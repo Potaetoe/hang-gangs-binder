@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hang Gang's Binder</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#241b21">
+<!-- Applied before first paint so a saved theme does not flash the
+     default palette on the way in. theme.js does everything else. -->
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("hgb-theme");
+      if (t) document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main>
+  <div class="themes">
+    <button type="button" data-set-theme="pink">Pink</button>
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" data-set-theme="dark">Dark</button>
+  </div>
+
+  <h1>Hang Gang's Binder</h1>
+  <p class="muted">Submission portal</p>
+
+  <div class="card">
+    <p><strong>Not open yet.</strong> The form is still being built.</p>
+    <p class="muted">
+      When it opens, submissions will be encrypted in your browser before
+      they are sent, so the service storing them cannot read them.
+    </p>
+  </div>
+</main>
+<script src="theme.js"></script>
+</body>
+</html>

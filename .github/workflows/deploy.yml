@@ -1,0 +1,77 @@
+name: Verify and deploy
+
+# Publishes apps/web to GitHub Pages, but only after the checks pass.
+#
+# ---------------------------------------------------------------------
+# THE BUILD IS A COPY
+#
+# apps/web contains exactly what gets published - nothing more. Checks,
+# the key generator and the test harness live in tools/ and dev/, which
+# are sibling directories the deploy never looks at.
+#
+# This matters more here than it did in the project this pattern came
+# from. There, a strip step going wrong would have published a test
+# fixture. Here, the thing that must never be published is the private
+# key that every submitter's privacy depends on, and a deletion that
+# never happens cannot fail to happen. tools/check_web.py additionally
+# fails the build if anything key-shaped is sitting in apps/web.
+#
+# There is deliberately no staging branch and no preview deployment: a
+# push is a release. What protects production is this job, plus running
+# the site locally before pushing.
+# ---------------------------------------------------------------------
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let an in-flight deploy finish rather than cancelling it midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check apps/web is publishable
+        run: python tools/check_web.py
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - name: Build the site
+        # A copy. apps/web is the product, so there is nothing to strip
+        # and nothing to guard against having failed to strip.
+        run: |
+          rm -rf _site
+          cp -r apps/web _site
+          echo "publishing ($(du -sh _site | cut -f1)):"
+          ls -R _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
