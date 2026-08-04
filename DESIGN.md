@@ -66,6 +66,47 @@ Chosen for transferability and for having no moving parts:
 - The Apps Script web app is a single `doPost` that appends a row. It
   never decrypts, never validates the contents, and has no read path.
 
+### Encryption, concretely
+
+Native WebCrypto. No library, no CDN, no vendored bundle.
+
+Per submission: generate an ephemeral P-256 keypair, ECDH it against the
+admin's public key, HKDF the shared secret into an AES-256-GCM key, and
+send the ephemeral public key + IV + ciphertext. Standard ECIES, roughly
+sixty lines, using only primitives the browser already ships.
+
+The alternative was vendoring libsodium.js for `crypto_box_seal`, which
+is the more foolproof primitive — one function call, no composition to
+get wrong. It was rejected because it is ~200 KB of third-party code
+that sees plaintext before encryption. A compromised or subtly wrong
+copy defeats the entire design, and pulling it from a CDN would be worse
+still: a supply-chain problem on the one script that handles cleartext.
+
+Composing primitives by hand is the real cost of that choice. The
+mitigation is the round-trip test in `dev/`, which is why that test is
+built before the form rather than after it — a form that silently
+produces undecryptable ciphertext is indistinguishable from a working
+one until export day, and by then the data is gone.
+
+`crypto.subtle` requires a secure context. Confirmed available on the
+deployed site and on `http://localhost`; it is *not* available over
+`file://`, which is why the README insists on serving the directory.
+
+### Export
+
+The admin downloads the Sheet as CSV from Google the ordinary way, then
+drops that file into `admin.html`, which decrypts it locally and returns
+a plaintext CSV. Nothing is uploaded and the key never leaves the page.
+
+This is why the endpoint has no read path — it never needed one. It also
+makes access genuinely two-factor, without any of it being built:
+
+- the Google login gets you the ciphertext
+- the private key gets you the plaintext
+
+Neither alone is enough, and the two are held independently, which is
+the same property that makes the handoff below work.
+
 ## Key custody
 
 **The private key never enters this repository, and never enters a
@@ -137,6 +178,35 @@ duplicates happens at export.
 - **No staging branch.** Same reasoning as the base project: a push to
   `main` is a release, gated by the verify job, and verified locally
   first.
+
+## Build order
+
+Nothing below is built yet. The order is deliberate.
+
+1. **Spike the endpoint before anything is built on it.** Apps Script
+   and CORS is the one thing that could sink the storage choice: a
+   `doPost` only returns a *readable* response if the request avoids a
+   preflight, which in practice means POSTing as
+   `text/plain;charset=utf-8` and letting Apps Script's redirect supply
+   the CORS header. If that round trip cannot be made to work, the
+   storage layer changes — and since the data is encrypted either way,
+   swapping it is cheap *now* and expensive later.
+2. **`tools/keygen.html`** — offline keypair generator. Produces the
+   private key to store and the public key to paste into `config.js`.
+3. **`crypto.js` and the `dev/` round-trip test**, in that order, before
+   the form. See "Encryption, concretely" above for why.
+4. **The form** — fields, unit toggle, country dropdown, 18+ checkbox,
+   validation, encrypt, POST.
+5. **`admin.html`** — CSV in, key in, decrypted CSV out.
+6. **`HANDOFF.md`** — written once there is something real to hand off,
+   from the transfer table above.
+
+## Open questions
+
+- **Imperial height entry.** Two inputs (feet + inches) is what people
+  expect and is the fiddliest part of the form to validate; a single
+  decimal-inches field is trivial but nobody thinks in it. Undecided —
+  defaulting to two inputs unless someone says otherwise.
 
 ## Threat model, honestly stated
 
