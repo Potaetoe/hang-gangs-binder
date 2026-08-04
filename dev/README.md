@@ -7,12 +7,18 @@ messy as it needs to be.
 ## What is here
 
 - `worker.test.mjs` — exercises `server/worker.js` against a stub D1
-  binding: preflight, origin rejection, the validation cases, and the
-  token gate on export. No account, no network, no wrangler.
+  binding: preflight, origin rejection, the validation cases, the token
+  gate on export, and that `ALLOWED_ORIGINS` overrides the built-in list
+  in both directions. No account, no network, no wrangler.
 
   ```bash
   node dev/worker.test.mjs
   ```
+
+  What it cannot see is the dashboard. A Worker with no D1 binding, or
+  no `EXPORT_TOKEN`, passes every check here and fails on the first real
+  request — so a live round trip stays part of deploying, not something
+  this replaces.
 
 ## Planned
 

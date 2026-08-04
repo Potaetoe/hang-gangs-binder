@@ -10,10 +10,11 @@ nothing to log into. Open the page, fill the form, done.
 service that stores them cannot read them. Only someone holding the
 project's private key can, and that key is not stored online anywhere.
 
-> **Status: scaffold.** The repository structure, the deploy pipeline,
-> the page shell and the storage endpoint's code are in place. The
-> endpoint is not deployed yet, and the form and the export tool are not
-> built. See [DESIGN.md](DESIGN.md) for what is being built and why.
+> **Status: not open yet.** The site, the page shell and the storage
+> endpoint are built, deployed and talking to each other. The form, the
+> key generator and the export tool are not built — so nothing collects
+> data yet, and nothing can. See [DESIGN.md](DESIGN.md) for what is
+> being built, in what order, and why.
 
 ---
 
@@ -55,6 +56,18 @@ dev/               test harness; never published
 `apps/web` is copied verbatim to GitHub Pages. Nothing is stripped, so
 nothing can fail to be stripped — anything that should not be public
 simply does not live in that directory.
+
+## Configuration
+
+[apps/web/config.js](apps/web/config.js) is the one file a fork or a new
+owner needs to change: the endpoint it posts to, and the public key it
+encrypts to. Both values are public by design.
+
+Changing the endpoint means changing it in **two** places — `config.js`
+and the `connect-src` of every page that loads it. Do one without the
+other and the site still loads, still looks correct, and silently drops
+every submission at the browser's security check. `tools/check_web.py`
+fails the build rather than letting that ship.
 
 ## Deploying
 

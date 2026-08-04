@@ -49,8 +49,9 @@ No CLI required; all of this is in the Cloudflare dashboard.
    it. A secret, not a plaintext variable — plaintext variables are
    visible in the dashboard to anyone with account access.
 5. **Deploy**, then put the Worker's URL in `apps/web/config.js` and add
-   its origin to the `connect-src` of each page's content security
-   policy. Until both are done the site cannot talk to it, by design.
+   its origin to the `connect-src` of every page that loads
+   `config.js`. Until both are done the site cannot talk to it, by
+   design; `tools/check_web.py` fails the build if only one is done.
 
 Optionally, add a plaintext variable **`ALLOWED_ORIGINS`** — a
 comma-separated list of the origins allowed to POST here. Left unset,

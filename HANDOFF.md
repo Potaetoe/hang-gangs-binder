@@ -41,9 +41,11 @@ help from you beyond the data itself.
    to change a URL, something has gone wrong — that variable exists so
    the code is identical on every deployment.
 3. They put their Worker's URL in `apps/web/config.js` and add its
-   origin to the `connect-src` of every page's content security policy.
+   origin to the `connect-src` of every page that loads `config.js`.
    Both. `python tools/check_web.py` fails the build if they do one and
-   not the other, which is exactly the mistake this hands out.
+   not the other, which is exactly the mistake this hands out — change
+   the endpoint alone and the site still loads, still looks right, and
+   silently drops every submission at the browser's CSP check.
 4. They generate a fresh keypair with `tools/keygen.html` and publish
    the public half in `config.js`.
 

@@ -303,33 +303,63 @@ that head, so a page added later cannot quietly ship without the policy.
 
 ## Build order
 
-Nothing below is built yet. The order is deliberate.
+The order is deliberate. State as of 2026-08-04:
 
-1. **Stand up the Worker and its database first**, so everything after
-   it has something real to talk to. This was a *spike* while the
-   storage was Apps Script, because the CORS round trip might not have
-   worked at all; with a Worker setting its own headers it is ordinary
-   work. Confirm the round trip from `dev/` anyway before the form
-   depends on it — a preflight, a POST, a token-gated read back.
-2. **`tools/keygen.html`** — offline keypair generator. Produces the
+1. ✅ **The Worker and its database.** Deployed, bound and verified end
+   to end — including from the live site under the real content
+   security policy, which is the only check that proves the D1 binding
+   exists at all. A Worker missing it passes every test in `dev/` and
+   fails on the first real request.
+
+   This was a *spike* while the storage was Apps Script, because the
+   CORS round trip might not have worked at all. With a Worker setting
+   its own headers it was ordinary work — see "Why a Cloudflare Worker
+   + D1".
+
+2. ⬜ **`tools/keygen.html`** — offline keypair generator. Produces the
    private key to store and the public key to paste into `config.js`.
-3. **`crypto.js` and the `dev/` round-trip test**, in that order, before
-   the form. See "Encryption, concretely" above for why.
-4. **The form** — fields, unit toggle, country dropdown, 18+ checkbox,
-   validation, encrypt, POST.
-5. **`admin.html`** — token in, key in, decrypted CSV out.
-6. **`HANDOFF.md`** — written up front, from the transfer table above,
-   and revisited as each piece lands. The original plan was to write it
-   last; that was wrong. Transferability shapes the code, so the
-   checklist has to exist while there is still time for the code to
-   accommodate it.
+   **Next.** Opened from disk, never served; the private half never
+   enters this repository. Until it exists, `config.js` carries
+   `publicKey: null`, and the form built in step 4 must refuse to
+   submit while that is true rather than posting something it could not
+   encrypt.
+
+3. ⬜ **`crypto.js` and the `dev/` round-trip test**, in that order,
+   before the form. See "Encryption, concretely" above for why.
+
+4. ⬜ **The form** — fields, unit toggle, country dropdown, 18+
+   checkbox, validation, encrypt, POST. Blocked on the open question
+   below.
+
+5. ⬜ **`admin.html`** — token in, key in, decrypted CSV out.
+
+6. 🔄 **`HANDOFF.md`** — written up front, from the transfer table
+   above, and revisited as each piece lands. The original plan was to
+   write it last; that was wrong. Transferability shapes the code, so
+   the checklist has to exist while there is still time for the code to
+   accommodate it. Revisit it when the key and the form exist, since
+   both add steps to it.
+
+### What exists now
+
+The site, the page shell, and the storage endpoint, wired together and
+live. A submitter visiting today sees an honest "not open yet" page.
+Nothing collects data, and nothing can: there is no form and no key to
+encrypt to.
 
 ## Open questions
 
 - **Imperial height entry.** Two inputs (feet + inches) is what people
   expect and is the fiddliest part of the form to validate; a single
   decimal-inches field is trivial but nobody thinks in it. Undecided —
-  defaulting to two inputs unless someone says otherwise.
+  defaulting to two inputs unless someone says otherwise. **Blocks step
+  4**, and only step 4; nothing before it depends on the answer.
+
+- **Who holds the private key.** If it is not the person building this,
+  the keyholder should run `tools/keygen.html` themselves, so the
+  private half never exists on a machine that is not theirs. Worth
+  settling before step 2 rather than generating a key and moving it
+  afterwards — moving it is exactly the moment a copy gets left behind.
 
 ## Threat model, honestly stated
 
