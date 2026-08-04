@@ -177,9 +177,30 @@ Two things move, independently:
 | The site itself | Transfer the GitHub repo, or they fork it. |
 
 Handing over storage is more work than the Drive menu item the Sheet
-offered — this is the cost of the storage decision, paid here. Write it
-down properly in `HANDOFF.md` rather than leaving someone to discover
-it.
+offered — this is the cost of the storage decision, paid here. The
+checklist is in `HANDOFF.md`, written early rather than last, because
+transferability is a constraint on the code and not a document produced
+at the end.
+
+Three things arrange the code so a handover is configuration rather than
+editing:
+
+- **Neither side names the other in code.** The Worker learns which
+  site may call it from `ALLOWED_ORIGINS`, a dashboard variable; the
+  site learns the endpoint from `config.js`. A new owner changes two
+  settings and deploys identical code. The moment someone has to edit
+  `worker.js` to change a URL, this property is lost.
+- **The pairing that fails silently is checked.** The endpoint lives in
+  `config.js` and the permission to reach it lives in each page's
+  `connect-src`. Change one and the site still loads, still looks
+  right, and drops every submission at the browser's CSP check. That is
+  the failure a new owner will hit, so `tools/check_web.py` fails the
+  build instead.
+- **`server/wrangler.toml` records the deployment shape** — which
+  bindings exist and what they are called. The dashboard remains the
+  normal path; this is for a successor who would rather run one command
+  than learn someone else's console, and it documents the bindings
+  either way.
 
 Rotating instead of sharing: the new holder generates a fresh keypair,
 publishes their public key in `config.js`, and new submissions are
@@ -297,8 +318,11 @@ Nothing below is built yet. The order is deliberate.
 4. **The form** — fields, unit toggle, country dropdown, 18+ checkbox,
    validation, encrypt, POST.
 5. **`admin.html`** — token in, key in, decrypted CSV out.
-6. **`HANDOFF.md`** — written once there is something real to hand off,
-   from the transfer table above.
+6. **`HANDOFF.md`** — written up front, from the transfer table above,
+   and revisited as each piece lands. The original plan was to write it
+   last; that was wrong. Transferability shapes the code, so the
+   checklist has to exist while there is still time for the code to
+   accommodate it.
 
 ## Open questions
 

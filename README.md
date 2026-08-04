@@ -89,6 +89,12 @@ recovery, by design.
 The long version, including what this does and does not protect against,
 is in [DESIGN.md](DESIGN.md).
 
+## Handing it on
+
+This project is built to be transferable — the data, the storage and the
+site move independently, and none of it requires sharing an account. The
+checklist is in [HANDOFF.md](HANDOFF.md).
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

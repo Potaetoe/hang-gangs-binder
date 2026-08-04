@@ -11,17 +11,34 @@
  * storage layer is untrusted on purpose.
  *
  * Bindings expected (see server/README.md):
- *   DB            D1 database binding
- *   EXPORT_TOKEN  secret, compared against the Authorization header
+ *   DB               D1 database binding
+ *   EXPORT_TOKEN     secret, compared against the Authorization header
+ *   ALLOWED_ORIGINS  optional, comma-separated; overrides the default
  */
 
 // The only origins allowed to call this. A submission from anywhere
 // else is either a mistake or somebody else's copy of the form, and in
 // both cases the row is noise in the export.
-const ALLOWED_ORIGINS = [
+//
+// This is a deployment fact, not a code fact: whoever inherits this
+// project will serve the site from their own address, and having to
+// edit and re-paste the Worker to say so is exactly the kind of chore
+// that gets skipped or got wrong. Set ALLOWED_ORIGINS in the dashboard
+// and this file never needs touching. The default below is what this
+// deployment happens to use.
+const DEFAULT_ORIGINS = [
   "https://potaetoe.github.io",
   "http://localhost:8124",
 ];
+
+function allowedOrigins(env) {
+  if (typeof env.ALLOWED_ORIGINS === "string" && env.ALLOWED_ORIGINS.trim()) {
+    return env.ALLOWED_ORIGINS.split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+  }
+  return DEFAULT_ORIGINS;
+}
 
 // A submission is a base64 blob of a short record. 16 KB is far more
 // than that and far less than anything worth storing by accident.
@@ -119,7 +136,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
-    const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : null;
+    const allowed = allowedOrigins(env).includes(origin) ? origin : null;
 
     if (request.method === "OPTIONS") {
       if (!allowed) return new Response(null, { status: 403 });

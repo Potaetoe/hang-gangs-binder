@@ -28,6 +28,14 @@ Three checks:
    are the ones that handle plaintext and keys, so "I copied the old
    page and trimmed the head" is exactly the mistake worth catching
    automatically rather than at review.
+
+4. The endpoint in config.js is permitted by every page's CSP. These
+   are two files that must agree, and they fail apart silently: change
+   the endpoint alone and the pages still load, still look right, and
+   drop every submission at the connect-src check. Whoever inherits
+   this project and points it at their own Worker will change the
+   obvious file and not the other one - so the build says so instead of
+   the site failing quietly on their first real submitter.
 """
 
 import os
@@ -91,6 +99,38 @@ def missing_head_pieces():
     return gaps
 
 
+def endpoint_origin():
+    """The origin of the endpoint in config.js, or None if not set up."""
+    path = os.path.join(WEB, "config.js")
+    if not os.path.exists(path):
+        return None  # not wired up yet; nothing to disagree about
+    text = open(path, encoding="utf-8").read()
+    match = re.search(r'endpoint\s*:\s*["\'](https://[^"\']+)["\']', text)
+    if not match:
+        return None
+    parts = match.group(1).split("/")
+    return "%s//%s" % (parts[0], parts[2])
+
+
+def csp_gaps(origin):
+    """(page, origin) for pages whose CSP would block the endpoint."""
+    if not origin:
+        return []
+    gaps = []
+    for name in html_pages():
+        text = open(os.path.join(WEB, name), encoding="utf-8").read()
+        text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+        policy = re.search(
+            r'http-equiv="Content-Security-Policy"[^>]*content="([^"]*)"',
+            text, re.I)
+        if not policy:
+            continue  # already reported by the shared-head check
+        connect = re.search(r"connect-src ([^;\"]*)", policy.group(1))
+        if not connect or origin not in connect.group(1):
+            gaps.append((name, origin))
+    return gaps
+
+
 def key_shaped_content():
     """(file, description) for anything in apps/web resembling a key."""
     hits = []
@@ -118,6 +158,12 @@ def main():
 
     for page, description in missing_head_pieces():
         problems.append("%s is missing %s" % (page, description))
+
+    for page, origin in csp_gaps(endpoint_origin()):
+        problems.append(
+            "%s does not allow %s in its CSP connect-src, but that is the "
+            "endpoint config.js points at - every submission would be "
+            "blocked by the browser." % (page, origin))
 
     for rel, description in key_shaped_content():
         problems.append(

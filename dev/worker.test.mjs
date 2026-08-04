@@ -77,12 +77,49 @@ for (const [label, fn, wantStatus, wantCors] of cases) {
   );
 }
 
-/* The rejections must have rejected: only the one good row got through. */
-const wroteOnce = stored.length === 1 && stored[0][0] === "QUJDRA==";
-if (!wroteOnce) failures++;
+/*
+ * ALLOWED_ORIGINS overrides the built-in list, so a new owner can point
+ * the endpoint at their own site from the dashboard without editing and
+ * re-pasting the Worker. Both directions matter: the override must let
+ * their origin in AND shut the old one out, or a handoff quietly leaves
+ * the previous owner's site still writing to the new owner's database.
+ */
+const NEW_OWNER = "https://someone-else.example";
+const inherited = {
+  ...env,
+  ALLOWED_ORIGINS: ` ${NEW_OWNER} , http://localhost:8124 `,
+};
+const asInherited = (headers) =>
+  worker.fetch(
+    new Request("https://w.dev/submit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ciphertext: "QUJDRA==" }),
+    }),
+    inherited
+  );
+
+const overrideCases = [
+  ["override admits the new origin", { Origin: NEW_OWNER, "Content-Type": "application/json" }, 200],
+  ["override shuts out the old origin", good, 403],
+];
+for (const [label, headers, wantStatus] of overrideCases) {
+  const res = await asInherited(headers);
+  const ok = res.status === wantStatus;
+  if (!ok) failures++;
+  console.log(
+    `${ok ? "pass" : "FAIL"}  ${label.padEnd(36)} ${String(res.status).padEnd(4)} ` +
+    `cors=${String(res.headers.get("Access-Control-Allow-Origin")).padEnd(30)}`
+  );
+}
+
+/* The rejections must have rejected: only the good rows got through. */
+const wroteTwice =
+  stored.length === 2 && stored.every((r) => r[0] === "QUJDRA==");
+if (!wroteTwice) failures++;
 console.log(
-  `${wroteOnce ? "pass" : "FAIL"}  exactly one row stored, and it is the valid ` +
-  `one -> ${JSON.stringify(stored)}`
+  `${wroteTwice ? "pass" : "FAIL"}  only the 2 valid posts reached the database ` +
+  `-> ${stored.length} row(s)`
 );
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");

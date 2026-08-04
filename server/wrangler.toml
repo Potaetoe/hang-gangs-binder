@@ -1,0 +1,34 @@
+# Deployment shape, written down so it can be reproduced.
+#
+# The Worker is normally set up by pasting worker.js into the Cloudflare
+# dashboard - no CLI needed, which is the point. This file exists for
+# the other case: somebody inheriting the project who would rather run
+# `wrangler deploy` than click through a dashboard they have never seen,
+# and who needs to know exactly which bindings the code expects.
+#
+# Read it as documentation first and config second. If you change the
+# bindings here, change them in the dashboard too - nothing enforces
+# that they agree, because only one of them is ever live at a time.
+#
+#     wrangler d1 create binder
+#     wrangler d1 execute binder --remote --file=server/schema.sql
+#     wrangler secret put EXPORT_TOKEN
+#     wrangler deploy
+
+name = "hang-gangs-binder"
+main = "worker.js"
+compatibility_date = "2026-08-04"
+
+# The site allowed to POST here. Set this and the Worker never needs
+# editing - see the comment above DEFAULT_ORIGINS in worker.js.
+[vars]
+ALLOWED_ORIGINS = "https://potaetoe.github.io,http://localhost:8124"
+
+# EXPORT_TOKEN is deliberately absent. It is a secret, set with
+# `wrangler secret put` or in the dashboard, and must never appear in a
+# file that lives in a public repository.
+
+[[d1_databases]]
+binding = "DB"            # worker.js reads env.DB - do not rename
+database_name = "binder"
+database_id = "REPLACE_ME"

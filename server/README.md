@@ -42,9 +42,20 @@ No CLI required; all of this is in the Cloudflare dashboard.
    its origin to the `connect-src` of each page's content security
    policy. Until both are done the site cannot talk to it, by design.
 
-`ALLOWED_ORIGINS` at the top of `worker.js` lists who may call it: the
-published site and `http://localhost:8124` for local work. A fork
-serving from a different address has to add its own.
+Optionally, add a plaintext variable **`ALLOWED_ORIGINS`** — a
+comma-separated list of the origins allowed to POST here. Left unset,
+the Worker falls back to the `DEFAULT_ORIGINS` in `worker.js`: this
+site, plus `http://localhost:8124` for local work.
+
+**Anyone running their own copy should set it.** It is what lets the
+Worker code stay byte-identical across deployments — if you are editing
+`worker.js` to change a URL, use this variable instead. Note that
+setting it *replaces* the defaults rather than adding to them, which is
+deliberate: an inherited deployment should stop accepting the previous
+owner's site, not keep quietly writing rows from it.
+
+`server/wrangler.toml` records the same bindings for anyone who would
+rather deploy from the command line than the dashboard.
 
 ## Changing it
 
