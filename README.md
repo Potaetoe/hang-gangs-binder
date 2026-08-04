@@ -32,10 +32,10 @@ kilograms and centimetres — there is a toggle.
 No build step and no dependencies. Serve `apps/web` and open it:
 
 ```bash
-python -m http.server 8123 --directory apps/web
+python -m http.server 8124 --directory apps/web
 ```
 
-Then visit <http://localhost:8123>.
+Then visit <http://localhost:8124>.
 
 Serving it matters — opening `index.html` as a `file://` URL breaks the
 crypto APIs the form depends on, because they require a secure context.
@@ -59,7 +59,16 @@ simply does not live in that directory.
 A push to `main` is a release. `.github/workflows/deploy.yml` runs the
 checks and, if they pass, publishes `apps/web`.
 
-There is no staging environment, so **verify locally before pushing**.
+There is no staging environment, so **verify locally before pushing** —
+open the site as above, and run the same checks CI will run:
+
+```bash
+python tools/check_web.py
+```
+
+It confirms every link resolves, that each page carries the shared head
+(including its content security policy), and that nothing key-shaped is
+sitting in the directory that gets published.
 
 ## Security
 

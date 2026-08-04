@@ -166,15 +166,67 @@ submission or offer an edit. Resubmitting simply adds a row, which also
 means the history doubles as weight-over-time data. Sorting out
 duplicates happens at export.
 
+## The page shell
+
+Every published page shares one head and one stylesheet. The shell was
+built before the form on purpose: the form and `admin.html` are the two
+pages that touch plaintext and keys, and both will start life as a copy
+of this one.
+
+**A content security policy, in a `<meta>` tag.** `default-src 'none'`
+with `script-src 'self'`, so the page can load nothing but its own
+files. This is the prose rule in "Encryption, concretely" — no CDNs, no
+third-party code — turned into something the browser enforces. It
+matters most in the window this whole design is about: the moment
+between the submitter typing their handle and the browser encrypting it,
+when an injected script would see cleartext. `connect-src` gains the
+Apps Script origin when the endpoint lands; nothing else is added to it.
+
+GitHub Pages serves no headers, so this is a meta policy, which means
+`frame-ancestors` and `report-uri` are unavailable — the site can be
+framed, and violations are not reported anywhere. Neither changes the
+threat model: there is nothing to clickjack on a page with no read path.
+
+**The pre-paint theme script is a file, not an inline block.** An inline
+script needs `'unsafe-inline'`, which would defeat the policy above, or
+a hash that silently breaks on every edit. A blocking same-origin script
+in the head runs at the same moment for the cost of one request.
+
+**No webfont.** Not an oversight and not only a taste call — a font from
+a CDN is third-party code on the page that handles plaintext, and the
+CSP above forbids it. The type carries itself on scale, weight and
+tracking, over the system stack.
+
+**A theme-aware SVG favicon.** It reads `prefers-color-scheme` itself,
+because a favicon cannot see the page's `data-theme`.
+
+**A `404.html` and a `robots.txt`.** GitHub Pages serves the former for
+any unknown path; without it a typo lands on GitHub's own 404, which is
+branded as a repository error and tells a visitor nothing. The latter
+says the same thing as the `noindex` meta each page carries, in the file
+a crawler reads first — this site is meant to be handed to people, not
+found in a search result next to somebody's Telegram handle.
+
+`tools/check_web.py` fails the build if any page is missing a piece of
+that head, so a page added later cannot quietly ship without the policy.
+
 ## What is deliberately not here
 
 - **No spam protection yet.** A public endpoint will eventually collect
   junk. The `doPost` is written with a single early return so a
   Turnstile check can be added without restructuring, but nothing is
   wired up until junk actually appears.
-- **No service worker / offline support.** The base project is an
-  installable PWA; a submission form that works offline would queue
-  writes it cannot confirm. Not worth the complexity.
+- **No service worker, and no web app manifest either.** The base
+  project is an installable PWA; a submission form that works offline
+  would queue writes it cannot confirm. Without the service worker a
+  manifest only buys an install prompt for a page most people will open
+  once — and an icon on a phone's home screen naming this project is a
+  privacy cost, not a feature.
+
+- **No framework and no build step.** `apps/web` is the build, so a
+  bundler would add a step that can fail between the source and the
+  published site. There is no state here that hand-written DOM code
+  cannot hold.
 - **No staging branch.** Same reasoning as the base project: a push to
   `main` is a release, gated by the verify job, and verified locally
   first.

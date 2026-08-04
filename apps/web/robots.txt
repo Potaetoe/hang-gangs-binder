@@ -1,0 +1,6 @@
+# This site is meant to be shared with people directly, not found in a
+# search result next to somebody's Telegram handle. Every page also
+# carries <meta name="robots" content="noindex, nofollow">; this file is
+# the copy a crawler reads before it fetches anything.
+User-agent: *
+Disallow: /

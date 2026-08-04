@@ -3,40 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Everything this page is allowed to load, and nothing else. Strict from
+  the start because this page will soon hold plaintext in memory before
+  encrypting it: an injected script that runs before the encryption step
+  sees exactly what the design exists to hide. The policy also enforces
+  the rule DESIGN.md states in prose - no CDNs, no third-party code.
+
+  connect-src gains the Apps Script endpoint's origin when the endpoint
+  is added; until then the page talks to nobody. frame-ancestors and
+  report-uri are ignored in a <meta> policy, so they are not written
+  here - a header would be needed, and GitHub Pages does not serve one.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Hang Gang's Binder</title>
+<meta name="description" content="Submission portal for the Hang Gang. Entries are encrypted in your browser before they are sent.">
 <meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#241b21">
-<!-- Applied before first paint so a saved theme does not flash the
-     default palette on the way in. theme.js does everything else. -->
-<script>
-  (function () {
-    try {
-      var t = localStorage.getItem("hgb-theme");
-      if (t) document.documentElement.setAttribute("data-theme", t);
-    } catch (e) {}
-  })();
-</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
 </head>
 <body>
-<main>
-  <div class="themes">
+
+<header class="stack">
+  <div class="themes" role="group" aria-label="Colour theme">
     <button type="button" data-set-theme="pink">Pink</button>
     <button type="button" data-set-theme="light">Light</button>
     <button type="button" data-set-theme="dark">Dark</button>
   </div>
 
-  <h1>Hang Gang's Binder</h1>
-  <p class="muted">Submission portal</p>
+  <div class="stack-tight">
+    <p class="eyebrow">Submission portal</p>
+    <h1>Hang Gang's Binder</h1>
+    <p class="muted">No account, no sign-up. Fill the form, done.</p>
+  </div>
+</header>
+
+<main class="stack">
+  <div class="card">
+    <p class="eyebrow">Status</p>
+    <p><strong>Not open yet.</strong> The form is still being built.</p>
+    <p class="muted small">
+      When it opens you will be asked for your Telegram username, your
+      weight and your height, in whichever units you think in. Gender,
+      roles and country are optional.
+    </p>
+  </div>
 
   <div class="card">
-    <p><strong>Not open yet.</strong> The form is still being built.</p>
-    <p class="muted">
-      When it opens, submissions will be encrypted in your browser before
-      they are sent, so the service storing them cannot read them.
+    <p class="eyebrow">How your entry is handled</p>
+    <p class="muted small">
+      Your submission is encrypted in your browser before it is sent, so
+      the service storing it cannot read it. Only the person holding the
+      key can — and that key is not kept online.
     </p>
   </div>
 </main>
+
+<footer>
+  <p>
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
 <script src="theme.js"></script>
 </body>
 </html>

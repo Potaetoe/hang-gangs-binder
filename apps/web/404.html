@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Same policy as index.html. See the comment there. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Page not found — Hang Gang's Binder</title>
+<meta name="description" content="That page does not exist on Hang Gang's Binder.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#241b21">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!--
+  GitHub Pages serves this file for any path it cannot find, so its
+  relative links resolve against the requested URL rather than the site
+  root. The site is flat - every real page is one level deep - so a
+  relative href is correct for anything a visitor could plausibly land
+  on, and it keeps this page working on localhost too.
+-->
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<body>
+
+<header class="stack">
+  <div class="themes" role="group" aria-label="Colour theme">
+    <button type="button" data-set-theme="pink">Pink</button>
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" data-set-theme="dark">Dark</button>
+  </div>
+
+  <div class="stack-tight">
+    <p class="eyebrow">404</p>
+    <h1>That page isn't here</h1>
+    <p class="muted">The link may be old, or the address mistyped.</p>
+  </div>
+</header>
+
+<main class="stack">
+  <div class="card">
+    <p><a href="index.html">Go to the submission portal</a></p>
+  </div>
+</main>
+
+<footer>
+  <p>
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+<script src="theme.js"></script>
+</body>
+</html>
