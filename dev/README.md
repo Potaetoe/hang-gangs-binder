@@ -20,15 +20,55 @@ messy as it needs to be.
   request — so a live round trip stays part of deploying, not something
   this replaces.
 
+- `crypto.test.mjs` — exercises `apps/web/crypto.js`: round trips, the
+  ways a key may be handed in, and every way a row must refuse to open.
+
+  ```bash
+  node dev/crypto.test.mjs
+  ```
+
+  The check that earns its keep is the **committed fixture** — a
+  ciphertext written by version 1 of the format, which must still
+  decrypt. Everything else here passes just as happily after a change
+  that quietly alters the format, and such a change would leave the
+  live database unreadable with no error anywhere.
+
+  **If the fixture stops decrypting, do not regenerate it.** That is the
+  test working. Either revert the change, or give it a new version byte
+  and teach `decrypt` to read both formats — the rows already stored
+  cannot be rewritten.
+
+- `crypto-browser-check.html` — the platform-dependent half of the same
+  checks, in a real browser under the published pages' content security
+  policy. Node is the same specification, which is why the Node test is
+  the one CI runs, but Node is not what a submitter uses.
+
+  Serve the **repository root**, not `apps/web` — the page reaches into
+  `apps/web` for the real `crypto.js` and `config.js`, so nothing is
+  copied:
+
+  ```bash
+  python -m http.server 8124 --directory .
+  ```
+
+  Then <http://localhost:8124/dev/crypto-browser-check.html>. Port 8124
+  is the localhost origin `server/worker.js` already allows. Note that
+  while this is running the site itself is at `/apps/web/`.
+
+- `fixture.json` — the stored ciphertext and the record it must come
+  back as. Both checks read this one file; two copies would be two
+  things to keep in step, and the copy that drifted would be the one
+  still passing.
+
+- `test-key.json` — the throwaway keypair both use, in the same envelope
+  `tools/keygen.html` writes.
+
 ## Planned
 
-- a round-trip test for the crypto: encrypt a known payload with a test
-  keypair, decrypt it, assert the result is byte-identical. This is the
-  check worth having — a form that silently produces undecryptable
-  ciphertext looks exactly like a working form until export day.
 - a fixture of sample submissions for exercising the export tool without
   needing real data.
 
-The test keypair used here is a throwaway generated for testing and is
-committed on purpose. It protects nothing. The real private key never
-enters this repository — see [../DESIGN.md](../DESIGN.md).
+The test keypair here is a throwaway generated for testing and is
+committed on purpose. It protects nothing and opens nothing real. The
+real private key never enters this repository — see
+[../DESIGN.md](../DESIGN.md).

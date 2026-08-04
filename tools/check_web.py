@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Five checks:
+Six checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -52,6 +52,22 @@ Five checks:
    uncompressed point, and does the curve arithmetic to confirm it
    actually lies on P-256. Cheap, and it moves the discovery from a
    stranger's browser to the terminal of the person who pasted it.
+
+6. Nothing reaches the network except through crypto.js. This is the
+   design's one rule restated as something a machine can check: the
+   whole point is that plaintext never leaves the browser, so a file
+   that can call out but does not encrypt is the shape of the mistake
+   that would break it. Two halves - a script that fetches or reads the
+   endpoint must also name BinderCrypto, and a page loading such a
+   script must actually load crypto.js. Both are vacuous until the form
+   exists, which is the point of writing them now: they arm on the day
+   the file that handles cleartext gets written.
+
+   Neither can prove the encryption is *used* - only that the pieces
+   are present. A submit handler that posts the form fields and never
+   calls encrypt would pass. That failure is loud in review and in the
+   round-trip test; this catches the quiet one, which is a page wired
+   to the endpoint with no encryption on it at all.
 """
 
 import base64
@@ -224,6 +240,54 @@ def public_key_problem():
     return None
 
 
+CRYPTO_FILE = "crypto.js"
+
+# What "this file can reach the network" looks like in a directory with
+# no build step and no framework: a fetch call, or a read of the one
+# place the endpoint's address is written down.
+REACHES_NETWORK = re.compile(
+    r"\bfetch\s*\(|\bXMLHttpRequest\b|\bsendBeacon\b|"
+    r"BINDER_CONFIG\s*(?:\.\s*endpoint\b|\[\s*[\"']endpoint)")
+
+
+def strip_js_comments(text):
+    """Prose about fetch() is not a fetch()."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"^\s*//.*$", "", text, flags=re.M)
+
+
+def unencrypted_paths():
+    """(file, problem) for anything that could put plaintext on the wire."""
+    problems = []
+
+    senders = set()
+    for name in sorted(n for n in os.listdir(WEB) if n.endswith(".js")):
+        if name == CRYPTO_FILE:
+            continue
+        code = strip_js_comments(
+            open(os.path.join(WEB, name), encoding="utf-8").read())
+        if not REACHES_NETWORK.search(code):
+            continue
+        senders.add(name)
+        if "BinderCrypto" not in code:
+            problems.append((
+                name,
+                "reaches the endpoint but never mentions BinderCrypto, so "
+                "whatever it sends has not been through crypto.js"))
+
+    for page, target in html_references():
+        if target in senders:
+            loaded = set(t for p, t in html_references() if p == page)
+            if CRYPTO_FILE not in loaded:
+                problems.append((
+                    page,
+                    "loads %s, which talks to the endpoint, but does not "
+                    "load %s - the encryption would not be there to call"
+                    % (target, CRYPTO_FILE)))
+
+    return problems
+
+
 def key_shaped_content():
     """(file, description) for anything in apps/web resembling a key."""
     hits = []
@@ -264,6 +328,11 @@ def main():
             "config.js: %s. Every submission would be encrypted to it - or "
             "rather would not be, since the browser rejects it. Re-copy the "
             "line from tools/keygen.html." % problem)
+
+    for name, problem in unencrypted_paths():
+        problems.append(
+            "%s %s. Encrypting before anything leaves the browser is the "
+            "whole design - see DESIGN.md." % (name, problem))
 
     for rel, description in key_shaped_content():
         problems.append(

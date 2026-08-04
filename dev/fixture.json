@@ -1,0 +1,22 @@
+{
+  "wroteWith": "apps/web/crypto.js, format version 1, 2026-08-04",
+  "doNotRegenerate": "If this stops decrypting, that is the test working: the format changed, and every row already in the database changed with it. Give the change a new version byte and teach decrypt to read both - do not rewrite this file to make a test pass. See dev/README.md.",
+  "key": "test-key.json",
+  "blob": "AQR20/CEw6oe7kci2NDR8raOP+IUfARQRb8F9vHs2Z3xLRBln0f4Ch3AapQijn9cK0RKxkEVqhHKoZdkGO3dOnTlpN5Zxn54ARN6meA7snBD5JdiVrjgelYbxzVMn6RZEG+kkJvZ9wr3RcpwfceDrX69GhW4xe3FRoVbBD4nP9jEgRriu5lospSprylCFU0ipWXD3I8uqMMazlpRqaQWtYMLyCaENUibkYxRoQBYV7pDeK2NCKMQPilEn/wa2ocZ2+NogJbFpeGsO6kqDfqQvYY7uHUdEG+g1s02M+g4Ky0gCkT68lgObw4/gDmcHGtgukxSuk6pLVGJ8GjLTclxLgg5cjP+z4VFG4MesINU/x/IjDQD/BU+D+3ZFTJfNepoptK9o7+gaRRXyBESycXEAXeKUZhSoySCXGqZgRxvosxvYfbu+CZHtFNviLUU4IvOp6inbFa+FgbAVVoZgEezD1CDq7HSgfYKfJPaTT1+DCLssg5gW1GwOq94qNs2wISt",
+  "record": {
+    "telegram": "testuser",
+    "weight_kg": 118.4,
+    "height_cm": 175,
+    "entered": {
+      "weight": "261",
+      "height": "5'9\"",
+      "units": "imperial"
+    },
+    "gender": "nonbinary",
+    "roles": ["gainer", "feedee"],
+    "country": "NZ",
+    "over18": true,
+    "submitted_at": "2026-08-04T21:00:00.000Z",
+    "note": "unicode check: café — 東京 — 🐷"
+  }
+}

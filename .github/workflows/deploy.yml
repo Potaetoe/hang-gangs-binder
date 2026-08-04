@@ -46,8 +46,24 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Check apps/web is publishable
         run: python tools/check_web.py
+
+      # The one check whose failure is about the data rather than the
+      # site. A crypto.js that no longer reads what is already stored
+      # publishes a site that looks perfect and cannot be exported from,
+      # so this blocks the release rather than being noticed later.
+      - name: Check the encryption round-trips
+        run: node dev/crypto.test.mjs
+
+      - name: Check the Worker
+        # server/ is not published by this job, but a release that leaves
+        # the endpoint broken is still a broken release.
+        run: node dev/worker.test.mjs
 
   deploy:
     needs: verify

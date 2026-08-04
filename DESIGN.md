@@ -122,6 +122,31 @@ built before the form rather than after it — a form that silently
 produces undecryptable ciphertext is indistinguishable from a working
 one until export day, and by then the data is gone.
 
+#### How a submission is written down
+
+One byte string, then standard base64: a format version byte, the
+ephemeral public key as a raw point, the AES-GCM nonce, then ciphertext
+and tag. The first three are passed to AES-GCM as additional data, so
+none of them can be edited in the database without the tag failing.
+
+Two choices in there are worth their reasons:
+
+- **The version byte.** Rows outlive the code that wrote them. By the
+  time anyone wants to change this format the database will hold blobs
+  nobody can regenerate, so the alternative to a version byte is
+  guessing from the length. One byte now buys a decoder that can read
+  both later.
+- **No HKDF salt.** A salt has to reach the other side, which here means
+  carrying random bytes in every row to seed a derivation whose input is
+  already a fresh ECDH secret per submission. The ephemeral key is
+  doing that job. (An all-zero salt would be the same thing spelled
+  longer — RFC 5869 defines an absent salt as a block of zeros.)
+
+The label mixed into the derivation is part of the format, not a
+comment. Changing it makes every stored row undecryptable, silently,
+which is the case `dev/crypto.test.mjs` exists to catch — see the
+fixture there.
+
 #### How the key itself is written down
 
 Three files have to agree about this — `keygen.html` writes it,
@@ -403,14 +428,42 @@ The order is deliberate. State as of 2026-08-04:
    if `publicKey` is ever `null` again, which is what a fork starts
    from.
 
-3. ⬜ **`crypto.js` and the `dev/` round-trip test**, in that order,
-   before the form. **Next.** See "Encryption, concretely" above for
-   why, and "How the key itself is written down" for the formats it
-   must read.
+3. ✅ **`crypto.js` and the `dev/` round-trip test.** Built and passing:
+   `node dev/crypto.test.mjs`. A classic script assigning
+   `globalThis.BinderCrypto`, matching `config.js` rather than
+   introducing modules into a directory that has none — which also lets
+   the test load the shipped file's real bytes under Node, the way
+   `dev/worker.test.mjs` loads the Worker.
+
+   The test has two halves and the second is the one worth having. A
+   fresh keypair round-tripping proves encrypt and decrypt agree *with
+   each other*; a **committed fixture ciphertext** proves they still
+   agree with what is already stored. Every other check passes happily
+   after a change that quietly alters the format — a different label, a
+   different salt, a reordered header — and such a change would leave
+   the live database unreadable with nothing anywhere reporting it.
+   Both directions were confirmed by mutation: altering the label, the
+   hash, the salt or the additional data breaks the fixture, and
+   reordering the header breaks the round trip.
+
+   `dev/crypto-browser-check.html` repeats the platform-dependent part
+   in a browser, under the published pages' policy and against the real
+   `crypto.js` rather than a copy. Node is the same specification and
+   is what CI runs; it is not what a submitter uses, and the
+   differences that would bite — the content security policy, the
+   secure context, the engine's own WebCrypto — are precisely the ones
+   Node cannot have.
+
+   `tools/check_web.py` gained a sixth check with this step, stating
+   the design's central rule in a form a machine can hold: a script
+   that can reach the network must also name `BinderCrypto`, and a page
+   loading such a script must load `crypto.js`. Vacuous today on
+   purpose — it arms on the day the file that handles cleartext is
+   written, which is step 4.
 
 4. ⬜ **The form** — fields, unit toggle, country dropdown, 18+
-   checkbox, validation, encrypt, POST. Blocked on the open question
-   below.
+   checkbox, validation, encrypt, POST. **Next.** Blocked on the open
+   question below.
 
 5. ⬜ **`admin.html`** — token in, key in, decrypted CSV out.
 
@@ -424,12 +477,13 @@ The order is deliberate. State as of 2026-08-04:
 ### What exists now
 
 The site, the page shell and the storage endpoint, wired together and
-live; the key generator; and a keypair, whose public half is published
-in `config.js` and whose private half is held offline by the keyholder.
-A submitter visiting today sees an honest "not open yet" page. Nothing
-collects data, and nothing can — there is no form. What is missing is
-now only the code between the two ends: `crypto.js`, the form, and
-`admin.html`.
+live; the key generator; a keypair, whose public half is published in
+`config.js` and whose private half is held offline by the keyholder;
+and `crypto.js`, tested against both a fresh keypair and a stored
+fixture. A submitter visiting today sees an honest "not open yet" page.
+Nothing collects data, and nothing can — there is no form, and no page
+loads `crypto.js` yet. What is missing is the two ends that use it: the
+form, and `admin.html`.
 
 ## Open questions
 

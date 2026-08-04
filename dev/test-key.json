@@ -1,0 +1,18 @@
+{
+  "project": "Hang Gang's Binder",
+  "purpose": "THROWAWAY TEST KEY. Generated for dev/crypto.test.mjs and committed on purpose - it protects nothing and opens nothing real. The key the portal actually uses is held offline and never enters this repository.",
+  "curve": "P-256",
+  "created": "2026-08-04T20:54:57.689Z",
+  "publicKey": "BP8QQNhAKv/HB3eHrXa0VWsiHGdQPL/DxlEPerTqkZwg4zhVQDlm98Y7s4IY6V46DQlMWQciiiRNlZHz24j5a30=",
+  "privateKey": {
+    "key_ops": [
+      "deriveBits"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "_xBA2EAq_8cHd4etdrRVayIcZ1A8v8PGUQ96tOqRnCA",
+    "y": "4zhVQDlm98Y7s4IY6V46DQlMWQciiiRNlZHz24j5a30",
+    "crv": "P-256",
+    "d": "d06w2GrdtWdCGdUoLbUQGIrP32gH6dSq16fe7J2vu3w"
+  }
+}

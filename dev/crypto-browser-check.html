@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The same checks as dev/crypto.test.mjs, in the runtime that actually
+  matters. Node's WebCrypto is the same specification, which is why the
+  Node test is the one wired into CI - but it is not the thing a
+  submitter runs, and the differences that would bite are exactly the
+  ones Node cannot have: the content security policy, isSecureContext,
+  and whichever engine the browser ships.
+
+  Serve the REPOSITORY ROOT, not apps/web - this page reaches sideways
+  into apps/web for the real crypto.js and the real config.js, and up
+  into dev/ for the fixture. Same origin, no copies.
+
+  Port 8124, the same one the site uses locally. Not arbitrary: it is
+  the localhost origin server/worker.js allows by default, so a check
+  that later grows a real request to the endpoint does not have to move
+  ports to be let in. Serving the root here rather than apps/web means
+  the site itself is at /apps/web/ while this is running.
+
+      python -m http.server 8124 --directory .
+      # then http://localhost:8124/dev/crypto-browser-check.html
+
+  The policy below is a copy of the published pages', for the same
+  reason the whole check exists: crypto.js has to work under it. If a
+  future change to crypto.js needs the policy loosened here, that is
+  the finding, not the fix.
+
+  This directory is never published. It is safe for it to name the test
+  key, which protects nothing and opens nothing real.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>crypto.js — browser check</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="../apps/web/theme.css">
+</head>
+<body>
+
+<header class="stack">
+  <div class="stack-tight">
+    <p class="eyebrow">Hang Gang's Binder · local check, never published</p>
+    <h1>crypto.js in a browser</h1>
+    <p class="muted">
+      The same assertions <code>dev/crypto.test.mjs</code> makes, run
+      here under the published pages' content security policy.
+    </p>
+  </div>
+</header>
+
+<main class="stack">
+  <div class="card">
+    <pre id="out">running…</pre>
+  </div>
+</main>
+
+<script src="../apps/web/config.js"></script>
+<script src="../apps/web/crypto.js"></script>
+<script src="crypto-browser-check.js"></script>
+</body>
+</html>

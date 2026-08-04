@@ -62,6 +62,11 @@ keys. Decide which you are doing:
 - **Inheriting** — they use your key. One key, all rows readable, and
   you should no longer hold a copy.
 
+Whichever you choose, the rows carry a format version byte and their own
+`crypto.js` is what reads it. If they fork and change that file's
+format, rows written before the change stop opening — silently. The
+fixture in `dev/crypto.test.mjs` is what tells them; point them at it.
+
 To move the rows themselves: `GET /export` with the token returns every
 row as JSON. Those rows are ciphertext, so they can be sent over any
 channel you like, and inserted into the new database with an `INSERT`

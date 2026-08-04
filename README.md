@@ -108,8 +108,23 @@ It confirms every link resolves, that each page carries the shared head
 (including its content security policy), and that nothing key-shaped is
 sitting in the directory that gets published.
 
-If you changed the endpoint, run its checks too — they need Node, and
-nothing else:
+Run the Node checks too — they need Node, and nothing else:
+
+```bash
+node dev/crypto.test.mjs
+```
+
+That one proves a submission encrypted today can still be decrypted, and
+that a ciphertext stored earlier can still be read. If it fails, stop:
+the data is what breaks.
+
+If you touched `apps/web/crypto.js`, run it in a browser too — Node is
+the same specification but not what a submitter uses. Serve the
+repository root and open
+<http://localhost:8124/dev/crypto-browser-check.html>; see
+[dev/README.md](dev/README.md).
+
+If you changed the endpoint or the Worker:
 
 ```bash
 node dev/worker.test.mjs
