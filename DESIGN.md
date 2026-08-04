@@ -25,21 +25,21 @@ the browser encrypting each submission before it leaves the page.
 ## The design
 
 ```
-  submitter's browser                Google Sheet             admin's browser
-  ───────────────────                ────────────             ───────────────
+  submitter's browser            Cloudflare Worker + D1        admin's browser
+  ───────────────────            ──────────────────────        ───────────────
   fills the form
-  encrypts to the      ── HTTPS ─>   one row per          <──  fetches rows
-  admin PUBLIC key                   submission, each          decrypts with the
-  (baked into the                    an opaque base64          PRIVATE key, held
-  public repo)                       blob                      only on this machine
-                                                               exports CSV
+  encrypts to the    ── HTTPS ─>  one row per submission,  <──  fetches the rows
+  admin PUBLIC key                each an opaque base64         decrypts with the
+  (baked into the                 blob plus a receipt           PRIVATE key, held
+  public repo)                    timestamp                     only on this machine
+                                                                exports CSV
 ```
 
 Three properties fall out of this:
 
-1. **The storage provider cannot read the data.** Google sees base64.
-   A breach of the Sheet, a misconfigured share link, a subpoena to
-   Google — all yield ciphertext.
+1. **The storage provider cannot read the data.** Cloudflare sees
+   base64. A breach of the database, a leaked API token, a subpoena to
+   Cloudflare — all yield ciphertext.
 2. **The public key being public is fine.** That is what a public key is
    for. It encrypts; it cannot decrypt. Publishing it in the repo is not
    a leak.
@@ -48,23 +48,57 @@ Three properties fall out of this:
 
 ### Why not just a database with write-only rules
 
-Firestore rules or a Worker with an allowlist would keep the public from
-*reading*, but the data would still sit in plaintext under someone's
-account. Transferring it would mean transferring the account, and any
-misconfiguration would expose every row at once. Encryption makes the
-storage layer untrusted by design, which means picking one is a
-convenience decision rather than a security decision.
+Rules that keep the public from *reading* would still leave the data
+sitting in plaintext under someone's account. Transferring it would mean
+transferring the account, and any misconfiguration would expose every
+row at once. Encryption makes the storage layer untrusted by design,
+which means picking one is a convenience decision rather than a security
+decision — and a cheap one to revisit.
 
-### Why Google Apps Script + a Sheet
+### Why a Cloudflare Worker + D1
 
-Chosen for transferability and for having no moving parts:
+The first version of this document chose Google Apps Script writing to a
+Sheet. That was reconsidered on the grounds of not wanting the data in a
+Google product, and the replacement turned out to be better on the
+merits, not merely different:
 
-- A Sheet's ownership transfers to any Google account from a Drive menu.
-- Free. No billing account, no CLI, no second deploy pipeline.
-- Export is native, and each row is one opaque string, so the Sheet is
-  doing nothing clever that could break.
-- The Apps Script web app is a single `doPost` that appends a row. It
-  never decrypts, never validates the contents, and has no read path.
+- **It deletes the project's only open risk.** Apps Script cannot set
+  its own response headers, so a readable reply depended on POSTing as
+  `text/plain;charset=utf-8` and letting a redirect supply the CORS
+  header. The entire first step of the build order existed to prove that
+  hack worked. A Worker sets its own headers; there is nothing to prove.
+- **Free at any volume this will ever see.** 100,000 Worker requests a
+  day, and D1 allows 5 GB with 100,000 row-writes a day.
+- **It does not pause.** This matters more than it sounds — see
+  Supabase below.
+- **One account, one deploy, no CLI required.** The Worker can be pasted
+  into the dashboard editor.
+
+The Worker is a single file: append a row on `POST`, return the rows on
+a token-gated `GET`, and nothing else. It never decrypts and holds no
+key.
+
+#### What was rejected, and why
+
+- **Google Apps Script + a Sheet.** Ruled out for being a Google
+  product. It kept two genuine advantages worth naming, since losing
+  them is the cost of this decision: the Sheet doubled as the export UI
+  for a non-technical keyholder, and handing the storage to someone else
+  was a Drive menu item. Both now need building or documenting instead.
+- **Supabase.** Free projects pause after seven days without traffic,
+  and a portal that sits quiet for a fortnight is exactly the case that
+  breaks. The workaround is a keep-alive cron — a moving part whose
+  failure is silent and whose consequence is a dead form.
+- **Netlify Forms and the hosted form services.** They cap submissions
+  per month and mean either moving the hosting or adding a third party
+  with its own account to inherit.
+- **No endpoint at all** — the page encrypts, the submitter pastes the
+  blob to the keyholder on Telegram. Genuinely self-contained: no
+  account, nothing to expire, nothing to transfer, and no spam surface,
+  since a static page cannot receive a POST without something on the
+  other end. Rejected for friction: it moves work onto every submitter
+  and onto the keyholder, and a form people abandon collects nothing.
+  Worth remembering as the fallback if the Worker ever becomes a burden.
 
 ### Encryption, concretely
 
@@ -94,14 +128,23 @@ deployed site and on `http://localhost`; it is *not* available over
 
 ### Export
 
-The admin downloads the Sheet as CSV from Google the ordinary way, then
-drops that file into `admin.html`, which decrypts it locally and returns
-a plaintext CSV. Nothing is uploaded and the key never leaves the page.
+The admin opens `admin.html`, pastes in the export token and the private
+key, and gets a plaintext CSV back. The page fetches the ciphertext from
+the Worker and decrypts it in the browser; nothing is uploaded, and the
+private key never leaves the page.
 
-This is why the endpoint has no read path — it never needed one. It also
-makes access genuinely two-factor, without any of it being built:
+Losing the Sheet meant losing a native export button, so the endpoint
+gains the read path the Sheet used to provide. It is gated by a bearer
+token held as a Worker secret. To be clear about what that token is for:
+**it is not what keeps the data confidential** — the rows are ciphertext
+whether or not the request is authorised, and Cloudflare could read them
+as readily as Google could have. The token exists so the corpus is not
+casually harvestable and so bulk reads are not anonymous. Confidentiality
+is the encryption's job, and only the encryption's.
 
-- the Google login gets you the ciphertext
+Access stays genuinely two-factor, which is the property worth keeping:
+
+- the export token gets you the ciphertext
 - the private key gets you the plaintext
 
 Neither alone is enough, and the two are held independently, which is
@@ -129,9 +172,14 @@ Two things move, independently:
 
 | To transfer | Do this |
 | --- | --- |
-| Read access to the data | Give them the private key file. Nothing else. |
-| The storage bucket | Transfer the Sheet's ownership in Drive, **or** have them deploy their own Apps Script and change the endpoint URL in `apps/web/config.js`. |
+| Read access to the data | Give them the private key file and the export token. Nothing else. |
+| The storage itself | Move the Cloudflare account, **or** have them deploy their own Worker and D1 database and change the endpoint URL in `apps/web/config.js`. Existing rows come across with a `SELECT`, and they are ciphertext in transit as much as at rest. |
 | The site itself | Transfer the GitHub repo, or they fork it. |
+
+Handing over storage is more work than the Drive menu item the Sheet
+offered — this is the cost of the storage decision, paid here. Write it
+down properly in `HANDOFF.md` rather than leaving someone to discover
+it.
 
 Rotating instead of sharing: the new holder generates a fresh keypair,
 publishes their public key in `config.js`, and new submissions are
@@ -152,8 +200,8 @@ archived rather than destroyed.
 | 18+ confirmation | yes | checkbox, recorded with the row |
 | Submitted at | — | timestamp, added client-side inside the ciphertext |
 
-Everything above is inside the encrypted blob. The Sheet row carries the
-ciphertext plus a server-side receipt timestamp — nothing else. In
+Everything above is inside the encrypted blob. The stored row carries
+the ciphertext plus a server-side receipt timestamp — nothing else. In
 particular the username is **not** stored in the clear, because a column
 of Telegram handles next to a form about feedism is the exact thing this
 design exists to prevent.
@@ -180,7 +228,7 @@ third-party code — turned into something the browser enforces. It
 matters most in the window this whole design is about: the moment
 between the submitter typing their handle and the browser encrypting it,
 when an injected script would see cleartext. `connect-src` gains the
-Apps Script origin when the endpoint lands; nothing else is added to it.
+Worker's origin when the endpoint lands; nothing else is added to it.
 
 GitHub Pages serves no headers, so this is a meta policy, which means
 `frame-ancestors` and `report-uri` are unavailable — the site can be
@@ -213,9 +261,10 @@ that head, so a page added later cannot quietly ship without the policy.
 ## What is deliberately not here
 
 - **No spam protection yet.** A public endpoint will eventually collect
-  junk. The `doPost` is written with a single early return so a
-  Turnstile check can be added without restructuring, but nothing is
-  wired up until junk actually appears.
+  junk. The Worker's `POST` path is written with a single early return
+  so a Turnstile check can be added without restructuring, but nothing
+  is wired up until junk actually appears. Turnstile is the natural fit
+  now that the endpoint is Cloudflare's anyway.
 - **No service worker, and no web app manifest either.** The base
   project is an installable PWA; a submission form that works offline
   would queue writes it cannot confirm. Without the service worker a
@@ -235,21 +284,19 @@ that head, so a page added later cannot quietly ship without the policy.
 
 Nothing below is built yet. The order is deliberate.
 
-1. **Spike the endpoint before anything is built on it.** Apps Script
-   and CORS is the one thing that could sink the storage choice: a
-   `doPost` only returns a *readable* response if the request avoids a
-   preflight, which in practice means POSTing as
-   `text/plain;charset=utf-8` and letting Apps Script's redirect supply
-   the CORS header. If that round trip cannot be made to work, the
-   storage layer changes — and since the data is encrypted either way,
-   swapping it is cheap *now* and expensive later.
+1. **Stand up the Worker and its database first**, so everything after
+   it has something real to talk to. This was a *spike* while the
+   storage was Apps Script, because the CORS round trip might not have
+   worked at all; with a Worker setting its own headers it is ordinary
+   work. Confirm the round trip from `dev/` anyway before the form
+   depends on it — a preflight, a POST, a token-gated read back.
 2. **`tools/keygen.html`** — offline keypair generator. Produces the
    private key to store and the public key to paste into `config.js`.
 3. **`crypto.js` and the `dev/` round-trip test**, in that order, before
    the form. See "Encryption, concretely" above for why.
 4. **The form** — fields, unit toggle, country dropdown, 18+ checkbox,
    validation, encrypt, POST.
-5. **`admin.html`** — CSV in, key in, decrypted CSV out.
+5. **`admin.html`** — token in, key in, decrypted CSV out.
 6. **`HANDOFF.md`** — written once there is something real to hand off,
    from the transfer table above.
 
@@ -262,8 +309,8 @@ Nothing below is built yet. The order is deliberate.
 
 ## Threat model, honestly stated
 
-Protected against: a breach of the storage provider, an accidentally
-public Sheet, a curious Google employee, anyone reading the repo, and a
+Protected against: a breach of the storage provider, a leaked export
+token, a curious Cloudflare employee, anyone reading the repo, and a
 future admin inheriting the site without inheriting the data.
 
 **Not** protected against: someone spamming the endpoint with garbage

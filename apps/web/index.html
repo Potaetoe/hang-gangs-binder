@@ -10,8 +10,8 @@
   sees exactly what the design exists to hide. The policy also enforces
   the rule DESIGN.md states in prose - no CDNs, no third-party code.
 
-  connect-src gains the Apps Script endpoint's origin when the endpoint
-  is added; until then the page talks to nobody. frame-ancestors and
+  connect-src gains the Worker's origin when the endpoint is deployed;
+  until then the page talks to nobody. frame-ancestors and
   report-uri are ignored in a <meta> policy, so they are not written
   here - a header would be needed, and GitHub Pages does not serve one.
 -->

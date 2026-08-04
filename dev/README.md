@@ -4,7 +4,17 @@ Test harness and scratch verification. **Never published** — the deploy
 copies `apps/web` and nothing else, so anything in here is safe to be as
 messy as it needs to be.
 
-Planned contents:
+## What is here
+
+- `worker.test.mjs` — exercises `server/worker.js` against a stub D1
+  binding: preflight, origin rejection, the validation cases, and the
+  token gate on export. No account, no network, no wrangler.
+
+  ```bash
+  node dev/worker.test.mjs
+  ```
+
+## Planned
 
 - a round-trip test for the crypto: encrypt a known payload with a test
   keypair, decrypt it, assert the result is byte-identical. This is the

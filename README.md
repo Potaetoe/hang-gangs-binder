@@ -10,9 +10,10 @@ nothing to log into. Open the page, fill the form, done.
 service that stores them cannot read them. Only someone holding the
 project's private key can, and that key is not stored online anywhere.
 
-> **Status: scaffold.** The repository structure, the deploy pipeline
-> and the design are in place. The form and the export tool are not
-> built yet. See [DESIGN.md](DESIGN.md) for what is being built and why.
+> **Status: scaffold.** The repository structure, the deploy pipeline,
+> the page shell and the storage endpoint's code are in place. The
+> endpoint is not deployed yet, and the form and the export tool are not
+> built. See [DESIGN.md](DESIGN.md) for what is being built and why.
 
 ---
 
@@ -45,7 +46,8 @@ crypto APIs the form depends on, because they require a secure context.
 
 ```
 apps/web/          the published site — this directory IS the build
-server/            the Apps Script endpoint, deployed by hand to Google
+server/            the Cloudflare Worker and its database schema,
+                   deployed by hand and never touched by CI
 tools/             checks and the offline key generator
 dev/               test harness; never published
 ```
@@ -69,6 +71,13 @@ python tools/check_web.py
 It confirms every link resolves, that each page carries the shared head
 (including its content security policy), and that nothing key-shaped is
 sitting in the directory that gets published.
+
+If you changed the endpoint, run its checks too — they need Node, and
+nothing else:
+
+```bash
+node dev/worker.test.mjs
+```
 
 ## Security
 
