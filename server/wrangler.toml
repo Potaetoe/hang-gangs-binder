@@ -10,8 +10,8 @@
 # bindings here, change them in the dashboard too - nothing enforces
 # that they agree, because only one of them is ever live at a time.
 #
-#     wrangler d1 create binder
-#     wrangler d1 execute binder --remote --file=server/schema.sql
+#     wrangler d1 create hg_binder_db
+#     wrangler d1 execute hg_binder_db --remote --file=server/schema.sql
 #     wrangler secret put EXPORT_TOKEN
 #     wrangler deploy
 
@@ -30,5 +30,5 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io,http://localhost:8124"
 
 [[d1_databases]]
 binding = "DB"            # worker.js reads env.DB - do not rename
-database_name = "binder"
+database_name = "hg_binder_db"
 database_id = "REPLACE_ME"

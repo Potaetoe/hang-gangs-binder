@@ -26,18 +26,28 @@ harvestable. See DESIGN.md, "Export".
 No CLI required; all of this is in the Cloudflare dashboard.
 
 1. **Create the database.** Workers & Pages → D1 → create a database
-   named `binder`. Open its console and run the contents of
+   named `hg_binder_db`. Open its console and run the contents of
    `schema.sql`.
 2. **Create the Worker.** Workers & Pages → create a Worker, then edit
    its code and paste in `worker.js`.
-3. **Bind the database.** In the Worker's Settings → Bindings, add a D1
-   binding with variable name **`DB`** pointing at `binder`. The name
-   matters — `worker.js` reads `env.DB`.
-4. **Add the export token.** Settings → Variables → add a **secret**
-   named **`EXPORT_TOKEN`**. Generate a long random value and store it
-   the same way as the private key; the admin page will ask for it.
-   A secret, not a plaintext variable — plaintext variables are visible
-   in the dashboard to anyone with account access.
+3. **Bind the database.** Open the Worker from the Workers & Pages list,
+   go to its **Bindings** tab, and add a **D1 database** binding with
+   variable name **`DB`** pointing at `hg_binder_db`. The name matters —
+   `worker.js` reads `env.DB`.
+
+   A *binding* is a connection to another Cloudflare resource, and is
+   not the same screen as *Variables and Secrets* below, even though
+   both arrive on the same `env` object in the code. `env.DB` is a live
+   database client; `env.EXPORT_TOKEN` is a string.
+
+   Check the Worker redeploys afterwards. A binding added without a
+   redeploy is the case where the code is right, every test here passes,
+   and the first real request still fails on `env.DB` being undefined.
+4. **Add the export token.** Settings → Variables and Secrets → add a
+   **secret** named **`EXPORT_TOKEN`**. Generate a long random value and
+   store it the same way as the private key; the admin page will ask for
+   it. A secret, not a plaintext variable — plaintext variables are
+   visible in the dashboard to anyone with account access.
 5. **Deploy**, then put the Worker's URL in `apps/web/config.js` and add
    its origin to the `connect-src` of each page's content security
    policy. Until both are done the site cannot talk to it, by design.

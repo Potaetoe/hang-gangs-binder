@@ -29,13 +29,14 @@ Three checks:
    page and trimmed the head" is exactly the mistake worth catching
    automatically rather than at review.
 
-4. The endpoint in config.js is permitted by every page's CSP. These
-   are two files that must agree, and they fail apart silently: change
-   the endpoint alone and the pages still load, still look right, and
-   drop every submission at the connect-src check. Whoever inherits
-   this project and points it at their own Worker will change the
-   obvious file and not the other one - so the build says so instead of
-   the site failing quietly on their first real submitter.
+4. The endpoint in config.js is permitted by the CSP of every page that
+   loads config.js. These are two files that must agree, and they fail
+   apart silently: change the endpoint alone and the pages still load,
+   still look right, and drop every submission at the connect-src
+   check. Whoever inherits this project and points it at their own
+   Worker will change the obvious file and not the other one - so the
+   build says so instead of the site failing quietly on their first
+   real submitter.
 """
 
 import os
@@ -113,11 +114,18 @@ def endpoint_origin():
 
 
 def csp_gaps(origin):
-    """(page, origin) for pages whose CSP would block the endpoint."""
+    """(page, origin) for pages whose CSP would block the endpoint.
+
+    Only pages that actually load config.js are checked. A page with no
+    reason to reach the endpoint should not be given permission to - the
+    404 page is the current example.
+    """
     if not origin:
         return []
+    users = set(page for page, target in html_references()
+                if target == "config.js")
     gaps = []
-    for name in html_pages():
+    for name in sorted(users):
         text = open(os.path.join(WEB, name), encoding="utf-8").read()
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
         policy = re.search(
