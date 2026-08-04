@@ -123,8 +123,15 @@ produces undecryptable ciphertext is indistinguishable from a working
 one until export day, and by then the data is gone.
 
 `crypto.subtle` requires a secure context. Confirmed available on the
-deployed site and on `http://localhost`; it is *not* available over
-`file://`, which is why the README insists on serving the directory.
+deployed site and on `http://localhost`, which is why the README insists
+on serving the directory rather than opening a page directly.
+
+Whether a `file://` URL counts as a secure context is **not** confirmed
+— browsers differ, and an earlier draft of this document asserted it did
+not without checking. Nothing here depends on the answer, because
+everything is served: the site over HTTPS, and the generator over
+localhost. That is deliberate. A page that silently lacks `crypto.subtle`
+looks identical to a working one right up until it produces nothing.
 
 ### Export
 
@@ -155,7 +162,20 @@ the same property that makes the handoff below work.
 **The private key never enters this repository, and never enters a
 browser other than the admin's own.**
 
-- Generated offline by `tools/keygen.html`, opened from disk.
+- Generated locally by `tools/keygen.html`, on the keyholder's own
+  machine. `tools/` is never published, so the generator is not
+  reachable from the deployed site and cannot be run by accident from
+  a page someone else controls.
+
+  **Serve it from `http://localhost`, do not open it as a `file://`
+  URL.** An earlier draft of this document said both "opened from disk"
+  and "`crypto.subtle` is not available over `file://`", which cannot
+  both be true. Rather than resolve which browsers treat a file URL as
+  a secure context — a question whose answer varies and can change
+  under you — the generator is served over localhost, which is
+  confirmed to work and costs one command. A generator that silently
+  lacks `crypto.subtle` is a page that appears to work and produces
+  nothing.
 - Stored by the holder — password manager, encrypted volume, paper in a
   safe. Two copies, or the data is one dead laptop away from gone.
 - Used only by `apps/web/admin.html`, which decrypts in-page and never
@@ -316,13 +336,16 @@ The order is deliberate. State as of 2026-08-04:
    its own headers it was ordinary work — see "Why a Cloudflare Worker
    + D1".
 
-2. ⬜ **`tools/keygen.html`** — offline keypair generator. Produces the
+2. ⬜ **`tools/keygen.html`** — local keypair generator. Produces the
    private key to store and the public key to paste into `config.js`.
-   **Next.** Opened from disk, never served; the private half never
-   enters this repository. Until it exists, `config.js` carries
-   `publicKey: null`, and the form built in step 4 must refuse to
-   submit while that is true rather than posting something it could not
-   encrypt.
+   **Next.** Never published — `tools/` is not part of the build — and
+   run over `http://localhost` rather than a `file://` URL, for the
+   reason under "Key custody". The private half never enters this
+   repository.
+
+   Until it exists, `config.js` carries `publicKey: null`, and the form
+   built in step 4 must refuse to submit while that is true rather than
+   posting something it could not encrypt.
 
 3. ⬜ **`crypto.js` and the `dev/` round-trip test**, in that order,
    before the form. See "Encryption, concretely" above for why.
@@ -355,11 +378,15 @@ encrypt to.
   defaulting to two inputs unless someone says otherwise. **Blocks step
   4**, and only step 4; nothing before it depends on the answer.
 
-- **Who holds the private key.** If it is not the person building this,
-  the keyholder should run `tools/keygen.html` themselves, so the
-  private half never exists on a machine that is not theirs. Worth
-  settling before step 2 rather than generating a key and moving it
-  afterwards — moving it is exactly the moment a copy gets left behind.
+**Settled 2026-08-04 — who holds the private key.** The key is
+generated locally, by the person building this, who is therefore the
+keyholder. No transfer, so none of the ways a moved key leaves copies
+behind apply.
+
+If custody ever changes hands, that is a *handover*, not a copy: see
+`HANDOFF.md`, and prefer rotating to a fresh keypair over shipping this
+one around. The old key then gets archived rather than destroyed, or the
+history it encrypted becomes unreadable.
 
 ## Threat model, honestly stated
 

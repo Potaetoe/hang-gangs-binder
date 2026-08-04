@@ -49,7 +49,7 @@ crypto APIs the form depends on, because they require a secure context.
 apps/web/          the published site — this directory IS the build
 server/            the Cloudflare Worker and its database schema,
                    deployed by hand and never touched by CI
-tools/             checks and the offline key generator
+tools/             checks and the key generator; never published
 dev/               test harness; never published
 ```
 
