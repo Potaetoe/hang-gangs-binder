@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  This page generates the key the whole project depends on. It is the
+  only page that ever holds the private half.
+
+  Why this one file breaks the rules the published pages follow
+  ------------------------------------------------------------
+  apps/web forbids inline script and inline style, and every page there
+  is assembled from shared files. This page is a single self-contained
+  file with both inlined, on purpose:
+
+  - It is never published. tools/ is not part of the build, so this is
+    not reachable from the deployed site and cannot be run against a
+    submitter by a page someone else controls.
+  - Self-containment is the property that matters here. A successor
+    generating their own key should be able to take one file to
+    whatever machine they trust and run it, without carrying a
+    stylesheet and three scripts that must all arrive intact. It is
+    also served from tools/ rather than apps/web, so it could not link
+    theme.css even if that were desirable.
+  - The reason the published pages ban inline code does not apply. That
+    ban exists because an injected script would see plaintext before it
+    is encrypted. This page loads nothing, fetches nothing and talks to
+    nothing - connect-src is 'none' below - so there is no injection
+    path to defend. What it must not do is reach the network, and the
+    policy forbids exactly that.
+
+  Serve it over http://localhost, do not open it as a file:// URL.
+  crypto.subtle requires a secure context, browsers disagree about
+  whether a file URL is one, and a page that silently lacks it looks
+  identical to a working one right up until it produces nothing. The
+  check below refuses to run rather than let that happen.
+
+      python -m http.server 8125 --directory tools
+      # or the "binder-tools" entry in the workspace launch.json
+
+  See DESIGN.md, "Key custody".
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Key generator — Hang Gang's Binder</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<style>
+  /* A trimmed copy of the site's Pink palette. Copied rather than
+     linked because this file stands alone; it is a handful of tokens
+     and it does not matter if it drifts from apps/web, since nobody
+     sees the two together. No theme switcher, for the same reason -
+     a tool page has no business writing to localStorage. */
+  :root {
+    color-scheme: dark;
+    --bg: #241b21;
+    --card: #322730;
+    --primary: #e87fa8;
+    --primary-dark: #f4a6c6;
+    --text: #f5e6ee;
+    --muted: #bfa8b6;
+    --line: #473942;
+    --warn-bg: #4a2626;
+    --warn-text: #f3b0b0;
+    --field-bg: #1b1418;
+    --focus: #ffa8c8;
+    --ok: #7fd39b;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg: #f2efe9;
+      --card: #faf8f4;
+      --primary: #5f7d59;
+      --primary-dark: #47613f;
+      --text: #3a3d35;
+      --muted: #77796d;
+      --line: #ddd8cb;
+      --warn-bg: #ece0d3;
+      --warn-text: #7a4a33;
+      --field-bg: #ffffff;
+      --focus: #3e5a38;
+      --ok: #3f6b4c;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0 auto;
+    padding: 1.5rem 1rem 2rem;
+    max-width: 42rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 1rem/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  h1 { font-size: 1.6rem; line-height: 1.2; letter-spacing: -0.015em; margin: 0; }
+  h2 { font-size: 1rem; margin: 0; }
+  p { margin: 0; text-wrap: pretty; }
+  ul { margin: 0; padding-left: 1.1rem; }
+  li + li { margin-top: 0.25rem; }
+
+  .eyebrow {
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    padding: 1rem 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .card.warn {
+    background: var(--warn-bg);
+    border-color: transparent;
+    color: var(--warn-text);
+  }
+
+  .card.warn .eyebrow { color: inherit; opacity: 0.85; }
+
+  .muted { color: var(--muted); }
+  .small { font-size: 0.875rem; }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--text);
+    padding: 0.4rem 0.9rem;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  button:hover:not(:disabled) { border-color: var(--primary); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  button.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--bg);
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+  }
+
+  .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+  /* Keys are long, unbroken and must be copyable verbatim. A textarea
+     rather than a <pre> so selecting all of one is one gesture, and
+     readonly so a stray keystroke cannot corrupt what gets pasted into
+     config.js. */
+  textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    width: 100%;
+    background: var(--field-bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    padding: 0.6rem;
+    resize: vertical;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+  }
+
+  :where(a, button, textarea, summary):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .status { font-size: 0.875rem; }
+  .status.ok { color: var(--ok); }
+  .status.bad { color: var(--warn-text); }
+
+  [hidden] { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <p class="eyebrow">Hang Gang's Binder · local tool, never published</p>
+  <h1>Key generator</h1>
+  <p class="muted small">
+    Generates the keypair the portal encrypts to. Everything happens in
+    this page — nothing is sent anywhere, and this file cannot reach the
+    network.
+  </p>
+</header>
+
+<main>
+
+  <div class="card warn" id="context-warning" hidden>
+    <p class="eyebrow">Cannot run here</p>
+    <p id="context-warning-text"></p>
+    <p class="small">
+      Serve this directory and open it over localhost:
+      <code>python -m http.server 8125 --directory tools</code>, then
+      visit <code>http://localhost:8125/keygen.html</code>.
+    </p>
+  </div>
+
+  <div class="card warn">
+    <p class="eyebrow">Before you press the button</p>
+    <ul class="small">
+      <li><strong>There is no recovery.</strong> Every submission is
+        encrypted to this key. Lose the private half and the data is
+        permanently unreadable — by you, by Cloudflare, by anyone.</li>
+      <li><strong>Save two copies, today.</strong> A password manager and
+        one other place. One copy is one dead laptop away from none.</li>
+      <li><strong>The private half never goes in the repository</strong>,
+        never in an email, never in a chat. Only the public half is
+        published, and publishing it is what a public key is for.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <p class="eyebrow">Step one</p>
+    <div class="row">
+      <button type="button" class="primary" id="generate">Generate a keypair</button>
+      <span class="status" id="generate-status"></span>
+    </div>
+    <p class="muted small">
+      P-256, for ECDH — the curve <code>crypto.js</code> and
+      <code>admin.html</code> expect. Generating again replaces what is
+      shown below; anything already saved keeps working, and anything
+      already submitted stays readable only by the key it was encrypted
+      to.
+    </p>
+  </div>
+
+  <div id="output" hidden>
+
+    <div class="card">
+      <p class="eyebrow">Step two — the public half</p>
+      <h2>Paste this into <code>apps/web/config.js</code></h2>
+      <textarea id="public-key" readonly rows="3" spellcheck="false"
+                aria-label="The publicKey line for config.js"></textarea>
+      <div class="row">
+        <button type="button" data-copy="public-key">Copy the line</button>
+        <span class="status" id="public-copy-status"></span>
+      </div>
+      <p class="muted small">
+        Safe to commit and safe to publish. It encrypts and cannot
+        decrypt. The form refuses to submit while <code>publicKey</code>
+        is <code>null</code>, so this is what opens the portal.
+      </p>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">Step three — the private half</p>
+      <h2>Save this file, then store it properly</h2>
+      <p class="small">
+        This is the only copy. Nothing has written it to disk yet.
+      </p>
+      <div class="row">
+        <button type="button" class="primary" id="download">Save the key file</button>
+        <button type="button" data-copy="private-key">Copy it instead</button>
+        <button type="button" id="reveal" aria-expanded="false"
+                aria-controls="private-key">Show it</button>
+        <span class="status" id="private-status"></span>
+      </div>
+      <textarea id="private-key" readonly rows="12" spellcheck="false" hidden
+                aria-label="The private key file contents"></textarea>
+      <p class="muted small">
+        Hidden by default — a key on screen is a key in a screenshot, a
+        screen share or over a shoulder. <code>admin.html</code> takes
+        this file as-is.
+      </p>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">Then</p>
+      <ul class="small">
+        <li>Put the line from step two in <code>config.js</code> and run
+          <code>python tools/check_web.py</code> before pushing.</li>
+        <li>Make the second copy of the key file now, not later.</li>
+        <li>Close this tab. Nothing here is stored, so closing it is all
+          the cleanup there is.</li>
+      </ul>
+    </div>
+
+  </div>
+
+</main>
+
+<footer>
+  <p class="muted small">
+    Why the key is generated here rather than anywhere else, and what
+    happens when custody changes hands: see <code>DESIGN.md</code> and
+    <code>HANDOFF.md</code>.
+  </p>
+</footer>
+
+<script>
+/*
+ * The generator.
+ *
+ * Three things happen, in this order, and the third is the point:
+ *
+ *   1. Generate a P-256 ECDH keypair.
+ *   2. Serialise it exactly the way the rest of the project will read
+ *      it back - raw for the public half, JWK for the private.
+ *   3. Re-import both from those serialised forms and prove they still
+ *      agree, before showing either of them.
+ *
+ * Step three exists because every failure this tool can have is a
+ * silent one. A key that generates fine but serialises to something
+ * admin.html cannot import produces a page that looks like it worked, a
+ * config.js that looks right, and a portal that collects a year of
+ * submissions nobody can read. The check costs milliseconds and closes
+ * that whole category.
+ *
+ * What it deliberately does not test is the symmetric half - HKDF and
+ * AES-GCM. That belongs to crypto.js and to the round-trip test in
+ * dev/, and duplicating it here would mean two implementations of the
+ * same format, drifting. This asserts the one thing that is this file's
+ * responsibility: the string you paste and the file you save are two
+ * halves of one working keypair.
+ */
+
+// The serialisation contract. crypto.js and admin.html must read what
+// is written here, so it is stated once, explicitly:
+//
+//   public   raw uncompressed point, 65 bytes, standard base64. One
+//            short string, which is what config.js wants - a JWK there
+//            would be four lines of JSON in a file people hand-edit.
+//   private  JWK, inside an envelope with the metadata a person needs
+//            when they find this file in three years and cannot
+//            remember what it opens. admin.html accepts the envelope or
+//            a bare JWK, because someone will paste just the inner
+//            object.
+const CURVE = "P-256";
+const KEY_FILE_NAME = "hang-gang-binder-private-key.json";
+
+let currentPrivateFile = null;
+
+function el(id) { return document.getElementById(id); }
+
+function setStatus(id, message, kind) {
+  const node = el(id);
+  node.textContent = message;
+  node.className = "status" + (kind ? " " + kind : "");
+}
+
+function toBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function sameBytes(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+/*
+ * Refuse to run rather than run badly. Without crypto.subtle every
+ * button below would either throw or, worse, appear to do nothing -
+ * and the reason is never the page, it is how the page was opened.
+ */
+function checkContext() {
+  let problem = null;
+  if (!window.isSecureContext) {
+    problem = "This page is not in a secure context, so the browser " +
+      "withholds the cryptography it needs. That is almost always " +
+      "because it was opened as a file:// URL rather than served.";
+  } else if (!window.crypto || !window.crypto.subtle) {
+    problem = "This browser does not expose crypto.subtle on this page, " +
+      "so no key can be generated here.";
+  }
+  if (problem) {
+    el("context-warning-text").textContent = problem;
+    el("context-warning").hidden = false;
+    el("generate").disabled = true;
+    return false;
+  }
+  return true;
+}
+
+async function generate() {
+  setStatus("generate-status", "Generating…");
+  el("output").hidden = true;
+  hidePrivateKey();
+
+  try {
+    const pair = await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: CURVE },
+      true,                 // extractable: the whole purpose of this page
+      ["deriveBits"]
+    );
+
+    const rawPublic = new Uint8Array(
+      await crypto.subtle.exportKey("raw", pair.publicKey));
+    const publicBase64 = toBase64(rawPublic);
+    const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+
+    await verifyRoundTrip(publicBase64, privateJwk);
+
+    const created = new Date().toISOString();
+
+    el("public-key").value =
+      '  publicKey: "' + publicBase64 + '",';
+
+    currentPrivateFile = JSON.stringify({
+      project: "Hang Gang's Binder",
+      purpose:
+        "PRIVATE KEY. Decrypts every submission. There is no recovery " +
+        "if this is lost. Never commit it, never send it over chat or " +
+        "email. Load it into apps/web/admin.html to export.",
+      curve: CURVE,
+      created: created,
+      publicKey: publicBase64,
+      privateKey: privateJwk,
+    }, null, 2) + "\n";
+
+    el("private-key").value = currentPrivateFile;
+    el("output").hidden = false;
+    setStatus("generate-status",
+      "Generated and verified — the two halves agree.", "ok");
+    setStatus("private-status", "Not saved yet.", "bad");
+    setStatus("public-copy-status", "");
+  } catch (error) {
+    currentPrivateFile = null;
+    // Nothing is shown on this path - the output stays hidden and the
+    // in-memory file is cleared, so there is no half-generated key to
+    // save by mistake.
+    setStatus("generate-status",
+      "Failed: " + (error && error.message ? error.message : error) +
+      " — no key was produced. Nothing here is usable; try again, and " +
+      "if it fails again generate the key in another browser.",
+      "bad");
+  }
+}
+
+/*
+ * Import both halves back from exactly the strings that will be saved
+ * and pasted, then prove they are a pair: an ECDH secret derived from
+ * one side must equal the secret derived from the other. If these
+ * thirty-two bytes match, the file opens what the config line locks.
+ */
+async function verifyRoundTrip(publicBase64, privateJwk) {
+  const rawBytes = Uint8Array.from(atob(publicBase64), (c) => c.charCodeAt(0));
+
+  const importedPublic = await crypto.subtle.importKey(
+    "raw", rawBytes, { name: "ECDH", namedCurve: CURVE }, true, []);
+  const importedPrivate = await crypto.subtle.importKey(
+    "jwk", privateJwk, { name: "ECDH", namedCurve: CURVE }, true,
+    ["deriveBits"]);
+
+  // A stand-in for a submitter's browser: it has the public half only.
+  const ephemeral = await crypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: CURVE }, true, ["deriveBits"]);
+
+  const submitterSide = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "ECDH", public: importedPublic }, ephemeral.privateKey, 256));
+  const adminSide = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "ECDH", public: ephemeral.publicKey }, importedPrivate, 256));
+
+  if (!sameBytes(submitterSide, adminSide)) {
+    throw new Error(
+      "the saved private key does not match the published public key");
+  }
+}
+
+function hidePrivateKey() {
+  el("private-key").hidden = true;
+  el("reveal").textContent = "Show it";
+  el("reveal").setAttribute("aria-expanded", "false");
+}
+
+function download() {
+  if (!currentPrivateFile) return;
+  // A blob and an object URL, revoked immediately after. The key exists
+  // as a URL for as long as the click takes and no longer.
+  const blob = new Blob([currentPrivateFile], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = KEY_FILE_NAME;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  setStatus("private-status",
+    "Saved as " + KEY_FILE_NAME + " — now make the second copy.", "ok");
+}
+
+/*
+ * Copy without the Clipboard API. navigator.clipboard needs permission
+ * in some browsers and fails in ways this page cannot report usefully;
+ * selecting the field and letting the user press the copy shortcut
+ * always works and shows them what they are copying. execCommand is
+ * tried first because when it works it is one click.
+ */
+function copyField(id, statusId) {
+  const field = el(id);
+  const wasHidden = field.hidden;
+  field.hidden = false;
+  field.focus();
+  field.select();
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (e) {
+    copied = false;
+  }
+
+  if (copied) {
+    if (wasHidden) field.hidden = true;
+    setStatus(statusId, "Copied.", "ok");
+  } else {
+    setStatus(statusId, "Selected — press Ctrl+C (Cmd+C on a Mac).");
+  }
+}
+
+if (checkContext()) {
+  el("generate").addEventListener("click", generate);
+  el("download").addEventListener("click", download);
+
+  el("reveal").addEventListener("click", function () {
+    const field = el("private-key");
+    field.hidden = !field.hidden;
+    this.textContent = field.hidden ? "Show it" : "Hide it";
+    this.setAttribute("aria-expanded", field.hidden ? "false" : "true");
+  });
+
+  document.querySelectorAll("[data-copy]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const target = this.getAttribute("data-copy");
+      copyField(target,
+        target === "private-key" ? "private-status" : "public-copy-status");
+    });
+  });
+}
+</script>
+
+</body>
+</html>

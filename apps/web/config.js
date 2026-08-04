@@ -21,8 +21,14 @@
 window.BINDER_CONFIG = {
   endpoint: "https://hgbinderworker.sorcererbiggz.workers.dev",
 
-  // Not generated yet - tools/keygen.html comes before the form. The
-  // form must refuse to submit while this is null rather than posting
-  // something it could not encrypt.
-  publicKey: null,
+  // Generated 2026-08-04 by tools/keygen.html. A raw uncompressed
+  // P-256 point in base64 - see DESIGN.md, "How the key itself is
+  // written down". The matching private half is held by the keyholder
+  // and exists nowhere in this repository.
+  //
+  // Replacing this makes every submission encrypted to the old key
+  // unreadable by the new one. That is a rotation, not an edit: the old
+  // key gets archived rather than destroyed, or the history it
+  // encrypted is gone. See HANDOFF.md.
+  publicKey: "BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD1d5PhnxXT9kD917khzW07MUT2yAX18Wc7rD4K0BTSQ8=",
 };

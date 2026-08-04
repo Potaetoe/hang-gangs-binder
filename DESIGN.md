@@ -122,6 +122,28 @@ built before the form rather than after it — a form that silently
 produces undecryptable ciphertext is indistinguishable from a working
 one until export day, and by then the data is gone.
 
+#### How the key itself is written down
+
+Three files have to agree about this — `keygen.html` writes it,
+`config.js` carries it, `admin.html` reads it — so it is stated here
+rather than inferred from whichever one someone opens first:
+
+- **The public half is a raw uncompressed P-256 point, 65 bytes,
+  standard base64.** One short string, because `config.js` is a file
+  people hand-edit and a JWK there would be four lines of JSON to
+  mangle. Imported with `importKey("raw", …)`.
+- **The private half is a JWK**, inside an envelope carrying the curve,
+  the date, the matching public key and a sentence saying what the file
+  is. The envelope exists for the person who finds this file in three
+  years and cannot remember what it opens. `admin.html` accepts the
+  envelope or a bare JWK, because someone will eventually paste just the
+  inner object.
+
+The envelope repeating the public key is not redundancy for its own
+sake: it is what lets a keyholder recover the `config.js` line from the
+key file alone, without regenerating and invalidating everything already
+submitted.
+
 `crypto.subtle` requires a secure context. Confirmed available on the
 deployed site and on `http://localhost`, which is why the README insists
 on serving the directory rather than opening a page directly.
@@ -175,7 +197,28 @@ browser other than the admin's own.**
   under you — the generator is served over localhost, which is
   confirmed to work and costs one command. A generator that silently
   lacks `crypto.subtle` is a page that appears to work and produces
-  nothing.
+  nothing. The page checks `isSecureContext` itself and refuses to
+  generate rather than fail obscurely, since the cause is never the
+  page but how it was opened.
+- **It proves the pair before it shows it.** Both halves are exported,
+  re-imported from exactly the strings that will be saved and pasted,
+  and an ECDH secret is derived from each side and compared. Nothing is
+  displayed unless they agree. Every failure this tool can have is
+  otherwise silent: a key that generates fine but serialises to
+  something `admin.html` cannot import gives a page that looks like it
+  worked, a `config.js` that looks right, and a year of submissions
+  nobody can read. What it does *not* test is HKDF and AES-GCM — that
+  is `crypto.js`'s format, tested in `dev/`, and implementing it twice
+  would mean two copies to drift apart.
+- **It is one self-contained file, with inline script and style** —
+  which the published pages forbid. The ban exists because an injected
+  script on those pages would see plaintext before encryption; this
+  page loads nothing, and its policy sets `connect-src 'none'`, so
+  there is no such path. What it buys is a generator a successor can
+  carry to whatever machine they trust as a single file, rather than a
+  page plus a stylesheet plus three scripts that must all arrive
+  intact. It is also served from `tools/`, so it could not share
+  `apps/web`'s stylesheet in any case.
 - Stored by the holder — password manager, encrypted volume, paper in a
   safe. Two copies, or the data is one dead laptop away from gone.
 - Used only by `apps/web/admin.html`, which decrypts in-page and never
@@ -336,19 +379,34 @@ The order is deliberate. State as of 2026-08-04:
    its own headers it was ordinary work — see "Why a Cloudflare Worker
    + D1".
 
-2. ⬜ **`tools/keygen.html`** — local keypair generator. Produces the
-   private key to store and the public key to paste into `config.js`.
-   **Next.** Never published — `tools/` is not part of the build — and
-   run over `http://localhost` rather than a `file://` URL, for the
-   reason under "Key custody". The private half never enters this
-   repository.
+2. ✅ **`tools/keygen.html`** — local keypair generator. Built and
+   exercised over `http://localhost`: it generates, verifies the two
+   halves agree, and refuses to show anything when they do not (checked
+   by forcing the mismatch). Never published — `tools/` is not part of
+   the build. The private half never enters this repository.
 
-   Until it exists, `config.js` carries `publicKey: null`, and the form
-   built in step 4 must refuse to submit while that is true rather than
-   posting something it could not encrypt.
+   `tools/check_web.py` gained two things because of this step. The
+   patterns for what the generator produces, since it creates a new way
+   to leak — it hands over the public line and the private file a few
+   centimetres apart, and only one of them may be published. And a
+   validity check on the public key itself, because the key reaches
+   `config.js` by copy-and-paste out of a browser window, and a paste
+   that drops a character produces a plausible-looking blob that fails
+   in a submitter's browser rather than in the terminal of whoever
+   pasted it. Decode, length, prefix, and the curve arithmetic.
+
+   **Done for this deployment on 2026-08-04.** The keypair was
+   generated by the keyholder on their own machine; the public half is
+   in `config.js` and verified importable, the private half is held
+   offline and has never been in this repository. Step 4's form can now
+   have something to encrypt to — though it must still refuse to submit
+   if `publicKey` is ever `null` again, which is what a fork starts
+   from.
 
 3. ⬜ **`crypto.js` and the `dev/` round-trip test**, in that order,
-   before the form. See "Encryption, concretely" above for why.
+   before the form. **Next.** See "Encryption, concretely" above for
+   why, and "How the key itself is written down" for the formats it
+   must read.
 
 4. ⬜ **The form** — fields, unit toggle, country dropdown, 18+
    checkbox, validation, encrypt, POST. Blocked on the open question
@@ -365,10 +423,13 @@ The order is deliberate. State as of 2026-08-04:
 
 ### What exists now
 
-The site, the page shell, and the storage endpoint, wired together and
-live. A submitter visiting today sees an honest "not open yet" page.
-Nothing collects data, and nothing can: there is no form and no key to
-encrypt to.
+The site, the page shell and the storage endpoint, wired together and
+live; the key generator; and a keypair, whose public half is published
+in `config.js` and whose private half is held offline by the keyholder.
+A submitter visiting today sees an honest "not open yet" page. Nothing
+collects data, and nothing can — there is no form. What is missing is
+now only the code between the two ends: `crypto.js`, the form, and
+`admin.html`.
 
 ## Open questions
 

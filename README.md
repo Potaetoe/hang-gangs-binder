@@ -11,10 +11,11 @@ service that stores them cannot read them. Only someone holding the
 project's private key can, and that key is not stored online anywhere.
 
 > **Status: not open yet.** The site, the page shell and the storage
-> endpoint are built, deployed and talking to each other. The form, the
-> key generator and the export tool are not built — so nothing collects
-> data yet, and nothing can. See [DESIGN.md](DESIGN.md) for what is
-> being built, in what order, and why.
+> endpoint are built, deployed and talking to each other, and the
+> keypair exists — the public half is published, the private half is
+> held offline. The form and the export tool are not built, so nothing
+> collects data yet and nothing can. See [DESIGN.md](DESIGN.md) for
+> what is being built, in what order, and why.
 
 ---
 
@@ -42,6 +43,28 @@ Then visit <http://localhost:8124>.
 Serving it matters — opening `index.html` as a `file://` URL breaks the
 crypto APIs the form depends on, because they require a secure context.
 `http://localhost` counts as one; a bare file path does not.
+
+## Generating the key
+
+Whoever holds the key runs this themselves, on their own machine. It is
+not part of the site and is never published.
+
+```bash
+python -m http.server 8125 --directory tools
+```
+
+Then visit <http://localhost:8125/keygen.html>. It hands back two
+things: a `publicKey` line to paste into
+[apps/web/config.js](apps/web/config.js) and commit, and a key file to
+save somewhere safe and **never** commit. It verifies the two halves
+agree before showing you either.
+
+Serve it — do not open it from disk. Browsers disagree about whether a
+`file://` URL gets the cryptography this needs, and a page that lacks it
+looks exactly like a working one until it quietly produces nothing.
+
+**There is no recovery from losing the key file.** Every submission is
+encrypted to it. Make the second copy the day you make the first.
 
 ## Repository layout
 
