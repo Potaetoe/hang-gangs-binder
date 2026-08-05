@@ -481,6 +481,129 @@ code {
   font-size: 0.9em;
 }
 
+/* ------------------------------------------------------------------ */
+/* The dashboard.                                                      */
+
+/*
+ * SVG is styled from here rather than from style attributes, because
+ * admin.html's style-src has no 'unsafe-inline' - an inline style would
+ * be dropped and every chart would render in the browser's defaults.
+ * fill and stroke are ordinary CSS properties, so a class does the job
+ * and inherits the palette for free.
+ */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--space-3);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.stat-value { font-size: var(--text-lg); }
+
+.chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chart figcaption {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.chart svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart-value {
+  fill: var(--text);
+  font-size: 11px;
+}
+
+.chart-track { fill: var(--accent-quiet); }
+
+.chart-bar { fill: var(--primary); }
+
+.chart-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-series { stroke-width: 2; }
+
+/*
+ * A polyline must never be filled - a filled one joins its first and
+ * last points and paints the area between, turning a weight history
+ * into a wedge. The `fill="none"` attribute on the element does NOT
+ * achieve this on its own: presentation attributes lose to any CSS
+ * rule, so the series colour below would win. Selecting the element
+ * type as well as the class is what makes this stick.
+ */
+polyline.chart-series { fill: none; }
+
+.chart-dot { stroke-width: 1; }
+
+.chart-series-label {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Six series colours, cycled. Enough to tell lines apart without
+   inventing a palette that fights the theme; the handle is printed at
+   the end of each line anyway, so colour is a hint and not the only
+   way to read the chart.
+
+   Stroke on everything, fill only on the shapes that are meant to be
+   solid - the dots and the label. */
+.series-0 { stroke: var(--primary); }
+.series-1 { stroke: #e8a33d; }
+.series-2 { stroke: #4bb3a6; }
+.series-3 { stroke: #b07de0; }
+.series-4 { stroke: #e0685f; }
+.series-5 { stroke: #6aa9e0; }
+
+circle.series-0, text.series-0 { fill: var(--primary); }
+circle.series-1, text.series-1 { fill: #e8a33d; }
+circle.series-2, text.series-2 { fill: #4bb3a6; }
+circle.series-3, text.series-3 { fill: #b07de0; }
+circle.series-4, text.series-4 { fill: #e0685f; }
+circle.series-5, text.series-5 { fill: #6aa9e0; }
+
+#charts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.secondary-link {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  align-self: center;
+}
+
 /* Live region under the button. Neutral by default because most of what
    it says is "Encrypting…" - progress, not a verdict. */
 .status { font-size: var(--text-sm); color: var(--muted); }

@@ -27,8 +27,14 @@ await load("../apps/web/admin.js");
 await load("../apps/web/form.js");
 await load("../apps/web/crypto.js");
 
-const { COLUMNS, rowFor, csvCell, toCsv, fileName } = globalThis.BinderAdmin;
+const { COLUMNS, entryFor, rowFor, csvCell, toCsv, toJson, fileName } =
+  globalThis.BinderAdmin;
 const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
+
+/* A stored row straight to a CSV row. entryFor is the normalisation
+ * both the CSV and the dashboard read, so it is on the path here too
+ * rather than being a step the tests skip. */
+const row = (submission, record) => rowFor(entryFor(submission, record));
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -117,19 +123,19 @@ await check("defusing still quotes when it has to", () => {
 /* One record to one row.                                              */
 
 await check("a row has one cell per column", () =>
-  rowFor(SUBMISSION, RECORD).length === COLUMNS.length);
+  row(SUBMISSION, RECORD).length === COLUMNS.length);
 
 await check("both unit systems reach the row", () => {
-  const row = rowFor(SUBMISSION, RECORD);
-  const cell = (name) => row[COLUMNS.indexOf(name)];
+  const cells = row(SUBMISSION, RECORD);
+  const cell = (name) => cells[COLUMNS.indexOf(name)];
   return cell("weight_kg") === 90.7 && cell("weight_lb") === 200 &&
     cell("height_cm") === 177.8 && cell("height_feet") === 5 &&
     cell("height_inches") === 10 && cell("height_total_inches") === 70;
 });
 
 await check("what was typed reaches the row", () => {
-  const row = rowFor(SUBMISSION, RECORD);
-  const cell = (name) => row[COLUMNS.indexOf(name)];
+  const cells = row(SUBMISSION, RECORD);
+  const cell = (name) => cells[COLUMNS.indexOf(name)];
   return cell("entered_units") === "imperial" &&
     cell("entered_weight") === "200 lb" &&
     cell("entered_height") === "5 ft 10 in";
@@ -137,13 +143,13 @@ await check("what was typed reaches the row", () => {
 
 await check("the server's receipt and the client's timestamp are both kept",
   () => {
-    const row = rowFor(SUBMISSION, RECORD);
-    return row[COLUMNS.indexOf("received_at")] === SUBMISSION.received_at &&
-      row[COLUMNS.indexOf("submitted_at")] === RECORD.submittedAt;
+    const cells = row(SUBMISSION, RECORD);
+    return cells[COLUMNS.indexOf("received_at")] === SUBMISSION.received_at &&
+      cells[COLUMNS.indexOf("submitted_at")] === RECORD.submittedAt;
   });
 
 await check("roles become one cell", () =>
-  rowFor(SUBMISSION, RECORD)[COLUMNS.indexOf("roles")] === "feedee;gainer");
+  row(SUBMISSION, RECORD)[COLUMNS.indexOf("roles")] === "feedee;gainer");
 
 /*
  * A record from an older version of the form will not carry every
@@ -151,14 +157,14 @@ await check("roles become one cell", () =>
  * about someone's body that nobody made.
  */
 await check("a missing field is empty, not undefined", () => {
-  const row = rowFor({ id: 1 }, { telegram: "x" });
-  return row.every((cell) => cell !== undefined && cell !== null) &&
-    row[COLUMNS.indexOf("weight_kg")] === "" &&
-    row[COLUMNS.indexOf("gender")] === "";
+  const cells = row({ id: 1 }, { telegram: "x" });
+  return cells.every((cell) => cell !== undefined && cell !== null) &&
+    cells[COLUMNS.indexOf("weight_kg")] === "" &&
+    cells[COLUMNS.indexOf("gender")] === "";
 });
 
 await check("an absent 18+ confirmation is not reported as yes", () =>
-  rowFor(SUBMISSION, Object.assign({}, RECORD, { over18: false }))[
+  row(SUBMISSION, Object.assign({}, RECORD, { over18: false }))[
     COLUMNS.indexOf("over18")] === "");
 
 /* ------------------------------------------------------------------ */
@@ -168,7 +174,7 @@ await check("the header names every column, in order", () =>
   toCsv([]).split("\r\n")[0] === COLUMNS.join(","));
 
 await check("rows are CRLF-terminated, per RFC 4180", () => {
-  const csv = toCsv([rowFor(SUBMISSION, RECORD)]);
+  const csv = toCsv([row(SUBMISSION, RECORD)]);
   return csv.endsWith("\r\n") && csv.split("\r\n").length === 3;
 });
 
@@ -178,6 +184,54 @@ await check("a file with no rows is still a valid file", () =>
 await check("the filename carries the export date", () =>
   fileName(Date.UTC(2026, 7, 4, 12, 0, 0)) ===
     "hang-gangs-binder-2026-08-04.csv");
+
+await check("the filename takes the format it is for", () =>
+  fileName(Date.UTC(2026, 7, 4), "json") ===
+    "hang-gangs-binder-2026-08-04.json");
+
+/* ------------------------------------------------------------------ */
+/* The normalisation both the CSV and the dashboard read.              */
+
+await check("an entry flattens the record's nesting", () => {
+  const entry = entryFor(SUBMISSION, RECORD);
+  return entry.kg === 90.7 && entry.lb === 200 && entry.cm === 177.8 &&
+    entry.feet === 5 && entry.telegram === "somehandle" &&
+    entry.enteredUnits === "imperial" && entry.over18 === true;
+});
+
+/* null, not "", so a chart can tell "no weight recorded" from a
+ * weight - the CSV turns it into an empty cell on its own. */
+await check("an absent number is null in an entry and empty in the CSV",
+  () => {
+    const entry = entryFor({ id: 1 }, { telegram: "x" });
+    return entry.kg === null && entry.gender === null &&
+      same(entry.roles, []) &&
+      rowFor(entry)[COLUMNS.indexOf("weight_kg")] === "";
+  });
+
+/* The entry must not alias the record, or a later edit to one would
+ * silently change the other. */
+await check("an entry's roles are a copy, not the record's own array", () => {
+  const record = Object.assign({}, RECORD, { roles: ["feedee"] });
+  const entry = entryFor(SUBMISSION, record);
+  entry.roles.push("gainer");
+  return record.roles.length === 1;
+});
+
+await check("JSON export carries every entry and a count", () => {
+  const entries = [entryFor(SUBMISSION, RECORD)];
+  const parsed = JSON.parse(toJson(entries));
+  return parsed.count === 1 && parsed.submissions.length === 1 &&
+    parsed.submissions[0].kg === 90.7 &&
+    typeof parsed.exported === "string";
+});
+
+/* No quoting rules to get wrong is the point of offering it. */
+await check("JSON needs no formula guard", () => {
+  const entry = entryFor(SUBMISSION,
+    Object.assign({}, RECORD, { telegram: "=cmd|calc" }));
+  return JSON.parse(toJson([entry])).submissions[0].telegram === "=cmd|calc";
+});
 
 /* ------------------------------------------------------------------ */
 /* The whole pipeline.                                                 */
@@ -200,7 +254,7 @@ await check("a submitted record survives encryption and reaches the CSV",
       record, keyFile.publicKey);
     const back = await globalThis.BinderCrypto.decrypt(blob, keyFile);
 
-    const csv = toCsv([rowFor(
+    const csv = toCsv([row(
       { id: 1, received_at: "2026-08-04T12:00:05.000Z" }, back)]);
     const cells = csv.split("\r\n")[1].split(",");
     const cell = (name) => cells[COLUMNS.indexOf(name)];

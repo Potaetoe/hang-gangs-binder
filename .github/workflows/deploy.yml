@@ -74,6 +74,11 @@ jobs:
       - name: Check the export's CSV
         run: node dev/admin.test.mjs
 
+      # A median over the wrong rows, or a person counted once per
+      # submission, produces a chart that is wrong and looks right.
+      - name: Check the dashboard's arithmetic
+        run: node dev/dashboard.test.mjs
+
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
         # the endpoint broken is still a broken release.

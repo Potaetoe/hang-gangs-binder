@@ -580,6 +580,69 @@ The order is deliberate. State as of 2026-08-04:
    closing the tab discards everything. Nothing is written to
    `localStorage`.
 
+   **JSON alongside the CSV.** It keeps the nesting the CSV has to
+   flatten and has no quoting rules to get wrong. The CSV stays the
+   default because the likeliest thing anyone does with an export is
+   open it in a spreadsheet.
+
+## The dashboard
+
+Charts on `admin.html`, from the same decrypted rows the CSV is built
+from. `dashboard.js` holds the aggregation and draws the charts as
+inline SVG.
+
+**No chart library, and this is not a preference.** `admin.html` runs
+under `default-src 'none'; script-src 'self'`, and it is the one page
+where every submission exists in the clear at once — a CDN script here
+would see the whole corpus. That is the rule the rest of this document
+argues for, so the charts are about a hundred lines of arithmetic and
+some `<rect>`s instead.
+
+Two consequences worth stating, because both were learned by getting
+them wrong:
+
+- **Colour comes from classes in `theme.css`, never from a `style`
+  attribute.** `style-src` carries no `'unsafe-inline'`, so an inline
+  style would be dropped and the chart would render in the browser's
+  defaults. `fill` and `stroke` are ordinary CSS properties, so a class
+  works and inherits the palette for free.
+- **A `polyline` needs `fill: none` from a rule that outranks the
+  series colour.** The `fill="none"` presentation attribute does not
+  survive: attributes lose to any CSS rule, so the per-series `fill`
+  won and every weight history rendered as a filled wedge. Selecting
+  `polyline.chart-series` is what makes it stick.
+
+### Entries are not people
+
+Storage is append-only and the form cannot detect a repeat, so a
+resubmission is a new row. "How many people" and "what was submitted"
+are different questions and both are legitimate, so the dashboard has a
+toggle rather than an opinion: **one per person (latest)** or **every
+entry**. The difference is not cosmetic — a frequent resubmitter drags
+every distribution toward themselves.
+
+The **weight-over-time** chart ignores the toggle and always uses every
+entry, because the repeats are what it is made of. It draws only people
+with more than one entry: a single entry is a point, not a trend, and
+drawing it as a line implies a history that does not exist.
+
+### Two smaller judgements
+
+- **Blank answers are a bar, not a deletion.** "60% male" reads very
+  differently from "60% of the third of people who answered", and a
+  chart that drops the blanks claims the first while meaning the
+  second. `Not stated` is always shown, and always sorts last.
+- **BMI is reported as a number and nothing else.** The clinical
+  category labels are deliberately absent. They are a judgement this
+  page has no business making about people who filled in a form, and
+  they would be the part everybody read.
+
+**Heights that changed between entries get their own panel.** Height
+does not change in adults, so a difference is a typo, a unit mix-up, or
+one handle used by two people — all things the keyholder wants to know
+before trusting a height figure. A centimetre of slack absorbs the
+rounding between the two unit systems.
+
 6. ✅ **`HANDOFF.md`** — written up front, from the transfer table
    above, and revisited as each piece landed. The original plan was to
    write it last; that was wrong. Transferability shapes the code, so

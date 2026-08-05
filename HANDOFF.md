@@ -83,7 +83,9 @@ key and the token that gate the data, not the address.
    the page. It is not uploaded, and nothing is saved.
 2. **Fetch and decrypt.** It pulls the ciphertext, opens each row in
    your browser and builds the CSV there.
-3. **Download CSV.**
+3. **Download CSV**, or **JSON** if something other than a spreadsheet
+   is going to read it. Below that is a dashboard built from the same
+   rows — weight over time, distributions, breakdowns and BMI.
 
 Things worth knowing before you rely on it:
 
@@ -100,8 +102,17 @@ Things worth knowing before you rely on it:
 - **Cells starting `=`, `+`, `-` or `@` arrive with a leading
   apostrophe.** That is deliberate — a spreadsheet would otherwise run
   them as formulas. Nothing legitimate starts that way.
+- **"One per person" and "every entry" are different numbers.** The
+  dashboard has a toggle because both are legitimate: one answers what
+  the group looks like, the other what was submitted. Someone who
+  submits monthly pulls every average toward themselves under the
+  second.
+- **A height that changed between entries is flagged.** Height does not
+  change in adults, so that panel means a typo, a unit mix-up, or one
+  handle used by two people. Check it before quoting a height figure.
 - **Close the tab when you are done**, or press Clear. That page is the
-  only place this data exists in the clear.
+  only place this data exists in the clear — and the dashboard makes it
+  the one screen worth not leaving open behind you.
 
 If the token is refused, it is the Worker secret `EXPORT_TOKEN` — reset
 it in the Cloudflare dashboard rather than guessing. If the key is

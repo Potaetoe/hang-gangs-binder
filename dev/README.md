@@ -74,6 +74,20 @@ messy as it needs to be.
   the real `form.js`, encrypted by the real `crypto.js`, decrypted, and
   turned into a CSV row.
 
+- `dashboard.test.mjs` — exercises the pure half of
+  `apps/web/dashboard.js`: averages, binning, breakdowns, the
+  people-versus-entries split, and the weight-over-time series.
+
+  ```bash
+  node dev/dashboard.test.mjs
+  ```
+
+  Aggregation is where a dashboard lies quietly. A median taken over
+  the wrong rows, a person counted once per submission, a blank
+  silently dropped from a breakdown — none of them throw, and a chart
+  that is wrong is indistinguishable from a chart that is right. The
+  drawing is checked by looking at it; the arithmetic is checked here.
+
 - `crypto-browser-check.html` — the platform-dependent half of the same
   checks, in a real browser under the published pages' content security
   policy. Node is the same specification, which is why the Node test is

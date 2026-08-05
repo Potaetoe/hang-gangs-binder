@@ -100,8 +100,14 @@
     <div class="card" id="results" hidden>
       <p class="eyebrow">Result</p>
       <p id="summary"></p>
-      <p>
+      <div class="row">
         <a id="download" class="primary" download>Download CSV</a>
+        <a id="download-json" class="secondary-link" download>Download JSON</a>
+      </div>
+      <p class="hint">
+        CSV opens in a spreadsheet. JSON keeps the nesting and has no
+        quoting rules to trip over — use it if something else is going to
+        read this.
       </p>
       <div class="table-scroll">
         <table class="tabular">
@@ -109,6 +115,38 @@
           <tbody id="tbody"></tbody>
         </table>
       </div>
+    </div>
+
+    <!--
+      Charts are built by dashboard.js as inline SVG. No chart library:
+      this page holds every submission in the clear, and script-src
+      'self' is what stops a third party seeing it. Colour comes from
+      classes in theme.css rather than style attributes, because
+      style-src has no 'unsafe-inline' either.
+    -->
+    <div class="card" id="dashboard" hidden>
+      <p class="eyebrow">Dashboard</p>
+
+      <fieldset class="field">
+        <legend>Count</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="basis" value="people" checked>
+            <span>One per person (latest)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="basis" value="entries">
+            <span>Every entry</span>
+          </label>
+        </div>
+        <p class="hint">
+          Anyone who resubmits adds a row rather than replacing one, so
+          these are different questions. Weight over time always uses
+          every entry — the repeats are what it is made of.
+        </p>
+      </fieldset>
+
+      <div id="charts"></div>
     </div>
 
     <div class="card">
@@ -133,6 +171,7 @@
 
 <script src="config.js"></script>
 <script src="crypto.js"></script>
+<script src="dashboard.js"></script>
 <script src="admin.js"></script>
 <script src="theme.js"></script>
 </body>

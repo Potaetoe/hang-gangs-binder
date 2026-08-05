@@ -51,37 +51,77 @@
   ];
 
   /* Missing rather than guessed. A record written by an older version of
-   * the form may not carry every field, and an empty cell is honest
+   * the form may not carry every field, and an absent value is honest
    * where a zero would be a claim. */
   function at(object, path) {
     let value = object;
     for (const step of path) {
-      if (value === null || value === undefined) return "";
+      if (value === null || value === undefined) return null;
       value = value[step];
     }
+    return value === null || value === undefined ? null : value;
+  }
+
+  /*
+   * One decrypted row, flattened, with the names the rest of this page
+   * uses. Both consumers read this and only this: the CSV writer below
+   * and dashboard.js.
+   *
+   * That is the point of it existing. Two independent readings of a
+   * record would be two chances to disagree, and the disagreement that
+   * matters - the table saying one thing and the chart another - is
+   * exactly the kind nobody notices, because each looks right on its
+   * own.
+   */
+  function entryFor(submission, record) {
+    return {
+      id: at(submission, ["id"]),
+      receivedAt: at(submission, ["received_at"]),
+      submittedAt: at(record, ["submittedAt"]),
+      telegram: at(record, ["telegram"]),
+      kg: at(record, ["weight", "kg"]),
+      lb: at(record, ["weight", "lb"]),
+      cm: at(record, ["height", "cm"]),
+      totalInches: at(record, ["height", "totalInches"]),
+      feet: at(record, ["height", "feet"]),
+      inches: at(record, ["height", "inches"]),
+      enteredUnits: at(record, ["entered", "units"]),
+      enteredWeight: at(record, ["entered", "weight"]),
+      enteredHeight: at(record, ["entered", "height"]),
+      gender: at(record, ["gender"]),
+      roles: Array.isArray(record && record.roles) ? record.roles.slice() : [],
+      country: at(record, ["country"]),
+      over18: at(record, ["over18"]) === true,
+      recordVersion: at(record, ["record"]),
+    };
+  }
+
+  /* null is an absent value everywhere else; in a CSV it is an empty
+   * cell, and the string "null" would be a lie in a spreadsheet. */
+  function blank(value) {
     return value === null || value === undefined ? "" : value;
   }
 
-  function rowFor(submission, record) {
+  function rowFor(entry) {
     return [
-      at(submission, ["id"]),
-      at(submission, ["received_at"]),
-      at(record, ["submittedAt"]),
-      at(record, ["telegram"]),
-      at(record, ["weight", "kg"]),
-      at(record, ["weight", "lb"]),
-      at(record, ["height", "cm"]),
-      at(record, ["height", "totalInches"]),
-      at(record, ["height", "feet"]),
-      at(record, ["height", "inches"]),
-      at(record, ["entered", "units"]),
-      at(record, ["entered", "weight"]),
-      at(record, ["entered", "height"]),
-      at(record, ["gender"]),
-      Array.isArray(record && record.roles) ? record.roles.join(";") : "",
-      at(record, ["country"]),
-      at(record, ["over18"]) === true ? "yes" : "",
-      at(record, ["record"]),
+      blank(entry.id),
+      blank(entry.receivedAt),
+      blank(entry.submittedAt),
+      blank(entry.telegram),
+      blank(entry.kg),
+      blank(entry.lb),
+      blank(entry.cm),
+      blank(entry.totalInches),
+      blank(entry.feet),
+      blank(entry.inches),
+      blank(entry.enteredUnits),
+      blank(entry.enteredWeight),
+      blank(entry.enteredHeight),
+      blank(entry.gender),
+      entry.roles.join(";"),
+      blank(entry.country),
+      entry.over18 === true ? "yes" : "",
+      blank(entry.recordVersion),
     ];
   }
 
@@ -116,16 +156,34 @@
     return lines.join("\r\n") + "\r\n";
   }
 
-  function fileName(now) {
+  /*
+   * The same data as JSON, for anything that is not a spreadsheet.
+   *
+   * It keeps the shape the CSV has to flatten, has no quoting rules to
+   * get wrong, and does not need the formula guard - nothing executes a
+   * string in a JSON file. The CSV remains the default because the
+   * likeliest thing anyone does with this is open it.
+   */
+  function toJson(entries) {
+    return JSON.stringify({
+      exported: new Date().toISOString(),
+      count: entries.length,
+      submissions: entries,
+    }, null, 2) + "\n";
+  }
+
+  function fileName(now, extension) {
     const date = new Date(now).toISOString().slice(0, 10);
-    return "hang-gangs-binder-" + date + ".csv";
+    return "hang-gangs-binder-" + date + "." + (extension || "csv");
   }
 
   root.BinderAdmin = {
     COLUMNS: COLUMNS,
+    entryFor: entryFor,
     rowFor: rowFor,
     csvCell: csvCell,
     toCsv: toCsv,
+    toJson: toJson,
     fileName: fileName,
   };
 
@@ -175,9 +233,11 @@
 
     // Everything decrypted so far, held only for as long as this tab is
     // open. Cleared by the Clear button along with the two secrets.
+    let entries = [];
     let rows = [];
     let csv = "";
-    let downloadUrl = null;
+    let json = "";
+    let urls = [];
 
     function say(message, tone) {
       const status = $("status");
@@ -186,20 +246,33 @@
       status.className = "status" + (tone ? " " + tone : "");
     }
 
+    // Object URLs pin their blob in memory until revoked, and the blob
+    // here is everyone's data in the clear. Re-running the export
+    // should not leave the previous one alive.
     function revoke() {
-      if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
-        downloadUrl = null;
-      }
+      for (const url of urls) URL.revokeObjectURL(url);
+      urls = [];
+    }
+
+    function offer(id, text, type, extension) {
+      const url = URL.createObjectURL(new Blob([text], { type: type }));
+      urls.push(url);
+      const link = $(id);
+      link.href = url;
+      link.download = fileName(Date.now(), extension);
     }
 
     function reset() {
+      entries = [];
       rows = [];
       csv = "";
+      json = "";
       revoke();
       $("tbody").textContent = "";
       $("summary").textContent = "";
+      $("charts").textContent = "";
       show($("results"), false);
+      show($("dashboard"), false);
       show($("failures"), false);
       $("failure-list").textContent = "";
     }
@@ -309,7 +382,7 @@
         try {
           const record = await root.BinderCrypto.decrypt(
             submission.ciphertext, key);
-          rows.push(rowFor(submission, record));
+          entries.push(entryFor(submission, record));
         } catch (error) {
           failures.push({
             id: submission.id,
@@ -318,10 +391,36 @@
         }
       }
 
+      rows = entries.map(rowFor);
       csv = toCsv(rows);
+      json = toJson(entries);
       render(submissions.length, failures);
       $("run").disabled = false;
     });
+
+    /*
+     * Which rows the snapshot charts count. Storage is append-only, so
+     * "how many people" and "how many entries" are different questions
+     * and both are legitimate - one per person answers what the group
+     * looks like, every entry answers what was submitted. The toggle
+     * costs a redraw and saves an argument.
+     */
+    function currentBasis() {
+      const chosen = Array.prototype.slice
+        .call(document.querySelectorAll('input[name="basis"]'))
+        .filter(function (input) { return input.checked; })[0];
+      return chosen ? chosen.value : "people";
+    }
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="basis"]'),
+      function (input) {
+        input.addEventListener("change", function () {
+          if (entries.length) {
+            root.BinderDashboard.render($("charts"), entries, currentBasis());
+          }
+        });
+      });
 
     const PREVIEW = 50;
 
@@ -363,15 +462,18 @@
       }
 
       revoke();
-      downloadUrl = URL.createObjectURL(
-        new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      const link = $("download");
-      link.href = downloadUrl;
-      link.download = fileName(Date.now());
+      offer("download", csv, "text/csv;charset=utf-8", "csv");
+      offer("download-json", json, "application/json;charset=utf-8", "json");
 
       show($("results"), true);
+
+      if (rows.length) {
+        root.BinderDashboard.render($("charts"), entries, currentBasis());
+        show($("dashboard"), true);
+      }
+
       say(rows.length
-        ? "Done. The CSV is built in this page - nothing was uploaded."
+        ? "Done. Both files are built in this page - nothing was uploaded."
         : "Nothing could be decrypted with this key.",
         rows.length ? null : "bad");
     }
