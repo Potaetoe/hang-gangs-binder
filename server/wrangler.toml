@@ -1,23 +1,43 @@
 # Deployment shape, written down so it can be reproduced.
 #
-# The Worker is normally set up by pasting worker.js into the Cloudflare
-# dashboard - no CLI needed, which is the point. This file exists for
-# the other case: somebody inheriting the project who would rather run
-# `wrangler deploy` than click through a dashboard they have never seen,
-# and who needs to know exactly which bindings the code expects.
+# This was documentation-only until 2026-08-05, and it had drifted from
+# the live deployment in the two ways a documentation-only file always
+# drifts: the `name` was the repository's rather than the Worker's, and
+# `database_id` was still the placeholder it shipped with. A
+# `wrangler deploy` against that would have created a SECOND Worker
+# beside the real one, with a binding that failed on "REPLACE_ME".
 #
-# Read it as documentation first and config second. If you change the
-# bindings here, change them in the dashboard too - nothing enforces
-# that they agree, because only one of them is ever live at a time.
+# It is now real config, which is what stops that happening again -
+# a file that gets run is a file that cannot quietly be wrong.
 #
-#     wrangler d1 create hg_binder_db
-#     wrangler d1 execute hg_binder_db --remote --file=server/schema.sql
-#     wrangler secret put EXPORT_TOKEN
+# `name` must match the deployed Worker exactly. It is what decides
+# whether a deploy updates the existing one or makes a new one, and
+# getting it wrong is not an error - it is a success, somewhere else.
+#
+#     wrangler d1 execute hg_binder_db --remote --file=schema.sql
 #     wrangler deploy
+#
+# Run both from this directory. The first is only needed when
+# schema.sql changes; it uses CREATE TABLE IF NOT EXISTS, so re-running
+# the whole file against a live database is safe.
 
-name = "hang-gangs-binder"
+name = "hgbinderworker"
 main = "worker.js"
 compatibility_date = "2026-08-04"
+
+# Off, and not merely unset - wrangler turns these on by default when a
+# workers.dev route exists, and says so in a warning that is easy to
+# scroll past.
+#
+# A preview URL publishes every deployed version at its own permanent
+# hostname. Nothing leaks through one: the origin check rejects a
+# request with no Origin header, and both secrets still gate what they
+# gated. What it does leave behind is every past version of this Worker,
+# reachable forever, which is a surface that buys nothing here - there
+# is no staging branch and no preview environment by design, because a
+# push to main is the release. See DESIGN.md, "What is deliberately not
+# here".
+preview_urls = false
 
 # The site allowed to POST here. Set this and the Worker never needs
 # editing - see the comment above DEFAULT_ORIGINS in worker.js.
@@ -28,7 +48,13 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io,http://localhost:8124"
 # `wrangler secret put` or in the dashboard, and must never appear in a
 # file that lives in a public repository.
 
+# The id is account-scoped and not a credential - it identifies the
+# database but opens nothing without Cloudflare authentication, which is
+# why it can sit in a public repository. It is here rather than left as
+# a placeholder because a placeholder is what made this file lie: a
+# config that gets run cannot quietly be wrong, and a config nobody runs
+# is documentation that has stopped being true without telling anyone.
 [[d1_databases]]
 binding = "DB"            # worker.js reads env.DB - do not rename
 database_name = "hg_binder_db"
-database_id = "REPLACE_ME"
+database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"

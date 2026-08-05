@@ -284,11 +284,20 @@ editing:
   right, and drops every submission at the browser's CSP check. That is
   the failure a new owner will hit, so `tools/check_web.py` fails the
   build instead.
-- **`server/wrangler.toml` records the deployment shape** — which
-  bindings exist and what they are called. The dashboard remains the
-  normal path; this is for a successor who would rather run one command
-  than learn someone else's console, and it documents the bindings
-  either way.
+- **`server/wrangler.toml` is the deployment**, not a description of
+  one. It was documentation-only until 2026-08-05 and had drifted in
+  both of the ways documentation-only config drifts: the wrong Worker
+  name, and a `REPLACE_ME` where the database id goes. A `deploy`
+  against that would not have errored — it would have created a second
+  Worker beside the real one, which is the failure mode this whole
+  document keeps circling, where the wrong thing succeeds quietly.
+
+  It is now what actually deploys, and that is the point: a file that
+  gets run cannot be quietly wrong, and the dashboard-paste path leaves
+  no trace in the repository at all. The dashboard is kept as the
+  fallback for a successor who cannot install wrangler, and
+  `server/README.md` says which is which — because two equal options is
+  how the endpoint and the repository come to disagree.
 
 Rotating instead of sharing: the new holder generates a fresh keypair,
 publishes their public key in `config.js`, and new submissions are

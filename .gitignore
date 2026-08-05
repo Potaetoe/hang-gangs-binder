@@ -15,6 +15,16 @@ Thumbs.db
 # Local build output
 _site/
 
+# Wrangler's working directory - build cache and temporary bundles it
+# writes beside the config. Nothing in it is worth keeping and some of
+# it is machine-specific.
+#
+# Note this is NOT where wrangler keeps credentials: the OAuth token
+# lives in the user profile, well outside the repository. Which is the
+# right side of the line, and worth stating so nobody assumes the
+# opposite and starts hunting for a secret to ignore.
+.wrangler/
+
 # ---------------------------------------------------------------------
 # KEYS. Nothing resembling a private key may ever reach a commit.
 #

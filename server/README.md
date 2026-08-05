@@ -87,11 +87,62 @@ rather deploy from the command line than the dashboard.
 
 ## Updating an existing deployment
 
+**Use wrangler. The dashboard is the fallback, not the default.** From
+this directory:
+
+```bash
+npx wrangler deploy
+```
+
+and, when `schema.sql` has changed:
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --file=schema.sql
+```
+
+Authentication is `npx wrangler login` once, which is an OAuth flow in
+your own browser.
+
+There are two ways to deploy this Worker and **they can silently
+diverge**, which is the whole reason this section names one. Pasting
+into the dashboard leaves no trace in the repository, so the code
+running at the endpoint and the code in `worker.js` can differ with
+nothing anywhere reporting it — and that is not hypothetical: this
+file's `wrangler.toml` sat with a `REPLACE_ME` database id and the
+wrong Worker name for a day, because nothing ever ran it. A config that
+gets executed cannot quietly be wrong.
+
+Use the dashboard when wrangler cannot be installed or authenticated,
+and treat that as the exception. Either way, verify against the live
+endpoint afterwards rather than trusting that it took — see "Checking a
+deployment" below.
+
 `schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so re-running the whole
 file against a live database is safe and adds whatever is missing
-without touching what is there. That is the update path: paste
-`schema.sql` into the D1 console again, then paste `worker.js` into the
-Worker editor and deploy.
+without touching what is there.
+
+### Checking a deployment
+
+The routes answer differently depending on what is wrong, which makes a
+few unauthenticated requests enough to tell deployment problems apart.
+None of these need a token, and none of them change anything:
+
+```bash
+EP=https://hgbinderworker.sorcererbiggz.workers.dev
+curl -s -H "Origin: https://potaetoe.github.io" "$EP/snapshot"
+```
+
+| What comes back | What it means |
+| --- | --- |
+| `No snapshot published yet.` (404) | Worker current, table present, nothing published |
+| `Not found.` (404) | the Worker is running older code |
+| a 500 | the `snapshots` table is missing |
+| `Origin not allowed.` (403) | the `Origin` header was omitted or is not allowed |
+
+And on `GET /export`, `Not authorised.` (401) means `EXPORT_TOKEN` is
+still set; a 500 means it is not. That distinction matters after any
+deploy, because a Worker with no secret passes every test in `dev/` and
+fails on the first real export.
 
 **The snapshot feature needs both halves**, and the failure if only one
 is done is quiet in the usual way:
