@@ -21,28 +21,22 @@
 
   if (typeof document === "undefined") return;
 
-  function $(id) {
-    return document.getElementById(id);
-  }
-
-  function show(element, visible) {
-    if (element) element.hidden = !visible;
-  }
+  const UI = root.BinderUI;
+  const $ = UI.byId;
+  const show = UI.show;
 
   /* Same guard as the other pages: a throw during setup leaves a page
    * that looks fine and does nothing, which is worse than a page that
    * says it is broken. */
-  document.addEventListener("DOMContentLoaded", function () {
-    setUp().catch(function (error) {
-      show($("tool"), false);
-      const closed = $("closed");
-      show(closed, true);
-      if (closed) {
-        closed.querySelector("[data-reason]").textContent =
-          "This page did not start up correctly, so there is nothing to " +
-          "show. " + (error && error.message ? "(" + error.message + ")" : "");
-      }
-    });
+  UI.boot(setUp, function (error) {
+    show($("tool"), false);
+    const closed = $("closed");
+    show(closed, true);
+    if (closed) {
+      closed.querySelector("[data-reason]").textContent =
+        "This page did not start up correctly, so there is nothing to " +
+        "show. " + (error && error.message ? "(" + error.message + ")" : "");
+    }
   });
 
   function unavailable(reason) {
@@ -126,18 +120,11 @@
         "of date.";
     }
 
-    function currentValue(name, fallback) {
-      const chosen = Array.prototype.slice
-        .call(document.querySelectorAll('input[name="' + name + '"]'))
-        .filter(function (input) { return input.checked; })[0];
-      return chosen ? chosen.value : fallback;
-    }
-
     function draw() {
       root.BinderDashboard.render(
         $("charts"), snapshot,
-        currentValue("basis", "people"),
-        currentValue("units", root.BinderDashboard.DEFAULT_UNITS));
+        UI.checkedValue("basis", "people"),
+        UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS));
     }
 
     Array.prototype.forEach.call(

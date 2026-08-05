@@ -192,28 +192,20 @@
 
   if (typeof document === "undefined") return;
 
-  function $(id) {
-    return document.getElementById(id);
-  }
-
-  function show(element, visible) {
-    if (element) element.hidden = !visible;
-  }
+  const UI = root.BinderUI;
+  const $ = UI.byId;
+  const show = UI.show;
 
   /* Same guard as form.js: a throw during setup would leave a page that
    * looks fine and a button that does nothing. */
-  document.addEventListener("DOMContentLoaded", function () {
-    try {
-      setUp();
-    } catch (error) {
-      show($("tool"), false);
-      const closed = $("closed");
-      show(closed, true);
-      if (closed) {
-        closed.querySelector("[data-reason]").textContent =
-          "This page did not start up correctly, so it is not safe to use. " +
-          (error && error.message ? "(" + error.message + ")" : "");
-      }
+  UI.boot(setUp, function (error) {
+    show($("tool"), false);
+    const closed = $("closed");
+    show(closed, true);
+    if (closed) {
+      closed.querySelector("[data-reason]").textContent =
+        "This page did not start up correctly, so it is not safe to use. " +
+        (error && error.message ? "(" + error.message + ")" : "");
     }
   });
 
@@ -241,10 +233,7 @@
     let urls = [];
 
     function say(message, tone) {
-      const status = $("status");
-      status.textContent = message || "";
-      status.hidden = !message;
-      status.className = "status" + (tone ? " " + tone : "");
+      UI.setStatus($("status"), message, tone);
     }
 
     // Object URLs pin their blob in memory until revoked, and the blob
@@ -422,10 +411,7 @@
      * costs a redraw and saves an argument.
      */
     function currentBasis() {
-      const chosen = Array.prototype.slice
-        .call(document.querySelectorAll('input[name="basis"]'))
-        .filter(function (input) { return input.checked; })[0];
-      return chosen ? chosen.value : "people";
+      return UI.checkedValue("basis", "people");
     }
 
     /*
@@ -439,10 +425,7 @@
      * without this page.
      */
     function currentUnits() {
-      const chosen = Array.prototype.slice
-        .call(document.querySelectorAll('input[name="units"]'))
-        .filter(function (input) { return input.checked; })[0];
-      return chosen ? chosen.value : root.BinderDashboard.DEFAULT_UNITS;
+      return UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS);
     }
 
     /*
@@ -481,10 +464,7 @@
      * them find a key file and decrypt the corpus first.
      */
     function sayUnpublish(message, tone) {
-      const status = $("unpublish-status");
-      status.textContent = message || "";
-      status.hidden = !message;
-      status.className = "status" + (tone ? " " + tone : "");
+      UI.setStatus($("unpublish-status"), message, tone);
     }
 
     async function refreshPublishedState() {
@@ -580,10 +560,7 @@
     }
 
     function sayPublish(message, tone) {
-      const status = $("publish-status");
-      status.textContent = message || "";
-      status.hidden = !message;
-      status.className = "status" + (tone ? " " + tone : "");
+      UI.setStatus($("publish-status"), message, tone);
     }
 
     /* Shown on demand, because "trust me, there are no handles in it"

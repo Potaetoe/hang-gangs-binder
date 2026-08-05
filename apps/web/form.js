@@ -332,13 +332,9 @@
 
   if (typeof document === "undefined") return;
 
-  function $(id) {
-    return document.getElementById(id);
-  }
-
-  function show(element, visible) {
-    if (element) element.hidden = !visible;
-  }
+  const UI = root.BinderUI;
+  const $ = UI.byId;
+  const show = UI.show;
 
   /*
    * Setup runs inside a guard.
@@ -354,19 +350,15 @@
    * tell it from a working one. So a page that cannot wire itself up
    * says so, and shows no form at all.
    */
-  document.addEventListener("DOMContentLoaded", function () {
-    try {
-      setUp();
-    } catch (error) {
-      show($("submission"), false);
-      const closed = $("closed");
-      show(closed, true);
-      if (closed) {
-        closed.querySelector("[data-reason]").textContent =
-          "This page did not start up correctly, so the form is not safe " +
-          "to use and has been hidden. Nothing you type would be sent. " +
-          (error && error.message ? "(" + error.message + ")" : "");
-      }
+  UI.boot(setUp, function (error) {
+    show($("submission"), false);
+    const closed = $("closed");
+    show(closed, true);
+    if (closed) {
+      closed.querySelector("[data-reason]").textContent =
+        "This page did not start up correctly, so the form is not safe " +
+        "to use and has been hidden. Nothing you type would be sent. " +
+        (error && error.message ? "(" + error.message + ")" : "");
     }
   });
 
@@ -518,8 +510,7 @@
     // one - but if the markup ever loses that attribute, the page and
     // this function should at least be wrong about the same thing.
     function currentUnits() {
-      const chosen = unitInputs.filter(function (i) { return i.checked; })[0];
-      return chosen ? chosen.value : "imperial";
+      return UI.checkedValue("units", "imperial");
     }
 
     function applyUnits() {
@@ -553,9 +544,7 @@
     }
 
     function say(message, tone) {
-      status.textContent = message || "";
-      status.hidden = !message;
-      status.className = "status" + (tone ? " " + tone : "");
+      UI.setStatus(status, message, tone);
     }
 
     form.addEventListener("submit", async function (event) {
