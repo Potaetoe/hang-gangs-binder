@@ -106,16 +106,32 @@
     </div>
 
     <div class="card">
+      <!--
+        Imperial first and checked. It is what most of the people this
+        form is for will type, and a default is not a neutral choice -
+        it is what gets used.
+
+        Changing it is safe here in a way it would not be in most forms,
+        and the reason is worth knowing before anyone changes it back:
+        every row stores both systems plus the `entered` string, so the
+        default decides what someone types, not what is recorded. No
+        stored row means anything different because of this line.
+
+        The markup's own hidden attributes must agree with the checked
+        radio. applyUnits() fixes them at DOMContentLoaded, but the
+        browser paints before that runs, and a form that shows the wrong
+        pair of boxes for a frame is a form somebody starts typing into.
+      -->
       <fieldset class="field">
         <legend>Units</legend>
         <div class="choices">
           <label class="choice">
-            <input type="radio" name="units" value="metric" checked>
-            <span>Metric</span>
+            <input type="radio" name="units" value="imperial" checked>
+            <span>Imperial</span>
           </label>
           <label class="choice">
-            <input type="radio" name="units" value="imperial">
-            <span>Imperial</span>
+            <input type="radio" name="units" value="metric">
+            <span>Metric</span>
           </label>
         </div>
       </fieldset>
@@ -126,28 +142,7 @@
         the only way to be sure it cannot is for the other system's
         numbers to live somewhere else. form.js hides one group.
       -->
-      <div id="metric-fields" class="pair">
-        <div class="field">
-          <label for="weight-kg">Weight</label>
-          <div class="row">
-            <input type="text" id="weight-kg" data-field="weight"
-                   inputmode="decimal" autocomplete="off" placeholder="90"
-                   aria-describedby="error-weight">
-            <span class="suffix">kg</span>
-          </div>
-        </div>
-        <div class="field">
-          <label for="height-cm">Height</label>
-          <div class="row">
-            <input type="text" id="height-cm" data-field="height"
-                   inputmode="decimal" autocomplete="off" placeholder="178"
-                   aria-describedby="error-height">
-            <span class="suffix">cm</span>
-          </div>
-        </div>
-      </div>
-
-      <div id="imperial-fields" class="pair" hidden>
+      <div id="imperial-fields" class="pair">
         <div class="field">
           <label for="weight-lb">Weight</label>
           <div class="row">
@@ -168,6 +163,27 @@
                    inputmode="decimal" autocomplete="off" placeholder="10"
                    aria-label="Height, inches" aria-describedby="error-height">
             <span class="suffix">in</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="metric-fields" class="pair" hidden>
+        <div class="field">
+          <label for="weight-kg">Weight</label>
+          <div class="row">
+            <input type="text" id="weight-kg" data-field="weight"
+                   inputmode="decimal" autocomplete="off" placeholder="90"
+                   aria-describedby="error-weight">
+            <span class="suffix">kg</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="height-cm">Height</label>
+          <div class="row">
+            <input type="text" id="height-cm" data-field="height"
+                   inputmode="decimal" autocomplete="off" placeholder="178"
+                   aria-describedby="error-height">
+            <span class="suffix">cm</span>
           </div>
         </div>
       </div>
@@ -249,8 +265,14 @@
   </div>
 </main>
 
+<!-- The dashboard is linked from here and not from a nav bar: this page
+     does one thing, and the link belongs after the form rather than
+     beside it. admin.html is deliberately not linked from anywhere - it
+     is useless without both secrets, but there is no reason to put it
+     in front of people it is not for. -->
 <footer>
   <p>
+    <a href="dashboard.html">See what everyone adds up to</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
     GitHub</a>
   </p>

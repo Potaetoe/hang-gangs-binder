@@ -22,7 +22,8 @@ const load = async (path) => {
 await load("../apps/web/dashboard.js");
 
 const {
-  NOT_STATED, median, mean, bmi, latestPerPerson, peopleCount,
+  NOT_STATED, DEFAULT_UNITS, unitsFor, formatInches, statText,
+  median, mean, bmi, latestPerPerson, peopleCount,
   histogram, countBy, countRoles, weightSeries, heightDisagreements,
   summarise,
 } = globalThis.BinderDashboard;
@@ -55,11 +56,14 @@ const entry = (over) => Object.assign({
   over18: true, recordVersion: 1,
 }, over);
 
-/* Someone who submitted three times, gaining. */
+/* Someone who submitted three times, gaining. Both unit systems move
+ * together, the way a real row does - a fixture that changed only the
+ * kg would make an imperial chart look like a flat line and the test
+ * that noticed would be reporting on the fixture. */
 const REPEATER = [
-  entry({ id: 1, telegram: "gainer1", kg: 90, submittedAt: "2026-01-01T00:00:00.000Z" }),
-  entry({ id: 2, telegram: "gainer1", kg: 96, submittedAt: "2026-04-01T00:00:00.000Z" }),
-  entry({ id: 3, telegram: "gainer1", kg: 104, submittedAt: "2026-07-01T00:00:00.000Z" }),
+  entry({ id: 1, telegram: "gainer1", kg: 90, lb: 198.4, submittedAt: "2026-01-01T00:00:00.000Z" }),
+  entry({ id: 2, telegram: "gainer1", kg: 96, lb: 211.6, submittedAt: "2026-04-01T00:00:00.000Z" }),
+  entry({ id: 3, telegram: "gainer1", kg: 104, lb: 229.3, submittedAt: "2026-07-01T00:00:00.000Z" }),
 ];
 
 /* ------------------------------------------------------------------ */
@@ -221,12 +225,12 @@ await check("picking none is counted as not stated", () => {
 await check("a repeat submitter becomes one series in order", () => {
   const series = weightSeries(REPEATER);
   return series.length === 1 &&
-    same(series[0].points.map((p) => p.kg), [90, 96, 104]);
+    same(series[0].points.map((p) => p.metric), [90, 96, 104]);
 });
 
 await check("points are sorted by time, not by arrival", () => {
   const series = weightSeries([REPEATER[2], REPEATER[0], REPEATER[1]]);
-  return same(series[0].points.map((p) => p.kg), [90, 96, 104]);
+  return same(series[0].points.map((p) => p.metric), [90, 96, 104]);
 });
 
 /* One entry is a point, not a trend. Drawing it as a line implies a
@@ -239,6 +243,18 @@ await check("an entry with no weight is left out of the series", () =>
     entry({ id: 1, telegram: "x", kg: 90, submittedAt: "2026-01-01T00:00:00.000Z" }),
     entry({ id: 2, telegram: "x", kg: null, submittedAt: "2026-02-01T00:00:00.000Z" }),
   ]).length === 0);
+
+/*
+ * Every point carries both systems, which is what lets one series be
+ * drawn in either. Building it twice - once per system - would be two
+ * traversals free to disagree about which points exist, and the
+ * disagreement would look like a line with a year missing from it.
+ */
+await check("one series carries both unit systems per point", () => {
+  const points = weightSeries(REPEATER)[0].points;
+  return same(points.map((p) => p.metric), [90, 96, 104]) &&
+    same(points.map((p) => p.imperial), [198.4, 211.6, 229.3]);
+});
 
 /* ------------------------------------------------------------------ */
 /* Data quality.                                                       */
@@ -271,13 +287,14 @@ await check("a single entry cannot disagree with itself", () =>
 /* The summary strip.                                                  */
 
 await check("the summary separates entries from people", () => {
-  const stats = summarise(REPEATER);
+  const stats = summarise(REPEATER, "metric");
   return stats.entries === 3 && stats.people === 1;
 });
 
 await check("the summary skips missing values rather than counting zeros",
   () => {
-    const stats = summarise([entry({ kg: 90 }), entry({ id: 2, kg: null })]);
+    const stats = summarise(
+      [entry({ kg: 90 }), entry({ id: 2, kg: null })], "metric");
     return stats.weightMedian === 90;
   });
 
@@ -285,6 +302,212 @@ await check("a summary of nothing reports nothing, not zero", () => {
   const stats = summarise([]);
   return stats.entries === 0 && stats.people === 0 &&
     stats.weightMedian === null && stats.bmiMedian === null;
+});
+
+/* ------------------------------------------------------------------ */
+/* Units.                                                              */
+
+/*
+ * The whole point of storing both systems is that this file never
+ * converts. These checks are what would fail if somebody "tidied up"
+ * by multiplying kg by 2.2 instead of reading the lb the row already
+ * carries - the numbers would be close enough to look right and wrong
+ * enough to be wrong.
+ */
+const MIXED = entry({ kg: 90, lb: 999, cm: 180, totalInches: 111 });
+
+await check("imperial reads the stored pounds, it does not convert kg", () =>
+  summarise([MIXED], "imperial").weightMedian === 999);
+
+await check("metric reads the stored kg", () =>
+  summarise([MIXED], "metric").weightMedian === 90);
+
+await check("imperial reads the stored total inches", () =>
+  summarise([MIXED], "imperial").heightMedian === 111);
+
+await check("the series carries the same field the summary reads", () => {
+  const series = weightSeries(REPEATER);
+  return same(series[0].points.map((p) => p.imperial), [198.4, 211.6, 229.3]) &&
+    summarise([REPEATER[2]], "imperial").weightMedian === 229.3;
+});
+
+/* The default is imperial everywhere - the form's default, and the one
+ * this project asked for. Absent and unrecognised both mean it. */
+await check("units default to imperial", () =>
+  DEFAULT_UNITS === "imperial" &&
+  summarise([MIXED]).weightMedian === 999 &&
+  summarise([MIXED], "furlongs").weightMedian === 999 &&
+  unitsFor(undefined).name === "imperial");
+
+/*
+ * BMI is defined in kg and metres, so it is the same number whatever
+ * the toggle says. The alternative is either a different BMI for the
+ * same person or a second formula carrying a 703.
+ */
+await check("BMI does not move when the units do", () =>
+  summarise([MIXED], "imperial").bmiMedian ===
+  summarise([MIXED], "metric").bmiMedian);
+
+await check("a height reads as feet and inches", () =>
+  formatInches(68) === "5'8\"" && formatInches(72) === "6'0\"" &&
+  formatInches(63) === "5'3\"");
+
+/* The carry that bit form.js: 71.98 in is 5 ft 11.98 in, which rounds
+ * to a height nobody writes as 5 ft 12 in. Rounding to whole inches
+ * before dividing is what keeps a twelfth inch impossible here. */
+await check("a height that rounds up to a whole foot carries", () =>
+  formatInches(71.98) === "6'0\"" && formatInches(71.6) === "6'0\"" &&
+  formatInches(71.4) === "5'11\"");
+
+await check("a missing measurement is a dash, not a zero", () =>
+  statText(null, unitsFor("imperial").weight) === "—" &&
+  statText(undefined, unitsFor("metric").height) === "—");
+
+await check("a standalone figure carries its own unit", () =>
+  statText(200, unitsFor("imperial").weight) === "200 lb" &&
+  statText(90, unitsFor("metric").weight) === "90 kg" &&
+  statText(180, unitsFor("metric").height) === "180 cm" &&
+  statText(68, unitsFor("imperial").height) === "5'8\"");
+
+/*
+ * Who appears on the height panel must not depend on a display toggle.
+ * If the 1 cm slack moved with the units, switching them would add and
+ * drop people from a data-quality panel, which would make the panel a
+ * report on itself.
+ */
+await check("the height panel carries both systems and detects in metric",
+  () => {
+    const found = heightDisagreements([
+      entry({ id: 1, telegram: "x", cm: 180, totalInches: 70.9,
+              submittedAt: "2026-01-01T00:00:00.000Z" }),
+      entry({ id: 2, telegram: "x", cm: 165, totalInches: 65,
+              submittedAt: "2026-02-01T00:00:00.000Z" }),
+    ]);
+    return found.length === 1 &&
+      found[0].low === 165 && found[0].high === 180 &&
+      found[0].lowInches === 65 && found[0].highInches === 70.9;
+  });
+
+/* A row written before totalInches existed has a cm and nothing else.
+ * Reporting null inches is what lets the page fall back rather than
+ * printing "null to null". */
+await check("a row with no inches reports null rather than inventing them",
+  () => {
+    const found = heightDisagreements([
+      entry({ id: 1, telegram: "x", cm: 180, totalInches: null }),
+      entry({ id: 2, telegram: "x", cm: 165, totalInches: null }),
+    ]);
+    return found.length === 1 && found[0].lowInches === null;
+  });
+
+/* ------------------------------------------------------------------ */
+/* The snapshot.                                                       */
+
+/*
+ * These are the checks that matter most in this file, because a
+ * snapshot is the one thing here that gets published. Everything else
+ * is wrong on a page one person looks at; this is wrong on the open
+ * web, permanently, and a leak cannot be taken back by fixing the code
+ * afterwards.
+ *
+ * So the central check is not that the numbers are right - it is that
+ * no handle is anywhere in the document.
+ */
+const { snapshotOf, SNAPSHOT_VERSION } = globalThis.BinderDashboard;
+
+const CORPUS = REPEATER.concat([
+  entry({ id: 10, telegram: "loner", kg: 70, lb: 154.3, cm: 165,
+          totalInches: 65, gender: "female", country: "GB", roles: [],
+          submittedAt: "2026-03-01T00:00:00.000Z" }),
+  entry({ id: 11, telegram: "shifty", kg: 80, lb: 176.4, cm: 180,
+          totalInches: 70.9, submittedAt: "2026-03-01T00:00:00.000Z" }),
+  entry({ id: 12, telegram: "shifty", kg: 82, lb: 180.8, cm: 165,
+          totalInches: 65, submittedAt: "2026-05-01T00:00:00.000Z" }),
+]);
+
+await check("a published snapshot contains no handle anywhere", () => {
+  const text = JSON.stringify(snapshotOf(CORPUS, { identify: false }));
+  return !text.includes("gainer1") && !text.includes("loner") &&
+    !text.includes("shifty");
+});
+
+await check("a published snapshot labels people by number", () => {
+  const snap = snapshotOf(CORPUS, { identify: false });
+  return snap.series.every((line) => /^Person \d+$/.test(line.label));
+});
+
+/* The keyholder's own page draws an identified snapshot, which is what
+ * makes Publish a preview rather than a leap - the same function drew
+ * what is already on screen. */
+await check("an identified snapshot keeps the handles", () => {
+  const snap = snapshotOf(CORPUS, { identify: true });
+  return snap.identified === true &&
+    snap.series.some((line) => line.label === "@gainer1");
+});
+
+/* A data-quality panel is for whoever can act on it. Published, it is
+ * a list of strangers' heights and no use to anybody. */
+await check("the height panel is dropped when publishing", () => {
+  const published = snapshotOf(CORPUS, { identify: false });
+  const private_ = snapshotOf(CORPUS, { identify: true });
+  return published.quality === null &&
+    private_.quality.heightChanges.length === 1 &&
+    private_.quality.heightChanges[0].telegram === "shifty";
+});
+
+/* Off unless asked for. A weight history is the one part of a snapshot
+ * that is still about individuals, pseudonyms or not. */
+await check("weight over time can be left out entirely", () =>
+  snapshotOf(CORPUS, { identify: false, series: false }).series === null);
+
+/*
+ * Both bases and both unit systems are precomputed. The public page has
+ * no rows, so anything it cannot find in here is a toggle that would
+ * have to be removed from it.
+ */
+await check("both counting bases are precomputed", () => {
+  const snap = snapshotOf(CORPUS, { identify: false });
+  return snap.bases.entries.count === 6 && snap.bases.people.count === 3 &&
+    snap.counts.entries === 6 && snap.counts.people === 3;
+});
+
+await check("both unit systems are precomputed, in both bases", () => {
+  const snap = snapshotOf(CORPUS, { identify: false });
+  for (const basis of ["people", "entries"]) {
+    const view = snap.bases[basis];
+    for (const system of ["imperial", "metric"]) {
+      if (!view[system] || !view[system].weight || !view[system].height) {
+        return false;
+      }
+    }
+  }
+  return true;
+});
+
+/* The snapshot must agree with the page it was computed from, or
+ * publishing would quietly change the numbers. */
+await check("a snapshot's figures match summarise on the same rows", () => {
+  const snap = snapshotOf(CORPUS, { identify: false });
+  const stats = summarise(latestPerPerson(CORPUS), "imperial");
+  const view = snap.bases.people.imperial;
+  return view.weight.median === stats.weightMedian &&
+    view.height.median === stats.heightMedian &&
+    snap.bases.people.bmi.median === stats.bmiMedian;
+});
+
+await check("a snapshot says when it was made and which format it is", () => {
+  const snap = snapshotOf(CORPUS, { identify: false },
+    Date.UTC(2026, 7, 5, 12, 0, 0));
+  return snap.snapshot === SNAPSHOT_VERSION &&
+    snap.generated === "2026-08-05T12:00:00.000Z";
+});
+
+await check("a snapshot of nothing is still a drawable snapshot", () => {
+  const snap = snapshotOf([], { identify: false });
+  return snap.counts.entries === 0 && snap.counts.people === 0 &&
+    same(snap.series, []) &&
+    snap.bases.people.imperial.weight.median === null &&
+    same(snap.bases.people.imperial.weight.bins, []);
 });
 
 /* ------------------------------------------------------------------ */

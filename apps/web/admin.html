@@ -90,6 +90,33 @@
       <p class="status" id="status" role="status" aria-live="polite" hidden></p>
     </div>
 
+    <!--
+      What is currently public, and how to stop it being public.
+
+      This sits above the export and outside everything the key gates,
+      on purpose. Reading the state needs nothing at all, and taking a
+      snapshot down needs only the token - because the moment somebody
+      wants to retract one is not the moment to make them fetch a key
+      file and decrypt two hundred rows first.
+    -->
+    <div class="card narrow">
+      <p class="eyebrow">Public dashboard</p>
+      <p id="published-state" class="muted">Checking…</p>
+      <div class="row">
+        <button type="button" id="unpublish" class="secondary" hidden>
+          Unpublish
+        </button>
+        <a href="dashboard.html" class="secondary-link">Open it</a>
+      </div>
+      <p class="hint">
+        Unpublishing needs the export token above — not the key. It
+        takes the page down immediately and leaves the submissions
+        untouched; publishing again rebuilds it.
+      </p>
+      <p class="status" id="unpublish-status" role="status"
+         aria-live="polite" hidden></p>
+    </div>
+
     <div class="card" id="failures" hidden>
       <p class="eyebrow">Rows that would not open</p>
       <p class="muted small">
@@ -149,7 +176,82 @@
         </p>
       </fieldset>
 
+      <!--
+        Imperial by default, as on the form. Every row stores both
+        systems, so this picks which stored figure is read and converts
+        nothing — see DESIGN.md, "Why every row carries both unit
+        systems".
+
+        It does not touch the CSV or the JSON. Those carry both systems
+        in every row on purpose, so an export is not a snapshot of
+        whatever this radio happened to say.
+      -->
+      <fieldset class="field">
+        <legend>Units</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="units" value="imperial" checked>
+            <span>Imperial</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="units" value="metric">
+            <span>Metric</span>
+          </label>
+        </div>
+        <p class="hint">
+          Charts only. Both downloads always carry both systems, and BMI
+          is metric by definition either way.
+        </p>
+      </fieldset>
+
       <div id="charts"></div>
+    </div>
+
+    <!--
+      Publishing. The one thing on this page that sends anything out,
+      which is why it is a separate card with its own button and its own
+      confirmation rather than a step of the export.
+
+      What goes out is the aggregate above with the names taken out -
+      counts, medians and histograms. No handles, no rows, nothing
+      per-person except the pseudonymous weight history, and only if it
+      is ticked. See DESIGN.md, "The public dashboard".
+    -->
+    <div class="card narrow" id="publish-card" hidden>
+      <p class="eyebrow">Publish</p>
+      <p>
+        Sends the charts above — as counts and medians, with no handles
+        and no rows — to the <a href="dashboard.html">public
+        dashboard</a>. It replaces whatever is there now.
+      </p>
+
+      <div class="field">
+        <label class="choice">
+          <input type="checkbox" id="publish-series">
+          <span>Include weight over time</span>
+        </label>
+        <p class="hint">
+          Published as “Person 1”, “Person 2” — never handles, and
+          renumbered every time, so two snapshots cannot be lined up to
+          follow one person. It is still a weight history: anyone who
+          knows what someone weighs may recognise their line. Off by
+          default for that reason.
+        </p>
+      </div>
+
+      <div class="row">
+        <button type="button" id="publish" class="primary">
+          Publish snapshot
+        </button>
+        <button type="button" id="publish-preview" class="secondary">
+          Show what would be sent
+        </button>
+      </div>
+
+      <p class="status" id="publish-status" role="status" aria-live="polite"
+         hidden></p>
+
+      <pre class="failure-list" id="publish-preview-body" hidden></pre>
     </div>
 
     <div class="card narrow">

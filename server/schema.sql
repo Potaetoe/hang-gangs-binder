@@ -17,3 +17,21 @@ CREATE TABLE IF NOT EXISTS submissions (
   ciphertext  TEXT NOT NULL,
   received_at TEXT NOT NULL
 );
+
+-- The published aggregate, and the only table anything can read without
+-- a token. It holds counts, medians and histogram bins - no handles, no
+-- rows - computed in the keyholder's browser and sent here as JSON.
+--
+-- Exactly one row, forced by the CHECK. A history of snapshots would be
+-- more published data about the same people kept for nobody's benefit;
+-- the current picture is the whole product, so publishing replaces
+-- rather than appends. This is also the one table with an UPDATE path
+-- in the Worker.
+--
+-- Nothing here can be turned back into a submission. If this table is
+-- lost, the keyholder presses Publish again.
+CREATE TABLE IF NOT EXISTS snapshots (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  body       TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

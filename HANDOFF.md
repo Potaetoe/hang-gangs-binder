@@ -107,6 +107,58 @@ Things worth knowing before you rely on it:
   the group looks like, the other what was submitted. Someone who
   submits monthly pulls every average toward themselves under the
   second.
+- **The units toggle changes the charts and nothing else.** Both
+  downloads always carry both systems, so an export is never a snapshot
+  of whichever radio happened to be selected.
+
+## Publishing the public dashboard
+
+`apps/web/dashboard.html` shows the group's numbers to anyone, with no
+key and no token. It is not live: it shows whatever was last published,
+and publishing is a button you press.
+
+At the bottom of the export page, after decrypting:
+
+1. Decide about **weight over time**. It is off by default. Ticked, the
+   published page gets one line per repeat submitter, labelled
+   "Person 1", "Person 2" — never handles, and renumbered every time so
+   two snapshots cannot be lined up to follow anyone. It is still a
+   weight history, and someone who knows what a person weighs may
+   recognise their line. That is the whole of the trade-off.
+2. Press **Show what would be sent** if you want to read it first. It
+   sends nothing; it prints the document.
+3. Press **Publish snapshot**. It replaces whatever was there before.
+
+What goes out is counts, medians and histogram bins. No handles, no
+rows, and the height-discrepancy panel is dropped entirely — it is a
+tool for you, and published it would be a list of strangers' heights.
+
+Things worth knowing:
+
+- **It goes stale, and it says so.** The page shows how old the figures
+  are and warns past two days. Nothing refreshes it but you.
+- **There is an Unpublish button, and it needs only the token.** Not
+  the key. It is in the "Public dashboard" card near the top of the
+  export page, which also tells you what is currently published and how
+  old it is — that part needs no credentials at all. Taking a snapshot
+  down is immediate, leaves the submissions untouched, and is undone by
+  publishing again.
+
+  To change part of it rather than remove it, republish: untick weight
+  over time and press Publish. The previous snapshot is replaced, not
+  kept.
+
+  If the page itself is unreachable, the same thing from a terminal:
+
+  ```bash
+  curl -X DELETE -H "Origin: https://potaetoe.github.io" \
+    -H "Authorization: Bearer YOUR_EXPORT_TOKEN" \
+    https://hgbinderworker.sorcererbiggz.workers.dev/snapshot
+  ```
+- **Publishing needs the export token but not the key**, and reading
+  needs neither. That asymmetry is the point: the public page can be
+  handed to anyone, permanently, because it never contained anything
+  worth protecting.
 - **A height that changed between entries is flagged.** Height does not
   change in adults, so that panel means a typo, a unit mix-up, or one
   handle used by two people. Check it before quoting a height figure.

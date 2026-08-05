@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Seven checks:
+Nine checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -53,19 +53,26 @@ Seven checks:
    actually lies on P-256. Cheap, and it moves the discovery from a
    stranger's browser to the terminal of the person who pasted it.
 
-6. Nothing reaches the network except through crypto.js. This is the
+6. Nothing *sends* to the network except through crypto.js. This is the
    design's one rule restated as something a machine can check: the
    whole point is that plaintext never leaves the browser, so a file
-   that can call out but does not encrypt is the shape of the mistake
-   that would break it. Two halves - a script that fetches or reads the
-   endpoint must also name BinderCrypto, and a page loading such a
-   script must actually load crypto.js. Both are vacuous until the form
-   exists, which is the point of writing them now: they arm on the day
-   the file that handles cleartext gets written.
+   that puts a body on the wire but does not encrypt is the shape of
+   the mistake that would break it. Two halves - a script that sends
+   must also name BinderCrypto, and a page loading such a script must
+   actually load crypto.js.
 
-   Neither can prove the encryption is *used* - only that the pieces
-   are present. A submit handler that posts the form fields and never
-   calls encrypt would pass. That failure is loud in review and in the
+   Sending, not touching. An earlier version of this check counted any
+   fetch at all, which was right while every page here either submitted
+   or exported, and became wrong the day dashboard.html arrived: that
+   page only reads an aggregate that was published on purpose, sends
+   nothing, and deliberately does not load crypto.js so that it cannot
+   be talked into decrypting anything. Holding a read-only page to a
+   rule about sending would have meant either loading decryption onto a
+   page with no use for it, or turning the check off.
+
+   It cannot prove the encryption is *used* - only that the pieces are
+   present. A submit handler that posts the form fields and never calls
+   encrypt would pass. That failure is loud in review and in the
    round-trip test; this catches the quiet one, which is a page wired
    to the endpoint with no encryption on it at all.
 
@@ -83,6 +90,26 @@ Seven checks:
    and reading `element.hidden` returns true - it is only the rendering
    that disagrees. So the one line the whole visibility model rests on
    is checked here rather than trusted.
+
+8. The form's checked units radio and its visible field group agree.
+   The site defaults to imperial, and that default is written down in
+   two places that must match: which radio carries `checked`, and which
+   of the two field groups carries `hidden`.
+
+   applyUnits() reconciles them at DOMContentLoaded, which is what makes
+   a mismatch so easy to miss - by the time anyone looks, the page is
+   right. But the browser paints the markup before that runs, so a
+   disagreement shows the wrong pair of boxes for a frame, and the boxes
+   it shows are the ones somebody starts typing into. Worse, both groups
+   visible at once is the exact rendering that shipped on 2026-08-04 for
+   the different reason check 7 now guards.
+
+9. Every promoted country code names a real country. The dropdown puts
+   a short block at the top, listed in countries.js as ISO codes, and
+   form.js skips any code it cannot find a name for - which is the right
+   behaviour on a live page and the reason a typo would be invisible.
+   The country simply would not be in the promoted block, and the only
+   way to notice is to know it should have been there.
 """
 
 import base64
@@ -257,12 +284,19 @@ def public_key_problem():
 
 CRYPTO_FILE = "crypto.js"
 
-# What "this file can reach the network" looks like in a directory with
-# no build step and no framework: a fetch call, or a read of the one
-# place the endpoint's address is written down.
-REACHES_NETWORK = re.compile(
-    r"\bfetch\s*\(|\bXMLHttpRequest\b|\bsendBeacon\b|"
-    r"BINDER_CONFIG\s*(?:\.\s*endpoint\b|\[\s*[\"']endpoint)")
+# What "this file puts something on the wire" looks like in a directory
+# with no build step and no framework. A bare fetch() is a read and is
+# not enough: reading is what the public dashboard does, and what the
+# export does, and neither is the risk this check exists for.
+#
+# sendBeacon is here because its whole purpose is sending a body, and
+# an XMLHttpRequest with an explicit method is the older spelling of
+# the same thing.
+SENDS_TO_NETWORK = re.compile(
+    r"method\s*:\s*[\"'](?:POST|PUT|PATCH)[\"']|"
+    r"\bsendBeacon\s*\(|"
+    r"\.open\s*\(\s*[\"'](?:POST|PUT|PATCH)[\"']",
+    re.I)
 
 
 def strip_js_comments(text):
@@ -281,14 +315,15 @@ def unencrypted_paths():
             continue
         code = strip_js_comments(
             open(os.path.join(WEB, name), encoding="utf-8").read())
-        if not REACHES_NETWORK.search(code):
+        if not SENDS_TO_NETWORK.search(code):
             continue
         senders.add(name)
         if "BinderCrypto" not in code:
             problems.append((
                 name,
-                "reaches the endpoint but never mentions BinderCrypto, so "
-                "whatever it sends has not been through crypto.js"))
+                "sends a body to the endpoint but never mentions "
+                "BinderCrypto, so whatever it sends has not been through "
+                "crypto.js"))
 
     for page, target in html_references():
         if target in senders:
@@ -296,7 +331,7 @@ def unencrypted_paths():
             if CRYPTO_FILE not in loaded:
                 problems.append((
                     page,
-                    "loads %s, which talks to the endpoint, but does not "
+                    "loads %s, which sends to the endpoint, but does not "
                     "load %s - the encryption would not be there to call"
                     % (target, CRYPTO_FILE)))
 
@@ -329,6 +364,90 @@ def hidden_attribute_problem():
             "beats the browser's own [hidden] rule. The pages would render "
             "every hidden element at once, with nothing reporting it"
             % STYLESHEET)
+
+
+COUNTRIES_FILE = "countries.js"
+
+
+def promoted_country_problems():
+    """(code, problem) for promoted codes with no country behind them."""
+    path = os.path.join(WEB, COUNTRIES_FILE)
+    if not os.path.exists(path):
+        return []  # check 1's to report
+    text = strip_js_comments(open(path, encoding="utf-8").read())
+
+    promoted = re.search(
+        r"BINDER_COUNTRIES_PROMOTED\s*=\s*\[(.*?)\]", text, re.S)
+    if not promoted:
+        return []  # no promoted block is a legitimate state
+    codes = re.findall(r"[\"']([^\"']+)[\"']", promoted.group(1))
+
+    known = set(re.findall(r"^\s*([A-Z]{2})\s*:", text, re.M))
+    problems = []
+    seen = set()
+    for code in codes:
+        if code in seen:
+            problems.append((
+                code,
+                "is promoted twice, so it appears twice in the block at the "
+                "top of the dropdown"))
+        seen.add(code)
+        if code not in known:
+            problems.append((
+                code,
+                "is not a country in %s. form.js skips it, so the dropdown "
+                "would simply be missing it at the top with nothing "
+                "reporting why" % COUNTRIES_FILE))
+    return problems
+
+
+FORM_PAGE = "index.html"
+
+# The two halves of the units default, as they appear in the markup.
+UNIT_SYSTEMS = ("imperial", "metric")
+
+
+def units_default_problem():
+    """A description of the units default contradicting itself, or None."""
+    path = os.path.join(WEB, FORM_PAGE)
+    if not os.path.exists(path):
+        return None  # check 1's to report
+    text = re.sub(r"<!--.*?-->", "", open(path, encoding="utf-8").read(),
+                  flags=re.S)
+
+    checked = [
+        system for system in UNIT_SYSTEMS
+        if re.search(
+            r'<input[^>]*name="units"[^>]*value="%s"[^>]*\bchecked\b' % system,
+            text, re.I)
+        or re.search(
+            r'<input[^>]*\bchecked\b[^>]*name="units"[^>]*value="%s"' % system,
+            text, re.I)
+    ]
+    if len(checked) != 1:
+        return ("%s has %d units radio marked checked, not exactly one - the "
+                "form would open with no unit system selected, or with two"
+                % (FORM_PAGE, len(checked)))
+
+    hidden = {}
+    for system in UNIT_SYSTEMS:
+        group = re.search(r'<div[^>]*id="%s-fields"[^>]*>' % system, text, re.I)
+        if not group:
+            return ("%s has no #%s-fields group, so the units toggle has "
+                    "nothing to show" % (FORM_PAGE, system))
+        hidden[system] = bool(re.search(r"\bhidden\b", group.group(0), re.I))
+
+    wanted = checked[0]
+    other = UNIT_SYSTEMS[1 - UNIT_SYSTEMS.index(wanted)]
+    if hidden[wanted]:
+        return ("%s checks the %s radio but ships #%s-fields hidden, so the "
+                "form paints with no inputs at all until applyUnits() runs"
+                % (FORM_PAGE, wanted, wanted))
+    if not hidden[other]:
+        return ("%s checks the %s radio but does not ship #%s-fields hidden, "
+                "so the form paints both unit systems at once"
+                % (FORM_PAGE, wanted, other))
+    return None
 
 
 def key_shaped_content():
@@ -375,6 +494,17 @@ def main():
     problem = hidden_attribute_problem()
     if problem:
         problems.append(problem + ".")
+
+    for code, problem in promoted_country_problems():
+        problems.append("%s: the promoted country %s %s."
+                        % (COUNTRIES_FILE, code, problem))
+
+    problem = units_default_problem()
+    if problem:
+        problems.append(
+            "%s. The checked radio and the visible field group are the same "
+            "decision written twice; applyUnits() hides the disagreement a "
+            "moment after the browser has already shown it." % problem)
 
     for name, problem in unencrypted_paths():
         problems.append(

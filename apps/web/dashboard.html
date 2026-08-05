@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The same policy as the other pages, and it costs nothing to keep here
+  even though this is the one page with no secret on it: no key, no
+  token, and a document that carries no handles and no rows.
+
+  It is kept anyway because "this page has nothing to protect" is a
+  claim about today. A page that starts without a policy is a page
+  nobody adds one to later.
+
+  crypto.js is deliberately not loaded. There is nothing here to
+  decrypt, and a page that cannot decrypt cannot be talked into it.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<title>Dashboard — Hang Gang's Binder</title>
+<meta name="description" content="Aggregate numbers from the submissions. No names, no individual entries.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#121212">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<!-- Same as admin.html: this reads as data rather than prose, so the
+     wide measure applies and the cards that are prose opt back out. -->
+<body class="wide">
+
+<header class="stack">
+  <div class="themes" role="group" aria-label="Colour theme">
+    <button type="button" data-set-theme="pink">Pink</button>
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" data-set-theme="dark">Dark</button>
+  </div>
+
+  <div class="stack-tight">
+    <p class="eyebrow">Everyone</p>
+    <h1>Dashboard</h1>
+    <p class="muted">
+      What the submissions add up to. Counts, middles and distributions
+      — no names, and no individual entries.
+    </p>
+  </div>
+</header>
+
+<main class="stack">
+
+  <!-- Shown instead of the charts when there is nothing to draw. -->
+  <div class="card narrow" id="closed" hidden>
+    <p class="eyebrow">Nothing to show</p>
+    <p data-reason></p>
+  </div>
+
+  <div class="stack" id="tool" hidden>
+
+    <div class="card narrow">
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <!--
+        The age of the figures, always visible and never rounded to
+        "recently". A dashboard quietly showing last month's numbers is
+        worse than one that admits it is stale, and the ordinary
+        failure of whatever refreshes this is silence rather than an
+        error.
+      -->
+      <p class="hint" id="freshness"></p>
+    </div>
+
+    <div class="card" id="dashboard">
+      <fieldset class="field">
+        <legend>Count</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="basis" value="people" checked>
+            <span>One per person (latest)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="basis" value="entries">
+            <span>Every entry</span>
+          </label>
+        </div>
+        <p class="hint">
+          Anyone who resubmits adds a row rather than replacing one, so
+          these are different questions. Both are worked out before
+          publishing, which is why this still works on a page with no
+          data behind it.
+        </p>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Units</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="units" value="imperial" checked>
+            <span>Imperial</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="units" value="metric">
+            <span>Metric</span>
+          </label>
+        </div>
+        <p class="hint">
+          Both systems are published, so this picks one rather than
+          converting. BMI is metric by definition either way.
+        </p>
+      </fieldset>
+
+      <div id="charts"></div>
+    </div>
+
+    <div class="card narrow">
+      <p class="eyebrow">What this is</p>
+      <p class="muted small">
+        These figures are worked out from the submissions and published
+        as totals. Nothing on this page identifies anybody: there are no
+        Telegram handles in it, and no individual entries — only how
+        many, how much on average, and how the answers are spread. Where
+        a weight history is shown, the people in it are numbered rather
+        than named, and renumbered every time this is republished.
+      </p>
+      <p class="muted small">
+        <a href="index.html">Add yours</a>, if you have not.
+      </p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <p>
+    <a href="index.html">Submission portal</a> ·
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+<script src="config.js"></script>
+<script src="dashboard.js"></script>
+<script src="public.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

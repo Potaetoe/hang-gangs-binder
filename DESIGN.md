@@ -610,6 +610,11 @@ Charts on `admin.html`, from the same decrypted rows the CSV is built
 from. `dashboard.js` holds the aggregation and draws the charts as
 inline SVG.
 
+Since 2026-08-05 it draws a *snapshot* rather than the rows themselves,
+and `admin.html` builds one of its own entries to hand it. That
+indirection is what lets the same function draw the public page — see
+"The public dashboard" below, which is where the reasoning lives.
+
 **No chart library, and this is not a preference.** `admin.html` runs
 under `default-src 'none'; script-src 'self'`, and it is the one page
 where every submission exists in the clear at once — a CDN script here
@@ -673,10 +678,11 @@ rounding between the two unit systems.
 ### What exists now
 
 **Both ends, and everything between them.** The site, the storage
-endpoint, the form and the export page, wired together and live; the
-key generator; a keypair, whose public half is published in `config.js`
-and whose private half is held offline by the keyholder; and
-`crypto.js`, tested against both a fresh keypair and a stored fixture.
+endpoint, the form and the export page, wired together and live; a
+public dashboard reading a published aggregate; the key generator; a
+keypair, whose public half is published in `config.js` and whose
+private half is held offline by the keyholder; and `crypto.js`, tested
+against both a fresh keypair and a stored fixture.
 
 A submitter fills in the form and their entry is encrypted in their
 browser and appended to D1 as ciphertext. The keyholder opens
@@ -687,10 +693,370 @@ The build order is complete. What remains is operational rather than
 architectural: spam protection if junk ever appears, and keeping
 `HANDOFF.md` honest as things change.
 
+## Next goals — recorded 2026-08-05, all built the same day
+
+Seven asks, written down as given. They were **goals, not decisions**
+when this section was written; the decisions came back the same day and
+the work is done. What follows is kept as the reasoning that produced
+the shape, with each goal marked with what actually happened.
+
+The three open questions this section raised were answered:
+
+- **Where the private key is during a refresh:** nowhere new. Option D
+  — publish a snapshot from `admin.html` — was chosen, so the key stays
+  where it was and no scheduled job holds one.
+- **What "European countries" means:** popular EU member states. Taken
+  as the ten most populous, which is a criterion that can be checked.
+- **Whether weight over time can be public:** yes, eventually. Built,
+  pseudonymous, and off by default until the keyholder ticks it.
+
+Two of the seven turned out to be the same build, and it is the same
+build goal 1 needed — see "One build serves 1, 5 and 6" below.
+
+### 1. A dashboard that refreshes daily from the database
+
+✅ **Built as option D — publishing from `admin.html`.** The keyholder
+presses a button and the aggregate goes out; nothing new holds a key.
+Options B and C below remain the upgrade path if that turns out to be
+too manual, and both write to the same endpoint this now uses, so
+neither is a rewrite.
+
+**The whole question is where the private key is when the refresh
+runs.** Something has to decrypt, decryption needs the key, and today
+the key exists only in the keyholder's browser for as long as the tab
+is open. "Daily and automatic" means naming a second place it lives,
+which is the one decision this project has spent every other page
+avoiding. Four ways, in the order they should be considered:
+
+- **D. Publish a snapshot from `admin.html`.** No scheduling at all: a
+  button on the page the keyholder already opens computes the
+  aggregate and POSTs it to a new Worker route, and the dashboard
+  reads that. "Daily" becomes "as of the last time anyone looked",
+  which for a portal seeing a few submissions a week may be the
+  truthful answer. Nothing new holds a key. **Start here** — it is
+  small, it needs no new secret, and it settles the snapshot format
+  that every other option also needs.
+- **B. A scheduled job on the keyholder's machine.** The same
+  computation as D, run by Task Scheduler against a key file on that
+  disk, POSTing to the same route. Genuinely daily; the key still
+  never leaves the machine. Costs: the machine has to be on, and a
+  key sitting in a file for a script to read is a weaker custody
+  story than a key pasted into a tab. **This is the recommended
+  answer if D turns out to be too manual** — it is additive, not a
+  rewrite.
+- **C. A second "analytics" keypair, and a reduced record.** Each
+  submission encrypted twice: once to the keyholder in full, once to
+  an analytics key over a record carrying no Telegram handle. The
+  analytics private key can then live in a Cloudflare Cron Trigger,
+  because losing it leaks de-identified statistics rather than a list
+  of who. Fully automatic, honest about what Cloudflare can see, and
+  the right answer if "the machine has to be on" is unacceptable.
+  Costs a wire-format change — a new version byte and a decoder that
+  reads both, per the rule under "How a submission is written down" —
+  and a second ciphertext per row forever.
+- **A. The real private key as a Worker secret, on a Cron Trigger.**
+  The obvious implementation and **the one to refuse**. It hands
+  Cloudflare the ability to read every submission, which is property
+  1 of this design and the reason the storage provider was allowed to
+  be a convenience decision in the first place. Named here so nobody
+  arrives at it later thinking it was never considered.
+
+Three rules bind whichever is chosen:
+
+- **The snapshot is public data.** It is served to a page with no key
+  and no token, so it carries no Telegram handles and nothing
+  per-person that identifies. That rules out the weight-over-time
+  chart in its current form — a per-person series is re-identifiable
+  by anyone who knows one person's weight — so it either stays behind
+  the key or is keyed by an opaque per-handle id.
+- **The snapshot carries the time it was made, and the page shows
+  it.** A dashboard quietly displaying week-old numbers is worse than
+  one that admits it is stale, and a scheduled job's ordinary failure
+  mode is silence.
+- **The aggregation is `dashboard.js`, not a second implementation.**
+  Same argument as the conversion in `form.js`: two copies drift, and
+  the one nobody tests is the one still passing. It follows that the
+  snapshot must precompute *both* bases — one-per-person and
+  every-entry — since deduplicating by handle is exactly what a
+  handle-free file cannot do later.
+
+### 2. A unit choice on the dashboard
+
+✅ **Built**, on both dashboards, imperial by default. The unit table
+in `dashboard.js` says which stored field each system reads and how it
+is written down; nothing converts. Imperial heights are shown as
+`5'8"`, which is formatting rather than conversion — the total inches
+are already the number being displayed, and rounding to whole inches
+before dividing by twelve is what keeps a "5 ft 12 in" out of it.
+
+Presentation only, and cheap for a reason already banked: **every row
+already stores both systems**, so nothing needs converting at read
+time and no stored row changes. What is metric-only today is the
+display and the arithmetic in `dashboard.js` — `summarise`, the
+histograms, the weight-over-time axis and the height-mismatch panel
+all read `entry.kg` and `entry.cm` and hard-code the suffix.
+
+The one rule: the toggle **selects which stored value to read**, never
+converts a displayed number. A conversion here would be the second
+copy of the arithmetic that "Why every row carries both unit systems"
+exists to prevent. BMI stays metric internally and unitless in
+display, because that is what BMI is.
+
+### 3. Default to imperial
+
+✅ **Built.** The form and both dashboards start imperial.
+`tools/check_web.py` gained a check for it — not for the default
+itself, but for the two places it is written down agreeing: the radio
+that carries `checked` and the field group that carries `hidden`.
+`applyUnits()` reconciles them a moment after the browser has already
+painted the disagreement, which is what makes that mismatch easy to
+ship and hard to see.
+
+This is safe to change precisely because the record keeps both systems
+plus the `entered` string: the default changes what most people type,
+not what is stored, and no existing row is reinterpreted. It does need
+`dev/form.test.mjs` to stop assuming the default, and the check that
+the toggle swaps *inputs* rather than relabelling them still holds —
+that decision is unaffected.
+
+### 4. Country ordering: USA, Canada, Mexico, UK, Europe, then the rest
+
+✅ **Built** as `BINDER_COUNTRIES_PROMOTED` in `countries.js` — a list
+of ISO codes, so the ordering survives a display-name correction and no
+stored row or exported column changes.
+
+Display order only. The stored value is the ISO code, never the name,
+which is what makes this a `countries.js` edit with no effect on a
+single stored row or on the export — the reason for that split,
+written down when `countries.js` was created, is being collected here.
+
+Three decisions were needed and all three are in the file's own
+comment. **"European" means popular EU member states**, taken as the
+ten most populous — a criterion someone else can check and extend,
+rather than a guess about who counts as popular, and the tenth place is
+a near-tie so the bottom of the list is arbitrary on purpose. Non-EU
+Europe stays in the alphabetical run. **The separator is an
+`<optgroup>`**, whose label cannot be selected and cannot be stored — a
+drawn `--------` row is an option somebody can pick. **The promoted
+countries also appear in the alphabetical group**, because a country
+missing from the A–Z run reads as a bug to whoever is scrolling for it,
+and both options carry the same value.
+
+`tools/check_web.py` gained a check that every promoted code names a
+real country. `form.js` skips one that does not, which is right on a
+live page and is exactly what makes a typo invisible: the country is
+simply absent from the top of the list, and the only way to notice is
+to know it should have been there.
+
+### 5. Splitting dashboard, admin and export into separate pages
+
+✅ **Built as a split by sensitivity rather than by feature.**
+`admin.html` still does one decrypt and holds the table, the CSV and
+the charts; `dashboard.html` is a new page that never sees plaintext,
+takes no key and no token, and reads a published aggregate.
+
+### 6. The admin page granting access to the export page
+
+✅ **Built as the only form of it that is not theatre.** `admin.html`
+has a Publish button, and what it grants access to is the public
+dashboard — a page that can be handed to anyone, permanently, with
+nothing to revoke, because it never contained anything worth
+protecting.
+
+### Rethinking 5 and 6
+
+**Why splitting the keyholder page three ways costs more than it
+looks.** Every page that shows plaintext has to fetch and decrypt for
+itself. Three such pages means either entering the token and the key
+three times, or keeping key material somewhere all three can reach —
+`sessionStorage`, `localStorage`, or a URL fragment. This project
+touches none of those on purpose, and `admin.html` says in as many
+words that closing the tab discards everything. Trading that for
+navigation is trading the security model for a menu. There is a
+smaller cost too: three pages means three copies of a content
+security policy that must not drift, and three more entries for
+`tools/check_web.py` to hold to the shared head.
+
+**But the ask is pointing at something real.** An eighteen-column
+table of handles, weights and kinks and a chart of median weight are
+not the same kind of data, and they do not have the same audience.
+The split worth making is along that line rather than along the
+feature line.
+
+**And "give access" has no meaning in this architecture, which is a
+feature.** There are no accounts and no sessions. A static page cannot
+gate another static page: anyone can type the URL, and any check
+written in the page is visible in View Source to the person it is
+meant to stop. Access here is possession of two things, and they
+behave differently — the export token is a Worker secret and is
+**revocable**; the private key, once handed to someone, is
+**permanently theirs**, and every row it opens is theirs for good.
+So an admin page could plausibly *issue* a scoped export token, and
+that would get someone the ciphertext and nothing else. It could
+never grant the ability to read plaintext, and it could never take it
+back.
+
+**One build serves 1, 5 and 6.** A **public dashboard page reading a
+published aggregate snapshot** — no token, no key, no personal data
+in the file it loads:
+
+- it is goal 1, since a snapshot is exactly what a daily refresh
+  produces;
+- it is goal 5 done along the line that matters, since the dashboard
+  leaves the page that holds the corpus in the clear and the
+  keyholder page keeps one decrypt for the table and the CSV;
+- it is goal 6 in the only form that is not theatre — a page that can
+  be handed to anyone, permanently, with nothing to revoke, because
+  it never contained anything worth protecting.
+
+If real delegation is wanted later — someone who can pull the actual
+rows — the honest options stay what the handover table already says:
+a per-holder export token from the Worker (revocable, gets ciphertext
+only), or a second keypair for the delegate so encryption to them can
+be stopped going forward (option C above, no revocation of what was
+already sent).
+
+### The order it was built in
+
+The sample fixture first, then 3, 4, 2, and the snapshot last. The
+fixture came first because none of the rest could be looked at without
+data to draw — see `dev/README.md`, which specced it before it existed
+and now documents it.
+
+## The public dashboard
+
+`dashboard.html`. No key, no token, no account: it fetches one
+published aggregate and hands it to the same function that draws
+`admin.html`'s charts.
+
+**The aggregation happens in the keyholder's browser, and only the
+result is published.** That is the sentence the whole feature turns on.
+A daily public dashboard sounds like it needs a server that can read
+the submissions, and a server that can read the submissions is the one
+thing this design does not have. Computing the numbers where the
+plaintext already is means nothing new ever holds the private key.
+
+### Why aggregates and not de-identified rows
+
+Publishing rows with the handles stripped would have been far less
+code. It is also not de-identification: `female, GB, 241 lb, 5 ft 8 in`
+is a person to anyone who knows her, and four such columns are a
+fingerprint even when the name column is blank. Counts, medians and
+histogram bins are not. So the published document has no rows in it at
+all.
+
+### One render function, two pages
+
+`render()` takes a **snapshot**, never rows — and `admin.html` draws
+its own charts by building a snapshot of its own entries first. That is
+not a detour. It means the keyholder's dashboard and the public one are
+the same code path, so Publish is a preview rather than a leap: what
+goes out was drawn by the same function that drew what is on screen.
+Two render functions would have been two things that look alike until
+one of them is wrong.
+
+The only difference between the two documents is a flag:
+
+| | keyholder | published |
+| --- | --- | --- |
+| Series labels | `@handle` | `Person 1`, `Person 2` |
+| Height-change panel | shown | dropped entirely |
+| Everything else | identical | identical |
+
+The pseudonyms are numbered within one document and renumbered every
+time, so two snapshots cannot be lined up to follow one person across
+them. That "Person 1" is the most frequent submitter is already visible
+from the chart, so the numbering gives away nothing the picture does
+not.
+
+The data-quality panel is dropped rather than pseudonymised because it
+is a tool for whoever can act on it. Published, it is a list of
+strangers' heights and no use to anybody.
+
+### Weight over time is opt-in
+
+It is the one part of a snapshot still about individuals, pseudonyms or
+not: anyone who knows what someone weighs may recognise their line. So
+the checkbox is off by default and the keyholder ticks it. That is the
+right place for the decision — it is theirs, it depends on who is in
+the data, and it can be reversed by republishing without it.
+
+### Three rules the format follows
+
+- **Both counting bases and both unit systems are precomputed.** The
+  public page has no rows, so it cannot recompute either. A toggle it
+  cannot honour is a toggle that would have to be removed.
+- **It carries the time it was computed, and the page shows it** — in
+  words and as a timestamp, and it says so plainly past two days. A
+  dashboard quietly showing last month's numbers is worse than one that
+  admits it is stale, and the ordinary failure of anything that
+  refreshes this is silence rather than an error.
+- **The Worker stores the bytes that arrived.** It parses the body only
+  far enough to refuse something that is not JSON, and never
+  re-serialises it. This endpoint has no opinion about what a snapshot
+  contains — the page that built it does — and re-encoding here would
+  be a second place the format could change without anyone deciding to.
+
+### What the endpoint gained
+
+`POST /snapshot` and `DELETE /snapshot`, both gated by the export
+token, and `GET /snapshot`, gated by nothing. That asymmetry is the
+point: writing and retracting are keyholder actions, and reading is
+what the page is for. The `snapshots` table holds exactly one row,
+forced by a `CHECK` — a history of snapshots would be more published
+data about the same people, retained for nobody. Publishing replaces.
+
+These are the only `UPDATE` and `DELETE` paths anywhere in the Worker.
+The submissions table remains strictly append-only, and nothing about a
+snapshot can be turned back into a submission: if it is lost, the
+keyholder presses Publish again.
+
+### Unpublishing needs the token and not the key
+
+The first version of this shipped without a retraction path at all, on
+the reasoning that republishing without a chart was enough. That was
+wrong, and worth recording as wrong: it answered "change what is
+published" and ignored "take it down". The only route left was opening
+the Cloudflare console and writing a `DELETE`, and the moment somebody
+wants to retract a snapshot is precisely the moment they have realised
+it says more than they meant — which is not the moment for a dashboard
+login and hand-typed SQL.
+
+So there is a `DELETE` route and an Unpublish button, and the button
+sits **outside everything the private key gates**, in a card that also
+reports what is currently published. Two properties follow, and both
+are the point rather than conveniences:
+
+- **Retracting needs only the token.** Requiring the key would mean
+  decrypting the entire corpus in order to remove something derived
+  from it — backwards, and slowest at exactly the wrong time.
+- **Reading the published state needs nothing at all.** It is the same
+  public route the dashboard reads, so the export page can say what is
+  live before anyone has typed a credential.
+
+Deleting nothing returns success. Someone pressing Unpublish twice, or
+pressing it when nothing was published, has got what they wanted; an
+error there would read as "it did not work" and invite a retry against
+a system that had already done the thing.
+
+`HANDOFF.md` carries the same instruction as a `curl`, for the case
+where the page itself is what is unreachable.
+
+### What this cost check 6
+
+`tools/check_web.py` used to hold every file that touched the network
+to naming `BinderCrypto`. `dashboard.html` is the first page that
+*reads* without sending, and holding it to that rule would have meant
+either loading decryption onto a page with no use for it or turning the
+check off. The rule now says what it always meant: a file that **sends
+a body** must encrypt. Reading is not the risk — the export returns
+ciphertext and the snapshot was published on purpose.
+
 ## Open questions
 
-None open. Both of the questions this document carried are settled and
-recorded below.
+None open. All three that this section's goals raised were answered on
+2026-08-05 and are recorded under "Next goals" above, along with the
+two the document carried from the start.
 
 **Settled 2026-08-04 — imperial height is two inputs.** Feet and
 inches, as separate boxes, which is how people think about their height
@@ -727,3 +1093,25 @@ rows (nothing stops writes), the admin's own machine being compromised
 while the key is in use, or a submitter lying. Traffic analysis is also
 unaddressed — the storage owner can see how many submissions arrive and
 when, just not what they say.
+
+**The published snapshot is a deliberate exception, and worth stating
+plainly.** It is the one thing here anyone can read: group size, group
+medians, and the shape of the distributions. That is the feature. Two
+honest caveats come with it:
+
+- **Small numbers say more than large ones.** A breakdown over eleven
+  people is close to a list of them, and "1 person, Portugal,
+  non-binary" is a description of somebody. This matters most while the
+  group is small, which is exactly when the dashboard is least
+  interesting — the answer if it bites is to untick weight over time
+  and republish, not to redesign the format.
+- **A weight history is the most identifying thing on it**, pseudonyms
+  and renumbering notwithstanding, because anyone who knows what a
+  person weighs can look for their line. That is why it is off unless
+  the keyholder turns it on, and why the choice sits with them rather
+  than in this document.
+
+What the snapshot cannot do is leak a handle, an individual row, or
+anything that would let a stranger be matched to a submission by name.
+`dev/dashboard.test.mjs` asserts the first of those directly, over a
+corpus built for it.

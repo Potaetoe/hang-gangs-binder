@@ -9,17 +9,34 @@ It is kept in the repo so the endpoint's behaviour is reviewable and so
 a new owner can stand up their own copy without reverse engineering the
 one that exists.
 
-Two routes and nothing else:
+Four routes and nothing else:
 
 | Route | Who can call it | What it does |
 | --- | --- | --- |
 | `POST /submit` | anyone, from an allowed origin | appends one row of ciphertext |
 | `GET /export` | anyone holding the export token | returns every row |
+| `POST /snapshot` | anyone holding the export token | replaces the published aggregate |
+| `GET /snapshot` | anyone, from an allowed origin | returns it |
+| `DELETE /snapshot` | anyone holding the export token | takes it down |
 
 It never decrypts, holds no key, and cannot read what it stores. The
 export token is not what keeps the data confidential — the rows are
 ciphertext either way — it just stops the corpus being casually
 harvestable. See DESIGN.md, "Export".
+
+`GET /snapshot` is the one route with no token on it, and that is
+deliberate: what it returns has no handles and no rows in it, only
+counts, medians and histogram bins. The Worker cannot compute a
+snapshot — doing that requires reading the submissions — so it is built
+in the keyholder's browser and this endpoint only holds the result. See
+DESIGN.md, "The public dashboard".
+
+`DELETE /snapshot` is the only destructive route here, and the only one
+in the Worker at all — the submissions table has no `DELETE` and no
+`UPDATE` path and is not touched by it. It needs the export token and
+**not** the private key, so a retraction never waits on decrypting the
+corpus first. Deleting nothing succeeds, so pressing Unpublish twice is
+not an error.
 
 ## Setting it up
 
@@ -68,6 +85,25 @@ owner's site, not keep quietly writing rows from it.
 `server/wrangler.toml` records the same bindings for anyone who would
 rather deploy from the command line than the dashboard.
 
+## Updating an existing deployment
+
+`schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so re-running the whole
+file against a live database is safe and adds whatever is missing
+without touching what is there. That is the update path: paste
+`schema.sql` into the D1 console again, then paste `worker.js` into the
+Worker editor and deploy.
+
+**The snapshot feature needs both halves**, and the failure if only one
+is done is quiet in the usual way:
+
+- Worker updated, table missing → Publish returns a 500 and the public
+  dashboard stays empty.
+- Table created, Worker not updated → Publish gets a 404 from a route
+  that does not exist yet, which reads as "Not found" rather than
+  "you have not deployed this".
+
+Neither breaks the form or the export, which keep working throughout.
+
 ## Changing it
 
 Run the checks before pasting a new version into the dashboard:
@@ -78,6 +114,6 @@ node dev/worker.test.mjs
 
 That exercises the real routing, validation and CORS logic against a
 stub database — no account and no network needed. What it cannot check
-is the part only the dashboard knows: that `DB` is bound and
-`EXPORT_TOKEN` is set. A Worker missing either will pass every test here
-and fail on the first real request.
+is the part only the dashboard knows: that `DB` is bound, that
+`EXPORT_TOKEN` is set, and that both tables exist. A Worker missing any
+of them will pass every test here and fail on the first real request.

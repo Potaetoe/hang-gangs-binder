@@ -406,19 +406,56 @@
       return;
     }
 
-    // Built here rather than in the HTML: 250 <option> tags would bury
-    // the six fields that matter in the page a reviewer most needs to
-    // read.
+    /*
+     * The country list, built here rather than in the HTML: 250
+     * <option> tags would bury the six fields that matter in the page a
+     * reviewer most needs to read.
+     *
+     * Two groups. A short promoted block first, then everyone
+     * alphabetically - and the promoted countries appear in both, which
+     * is deliberate: a country missing from the A-Z run reads as a bug
+     * to whoever is scrolling for it, and both options carry the same
+     * value so the record cannot tell which was used.
+     *
+     * <optgroup> rather than a drawn separator. Its label is not
+     * selectable, a screen reader announces which group an option is
+     * in, and it needs no styling to be understood - a "--------" row
+     * is an option that can be chosen and stored.
+     */
     const country = $("country");
     const countries = root.BINDER_COUNTRIES || {};
-    Object.keys(countries)
-      .sort(function (a, b) { return countries[a].localeCompare(countries[b]); })
-      .forEach(function (code) {
+
+    function addOptions(parent, codes) {
+      codes.forEach(function (code) {
+        // A promoted code with no country behind it is skipped rather
+        // than rendered as an empty row. tools/check_web.py fails the
+        // build on one, so this is the safe half of that pair.
+        if (!countries[code]) return;
         const option = document.createElement("option");
         option.value = code;
         option.textContent = countries[code];
-        country.appendChild(option);
+        parent.appendChild(option);
       });
+    }
+
+    function addGroup(label, codes) {
+      const group = document.createElement("optgroup");
+      group.label = label;
+      addOptions(group, codes);
+      country.appendChild(group);
+    }
+
+    const promoted = root.BINDER_COUNTRIES_PROMOTED || [];
+    if (promoted.length) addGroup("Most common", promoted);
+
+    const alphabetical = Object.keys(countries).sort(function (a, b) {
+      return countries[a].localeCompare(countries[b]);
+    });
+    if (promoted.length) {
+      addGroup("All countries", alphabetical);
+    } else {
+      addOptions(country, alphabetical);
+    }
 
     /*
      * Reporting problems. Declared before the unit toggle because
@@ -476,9 +513,13 @@
     const unitInputs = Array.prototype.slice.call(
       document.querySelectorAll('input[name="units"]'));
 
+    // The fallback matches the radio index.html checks. It should be
+    // unreachable - a radio group with a `checked` member always has
+    // one - but if the markup ever loses that attribute, the page and
+    // this function should at least be wrong about the same thing.
     function currentUnits() {
       const chosen = unitInputs.filter(function (i) { return i.checked; })[0];
-      return chosen ? chosen.value : "metric";
+      return chosen ? chosen.value : "imperial";
     }
 
     function applyUnits() {

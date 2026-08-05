@@ -10,12 +10,13 @@ nothing to log into. Open the page, fill the form, done.
 service that stores them cannot read them. Only someone holding the
 project's private key can, and that key is not stored online anywhere.
 
-> **Status: not open yet.** The site, the page shell and the storage
-> endpoint are built, deployed and talking to each other, and the
-> keypair exists — the public half is published, the private half is
-> held offline. The form and the export tool are not built, so nothing
-> collects data yet and nothing can. See [DESIGN.md](DESIGN.md) for
-> what is being built, in what order, and why.
+> **Status: open.** The form, the storage endpoint and the export tool
+> are built, deployed and verified end to end against the live site.
+> The keypair exists — the public half is published, the private half is
+> held offline. There is also a [public
+> dashboard](https://potaetoe.github.io/hang-gangs-binder/dashboard.html)
+> showing what the submissions add up to, with nobody's name in it. See
+> [DESIGN.md](DESIGN.md) for how it all fits together and why.
 
 ---
 
@@ -28,7 +29,21 @@ Optional: gender, which roles you take in the kink (feeder, feedee,
 gainer, fat admirer), and your country.
 
 Weight and height can be entered in either pounds and inches or
-kilograms and centimetres — there is a toggle.
+kilograms and centimetres — there is a toggle, and it starts on
+imperial. Whichever you use, both are stored, along with exactly what
+you typed.
+
+## What is public
+
+The [dashboard](https://potaetoe.github.io/hang-gangs-binder/dashboard.html)
+shows totals: how many people, the middle weight and height, and how
+the answers are spread. It has no Telegram handles in it and no
+individual entries — only counts, medians and distributions, worked out
+before anything is published. It updates when the keyholder publishes,
+and it says on the page how old the figures are.
+
+Nothing else is public. The submissions themselves are ciphertext that
+only the private key opens.
 
 ## Running it locally
 
