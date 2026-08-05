@@ -95,6 +95,14 @@ jobs:
       - name: Check the dashboard's arithmetic
         run: node dev/dashboard.test.mjs
 
+      # Every interactive page boots through ui.js now, and broken shared
+      # wiring does not throw - it renders a page that looks finished and
+      # does nothing. This suite loads the shipped file's real bytes under
+      # a document stub, so it also holds the no-network boundary that
+      # check 6 depends on.
+      - name: Check the shared UI wiring
+        run: node dev/ui.test.mjs
+
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
         # the endpoint broken is still a broken release. Since the
