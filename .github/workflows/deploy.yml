@@ -27,20 +27,23 @@ name: Verify and deploy
 # and as of 2026-08-05 they deliberately do. See server/README.md.
 # ---------------------------------------------------------------------
 
+# The checks run on pull requests as well as on main. Until two agents
+# started working here a push *was* the review, so gating only main was
+# enough; under branch-and-review it would mean every check ran after the
+# merge, which is the wrong way round. The deploy job stays main-only -
+# see its `if` below.
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
+# Read-only by default. The two write scopes a Pages release needs are
+# granted to the deploy job alone, so a pull request from a branch cannot
+# reach them even if something in the verify job goes wrong.
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-# Let an in-flight deploy finish rather than cancelling it midway.
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   verify:
@@ -103,7 +106,21 @@ jobs:
 
   deploy:
     needs: verify
+    # A pull request gets the checks and nothing else. Publishing is what
+    # merging to main is for, and a release triggered from a branch would
+    # make the site something other than what main says it is.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # Let an in-flight deploy finish rather than cancelling it midway.
+    # Job-level rather than workflow-level, so pull-request checks do not
+    # queue behind a release they are not going to perform.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
