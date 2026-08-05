@@ -74,6 +74,23 @@ messy as it needs to be.
   the real `form.js`, encrypted by the real `crypto.js`, decrypted, and
   turned into a CSV row.
 
+- `xlsx.test.mjs` — exercises `apps/web/xlsx.js`, which writes the
+  spreadsheet export: a ZIP of XML parts, built by hand because
+  `admin.html` may not load a library.
+
+  ```bash
+  node dev/xlsx.test.mjs
+  ```
+
+  Its failure mode is the opposite of the CSV's and needs a different
+  kind of check. A CSV with a quoting bug opens cleanly and is quietly
+  wrong; an .xlsx with a bad checksum, an overstated central directory
+  or an unescapable character does not open at all, and the message a
+  keyholder gets says only that the file is corrupt. So the last
+  section is a small ZIP **reader**: it walks the central directory,
+  extracts every part and re-checks every CRC. That found a real bug —
+  the end-of-central-directory record was measuring itself.
+
 - `dashboard.test.mjs` — exercises the pure half of
   `apps/web/dashboard.js`: averages, binning, breakdowns, the
   people-versus-entries split, and the weight-over-time series.

@@ -237,6 +237,7 @@
     let rows = [];
     let csv = "";
     let json = "";
+    let xlsx = null;
     let urls = [];
 
     function say(message, tone) {
@@ -254,8 +255,11 @@
       urls = [];
     }
 
-    function offer(id, text, type, extension) {
-      const url = URL.createObjectURL(new Blob([text], { type: type }));
+    // `content` is a string for the text formats and a Uint8Array for
+    // the spreadsheet. Blob takes either, which is the whole reason
+    // this needed no other change to gain a binary download.
+    function offer(id, content, type, extension) {
+      const url = URL.createObjectURL(new Blob([content], { type: type }));
       urls.push(url);
       const link = $(id);
       link.href = url;
@@ -267,6 +271,7 @@
       rows = [];
       csv = "";
       json = "";
+      xlsx = null;
       revoke();
       $("tbody").textContent = "";
       $("summary").textContent = "";
@@ -399,6 +404,12 @@
       rows = entries.map(rowFor);
       csv = toCsv(rows);
       json = toJson(entries);
+      // The rows as they are, not as the CSV writes them: csvCell's
+      // formula guard must not reach this file. A cell typed as a
+      // string in a spreadsheet is a string, so the leading apostrophe
+      // that stops Excel executing a CSV cell would just be an
+      // apostrophe here. See apps/web/xlsx.js.
+      xlsx = root.BinderXlsx.build(COLUMNS, rows, "Submissions", Date.now());
       render(submissions.length, failures);
       $("run").disabled = false;
     });
@@ -672,6 +683,9 @@
 
       revoke();
       offer("download", csv, "text/csv;charset=utf-8", "csv");
+      offer("download-xlsx", xlsx,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xlsx");
       offer("download-json", json, "application/json;charset=utf-8", "json");
 
       show($("results"), true);

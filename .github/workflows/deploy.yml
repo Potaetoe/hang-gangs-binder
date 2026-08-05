@@ -74,6 +74,13 @@ jobs:
       - name: Check the export's CSV
         run: node dev/admin.test.mjs
 
+      # An .xlsx is a ZIP of XML written by hand here, because the page
+      # that builds it may not load a library. Its failure is not a
+      # wrong number - it is a file that will not open at all, and the
+      # message the keyholder gets says only that it is corrupt.
+      - name: Check the spreadsheet
+        run: node dev/xlsx.test.mjs
+
       # A median over the wrong rows, or a person counted once per
       # submission, produces a chart that is wrong and looks right.
       - name: Check the dashboard's arithmetic

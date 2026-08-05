@@ -151,13 +151,23 @@
     <div class="card" id="results" hidden>
       <p class="eyebrow">Result</p>
       <p id="summary"></p>
-      <div class="row">
+      <!--
+        Three downloads, three buttons. The JSON link used to be small
+        grey text beside a filled button, which made two equal choices
+        look like a control and an afterthought. They are all the same
+        kind of thing now; Excel and JSON are outlined rather than
+        filled only because the CSV is the one most people want.
+      -->
+      <div class="row buttons">
         <a id="download" class="primary" download>Download CSV</a>
-        <a id="download-json" class="secondary-link" download>Download JSON</a>
+        <a id="download-xlsx" class="secondary" download>Download Excel</a>
+        <a id="download-json" class="secondary" download>Download JSON</a>
       </div>
       <p class="hint">
-        CSV opens in a spreadsheet. JSON keeps the nesting and has no
-        quoting rules to trip over — use it if something else is going to
+        Excel keeps the numbers as numbers, so a weight sorts as a weight
+        and a handle of digits stays a handle. CSV is plain text that
+        anything can read. JSON keeps the nesting the other two have to
+        flatten — use it if something other than a person is going to
         read this.
       </p>
       <div class="table-scroll">
@@ -298,6 +308,7 @@
 <script src="config.js"></script>
 <script src="crypto.js"></script>
 <script src="dashboard.js"></script>
+<script src="xlsx.js"></script>
 <script src="admin.js"></script>
 <script src="nav.js"></script>
 <script src="theme.js"></script>

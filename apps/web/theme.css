@@ -525,6 +525,13 @@ input[aria-invalid="true"] { border-color: var(--warn-text); }
 
 .row input[type="text"] { flex: 1; }
 
+/* A row of buttons rather than a control and its unit, and the only
+   one that wraps. Three downloads come to about 330px, which fits a
+   375px phone and does not fit a 320px one - and `.row` itself must
+   not wrap, because the pair it was made for is a number and the "ft"
+   that belongs to it. */
+.row.buttons { flex-wrap: wrap; }
+
 .suffix {
   font-size: var(--text-sm);
   color: var(--muted);
@@ -597,7 +604,11 @@ button.primary:disabled {
   cursor: progress;
 }
 
-button.secondary {
+/* `a.secondary` for the same reason `a.primary` exists: a download is a
+   link because it points at a blob URL, but it is the same action as a
+   button and should not look like prose. */
+button.secondary,
+a.secondary {
   font: inherit;
   color: var(--muted);
   background: transparent;
@@ -605,6 +616,16 @@ button.secondary {
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
+}
+
+a.secondary {
+  display: inline-block;
+  text-decoration: none;
+}
+
+a.secondary:hover {
+  border-color: var(--primary);
+  color: var(--text);
 }
 
 button.secondary:hover {
