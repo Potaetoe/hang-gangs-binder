@@ -555,13 +555,37 @@ is independent of all of this and can land whenever.
 ### `dev/dashboard.test.mjs` gains the assertion that was missing
 
 The existing test asserts no handle appears in a published document.
-That always passed and was never the question. Add:
+That always passed and was never the question.
 
-> Two snapshots of the same corpus, one with an extra entry, share no
-> exact series point.
+**This section originally specified the missing assertion as:**
 
-That is the property the quantisation exists for, and it is the one that
-was claimed in prose and never checked.
+> ~~Two snapshots of the same corpus, one with an extra entry, share no
+> exact series point.~~
+
+**That criterion is not achievable, and the correction is recorded here
+rather than quietly rewritten** — for the same reason the linkage claim
+it was meant to fix is recorded as false rather than deleted.
+
+Quantisation is a deterministic function of a point. An entry that did
+not change quantises the same way in both documents, so the two
+snapshots go on sharing points — and coarsening makes them *more* alike,
+not less. Demonstrated while building step 8: all three of one person's
+points survived into the second snapshot unchanged. Only per-publication
+randomness could satisfy the sentence as written, and that would make
+the chart lie without preventing an approximate match.
+
+**What quantisation actually buys is ambiguity, not absence.** A
+published point stops being a *unique* key, because several people's
+different measurements land on the same date and the same bin. So the
+assertions are:
+
+> A published point carries the date, not the instant, and a weight on
+> the histogram's own bin edge. Two people with different measurements
+> share one published point. The keyholder's own snapshot keeps full
+> precision. The shape of a line survives.
+
+All five landed in `dev/dashboard.test.mjs`, each confirmed armed by
+mutation in both directions.
 
 ### CI
 

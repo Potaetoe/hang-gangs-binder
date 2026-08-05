@@ -460,6 +460,96 @@ await check("the height panel is dropped when publishing", () => {
 await check("weight over time can be left out entirely", () =>
   snapshotOf(CORPUS, { identify: false, series: false }).series === null);
 
+/* ------------------------------------------------------------------ */
+/* Quantisation of the published series.                               */
+
+/*
+ * Why these checks exist, and why they are not the check that was
+ * specified.
+ *
+ * DESIGN.md once claimed renumbering pseudonyms stopped two snapshots
+ * being lined up to follow one person. That was false: the series
+ * carried an exact millisecond instant and a weight to a tenth, so
+ * Person 3's line reappeared verbatim in the next document with one
+ * point on the end. Matching was a join on an exact key.
+ *
+ * REDESIGN.md Part 5 then specified the missing test as "two snapshots
+ * of the same corpus, one with an extra entry, share no exact series
+ * point". **That criterion cannot hold, and correcting it is part of
+ * this step.** Quantisation is a deterministic function of a point, so
+ * an entry that did not change quantises the same way in both
+ * documents - the shared points are guaranteed, and coarsening makes
+ * them *more* alike, not less. Only per-publication randomness could
+ * satisfy the sentence as written, and that would make the chart lie
+ * without stopping an approximate match anyway.
+ *
+ * What quantisation actually buys is **ambiguity**: a published point
+ * stops being a unique key, because several people's different
+ * measurements land on the same date and the same bin. That is the
+ * property worth asserting, and it is what these checks assert.
+ */
+const DAY = 86400000;
+
+/* Two people whose raw measurements differ, on times of day that
+ * differ, chosen so that both collapse onto one published point. A
+ * fixture of midnight timestamps and bin-aligned weights would pass
+ * every check below without quantisation existing at all. */
+const QUANT = [
+  entry({ id: 20, telegram: "alpha", lb: 201.3, kg: 91.3,
+          submittedAt: "2026-02-03T13:47:12.345Z" }),
+  entry({ id: 21, telegram: "alpha", lb: 231.7, kg: 105.1,
+          submittedAt: "2026-06-11T08:15:00.000Z" }),
+  entry({ id: 22, telegram: "beta", lb: 214.8, kg: 97.4,
+          submittedAt: "2026-02-03T04:02:59.999Z" }),
+  entry({ id: 23, telegram: "beta", lb: 250.0, kg: 113.4,
+          submittedAt: "2026-09-20T19:30:00.000Z" }),
+];
+
+const publishedPoints = (rows) =>
+  snapshotOf(rows, { identify: false }).series
+    .reduce((all, line) => all.concat(line.points), []);
+
+await check("a published point carries the date, not the instant", () =>
+  publishedPoints(QUANT).every((p) => p.at % DAY === 0));
+
+/* The bin the histogram already uses - 20 lb and 10 kg. Each system
+ * reads its own stored field and is floored on its own; converting one
+ * into the other would put a second copy of the conversion here, free
+ * to drift from form.js. */
+await check("a published weight sits on the histogram's bin edge", () =>
+  publishedPoints(QUANT).every((p) => p.imperial % 20 === 0 && p.metric % 10 === 0));
+
+/* The exact time of a submission was never a thing anybody decided to
+ * publish - it was simply what timeOf happened to return. */
+await check("no published point carries a submission's exact time", () =>
+  publishedPoints(QUANT).every((p) => p.at !== Date.parse("2026-02-03T13:47:12.345Z")));
+
+/* It never leaves the keyholder's tab, so it keeps every decimal. */
+await check("the keyholder's own snapshot keeps full precision", () => {
+  const points = snapshotOf(QUANT, { identify: true }).series
+    .reduce((all, line) => all.concat(line.points), []);
+  return points.some((p) => p.at === Date.parse("2026-02-03T13:47:12.345Z")) &&
+    points.some((p) => p.imperial === 201.3 && p.metric === 91.3);
+});
+
+/* The property the whole step is for. Two people, different weights,
+ * different times of day - one published point. A reader joining on it
+ * cannot tell which line it belonged to. */
+await check("a published point is ambiguous rather than a unique key", () => {
+  const snap = snapshotOf(QUANT, { identify: false });
+  const key = (p) => [p.at, p.imperial, p.metric].join("|");
+  const first = snap.series.map((line) => key(line.points[0]));
+  return first.length === 2 && first[0] === first[1];
+});
+
+/* Coarsening the points must not flatten what the chart is for. */
+await check("the shape of a line survives quantisation", () => {
+  const line = snapshotOf(QUANT, { identify: false }).series
+    .find((l) => l.points.length === 2);
+  return line.points[0].imperial < line.points[1].imperial &&
+    line.points[0].at < line.points[1].at;
+});
+
 /*
  * Both bases and both unit systems are precomputed. The public page has
  * no rows, so anything it cannot find in here is a toggle that would

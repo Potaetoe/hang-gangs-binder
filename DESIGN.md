@@ -1478,6 +1478,24 @@ ambiguous instead of exact, and the chart loses precision that a 620-
 pixel plot could not draw in the first place. The keyholder's own
 snapshot keeps full precision, because it never leaves their tab.
 
+**Built 2026-08-05.** `dashboard.js`'s `quantise()`, applied only when
+`identify` is false. Each unit system is floored on its own stored field
+rather than one being converted into the other — converting would put a
+second copy of `form.js`'s conversion here, free to drift.
+
+**A second correction, found while building it.** `REDESIGN.md`
+specified the missing test as "two snapshots of the same corpus, one
+with an extra entry, share no exact series point". **That cannot be
+achieved by rounding, and the sentence above should not be read as
+promising it.** Quantisation is deterministic: an entry that did not
+change quantises identically in both documents, so the two snapshots go
+on sharing points, and coarsening makes them *more* alike rather than
+less. The guarantee is that a shared point no longer *identifies* a
+line, because several people land on the same date and bin — ambiguity,
+not absence. Anyone reasoning about what the published dashboard
+protects should hold the weaker claim, and the opt-in remains the
+load-bearing control.
+
 Two smaller things fall out of it and both are improvements. The shape
 of a line survives quantisation, so the chart still says what it was
 for. And a submission's exact time stops being published at all, which
@@ -1661,8 +1679,11 @@ the two irreversible steps happen where they can be checked.
 
 8. **Quantise the published series** — date and histogram bin — with the
    test that the correction above showed was missing: not "no handle
-   appears", which always passed, but "two snapshots of the same corpus
-   plus one entry do not share an exact point".
+   appears", which always passed, but that a published point is
+   *ambiguous* rather than a unique join key. **Done 2026-08-05.** The
+   originally specified assertion ("two snapshots do not share an exact
+   point") turned out to be unachievable by rounding; see the correction
+   under "The members' dashboard".
 
 9. **`tools/check_web.py`.** Check 6 needs a third revision and two new
    checks are worth having; see below.

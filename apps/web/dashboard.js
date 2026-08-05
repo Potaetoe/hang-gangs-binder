@@ -486,8 +486,14 @@
    * Handles, or pseudonyms numbered in the order the charts already
    * reveal. "Person 1" being the most frequent submitter is visible
    * from the chart itself, so the numbering gives nothing away that the
-   * picture does not - and it is assigned fresh each time, so two
-   * snapshots cannot be lined up to follow one person across them.
+   * picture does not.
+   *
+   * It is assigned fresh each time, which prevents *label* continuity
+   * between two documents - and nothing more than that. This comment
+   * used to claim renumbering meant "two snapshots cannot be lined up
+   * to follow one person across them", which was false: the points
+   * themselves were the join key. See quantise() below, and DESIGN.md,
+   * "Renumbering does not prevent linkage - a correction".
    */
   function labeller(identify) {
     if (identify) {
@@ -500,6 +506,47 @@
     };
   }
 
+  const DAY = 86400000;
+
+  /*
+   * A published point carries the date rather than the instant, and
+   * each weight on the bin edge the histogram already uses.
+   *
+   * This is what stands between the published series and cross-snapshot
+   * linkage. An exact millisecond plus a weight to a tenth was a join
+   * key: publish twice and one person's line reappeared verbatim in the
+   * second document with a point on the end, so following them across
+   * was a join rather than an analysis. Renumbering the pseudonyms
+   * never touched that - see labeller() above.
+   *
+   * What this buys is **ambiguity, not absence**. Quantising is
+   * deterministic, so an entry that did not change still quantises the
+   * same way in both documents; the two snapshots go on sharing points.
+   * The difference is that a shared point no longer identifies a line,
+   * because several people's measurements land on the same date and the
+   * same bin. dev/dashboard.test.mjs asserts that directly, and records
+   * why the criterion REDESIGN.md originally specified - "share no
+   * exact series point" - is not achievable by any amount of rounding.
+   *
+   * Each system is floored on its own stored field rather than one
+   * being converted into the other. Converting would put a second copy
+   * of form.js's conversion here, free to drift from it; the same rule
+   * the unit toggle already follows.
+   *
+   * The chart loses precision a 620-pixel plot could not draw anyway,
+   * and the keyholder's own snapshot keeps every decimal, because it
+   * never leaves their tab.
+   */
+  function quantise(point) {
+    const lb = UNITS.imperial.weight.bin;
+    const kg = UNITS.metric.weight.bin;
+    return {
+      at: Math.floor(point.at / DAY) * DAY,
+      imperial: Math.floor(point.imperial / lb) * lb,
+      metric: Math.floor(point.metric / kg) * kg,
+    };
+  }
+
   function snapshotOf(entries, options, now) {
     const opts = options || {};
     const identify = opts.identify === true;
@@ -507,7 +554,10 @@
 
     const series = opts.series === false ? null :
       weightSeries(entries).map(function (line) {
-        return { label: label(line.telegram), points: line.points };
+        return {
+          label: label(line.telegram),
+          points: identify ? line.points : line.points.map(quantise),
+        };
       });
 
     return {
