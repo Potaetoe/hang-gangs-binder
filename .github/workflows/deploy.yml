@@ -60,6 +60,14 @@ jobs:
       - name: Check the encryption round-trips
         run: node dev/crypto.test.mjs
 
+      # The other half of the same failure. crypto.js proves the bytes
+      # survive; this proves the numbers going into them are the ones
+      # the submitter typed. A wrong conversion factor produces a
+      # plausible record, seals it perfectly, and is undiscoverable
+      # after the fact - there is no original to compare against.
+      - name: Check the form's conversions and validation
+        run: node dev/form.test.mjs
+
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
         # the endpoint broken is still a broken release.

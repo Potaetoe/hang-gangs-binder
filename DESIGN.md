@@ -299,15 +299,44 @@ archived rather than destroyed.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| Telegram username | yes | The only identifier. Normalised (strip a leading `@`, lowercase). |
-| Weight | yes | Stored canonically in kg, alongside what was typed. |
-| Height | yes | Stored canonically in cm, alongside what was typed. |
-| Units | — | lbs/in or kg/cm toggle; conversion happens client-side. |
+| Telegram username | yes | The only identifier. Normalised: a leading `@` and a `t.me/` link prefix are stripped, then lowercased. |
+| Weight | yes | Stored in **both** kg and lb, whichever was typed. |
+| Height | yes | Stored in **both** cm and feet+inches (and total inches), whichever was typed. |
+| Units | — | lb/ft+in or kg/cm toggle; conversion happens client-side. Which one was used is recorded. |
+| What was typed | — | The weight and height exactly as entered, as strings. |
 | Gender | no | male / female / nonbinary / other |
 | Roles | no | multi-select: feeder, feedee, gainer, fat admirer |
-| Country | no | dropdown, ISO 3166 list |
+| Country | no | dropdown, ISO 3166 list; the **code** is stored, not the name |
 | 18+ confirmation | yes | checkbox, recorded with the row |
 | Submitted at | — | timestamp, added client-side inside the ciphertext |
+
+### Why every row carries both unit systems
+
+An earlier draft of this table stored one canonical value — kg and cm —
+plus the raw text, and converted at export. Storing both was chosen
+instead, on the keyholder's instruction, and it is the better shape for
+two reasons beyond the asking:
+
+- **The conversion exists once.** Deriving pounds at export would put
+  this same arithmetic in `admin.html`, as a second copy free to drift
+  from the one in `form.js`. Two implementations of a conversion is two
+  chances to be wrong and one of them is not tested.
+- **The CSV is readable without the code.** An export that reads
+  `90.7 kg / 200 lb` is a file a person can use. One that reads `90.7`
+  and requires knowing the factor is a file that needs this repository
+  to interpret, which is the opposite of what `HANDOFF.md` is for.
+
+The cost is a few bytes inside a blob already padded to an AES block.
+
+What is **not** derived is the `entered` field: exactly what the
+submitter typed, kept verbatim as a string. Rounding is lossy in both
+directions, and "what did they actually say" is a question worth being
+able to answer without inverting a conversion.
+
+`feet` and `inches` are computed from the total rather than carried
+alongside it, so the two cannot disagree — and the rounding carry is
+handled, because 5 ft 11.98 in otherwise rounds to a height written
+`5 ft 12 in`. `dev/form.test.mjs` holds that case.
 
 Everything above is inside the encrypted blob. The stored row carries
 the ciphertext plus a server-side receipt timestamp — nothing else. In
@@ -327,8 +356,9 @@ duplicates happens at export.
 
 Every published page shares one head and one stylesheet. The shell was
 built before the form on purpose: the form and `admin.html` are the two
-pages that touch plaintext and keys, and both will start life as a copy
-of this one.
+pages that touch plaintext and keys. The form grew into this page rather
+than being copied from it — `index.html` *is* the form — so what is left
+to copy is `admin.html`.
 
 **A content security policy, in a `<meta>` tag.** `default-src 'none'`
 with `script-src 'self'`, so the page can load nothing but its own
@@ -461,11 +491,45 @@ The order is deliberate. State as of 2026-08-04:
    purpose — it arms on the day the file that handles cleartext is
    written, which is step 4.
 
-4. ⬜ **The form** — fields, unit toggle, country dropdown, 18+
-   checkbox, validation, encrypt, POST. **Next.** Blocked on the open
-   question below.
+4. ✅ **The form** — fields, unit toggle, country dropdown, 18+
+   checkbox, validation, encrypt, POST. Built on `index.html` itself
+   rather than a page of its own: this site does one thing, and a
+   landing page whose only content is a link to the form is a click
+   between a submitter and the only reason they came.
 
-5. ⬜ **`admin.html`** — token in, key in, decrypted CSV out.
+   `form.js` is split in two. The pure half — normalising, converting,
+   validating, building the record — touches no DOM and is exported as
+   `BinderForm`, so `dev/form.test.mjs` loads the shipped file under
+   Node the way the crypto and Worker tests already do. The wiring
+   returns early when there is no `document`.
+
+   That split is not tidiness. It is the same argument that put
+   `crypto.js`'s test before the form: **a wrong conversion factor
+   cannot be discovered after the fact.** It does not throw, it does not
+   render badly, and it produces a plausible number which is then sealed
+   correctly. There is no original kept anywhere to compare against — so
+   the arithmetic is tested, and CI runs it.
+
+   Two smaller decisions worth their reasons:
+
+   - **The unit toggle swaps which inputs exist**, rather than
+     relabelling one pair. Someone who types 200 into a pounds box and
+     then switches to metric has not become 200 kg, and a form that
+     quietly records that they have is a form that stores a lie. The
+     two systems have separate inputs, and validation reads only the
+     system in use.
+   - **The form refuses to open at all** when `crypto.subtle` is absent
+     or `config.publicKey` is `null`, and says which. Both are states a
+     submitter can do nothing about; the alternative is six filled
+     fields and a dead button. The `publicKey` case is what a fork
+     starts from.
+
+   `tools/check_web.py`'s sixth check is no longer vacuous — `form.js`
+   is the first file in `apps/web` that reaches the network, and it is
+   held to naming `BinderCrypto`, with `index.html` held to loading
+   `crypto.js`. Confirmed armed rather than assumed.
+
+5. ⬜ **`admin.html`** — token in, key in, decrypted CSV out. **Next.**
 
 6. 🔄 **`HANDOFF.md`** — written up front, from the transfer table
    above, and revisited as each piece lands. The original plan was to
@@ -476,22 +540,38 @@ The order is deliberate. State as of 2026-08-04:
 
 ### What exists now
 
-The site, the page shell and the storage endpoint, wired together and
-live; the key generator; a keypair, whose public half is published in
+The site, the storage endpoint and the form, wired together and live;
+the key generator; a keypair, whose public half is published in
 `config.js` and whose private half is held offline by the keyholder;
 and `crypto.js`, tested against both a fresh keypair and a stored
-fixture. A submitter visiting today sees an honest "not open yet" page.
-Nothing collects data, and nothing can — there is no form, and no page
-loads `crypto.js` yet. What is missing is the two ends that use it: the
-form, and `admin.html`.
+fixture. **The portal collects data.** A submitter fills in the form,
+their entry is encrypted in their browser and appended to D1 as
+ciphertext.
+
+What is missing is the other end: `admin.html`. Until it exists the
+rows accumulate and cannot be read back by anything with a user
+interface — the data is safe and the key is held, but there is no
+export. That is the next thing built, and it is the reason step 5 is
+not optional.
 
 ## Open questions
 
-- **Imperial height entry.** Two inputs (feet + inches) is what people
-  expect and is the fiddliest part of the form to validate; a single
-  decimal-inches field is trivial but nobody thinks in it. Undecided —
-  defaulting to two inputs unless someone says otherwise. **Blocks step
-  4**, and only step 4; nothing before it depends on the answer.
+None open. Both of the questions this document carried are settled and
+recorded below.
+
+**Settled 2026-08-04 — imperial height is two inputs.** Feet and
+inches, as separate boxes, which is how people think about their height
+and therefore how they will type it. A single decimal-inches field
+would have been trivial to validate and nobody would have filled it in
+correctly.
+
+The fiddly parts were the ones expected: an empty inches box means a
+round number of feet rather than an error, inches are rejected at 12 or
+more, and the rounding carry that turns 5 ft 11.98 in into 5 ft 12 in
+is handled. All three are in `dev/form.test.mjs`.
+
+Settled together with it: **every row stores both unit systems**, not
+just the canonical one — see "Why every row carries both unit systems".
 
 **Settled 2026-08-04 — who holds the private key.** The key is
 generated locally, by the person building this, who is therefore the

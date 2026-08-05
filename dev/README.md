@@ -38,6 +38,25 @@ messy as it needs to be.
   and teach `decrypt` to read both formats — the rows already stored
   cannot be rewritten.
 
+- `form.test.mjs` — exercises the pure half of `apps/web/form.js`:
+  normalising a Telegram handle, reading a number strictly, the unit
+  conversions in both directions, validation, and the record that gets
+  encrypted.
+
+  ```bash
+  node dev/form.test.mjs
+  ```
+
+  It exists for the same reason `crypto.test.mjs` does. A wrong
+  conversion factor does not throw and does not look wrong — it writes a
+  plausible number into a blob nobody can read back, and by the time
+  anyone notices there is no original left to correct it from. `form.js`
+  returns before touching the DOM when there is no `document`, which is
+  what lets this load the shipped file rather than a copy.
+
+  The last two checks run a real record through `crypto.js` and back,
+  which is where the two halves meet.
+
 - `crypto-browser-check.html` — the platform-dependent half of the same
   checks, in a real browser under the published pages' content security
   policy. Node is the same specification, which is why the Node test is
