@@ -1,11 +1,20 @@
 # Hang Gang's Binder — design
 
-A public submission portal. Anyone can submit their stats; exactly one
-person can read them back. No accounts for submitters, no relational
-database, hosted on GitHub Pages.
+A submission portal for one Telegram group. Members sign in with
+Telegram and submit their stats; whoever holds the key reads them back.
+Hosted on GitHub Pages, stored by a Cloudflare Worker that cannot read a
+single row of what it holds.
 
 This document records *why* the architecture is what it is, so the
 reasoning survives the conversation it came from.
+
+**The first version of this document opened with "no accounts for
+submitters", and meant it.** That was reversed on 2026-08-05 — see
+"Accounts" below, which records what forced it and what it cost. The
+reversal is narrower than it sounds: an account establishes *who is
+writing*, and changes nothing about who can *read*. Read access is still
+a file rather than a login, and that is still the property the whole
+design turns on.
 
 ---
 
@@ -25,17 +34,22 @@ the browser encrypting each submission before it leaves the page.
 ## The design
 
 ```
-  submitter's browser            Cloudflare Worker + D1        admin's browser
-  ───────────────────            ──────────────────────        ───────────────
-  fills the form
-  encrypts to the    ── HTTPS ─>  one row per submission,  <──  fetches the rows
-  admin PUBLIC key                each an opaque base64         decrypts with the
-  (baked into the                 blob plus a receipt           PRIVATE key, held
-  public repo)                    timestamp                     only on this machine
-                                                                exports CSV
+  member's browser             Cloudflare Worker + D1       keyholder's browser
+  ────────────────             ──────────────────────       ───────────────────
+  signs in with     ── HTTPS ─> verifies the payload
+  Telegram                     against the bot token,
+                               issues a session, and
+                               keeps no handle
+
+  fills the form               one row per submission:
+  encrypts to the   ── HTTPS ─> an opaque base64 blob,  <──  fetches the rows
+  keyholder's                  an account id, and a          decrypts with the
+  PUBLIC key                   receipt timestamp             PRIVATE key, held
+  (in the public repo)                                       only on this machine
+                                                             exports CSV
 ```
 
-Three properties fall out of this:
+Four properties fall out of this:
 
 1. **The storage provider cannot read the data.** Cloudflare sees
    base64. A breach of the database, a leaked API token, a subpoena to
@@ -44,7 +58,14 @@ Three properties fall out of this:
    for. It encrypts; it cannot decrypt. Publishing it in the repo is not
    a leak.
 3. **Read access is a file, not an account.** Which is what makes it
-   transferable — see below.
+   transferable — see below. Sign-in did not change this and could not:
+   an account authorises *writing*, and no flag in a database can hand
+   anybody the ability to decrypt.
+4. **The account id is not derived from anything about the person.** It
+   is an HMAC of a Telegram numeric id under a secret only the Worker
+   holds. Getting that wrong is the single most dangerous mistake
+   available in this design, and "Accounts" below spends most of its
+   length on why.
 
 ### Why not just a database with write-only rules
 
@@ -182,27 +203,301 @@ looks identical to a working one right up until it produces nothing.
 
 ### Export
 
-The admin opens `admin.html`, pastes in the export token and the private
-key, and gets a plaintext CSV back. The page fetches the ciphertext from
-the Worker and decrypts it in the browser; nothing is uploaded, and the
-private key never leaves the page.
+The admin signs in, supplies the private key, and gets a plaintext CSV
+back. The page fetches the ciphertext from the Worker and decrypts it in
+the browser; nothing is uploaded, and the private key never leaves the
+page.
+
+Until 2026-08-05 the first factor was an export token typed into a box.
+It is now an admin session, for the reasons under "Admin accounts" — the
+short version is that one shared bearer token can only be revoked for
+everybody at once. `EXPORT_TOKEN` still exists as break-glass and is no
+longer part of the ordinary path.
 
 Losing the Sheet meant losing a native export button, so the endpoint
-gains the read path the Sheet used to provide. It is gated by a bearer
-token held as a Worker secret. To be clear about what that token is for:
-**it is not what keeps the data confidential** — the rows are ciphertext
-whether or not the request is authorised, and Cloudflare could read them
-as readily as Google could have. The token exists so the corpus is not
-casually harvestable and so bulk reads are not anonymous. Confidentiality
-is the encryption's job, and only the encryption's.
+gains the read path the Sheet used to provide, gated on being an admin.
+To be clear about what that gate is for: **it is not what keeps the data
+confidential** — the rows are ciphertext whether or not the request is
+authorised, and Cloudflare could read them as readily as Google could
+have. It exists so the corpus is not casually harvestable and so bulk
+reads are not anonymous. Confidentiality is the encryption's job, and
+only the encryption's.
+
+That is also why moving this gate from a shared token to a per-person
+account was safe to do: changing who can fetch ciphertext cannot make
+ciphertext more or less readable.
 
 Access stays genuinely two-factor, which is the property worth keeping:
 
-- the export token gets you the ciphertext
-- the private key gets you the plaintext
+- an admin account gets you the ciphertext, and can be taken back
+- the private key gets you the plaintext, and cannot
 
 Neither alone is enough, and the two are held independently, which is
-the same property that makes the handoff below work.
+the same property that makes the handoff below work. Accounts sharpened
+it rather than changing it: the revocable factor is now per person
+instead of one secret shared by everyone who has it.
+
+## Accounts
+
+Decided 2026-08-05, reversing this document's opening sentence. Three
+problems were open and all three had the same shape — *there is no way
+to tell one submitter from another, or a submitter from anybody at all*:
+
+- **Nothing stopped junk.** The endpoint accepted any POST that set an
+  `Origin` header, which `curl` does for free. The section below called
+  this operational and said nothing would be wired up until junk
+  appeared — see "What is deliberately not here", now corrected. That
+  posture assumed junk was recoverable. It was not: there was no delete
+  path for a submission anywhere in the Worker or the pages, so clearing
+  it meant the Cloudflare console and hand-typed SQL, which this
+  document had already ruled out as *not a path* when the same gap was
+  found in the snapshot.
+- **Nobody could withdraw.** The person whose data it is had no route
+  at all. This is the argument the keyholder had already won once about
+  the published snapshot — it answered "change what is published" and
+  ignored "take it down" — reappearing one level down, against the data
+  that actually identifies people.
+- **Nobody could correct anything.** Storage was append-only and blind,
+  so a typo was permanent and a fresh reading was indistinguishable
+  from one.
+
+### The identifier is the whole problem
+
+Everything else about accounts is ordinary work. The identifier is not,
+and the obvious design is the dangerous one.
+
+The obvious design is `account_id = SHA-256(handle)`, stored in the
+clear beside the ciphertext. It is unique per person, survives
+resubmission, and needs no new secret. It also destroys the property
+this project exists for.
+
+Telegram handles are not a large search space *in practice*. The
+relevant ones are the few dozen names visible in the group's member
+list, and hashing a few dozen strings is instant. A clear-text hashed
+handle therefore turns the database into a **membership oracle**:
+anybody holding it can answer "did @foo submit to this?" without
+decrypting a single row.
+
+That is exactly the scenario the threat model claims to cover. Today a
+leaked export token yields ciphertext and nothing else. With hashed
+handles it yields *the list of who is in the binder* — which, for a form
+about feedism sitting next to real Telegram handles, is most of the harm
+the encryption was there to prevent. It is the same harm as the
+plaintext handle column this design refused at the very start, arriving
+by a route that looks like a precaution.
+
+A pepper does not save it. In `config.js` the pepper is public along
+with everything else on a static site; moved to the Worker it means the
+Worker receives the handle, which is the thing being avoided.
+
+**Rejected: an oblivious PRF.** Getting a non-enumerable id *out of* a
+handle without the server learning the handle is a solved problem —
+RFC 9497, VOPRF over P-256 — and it is implementable here in the sense
+that the primitives exist in WebCrypto. It is rejected for the same
+reason vendoring libsodium was rejected, only more so: composing ECIES
+by hand was about sixty lines with a round-trip test that can prove it
+right, and a blinded PRF is neither. Named here so nobody arrives at it
+later thinking it was never considered.
+
+**Rejected: invite codes.** The keyholder generates random codes and
+hands them out in Telegram; the code is the account. This works, and it
+is the smaller build — no third party, no script anywhere near the
+cleartext page, no CSP change, and the Worker learns nothing about
+anyone. It lost on two counts. A code is a bearer credential people
+paste into group chats and lose, and reissuing one is manual work for
+the keyholder forever. And it verifies nothing: it proves somebody was
+invited, not that the handle they typed is theirs.
+
+### Telegram is the identity provider
+
+The account id is `HMAC-SHA256(ACCOUNT_SECRET, telegram_numeric_id)`,
+computed by the Worker, stored in the clear beside the ciphertext.
+
+The numeric id rather than the handle, because handles are changeable
+and the numeric id is not — an account should survive somebody renaming
+themselves. The HMAC rather than the raw id, and the secret rather than
+a constant, because that is what makes the oracle above impossible: an
+attacker holding the whole database cannot test a guess without a secret
+that lives only in the Worker's environment.
+
+**`ACCOUNT_SECRET` is load-bearing forever.** Change it and every
+account id changes, every member's history detaches from them, and there
+is no way back — the rows are still readable, but nothing links a
+person's four entries to each other. It belongs in the same mental
+category as `crypto.js`'s derivation label: a value that looks like
+configuration and is actually part of the stored format.
+
+This buys something the old form could not have: **the handle stops
+being typed.** The Worker hands the verified username back to the
+authenticated browser, which puts it in the record before encrypting.
+
+**It does not make the handle trustworthy, and the difference matters.**
+The record is built and sealed in the member's own browser, so a member
+who edits their own page can put any handle they like inside the
+ciphertext, and the Worker — which cannot read it — has no way to
+object. What the Worker *does* control absolutely is the account id: it
+is derived from the verified session and no client can influence it.
+
+So a row has two identities, and they are not equally good:
+
+- **The account id is trustworthy.** It is set server-side from a
+  Telegram sign-in and cannot be forged by the page.
+- **The handle inside the blob is a label.** It is as good as the client
+  that wrote it, which for everybody who is not attacking their own
+  browser is very good, and for anybody who is, is worthless.
+
+The keyholder should treat the account id as identity and the handle as
+display. The useful consequence is that **the two disagreeing is
+detectable**: two different handles appearing under one account id is
+either a rename or somebody lying, and it is exactly the shape of the
+existing height-mismatch panel. Worth building for the same reason that
+one exists — it is a fact about the data the keyholder wants before
+trusting a name.
+
+What sign-in genuinely closed is anonymous writing. What it narrowed,
+rather than closed, is "not protected against: a submitter lying".
+
+### The sign-in page is a page of its own
+
+The Telegram Login Widget is third-party script from `telegram.org`. On
+the page that handles cleartext that is precisely the risk this document
+rejected a CDN copy of libsodium for, and it would mean opening
+`script-src` on the one page where it matters most.
+
+So sign-in is `index.html` and nothing else: the widget, and no
+`crypto.js`, no form, no plaintext of any kind. The form moves to its
+own page. `index.html`'s policy carries the two exceptions the widget
+needs — `script-src https://telegram.org` and
+`frame-src https://oauth.telegram.org` — and no other page gains
+either.
+
+**This reverses "the form grew into `index.html` rather than being
+copied from it".** That decision was right when a landing page's only
+content would have been a link to the form, and a click between a
+submitter and the only reason they came is a click worth deleting. There
+is now something at the front door that has to happen first, so the
+landing page has content, and putting the widget on the form page in
+order to preserve the old shape would trade the CSP for a URL.
+
+**Rejected: the bot deep-link flow.** A `t.me/YourBot?start=<nonce>`
+link, a webhook on the Worker, and the page polling until the nonce is
+claimed gets identical verification with *no third-party script at all*
+and no CSP exception anywhere. It was the better answer on the merits
+and lost on familiarity: a widget that says "Log in with Telegram" is a
+thing people recognise, and a link that sends you to a bot and asks you
+to come back is a thing people abandon. Worth remembering if the CSP
+exception ever becomes a problem — it is the same account id and the
+same session on the other side, so it is a swap rather than a rewrite.
+
+### The page is not the gate
+
+`index.html` being the first page anyone sees is routing, not security,
+and it is worth being blunt about that because it is the kind of thing
+that produces false confidence.
+
+A static site cannot gate a static page. Anyone can type the form page's
+URL, and any check written into that page is visible in View Source to
+the person it is meant to stop — this document already says exactly that
+about granting access, and nothing about sign-in changes it. The form
+page bouncing a signed-out visitor back to `index.html` is a courtesy so
+that people do not fill in six fields before learning they cannot send
+them.
+
+**The gate is the Worker refusing `POST /submit` without a valid
+session.** That is enforceable, it is the only thing that is, and it is
+what actually delivers "only accounts can submit".
+
+### Sessions
+
+A session is a random token issued when a Telegram payload verifies, and
+held in `sessionStorage` for the life of the tab.
+
+**This is a change to a rule this document made in as many words** — that
+the project touches `sessionStorage`, `localStorage` and URL fragments
+on none of its pages. That rule was about *key material*, and the reason
+given was that a page holding the corpus in the clear should discard
+everything when it closes. A submitter's session token is not key
+material. It authorises appending a row to one account and nothing else:
+it cannot read a submission, cannot decrypt one, and cannot reach the
+export. Holding it for the tab is the difference between signing in once
+and signing in on every page.
+
+The Worker stores `SHA-256(token)` rather than the token, so reading the
+sessions table does not yield a working session. Sessions expire, and
+expired rows are cleared opportunistically when one is looked up rather
+than by a scheduled job — the failure mode of a scheduled job is
+silence, and there is nothing here worth a moving part.
+
+### Admin accounts
+
+An admin account grants three things: pulling the ciphertext, publishing
+and unpublishing the snapshot, and deleting a submission.
+
+**It cannot grant plaintext, and this is not a limitation to be worked
+around.** This document already worked out the honest form of
+delegation: a per-holder grant gets someone the ciphertext, and the
+private key, once handed over, is permanently theirs and cannot be taken
+back by anything. Accounts change which half is assignable, not the
+shape. Before, the revocable half was one shared `EXPORT_TOKEN` that
+could only be revoked for everybody at once; now it is a per-person flag
+that can be dropped for one person on a Tuesday.
+
+**Admins are named in a Worker environment variable**,
+`ADMIN_TELEGRAM_IDS`, compared by HMAC the same way an account id is
+derived. Deliberately not a button on a page: an admin who can create an
+admin means the founding secret stops being the only root of trust, and
+a promotion that costs a trip to the Cloudflare dashboard is a promotion
+somebody thought about. The cost is that it is a dashboard errand every
+time, and it is the right cost at this size.
+
+It also survives the table being cleared, which a promoted-in-the-
+database scheme would not — there is no state in which nobody can
+administer the thing.
+
+`EXPORT_TOKEN` stays, as break-glass and nothing else. `HANDOFF.md`
+already documents recovering by `curl` for the case where the pages
+themselves are unreachable, and a Telegram outage is not a reason to be
+locked out of your own data. It is no longer typed into `admin.html`,
+which now works from an admin session — one less shared secret on
+screen, and one less field to paste the wrong thing into.
+
+### Deleting a submission
+
+Deletion is an admin action. A member who wants their entry gone asks,
+which in a Telegram group is a message, and the admin clicks a row.
+
+**This ends "the submissions table remains strictly append-only".** That
+sentence was true and is now false, and the reason is the same one that
+put a `DELETE` route on the snapshot: the moment somebody wants their
+data gone is not the moment to make them wait for a console login and
+hand-typed SQL. The same route is what makes spam recoverable, which is
+what allowed the answer to spam to stay "nothing until it appears".
+
+**Member self-deletion is now cheap and is deliberately not built.** A
+session proves which rows are yours, so the route would be a few lines.
+It is left out because "ask an admin" is one message in a group where
+everyone can already reach each other, and because a delete button on a
+member's own page is a thing to press by accident. If the group grows
+past the point where asking is reasonable, this is the first thing to
+add.
+
+### What this costs, stated plainly
+
+Two disclosures that did not exist before. Both are in the threat model
+as well; they are repeated here because they are the price of this
+section and should not be discoverable only by reading a schema.
+
+- **Grouping.** A stable account id in the clear reveals which rows
+  belong to one person. Cloudflare, or anyone with a leaked export
+  token, learns that some account submitted twelve times over eight
+  months. Before, they saw twelve unrelated opaque rows. This is
+  unavoidable if accounts are to work at all — an identifier that cannot
+  be grouped is not an identifier.
+- **The Worker sees Telegram ids.** Verification happens there, so the
+  numeric id and the handle pass through it on every sign-in. The Worker
+  must store neither and log neither, and Cloudflare still learns the
+  set of ids that authenticated. What it never learns is what any of
+  them weigh.
 
 ## Key custody
 
@@ -260,7 +555,7 @@ Two things move, independently:
 
 | To transfer | Do this |
 | --- | --- |
-| Read access to the data | Give them the private key file and the export token. Nothing else. |
+| Read access to the data | Give them the private key file, and make them an admin by adding their Telegram id to `ADMIN_TELEGRAM_IDS`. Nothing else. The admin flag gets them the ciphertext and is revocable; the key gets them the plaintext and is not. |
 | The storage itself | Move the Cloudflare account, **or** have them deploy their own Worker and D1 database and change the endpoint URL in `apps/web/config.js`. Existing rows come across with a `SELECT`, and they are ciphertext in transit as much as at rest. |
 | The site itself | Transfer the GitHub repo, or they fork it. |
 
@@ -308,7 +603,7 @@ archived rather than destroyed.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| Telegram username | yes | The only identifier. Normalised: a leading `@` and a `t.me/` link prefix are stripped, then lowercased. |
+| Telegram username | yes | **Not typed — taken from the verified sign-in.** The Worker hands it back to the authenticated page, which puts it in the record before encrypting. Still normalised to lowercase, since Telegram's own casing is display only. |
 | Weight | yes | Stored in **both** kg and lb, whichever was typed. |
 | Height | yes | Stored in **both** cm and feet+inches (and total inches), whichever was typed. |
 | Units | — | lb/ft+in or kg/cm toggle; conversion happens client-side. Which one was used is recorded. |
@@ -348,35 +643,66 @@ handled, because 5 ft 11.98 in otherwise rounds to a height written
 `5 ft 12 in`. `dev/form.test.mjs` holds that case.
 
 Everything above is inside the encrypted blob. The stored row carries
-the ciphertext plus a server-side receipt timestamp — nothing else. In
-particular the username is **not** stored in the clear, because a column
-of Telegram handles next to a form about feedism is the exact thing this
-design exists to prevent.
+the ciphertext, a server-side receipt timestamp, and the account id —
+nothing else. In particular the username is **not** stored in the clear,
+because a column of Telegram handles next to a form about feedism is the
+exact thing this design exists to prevent. The account id is what
+replaces it, and the reason it can sit in the clear where a handle
+cannot is the whole of "The identifier is the whole problem" above.
 
-### Duplicates
+### Repeat entries
 
-Storage is append-only and every row is kept. The page cannot read what
-is already stored — that is the point — so it cannot detect a repeat
-submission or offer an edit. Resubmitting simply adds a row, which also
-means the history doubles as weight-over-time data. Sorting out
-duplicates happens at export.
+Every update writes a new row. Members do not edit an entry; they submit
+their current numbers again, and the account id is what ties the entries
+together.
+
+This is a deliberate choice between two readings of "update". Replacing
+in place would give one live row per account, which is the tidier data
+model and the more literal reading of a unique account — and it would
+delete weight over time, since a history nobody keeps is a history
+nobody can plot. Appending keeps both questions answerable: *what does
+this person weigh* is the latest row, *what has happened to them* is all
+of them.
+
+The consequence is that "how many people" and "how many entries" stay
+different questions, both legitimate, which is why the dashboard has a
+toggle rather than an opinion. What has changed is that the answer no
+longer requires decryption to work out — the account id groups rows
+without opening them, where before the only way to tell two submissions
+apart was to decrypt both and compare handles.
+
+A typo is still permanent, since nothing rewrites a row. The route back
+is submitting again, and asking an admin to delete the wrong one.
 
 ## The page shell
 
 Every published page shares one head and one stylesheet. The shell was
 built before the form on purpose: the form and `admin.html` are the two
-pages that touch plaintext and keys. The form grew into this page rather
-than being copied from it — `index.html` *is* the form — so what is left
-to copy is `admin.html`.
+pages that touch plaintext and keys.
+
+`index.html` was the form until 2026-08-05 and is now the sign-in page —
+see "The sign-in page is a page of its own". The pages that touch
+plaintext are the form and `admin.html`; the pages that touch a session
+are all of them except `404.html`.
 
 **A content security policy, in a `<meta>` tag.** `default-src 'none'`
 with `script-src 'self'`, so the page can load nothing but its own
 files. This is the prose rule in "Encryption, concretely" — no CDNs, no
 third-party code — turned into something the browser enforces. It
 matters most in the window this whole design is about: the moment
-between the submitter typing their handle and the browser encrypting it,
-when an injected script would see cleartext. `connect-src` gains the
-Worker's origin when the endpoint lands; nothing else is added to it.
+between the form being filled in and the browser encrypting it, when an
+injected script would see cleartext. `connect-src` gains the Worker's
+origin when the endpoint lands; nothing else is added to it.
+
+**`index.html` is the one exception, and it is why sign-in is a separate
+page.** It carries `script-src https://telegram.org` and
+`frame-src https://oauth.telegram.org` because the login widget needs
+both. That is a real weakening — Telegram can run code on that page —
+and it is survivable only because there is nothing on that page to
+steal: no form, no record, no key, no `crypto.js`. The exception must
+not spread. A page that holds cleartext and a page that loads a third
+party are two different pages, permanently, and if that ever has to
+change the bot deep-link flow is the way out rather than a wider policy.
 
 GitHub Pages serves no headers, so this is a meta policy, which means
 `frame-ancestors` and `report-uri` are unavailable — the site can be
@@ -442,11 +768,26 @@ that head, so a page added later cannot quietly ship without the policy.
 
 ## What is deliberately not here
 
-- **No spam protection yet.** A public endpoint will eventually collect
-  junk. The Worker's `POST` path is written with a single early return
-  so a Turnstile check can be added without restructuring, but nothing
-  is wired up until junk actually appears. Turnstile is the natural fit
-  now that the endpoint is Cloudflare's anyway.
+- **No bot check, because there is no longer an open endpoint.**
+  Submitting requires a session, and a session requires Telegram to have
+  vouched for you, so the cost of a junk row is a Telegram account
+  rather than a `curl` invocation. Turnstile would now be a second lock
+  on a door that is already locked.
+
+  **This replaces a worse answer, recorded because the reasoning was
+  wrong rather than merely superseded.** The old text said a public
+  endpoint would eventually collect junk, that the `POST` path had an
+  early return ready for a Turnstile check, and that nothing would be
+  wired up until junk actually appeared. Waiting is a reasonable posture
+  when the damage is recoverable, and it was not: there was no delete
+  path for a submission anywhere, so junk would have been permanent
+  short of hand-typed SQL in the Cloudflare console. The early return is
+  still there and now holds the session check.
+
+  What remains unaddressed is a member submitting junk deliberately.
+  That is a moderation problem rather than a security one, and it has an
+  answer now that it did not before — an admin can delete the rows, and
+  demote or ignore the account.
 - **No service worker, and no web app manifest either.** The base
   project is an installable PWA; a submission form that works offline
   would queue writes it cannot confirm. Without the service worker a
@@ -622,7 +963,7 @@ inline SVG.
 Since 2026-08-05 it draws a *snapshot* rather than the rows themselves,
 and `admin.html` builds one of its own entries to hand it. That
 indirection is what lets the same function draw the public page — see
-"The public dashboard" below, which is where the reasoning lives.
+"The members' dashboard" below, which is where the reasoning lives.
 
 **No chart library, and this is not a preference.** `admin.html` runs
 under `default-src 'none'; script-src 'self'`, and it is the one page
@@ -647,12 +988,16 @@ them wrong:
 
 ### Entries are not people
 
-Storage is append-only and the form cannot detect a repeat, so a
-resubmission is a new row. "How many people" and "what was submitted"
-are different questions and both are legitimate, so the dashboard has a
-toggle rather than an opinion: **one per person (latest)** or **every
-entry**. The difference is not cosmetic — a frequent resubmitter drags
-every distribution toward themselves.
+Every update writes a new row, so "how many people" and "what was
+submitted" are different questions and both are legitimate. The
+dashboard has a toggle rather than an opinion: **one per person
+(latest)** or **every entry**. The difference is not cosmetic — a
+frequent resubmitter drags every distribution toward themselves.
+
+Since accounts, "one per person" is a fact about the account id rather
+than a guess from the decrypted handle. The toggle and the charts are
+unchanged; what changed is that grouping no longer depends on two rows
+having spelled a handle the same way.
 
 The **weight-over-time** chart ignores the toggle and always uses every
 entry, because the repeats are what it is made of. It draws only people
@@ -686,21 +1031,31 @@ rounding between the two unit systems.
 
 ### What exists now
 
+*As of 2026-08-05, before the accounts work began. Kept as the record of
+what the first build order produced; "Build order — accounts" below is
+what is being built on top of it.*
+
 **Both ends, and everything between them.** The site, the storage
 endpoint, the form and the export page, wired together and live; a
-public dashboard reading a published aggregate; the key generator; a
-keypair, whose public half is published in `config.js` and whose
-private half is held offline by the keyholder; and `crypto.js`, tested
-against both a fresh keypair and a stored fixture.
+dashboard reading a published aggregate; the key generator; a keypair,
+whose public half is published in `config.js` and whose private half is
+held offline by the keyholder; and `crypto.js`, tested against both a
+fresh keypair and a stored fixture.
 
 A submitter fills in the form and their entry is encrypted in their
 browser and appended to D1 as ciphertext. The keyholder opens
 `admin.html`, supplies the export token and the key file, and gets a
 CSV built in their own browser. Nothing in between can read any of it.
 
-The build order is complete. What remains is operational rather than
-architectural: spam protection if junk ever appears, and keeping
-`HANDOFF.md` honest as things change.
+The line that used to close this section — that the build order was
+complete and what remained was operational rather than architectural,
+namely spam protection if junk ever appeared — was wrong on its own
+terms, and the way it was wrong is instructive. Spam was filed as
+operational because it looked like a nuisance. It was architectural,
+because nothing built could undo it, and pulling that thread produced
+accounts, sessions, a deletion path and a gated dashboard. **A problem
+whose damage cannot be reversed by anything in the system is not an
+operational problem, whatever it looks like from the outside.**
 
 ## Next goals — recorded 2026-08-05, all built the same day
 
@@ -893,7 +1248,17 @@ The split worth making is along that line rather than along the
 feature line.
 
 **And "give access" has no meaning in this architecture, which is a
-feature.** There are no accounts and no sessions. A static page cannot
+feature.** There are no accounts and no sessions.
+
+> **Superseded 2026-08-05 in its first sentence and vindicated in the
+> rest.** There are now accounts and sessions. What did not change is
+> the conclusion this paragraph reaches: a page still cannot gate a
+> page, and an account still cannot confer the ability to decrypt. The
+> "honest options" this section arrives at below turned out to be the
+> design that got built — a revocable per-holder grant of ciphertext,
+> which is exactly what an admin account is. See "Admin accounts".
+
+A static page cannot
 gate another static page: anyone can type the URL, and any check
 written in the page is visible in View Source to the person it is
 meant to stop. Access here is possession of two things, and they
@@ -932,11 +1297,30 @@ fixture came first because none of the rest could be looked at without
 data to draw — see `dev/README.md`, which specced it before it existed
 and now documents it.
 
-## The public dashboard
+## The members' dashboard
 
-`dashboard.html`. No key, no token, no account: it fetches one
-published aggregate and hands it to the same function that draws
-`admin.html`'s charts.
+`dashboard.html`. No key and no export token: it fetches one published
+aggregate and hands it to the same function that draws `admin.html`'s
+charts. **It does require a session.** `GET /snapshot` is gated on one,
+decided 2026-08-05, and that gate is real rather than decorative — the
+Worker enforces it, which is the one place in this design where a gate
+can be enforced at all.
+
+This narrows what the page is for. It was built as something that could
+be handed to anyone, permanently, with nothing to revoke, because it
+never contained anything worth protecting — and that argument is now
+only half used: the file still contains nothing worth protecting, and
+the audience for it is the group rather than the world.
+
+**The pseudonymisation stays, and matters more rather than less.** The
+instinct on gating a page is to relax what is on it, and it is exactly
+backwards here. The people who can recognise somebody from a weight
+history are the people who know what that person weighs, and those
+people are the other members of the group. A stranger reading an
+unlabelled line learns nothing; a groupmate reading it may learn who.
+Everything below — the pseudonyms, the dropped data-quality panel, the
+opt-in series, the quantisation — is aimed at the reader who is now the
+only reader.
 
 **The aggregation happens in the keyholder's browser, and only the
 result is published.** That is the sentence the whole feature turns on.
@@ -969,14 +1353,59 @@ The only difference between the two documents is a flag:
 | | keyholder | published |
 | --- | --- | --- |
 | Series labels | `@handle` | `Person 1`, `Person 2` |
+| Series precision | exact | date, and the weight histogram's bin |
 | Height-change panel | shown | dropped entirely |
 | Everything else | identical | identical |
 
 The pseudonyms are numbered within one document and renumbered every
-time, so two snapshots cannot be lined up to follow one person across
-them. That "Person 1" is the most frequent submitter is already visible
+time. That "Person 1" is the most frequent submitter is already visible
 from the chart, so the numbering gives away nothing the picture does
 not.
+
+### Renumbering does not prevent linkage — a correction
+
+**An earlier version of this section claimed that renumbering meant "two
+snapshots cannot be lined up to follow one person across them". That was
+false, and it is worth recording as false rather than quietly
+rewritten**, because the keyholder was being asked to make the opt-in
+decision below on the strength of it.
+
+The series carried each point as an exact millisecond timestamp and a
+weight to a tenth of a unit. Publish twice and Person 3's line in the
+first document is a set of points that reappears verbatim in the second,
+with one new point on the end. Matching them is not analysis, it is a
+join on an exact key. Renumbering prevents *label* continuity, which
+nobody was relying on; it does nothing whatsoever about linkage.
+
+`dev/dashboard.test.mjs` asserts that no handle appears anywhere in a
+published document. That passes, and always would have — linkage here
+has nothing to do with handles, so the test was giving comfort about a
+question nobody had asked.
+
+**The fix is in the format, not the prose.** A published point carries
+the date rather than the instant, and the weight rounded to the bin
+width the histogram already uses. Cross-snapshot matching becomes
+ambiguous instead of exact, and the chart loses precision that a 620-
+pixel plot could not draw in the first place. The keyholder's own
+snapshot keeps full precision, because it never leaves their tab.
+
+Two smaller things fall out of it and both are improvements. The shape
+of a line survives quantisation, so the chart still says what it was
+for. And a submission's exact time stops being published at all, which
+was a stray disclosure nobody had decided to make — it was simply what
+`timeOf` happened to return.
+
+### While correcting: the small-numbers worry was aimed at the wrong thing
+
+The threat model warns that "1 person, Portugal, non-binary" is a
+description of somebody. It is not derivable from a snapshot: the
+document publishes marginals — gender counts, country counts, each on
+its own — and never a cross-tabulation, so a reader learns that somebody
+is Portuguese and that somebody is non-binary, and cannot join the two.
+
+The genuine per-person exposure was always the weight series, and the
+document was confident about it while being anxious about the counts.
+Both statements are corrected below.
 
 The data-quality panel is dropped rather than pseudonymised because it
 is a tool for whoever can act on it. Published, it is a list of
@@ -984,11 +1413,19 @@ strangers' heights and no use to anybody.
 
 ### Weight over time is opt-in
 
-It is the one part of a snapshot still about individuals, pseudonyms or
-not: anyone who knows what someone weighs may recognise their line. So
-the checkbox is off by default and the keyholder ticks it. That is the
-right place for the decision — it is theirs, it depends on who is in
-the data, and it can be reversed by republishing without it.
+It is the one part of a snapshot still about individuals, pseudonyms and
+quantisation or not: anyone who knows what someone weighs may recognise
+their line. So the checkbox is off by default and the keyholder ticks
+it. That is the right place for the decision — it is theirs, it depends
+on who is in the data, and it can be reversed by republishing without
+it, or by unpublishing outright.
+
+Three things now stand between a series and a name, and the opt-in is
+still the load-bearing one. The label is a pseudonym, the points are
+rounded to a date and a bin, and the audience is the group rather than
+the internet. None of that helps against the reader who already knows
+roughly what one member weighs and roughly when they joined, which is
+the reader this chart has to be safe against and is not.
 
 ### Three rules the format follows
 
@@ -1008,17 +1445,28 @@ the data, and it can be reversed by republishing without it.
 
 ### What the endpoint gained
 
-`POST /snapshot` and `DELETE /snapshot`, both gated by the export
-token, and `GET /snapshot`, gated by nothing. That asymmetry is the
-point: writing and retracting are keyholder actions, and reading is
-what the page is for. The `snapshots` table holds exactly one row,
-forced by a `CHECK` — a history of snapshots would be more published
-data about the same people, retained for nobody. Publishing replaces.
+`POST /snapshot` and `DELETE /snapshot`, both admin actions, and
+`GET /snapshot`, which any member's session opens. That asymmetry is
+still the point: writing and retracting are keyholder actions, and
+reading is what the page is for — it is the audience for "reading" that
+narrowed, not the principle.
 
-These are the only `UPDATE` and `DELETE` paths anywhere in the Worker.
-The submissions table remains strictly append-only, and nothing about a
-snapshot can be turned back into a submission: if it is lost, the
-keyholder presses Publish again.
+**`GET /snapshot` was gated by nothing until 2026-08-05**, and the route
+was the reason the format carries no rows and no handles. It still is.
+Gating a document is not a reason to relax it, and the moment the gate
+is treated as the protection rather than the format is the moment
+somebody puts a handle back in.
+
+The `snapshots` table holds exactly one row, forced by a `CHECK` — a
+history of snapshots would be more published data about the same people,
+retained for nobody. Publishing replaces.
+
+Snapshot writes are no longer the only `UPDATE` and `DELETE` paths in
+the Worker: deleting a submission is one too, and the sentence that used
+to sit here — that the submissions table remains strictly append-only —
+is retracted in "Deleting a submission" above. What still holds is that
+nothing about a snapshot can be turned back into a submission. If it is
+lost, an admin presses Publish again.
 
 ### Unpublishing needs the token and not the key
 
@@ -1036,12 +1484,16 @@ sits **outside everything the private key gates**, in a card that also
 reports what is currently published. Two properties follow, and both
 are the point rather than conveniences:
 
-- **Retracting needs only the token.** Requiring the key would mean
-  decrypting the entire corpus in order to remove something derived
-  from it — backwards, and slowest at exactly the wrong time.
-- **Reading the published state needs nothing at all.** It is the same
-  public route the dashboard reads, so the export page can say what is
-  live before anyone has typed a credential.
+- **Retracting needs no key.** Requiring it would mean decrypting the
+  entire corpus in order to remove something derived from it —
+  backwards, and slowest at exactly the wrong time. Until 2026-08-05
+  this read "needs only the token"; it is now an admin session, and the
+  property that mattered is unchanged.
+- **Reading the published state needs no key either.** It is the same
+  route the dashboard reads, so the export page can say what is live
+  before anyone has opened a key file. Since the snapshot became
+  members-only it does need a session, which an admin already has by the
+  time they are looking at this card.
 
 Deleting nothing returns success. Someone pressing Unpublish twice, or
 pressing it when nothing was published, has got what they wanted; an
@@ -1061,11 +1513,118 @@ check off. The rule now says what it always meant: a file that **sends
 a body** must encrypt. Reading is not the risk — the export returns
 ciphertext and the snapshot was published on purpose.
 
+## Build order — accounts
+
+Decided 2026-08-05. The order is chosen so that the site is never in a
+state where a member can submit something nothing can read, and so that
+the two irreversible steps happen where they can be checked.
+
+1. **The Worker: sign-in, sessions, and the account id.** Everything
+   else depends on the account id existing and being right, and
+   `ACCOUNT_SECRET` is unchangeable once a row carries an id derived
+   from it. `dev/worker.test.mjs` grows to cover payload verification,
+   session issue and expiry, and the admin list — all of it pure
+   arithmetic over a fake `env`, so none of it needs a deployment.
+
+   Two things only a live round trip can prove, exactly as with `DB`
+   and `EXPORT_TOKEN` before them: that `TELEGRAM_BOT_TOKEN` matches the
+   bot the widget names, and that `ADMIN_TELEGRAM_IDS` holds the id you
+   think it does. A Worker wrong about either passes every local test
+   and fails on the first real sign-in.
+
+2. **Clear the table, and unpublish.** Both irreversible, and this is
+   the moment for them: after the schema is settled and before anybody
+   has an account to lose. Unpublishing is not optional housekeeping —
+   the live snapshot describes people whose rows are about to stop
+   existing, and leaving it up would publish a group that is no longer
+   there.
+
+3. **`index.html` becomes the sign-in page**, and the form moves to
+   `submit.html`. Nothing is gated yet; this is the page shell, the
+   widget, the session in `sessionStorage`, and the two CSP exceptions.
+   Doing it before the gate means a broken sign-in is visible as a
+   broken sign-in rather than as a form that refuses everybody.
+
+4. **`POST /submit` starts requiring a session**, and the form takes its
+   handle from the verified sign-in rather than from a text box. This is
+   the step that makes the sign-in load-bearing, so it is the step where
+   a mistake locks the group out — hence third, after the page it
+   depends on is known to work.
+
+5. **The account panel.** Metadata only: how many entries are on record
+   and when the last one was, from `GET /me`. No read-back, because the
+   member holds no key and every way of giving them one is worse than
+   not — see "Accounts". The form itself stays blank, optionally
+   prefilled from `localStorage` on that device.
+
+6. **`GET /snapshot` starts requiring a session**, and `dashboard.html`
+   learns to sign in. Small, and separable from everything above.
+
+7. **`admin.html` moves to an admin session**, gaining row deletion and
+   losing the export-token box. `EXPORT_TOKEN` stays in the Worker as
+   break-glass and moves to `HANDOFF.md` as a `curl`.
+
+8. **Quantise the published series** — date and histogram bin — with the
+   test that the correction above showed was missing: not "no handle
+   appears", which always passed, but "two snapshots of the same corpus
+   plus one entry do not share an exact point".
+
+9. **`tools/check_web.py`.** Check 6 needs a third revision and two new
+   checks are worth having; see below.
+
+10. **`HANDOFF.md`**, last as usual and revisited throughout: three new
+    secrets, a new bootstrap procedure, and the fact that losing
+    `ACCOUNT_SECRET` orphans every member's history.
+
+### What the deployment gains
+
+Three secrets and two tables, all of which have to exist before step 1
+is testable against anything real:
+
+- `TELEGRAM_BOT_TOKEN` — verifies the login payload. Also the thing that
+  must never be logged.
+- `ACCOUNT_SECRET` — the HMAC key behind every account id. Permanent.
+- `ADMIN_TELEGRAM_IDS` — plaintext var, comma-separated numeric ids.
+
+`submissions` gains an `account_id` column and an index on it; a
+`sessions` table holds `SHA-256(token)`, the account id, whether it is
+an admin session, and an expiry.
+
+### Check 6, for the third time
+
+`index.html` will POST a Telegram payload without loading `crypto.js`,
+which fails check 6 as written — for the third time the rule has met a
+case it did not mean. It was "anything touching the network", then
+"anything sending a body", and neither spelling can say the thing it is
+actually for, which is *the submission record must be encrypted before
+it is sent*.
+
+The answer is not to widen it again. It gains a named exemption list,
+with a reason beside each entry, so that a file which sends without
+encrypting is either a failure or a decision somebody wrote down. Two
+checks are worth adding beside it, both stating a rule this design now
+depends on and neither of which any existing check covers:
+
+- **The sign-in page must not load `crypto.js`.** It is the one page
+  permitted third-party script, and the entire argument for permitting
+  it is that there is no plaintext there to see.
+- **No page except the sign-in page may name `telegram.org` in its
+  CSP.** The exception is survivable because it is confined; a check is
+  what keeps it confined once somebody is copying a head from whichever
+  page they had open.
+
 ## Open questions
 
-None open. All three that this section's goals raised were answered on
-2026-08-05 and are recorded under "Next goals" above, along with the
-two the document carried from the start.
+**Whether members should be able to delete their own entries.** Not
+built — deletion is an admin action and "ask an admin" is one message in
+a group where everyone can reach each other. A session already proves
+which rows are yours, so the route is a few lines whenever the group
+outgrows asking. Recorded as a decision rather than an omission.
+
+The five that this document carried before are all closed: private-key
+custody and imperial height entry were settled 2026-08-04, and the three
+raised by the dashboard goals were answered 2026-08-05, all recorded in
+their own sections above.
 
 **Settled 2026-08-04 — imperial height is two inputs.** Feet and
 inches, as separate boxes, which is how people think about their height
@@ -1094,33 +1653,85 @@ history it encrypted becomes unreadable.
 ## Threat model, honestly stated
 
 Protected against: a breach of the storage provider, a leaked export
-token, a curious Cloudflare employee, anyone reading the repo, and a
-future admin inheriting the site without inheriting the data.
+token, a curious Cloudflare employee, anyone *reading* the repo, an
+unauthenticated stranger writing rows, and a future admin inheriting the
+site without inheriting the data.
 
-**Not** protected against: someone spamming the endpoint with garbage
-rows (nothing stops writes), the admin's own machine being compromised
-while the key is in use, or a submitter lying. Traffic analysis is also
-unaddressed — the storage owner can see how many submissions arrive and
-when, just not what they say.
+**Not** protected against, in rough order of how likely it is to matter:
 
-**The published snapshot is a deliberate exception, and worth stating
-plainly.** It is the one thing here anyone can read: group size, group
-medians, and the shape of the distributions. That is the feature. Two
-honest caveats come with it:
+- **Anyone who can *write* to the repository, or to the Pages
+  deployment.** They replace `publicKey` in `config.js` with one of
+  their own, and every subsequent submission is encrypted to them. It is
+  silent, `tools/check_web.py` passes — a substituted key is still a
+  valid P-256 point — and nothing in a submitter's browser could tell.
+  This is unfixable in a static site with no way to pin a key, and it
+  was missing from a section titled "honestly stated" until 2026-08-05.
+  The cheap mitigation is out-of-band: publish the key's fingerprint in
+  the group description, so that somebody who wants to check, can.
+- **The keyholder's own machine, while the key is in use.** `admin.html`
+  holds the entire corpus in the clear for as long as the tab is open.
+- **A member lying, including about their handle.** Sign-in verifies who
+  is *writing*, not what they write, and the record is sealed in their
+  own browser before the Worker ever sees it. The account id on the row
+  is trustworthy; the handle inside the blob is a label the client
+  supplied. See "Telegram is the identity provider" — the two
+  disagreeing is at least detectable.
+- **Telegram, and Cloudflare, learning who participates.** See the two
+  disclosures below.
+- **Traffic analysis.** The storage owner sees how many submissions
+  arrive and when, just not what they say.
 
-- **Small numbers say more than large ones.** A breakdown over eleven
-  people is close to a list of them, and "1 person, Portugal,
-  non-binary" is a description of somebody. This matters most while the
-  group is small, which is exactly when the dashboard is least
-  interesting — the answer if it bites is to untick weight over time
-  and republish, not to redesign the format.
-- **A weight history is the most identifying thing on it**, pseudonyms
-  and renumbering notwithstanding, because anyone who knows what a
-  person weighs can look for their line. That is why it is off unless
-  the keyholder turns it on, and why the choice sits with them rather
-  than in this document.
+### What accounts added to this list
+
+Both are the price of "Accounts" above, and both were accepted
+knowingly rather than discovered afterwards.
+
+- **Rows are groupable.** The account id sits in the clear, so a breach
+  or a leaked export token now reveals that some account submitted
+  twelve times over eight months. Before, that was twelve unrelated
+  opaque rows. It reveals *that* somebody is a frequent submitter, never
+  *who* — the id is an HMAC under a Worker secret, so it cannot be
+  tested against a guessed handle. An identifier that could not be
+  grouped would not be an identifier.
+- **The Worker sees Telegram ids.** Verification happens there, so a
+  numeric id and a handle pass through it at every sign-in. It stores
+  neither and logs neither, which bounds the exposure to the request
+  itself — but Cloudflare is in a position to see the set of people who
+  sign in, and Telegram already knows. What neither learns is what any
+  of them weigh.
+
+And `index.html` loads a script from `telegram.org`, which is
+third-party code with execution rights on that page. It is confined
+there deliberately: no form, no record, no key, no `crypto.js`. A
+compromise of `telegram.org` breaks sign-in and cannot reach a
+submission.
+
+### The snapshot, and two corrections
+
+The snapshot is the one document here that is read by people who cannot
+decrypt anything: group size, group medians, and the shape of the
+distributions. Since 2026-08-05 that readership is the group rather than
+the world. Three honest caveats:
+
+- **A weight history is the most identifying thing on it.** Anyone who
+  knows roughly what a person weighs can look for their line, and after
+  gating, the readers are precisely the people who might. Pseudonyms,
+  renumbering and quantisation all narrow this and none of them close
+  it, which is why the chart is off unless the keyholder turns it on.
+- **Renumbering never prevented cross-snapshot linkage**, contrary to
+  what this document claimed until 2026-08-05. Exact timestamps and
+  exact weights were a join key. The points are now rounded to a date
+  and a histogram bin; the correction and its reasoning are under "The
+  members' dashboard".
+- **Small numbers say more than large ones** — but less than this
+  section used to claim. "1 person, Portugal, non-binary" is *not*
+  derivable, because the document publishes marginals and never a
+  cross-tabulation. What a small group does expose is that somebody in
+  it is Portuguese, and a histogram bin holding one person pins that
+  person to a band.
 
 What the snapshot cannot do is leak a handle, an individual row, or
-anything that would let a stranger be matched to a submission by name.
+anything that would let a reader be matched to a submission by name.
 `dev/dashboard.test.mjs` asserts the first of those directly, over a
-corpus built for it.
+corpus built for it — and, as noted above, asserting it was never the
+same as asserting the second.

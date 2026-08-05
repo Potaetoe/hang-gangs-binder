@@ -9,6 +9,13 @@ It is kept in the repo so the endpoint's behaviour is reviewable and so
 a new owner can stand up their own copy without reverse engineering the
 one that exists.
 
+> **This describes the Worker as deployed, and it is correct.** The
+> accounts redesign decided on 2026-08-05 adds three secrets, two
+> routes, a `sessions` table and an `account_id` column, and moves every
+> token-gated route onto admin sessions. None of it is built. The setup
+> steps for it are in `REDESIGN.md`; this file gets rewritten when the
+> Worker actually changes, not before.
+
 Four routes and nothing else:
 
 | Route | Who can call it | What it does |
@@ -29,7 +36,7 @@ deliberate: what it returns has no handles and no rows in it, only
 counts, medians and histogram bins. The Worker cannot compute a
 snapshot — doing that requires reading the submissions — so it is built
 in the keyholder's browser and this endpoint only holds the result. See
-DESIGN.md, "The public dashboard".
+DESIGN.md, "The members' dashboard".
 
 `DELETE /snapshot` is the only destructive route here, and the only one
 in the Worker at all — the submissions table has no `DELETE` and no

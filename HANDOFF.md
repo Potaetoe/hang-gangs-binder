@@ -5,6 +5,17 @@ because the transfer story is a design constraint here and not a
 postscript. `DESIGN.md` explains *why* it works this way; this file is
 the checklist.
 
+> **This describes the deployment as it runs today, and it is correct.**
+> An accounts redesign was decided on 2026-08-05 and is not built:
+> members will sign in with Telegram, the export token is replaced by
+> admin accounts, and the dashboard moves behind a session. When that
+> lands, most of this file changes — the four-things-move table, the
+> export procedure and the `curl` recovery especially.
+>
+> It is deliberately not rewritten in advance. A runbook describing a
+> system that does not exist yet is worse than a stale one, because
+> somebody follows it during an incident. See `REDESIGN.md`.
+
 ## The one thing to understand first
 
 **There is no recovery from a lost private key.** Every stored
@@ -121,10 +132,21 @@ At the bottom of the export page, after decrypting:
 
 1. Decide about **weight over time**. It is off by default. Ticked, the
    published page gets one line per repeat submitter, labelled
-   "Person 1", "Person 2" — never handles, and renumbered every time so
-   two snapshots cannot be lined up to follow anyone. It is still a
-   weight history, and someone who knows what a person weighs may
-   recognise their line. That is the whole of the trade-off.
+   "Person 1", "Person 2" — never handles, and renumbered every time.
+
+   **Renumbering does not stop two snapshots being lined up, and an
+   earlier version of this file said it did.** Each point currently
+   carries an exact timestamp and an exact weight, so the same person's
+   line reappears in the next snapshot as the same set of points with
+   one added — matching them is trivial. The pseudonyms only stop the
+   *labels* being followed.
+
+   So the honest version of the trade-off is: publishing this chart
+   twice discloses cumulatively, and anyone who knows roughly what a
+   person weighs may recognise their line. Off is the safe answer, and
+   it is off unless you tick it. A fix — publishing the date and a
+   rounded weight instead of the exact ones — is specified in
+   `DESIGN.md` under "The members' dashboard" and not yet built.
 2. Press **Show what would be sent** if you want to read it first. It
    sends nothing; it prints the document.
 3. Press **Publish snapshot**. It replaces whatever was there before.

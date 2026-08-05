@@ -3,8 +3,8 @@
 A submission portal for the Hang Gang. People enter their stats; one
 person — whoever holds the key — can export them.
 
-**Submitters need no account.** There is nothing to sign up for and
-nothing to log into. Open the page, fill the form, done.
+**Submitters need no account** — today. That is changing; see the status
+note below. Open the page, fill the form, done.
 
 **Submissions are encrypted in your browser before they are sent.** The
 service that stores them cannot read them. Only someone holding the
@@ -17,6 +17,13 @@ project's private key can, and that key is not stored online anywhere.
 > dashboard](https://potaetoe.github.io/hang-gangs-binder/dashboard.html)
 > showing what the submissions add up to, with nobody's name in it. See
 > [DESIGN.md](DESIGN.md) for how it all fits together and why.
+>
+> **Changing soon.** An accounts redesign was decided on 2026-08-05:
+> members will sign in with Telegram before submitting, entries will be
+> tied to an account so they can be updated and removed, and the
+> dashboard moves behind a sign-in. Nothing below has changed yet — the
+> reasoning is in [DESIGN.md](DESIGN.md) under "Accounts", and the plan
+> for building it is in [REDESIGN.md](REDESIGN.md).
 
 ---
 
