@@ -387,6 +387,21 @@ tracking, over the system stack.
 **A theme-aware SVG favicon.** It reads `prefers-color-scheme` itself,
 because a favicon cannot see the page's `data-theme`.
 
+**One rule forcing `[hidden]` to `display: none !important`.** Every
+part of this site that appears and disappears does it by setting the
+`hidden` attribute — both unit groups, the "not open" notice, the
+success card, each field error. The browser's own rule for that is
+`display: none` at the weakest specificity there is, so any component
+setting `display` beats it, and `.card` and `.stack` both set `flex`.
+
+This shipped broken on 2026-08-04: the published form showed both unit
+systems at once, under a "not open" notice and a "thanks for
+submitting" card nobody had earned. Nothing about it fails loudly —
+the JavaScript is right, the attribute is set, and `element.hidden`
+reads `true`; only the rendering disagrees. **Verifying `element.hidden`
+does not verify that anything is hidden.** `tools/check_web.py` check 7
+now refuses to publish a stylesheet without the rule.
+
 **A `404.html` and a `robots.txt`.** GitHub Pages serves the former for
 any unknown path; without it a typo lands on GitHub's own 404, which is
 branded as a repository error and tells a visitor nothing. The latter

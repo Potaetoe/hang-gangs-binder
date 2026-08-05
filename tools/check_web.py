@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Six checks:
+Seven checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -68,6 +68,21 @@ Six checks:
    calls encrypt would pass. That failure is loud in review and in the
    round-trip test; this catches the quiet one, which is a page wired
    to the endpoint with no encryption on it at all.
+
+7. The stylesheet honours the hidden attribute. Every piece of this
+   site that appears and disappears - the two unit groups, the "not
+   open" notice, the success card, each field error - does it by
+   setting `hidden` in JavaScript. The browser's own rule for that is
+   `display: none` at the weakest specificity there is, so any
+   component that sets display beats it: .card and .stack both set
+   `flex`, and did, and the published form showed both unit systems at
+   once alongside a "thanks for submitting" card nobody had earned.
+
+   Nothing about that fails loudly. The JavaScript is correct, the
+   attribute is set, the DOM inspector agrees the element is hidden,
+   and reading `element.hidden` returns true - it is only the rendering
+   that disagrees. So the one line the whole visibility model rests on
+   is checked here rather than trusted.
 """
 
 import base64
@@ -288,6 +303,34 @@ def unencrypted_paths():
     return problems
 
 
+STYLESHEET = "theme.css"
+
+# `[hidden] { display: none !important }`, however it is spaced. The
+# !important is required, not stylistic: without it the rule loses to
+# any component that sets display, which is the exact failure this
+# checks for.
+HONOURS_HIDDEN = re.compile(
+    r"\[hidden\][^{}]*\{[^{}]*display\s*:\s*none\s*!\s*important", re.I | re.S)
+
+
+def hidden_attribute_problem():
+    """A description of the stylesheet failing to honour [hidden], or None."""
+    path = os.path.join(WEB, STYLESHEET)
+    if not os.path.exists(path):
+        return None  # the missing-stylesheet case is check 1's to report
+    css = re.sub(r"/\*.*?\*/", "", open(path, encoding="utf-8").read(),
+                 flags=re.S)
+    if HONOURS_HIDDEN.search(css):
+        return None
+    return ("%s does not force [hidden] to display:none !important. Every "
+            "element this site shows and hides - both unit groups, the "
+            "closed notice, the success card, the field errors - relies on "
+            "that one rule, and .card and .stack set display:flex, which "
+            "beats the browser's own [hidden] rule. The pages would render "
+            "every hidden element at once, with nothing reporting it"
+            % STYLESHEET)
+
+
 def key_shaped_content():
     """(file, description) for anything in apps/web resembling a key."""
     hits = []
@@ -328,6 +371,10 @@ def main():
             "config.js: %s. Every submission would be encrypted to it - or "
             "rather would not be, since the browser rejects it. Re-copy the "
             "line from tools/keygen.html." % problem)
+
+    problem = hidden_attribute_problem()
+    if problem:
+        problems.append(problem + ".")
 
     for name, problem in unencrypted_paths():
         problems.append(

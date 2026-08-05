@@ -124,6 +124,27 @@
 *::before,
 *::after { box-sizing: border-box; }
 
+/*
+ * The hidden attribute must beat every display rule below it.
+ *
+ * This is not a nicety. The browser's own [hidden] rule is
+ * `display: none` at the weakest possible specificity, so any author
+ * rule that sets display - .card and .stack both set `flex` - silently
+ * un-hides the element. The page then shows both unit systems at once,
+ * a "not open" notice and a "thanks for submitting" confirmation, all
+ * on top of a form that works.
+ *
+ * Everything this page hides, it hides with the attribute: the two unit
+ * groups, the closed notice, the success card, every field error. So
+ * this one line is load-bearing for all of them, which is why
+ * tools/check_web.py refuses to publish a stylesheet without it.
+ *
+ * !important is correct here rather than lazy - the alternative is
+ * remembering to out-specify it in every component that sets display,
+ * forever, and losing exactly once.
+ */
+[hidden] { display: none !important; }
+
 html {
   -webkit-text-size-adjust: 100%;
 }
