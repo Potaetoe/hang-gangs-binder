@@ -280,25 +280,143 @@ p {
 /* Numbers that will sit in columns once there is data to line up. */
 .tabular { font-variant-numeric: tabular-nums; }
 
-/* On desktop the title and the theme chips share a line - the chips are
-   a control, not a heading, and giving them their own row above the
-   title makes them look like one. The markup keeps them first for tab
-   order; the grid puts them right. */
-header.stack {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
-  gap: var(--space-4);
+/* The header is an ordinary stack now: a nav bar, then the title. It
+   used to be a two-column grid so the theme chips could share the
+   title's line - they are a control rather than a heading, and a row of
+   their own made them look like one. The chips now sit in the nav bar,
+   which is a row of controls and exactly where they belong, so the grid
+   had nothing left to arrange. `.stack` already does the rest, which is
+   why no header rule survives here. */
+
+/* ------------------------------------------------------------------ */
+/* Navigation.                                                         */
+
+/* The bar: the menu button at one end, the theme chips at the other.
+   `relative` is load-bearing - the menu is positioned against it. */
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  position: relative;
 }
 
-header.stack > .themes {
-  grid-column: 2;
-  grid-row: 1;
+/* Styled as a theme chip, so the two controls sharing this bar read as
+   the same kind of thing. */
+.nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease,
+              border-color 120ms ease;
 }
 
-header.stack > .stack-tight {
-  grid-column: 1;
-  grid-row: 1;
+.nav-toggle:hover,
+.nav-toggle[aria-expanded="true"] {
+  background: var(--accent-quiet);
+  color: var(--text);
+}
+
+/* Three bars, drawn rather than fetched. An icon font or an SVG file
+   would be another request on a page whose policy is to load nothing it
+   does not have to - and the CSP forbids the CDN it would come from. */
+.nav-bars {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 1rem;
+  height: 0.75rem;
+}
+
+.nav-bars span {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+/* Open: the outer bars cross, the middle one goes. The
+   prefers-reduced-motion block at the bottom of this file already
+   flattens the transition to nothing. */
+.nav-toggle[aria-expanded="true"] .nav-bars span:nth-child(1) {
+  transform: translateY(5px) rotate(45deg);
+}
+
+.nav-toggle[aria-expanded="true"] .nav-bars span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-toggle[aria-expanded="true"] .nav-bars span:nth-child(3) {
+  transform: translateY(-5px) rotate(-45deg);
+}
+
+/*
+ * The menu. Absolute rather than in flow: opening it should not shove
+ * the page down and then pull it back up again, which on a form is a
+ * jump underneath whatever somebody was about to click.
+ *
+ * Hidden by the `hidden` attribute like everything else on this site,
+ * which works only because of the [hidden] rule at the top of this file
+ * - `display: flex` here would otherwise beat the browser's own rule
+ * and the menu would render open on every page. That is check 7 in
+ * tools/check_web.py, and it shipped broken once already.
+ */
+.nav-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 10;
+  min-width: 15rem;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+
+.nav-menu a {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav-menu a:hover,
+.nav-menu a:focus-visible {
+  background: var(--accent-quiet);
+}
+
+/* The page you are on is marked, not removed. A menu that drops the
+   current entry changes shape as you move through the site, and nothing
+   is ever where it was last time. */
+.nav-menu a[aria-current="page"] {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* One line under a link, for the page whose name does not say what it
+   wants from you. */
+.nav-menu .nav-note {
+  display: block;
+  padding-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
 }
 
 /* Theme chips, wired by theme.js via [data-set-theme]. */
@@ -732,12 +850,14 @@ a { color: var(--primary-dark); }
 
   body.wide .narrow { max-width: 100%; }
 
-  /* The chips go back above the title. Side by side, the heading has
-     nowhere left to wrap to. */
-  header.stack {
-    display: flex;
-    flex-direction: column;
-  }
+  /* The header needed unpicking here while it was a grid - the chips
+     sat beside the title and the heading had nowhere left to wrap to.
+     It is a plain stack now and needs nothing.
+
+     The nav bar does need one thing: on a narrow screen the button and
+     three theme chips will not share a line, so they wrap and the menu
+     hangs from whatever height that leaves. */
+  .nav { flex-wrap: wrap; }
 
   .pair { flex-direction: column; }
 

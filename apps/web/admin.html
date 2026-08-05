@@ -33,11 +33,32 @@
 <body class="wide">
 
 <header class="stack">
-  <div class="themes" role="group" aria-label="Colour theme">
-    <button type="button" data-set-theme="pink">Pink</button>
-    <button type="button" data-set-theme="light">Light</button>
-    <button type="button" data-set-theme="dark">Dark</button>
-  </div>
+  <!-- Identical on every page; tools/check_web.py holds the four
+       copies to agreeing. See the longer note in index.html. -->
+  <nav class="nav" aria-label="Site">
+    <button type="button" class="nav-toggle" id="nav-toggle"
+            aria-expanded="false" aria-controls="nav-menu">
+      <span class="nav-bars" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
+      <span>Menu</span>
+    </button>
+
+    <ul class="nav-menu" id="nav-menu" hidden>
+      <li><a href="index.html">Submit your stats</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li>
+        <a href="admin.html">Export</a>
+        <span class="nav-note">Keyholder only — needs the key</span>
+      </li>
+    </ul>
+
+    <div class="themes" role="group" aria-label="Colour theme">
+      <button type="button" data-set-theme="pink">Pink</button>
+      <button type="button" data-set-theme="light">Light</button>
+      <button type="button" data-set-theme="dark">Dark</button>
+    </div>
+  </nav>
 
   <div class="stack-tight">
     <p class="eyebrow">Keyholder only</p>
@@ -278,6 +299,7 @@
 <script src="crypto.js"></script>
 <script src="dashboard.js"></script>
 <script src="admin.js"></script>
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>

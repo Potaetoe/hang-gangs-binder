@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Nine checks:
+Ten checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -110,6 +110,18 @@ Nine checks:
    behaviour on a live page and the reason a typo would be invisible.
    The country simply would not be in the promoted block, and the only
    way to notice is to know it should have been there.
+
+10. Every page carries the same navigation. The nav links are written
+    out in each page's HTML rather than built by nav.js, so that a
+    script failure cannot strand somebody on a page with no way off it.
+    The cost of that choice is the same list written four times, and
+    four copies of anything drift - a page added later gets the nav
+    copied from whichever page was open, and a link added to one page
+    is missing from three.
+
+    Nothing about that is visible from the page you happen to be
+    looking at. This compares the sets and fails if they differ, which
+    is what makes the duplication safe to have chosen.
 """
 
 import base64
@@ -366,6 +378,61 @@ def hidden_attribute_problem():
             % STYLESHEET)
 
 
+def nav_links(text):
+    """The (href, label) pairs inside a page's .nav-menu, in order."""
+    menu = re.search(r'<ul[^>]*class="nav-menu".*?</ul>', text, re.S | re.I)
+    if not menu:
+        return None
+    return re.findall(r'<a\s+href="([^"]+)"[^>]*>(.*?)</a>',
+                      menu.group(0), re.S | re.I)
+
+
+def nav_problems():
+    """(page, problem) for pages whose navigation is missing or differs."""
+    problems = []
+    found = {}
+    for name in html_pages():
+        text = re.sub(r"<!--.*?-->", "", open(os.path.join(WEB, name),
+                                              encoding="utf-8").read(),
+                      flags=re.S)
+        links = nav_links(text)
+        if links is None:
+            problems.append((name, "has no navigation menu"))
+            continue
+        if not links:
+            problems.append((name, "has a navigation menu with no links"))
+            continue
+        found[name] = links
+
+        # A menu that cannot be opened is a menu that is not there. The
+        # toggle and the list have to agree about the id, or the button
+        # controls nothing and nav.js gives up.
+        if 'id="nav-toggle"' not in text or 'id="nav-menu"' not in text:
+            problems.append((
+                name,
+                "has nav markup but is missing the nav-toggle or nav-menu "
+                "id that nav.js and aria-controls both rely on"))
+
+    # Compared against whichever page sorts first, so the message names a
+    # specific page to go and look at rather than "they differ".
+    if len(found) > 1:
+        reference = sorted(found)[0]
+        for name in sorted(found):
+            if name != reference and found[name] != found[reference]:
+                problems.append((
+                    name,
+                    "has different navigation from %s. Every page carries "
+                    "its own copy, so they have to be kept identical by "
+                    "hand - %s has %s, this has %s"
+                    % (reference, reference,
+                       [h for h, _ in found[reference]],
+                       [h for h, _ in found[name]])))
+
+    # A nav link to a page that does not exist is caught by check 1 as a
+    # broken reference, so it is not repeated here.
+    return problems
+
+
 COUNTRIES_FILE = "countries.js"
 
 
@@ -494,6 +561,9 @@ def main():
     problem = hidden_attribute_problem()
     if problem:
         problems.append(problem + ".")
+
+    for page, problem in nav_problems():
+        problems.append("%s %s." % (page, problem))
 
     for code, problem in promoted_country_problems():
         problems.append("%s: the promoted country %s %s."

@@ -24,11 +24,39 @@
 <body>
 
 <header class="stack">
-  <div class="themes" role="group" aria-label="Colour theme">
-    <button type="button" data-set-theme="pink">Pink</button>
-    <button type="button" data-set-theme="light">Light</button>
-    <button type="button" data-set-theme="dark">Dark</button>
-  </div>
+  <!-- Identical on every page; tools/check_web.py holds the four
+       copies to agreeing. See the longer note in index.html.
+
+       These hrefs inherit the caveat in the head comment above: they
+       resolve against the URL that was requested, not the site root.
+       The site is flat, so they are right for anything a visitor could
+       plausibly land on and wrong only for a made-up path two levels
+       deep - where the nav being slightly off is not the visitor's
+       biggest problem. -->
+  <nav class="nav" aria-label="Site">
+    <button type="button" class="nav-toggle" id="nav-toggle"
+            aria-expanded="false" aria-controls="nav-menu">
+      <span class="nav-bars" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
+      <span>Menu</span>
+    </button>
+
+    <ul class="nav-menu" id="nav-menu" hidden>
+      <li><a href="index.html">Submit your stats</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li>
+        <a href="admin.html">Export</a>
+        <span class="nav-note">Keyholder only — needs the key</span>
+      </li>
+    </ul>
+
+    <div class="themes" role="group" aria-label="Colour theme">
+      <button type="button" data-set-theme="pink">Pink</button>
+      <button type="button" data-set-theme="light">Light</button>
+      <button type="button" data-set-theme="dark">Dark</button>
+    </div>
+  </nav>
 
   <div class="stack-tight">
     <p class="eyebrow">404</p>
@@ -50,6 +78,7 @@
   </p>
 </footer>
 
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>

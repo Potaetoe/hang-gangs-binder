@@ -36,11 +36,41 @@
 <body>
 
 <header class="stack">
-  <div class="themes" role="group" aria-label="Colour theme">
-    <button type="button" data-set-theme="pink">Pink</button>
-    <button type="button" data-set-theme="light">Light</button>
-    <button type="button" data-set-theme="dark">Dark</button>
-  </div>
+  <!--
+    The same nav on every page, written out rather than built by
+    nav.js - a page whose navigation disappears when a script fails is
+    a page somebody can get stranded on. The cost is four copies, and
+    tools/check_web.py fails the build if they disagree.
+
+    `hidden` on the menu is what keeps it shut before nav.js runs. It
+    only works because theme.css forces [hidden] to display:none
+    !important - .nav-menu sets display:flex, which beats the browser's
+    own rule. See DESIGN.md, "The page shell".
+  -->
+  <nav class="nav" aria-label="Site">
+    <button type="button" class="nav-toggle" id="nav-toggle"
+            aria-expanded="false" aria-controls="nav-menu">
+      <span class="nav-bars" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
+      <span>Menu</span>
+    </button>
+
+    <ul class="nav-menu" id="nav-menu" hidden>
+      <li><a href="index.html">Submit your stats</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li>
+        <a href="admin.html">Export</a>
+        <span class="nav-note">Keyholder only — needs the key</span>
+      </li>
+    </ul>
+
+    <div class="themes" role="group" aria-label="Colour theme">
+      <button type="button" data-set-theme="pink">Pink</button>
+      <button type="button" data-set-theme="light">Light</button>
+      <button type="button" data-set-theme="dark">Dark</button>
+    </div>
+  </nav>
 
   <div class="stack-tight">
     <p class="eyebrow">Submission portal</p>
@@ -265,11 +295,16 @@
   </div>
 </main>
 
-<!-- The dashboard is linked from here and not from a nav bar: this page
-     does one thing, and the link belongs after the form rather than
-     beside it. admin.html is deliberately not linked from anywhere - it
-     is useless without both secrets, but there is no reason to put it
-     in front of people it is not for. -->
+<!-- The dashboard is linked here as well as in the nav: this link is at
+     the end of the form, which is where somebody who has just submitted
+     actually is.
+
+     admin.html is in the nav now, on instruction, and it costs nothing:
+     the page is public and useless without both secrets - DESIGN.md has
+     said so since the beginning under "Key custody". What it gains is
+     the keyholder not having to remember a URL nothing links to. The
+     menu entry says what it needs, so nobody follows it expecting a
+     page they can use. -->
 <footer>
   <p>
     <a href="dashboard.html">See what everyone adds up to</a> ·
@@ -282,6 +317,7 @@
 <script src="countries.js"></script>
 <script src="crypto.js"></script>
 <script src="form.js"></script>
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>
