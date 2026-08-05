@@ -485,10 +485,16 @@
       });
       // The handle, at the end of its own line - a legend for six
       // series costs more room than the labels do.
+      //
+      // A line that finishes at the right edge has no room to its
+      // right, so the label is anchored the other way and lifted clear
+      // of the line rather than being drawn along it.
       const last = line.points[line.points.length - 1];
+      const atEdge = x(last.at) > width - 60;
       node.appendChild(svg("text", {
-        x: Math.min(x(last.at) + 6, width - 4), y: y(last.kg) + 4,
-        "text-anchor": x(last.at) > width - 60 ? "end" : "start",
+        x: atEdge ? x(last.at) - 6 : x(last.at) + 6,
+        y: atEdge ? y(last.kg) - 8 : y(last.kg) + 4,
+        "text-anchor": atEdge ? "end" : "start",
       }, "chart-label " + cls.split(" ")[1] + " chart-series-label"))
         .textContent = line.telegram;
     });
@@ -539,7 +545,11 @@
       ? series.length + " of " + peopleCount(entries) +
         " people have submitted more than once."
       : null;
+    // Full width in the chart grid: it is the only chart with a real
+    // horizontal axis, and squeezing a year into half a column wastes
+    // the one thing it has to show.
     const timeWrap = figure("Weight over time", repeatNote);
+    timeWrap.classList.add("chart-wide");
     if (series.length) {
       timeWrap.appendChild(lineChart(series.slice(0, 12)));
       if (series.length > 12) {
@@ -558,6 +568,7 @@
         "Height does not change in adults, so these are typos, a unit " +
         "mix-up, or one handle used by two people. Worth checking before " +
         "trusting the height figures.");
+      wrap.classList.add("chart-wide");   // a list, not a chart
       const list = document.createElement("pre");
       list.className = "failure-list";
       list.textContent = heightMoved.map(function (item) {

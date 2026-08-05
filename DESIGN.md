@@ -387,6 +387,25 @@ tracking, over the system stack.
 **A theme-aware SVG favicon.** It reads `prefers-color-scheme` itself,
 because a favicon cannot see the page's `data-theme`.
 
+**The stylesheet is desktop-first**, which is the opposite of the usual
+advice and deliberate. This form is filled in once, mostly at a desk,
+and the page that matters most — the export — has an eighteen-column
+table and a grid of charts. Building those up from a phone layout made
+every desktop rule an exception; this way the exceptions are the small
+screen, where there is only ever one answer: one column, in the order
+the markup already has. The mobile override is one block at the bottom
+of `theme.css` and is short because of it.
+
+Two measures, not one. `--measure` is the reading column for prose and
+forms; `--measure-wide` is for `admin.html`, which is looking at data
+rather than reading. `body.wide` opts into it and `.narrow` opts an
+individual card back out — the credentials card is inputs and prose, and
+a password field stretched to 84rem looks broken because it is.
+
+Breakpoints are in `rem` and chosen from the layout rather than from
+any device: 52rem is where two fields stop fitting side by side with
+room to type in them.
+
 **One rule forcing `[hidden]` to `display: none !important`.** Every
 part of this site that appears and disappears does it by setting the
 `hidden` attribute — both unit groups, the "not open" notice, the

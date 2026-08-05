@@ -27,7 +27,10 @@
 <link rel="stylesheet" href="theme.css">
 <script src="theme-init.js"></script>
 </head>
-<body>
+<!-- The one page that reads as data rather than prose: an eighteen-column
+     table and a grid of charts. `wide` widens the measure for those; the
+     cards that are still prose or inputs opt back out with `narrow`. -->
+<body class="wide">
 
 <header class="stack">
   <div class="themes" role="group" aria-label="Colour theme">
@@ -48,14 +51,14 @@
 <main class="stack">
 
   <!-- Shown instead of the tool when the browser cannot decrypt. -->
-  <div class="card" id="closed" hidden>
+  <div class="card narrow" id="closed" hidden>
     <p class="eyebrow">Unavailable</p>
     <p data-reason></p>
   </div>
 
   <div class="stack" id="tool">
 
-    <div class="card">
+    <div class="card narrow">
       <div class="field">
         <label for="token">Export token</label>
         <input type="password" id="token" autocomplete="off"
@@ -149,7 +152,7 @@
       <div id="charts"></div>
     </div>
 
-    <div class="card">
+    <div class="card narrow">
       <p class="eyebrow">Before you close this</p>
       <p class="muted small">
         This page is the only place the submissions exist in the clear.

@@ -126,7 +126,24 @@
 
   --radius: 0.75rem;
   --radius-pill: 999px;
-  --measure: 34rem;
+
+  /*
+   * Written desktop-first: the rules below are the desktop layout, and
+   * the mobile layout is the override at the bottom of this file.
+   *
+   * That is the opposite of the usual advice, and deliberate. This site
+   * is filled in once, mostly at a desk, and the page that matters most
+   * - the export - has an eighteen-column table and a wall of charts.
+   * Building those up from a phone layout meant every desktop rule was
+   * an exception; this way the exceptions are the small screen, where
+   * there is only ever one answer: stack it.
+   *
+   * --measure is the reading column for prose and forms. --measure-wide
+   * is for pages that are looking at data rather than reading, which is
+   * admin.html and nothing else.
+   */
+  --measure: 46rem;
+  --measure-wide: 84rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -163,7 +180,7 @@ html {
 
 body {
   margin: 0;
-  padding: var(--space-6) var(--space-4) var(--space-8);
+  padding: var(--space-8) var(--space-6);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -181,6 +198,32 @@ body > * {
   max-width: var(--measure);
   margin-inline: auto;
 }
+
+/* admin.html only. Its table and charts are the reason --measure-wide
+   exists; a form does not get wider just because the window is. */
+body.wide > * { max-width: var(--measure-wide); }
+
+/* Pulls one block back to the reading column on a wide page - the
+   credentials card and the closing note, which are prose and inputs
+   rather than data. A password field stretched to 84rem looks broken
+   because it is. */
+body.wide .narrow {
+  max-width: var(--measure);
+  margin-inline: 0;
+}
+
+/*
+ * Two fields that belong beside each other: weight and height, gender
+ * and country. They stack on a small screen, which is the only thing
+ * the mobile override has to say about them.
+ */
+.pair {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.pair > * { flex: 1; min-width: 0; }
 
 /* Vertical rhythm comes from the container, not from margins on each
    child - nothing to collapse, nothing to double up. */
@@ -236,6 +279,27 @@ p {
 
 /* Numbers that will sit in columns once there is data to line up. */
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* On desktop the title and the theme chips share a line - the chips are
+   a control, not a heading, and giving them their own row above the
+   title makes them look like one. The markup keeps them first for tab
+   order; the grid puts them right. */
+header.stack {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--space-4);
+}
+
+header.stack > .themes {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+header.stack > .stack-tight {
+  grid-column: 1;
+  grid-row: 1;
+}
 
 /* Theme chips, wired by theme.js via [data-set-theme]. */
 .themes {
@@ -592,11 +656,19 @@ circle.series-3, text.series-3 { fill: #b07de0; }
 circle.series-4, text.series-4 { fill: #e0685f; }
 circle.series-5, text.series-5 { fill: #6aa9e0; }
 
+/* Two charts abreast on a wide window. A histogram 84rem across is not
+   more informative, just longer to look at. */
 #charts {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6) var(--space-8);
+  align-items: start;
 }
+
+/* The ones that earn the full width: the time series, because it is the
+   only chart with a real horizontal axis, and the data-quality panel,
+   because it is a list. */
+.chart-wide { grid-column: 1 / -1; }
 
 .secondary-link {
   font-size: var(--text-sm);
@@ -632,6 +704,62 @@ a { color: var(--primary-dark); }
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--space-1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Mobile.                                                             */
+
+/*
+ * Everything above is the desktop layout. This is the whole of the
+ * small-screen one, and it is short because on a phone there is only
+ * ever one answer: one column, edge to edge, in the order the markup
+ * already has.
+ *
+ * 52rem rather than a device width. The question is whether two fields
+ * fit side by side and still leave room to type in them, and that is a
+ * fact about the layout, not about anybody's handset.
+ */
+@media (max-width: 52rem) {
+  body {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+    gap: var(--space-4);
+  }
+
+  /* One column, full width. --measure-wide stops applying on a screen
+     that has no width to give it. */
+  body > *,
+  body.wide > * { max-width: 100%; }
+
+  body.wide .narrow { max-width: 100%; }
+
+  /* The chips go back above the title. Side by side, the heading has
+     nowhere left to wrap to. */
+  header.stack {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pair { flex-direction: column; }
+
+  #charts { grid-template-columns: minmax(0, 1fr); }
+
+  /* The eighteen-column table cannot be made to fit and should not
+     try - .table-scroll already scrolls it. This just stops the cells
+     being needlessly wide inside that scroll. */
+  th,
+  td { padding: var(--space-2); }
+
+  /* Two across rather than one, so the summary is not a long list of
+     single numbers. */
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Very narrow: one stat per row, since two no longer fit their labels.
+   22rem rather than something phone-sized on purpose - at 375px two
+   still fit, and six stats stacked single-file is a scroll, not a
+   summary. */
+@media (max-width: 22rem) {
+  .stats { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

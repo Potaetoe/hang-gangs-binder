@@ -126,7 +126,7 @@
         the only way to be sure it cannot is for the other system's
         numbers to live somewhere else. form.js hides one group.
       -->
-      <div id="metric-fields" class="stack">
+      <div id="metric-fields" class="pair">
         <div class="field">
           <label for="weight-kg">Weight</label>
           <div class="row">
@@ -147,7 +147,7 @@
         </div>
       </div>
 
-      <div id="imperial-fields" class="stack" hidden>
+      <div id="imperial-fields" class="pair" hidden>
         <div class="field">
           <label for="weight-lb">Weight</label>
           <div class="row">
@@ -204,23 +204,25 @@
         </div>
       </fieldset>
 
-      <div class="field">
-        <label for="gender">Gender</label>
-        <select id="gender">
-          <option value="">Prefer not to say</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="nonbinary">Non-binary</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
+      <div class="pair">
+        <div class="field">
+          <label for="gender">Gender</label>
+          <select id="gender">
+            <option value="">Prefer not to say</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="nonbinary">Non-binary</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
 
-      <div class="field">
-        <label for="country">Country</label>
-        <!-- Options are added by form.js from countries.js. -->
-        <select id="country">
-          <option value="">Prefer not to say</option>
-        </select>
+        <div class="field">
+          <label for="country">Country</label>
+          <!-- Options are added by form.js from countries.js. -->
+          <select id="country">
+            <option value="">Prefer not to say</option>
+          </select>
+        </div>
       </div>
     </div>
 
