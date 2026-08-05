@@ -295,6 +295,8 @@ p {
 /* Inputs and selects share one surface. --field-bg rather than --card so
    a control reads as a hole in the card it sits on, in every palette. */
 input[type="text"],
+input[type="password"],
+textarea,
 select {
   font: inherit;
   color: var(--text);
@@ -308,8 +310,24 @@ select {
 
 input[type="text"] { font-variant-numeric: tabular-nums; }
 
+/* The key file is JSON. Monospace makes a truncated paste visible. */
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  resize: vertical;
+}
+
 input[type="text"]:hover,
+input[type="password"]:hover,
+textarea:hover,
 select:hover { border-color: var(--primary); }
+
+input[type="file"] {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  max-width: 100%;
+}
 
 /* The one place colour alone is not the signal - the message under the
    field is. This just points at it. */
@@ -368,7 +386,11 @@ input[aria-invalid="true"] { border-color: var(--warn-text); }
   padding: var(--space-2) var(--space-3);
 }
 
-button.primary {
+/* a.primary is the CSV download, which is a link because it points at a
+   blob URL - but it is the same action as a button and should not look
+   like prose. */
+button.primary,
+a.primary {
   font: inherit;
   font-weight: 600;
   color: var(--bg);
@@ -380,11 +402,83 @@ button.primary {
   transition: background-color 120ms ease;
 }
 
-button.primary:hover:not(:disabled) { background: var(--primary-dark); }
+a.primary {
+  display: inline-block;
+  text-decoration: none;
+}
+
+button.primary:hover:not(:disabled),
+a.primary:hover { background: var(--primary-dark); }
 
 button.primary:disabled {
   opacity: 0.55;
   cursor: progress;
+}
+
+button.secondary {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+
+button.secondary:hover {
+  color: var(--text);
+  border-color: var(--primary);
+}
+
+/* ------------------------------------------------------------------ */
+/* The export table.                                                   */
+
+/* Eighteen columns will not fit a phone and should not try. The table
+   scrolls inside its card rather than widening the page. */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+table {
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+th,
+td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: var(--card);
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+
+.failure-list {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-xs);
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
 }
 
 /* Live region under the button. Neutral by default because most of what

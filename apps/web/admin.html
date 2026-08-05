@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Same policy as index.html, and load-bearing for the same reason from
+  the other direction: index.html holds plaintext on the way in, this
+  page holds everyone's plaintext on the way out, plus the key that
+  produced it. An injected script here would see the whole corpus.
+
+  connect-src names the Worker exactly, and deliberately does NOT list
+  blob:. The CSV is built in this page and handed over as an object URL
+  on a download link, and a download is not a fetch - confirmed by
+  watching securitypolicyviolation while clicking it, which reports
+  nothing. Adding blob: here would permit something this page never
+  does; the only thing it would enable is reading an object URL back
+  through fetch(), which is how the mistake was nearly made.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<title>Export — Hang Gang's Binder</title>
+<meta name="description" content="Decrypt and export the submissions. Requires the export token and the private key.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#121212">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<body>
+
+<header class="stack">
+  <div class="themes" role="group" aria-label="Colour theme">
+    <button type="button" data-set-theme="pink">Pink</button>
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" data-set-theme="dark">Dark</button>
+  </div>
+
+  <div class="stack-tight">
+    <p class="eyebrow">Keyholder only</p>
+    <h1>Export</h1>
+    <p class="muted">
+      Decrypts the submissions in this browser. Nothing is uploaded.
+    </p>
+  </div>
+</header>
+
+<main class="stack">
+
+  <!-- Shown instead of the tool when the browser cannot decrypt. -->
+  <div class="card" id="closed" hidden>
+    <p class="eyebrow">Unavailable</p>
+    <p data-reason></p>
+  </div>
+
+  <div class="stack" id="tool">
+
+    <div class="card">
+      <div class="field">
+        <label for="token">Export token</label>
+        <input type="password" id="token" autocomplete="off"
+               spellcheck="false" aria-describedby="token-help">
+        <p class="hint" id="token-help">
+          The Worker secret. It fetches the rows; on its own it gets you
+          nothing but ciphertext.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="keyfile">Private key</label>
+        <textarea id="keyfile" rows="5" autocomplete="off" spellcheck="false"
+                  aria-describedby="key-help"
+                  placeholder="Paste the key file, or choose it below"></textarea>
+        <p class="hint" id="key-help">
+          The file <code>tools/keygen.html</code> saved. It is read in
+          this page and never sent anywhere.
+        </p>
+        <input type="file" id="keyfile-picker" accept=".json,application/json"
+               aria-label="Choose the key file">
+      </div>
+
+      <div class="row">
+        <button type="button" id="run" class="primary">Fetch and decrypt</button>
+        <button type="button" id="clear" class="secondary">Clear</button>
+      </div>
+
+      <p class="status" id="status" role="status" aria-live="polite" hidden></p>
+    </div>
+
+    <div class="card" id="failures" hidden>
+      <p class="eyebrow">Rows that would not open</p>
+      <p class="muted small">
+        Usually the key has been rotated and these predate it — the old
+        key still reads them. Worth checking before assuming they are
+        damaged.
+      </p>
+      <pre class="failure-list" id="failure-list"></pre>
+    </div>
+
+    <div class="card" id="results" hidden>
+      <p class="eyebrow">Result</p>
+      <p id="summary"></p>
+      <p>
+        <a id="download" class="primary" download>Download CSV</a>
+      </p>
+      <div class="table-scroll">
+        <table class="tabular">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">Before you close this</p>
+      <p class="muted small">
+        This page is the only place the submissions exist in the clear.
+        Nothing here is saved — closing the tab discards the key, the
+        token and the decrypted rows. Press <strong>Clear</strong> if you
+        are leaving it open on a machine someone else can reach.
+      </p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <p>
+    <a href="index.html">Submission portal</a> ·
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+<script src="config.js"></script>
+<script src="crypto.js"></script>
+<script src="admin.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

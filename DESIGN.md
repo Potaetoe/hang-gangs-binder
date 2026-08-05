@@ -544,30 +544,66 @@ The order is deliberate. State as of 2026-08-04:
    held to naming `BinderCrypto`, with `index.html` held to loading
    `crypto.js`. Confirmed armed rather than assumed.
 
-5. ⬜ **`admin.html`** — token in, key in, decrypted CSV out. **Next.**
+5. ✅ **`admin.html`** — token in, key in, decrypted CSV out. Built,
+   and split like the form: the CSV logic is pure, exported as
+   `BinderAdmin`, and tested in `dev/admin.test.mjs`, which CI runs.
+   The CSV *is* the product, and a quoting bug does not throw — it
+   shifts one column into the next and produces a file that opens
+   cleanly in a spreadsheet and is wrong.
 
-6. 🔄 **`HANDOFF.md`** — written up front, from the transfer table
-   above, and revisited as each piece lands. The original plan was to
+   Four decisions worth their reasons:
+
+   - **The key is imported before the network is touched.** A bad key
+     is the admin's own mistake and can be reported instantly; spending
+     the request first would report it as a failure of the fetch, which
+     sends them to check the wrong thing.
+   - **A row that will not open is named, not skipped.** `crypto.js`
+     throws, which is right, but stopping the export on the first
+     failure is not: the ordinary cause is a rotated key, where the old
+     rows fail and the new ones are exactly what is wanted. Failures
+     are counted and listed with their row ids beside the result.
+   - **Cells that a spreadsheet would execute are defused.** A cell
+     beginning `=`, `+`, `-` or `@` is a formula in Excel, Numbers and
+     Sheets. Nothing that passes the form's validation starts that way,
+     but a record is whatever arrived, and this design assumes the
+     submitter's browser is the submitter's. A leading apostrophe is
+     the conventional fix; the only honest false positive would be a
+     negative number, and no field here can be negative.
+   - **`connect-src` does not list `blob:`.** The CSV is handed over as
+     an object URL on a download link, and a download is not a fetch —
+     confirmed by watching `securitypolicyviolation` while clicking it.
+     Adding `blob:` would permit only the thing this page never does:
+     reading an object URL back through `fetch()`.
+
+   The page holds the whole corpus in the clear, which nothing else
+   does, so it also has a **Clear** button and says plainly that
+   closing the tab discards everything. Nothing is written to
+   `localStorage`.
+
+6. ✅ **`HANDOFF.md`** — written up front, from the transfer table
+   above, and revisited as each piece landed. The original plan was to
    write it last; that was wrong. Transferability shapes the code, so
-   the checklist has to exist while there is still time for the code to
-   accommodate it. Revisit it when the key and the form exist, since
-   both add steps to it.
+   the checklist had to exist while there was still time for the code
+   to accommodate it. It now carries the export procedure, which only
+   became writable once `admin.html` existed. Revisit it whenever the
+   key, the endpoint or the export changes.
 
 ### What exists now
 
-The site, the storage endpoint and the form, wired together and live;
-the key generator; a keypair, whose public half is published in
-`config.js` and whose private half is held offline by the keyholder;
-and `crypto.js`, tested against both a fresh keypair and a stored
-fixture. **The portal collects data.** A submitter fills in the form,
-their entry is encrypted in their browser and appended to D1 as
-ciphertext.
+**Both ends, and everything between them.** The site, the storage
+endpoint, the form and the export page, wired together and live; the
+key generator; a keypair, whose public half is published in `config.js`
+and whose private half is held offline by the keyholder; and
+`crypto.js`, tested against both a fresh keypair and a stored fixture.
 
-What is missing is the other end: `admin.html`. Until it exists the
-rows accumulate and cannot be read back by anything with a user
-interface — the data is safe and the key is held, but there is no
-export. That is the next thing built, and it is the reason step 5 is
-not optional.
+A submitter fills in the form and their entry is encrypted in their
+browser and appended to D1 as ciphertext. The keyholder opens
+`admin.html`, supplies the export token and the key file, and gets a
+CSV built in their own browser. Nothing in between can read any of it.
+
+The build order is complete. What remains is operational rather than
+architectural: spam protection if junk ever appears, and keeping
+`HANDOFF.md` honest as things change.
 
 ## Open questions
 

@@ -57,6 +57,23 @@ messy as it needs to be.
   The last two checks run a real record through `crypto.js` and back,
   which is where the two halves meet.
 
+- `admin.test.mjs` — exercises the pure half of `apps/web/admin.js`:
+  CSV quoting, the spreadsheet-formula guard, and turning a decrypted
+  record into a row.
+
+  ```bash
+  node dev/admin.test.mjs
+  ```
+
+  The CSV is the product — everything else in this project exists to
+  get the data into that file intact. A quoting bug does not throw and
+  does not look wrong; it shifts one column into the next and produces
+  a file that opens cleanly in a spreadsheet and is quietly incorrect.
+
+  The last checks run the whole pipeline in one go: a record built by
+  the real `form.js`, encrypted by the real `crypto.js`, decrypted, and
+  turned into a CSV row.
+
 - `crypto-browser-check.html` — the platform-dependent half of the same
   checks, in a real browser under the published pages' content security
   policy. Node is the same specification, which is why the Node test is

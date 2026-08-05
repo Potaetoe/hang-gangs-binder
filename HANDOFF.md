@@ -72,11 +72,48 @@ row as JSON. Those rows are ciphertext, so they can be sent over any
 channel you like, and inserted into the new database with an `INSERT`
 per row. Nothing in them is readable in transit.
 
+## Reading the submissions
+
+`apps/web/admin.html` on the live site, which is a public page and
+useless without both secrets. Publishing it costs nothing; it is the
+key and the token that gate the data, not the address.
+
+1. Open it, paste the **export token**, and give it the **key file** —
+   either paste the JSON or use the file picker. The file is read in
+   the page. It is not uploaded, and nothing is saved.
+2. **Fetch and decrypt.** It pulls the ciphertext, opens each row in
+   your browser and builds the CSV there.
+3. **Download CSV.**
+
+Things worth knowing before you rely on it:
+
+- **Rows that will not open are listed, not hidden.** If you have
+  rotated keys, expect the older rows to fail with the newer key. That
+  is not damage — the old key still reads them. This is why a rotated
+  key is archived rather than destroyed.
+- **Duplicates are normal.** Storage is append-only and the form cannot
+  read what is already there, so anyone resubmitting adds a row. Sort
+  it out here; the repeats double as weight-over-time history.
+- **Both unit systems are in every row**, plus what the submitter
+  actually typed. When a rounded value looks wrong, `entered_*` is the
+  column to trust.
+- **Cells starting `=`, `+`, `-` or `@` arrive with a leading
+  apostrophe.** That is deliberate — a spreadsheet would otherwise run
+  them as formulas. Nothing legitimate starts that way.
+- **Close the tab when you are done**, or press Clear. That page is the
+  only place this data exists in the clear.
+
+If the token is refused, it is the Worker secret `EXPORT_TOKEN` — reset
+it in the Cloudflare dashboard rather than guessing. If the key is
+refused, the page says which way it is wrong; a common one is pasting
+the public half.
+
 ## Before you consider it handed over
 
 - [ ] They can decrypt a real submission — not a test fixture, an
-      actual row from the live database. Nothing else proves the key,
-      the token and the endpoint all reached them intact.
+      actual row from the live database, through `admin.html` on their
+      own machine. Nothing else proves the key, the token and the
+      endpoint all reached them intact.
 - [ ] They have two copies of the private key, in two places.
 - [ ] They have submitted through the live form themselves and seen the
       row arrive.

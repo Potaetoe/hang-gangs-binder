@@ -68,6 +68,12 @@ jobs:
       - name: Check the form's conversions and validation
         run: node dev/form.test.mjs
 
+      # The CSV is what the whole project is for. A quoting bug does not
+      # throw - it shifts one column into the next and produces a file
+      # that opens cleanly and is wrong.
+      - name: Check the export's CSV
+        run: node dev/admin.test.mjs
+
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
         # the endpoint broken is still a broken release.
