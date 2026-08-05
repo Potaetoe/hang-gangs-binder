@@ -127,6 +127,20 @@ messy as it needs to be.
   that is wrong is indistinguishable from a chart that is right. The
   drawing is checked by looking at it; the arithmetic is checked here.
 
+- `ui.test.mjs` exercises the shared DOM wiring in `apps/web/ui.js`:
+  element lookup, visibility, checked-radio selection, status messages,
+  and the guarded startup path for both synchronous and asynchronous
+  failures.
+
+  ```bash
+  node dev/ui.test.mjs
+  ```
+
+  It also holds the architectural boundary that `ui.js` must contain no
+  `fetch` or `POST`. Network behavior stays in the page-specific scripts,
+  where the publishability check can require encryption for anything that
+  sends a body.
+
 - `crypto-browser-check.html` — the platform-dependent half of the same
   checks, in a real browser under the published pages' content security
   policy. Node is the same specification, which is why the Node test is

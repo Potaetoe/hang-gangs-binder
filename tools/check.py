@@ -5,7 +5,7 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of seven remembered ones. It runs the five
+it?" one command instead of eight remembered ones. It runs the seven
 Node suites in dev/ and the publishability check, and exits non-zero if
 any of them fails:
 
@@ -15,7 +15,8 @@ any of them fails:
     4. admin.js quotes CSV correctly and guards spreadsheet formulas
     5. xlsx.js writes a ZIP that a reader can actually open
     6. dashboard.js aggregates the rows correctly
-    7. worker.js routes, validates and enforces CORS
+    7. ui.js keeps the shared DOM wiring and boot guard intact
+    8. worker.js routes, validates and enforces CORS
 
 What none of it can see is the Cloudflare dashboard. A Worker with no
 D1 binding, or no EXPORT_TOKEN, passes every check here and fails on
@@ -44,6 +45,7 @@ NODE_SUITES = [
     ("admin CSV + formula guard", "dev/admin.test.mjs"),
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),
     ("dashboard aggregation", "dev/dashboard.test.mjs"),
+    ("shared UI wiring", "dev/ui.test.mjs"),
     ("worker routing + CORS", "dev/worker.test.mjs"),
 ]
 
