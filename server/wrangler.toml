@@ -44,9 +44,30 @@ preview_urls = false
 [vars]
 ALLOWED_ORIGINS = "https://potaetoe.github.io,http://localhost:8124"
 
-# EXPORT_TOKEN is deliberately absent. It is a secret, set with
+# Every secret is deliberately absent. They are set with
 # `wrangler secret put` or in the dashboard, and must never appear in a
-# file that lives in a public repository.
+# file that lives in a public repository:
+#
+#     EXPORT_TOKEN         break-glass admin access
+#     TELEGRAM_BOT_TOKEN   verifies every login payload
+#     ACCOUNT_SECRET       the HMAC key behind every account id.
+#                          PERMANENT - changing it detaches every member
+#                          from their own history, with no way back.
+#     DEV_LOGIN_SECRET     DEVELOPMENT ONLY. Its absence is what turns
+#                          POST /auth/dev off, so it must never be set
+#                          here or on the production Worker.
+#
+# ADMIN_TELEGRAM_IDS, TELEGRAM_GROUP_CHAT_ID and
+# ALWAYS_ALLOW_TELEGRAM_IDS are plaintext vars rather than secrets - they
+# are numeric ids, not credentials - and they are not listed under
+# [vars] yet because the accounts Worker is not deployed. See
+# server/README.md.
+#
+# There is no [env.dev] block yet either, and there deliberately will not
+# be one until the development D1 database exists. A block carrying a
+# placeholder database_id is exactly the drift the comment at the top of
+# this file describes: config nobody runs is documentation that has
+# stopped being true without telling anyone.
 
 # The id is account-scoped and not a credential - it identifies the
 # database but opens nothing without Cloudflare authentication, which is

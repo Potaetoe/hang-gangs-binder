@@ -16,9 +16,15 @@ name: Verify and deploy
 # never happens cannot fail to happen. tools/check_web.py additionally
 # fails the build if anything key-shaped is sitting in apps/web.
 #
-# There is deliberately no staging branch and no preview deployment: a
-# push is a release. What protects production is this job, plus running
-# the site locally before pushing.
+# There is deliberately no staging branch: a push is a release. What
+# protects production is this job, plus running the site locally before
+# pushing. A non-production *environment* - a second Worker and D1, with
+# config.js choosing by hostname - is a different thing and is planned;
+# see DESIGN.md, "What is deliberately not here".
+#
+# This job never deploys server/. The Worker is deployed separately and
+# by hand, which means the repository and the endpoint can disagree -
+# and as of 2026-08-05 they deliberately do. See server/README.md.
 # ---------------------------------------------------------------------
 
 on:
@@ -88,7 +94,11 @@ jobs:
 
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
-        # the endpoint broken is still a broken release.
+        # the endpoint broken is still a broken release. Since the
+        # accounts work this also gates sign-in, the session rules and
+        # the route-by-caller matrix - including that the development
+        # login route stays shut, which is the one failure here that
+        # would be a real compromise rather than an outage.
         run: node dev/worker.test.mjs
 
   deploy:

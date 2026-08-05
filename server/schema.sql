@@ -5,18 +5,75 @@
 -- inside it, including the timestamp their browser recorded.
 --
 -- `received_at` is the server's own receipt time, kept outside the blob
--- because it is the one fact the endpoint can honestly attest to. It is
--- also, deliberately, the only metadata stored - see DESIGN.md, "Data
--- collected", on why the Telegram handle is not a column.
+-- because it is the one fact the endpoint can honestly attest to. It and
+-- `account_id` are the only metadata stored - see DESIGN.md, "Data
+-- collected", on why the Telegram handle is not a column, and
+-- "Accounts" on why an account id can sit in the clear where a handle
+-- cannot.
 --
--- Append-only in practice: there is no UPDATE and no DELETE anywhere in
--- the Worker. Duplicates are sorted out at export.
+-- ---------------------------------------------------------------------
+-- AHEAD OF THE LIVE DATABASE, as of 2026-08-05.
+--
+-- Running this file against the current production database will NOT
+-- migrate it, and will not say so: `submissions` already exists, so
+-- CREATE TABLE IF NOT EXISTS skips it and `account_id` never appears.
+-- What you would get is a `sessions` table beside an unchanged
+-- `submissions` - half a migration, quietly.
+--
+-- The real migration DROPs and recreates, because SQLite cannot add a
+-- NOT NULL column to a table with rows in it. That is destructive and
+-- deliberate; it is step 2 of REDESIGN.md's build order, and it comes
+-- after the dev database has been used to rehearse it.
+-- ---------------------------------------------------------------------
+--
+-- `account_id` is an HMAC of a Telegram numeric id under a Worker
+-- secret. It is the one identity on a row a client cannot influence -
+-- the handle inside the blob is written by the member's own browser and
+-- is a label rather than a fact. See DESIGN.md, "Accounts", including
+-- why a plain hash of the handle would have been a disaster.
+--
+-- No UPDATE: an update writes a new row, which is what the
+-- weight-over-time history is made of. There IS a DELETE, added
+-- 2026-08-05 - an admin can remove one submission, which is what
+-- answers "please take mine down" and what makes junk recoverable.
+--
+-- Adding account_id to a table that already has rows is not possible in
+-- SQLite for a NOT NULL column, so the accounts migration DROPs and
+-- recreates. That is deliberate and destructive; REDESIGN.md, Part 2.
 
 CREATE TABLE IF NOT EXISTS submissions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id  TEXT NOT NULL,
   ciphertext  TEXT NOT NULL,
   received_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS submissions_account
+  ON submissions(account_id);
+
+-- Sessions. Only the SHA-256 of a token is kept, so reading this table
+-- yields nothing that can be used as a session - the same reasoning that
+-- keeps plaintext out of `submissions`, applied to a much smaller
+-- secret.
+--
+-- `is_dev` marks a session minted by POST /auth/dev rather than by
+-- Telegram. It defaults to 0, so a session is only ever a development
+-- one by having said so, and the pages show a banner while one is in
+-- use. A development session that looks real is worse than none.
+--
+-- Expired rows are cleared when one is looked up rather than on a
+-- schedule. The ordinary failure of a scheduled job is silence.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  is_admin   INTEGER NOT NULL DEFAULT 0,
+  is_dev     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS sessions_expiry
+  ON sessions(expires_at);
 
 -- The published aggregate, and the only table anything can read without
 -- a token. It holds counts, medians and histogram bins - no handles, no

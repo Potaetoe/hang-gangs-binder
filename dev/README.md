@@ -7,18 +7,40 @@ messy as it needs to be.
 ## What is here
 
 - `worker.test.mjs` — exercises `server/worker.js` against a stub D1
-  binding: preflight, origin rejection, the validation cases, the token
-  gate on export, and that `ALLOWED_ORIGINS` overrides the built-in list
-  in both directions. No account, no network, no wrangler.
+  binding: preflight, origin rejection, the validation cases, Telegram
+  sign-in, sessions, group membership, the account id, and a full
+  route-by-caller gating matrix. No account, no network, no wrangler.
 
   ```bash
   node dev/worker.test.mjs
   ```
 
+  Three parts of it are worth knowing about before changing anything.
+
+  **The account-id fixture is a committed answer, and the same rule
+  applies to it as to `fixture.json`: if it fails, do not regenerate
+  it.** A changed account id means every stored row has detached from
+  the person who wrote it, with nothing anywhere reporting it. Find what
+  changed instead.
+
+  **The `POST /auth/dev` refusals are the most important assertions in
+  the file.** Everything else here protects the data; those protect the
+  boundary that protects the data, and a silent pass is itself the
+  compromise. Two independent conditions keep that route shut — the
+  secret being unset, and the origin not being loopback — so removing
+  either one alone still fails closed, and removing both fails two
+  tests. That is the property being armed rather than the implementation.
+
+  **Login payloads are signed here rather than committed.** A fixture
+  would carry a fixed `auth_date` and the freshness check would start
+  rejecting it five minutes after it was written.
+
   What it cannot see is the dashboard. A Worker with no D1 binding, or
-  no `EXPORT_TOKEN`, passes every check here and fails on the first real
-  request — so a live round trip stays part of deploying, not something
-  this replaces.
+  with a secret missing or wrong, passes every check here and fails on
+  the first real request — so a live round trip stays part of deploying,
+  not something this replaces. A wrong `TELEGRAM_BOT_TOKEN` is the new
+  example: it refuses every sign-in with the same 401 a tampered payload
+  gets.
 
 - `crypto.test.mjs` — exercises `apps/web/crypto.js`: round trips, the
   ways a key may be handed in, and every way a row must refuse to open.

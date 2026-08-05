@@ -1,6 +1,6 @@
 # Scaffolding the accounts redesign
 
-Recorded 2026-08-05. **Nothing in this document is built yet.**
+Recorded 2026-08-05. **Step 1 is built and tested. Nothing is deployed.**
 
 `DESIGN.md` says *why* accounts, what was rejected, and what it costs.
 This file is the other half: the shape the code lands into, the setup
@@ -12,15 +12,41 @@ Everything here assumes those decisions and does not re-argue them.
 
 ## What is true right now
 
-The live site has no accounts. `README.md`, `HANDOFF.md`,
-`server/README.md`, `server/schema.sql` and `server/wrangler.toml` all
-describe **the deployment as it currently runs**, and they are correct.
-They are deliberately not rewritten ahead of the code — a runbook that
-describes a system which does not exist yet is worse than a stale one,
-because somebody follows it during an incident.
+**The live site and the live endpoint have no accounts.** Nothing a
+visitor can reach has changed.
 
-Each of those files carries a pointer to this one. They get rewritten as
-the steps below land, not before.
+**`server/worker.js`, `server/schema.sql` and `dev/worker.test.mjs` are
+ahead of the deployment**, as of 2026-08-05. The accounts Worker is
+written and passes 64 checks including mutation testing; the pages that
+would sign somebody in do not exist yet.
+
+> **Deploying `worker.js` now would 401 every submitter.** The form
+> encrypts fine and is then refused, because it sends no session. The
+> schema is worse: the new `submissions` table has a `NOT NULL
+> account_id` that nothing on the live site knows how to supply. Step 1
+> deliberately stops at "written and tested" — the deploy belongs after
+> step 3.
+
+`README.md`, `HANDOFF.md`, `server/README.md` and `server/wrangler.toml`
+describe **the deployment as it currently runs**, and every procedure in
+them works today. They are deliberately not rewritten ahead of the code
+— a runbook that describes a system which does not exist yet is worse
+than a stale one, because somebody follows it during an incident. Each
+carries a pointer here, and `server/README.md` carries the
+do-not-deploy warning in full.
+
+## What is done
+
+| Step | State |
+| --- | --- |
+| 1 — Worker: auth, sessions, account id | **built, tested, not deployed** |
+| 0 — `ui.js` | not started |
+| 0.5 — dev Worker and D1 | not started; needs a Cloudflare errand |
+| 2 onwards | not started |
+
+Step 1 landed before step 0 because it needs nothing from anybody: no
+bot, no Cloudflare, no secrets. Steps 0 and 0.5 are next, and 0.5 needs
+you rather than me.
 
 ---
 
@@ -46,6 +72,50 @@ the widget renders and refuses to sign anybody in. The domain is the
 GitHub user is on their own host.
 
 Keep the bot's username. The widget markup names it.
+
+The bot token is a credential of the same rank as `EXPORT_TOKEN`:
+anyone holding it can forge a login payload for any Telegram user, and
+therefore a session for any member. `/revoke` in BotFather issues a new
+one if it ever leaks. Revoking it does **not** disturb account ids —
+those derive from `ACCOUNT_SECRET` and the numeric user id, and the bot
+token is not an input. Losing the bot token costs a re-paste; losing
+`ACCOUNT_SECRET` costs the data's structure.
+
+`tools/check_web.py`'s check 2 should learn the bot token's shape —
+`\d{8,10}:[A-Za-z0-9_-]{35}` is distinctive enough to catch, and
+`apps/web` is exactly where somebody pastes one "just to test the login
+locally". It is the same accident the private-key patterns exist for,
+with a new credential.
+
+### Sign-in cannot be tested locally, and that is a real cost
+
+`/setdomain` binds the widget to one origin, and Telegram will not
+accept `localhost`. So **the login widget does not work on
+`http://localhost:8124`**, which collides with this project's rule that
+a push to `main` is a release and is verified locally first.
+
+This is a cost of choosing the widget over the bot deep-link flow, which
+has no domain binding and would have worked from any origin. It was not
+priced in when that choice was made, and it should be recorded as part
+of the price rather than discovered at step 3.
+
+**The way through is a development sign-in route on the development
+Worker**, specified in Part 1b. It is a real hole in a real boundary and
+it is built accordingly: four independent conditions, every one failing
+closed, a `404` rather than a `401` so production does not advertise it,
+sessions visibly marked as development on screen, and two tests that
+assert it refuses when its secret is absent.
+
+What stays unverifiable anywhere but production is the widget rendering
+and its callback — a small surface, identical on every deployment, and
+checked on the live site once before anyone is told the URL. Everything
+downstream of holding a session is exercised locally.
+
+Considered and not chosen: pasting a genuine session token into the
+local page, obtained from a real sign-in on the live site. It bypasses
+nothing, which is its whole appeal, but the payload's five-minute
+freshness window makes it a race every time and it cannot mint a second
+member to test against.
 
 ### The Cloudflare secrets
 
@@ -76,6 +146,173 @@ another way — that is the intended route, and it means
 
 ---
 
+## Part 1b — The non-production environment
+
+Added 2026-08-05, before any of the accounts work. See `DESIGN.md`,
+"What is deliberately not here", for why this is an *environment* and
+still not a branch.
+
+**It fixes something already broken.** `config.js` names one endpoint,
+so the local preview writes to the production database — pressing Submit
+on `localhost:8124` puts a real row in the live D1. That is how
+`zzztestrow` got in. Doing this first also means step 2's `DROP TABLE`
+is rehearsed rather than performed for the first time on real data.
+
+### A second Worker and D1
+
+`server/wrangler.toml` gains an environment block. **Set `name`
+explicitly** rather than letting wrangler derive it — the file's
+existing comment already says why a wrong Worker name is not an error
+but a success somewhere else.
+
+```toml
+[env.dev]
+name = "hgbinderworker-dev"
+
+[env.dev.vars]
+ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "hg_binder_db_dev"
+database_id = "..."
+```
+
+```bash
+wrangler d1 create hg_binder_db_dev
+wrangler d1 execute hg_binder_db_dev --remote --file=schema.sql --env dev
+wrangler secret put EXPORT_TOKEN --env dev
+wrangler secret put DEV_LOGIN_SECRET --env dev   # dev only, never prod
+wrangler deploy --env dev
+```
+
+Each secret is set per environment. **Give development its own values
+for all of them** — a shared `EXPORT_TOKEN` would mean a token pasted
+into a scratch page also opens production.
+
+`DEV_LOGIN_SECRET` is the exception in the other direction: it is set on
+development and **must never be set on production**, where its absence
+is what turns the route below off. It is the only secret in this project
+whose safety comes from not existing somewhere.
+
+### `config.js` chooses by hostname
+
+One committed file, no build step, and no local edit that can ship by
+accident:
+
+```js
+const ENVIRONMENTS = {
+  "potaetoe.github.io": {
+    name: "production",
+    endpoint: "https://hgbinderworker.sorcererbiggz.workers.dev",
+    publicKey: "BF...",
+  },
+  "localhost": {
+    name: "development",
+    endpoint: "https://hgbinderworker-dev.sorcererbiggz.workers.dev",
+    publicKey: "BK...",
+  },
+};
+ENVIRONMENTS["127.0.0.1"] = ENVIRONMENTS.localhost;
+
+// No default. An unrecognised host gets no key, which is the state the
+// form already handles and says out loud - submissions closed. A
+// default of "production" is the accident this whole arrangement exists
+// to prevent.
+globalThis.BINDER_CONFIG =
+  ENVIRONMENTS[location.hostname] || { name: "unknown", publicKey: null };
+```
+
+Development needs **its own keypair**, from `tools/keygen.html`. Sharing
+production's would mean loading the real private key to read test rows.
+The development private key is a convenience and not a secret; it still
+does not belong in the repository, because check 2 cannot tell two
+private keys apart and should not have to.
+
+### What `check_web.py` gains
+
+Checks 4 and 5 currently assume one endpoint and one key. They become:
+
+- every arm's `publicKey` is a real P-256 point, not just the first one
+  the regex finds;
+- every arm's origin appears in the `connect-src` of every page that
+  loads `config.js`;
+- **no two arms share an endpoint or a public key** — that is what a
+  half-finished copy-and-paste looks like, and it is the exact shape of
+  production silently pointing at development;
+- the arm named `production` carries the deployed host as its key.
+
+### Local sign-in: `POST /auth/dev`
+
+The widget is bound to one domain and Telegram will not accept
+`localhost`, so the development environment cannot mint a member session
+the ordinary way. Decided 2026-08-05: it gets a **development sign-in
+route** rather than making local work stop at the session boundary.
+
+This is a deliberate hole in the boundary that now enforces everything,
+so the entire design of it is about which way it fails. Four conditions
+gate it and **every one of them fails closed**:
+
+1. **`DEV_LOGIN_SECRET` must be set.** Absent, the route does not exist.
+   The existing `authorised()` is the pattern to copy exactly — it reads
+   `Boolean(env.EXPORT_TOKEN) && tokenMatches(...)`, so a missing secret
+   refuses rather than skips the check. A guard written the other way up
+   is the whole risk in one line.
+2. **The caller must present that secret**, compared with the same
+   constant-time helper as the export token.
+3. **The `Origin` must be loopback** — `http://localhost:*` or
+   `http://127.0.0.1:*`. Positive matching, not a deny list: the route
+   never needs to know what production is, so it cannot be wrong about
+   it. A development login only makes sense from a local page, and this
+   is that sentence written as code.
+4. **It answers `404`, not `401`**, when any of the above fails. A
+   production deployment does not advertise a route it will not serve.
+
+```
+POST /auth/dev   { "secret": "...", "subject": "alice", "admin": false }
+```
+
+`account_id = HMAC(ACCOUNT_SECRET, "dev:" + subject)`. The `dev:` prefix
+is namespacing, not decoration: a real account id derives from a numeric
+Telegram id, so a prefixed subject can never collide with one even if
+the two environments were ever handed the same `ACCOUNT_SECRET`.
+
+`subject` being free text is the point — it is what lets local work test
+two members, a repeat submitter, and an admin without needing three
+Telegram accounts.
+
+**Sessions minted this way are marked.** A `is_dev` column on `sessions`,
+returned by `GET /me`, and the pages show a visible banner while one is
+in use. A development session must never be mistakable for a real one,
+and the cheapest way to guarantee that is for it to say so on screen.
+
+**Two tests carry this, and they are the reason it is safe rather than
+merely intended.** With no `DEV_LOGIN_SECRET` in `env`, every body gets
+a 404. With the secret set but a non-loopback `Origin`, every body gets
+a 404. Both confirmed by mutation — the same discipline the crypto
+fixture and check 7 were confirmed with, applied here because this is
+the one route where a silent pass is a real compromise.
+
+**Built and mutation-tested 2026-08-05, and the mutation found
+something.** Removing the `DEV_LOGIN_SECRET` guard on its own does not
+break any test, because `tokenMatches` now refuses an unset secret
+rather than comparing against it — two independent conditions, either
+one of which alone keeps the route closed. Removing *both* fails two
+tests, which is the property being armed. That is the right shape: the
+tests assert the property rather than the implementation, and the route
+has defence in depth rather than one line standing between development
+and production.
+
+`tokenMatches` did not start out that way. Given an undefined secret it
+compared against `expected.length` and threw, so the first mutation run
+reported a crash as "zero failures" — a reminder that a harness counting
+failures has to count a dead run as one too.
+
+Production simply never sets `DEV_LOGIN_SECRET`, and the tests above are
+what stop that being the only thing standing between the two.
+
+---
+
 ## Part 2 — The schema
 
 `submissions` gains a `NOT NULL` column, which SQLite cannot add to a
@@ -100,6 +337,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
   is_admin   INTEGER NOT NULL DEFAULT 0,
+  -- Minted by POST /auth/dev rather than by Telegram. Defaults to 0, so
+  -- a session is only ever a development one by having said so. GET /me
+  -- returns it and the pages show a banner: a development session must
+  -- never be mistakable for a real one.
+  is_dev     INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL
 );
@@ -126,6 +368,7 @@ plaintext out of `submissions`, applied to a much smaller secret.
 | Route | Who | Change |
 | --- | --- | --- |
 | `POST /auth/telegram` | anyone, allowed origin | **new** — verifies a widget payload, issues a session |
+| `POST /auth/dev` | `DEV_LOGIN_SECRET` **and** a loopback origin | **new** — development only; `404` everywhere else. See Part 1b |
 | `GET /me` | member session | **new** — entry count, last submission, admin flag |
 | `POST /submit` | member session | was open to any allowed origin |
 | `GET /snapshot` | member session | was open to anyone |
@@ -298,6 +541,16 @@ is independent of all of this and can land whenever.
    admin session, `EXPORT_TOKEN`} → expected status. Cheap to write as a
    table and it is the thing most likely to be quietly wrong after a
    refactor.
+5. **`POST /auth/dev` fails closed**, which is the most important test
+   in this file. With no `DEV_LOGIN_SECRET` in `env`, every body gets a
+   404. With the secret set but the `Origin` not loopback, every body
+   gets a 404. Confirmed by mutation, both directions — a test that
+   passes because the route is broken for an unrelated reason is worth
+   nothing here.
+
+   The other tests protect the data. This one protects the boundary that
+   protects the data, and it is the only place in the Worker where a
+   silently-passing check is itself the compromise.
 
 ### `dev/dashboard.test.mjs` gains the assertion that was missing
 
@@ -321,6 +574,7 @@ running four; they just cover more.
 
 | Check | What happens to it |
 | --- | --- |
+| 2 — nothing key-shaped in `apps/web` | Gains the bot token's shape, `\d{8,10}:[A-Za-z0-9_-]{35}`. A new credential exists and `apps/web` is where somebody pastes one to test a login. |
 | 4 — endpoint in `connect-src` | Now spans `index.html` and `submit.html` too. No code change; it derives its own file list. |
 | 6 — sending requires encryption | **Third revision.** `index.html` will POST a login payload without loading `crypto.js`. Gains a named exemption list with a reason per entry, rather than being widened again. |
 | 8 — units default | **Hardcoded to `index.html` as `FORM_PAGE`.** Must point at `submit.html`, or it fails against a page that no longer has unit radios. |
@@ -346,9 +600,10 @@ before moving on.
 | # | Step | Do not proceed until |
 | --- | --- | --- |
 | 0 | Bot, secrets, `ui.js` | `node dev/worker.test.mjs` passes; secrets exist in the dashboard |
+| 0.5 | **Dev Worker, dev D1, hostname-switched `config.js`** | A local preview submits to the dev database and **cannot** reach production; `check_web.py`'s new arm checks confirmed armed by mutation |
 | 1 | Worker: auth, sessions, account id | A real sign-in returns a session, and the Worker reports your numeric id so `ADMIN_TELEGRAM_IDS` can be set from fact |
 | 2 | **Clear the table, unpublish** | See Part 8 — this is the point of no return |
-| 3 | `index.html` → sign-in, form → `submit.html` | Sign-in works end to end with no gate yet behind it |
+| 3 | `index.html` → sign-in, form → `submit.html` | Sign-in works end to end on the **live site** — it cannot work locally, see Part 1 — with no gate yet behind it |
 | 4 | `POST /submit` requires a session | A submission arrives with an `account_id`, and a signed-out `curl` is refused |
 | 5 | The panel, `GET /me` | Counts match what is in the table |
 | 6 | `GET /snapshot` requires a session | The dashboard still draws for a signed-in member |
@@ -370,6 +625,12 @@ is what makes them unchangeable.
 export is unencrypted and should be deleted rather than filed. Take an
 export first anyway if the current rows are worth reading once, then
 delete the file when you are done with it.
+
+**Rehearse it on the dev database first.** That is most of what step 0.5
+is for: run the `DROP TABLE` and the recreate against `hg_binder_db_dev`,
+submit a row, and confirm the new shape works — before doing the same
+thing to data nobody can rebuild. Every schema change this project has
+made until now was first executed against production.
 
 **Unpublishing.** Do it in the same sitting as the clear, not after. The
 live snapshot describes a group that is about to stop existing, and
@@ -396,7 +657,12 @@ this order, last:
   only metadata. Both stop being true.
 - **`server/wrangler.toml`** — the three new secrets are absent from it
   deliberately, exactly as `EXPORT_TOKEN` is, and the comment saying so
-  should name them.
+  should name them. It also gains the `[env.dev]` block at step 0.5,
+  which is the earlier change and the one that lands first.
+- **`README.md`'s "Running it locally"** — after step 0.5 a local
+  preview talks to the development Worker rather than production, which
+  is worth saying out loud since it is the opposite of what it did
+  before and is the reason the section is safe to follow at all.
 - **`HANDOFF.md`** — the four-things-move table, the export procedure
   (no more token box), the `curl` recovery, and the bootstrap procedure
   for a successor who has to make themselves an admin. Its statement

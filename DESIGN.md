@@ -799,9 +799,98 @@ that head, so a page added later cannot quietly ship without the policy.
   bundler would add a step that can fail between the source and the
   published site. There is no state here that hand-written DOM code
   cannot hold.
-- **No staging branch.** Same reasoning as the base project: a push to
-  `main` is a release, gated by the verify job, and verified locally
-  first.
+- **No staging branch, but a non-production *environment* since
+  2026-08-05.** The two are not the same thing, and conflating them is
+  what kept the second one from existing for so long.
+
+  A push to `main` is still a release, gated by the verify job and
+  verified locally first. A staging *branch* is still rejected, for the
+  reason it always was: `apps/web` **is** the build, so there is no
+  artifact to promote, and a long-lived second branch is two histories
+  that drift with nothing to reconcile them. Nothing about a second
+  environment requires one — the dev Worker is deployed on demand from
+  whatever is being worked on.
+
+  What forced the environment is a hazard that had been there from the
+  beginning and was easy to miss because it never failed loudly:
+  **`config.js` named one endpoint, so the local preview wrote to the
+  production database.** Serving `apps/web` on `localhost:8124` and
+  pressing Submit put a real row in the live D1. It happened — a
+  `zzztestrow` had to be cleared out with console SQL — and the only
+  thing standing between a local test and production data was
+  remembering not to press the button.
+
+  So there is a second Worker and a second D1, and **`config.js` chooses
+  by hostname**: `localhost` gets the development endpoint and a
+  development key, the deployed host gets production, and an unrecognised
+  host gets neither. That last case falls into the state the form
+  already handles — `publicKey: null`, submissions closed, and it says
+  so — rather than defaulting to production, because a default that
+  guesses "production" is the failure this whole arrangement exists to
+  prevent.
+
+  It is a runtime branch in a hand-edited file, not a build step. The
+  objection to a bundler was that it adds a step which can fail between
+  the source and the published site; one object literal selected by
+  `location.hostname` adds nothing that can fail unobserved, and it is
+  checkable — see below.
+
+  **The cost is honest and worth naming.** Every page that loads
+  `config.js` must permit *both* endpoints in its `connect-src`, because
+  a `<meta>` policy is one string served to both origins. So the
+  production pages are allowed to reach the development Worker even
+  though their config will never select it. That widening buys an
+  attacker nothing they did not already have — an injected script could
+  exfiltrate to the production endpoint just as easily, and `script-src`
+  rather than `connect-src` is what stops injection — but it is a real
+  loosening and it should be a decision rather than a surprise.
+
+  **The new failure mode is the wires crossing**, and it is exactly the
+  shape this document keeps circling: production shipping the
+  development endpoint, or the development public key. Neither throws.
+  The site loads, looks right, and quietly writes real submissions
+  somewhere they were never meant to go, or seals them to a key that was
+  treated as disposable. `tools/check_web.py` already fails the build
+  when `config.js` and a CSP disagree; it gains the environment version
+  of the same idea — every arm's key is a real P-256 point, every arm's
+  origin is permitted, and no two arms share an endpoint or a key, which
+  is what a half-finished copy-and-paste looks like.
+
+  **Sign-in gets a development route, and it is a deliberate hole.** The
+  login widget is bound to one domain and Telegram will not accept
+  `localhost`, so a development environment on the same machine cannot
+  exercise a member signing in the ordinary way. Rather than let local
+  work stop at the session boundary, the Worker gains
+  `POST /auth/dev` — and since it is a hole in the boundary that now
+  enforces everything, the whole of its design is about which way it
+  fails.
+
+  Four conditions gate it and every one fails closed: a
+  `DEV_LOGIN_SECRET` that must be **set** for the route to exist at all,
+  the caller presenting it, an `Origin` that must be loopback, and a
+  `404` rather than a `401` so production never advertises a route it
+  will not serve. The first is the important one and it is not a new
+  idea here — `authorised()` already reads
+  `Boolean(env.EXPORT_TOKEN) && tokenMatches(...)`, which is the same
+  guard written the right way up. A guard written the other way up is
+  the entire risk, in one line.
+
+  The origin condition is positive matching rather than a deny list, on
+  purpose: the route never has to know what production is, so it cannot
+  be wrong about it. Sessions minted this way are marked in the database
+  and announced on screen, because a development session that looks like
+  a real one is worse than no development session. And two tests assert
+  the refusals — with the secret absent, and with the origin wrong —
+  confirmed by mutation, which is what makes this safe rather than
+  merely intended.
+
+  **What still cannot be verified outside production** is the widget
+  rendering and its callback. Closing that needs a second *origin* —
+  Cloudflare Pages behind an Access policy is the only arrangement that
+  is genuinely owner-only, since GitHub Pages cannot be made private
+  outside Enterprise Cloud — plus a second bot and a second keypair. It
+  is additive rather than a rewrite, and deferred until that callback is
+  the only thing left unchecked.
 
 ## Build order
 
@@ -1468,7 +1557,7 @@ is retracted in "Deleting a submission" above. What still holds is that
 nothing about a snapshot can be turned back into a submission. If it is
 lost, an admin presses Publish again.
 
-### Unpublishing needs the token and not the key
+### Unpublishing needs admin and not the key
 
 The first version of this shipped without a retraction path at all, on
 the reasoning that republishing without a chart was enough. That was
@@ -1519,12 +1608,18 @@ Decided 2026-08-05. The order is chosen so that the site is never in a
 state where a member can submit something nothing can read, and so that
 the two irreversible steps happen where they can be checked.
 
-1. **The Worker: sign-in, sessions, and the account id.** Everything
-   else depends on the account id existing and being right, and
-   `ACCOUNT_SECRET` is unchangeable once a row carries an id derived
-   from it. `dev/worker.test.mjs` grows to cover payload verification,
-   session issue and expiry, and the admin list — all of it pure
-   arithmetic over a fake `env`, so none of it needs a deployment.
+1. ✅ **The Worker: sign-in, sessions, and the account id.** Written and
+   tested 2026-08-05, and **deliberately not deployed** — the pages that
+   sign somebody in do not exist yet, so deploying it would refuse every
+   submitter. It landed first because it needs nothing from anybody: no
+   bot, no Cloudflare account, no secrets.
+
+   It is first because everything else depends on the account id
+   existing and being right, and `ACCOUNT_SECRET` is unchangeable once a
+   row carries an id derived from it. `dev/worker.test.mjs` covers
+   payload verification, session issue and expiry, group membership, the
+   admin list and a route-by-caller matrix — all of it over a fake
+   `env`, so none of it needs a deployment.
 
    Two things only a live round trip can prove, exactly as with `DB`
    and `EXPORT_TOKEN` before them: that `TELEGRAM_BOT_TOKEN` matches the

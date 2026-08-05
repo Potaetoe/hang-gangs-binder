@@ -9,14 +9,29 @@ It is kept in the repo so the endpoint's behaviour is reviewable and so
 a new owner can stand up their own copy without reverse engineering the
 one that exists.
 
-> **This describes the Worker as deployed, and it is correct.** The
-> accounts redesign decided on 2026-08-05 adds three secrets, two
-> routes, a `sessions` table and an `account_id` column, and moves every
-> token-gated route onto admin sessions. None of it is built. The setup
-> steps for it are in `REDESIGN.md`; this file gets rewritten when the
-> Worker actually changes, not before.
+> ## ⚠ Do not deploy `worker.js` yet
+>
+> **As of 2026-08-05 this file is ahead of the deployment.** The accounts
+> Worker is written and tested, and the site is not: `index.html` is
+> still the old form with no sign-in on it.
+>
+> Deploying now would return **401 to every submitter** — the form would
+> encrypt correctly and then be refused, and the only way back is
+> re-deploying the previous version. The same is true of the schema: the
+> new `submissions` table has a `NOT NULL account_id` that nothing on the
+> live site knows how to send.
+>
+> The live endpoint is the last commit before this one, and it still
+> works exactly as the rest of this file describes: an open `POST
+> /submit`, an `EXPORT_TOKEN` on the read paths, and a `GET /snapshot`
+> anyone can call.
+>
+> `REDESIGN.md`'s build order says when this changes — step 1 for the
+> Worker, and not before step 3 has moved sign-in onto the site. Until
+> then, read everything below as *what the deployed Worker does*, and
+> `worker.js` as *what it will do*.
 
-Four routes and nothing else:
+**Deployed today** — five routes:
 
 | Route | Who can call it | What it does |
 | --- | --- | --- |
@@ -25,6 +40,24 @@ Four routes and nothing else:
 | `POST /snapshot` | anyone holding the export token | replaces the published aggregate |
 | `GET /snapshot` | anyone, from an allowed origin | returns it |
 | `DELETE /snapshot` | anyone holding the export token | takes it down |
+
+**In `worker.js`, written and not yet deployed** — the accounts version:
+
+| Route | Who can call it | What it does |
+| --- | --- | --- |
+| `POST /auth/telegram` | anyone, from an allowed origin | verifies a login payload, issues a session |
+| `POST /auth/dev` | `DEV_LOGIN_SECRET` **and** a loopback origin | development sign-in; `404` everywhere else |
+| `GET /me` | any session | entry count, last submission, admin flag |
+| `POST /submit` | a member session | appends one row, tagged with the account id |
+| `GET /export` | an admin | returns every row |
+| `POST /snapshot` | an admin | replaces the published aggregate |
+| `GET /snapshot` | any session | returns it — members only now |
+| `DELETE /snapshot` | an admin | takes it down |
+| `DELETE /submission/:id` | an admin | removes one row |
+
+`EXPORT_TOKEN` still opens every admin route, as break-glass. It is not
+a member, so it cannot `POST /submit` — there is no account for it to
+submit to.
 
 It never decrypts, holds no key, and cannot read what it stores. The
 export token is not what keeps the data confidential — the rows are
@@ -76,6 +109,33 @@ No CLI required; all of this is in the Cloudflare dashboard.
    its origin to the `connect-src` of every page that loads
    `config.js`. Until both are done the site cannot talk to it, by
    design; `tools/check_web.py` fails the build if only one is done.
+
+### What the accounts version additionally needs
+
+Not yet, but before `worker.js` is deployed. All of it is Settings →
+Variables and Secrets, and `REDESIGN.md` Part 1 has the BotFather half.
+
+| Name | Kind | Notes |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | **secret** | From BotFather. Verifies every login payload. Never logged. |
+| `ACCOUNT_SECRET` | **secret** | The HMAC key behind every account id. **Permanent** — see below. |
+| `ADMIN_TELEGRAM_IDS` | variable | Comma-separated **numeric** ids, not handles. |
+| `TELEGRAM_GROUP_CHAT_ID` | variable | Optional. Set it and only members of that group may sign in. |
+| `ALWAYS_ALLOW_TELEGRAM_IDS` | variable | Optional. Ids that skip the group check — and the way back in if the bot is ever removed from the group. |
+| `DEV_LOGIN_SECRET` | **secret** | **Development only. Never set this on production** — its absence is what turns `POST /auth/dev` off. |
+
+**`ACCOUNT_SECRET` can never change.** Once one row carries an id
+derived from it, changing it detaches every member from their own
+history — the rows still decrypt, but nothing links a person's four
+entries to each other, and there is no way back. Generate it once, store
+it beside the private key, and treat editing it as data loss. It is
+configuration in appearance and part of the stored format in fact, in
+the same way `crypto.js`'s derivation label is.
+
+Leaving `TELEGRAM_GROUP_CHAT_ID` unset means **anyone with a Telegram
+account can sign in**, which is a deployment decision rather than an
+oversight — but for a private group it is almost certainly not the one
+you want. Getting the chat id needs the bot in the group.
 
 Optionally, add a plaintext variable **`ALLOWED_ORIGINS`** — a
 comma-separated list of the origins allowed to POST here. Left unset,
@@ -141,15 +201,32 @@ curl -s -H "Origin: https://potaetoe.github.io" "$EP/snapshot"
 
 | What comes back | What it means |
 | --- | --- |
-| `No snapshot published yet.` (404) | Worker current, table present, nothing published |
-| `Not found.` (404) | the Worker is running older code |
+| `Not authorised.` (401) | **the accounts Worker is live** — the snapshot is members-only now |
+| `No snapshot published yet.` (404) | the pre-accounts Worker, table present, nothing published |
+| `Not found.` (404) | the Worker is running older code than either |
 | a 500 | the `snapshots` table is missing |
 | `Origin not allowed.` (403) | the `Origin` header was omitted or is not allowed |
 
-And on `GET /export`, `Not authorised.` (401) means `EXPORT_TOKEN` is
-still set; a 500 means it is not. That distinction matters after any
-deploy, because a Worker with no secret passes every test in `dev/` and
-fails on the first real export.
+That first row is the one to check after the accounts deploy: a 401 on
+an unauthenticated `GET /snapshot` is the healthy answer, and a 404 with
+`No snapshot published yet.` means the paste did not take.
+
+And on `GET /export`, `Not authorised.` (401) means the request had no
+usable credential — which after the accounts deploy is the healthy
+answer whether or not `EXPORT_TOKEN` is set, since a session works too.
+On the deployed Worker it still distinguishes: 401 means the secret is
+set, a 500 means it is not.
+
+A quick way to tell which Worker answers, needing no credential at all:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  -H "Origin: https://potaetoe.github.io" \
+  -H "Content-Type: application/json" -d '{}' "$EP/auth/telegram"
+```
+
+`401` is the accounts Worker refusing an unsigned payload. `404` is the
+deployed one, which has no such route.
 
 **The snapshot feature needs both halves**, and the failure if only one
 is done is quiet in the usual way:
@@ -171,7 +248,14 @@ node dev/worker.test.mjs
 ```
 
 That exercises the real routing, validation and CORS logic against a
-stub database — no account and no network needed. What it cannot check
-is the part only the dashboard knows: that `DB` is bound, that
-`EXPORT_TOKEN` is set, and that both tables exist. A Worker missing any
-of them will pass every test here and fail on the first real request.
+stub database — no account and no network needed. It now also covers
+sign-in, sessions, the account id, group membership, and the full
+route-by-caller gating matrix.
+
+What it cannot check is the part only the dashboard knows: that `DB` is
+bound, that the secrets are set, and that every table exists. A Worker
+missing any of them will pass every test here and fail on the first real
+request. After the accounts deploy that list grows — a wrong
+`TELEGRAM_BOT_TOKEN` refuses every sign-in with the same 401 a tampered
+payload gets, and an `ADMIN_TELEGRAM_IDS` holding the wrong number looks
+exactly like a working deployment until somebody tries to export.

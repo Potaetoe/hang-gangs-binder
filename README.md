@@ -18,12 +18,17 @@ project's private key can, and that key is not stored online anywhere.
 > showing what the submissions add up to, with nobody's name in it. See
 > [DESIGN.md](DESIGN.md) for how it all fits together and why.
 >
-> **Changing soon.** An accounts redesign was decided on 2026-08-05:
-> members will sign in with Telegram before submitting, entries will be
-> tied to an account so they can be updated and removed, and the
-> dashboard moves behind a sign-in. Nothing below has changed yet — the
-> reasoning is in [DESIGN.md](DESIGN.md) under "Accounts", and the plan
-> for building it is in [REDESIGN.md](REDESIGN.md).
+> **Changing, and partly built.** An accounts redesign was decided on
+> 2026-08-05: members sign in with Telegram before submitting, entries
+> are tied to an account so they can be updated and removed, and the
+> dashboard moves behind a sign-in.
+>
+> The Worker for it is **written and tested but not deployed** — the
+> live endpoint is still the open one described below, and
+> [server/README.md](server/README.md) explains why deploying it before
+> the pages catch up would break the form. Everything a visitor sees is
+> unchanged. The reasoning is in [DESIGN.md](DESIGN.md) under
+> "Accounts", and the build plan in [REDESIGN.md](REDESIGN.md).
 
 ---
 

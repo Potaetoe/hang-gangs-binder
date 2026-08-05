@@ -5,16 +5,23 @@ because the transfer story is a design constraint here and not a
 postscript. `DESIGN.md` explains *why* it works this way; this file is
 the checklist.
 
-> **This describes the deployment as it runs today, and it is correct.**
-> An accounts redesign was decided on 2026-08-05 and is not built:
-> members will sign in with Telegram, the export token is replaced by
-> admin accounts, and the dashboard moves behind a session. When that
-> lands, most of this file changes — the four-things-move table, the
-> export procedure and the `curl` recovery especially.
+> **This describes the deployment as it runs today, and every procedure
+> in it works right now.** The export token still opens the export page;
+> the dashboard is still public; nothing here needs a Telegram sign-in.
+>
+> An accounts redesign was decided on 2026-08-05 and is **partly built**:
+> the Worker exists in the repository and is tested, but is **not
+> deployed**, and the site is untouched. When it does land, four things
+> in this file change — the four-things-move table gains admin accounts,
+> the export procedure loses the token box, the `curl` recovery becomes
+> the only place the export token is used, and there is a new bootstrap
+> step for making a successor an admin.
 >
 > It is deliberately not rewritten in advance. A runbook describing a
 > system that does not exist yet is worse than a stale one, because
-> somebody follows it during an incident. See `REDESIGN.md`.
+> somebody follows it during an incident. See `REDESIGN.md`, and
+> `server/README.md` for why the repository and the endpoint currently
+> disagree on purpose.
 
 ## The one thing to understand first
 
