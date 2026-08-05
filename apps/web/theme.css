@@ -8,8 +8,13 @@
  *
  * How a palette is chosen (theme-init.js writes the attribute before
  * first paint, theme.js maintains it):
- *   no data-theme  -> Pink, unless the system prefers light, then Light
+ *   no data-theme  -> Dark, unless the system prefers light, then Light
  *   data-theme=... -> that palette, in both directions
+ *
+ * Dark is the default rather than Pink: the portal opens on whatever
+ * the visitor's system already asked for, and Pink is a choice they can
+ * make rather than one made for them. Pink remains a full palette and
+ * is otherwise unchanged.
  *
  * Components below are styled through the tokens only - never inside a
  * media query - so adding a fourth palette is a block of variables and
@@ -20,8 +25,32 @@
  * background here and check theme.js's BG map.
  */
 
-/* "Pink", the default: deep plum with pink accents. */
-:root {
+/* "Dark", the default: a standard neutral web dark - near-black
+   surfaces, gray text, blue accent.
+
+   Stated once, for two selectors. A page with no data-theme gets this
+   (unless the system asks for light, below), and so does one that
+   explicitly selects dark - they are the same palette, and writing the
+   values twice would be two blocks to keep in step. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121212;
+  --card: #1e1e1e;
+  --primary: #3b82f6;
+  --primary-dark: #60a5fa;
+  --text: #e4e4e7;
+  --muted: #a1a1aa;
+  --line: #33333a;
+  --warn-bg: #3a2222;
+  --warn-text: #f2b8b5;
+  --field-bg: #121212;
+  --focus: #93c5fd;
+}
+
+/* "Pink": deep plum with pink accents. The project's own palette, now
+   chosen rather than assumed. */
+:root[data-theme="pink"] {
   color-scheme: dark;
   --bg: #241b21;
   --card: #322730;
@@ -54,23 +83,6 @@
     --field-bg: #ffffff;
     --focus: #3e5a38;
   }
-}
-
-/* "Dark": a standard neutral web dark - near-black surfaces, gray text,
-   blue accent. */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #121212;
-  --card: #1e1e1e;
-  --primary: #3b82f6;
-  --primary-dark: #60a5fa;
-  --text: #e4e4e7;
-  --muted: #a1a1aa;
-  --line: #33333a;
-  --warn-bg: #3a2222;
-  --warn-text: #f2b8b5;
-  --field-bg: #121212;
-  --focus: #93c5fd;
 }
 
 /* "Light" is deliberately natural rather than bright: linen and stone

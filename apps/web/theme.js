@@ -26,10 +26,12 @@
 
   var stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
-  // No saved choice: reflect what the CSS is already doing (Light on
-  // a light-preferring system, Pink otherwise) without persisting.
+  // No saved choice: reflect what the CSS is already doing (Light on a
+  // light-preferring system, Dark otherwise) without persisting. This
+  // pairing is load-bearing - if it disagrees with theme.css the page
+  // repaints to a different palette the moment this file runs.
   apply(stored || (window.matchMedia &&
-    matchMedia("(prefers-color-scheme: light)").matches ? "light" : "pink"));
+    matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
 
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {

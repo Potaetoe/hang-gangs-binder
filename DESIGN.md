@@ -305,7 +305,7 @@ archived rather than destroyed.
 | Units | — | lb/ft+in or kg/cm toggle; conversion happens client-side. Which one was used is recorded. |
 | What was typed | — | The weight and height exactly as entered, as strings. |
 | Gender | no | male / female / nonbinary / other |
-| Roles | no | multi-select: feeder, feedee, gainer, fat admirer |
+| Roles | no | multi-select: feeder, feedee, gainer, admirer. Shown to submitters as "Feedism Affiliation(s)" — the label is display only; the stored field is `roles` and its values are unchanged. |
 | Country | no | dropdown, ISO 3166 list; the **code** is stored, not the name |
 | 18+ confirmation | yes | checkbox, recorded with the row |
 | Submitted at | — | timestamp, added client-side inside the ciphertext |

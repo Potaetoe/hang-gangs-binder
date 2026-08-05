@@ -25,7 +25,10 @@
 <meta name="description" content="Submission portal for the Hang Gang. Entries are encrypted in your browser before they are sent.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#241b21">
+<!-- Dark's --bg, the default palette. theme.js rewrites this to match
+     whichever palette is actually applied; this is what the browser
+     chrome uses before that runs. -->
+<meta name="theme-color" content="#121212">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="theme.css">
 <script src="theme-init.js"></script>
@@ -85,6 +88,21 @@
         </p>
         <p class="field-error" id="error-telegram" hidden></p>
       </div>
+
+      <!--
+        Up here with the identifier rather than down by the button. It is
+        a required field, and the two required things a submitter must
+        actively assert belong together where they will be read, not
+        split across the page with the optional fields in between.
+      -->
+      <div class="field">
+        <label class="choice">
+          <input type="checkbox" id="over18" data-field="over18"
+                 aria-describedby="error-over18">
+          <span>I confirm I am 18 or older.</span>
+        </label>
+        <p class="field-error" id="error-over18" hidden></p>
+      </div>
     </div>
 
     <div class="card">
@@ -93,16 +111,13 @@
         <div class="choices">
           <label class="choice">
             <input type="radio" name="units" value="metric" checked>
-            <span>kg / cm</span>
+            <span>Metric</span>
           </label>
           <label class="choice">
             <input type="radio" name="units" value="imperial">
-            <span>lb / ft + in</span>
+            <span>Imperial</span>
           </label>
         </div>
-        <p class="hint">
-          Whichever you think in. Both are stored either way.
-        </p>
       </fieldset>
 
       <!--
@@ -164,19 +179,15 @@
     <div class="card">
       <p class="eyebrow">Optional</p>
 
-      <div class="field">
-        <label for="gender">Gender</label>
-        <select id="gender">
-          <option value="">Prefer not to say</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="nonbinary">Non-binary</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-
+      <!--
+        The values are unchanged - "roles" in the record, and feeder /
+        feedee / gainer / admirer within it. Only the label a submitter
+        reads has changed, which is exactly the split countries.js was
+        built around: rename what is displayed without touching a single
+        stored row.
+      -->
       <fieldset class="field">
-        <legend>Roles</legend>
+        <legend>Feedism Affiliation(s)</legend>
         <div class="choices">
           <label class="choice">
             <input type="checkbox" name="roles" value="feeder"><span>Feeder</span>
@@ -194,6 +205,17 @@
       </fieldset>
 
       <div class="field">
+        <label for="gender">Gender</label>
+        <select id="gender">
+          <option value="">Prefer not to say</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="nonbinary">Non-binary</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label for="country">Country</label>
         <!-- Options are added by form.js from countries.js. -->
         <select id="country">
@@ -203,15 +225,6 @@
     </div>
 
     <div class="card">
-      <div class="field">
-        <label class="choice">
-          <input type="checkbox" id="over18" data-field="over18"
-                 aria-describedby="error-over18">
-          <span>I confirm I am 18 or older.</span>
-        </label>
-        <p class="field-error" id="error-over18" hidden></p>
-      </div>
-
       <button type="submit" id="submit" class="primary">Submit</button>
 
       <p class="status" id="status" role="status" aria-live="polite" hidden></p>
