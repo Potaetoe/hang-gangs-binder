@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Ten checks:
+Twelve checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -25,6 +25,10 @@ Ten checks:
    when only the publicKey line belongs there. The generator hands over
    two things at once, a few centimetres apart on screen, and only one
    of them may be published.
+
+   The Telegram bot token is the same kind of secret with a different
+   shape. The realistic accident is pasting it into the sign-in page to
+   make a local widget test work, so that shape is refused here too.
 
 3. Every page carries the shared head: charset, viewport, title, the
    content security policy, the stylesheet and the pre-paint theme
@@ -137,6 +141,16 @@ Ten checks:
     Nothing about that is visible from the page you happen to be
     looking at. This compares the sets and fails if they differ, which
     is what makes the duplication safe to have chosen.
+
+11. The sign-in page must not load crypto.js. It is the only page allowed
+    to load Telegram's third-party script, and that exception is survivable
+    only because the page has no submission plaintext or private key for
+    that script to reach.
+
+12. No page except the sign-in page may name telegram.org or unsafe-eval in
+    its CSP. The callback widget requires both exceptions, and they are
+    survivable only while confined to the page with nothing to steal; this
+    catches a copied head quietly spreading them to a plaintext page.
 """
 
 import base64
@@ -163,6 +177,10 @@ KEY_PATTERNS = [
     # publicKey line out of it.
     (r"[\"']?\bprivate[_-]?key[\"']?\s*[:=]\s*\{",
      "an assigned privateKey object - the generator's key file, pasted whole"),
+    # BotFather's token shape. It is deliberately structural rather than a
+    # literal: the real credential never enters the repository or a test.
+    (r"(?<![A-Za-z0-9_-])\d{8,10}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])",
+     "a Telegram bot token"),
 ]
 
 
@@ -459,6 +477,9 @@ def public_key_problem(value):
 
 
 CRYPTO_FILE = "crypto.js"
+SIGN_IN_PAGE = "index.html"
+TELEGRAM_CSP_HOST = re.compile(r"\btelegram\.org\b", re.I)
+UNSAFE_EVAL_CSP = re.compile(r"(?:^|[\s;])'unsafe-eval'(?=[\s;]|$)", re.I)
 
 # What "this file puts something on the wire" looks like in a directory
 # with no build step and no framework. A bare fetch() is a read and is
@@ -530,6 +551,46 @@ def unencrypted_paths():
                 "is named as an unencrypted sender exemption but does not "
                 "send a body. Remove the stale exemption so a later POST "
                 "cannot inherit it silently"))
+
+    return problems
+
+
+def sign_in_boundary_problems():
+    """(page, problem) when the sign-in-only third-party boundary spreads."""
+    problems = []
+    sign_in_refs = {
+        target for page, target in html_references()
+        if page == SIGN_IN_PAGE
+    }
+    if CRYPTO_FILE in sign_in_refs:
+        problems.append((
+            SIGN_IN_PAGE,
+            "loads crypto.js even though it is the only page permitted "
+            "Telegram's third-party widget. That exception is survivable only "
+            "while this page has no submission plaintext or key to expose"))
+
+    for name in html_pages():
+        if name == SIGN_IN_PAGE:
+            continue
+        text = re.sub(
+            r"<!--.*?-->", "",
+            open(os.path.join(WEB, name), encoding="utf-8").read(),
+            flags=re.S)
+        policy = re.search(
+            r'http-equiv="Content-Security-Policy"[^>]*content="([^"]*)"',
+            text, re.I)
+        if not policy:
+            continue  # the missing-policy case is check 3's to report
+        permissions = []
+        if TELEGRAM_CSP_HOST.search(policy.group(1)):
+            permissions.append("telegram.org")
+        if UNSAFE_EVAL_CSP.search(policy.group(1)):
+            permissions.append("'unsafe-eval'")
+        if permissions:
+            problems.append((
+                name,
+                "names %s in its CSP even though only index.html is allowed "
+                "the Telegram callback exception" % " and ".join(permissions)))
 
     return problems
 
@@ -790,6 +851,9 @@ def main():
         problems.append(
             "%s %s. Encrypting before anything leaves the browser is the "
             "whole design - see DESIGN.md." % (name, problem))
+
+    for page, problem in sign_in_boundary_problems():
+        problems.append("%s %s." % (page, problem))
 
     for rel, description in key_shaped_content():
         problems.append(
