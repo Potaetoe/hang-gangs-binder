@@ -51,8 +51,8 @@ blindness to a swapped `config.js` arm. A wall between planning and
 building sits exactly where the information flows.
 
 **The contract between agents is a failing test, not a paragraph.** Commit
-the test first, implement to green. Where behaviour cannot be known in
-advance — the login widget's real CSP, quantisation bin sizes — the rule is
+the test first, implement to green. Where behavior cannot be known in
+advance — the login widget's real CSP, quantization bin sizes — the rule is
 **spike, then specify**: observe it, record the finding in a commit, then
 pin it.
 
@@ -144,9 +144,9 @@ says it, the commit message should say it.
 
 ## Implementation invariants
 
-- `apps/web/ui.js` is DOM-only. No `fetch`, no POST — network behaviour
+- `apps/web/ui.js` is DOM-only. No `fetch`, no POST — network behavior
   stays in page-specific modules so the web checks can stay strict.
-- Unknown hostnames **fail closed**. `config.js` gives an unrecognised
+- Unknown hostnames **fail closed**. `config.js` gives an unrecognized
   host no endpoint and no key; a production fallback is the accident that
   arrangement exists to prevent.
 - Session material lives in `sessionStorage`, never in persistent storage.
@@ -160,12 +160,12 @@ says it, the commit message should say it.
   `display: flex`, which beats the browser's own `[hidden]` rule, and only
   `theme.css`'s `[hidden] { display: none !important }` makes it true. Use
   `getComputedStyle()` and `getClientRects()`.
-- Colour in generated SVG must come from classes in `theme.css`;
+- Color in generated SVG must come from classes in `theme.css`;
   `style-src` carries no `'unsafe-inline'`, so a `style` attribute is
   dropped. A `polyline` needs `fill: none` from an element+class rule —
   the `fill="none"` attribute loses to any CSS rule.
 - Keep sign-in code free of Telegram widget URLs and crypto calls until
-  the real widget's CSP behaviour has been observed and its slice is
+  the real widget's CSP behavior has been observed and its slice is
   unblocked.
 - **Never regenerate a committed fixture to make a failing test pass.**
   `dev/fixture.json` and the account-id fixture stop matching only when
@@ -204,7 +204,7 @@ says it, the commit message should say it.
 **Implement**
 
 - [ ] Stay inside the claimed slice and its file boundary.
-- [ ] Add regression coverage for new behaviour, and mutation coverage for anything security-sensitive or quiet-failing.
+- [ ] Add regression coverage for new behavior, and mutation coverage for anything security-sensitive or quiet-failing.
 - [ ] Register any new suite in both the local gate and CI.
 - [ ] Update `CHANGELOG.md` and `DAILY_LOG.md` — appending to the day's existing entry, not starting a new one.
 
@@ -229,7 +229,7 @@ says it, the commit message should say it.
 Build step / issue:
 Branch / base / remote head:
 Files changed:
-Behaviour delivered:
+Behavior delivered:
 Source and local checks:
 CI checks:
 Live checks (and any not performed):

@@ -469,7 +469,7 @@ check("a refused publish leaves the previous snapshot alone",
   snapshot !== null && JSON.parse(snapshot.body).counts.entries === 9);
 
 await call("DELETE", "/snapshot", { headers: bearer(A) });
-check("an authorised DELETE takes the snapshot down", snapshot === null);
+check("an authorized DELETE takes the snapshot down", snapshot === null);
 await statusOf("reading after a delete is 404 again",
   call("GET", "/snapshot", { headers: bearer(A) }), 404);
 

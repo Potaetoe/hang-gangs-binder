@@ -332,7 +332,7 @@ await check("the series carries the same field the summary reads", () => {
 });
 
 /* The default is imperial everywhere - the form's default, and the one
- * this project asked for. Absent and unrecognised both mean it. */
+ * this project asked for. Absent and unrecognized both mean it. */
 await check("units default to imperial", () =>
   DEFAULT_UNITS === "imperial" &&
   summarise([MIXED]).weightMedian === 999 &&
@@ -461,7 +461,7 @@ await check("weight over time can be left out entirely", () =>
   snapshotOf(CORPUS, { identify: false, series: false }).series === null);
 
 /* ------------------------------------------------------------------ */
-/* Quantisation of the published series.                               */
+/* Quantization of the published series.                               */
 
 /*
  * Why these checks exist, and why they are not the check that was
@@ -476,14 +476,14 @@ await check("weight over time can be left out entirely", () =>
  * REDESIGN.md Part 5 then specified the missing test as "two snapshots
  * of the same corpus, one with an extra entry, share no exact series
  * point". **That criterion cannot hold, and correcting it is part of
- * this step.** Quantisation is a deterministic function of a point, so
- * an entry that did not change quantises the same way in both
+ * this step.** Quantization is a deterministic function of a point, so
+ * an entry that did not change quantizes the same way in both
  * documents - the shared points are guaranteed, and coarsening makes
  * them *more* alike, not less. Only per-publication randomness could
  * satisfy the sentence as written, and that would make the chart lie
  * without stopping an approximate match anyway.
  *
- * What quantisation actually buys is **ambiguity**: a published point
+ * What quantization actually buys is **ambiguity**: a published point
  * stops being a unique key, because several people's different
  * measurements land on the same date and the same bin. That is the
  * property worth asserting, and it is what these checks assert.
@@ -493,7 +493,7 @@ const DAY = 86400000;
 /* Two people whose raw measurements differ, on times of day that
  * differ, chosen so that both collapse onto one published point. A
  * fixture of midnight timestamps and bin-aligned weights would pass
- * every check below without quantisation existing at all. */
+ * every check below without quantization existing at all. */
 const QUANT = [
   entry({ id: 20, telegram: "alpha", lb: 201.3, kg: 91.3,
           submittedAt: "2026-02-03T13:47:12.345Z" }),
@@ -543,7 +543,7 @@ await check("a published point is ambiguous rather than a unique key", () => {
 });
 
 /* Coarsening the points must not flatten what the chart is for. */
-await check("the shape of a line survives quantisation", () => {
+await check("the shape of a line survives quantization", () => {
   const line = snapshotOf(QUANT, { identify: false }).series
     .find((l) => l.points.length === 2);
   return line.points[0].imperial < line.points[1].imperial &&

@@ -339,10 +339,10 @@ const payload = {
 await writeFile(
   HERE("sample-submissions.json"), JSON.stringify(payload, null, 2) + "\n");
 
-// Normalised before counting, or the three spellings of one handle in
+// Normalized before counting, or the three spellings of one handle in
 // the table above would be reported as three people.
 const people = new Set(
-  SAMPLE.map((row) => globalThis.BinderForm.normaliseTelegram(row.telegram))
+  SAMPLE.map((row) => globalThis.BinderForm.normalizeTelegram(row.telegram))
 ).size;
 console.log(
   "dev/sample-submissions.json written - " + submissions.length +

@@ -191,7 +191,7 @@ body {
         sans-serif;
 }
 
-/* Every direct child of the page centres on the same measure, so the
+/* Every direct child of the page centers on the same measure, so the
    header, the content and the footer share one edge. */
 body > * {
   width: 100%;
@@ -511,7 +511,7 @@ input[type="file"] {
   max-width: 100%;
 }
 
-/* The one place colour alone is not the signal - the message under the
+/* The one place color alone is not the signal - the message under the
    field is. This just points at it. */
 input[aria-invalid="true"] { border-color: var(--warn-text); }
 
@@ -762,7 +762,7 @@ code {
  * last points and paints the area between, turning a weight history
  * into a wedge. The `fill="none"` attribute on the element does NOT
  * achieve this on its own: presentation attributes lose to any CSS
- * rule, so the series colour below would win. Selecting the element
+ * rule, so the series color below would win. Selecting the element
  * type as well as the class is what makes this stick.
  */
 polyline.chart-series { fill: none; }
@@ -774,9 +774,9 @@ polyline.chart-series { fill: none; }
   font-weight: 600;
 }
 
-/* Six series colours, cycled. Enough to tell lines apart without
+/* Six series colors, cycled. Enough to tell lines apart without
    inventing a palette that fights the theme; the handle is printed at
-   the end of each line anyway, so colour is a hint and not the only
+   the end of each line anyway, so color is a hint and not the only
    way to read the chart.
 
    Stroke on everything, fill only on the shapes that are meant to be

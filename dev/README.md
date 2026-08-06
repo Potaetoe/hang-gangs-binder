@@ -61,7 +61,7 @@ messy as it needs to be.
   cannot be rewritten.
 
 - `form.test.mjs` — exercises the pure half of `apps/web/form.js`:
-  normalising a Telegram handle, reading a number strictly, the unit
+  normalizing a Telegram handle, reading a number strictly, the unit
   conversions in both directions, validation, and the record that gets
   encrypted.
 

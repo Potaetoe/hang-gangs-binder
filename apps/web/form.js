@@ -10,7 +10,7 @@
  *
  * Two halves, split on purpose:
  *
- *   1. Pure functions - normalising, converting, validating, building
+ *   1. Pure functions - normalizing, converting, validating, building
  *      the record. No DOM, no network, no clock beyond one injected
  *      timestamp. Exported as BinderForm so dev/form.test.mjs can load
  *      this exact file under Node, the same arrangement crypto.js and
@@ -79,7 +79,7 @@
    * removal only - nothing is invented, so a handle that survives is
    * one the submitter actually typed.
    */
-  function normaliseTelegram(text) {
+  function normalizeTelegram(text) {
     let value = String(text == null ? "" : text).trim();
     value = value.replace(/^https?:\/\//i, "");
     value = value.replace(/^(?:www\.)?t(?:elegram)?\.me\//i, "");
@@ -157,7 +157,7 @@
     const problems = [];
     const imperial = input.units === "imperial";
 
-    const handle = normaliseTelegram(input.telegram);
+    const handle = normalizeTelegram(input.telegram);
     if (!handle) {
       problems.push({
         field: "telegram",
@@ -296,7 +296,7 @@
       // reasons, so they are different numbers.
       record: 1,
       submittedAt: new Date(now).toISOString(),
-      telegram: normaliseTelegram(input.telegram),
+      telegram: normalizeTelegram(input.telegram),
       weight: weight,
       height: height,
       entered: {
@@ -317,7 +317,7 @@
     LIMITS: LIMITS,
     GENDERS: GENDERS,
     ROLES: ROLES,
-    normaliseTelegram: normaliseTelegram,
+    normalizeTelegram: normalizeTelegram,
     parseNumber: parseNumber,
     weightFromKg: weightFromKg,
     weightFromLb: weightFromLb,

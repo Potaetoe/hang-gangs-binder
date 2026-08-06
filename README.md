@@ -183,6 +183,6 @@ This project is built to be transferable — the data, the storage and the
 site move independently, and none of it requires sharing an account. The
 checklist is in [HANDOFF.md](HANDOFF.md).
 
-## Licence
+## License
 
 MIT — see [LICENSE](LICENSE).

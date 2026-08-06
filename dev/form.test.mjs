@@ -24,7 +24,7 @@ const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const formSrc = await readFile(HERE("../apps/web/form.js"), "utf8");
 await import("data:text/javascript," + encodeURIComponent(formSrc));
 const {
-  normaliseTelegram, parseNumber, weightFromKg, weightFromLb,
+  normalizeTelegram, parseNumber, weightFromKg, weightFromLb,
   heightFromCm, heightFromFeetInches, validate, buildRecord,
 } = globalThis.BinderForm;
 
@@ -81,28 +81,28 @@ const GOOD_IMPERIAL = Object.assign({}, GOOD_METRIC, {
 const vary = (base, changes) => Object.assign({}, base, changes);
 
 /* ------------------------------------------------------------------ */
-/* Normalising the one identifier this project has.                    */
+/* Normalizing the one identifier this project has.                    */
 
 await check("a bare handle is lowercased", () =>
-  normaliseTelegram("SomeHandle") === "somehandle");
+  normalizeTelegram("SomeHandle") === "somehandle");
 
 await check("a leading @ is stripped", () =>
-  normaliseTelegram("@SomeHandle") === "somehandle");
+  normalizeTelegram("@SomeHandle") === "somehandle");
 
 await check("surrounding whitespace is stripped", () =>
-  normaliseTelegram("  @SomeHandle \n") === "somehandle");
+  normalizeTelegram("  @SomeHandle \n") === "somehandle");
 
 /* People paste links. All three forms name the same person, and a row
  * recording "https://t.me/x" is a row the keyholder has to clean by
  * hand. */
 await check("a t.me link is reduced to the handle", () =>
-  normaliseTelegram("t.me/SomeHandle") === "somehandle");
+  normalizeTelegram("t.me/SomeHandle") === "somehandle");
 
 await check("a full https t.me link is reduced to the handle", () =>
-  normaliseTelegram("https://t.me/SomeHandle") === "somehandle");
+  normalizeTelegram("https://t.me/SomeHandle") === "somehandle");
 
-await check("normalising is removal only - nothing is invented", () =>
-  normaliseTelegram("") === "" && normaliseTelegram(null) === "");
+await check("normalizing is removal only - nothing is invented", () =>
+  normalizeTelegram("") === "" && normalizeTelegram(null) === "");
 
 /* ------------------------------------------------------------------ */
 /* Reading a number, strictly.                                         */
@@ -269,7 +269,7 @@ await check("what was typed is recorded verbatim", () =>
   same(buildRecord(GOOD_METRIC, WHEN).entered,
     { units: "metric", weight: "90 kg", height: "178 cm" }));
 
-await check("the handle is stored normalised", () =>
+await check("the handle is stored normalized", () =>
   buildRecord(vary(GOOD_METRIC, { telegram: "https://t.me/SomeHandle" }), WHEN)
     .telegram === "somehandle");
 

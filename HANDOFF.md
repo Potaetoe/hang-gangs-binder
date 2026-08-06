@@ -150,7 +150,7 @@ At the bottom of the export page, after decrypting:
 
    So the honest version of the trade-off is: publishing this chart
    twice discloses cumulatively, and anyone who knows roughly what a
-   person weighs may recognise their line. Off is the safe answer, and
+   person weighs may recognize their line. Off is the safe answer, and
    it is off unless you tick it. A fix — publishing the date and a
    rounded weight instead of the exact ones — is specified in
    `DESIGN.md` under "The members' dashboard" and not yet built.

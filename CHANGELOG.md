@@ -114,7 +114,7 @@ deliberate mutations were run across the two before handoff.
   of — element lookup, visibility, checked-radio selection, status
   rendering, and a guarded boot. `dev/ui.test.mjs` is a 16-check DOM
   contract over it, including the architectural rule that **`ui.js`
-  contains no `fetch` and no POST** — network behaviour stays in
+  contains no `fetch` and no POST** — network behavior stays in
   page-specific modules so `check_web.py` can keep its senders rule
   strict.
 - A development Worker and database: `hgbinderworker-dev` over
@@ -187,7 +187,7 @@ deliberate mutations were run across the two before handoff.
   with them, so pull request checks do not queue behind a release they
   are not going to perform.
 
-## 2026-08-05 — Quantised the published series
+## 2026-08-05 — Quantized the published series
 
 ### Changed
 - A published weight-over-time point now carries the date rather than
@@ -203,10 +203,10 @@ deliberate mutations were run across the two before handoff.
 - `REDESIGN.md` had specified the missing assertion as "two snapshots of
   the same corpus, one with an extra entry, share no exact series
   point". That is not achievable and the criterion was corrected rather
-  than quietly dropped: quantising is deterministic, so an unchanged
-  entry quantises identically in both documents and the snapshots go on
+  than quietly dropped: quantizing is deterministic, so an unchanged
+  entry quantizes identically in both documents and the snapshots go on
   sharing points. Coarsening makes them more alike, not less.
-- What quantisation buys is ambiguity, not absence — a shared point
+- What quantization buys is ambiguity, not absence — a shared point
   stops identifying a line because several people land on the same date
   and the same bin. Five checks assert that over a fixture built with
   off-midnight times and off-bin weights, so none of them can pass by
@@ -342,7 +342,7 @@ out, all of it in the keyholder's own browser.
   wrong.
 - `apps/web/dashboard.js`: charts as hand-written inline SVG, no chart
   library, for the same reason the spreadsheet writer is hand-written.
-- `entryFor`, the single normalisation of a decrypted record read by
+- `entryFor`, the single normalization of a decrypted record read by
   both the CSV writer and the charts. Two independent readings would be
   two chances to disagree, and a table saying one thing while a chart
   says another is the kind of disagreement nobody notices, because each
@@ -350,7 +350,7 @@ out, all of it in the keyholder's own browser.
 
 ### Notes
 - Two things about drawing under this CSP were learned by getting them
-  wrong: colour has to come from classes in `theme.css` because
+  wrong: color has to come from classes in `theme.css` because
   `style-src` carries no `'unsafe-inline'`, and a `polyline` needs
   `fill: none` from an element+class rule, because the `fill="none"`
   attribute loses to any CSS rule. It shipped once as a filled wedge

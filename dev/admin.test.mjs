@@ -31,7 +31,7 @@ const { COLUMNS, entryFor, rowFor, csvCell, toCsv, toJson, fileName } =
   globalThis.BinderAdmin;
 const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
 
-/* A stored row straight to a CSV row. entryFor is the normalisation
+/* A stored row straight to a CSV row. entryFor is the normalization
  * both the CSV and the dashboard read, so it is on the path here too
  * rather than being a step the tests skip. */
 const row = (submission, record) => rowFor(entryFor(submission, record));
@@ -190,7 +190,7 @@ await check("the filename takes the format it is for", () =>
     "hang-gangs-binder-2026-08-04.json");
 
 /* ------------------------------------------------------------------ */
-/* The normalisation both the CSV and the dashboard read.              */
+/* The normalization both the CSV and the dashboard read.              */
 
 await check("an entry flattens the record's nesting", () => {
   const entry = entryFor(SUBMISSION, RECORD);

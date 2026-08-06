@@ -19,7 +19,7 @@
     }
   }
 
-  function normalise(value) {
+  function normalize(value) {
     if (!value || typeof value !== "object") return null;
     if (typeof value.session !== "string" || !value.session.trim()) {
       return null;
@@ -55,7 +55,7 @@
     try {
       const raw = storage.getItem(STORAGE_KEY);
       if (!raw) return null;
-      value = normalise(JSON.parse(raw));
+      value = normalize(JSON.parse(raw));
     } catch (error) {
       value = null;
     }
@@ -70,7 +70,7 @@
     if (!response || response.ok !== true) {
       throw new Error("The server returned an invalid or expired session.");
     }
-    const value = normalise(response);
+    const value = normalize(response);
     if (!value) {
       throw new Error("The server returned an invalid or expired session.");
     }

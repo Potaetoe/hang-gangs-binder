@@ -39,7 +39,7 @@ exports in theirs, nothing in between can read anything.
 claim in `DESIGN.md` was false: renumbering pseudonyms between published
 snapshots never stopped anyone lining two snapshots up, because exact
 timestamps and weights were a join key. Fixing it properly meant
-quantisation, which landed the same day.
+quantization, which landed the same day.
 
 The larger thread was spam, filed as an operational problem — a nuisance
 if junk ever appeared. Pulling on it produced accounts, sessions, a
@@ -66,7 +66,7 @@ like from the outside.** `REDESIGN.md` is the plan that came out of it.
   documents. Corrected at the end of the day in `AGENTS.md`.
 
 - **The contract between agents is a failing test, not a paragraph.**
-  Commit the test first, implement to green. Where behaviour cannot be
+  Commit the test first, implement to green. Where behavior cannot be
   known in advance, *spike then specify*.
 
 - **Coordination runs through GitHub, not through the owner.** Eleven
@@ -103,7 +103,7 @@ Issue #1, merged in PR #14; CI registration followed in PR #15.
 - Added frozen `globalThis.BinderUI` in `apps/web/ui.js` — element lookup,
   visibility, checked-radio selection, status messages, guarded startup.
 - Rewired form, dashboard, public dashboard and admin onto it **without**
-  moving network behaviour into `ui.js`; `dev/ui.test.mjs` pins that as an
+  moving network behavior into `ui.js`; `dev/ui.test.mjs` pins that as an
   architectural rule (no `fetch`, no POST).
 - The suite landed registered in `tools/check.py` but **not** in GitHub
   Actions, so it passed locally and never ran in the pipeline. Caught and

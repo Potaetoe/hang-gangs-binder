@@ -358,8 +358,8 @@ async function callerFor(request, env) {
   return sessionFor(env, given);
 }
 
-function unauthorised(origin) {
-  return json({ error: "Not authorised." }, 401, origin);
+function unauthorized(origin) {
+  return json({ error: "Not authorized." }, 401, origin);
 }
 
 /*
@@ -578,10 +578,10 @@ async function handleExport(request, env, origin, caller) {
   if (!caller || !caller.isAdmin) {
     // Answered with CORS headers on purpose. The origin was already
     // checked before this ran, so the only person who sees this is the
-    // admin on the admin page - and "Not authorised" is a far better
+    // admin on the admin page - and "Not authorized" is a far better
     // thing for them to read than the opaque CORS failure a bare
     // rejection would produce when they mistype the token.
-    return json({ error: "Not authorised." }, 401, origin);
+    return json({ error: "Not authorized." }, 401, origin);
   }
 
   // account_id travels with the row. The export page groups by it rather
@@ -729,37 +729,37 @@ export default {
     const admin = Boolean(caller && caller.isAdmin);
 
     if (method === "GET" && path === "/me") {
-      if (!caller) return unauthorised(allowed);
+      if (!caller) return unauthorized(allowed);
       return handleMe(request, env, allowed, caller);
     }
     if (method === "POST" && path === "/submit") {
       // A break-glass EXPORT_TOKEN caller has no account to write to.
       // Submitting is a member action and it needs a member.
-      if (!caller || !caller.accountId) return unauthorised(allowed);
+      if (!caller || !caller.accountId) return unauthorized(allowed);
       return handleSubmit(request, env, allowed, caller);
     }
     if (method === "GET" && path === "/export") {
       return handleExport(request, env, allowed, caller);
     }
     if (method === "POST" && path === "/snapshot") {
-      if (!admin) return unauthorised(allowed);
+      if (!admin) return unauthorized(allowed);
       return handlePublishSnapshot(request, env, allowed);
     }
     if (method === "GET" && path === "/snapshot") {
       // Members only since 2026-08-05. The document still carries no
       // handles and no rows - gating it is not a reason to relax what
       // goes in it. See DESIGN.md, "The members' dashboard".
-      if (!caller) return unauthorised(allowed);
+      if (!caller) return unauthorized(allowed);
       return handleReadSnapshot(env, allowed);
     }
     if (method === "DELETE" && path === "/snapshot") {
-      if (!admin) return unauthorised(allowed);
+      if (!admin) return unauthorized(allowed);
       return handleDeleteSnapshot(env, allowed);
     }
 
     const submission = /^\/submission\/([^/]+)$/.exec(path);
     if (method === "DELETE" && submission) {
-      if (!admin) return unauthorised(allowed);
+      if (!admin) return unauthorized(allowed);
       return handleDeleteSubmission(env, allowed, submission[1]);
     }
 

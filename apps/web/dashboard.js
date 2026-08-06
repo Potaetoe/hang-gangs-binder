@@ -11,7 +11,7 @@
  *
  * Two consequences worth knowing before editing:
  *
- *   - Colour comes from CSS classes in theme.css, never from a `style`
+ *   - Color comes from CSS classes in theme.css, never from a `style`
  *     attribute. `style-src 'self'` has no 'unsafe-inline', so an
  *     inline style attribute would be dropped and the chart would
  *     render in the browser's defaults. fill and stroke are ordinary
@@ -492,7 +492,7 @@
    * between two documents - and nothing more than that. This comment
    * used to claim renumbering meant "two snapshots cannot be lined up
    * to follow one person across them", which was false: the points
-   * themselves were the join key. See quantise() below, and DESIGN.md,
+   * themselves were the join key. See quantize() below, and DESIGN.md,
    * "Renumbering does not prevent linkage - a correction".
    */
   function labeller(identify) {
@@ -519,8 +519,8 @@
    * was a join rather than an analysis. Renumbering the pseudonyms
    * never touched that - see labeller() above.
    *
-   * What this buys is **ambiguity, not absence**. Quantising is
-   * deterministic, so an entry that did not change still quantises the
+   * What this buys is **ambiguity, not absence**. Quantizing is
+   * deterministic, so an entry that did not change still quantizes the
    * same way in both documents; the two snapshots go on sharing points.
    * The difference is that a shared point no longer identifies a line,
    * because several people's measurements land on the same date and the
@@ -537,7 +537,7 @@
    * and the keyholder's own snapshot keeps every decimal, because it
    * never leaves their tab.
    */
-  function quantise(point) {
+  function quantize(point) {
     const lb = UNITS.imperial.weight.bin;
     const kg = UNITS.metric.weight.bin;
     return {
@@ -556,7 +556,7 @@
       weightSeries(entries).map(function (line) {
         return {
           label: label(line.telegram),
-          points: identify ? line.points : line.points.map(quantise),
+          points: identify ? line.points : line.points.map(quantize),
         };
       });
 
@@ -797,7 +797,7 @@
         return x(point.at) + "," + y(point[system]);
       }).join(" ");
       // fill is set by `polyline.chart-series` in theme.css, not here -
-      // a presentation attribute would lose to the series colour rule.
+      // a presentation attribute would lose to the series color rule.
       node.appendChild(svg("polyline", { points: points }, cls));
       line.points.forEach(function (point) {
         node.appendChild(svg("circle", {

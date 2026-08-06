@@ -5,7 +5,7 @@ database (`schema.sql`). **Not deployed by CI** — it is set up once, by
 hand, by whoever owns the Cloudflare account, and it lives outside the
 GitHub Pages deploy entirely.
 
-It is kept in the repo so the endpoint's behaviour is reviewable and so
+It is kept in the repo so the endpoint's behavior is reviewable and so
 a new owner can stand up their own copy without reverse engineering the
 one that exists.
 
@@ -201,7 +201,7 @@ curl -s -H "Origin: https://potaetoe.github.io" "$EP/snapshot"
 
 | What comes back | What it means |
 | --- | --- |
-| `Not authorised.` (401) | **the accounts Worker is live** — the snapshot is members-only now |
+| `Not authorized.` (401) | **the accounts Worker is live** — the snapshot is members-only now |
 | `No snapshot published yet.` (404) | the pre-accounts Worker, table present, nothing published |
 | `Not found.` (404) | the Worker is running older code than either |
 | a 500 | the `snapshots` table is missing |
@@ -211,7 +211,7 @@ That first row is the one to check after the accounts deploy: a 401 on
 an unauthenticated `GET /snapshot` is the healthy answer, and a 404 with
 `No snapshot published yet.` means the paste did not take.
 
-And on `GET /export`, `Not authorised.` (401) means the request had no
+And on `GET /export`, `Not authorized.` (401) means the request had no
 usable credential — which after the accounts deploy is the healthy
 answer whether or not `EXPORT_TOKEN` is set, since a session works too.
 On the deployed Worker it still distinguishes: 401 means the secret is

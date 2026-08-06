@@ -100,7 +100,7 @@ export default [
     rules: {
       "no-restricted-globals": ["error", {
         name: "fetch",
-        message: "ui.js is DOM-only. Network behaviour belongs in the " +
+        message: "ui.js is DOM-only. Network behavior belongs in the " +
                  "page's own script - see check 6 in tools/check_web.py.",
       }],
       "no-restricted-properties": ["error", {

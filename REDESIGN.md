@@ -215,7 +215,7 @@ const ENVIRONMENTS = {
 };
 ENVIRONMENTS["127.0.0.1"] = ENVIRONMENTS.localhost;
 
-// No default. An unrecognised host gets no key, which is the state the
+// No default. An unrecognized host gets no key, which is the state the
 // form already handles and says out loud - submissions closed. A
 // default of "production" is the accident this whole arrangement exists
 // to prevent.
@@ -254,7 +254,7 @@ so the entire design of it is about which way it fails. Four conditions
 gate it and **every one of them fails closed**:
 
 1. **`DEV_LOGIN_SECRET` must be set.** Absent, the route does not exist.
-   The existing `authorised()` is the pattern to copy exactly — it reads
+   The existing `authorized()` is the pattern to copy exactly — it reads
    `Boolean(env.EXPORT_TOKEN) && tokenMatches(...)`, so a missing secret
    refuses rather than skips the check. A guard written the other way up
    is the whole risk in one line.
@@ -566,15 +566,15 @@ That always passed and was never the question.
 rather than quietly rewritten** — for the same reason the linkage claim
 it was meant to fix is recorded as false rather than deleted.
 
-Quantisation is a deterministic function of a point. An entry that did
-not change quantises the same way in both documents, so the two
+Quantization is a deterministic function of a point. An entry that did
+not change quantizes the same way in both documents, so the two
 snapshots go on sharing points — and coarsening makes them *more* alike,
 not less. Demonstrated while building step 8: all three of one person's
 points survived into the second snapshot unchanged. Only per-publication
 randomness could satisfy the sentence as written, and that would make
 the chart lie without preventing an approximate match.
 
-**What quantisation actually buys is ambiguity, not absence.** A
+**What quantization actually buys is ambiguity, not absence.** A
 published point stops being a *unique* key, because several people's
 different measurements land on the same date and the same bin. So the
 assertions are:
@@ -632,7 +632,7 @@ before moving on.
 | 5 | The panel, `GET /me` | Counts match what is in the table |
 | 6 | `GET /snapshot` requires a session | The dashboard still draws for a signed-in member |
 | 7 | `admin.html` on an admin session, row deletion | An export still decrypts; a deleted row is gone and the rest are intact |
-| 8 | Quantise the series | The two-snapshot test passes |
+| 8 | Quantize the series | The two-snapshot test passes |
 | 9 | `check_web.py` | Every new check confirmed armed by mutation, both directions |
 | 10 | Rewrite the runbooks | Part 9 |
 

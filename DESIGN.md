@@ -59,7 +59,7 @@ Four properties fall out of this:
    a leak.
 3. **Read access is a file, not an account.** Which is what makes it
    transferable — see below. Sign-in did not change this and could not:
-   an account authorises *writing*, and no flag in a database can hand
+   an account authorizes *writing*, and no flag in a database can hand
    anybody the ability to decrypt.
 4. **The account id is not derived from anything about the person.** It
    is an HMAC of a Telegram numeric id under a secret only the Worker
@@ -218,7 +218,7 @@ Losing the Sheet meant losing a native export button, so the endpoint
 gains the read path the Sheet used to provide, gated on being an admin.
 To be clear about what that gate is for: **it is not what keeps the data
 confidential** — the rows are ciphertext whether or not the request is
-authorised, and Cloudflare could read them as readily as Google could
+authorized, and Cloudflare could read them as readily as Google could
 have. It exists so the corpus is not casually harvestable and so bulk
 reads are not anonymous. Confidentiality is the encryption's job, and
 only the encryption's.
@@ -384,7 +384,7 @@ link, a webhook on the Worker, and the page polling until the nonce is
 claimed gets identical verification with *no third-party script at all*
 and no CSP exception anywhere. It was the better answer on the merits
 and lost on familiarity: a widget that says "Log in with Telegram" is a
-thing people recognise, and a link that sends you to a bot and asks you
+thing people recognize, and a link that sends you to a bot and asks you
 to come back is a thing people abandon. Worth remembering if the CSP
 exception ever becomes a problem — it is the same account id and the
 same session on the other side, so it is a swap rather than a rewrite.
@@ -417,7 +417,7 @@ the project touches `sessionStorage`, `localStorage` and URL fragments
 on none of its pages. That rule was about *key material*, and the reason
 given was that a page holding the corpus in the clear should discard
 everything when it closes. A submitter's session token is not key
-material. It authorises appending a row to one account and nothing else:
+material. It authorizes appending a row to one account and nothing else:
 it cannot read a submission, cannot decrypt one, and cannot reach the
 export. Holding it for the tab is the difference between signing in once
 and signing in on every page.
@@ -603,7 +603,7 @@ archived rather than destroyed.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| Telegram username | yes | **Not typed — taken from the verified sign-in.** The Worker hands it back to the authenticated page, which puts it in the record before encrypting. Still normalised to lowercase, since Telegram's own casing is display only. |
+| Telegram username | yes | **Not typed — taken from the verified sign-in.** The Worker hands it back to the authenticated page, which puts it in the record before encrypting. Still normalized to lowercase, since Telegram's own casing is display only. |
 | Weight | yes | Stored in **both** kg and lb, whichever was typed. |
 | Height | yes | Stored in **both** cm and feet+inches (and total inches), whichever was typed. |
 | Units | — | lb/ft+in or kg/cm toggle; conversion happens client-side. Which one was used is recorded. |
@@ -850,7 +850,7 @@ that head, so a page added later cannot quietly ship without the policy.
 
   So there is a second Worker and a second D1, and **`config.js` chooses
   by hostname**: `localhost` gets the development endpoint and a
-  development key, the deployed host gets production, and an unrecognised
+  development key, the deployed host gets production, and an unrecognized
   host gets neither. That last case falls into the state the form
   already handles — `publicKey: null`, submissions closed, and it says
   so — rather than defaulting to production, because a default that
@@ -898,7 +898,7 @@ that head, so a page added later cannot quietly ship without the policy.
   the caller presenting it, an `Origin` that must be loopback, and a
   `404` rather than a `401` so production never advertises a route it
   will not serve. The first is the important one and it is not a new
-  idea here — `authorised()` already reads
+  idea here — `authorized()` already reads
   `Boolean(env.EXPORT_TOKEN) && tokenMatches(...)`, which is the same
   guard written the right way up. A guard written the other way up is
   the entire risk, in one line.
@@ -998,7 +998,7 @@ The order is deliberate. State as of 2026-08-04:
    landing page whose only content is a link to the form is a click
    between a submitter and the only reason they came.
 
-   `form.js` is split in two. The pure half — normalising, converting,
+   `form.js` is split in two. The pure half — normalizing, converting,
    validating, building the record — touches no DOM and is exported as
    `BinderForm`, so `dev/form.test.mjs` loads the shipped file under
    Node the way the crypto and Worker tests already do. The wiring
@@ -1092,13 +1092,13 @@ some `<rect>`s instead.
 Two consequences worth stating, because both were learned by getting
 them wrong:
 
-- **Colour comes from classes in `theme.css`, never from a `style`
+- **Color comes from classes in `theme.css`, never from a `style`
   attribute.** `style-src` carries no `'unsafe-inline'`, so an inline
   style would be dropped and the chart would render in the browser's
   defaults. `fill` and `stroke` are ordinary CSS properties, so a class
   works and inherits the palette for free.
 - **A `polyline` needs `fill: none` from a rule that outranks the
-  series colour.** The `fill="none"` presentation attribute does not
+  series color.** The `fill="none"` presentation attribute does not
   survive: attributes lose to any CSS rule, so the per-series `fill`
   won and every weight history rendered as a filled wedge. Selecting
   `polyline.chart-series` is what makes it stick.
@@ -1431,12 +1431,12 @@ the audience for it is the group rather than the world.
 
 **The pseudonymisation stays, and matters more rather than less.** The
 instinct on gating a page is to relax what is on it, and it is exactly
-backwards here. The people who can recognise somebody from a weight
+backwards here. The people who can recognize somebody from a weight
 history are the people who know what that person weighs, and those
 people are the other members of the group. A stranger reading an
 unlabelled line learns nothing; a groupmate reading it may learn who.
 Everything below — the pseudonyms, the dropped data-quality panel, the
-opt-in series, the quantisation — is aimed at the reader who is now the
+opt-in series, the quantization — is aimed at the reader who is now the
 only reader.
 
 **The aggregation happens in the keyholder's browser, and only the
@@ -1506,7 +1506,7 @@ ambiguous instead of exact, and the chart loses precision that a 620-
 pixel plot could not draw in the first place. The keyholder's own
 snapshot keeps full precision, because it never leaves their tab.
 
-**Built 2026-08-05.** `dashboard.js`'s `quantise()`, applied only when
+**Built 2026-08-05.** `dashboard.js`'s `quantize()`, applied only when
 `identify` is false. Each unit system is floored on its own stored field
 rather than one being converted into the other — converting would put a
 second copy of `form.js`'s conversion here, free to drift.
@@ -1515,8 +1515,8 @@ second copy of `form.js`'s conversion here, free to drift.
 specified the missing test as "two snapshots of the same corpus, one
 with an extra entry, share no exact series point". **That cannot be
 achieved by rounding, and the sentence above should not be read as
-promising it.** Quantisation is deterministic: an entry that did not
-change quantises identically in both documents, so the two snapshots go
+promising it.** Quantization is deterministic: an entry that did not
+change quantizes identically in both documents, so the two snapshots go
 on sharing points, and coarsening makes them *more* alike rather than
 less. The guarantee is that a shared point no longer *identifies* a
 line, because several people land on the same date and bin — ambiguity,
@@ -1525,7 +1525,7 @@ protects should hold the weaker claim, and the opt-in remains the
 load-bearing control.
 
 Two smaller things fall out of it and both are improvements. The shape
-of a line survives quantisation, so the chart still says what it was
+of a line survives quantization, so the chart still says what it was
 for. And a submission's exact time stops being published at all, which
 was a stray disclosure nobody had decided to make — it was simply what
 `timeOf` happened to return.
@@ -1549,7 +1549,7 @@ strangers' heights and no use to anybody.
 ### Weight over time is opt-in
 
 It is the one part of a snapshot still about individuals, pseudonyms and
-quantisation or not: anyone who knows what someone weighs may recognise
+quantization or not: anyone who knows what someone weighs may recognize
 their line. So the checkbox is off by default and the keyholder ticks
 it. That is the right place for the decision — it is theirs, it depends
 on who is in the data, and it can be reversed by republishing without
@@ -1705,7 +1705,7 @@ the two irreversible steps happen where they can be checked.
    losing the export-token box. `EXPORT_TOKEN` stays in the Worker as
    break-glass and moves to `HANDOFF.md` as a `curl`.
 
-8. **Quantise the published series** — date and histogram bin — with the
+8. **Quantize the published series** — date and histogram bin — with the
    test that the correction above showed was missing: not "no handle
    appears", which always passed, but that a published point is
    *ambiguous* rather than a unique join key. **Done 2026-08-05.** The
@@ -1860,7 +1860,7 @@ the world. Three honest caveats:
 - **A weight history is the most identifying thing on it.** Anyone who
   knows roughly what a person weighs can look for their line, and after
   gating, the readers are precisely the people who might. Pseudonyms,
-  renumbering and quantisation all narrow this and none of them close
+  renumbering and quantization all narrow this and none of them close
   it, which is why the chart is off unless the keyholder turns it on.
 - **Renumbering never prevented cross-snapshot linkage**, contrary to
   what this document claimed until 2026-08-05. Exact timestamps and

@@ -122,7 +122,7 @@ Ten checks:
 9. Every promoted country code names a real country. The dropdown puts
    a short block at the top, listed in countries.js as ISO codes, and
    form.js skips any code it cannot find a name for - which is the right
-   behaviour on a live page and the reason a typo would be invisible.
+   behavior on a live page and the reason a typo would be invisible.
    The country simply would not be in the promoted block, and the only
    way to notice is to know it should have been there.
 
@@ -475,7 +475,7 @@ SENDS_TO_NETWORK = re.compile(
     re.I)
 
 # Check 6 approximates "a submission never leaves before encryption" by
-# recognising scripts that send a request body. Authentication is the one
+# recognizing scripts that send a request body. Authentication is the one
 # body with a different purpose, and naming it here keeps that exception
 # narrow and reviewable instead of weakening the rule for every sender.
 UNENCRYPTED_SENDERS = {
