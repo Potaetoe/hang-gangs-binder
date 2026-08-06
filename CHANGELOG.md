@@ -40,11 +40,13 @@ On `accounts`, not released. `main` stays at the last complete release.
   on every sign-in. It also corrects the sentence the exception was first
   argued with — the page is not one with nothing to steal, since after
   sign-in it holds the session.
-- `AGENTS.md` gains the Worker-configuration reality above, and a
-  verification rule earned the hard way: **check that a CI run exists for
-  the head commit**, not that no run failed. An Actions incident dropped
-  one push's run entirely, and a missing run is listed nowhere — the
-  branch reads green.
+- `AGENTS.md` gains the Worker-configuration reality above, and three
+  CI-verification rules: check that a run **exists** for the head commit
+  rather than that none failed; query `head_sha` with the **full
+  40-character SHA**, because an abbreviated one returns `total_count: 0`
+  and is indistinguishable from a commit that never ran; and never reach
+  for `workflow_dispatch` as a routine re-trigger, because on `main` it
+  satisfies the deploy condition and releases the site.
 
 ### Security
 - **A published snapshot no longer describes fewer than five people.**

@@ -313,27 +313,38 @@ implemented it. Say which it is.
 - A local preview serves stale JS — `python -m http.server` sends no
   `Cache-Control`. Confirm with `fetch(url, { cache: "reload" })` before
   concluding a change did not land.
-- **Check that a CI run *exists* for the head commit, not that no run
-  failed.** On 2026-08-06 a GitHub Actions incident failed runs in
-  `Set up job` with `Failed to resolve action download info. Error:
-  Service Unavailable` — before checkout, so no code was read — and then
-  dropped one push's run **entirely**: no run was created for the commit
-  at all, with no `paths` filter and the branch in the `push` trigger
-  list. A red run is visible in every listing; a missing run is listed
-  nowhere, so `gh run list` shows an unbroken column of green and the
-  unverified commit does not appear. **Absence reads as success.**
+- **Check that a CI run *exists* for the head commit, not merely that no
+  run failed.** A red run appears in every listing; a commit with no run
+  appears in none, so `gh run list` shows an unbroken column of green and
+  the unverified commit is simply absent. Absence reads as success.
 
   ```
-  gh api "repos/Potaetoe/hang-gangs-binder/actions/runs?head_sha=<sha>"
+  gh api "repos/OWNER/REPO/actions/runs?head_sha=<FULL 40-CHAR SHA>"
   ```
 
-  `total_count: 0` means nothing ran. The fix is
-  `gh workflow run "Verify and deploy" --ref <branch>`, which is why
-  `workflow_dispatch` stays in the trigger list. Re-running a failed run
-  answers the loud failure and does nothing for the silent one.
-- **Do not call an intermittent outage over on one success.** That same
+  **`head_sha` requires the full 40-character SHA. An abbreviated one
+  returns `total_count: 0` — the same answer as a commit that genuinely
+  never ran.** That is a silent false negative on the exact check meant
+  to catch silent failures, and on 2026-08-06 it produced a confident,
+  wrong report of a dropped run. `git rev-parse HEAD`, never the short
+  form off a log line.
+
+- **During an incident, run *creation* lags — a run that is absent now
+  may appear minutes later.** The same day, a push to `accounts` had no
+  run for several minutes and then had one. "Not created yet" and "never
+  created" look identical at the moment you look, and only the second is
+  a problem. Re-check before concluding, and prefer waiting to
+  dispatching.
+
+- **`workflow_dispatch` on `main` deploys.** The deploy job's condition is
+  `github.event_name != 'pull_request' && github.ref ==
+  'refs/heads/main'`, and a manual dispatch satisfies both. On `accounts`
+  a dispatch is harmless; on `main` it is a release. Never reach for it
+  as a routine "just re-trigger the checks" move.
+
+- **Do not call an intermittent outage over on one success.** That
   incident produced four failures and one pass inside half an hour, and
-  the pass was read as recovery.
+  the pass was read as recovery. It was not.
 
 ## The slice checklist
 

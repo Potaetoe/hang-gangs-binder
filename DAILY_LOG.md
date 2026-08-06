@@ -443,15 +443,27 @@ enforces that the exception does not spread and not that it stays narrow
 Rewriting that page's policy with `'unsafe-inline'` and an arbitrary
 third-party origin left all eleven stages green.
 
-**Two CI findings, and the second is the one worth carrying.** A GitHub
-Actions incident failed five runs in `Set up job` before checkout; none
-of it reached the code, and `ffd48b2` was never broken. It was
-intermittent rather than a window, and one success was misread as
-recovery. Then a push to `accounts` produced **no run at all** — none
-created, no `paths` filter, branch in the `push` list. A red run is
-visible everywhere; a missing run is listed nowhere, so the branch looked
-green. Verified green afterwards by `workflow_dispatch`. `AGENTS.md`
-carries the check.
+**A CI incident, and a wrong diagnosis of it worth more than the
+incident.** A GitHub Actions incident failed five runs in `Set up job`
+before checkout; none of it reached the code, and `ffd48b2` was never
+broken. It was intermittent rather than a window, and one success was
+misread as recovery.
+
+Then a push to `accounts` appeared to have produced no run at all, and I
+reported that GitHub had dropped it. **That was wrong twice over.**
+`?head_sha=` was queried with a *seven-character* SHA, and the API
+answers `total_count: 0` for an abbreviated SHA exactly as it does for a
+commit that never ran — a silent false negative on the check written to
+catch silent failures. The full SHA showed two runs. And run *creation*
+was lagging during the incident: the push run did exist, queued, minutes
+later. "Not created yet" and "never created" are indistinguishable at the
+moment of looking, and only one of them is a problem.
+
+The `workflow_dispatch` I fired to "fix" it was harmless on `accounts`
+and would not have been on `main` — a manual dispatch satisfies the
+deploy job's condition and releases the site. `AGENTS.md` now carries all
+three: the full-SHA requirement, the creation lag, and the dispatch
+hazard.
 
 ### Open threads
 
