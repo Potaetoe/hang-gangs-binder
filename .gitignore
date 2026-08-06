@@ -37,3 +37,7 @@ _site/
 *.pem
 *-private*
 secret*
+
+# Node tooling. devDependencies only - nothing here is bundled or
+# shipped, and apps/web is copied to the published site verbatim.
+node_modules/

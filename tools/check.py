@@ -84,6 +84,50 @@ def run(label, argv):
     return subprocess.run(argv, cwd=REPO).returncode == 0
 
 
+def run_linters(node):
+    """(label, ok) for ESLint and Ruff.
+
+    A missing linter is reported as FAILED, never as skipped, for the
+    same reason a missing node is: a gate that quietly drops a check
+    reports success for a run that verified less than it claims. That is
+    the failure this repository has hit twice - a suite registered
+    locally but not in CI, and a check that could not fail.
+
+    Neither of these is a build step. apps/web is still copied verbatim
+    and nothing here rewrites a file; they refuse a release rather than
+    producing one. See DESIGN.md, "What is deliberately not here".
+    """
+    results = []
+
+    if node:
+        eslint = os.path.join(REPO, "node_modules", "eslint", "bin",
+                              "eslint.js")
+        if os.path.exists(eslint):
+            results.append(("eslint (js)", run(
+                "eslint (js)", [node, eslint, "."])))
+        else:
+            print("\n=== eslint (js) ===")
+            print("FAILED - node_modules is missing. Run `npm install` "
+                  "once; it installs devDependencies only and nothing "
+                  "from it is published.")
+            results.append(("eslint (js)", False))
+    else:
+        results.append(("eslint (js)", False))
+
+    ruff = shutil.which("ruff")
+    ruff_cmd = [ruff, "check", "."] if ruff else [
+        sys.executable, "-m", "ruff", "check", "."]
+    try:
+        results.append(("ruff (python)", run("ruff (python)", ruff_cmd)))
+    except FileNotFoundError:
+        print("\n=== ruff (python) ===")
+        print("FAILED - ruff is not installed. `python -m pip install "
+              "ruff`.")
+        results.append(("ruff (python)", False))
+
+    return results
+
+
 def main():
     results = []
 
@@ -92,6 +136,7 @@ def main():
     )))
 
     node = find_node()
+    results.extend(run_linters(node))
     if node:
         for label, script in NODE_SUITES:
             results.append((label, run(label, [node, script])))

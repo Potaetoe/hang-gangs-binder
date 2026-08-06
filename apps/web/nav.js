@@ -14,7 +14,7 @@
  * that reading the file does not already tell you; what could break is
  * the rendering, which is checked by looking at it.
  */
-(function (root) {
+(function () {
   "use strict";
 
   if (typeof document === "undefined") return;
@@ -89,4 +89,4 @@
     // what stops the two disagreeing if somebody edits one of them.
     setOpen(false);
   });
-})(globalThis);
+})();

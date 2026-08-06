@@ -286,6 +286,22 @@ def crossed_wire_problems(environments):
     return problems
 
 
+def literal_field(body, name):
+    """One quoted `name: "value"` out of a single ENVIRONMENTS arm.
+
+    Module level, and deliberately taking the body rather than closing
+    over it. It used to be defined inside the loop that walks the arms,
+    which reads correctly only for as long as it is called in the same
+    iteration it was defined in - store one of those closures and call it
+    later and it silently reports the last arm's values for every arm.
+    Nothing did that, and nothing had to for this to be worth removing:
+    the failure would be a config check that passed while describing the
+    wrong environment.
+    """
+    found = re.search(r"\b%s\s*:\s*[\"']([^\"']+)[\"']" % name, body)
+    return found.group(1) if found else None
+
+
 def config_environments():
     """([environment], [problem]) parsed from the shipped config.js.
 
@@ -313,16 +329,11 @@ def config_environments():
                     if value is not None)
         body = match.group(4)
 
-        def field(name):
-            found = re.search(
-                r"\b%s\s*:\s*[\"']([^\"']+)[\"']" % name, body)
-            return found.group(1) if found else None
-
         environment = {
             "host": host,
-            "name": field("name"),
-            "endpoint": field("endpoint"),
-            "publicKey": field("publicKey"),
+            "name": literal_field(body, "name"),
+            "endpoint": literal_field(body, "endpoint"),
+            "publicKey": literal_field(body, "publicKey"),
         }
         environments.append(environment)
         for required in ("name", "endpoint", "publicKey"):
@@ -394,8 +405,8 @@ def csp_gaps(origins):
     origins = [origin for origin in origins if origin]
     if not origins:
         return []
-    users = set(page for page, target in html_references()
-                if target == CONFIG_FILE)
+    users = {page for page, target in html_references()
+             if target == CONFIG_FILE}
     gaps = []
     for name in sorted(users):
         text = open(os.path.join(WEB, name), encoding="utf-8").read()
@@ -492,7 +503,7 @@ def unencrypted_paths():
 
     for page, target in html_references():
         if target in senders:
-            loaded = set(t for p, t in html_references() if p == page)
+            loaded = {t for p, t in html_references() if p == page}
             if CRYPTO_FILE not in loaded:
                 problems.append((
                     page,

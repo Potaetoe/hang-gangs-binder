@@ -71,7 +71,7 @@
       async () => {
         const blob = await BinderCrypto.encrypt(fixture.record,
           BINDER_CONFIG.publicKey);
-        return /^[A-Za-z0-9+\/]+={0,2}$/.test(blob) && blob.length < 16 * 1024;
+        return /^[A-Za-z0-9+/]+={0,2}$/.test(blob) && blob.length < 16 * 1024;
       });
 
     await check("a fresh keypair round-trips in this browser", async () => {

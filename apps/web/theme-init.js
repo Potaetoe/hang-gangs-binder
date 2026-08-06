@@ -13,7 +13,7 @@
 (function () {
   "use strict";
   try {
-    var t = localStorage.getItem("hgb-theme");
+    const t = localStorage.getItem("hgb-theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 })();

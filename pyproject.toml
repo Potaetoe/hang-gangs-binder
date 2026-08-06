@@ -1,0 +1,75 @@
+# Python tooling configuration.
+#
+# There is no Python package here and this file does not declare one. It
+# exists so that `ruff` has somewhere to read its settings from, in the
+# place ruff looks for them by default. tools/ is a set of scripts run
+# directly; nothing is installed, imported as a library, or published.
+#
+# Same standing as eslint.config.js: a gate, not a build. Nothing under
+# tools/ reaches the published site - the deploy job copies apps/web and
+# never looks at a sibling directory.
+
+[tool.ruff]
+# 79, which is what tools/ was already written to by eye. Worth pinning
+# rather than leaving to taste: this repository's Python is read far more
+# often than it is run, and its comments carry the reasoning.
+line-length = 79
+target-version = "py39"
+extend-exclude = ["node_modules", "_site", ".wrangler"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes - undefined names, unused imports
+    "I",    # isort - import ordering
+    "B",    # bugbear - the mistakes that pass review
+    "UP",   # pyupgrade
+    "C4",   # comprehension clarity
+    "RUF",  # ruff's own
+]
+
+ignore = [
+    # A bare `except:` is wrong, but `except Exception:` around a parse
+    # that may fail in any number of ways is deliberate here and reads
+    # better than enumerating them. BLE001 is not selected; this is the
+    # narrower one that still fires.
+    "B904",
+
+    # printf-style formatting. Deliberately kept, and this is the one
+    # rule in the "UP" set that was argued with rather than obeyed.
+    #
+    # It fires 36 times, all of them inside the two check scripts, and
+    # every one is a message a person reads when a check fails. The rule
+    # is a style preference: `%` formatting is not deprecated, not slower
+    # in any way that matters here, and not wrong. Against that, the
+    # rewrite would touch 36 message strings in tools/check_web.py, which
+    # is the file that stands between a private key and a public
+    # repository. A transposed placeholder there produces a check that
+    # still runs and reports the wrong thing.
+    #
+    # Consistency was the goal and consistency is what exists: the Python
+    # here is 100% printf-style already. Churning it to satisfy a
+    # preference would trade a real risk for no behavioural gain. If a
+    # future file wants f-strings, that is a conversation, not a silent
+    # divergence - which is why this is written down rather than left as
+    # an unexplained ignore.
+    "UP031",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The check scripts hold long regexes and long explanatory strings where
+# breaking the line would hurt more than the length does.
+"tools/check_web.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tools"]
+
+[tool.ruff.format]
+# Formatting is NOT applied automatically anywhere in this repository.
+# `ruff format` is available to run by hand; no gate invokes it, and no
+# hook rewrites a file behind the author. The reasoning in these scripts
+# is carried by their line breaks as much as by their words, and a
+# formatter that reflows a comment block is editing prose.
+quote-style = "double"
+indent-style = "space"

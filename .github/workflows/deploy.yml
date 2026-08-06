@@ -113,6 +113,26 @@ jobs:
       # does nothing. This suite loads the shipped file's real bytes under
       # a document stub, so it also holds the no-network boundary that
       # check 6 depends on.
+      # The linters. Registered here AND in tools/check.py - there are two
+      # suite lists in this repository and they have to be edited
+      # together. A check that passes on a developer's machine and never
+      # runs in the pipeline looks armed and is not, which is the same
+      # failure as having no check at all.
+      #
+      # Neither is a build step: apps/web is copied verbatim by the deploy
+      # job below and nothing here rewrites a file. They refuse a release
+      # rather than producing one.
+      - name: Install the lint tooling
+        run: |
+          npm ci
+          python -m pip install --quiet ruff
+
+      - name: Lint the JavaScript
+        run: npx eslint .
+
+      - name: Lint the Python
+        run: python -m ruff check .
+
       - name: Check the shared UI wiring
         run: node dev/ui.test.mjs
 

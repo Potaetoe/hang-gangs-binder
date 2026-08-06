@@ -214,7 +214,7 @@
   /* A growable little-endian byte writer. ZIP is little-endian
    * throughout, which is the one thing about it that never varies. */
   function writer() {
-    let bytes = [];
+    const bytes = [];
     return {
       u8: function (v) { bytes.push(v & 0xff); return this; },
       u16: function (v) {

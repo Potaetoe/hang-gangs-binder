@@ -7,9 +7,9 @@
  */
 (function () {
   "use strict";
-  var KEY = "hgb-theme";
-  var BG = { pink: "#241b21", light: "#f2efe9", dark: "#121212" };
-  var buttons = document.querySelectorAll("[data-set-theme]");
+  const KEY = "hgb-theme";
+  const BG = { pink: "#241b21", light: "#f2efe9", dark: "#121212" };
+  const buttons = document.querySelectorAll("[data-set-theme]");
   if (!buttons.length) return;
 
   function apply(name) {
@@ -24,7 +24,7 @@
     });
   }
 
-  var stored = null;
+  let stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
   // No saved choice: reflect what the CSS is already doing (Light on a
   // light-preferring system, Dark otherwise) without persisting. This
@@ -35,7 +35,7 @@
 
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
-      var name = b.getAttribute("data-set-theme");
+      const name = b.getAttribute("data-set-theme");
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
     });
