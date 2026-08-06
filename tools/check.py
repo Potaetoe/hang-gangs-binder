@@ -5,19 +5,27 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of nine remembered ones. It runs the eight
-Node suites in dev/ and the publishability check, and exits non-zero if
-any of them fails:
+it?" one command instead of eleven remembered ones. It runs the two
+linters, the eight Node suites in dev/, and the publishability check,
+and exits non-zero if any of them fails:
 
-    1. apps/web is publishable (references resolve, no key-shaped content)
-    2. crypto.js round trips, and the v1 fixture still decrypts
-    3. form.js builds the record the way it always did
-    4. admin.js quotes CSV correctly and guards spreadsheet formulas
-    5. xlsx.js writes a ZIP that a reader can actually open
-    6. dashboard.js aggregates the rows correctly
-    7. ui.js keeps the shared DOM wiring and boot guard intact
-    8. session.js stores a valid tab session and auth.js hands it off
-    9. worker.js routes, validates and enforces CORS
+     1. apps/web is publishable (references resolve, no key-shaped
+        content)
+     2. eslint passes over the JavaScript
+     3. ruff passes over the Python
+     4. crypto.js round trips, and the v1 fixture still decrypts
+     5. form.js builds the record the way it always did
+     6. admin.js quotes CSV correctly and guards spreadsheet formulas
+     7. xlsx.js writes a ZIP that a reader can actually open
+     8. dashboard.js aggregates the rows correctly
+     9. ui.js keeps the shared DOM wiring and boot guard intact
+    10. session.js stores a valid tab session and auth.js hands it off
+    11. worker.js routes, validates and enforces CORS
+
+The linters are a gate, not a build. Nothing they run rewrites a file
+and apps/web is still copied verbatim to the published site; they refuse
+a release rather than producing one. See DESIGN.md, "What is
+deliberately not here".
 
 What none of it can see is the Cloudflare dashboard. A Worker with no
 D1 binding, or no EXPORT_TOKEN, passes every check here and fails on

@@ -108,11 +108,6 @@ jobs:
       - name: Check the dashboard's arithmetic
         run: node dev/dashboard.test.mjs
 
-      # Every interactive page boots through ui.js now, and broken shared
-      # wiring does not throw - it renders a page that looks finished and
-      # does nothing. This suite loads the shipped file's real bytes under
-      # a document stub, so it also holds the no-network boundary that
-      # check 6 depends on.
       # The linters. Registered here AND in tools/check.py - there are two
       # suite lists in this repository and they have to be edited
       # together. A check that passes on a developer's machine and never
@@ -133,6 +128,11 @@ jobs:
       - name: Lint the Python
         run: python -m ruff check .
 
+      # Every interactive page boots through ui.js now, and broken shared
+      # wiring does not throw - it renders a page that looks finished and
+      # does nothing. This suite loads the shipped file's real bytes under
+      # a document stub, so it also holds the no-network boundary that
+      # check 6 depends on.
       - name: Check the shared UI wiring
         run: node dev/ui.test.mjs
 
