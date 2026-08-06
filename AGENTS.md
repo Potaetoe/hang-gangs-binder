@@ -67,6 +67,82 @@ chain. On a chain the second agent's value is review, not throughput.
 - Do not touch a file reserved by a slice carrying the other agent's
   label. Comment on the issue when you start and when you stop, naming the
   files held and what you are leaving undone.
+
+### Claiming a slice, concretely
+
+**The label says who. The claim comment says what — and the collision is
+always at the file level, never at the issue level.** On 2026-08-06
+issues #25 and #26 both changed `index.html`; nothing in this file
+prevented that, and it was avoided only because Codex noticed and
+ordered them by hand. Courtesy is not a lock.
+
+**Read the board immediately before your first edit, not when you picked
+the task.** A claim you read an hour ago is not current.
+
+```
+gh issue list --repo Potaetoe/hang-gangs-binder --state open \
+  --json number,title,labels
+gh pr list --repo Potaetoe/hang-gangs-binder --state open \
+  --json number,title,headRefName,files
+```
+
+An open PR reserves its files just as a labelled issue does — arguably
+harder, since the change already exists. To see what a branch actually
+touches rather than what its handoff claims:
+
+```
+git diff --name-only origin/accounts...origin/<branch>
+```
+
+**Then post the claim before the first edit**, as an issue comment:
+
+```
+CLAIM claude — step 4
+Branch:  claude/issue-5-submit-session
+Base:    <full 40-char sha>
+Files:   server/worker.js, dev/worker.test.mjs, apps/web/submit.js
+Not:     tools/check_web.py (issue #26 holds it)
+```
+
+**Release it the same way** when the PR merges or you stop early:
+
+```
+RELEASE claude — step 4
+Landed:  <sha or "nothing">
+Left:    <what the next agent inherits, or "nothing">
+```
+
+then remove your label. **An issue whose PR has merged but whose label is
+still on it reads as held**, which is the same failure as `Closes #N` not
+firing — see below.
+
+**If your file list overlaps something already claimed**, you have three
+options and picking silently is not one: take a different slice; branch
+from *their* branch rather than from `accounts`, saying so in the claim;
+or ask them to release. Say which in the claim comment.
+
+**A claim goes stale after roughly a day with no push to its branch.**
+Take it over by commenting on the issue first, then swapping the label —
+never by simply starting.
+
+### When CI is backed up
+
+GitHub Actions degraded for hours on 2026-08-06, first failing runs
+before checkout and later creating runs it never started. That changes
+what good coordination looks like, because **merges are what free a
+file**:
+
+- **A queued run is not a green run, and a merge on one is a merge on
+  nothing.** Say "verified locally, CI pending" in the handoff and let
+  the reviewer decide — do not quietly treat local green as sufficient.
+- **Do not stack slices on files an unmerged branch already changes.**
+  With merges blocked, the second slice inherits a rebase and the
+  reviewer inherits a diff against a base that no longer means anything.
+  Prefer a slice with a disjoint file list while the queue is stuck; the
+  build order has usually got one.
+- If nothing disjoint is left, branch from the unmerged branch and say so
+  — an explicit dependency is fine, a silent one is what produces the
+  conflict nobody expected.
 - **Work in your own checkout.** Codex uses a separate clone; Claude uses
   the main working tree. Never check out a branch in the other agent's
   tree — an uncommitted edit sitting there while the other checks out
@@ -352,7 +428,14 @@ implemented it. Say which it is.
 
 - [ ] Read this file, the relevant design sections, and the latest issue comment.
 - [ ] Confirm the build step, base commit, deliverables, exclusions, and reserved files.
-- [ ] Confirm the issue does not carry the other agent's label; add yours and a start comment.
+- [ ] **Read the board now, not when you picked the task** — open issues
+      with labels, *and* open PRs with their real file lists. See
+      "Claiming a slice, concretely".
+- [ ] Confirm the issue does not carry the other agent's label, and that
+      **no open PR or labelled issue names a file on your list**. If one
+      does, say which of the three options you took.
+- [ ] **Post the `CLAIM` comment and add your label before the first
+      edit.** Not after the branch, not with the PR.
 - [ ] Branch from the commit the issue names, in your own checkout.
 - [ ] Check `git status` and preserve unrelated work.
 
@@ -380,7 +463,11 @@ implemented it. Say which it is.
 - [ ] Stage only the intended files; write a commit message that carries the reasoning.
 - [ ] Open or update a draft PR using the handoff format below.
 - [ ] Wait for GitHub Actions and inspect the uploaded files on the remote branch.
+      **Confirm a run exists for the full head SHA** — see Verification —
+      and treat `queued` as pending, never as passing.
 - [ ] Stop comment on the issue: PR, checks, exclusions, next action.
+- [ ] **Post the `RELEASE` comment and remove your label** once it merges
+      or once you stop. A label left on a merged slice reads as held.
 - [ ] Shut down any preview server you started, and confirm the port is free.
 
 ## Handoff format
