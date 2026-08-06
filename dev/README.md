@@ -300,3 +300,26 @@ The test keypair here is a throwaway generated for testing and is
 committed on purpose. It protects nothing and opens nothing real. The
 real private key never enters this repository — see
 [../DESIGN.md](../DESIGN.md).
+
+## The three keypairs, and which is which
+
+Easy to conflate, and two of them are unrecoverable if lost, so they are
+written down here once.
+
+| Key | Public half | Private half |
+| --- | --- | --- |
+| **Production** | `config.js`, `potaetoe.github.io` arm | held offline by the owner |
+| **Development** | `config.js`, `localhost` arm | **held offline by the owner** — recorded 2026-08-06 |
+| **Throwaway** | `dev/test-key.json` | `dev/test-key.json`, committed on purpose |
+
+The development private half was unaccounted for until 2026-08-06. Its
+public half arrived in `b6a984f`, a commit with an empty message body,
+so nothing recorded what had become of the other one — which is the cost
+of that habit made concrete, and why `AGENTS.md` now asks for the
+reasoning in the commit.
+
+**A fourth secret is not a keypair at all and is regularly confused with
+one:** `TELEGRAM_BOT_TOKEN`, from BotFather. It is a single string with
+no halves, it verifies login payloads, and it lives only in Cloudflare.
+Losing it costs a `/revoke` and a re-paste. Losing either private key
+above costs the data encrypted to it, permanently.
