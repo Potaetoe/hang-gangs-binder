@@ -4,7 +4,7 @@
  * The links themselves are in the HTML of each page, not built here.
  * That is deliberate and it is the opposite of what countries.js does,
  * so it is worth saying why: 250 country options would bury the six
- * fields that matter, whereas three links are the page's own structure,
+ * fields that matter, whereas four links are the page's own structure,
  * and a page whose navigation vanishes when a script fails is a page
  * somebody can get stranded on. The cost is the same list written five
  * times, which is real - so tools/check_web.py fails the build if the

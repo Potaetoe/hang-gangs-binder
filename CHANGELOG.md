@@ -44,6 +44,12 @@ On `accounts`, not released. `main` stays at the last complete release.
   groups.
 
 ### Fixed
+- `BinderUI.checkedValue` now exposes the global two-argument behavior
+  every caller actually used; its unused `scope` parameter no longer
+  advertises collision protection that was never active.
+- Every static navigation menu now links to the sign-in page. Check 10
+  requires that route as well as identical menus, so removing it from all
+  five pages cannot strand signed-out visitors while the gate stays green.
 - `render()` dereferenced the basis immediately, so a suppressed
   (`null`) basis would have white-screened the public dashboard for any
   group below the floor.
