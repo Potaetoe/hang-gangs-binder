@@ -128,7 +128,9 @@ Issue #2, merged in PR #16.
 
 ### Step 3 — session half, before the bot (Codex)
 
-Issue #4, draft PR #17. Session commit `21deba7`.
+Issue #4, draft PR #17. Session commit `21deba7`, later rewritten to
+`539e6ea` — same tree, rebased onto `accounts` with the reasoning moved
+from the PR body into the commit message.
 
 - Frozen `globalThis.BinderSession`: validated tab-scoped storage, expiry,
   removal of malformed values, bearer headers, signed-out redirects,
@@ -239,6 +241,13 @@ Consolidated:
   listening on 8124, serving a branch checkout to anything asking for a
   local preview. Killed. `AGENTS.md` now requires shutting down your own
   servers before reporting done.
+- `step-3-session-plumbing` was rewritten to `539e6ea`: the same tree,
+  rebased onto `accounts`, with the reasoning moved out of the PR body
+  into the commit message and the `check_web.py` docstring conflict
+  resolved (both halves kept). Codex's three documentation commits were
+  dropped from that branch **after** their four blobs were confirmed
+  byte-identical to what had already been merged here — nothing was
+  lost, and PR #17 is now purely the step 3 code slice.
 
 ### Open threads
 
