@@ -13,11 +13,16 @@ const source = await readFile(sourcePath, "utf8");
 
 let listener = null;
 let listenerOptions = null;
+let radioSelector = null;
+let radioInputs = [];
 const elements = new Map([["known", { id: "known" }]]);
 globalThis.document = {
   readyState: "loading",
   getElementById(id) { return elements.get(id) || null; },
-  querySelectorAll() { return []; },
+  querySelectorAll(selector) {
+    radioSelector = selector;
+    return radioInputs;
+  },
   addEventListener(type, callback, options) {
     if (type === "DOMContentLoaded") {
       listener = callback;
@@ -52,20 +57,16 @@ const radios = [
   { value: "first", checked: false },
   { value: "second", checked: true },
 ];
-const scope = {
-  selector: null,
-  querySelectorAll(selector) {
-    this.selector = selector;
-    return radios;
-  },
-};
+radioInputs = radios;
+check("checkedValue exposes only its global two-argument contract",
+  UI.checkedValue.length === 2);
 check("checkedValue returns the checked radio",
-  UI.checkedValue("units", "fallback", scope) === "second");
-check("checkedValue scopes the requested group",
-  scope.selector === 'input[name="units"]');
+  UI.checkedValue("units", "fallback") === "second");
+check("checkedValue queries document for the requested group",
+  radioSelector === 'input[name="units"]');
 radios[1].checked = false;
 check("checkedValue returns its explicit fallback",
-  UI.checkedValue("units", "fallback", scope) === "fallback");
+  UI.checkedValue("units", "fallback") === "fallback");
 
 const status = { textContent: "old", hidden: true, className: "old" };
 UI.setStatus(status, "Ready", "good");

@@ -588,6 +588,15 @@ def nav_problems():
             continue
         found[name] = links
 
+        # Identical incomplete menus still strand somebody. Sign-in is the
+        # route a signed-out visitor needs most, so comparing the five copies
+        # is not enough: every copy must name the directory index explicitly.
+        if not any(href == "index.html" for href, _ in links):
+            problems.append((
+                name,
+                "has no index.html route to sign-in, so a signed-out visitor "
+                "can be stranded away from the page that mints a session"))
+
         # A menu that cannot be opened is a menu that is not there. The
         # toggle and the list have to agree about the id, or the button
         # controls nothing and nav.js gives up.
