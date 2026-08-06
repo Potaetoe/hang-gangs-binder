@@ -366,10 +366,11 @@ rejected a CDN copy of libsodium for, and it would mean opening
 
 So sign-in is `index.html` and nothing else: the widget, and no
 `crypto.js`, no form, no plaintext of any kind. The form moves to its
-own page. `index.html`'s policy carries the two exceptions the widget
-needs — `script-src https://telegram.org` and
-`frame-src https://oauth.telegram.org` — and no other page gains
-either.
+own page. `index.html`'s policy carries the exceptions the widget needs
+— `script-src https://telegram.org` and
+`frame-src https://oauth.telegram.org`, **and `'unsafe-eval'`, which
+this section did not predict; see "The policy needed a third exception"
+below** — and no other page gains any of them.
 
 **This reverses "the form grew into `index.html` rather than being
 copied from it".** That decision was right when a landing page's only
@@ -388,6 +389,70 @@ thing people recognize, and a link that sends you to a bot and asks you
 to come back is a thing people abandon. Worth remembering if the CSP
 exception ever becomes a problem — it is the same account id and the
 same session on the other side, so it is a swap rather than a rewrite.
+
+### The policy needed a third exception
+
+The two exceptions above were written before anybody had run the widget.
+The real policy needs a third, found by observation rather than reading:
+
+```
+script-src 'self' 'unsafe-eval' https://telegram.org;
+frame-src https://oauth.telegram.org
+```
+
+`telegram-widget.js` fails before it creates its iframe with
+`EvalError: Evaluating a string as JavaScript violates script-src`.
+Telegram's shipped source puts `data-onauth` through `__parseFunction`,
+which is implemented with `eval`. **Callback mode cannot work without
+`'unsafe-eval'`** — that is a property of their script, not a
+configuration this project chose.
+
+**Rejected: redirect mode.** `data-auth-url` needs no eval at all, and
+loses on the thing this document cares most about. Telegram would send
+the signed payload back **in a URL query string** — the numeric id and
+the handle both. URLs reach browser history, `Referer` headers, and the
+host's access logs. That is the membership oracle this design rejects
+handle-derived account ids to prevent, relocated from the database into
+a log file, on every single sign-in. **A certain, repeating leak is
+worse than a hypothetical one**, which is the whole comparison.
+
+**What `'unsafe-eval'` does and does not cost.** It admits no new
+origins: `script-src` still names only this site and `telegram.org`. It
+lets an already-permitted script turn strings into code. `telegram.org`
+can read this page and its storage with or without it, so it widens what
+that script can do to itself rather than what it can reach. The real
+cost is future: if a first-party script on this page ever feeds
+attacker-controlled data to `eval`, that becomes execution. None do.
+
+**The page is not "nothing to steal", and the record should say so.**
+After a successful sign-in this page holds the session token, which is
+what `GET /me` and `POST /submit` accept. Trusting Telegram's script
+with that is inherent to using Telegram's widget — a compromised widget
+still cannot forge a payload the Worker will take, because the Worker
+checks the signature against `TELEGRAM_BOT_TOKEN`. But "the page has
+nothing sensitive on it" was the sentence this exception was first
+argued with, and it is not true.
+
+**Confinement is the condition, so it has to be executable.** Check 11
+refuses `crypto.js` on the sign-in page; check 12 refuses
+`telegram.org` and `'unsafe-eval'` on every *other* page. That pair
+enforces *the exception does not spread* and, as first written, not
+*the exception stays narrow* — check 12 skipped `index.html` entirely.
+Rewriting that page's policy as
+`script-src 'self' 'unsafe-eval' 'unsafe-inline' https://telegram.org
+https://evil.example` left the whole gate green. **A check that exempts
+the file holding the exception is not guarding the exception**, which is
+the same corollary `AGENTS.md` records: something outside a file has to
+say what that file is allowed to contain. Check 12 must pin the sign-in
+page's `script-src` and `frame-src` to exactly the tokens above and fail
+on any other.
+
+**Provisional.** BotFather binds the widget to `potaetoe.github.io`, so
+localhost renders "Bot domain invalid" and cannot prove the real render
+or the callback. The policy is confirmed at cutover, with the owner
+present, and this section is what to re-read if it turns out to need a
+fourth exception — the answer would be to reconsider the deep-link flow
+above rather than to keep widening this one.
 
 ### The page is not the gate
 
