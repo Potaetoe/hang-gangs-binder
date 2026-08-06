@@ -6,10 +6,58 @@ soon as they land — the Worker is the exception and is deployed
 separately, which is why some entries below say a thing is built and not
 deployed.
 
+A merged configuration change does not by itself prove the corresponding
+live service was deployed. Where the two differ, entries say so.
+
 This file starts on 2026-08-05. The work before it — the wire format, the
 form, the Worker and D1, the key generator — is recorded in `DESIGN.md`,
 which carries the reasoning rather than the sequence, and in the git
 history.
+
+## Unreleased
+
+Proposed in [PR #17](https://github.com/Potaetoe/hang-gangs-binder/pull/17),
+based on `accounts`. Build-order step 3, session half only.
+
+### Added
+- `apps/web/session.js` and a frozen `globalThis.BinderSession`:
+  tab-scoped session storage, expiry validation, bearer headers, explicit
+  sign-in redirects, and a visible development-session marker.
+- The transport half of `apps/web/auth.js`, shared by development auth and
+  the future Telegram widget callback — both responses travel the same
+  POST/store/redirect path.
+- `apps/web/submit.html`, holding the form formerly served by
+  `index.html`.
+- `dev/session.test.mjs`, registered in **both** `tools/check.py` and
+  GitHub Actions.
+
+### Changed
+- `index.html` is a sign-in-only shell. It does not load `crypto.js` and
+  holds no submission fields — the one page permitted third-party script
+  is the one page with nothing to steal.
+- Form submissions require a stored member session and send its bearer
+  token.
+- Interactive pages load session support; `404.html` stays inert.
+- Shared navigation points at `submit.html`.
+- `check_web.py` gains one named, stale-checked auth-payload exemption,
+  and its units-default check moves to `submit.html`.
+
+### Security
+- Malformed, unsuccessful and expired session responses fail closed and
+  are removed from tab storage rather than left to fail every request
+  until the tab closes.
+- Authentication can POST only to the two known auth routes.
+- `admin.html` is **not** auto-redirected when signed out, preserving the
+  owner's break-glass export-token path. Gating the dashboard belongs to
+  step 6.
+
+### Still blocked
+- Telegram widget markup and the bot username.
+- Telegram `script-src` and `frame-src` permissions, pending observation
+  of the real widget rather than assertion of a policy.
+- Widget-confinement checks 11 and 12.
+- One positive live `/auth/dev` round trip, which needs the owner-held
+  secret.
 
 ## 2026-08-05 — Stopped releasing the redesign one step at a time
 
@@ -53,13 +101,22 @@ history.
 
 ## 2026-08-05 — Split the environment, and shared the page wiring
 
-Build-order steps 0 and 0.5 of the accounts redesign.
+Build-order steps 0 and 0.5 of the accounts redesign. Shared UI in
+[PR #14](https://github.com/Potaetoe/hang-gangs-binder/pull/14) with its CI
+registration in [#15](https://github.com/Potaetoe/hang-gangs-binder/pull/15);
+development isolation in
+[#16](https://github.com/Potaetoe/hang-gangs-binder/pull/16). Nine
+deliberate mutations were run across the two before handoff.
 
 ### Added
-- `apps/web/ui.js` (`BinderUI`), holding the page wiring that
-  `form.js`, `admin.js` and `public.js` each carried their own copy of —
-  the boot guard, `show()`, and status rendering. `dev/ui.test.mjs` is a
-  16-check DOM contract over it.
+- `apps/web/ui.js` (frozen `globalThis.BinderUI`), holding the page wiring
+  that `form.js`, `admin.js` and `public.js` each carried their own copy
+  of — element lookup, visibility, checked-radio selection, status
+  rendering, and a guarded boot. `dev/ui.test.mjs` is a 16-check DOM
+  contract over it, including the architectural rule that **`ui.js`
+  contains no `fetch` and no POST** — network behaviour stays in
+  page-specific modules so `check_web.py` can keep its senders rule
+  strict.
 - A development Worker and database: `hgbinderworker-dev` over
   `hg_binder_db_dev`, so a local preview stops writing into the live
   data. `config.js` now switches on hostname rather than being edited.
@@ -70,8 +127,25 @@ Build-order steps 0 and 0.5 of the accounts redesign.
   so sign-in cannot otherwise be exercised anywhere but production.
 
 ### Changed
-- `tools/check_web.py` was reworked around the two-environment split so
-  a local endpoint cannot reach production and the reverse.
+- `config.js` selects production or development by **exact hostname**,
+  aliases `127.0.0.1` to localhost, and fails closed on an unknown host
+  with neither endpoint nor key. A production fallback is the accident the
+  whole arrangement exists to prevent.
+- The production Worker no longer allows loopback origins; they moved to
+  the development environment.
+- `tools/check_web.py` was reworked around the two-environment split: it
+  validates every arm's endpoint and P-256 key, the production hostname,
+  the loopback alias, the closed fallback, and CSP coverage for every arm
+  on every page that loads `config.js`. Its `connect-src` test also moved
+  from substring matching to **exact token matching** — a policy naming a
+  lookalike origin that contained the real one as a substring would have
+  passed the old test while permitting exfiltration.
+- Every page loading `config.js` now permits **both** Worker origins in
+  `connect-src`. A `<meta>` policy is one string served to both hosts, so
+  this is unavoidable; `DESIGN.md` records it as an accepted loosening
+  rather than a surprise.
+- `dev/worker.test.mjs` covers the development login from the numeric
+  loopback origin as well as from `localhost`.
 - `preview_urls = false` is repeated on the development environment
   rather than left to inherit, so old versions of the sign-in bypass do
   not stay reachable at a permanent hostname.
