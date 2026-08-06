@@ -121,6 +121,81 @@ find it.
 Write the why, what was rejected, and what was verified. If the PR body
 says it, the commit message should say it.
 
+## Code standards
+
+Most of this is machine-checked, which is the point — a standard that
+only exists in this file is one three agents can each read differently.
+Run `python tools/check.py`; it is eleven checks now and two of them are
+the linters.
+
+| Concern | Where it is decided | Enforced by |
+| --- | --- | --- |
+| Line endings, charset, final newline | `.gitattributes`, `.editorconfig` | git, on commit |
+| JavaScript style and correctness | `eslint.config.js` | `npx eslint .` |
+| Python style and correctness | `pyproject.toml` | `python -m ruff check .` |
+| What may be published | `tools/check_web.py` | the gate |
+
+**A linter here is a gate, not a build.** `apps/web` is copied verbatim
+to the published site; nothing rewrites a file, and a lint failure
+refuses a release rather than producing one. That is why this does not
+contradict `DESIGN.md`'s rejection of a bundler — read that section
+before proposing tooling that *transforms* anything.
+
+Setup, once: `npm install` (devDependencies only, `node_modules` is
+ignored and never published) and `python -m pip install ruff`.
+
+The conventions the linters cannot express:
+
+- **The module shape means something.** `(function (root) { … })(globalThis)`
+  is a file that assigns a global; `(function () { … })()` is a file that
+  does not. Do not add an unused `root` parameter for symmetry — `nav.js`
+  had one and it was removed.
+- **Exported objects are frozen.** `BinderUI`, `BinderSession` and
+  `BinderAuth` are `Object.freeze`d, so a page cannot quietly redefine a
+  helper another page depends on.
+- **The pure/DOM split is what makes the suites possible.** `crypto.js`,
+  `form.js`, `admin.js`, `session.js` each export a pure half and wire the
+  DOM after a `typeof document === "undefined"` guard, so a Node suite can
+  load the shipped file's real bytes rather than a copy.
+- **American spelling**, in prose, comments and our own identifiers.
+  Platform names keep their own spelling — CSS is `color` because the
+  property is `color`. Settled 2026-08-06 after the repository was found
+  split mid-word.
+- **Comments explain why, not what.** The reasoning in this repository is
+  load-bearing and has repeatedly been the only record of a decision. A
+  comment restating the line below it is worse than none.
+
+## The review bar
+
+Reviewing a slice means **attacking the threat the design names, not
+checking the criterion the spec lists.**
+
+Re-running the gate and reading the diff is not enough, and there is a
+worked example. `check_web.py` check 5 exists to catch production
+pointing at development. `REDESIGN.md` specified it as four bullets;
+every bullet was implemented correctly and every one was confirmed armed
+by mutation. The gate still passed with the production and development
+public keys **exchanged** — because two swapped arms are still distinct,
+and distinctness was the criterion. `DESIGN.md` named that exact failure
+one paragraph before prescribing the check that could not catch it.
+
+So a review asks two questions, and the second is the one that finds
+things:
+
+1. Does the code do what the spec said?
+2. **Does the spec still cover the hazard the design document names?**
+   Go and read the hazard in its own words, then try to produce it. If it
+   can be produced while the gate stays green, the specification is wrong
+   — and saying so is the review's job, not a nitpick outside it.
+
+Corollary worth stating, because it decided the fix: **a check computed
+entirely from the file it guards cannot detect that the file's contents
+were rearranged.** When the invariant is "this specific value belongs
+*here*", something outside the file has to say so.
+
+A finding against the specification is not a finding against whoever
+implemented it. Say which it is.
+
 ## Operational and security boundaries
 
 - **A coding request does not authorize an adjacent act.** Code changes do
@@ -210,10 +285,15 @@ says it, the commit message should say it.
 
 **Verify**
 
-- [ ] `python tools/check.py`, with exact totals captured.
+- [ ] `python tools/check.py` — all eleven, with exact totals captured.
+      The linters are checks 2 and 3; a new file has never been linted
+      before it lands, so run the gate on the *merge result*, not only on
+      the branch.
 - [ ] `git diff --check`, and read the whole diff.
 - [ ] Exercise every affected page in a browser, checking computed visibility.
 - [ ] Separate source, local, CI and live results. Name any live check not performed.
+- [ ] Reviewing? Re-read the hazard the design names and try to produce
+      it, rather than re-running the criterion the spec lists.
 
 **Publish**
 

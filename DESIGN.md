@@ -799,6 +799,39 @@ that head, so a page added later cannot quietly ship without the policy.
   bundler would add a step that can fail between the source and the
   published site. There is no state here that hand-written DOM code
   cannot hold.
+
+  **Amended 2026-08-06: there are linters, and this paragraph still
+  stands.** ESLint and Ruff were added, and the distinction that lets
+  both be true is worth keeping sharp, because "no build step" was
+  nearly read as "no tooling" and would have cost real defects.
+
+  The objection above is to a step *between the source and the published
+  site* — something that transforms a file, so that what ships is not
+  what was written, and so that a failure in the middle produces a site
+  nobody reviewed. A linter does none of that. `apps/web` is still copied
+  verbatim, no file is rewritten, and formatting is deliberately not
+  applied automatically anywhere: `ruff format` exists to run by hand and
+  no gate invokes it, because the reasoning in these files is carried by
+  their line breaks as much as by their words. A lint failure **refuses a
+  release** rather than producing one.
+
+  That is the same standing `tools/check_web.py` has always had, and it
+  is the test to apply to any future tooling: **does it change what
+  ships, or does it refuse to ship?** The first is the thing this
+  paragraph rejects. The second is this project's whole method.
+
+  What it bought immediately, which is the reason it is recorded rather
+  than just configured: Ruff found that `config_environments()` defined
+  its field helper inside the loop over the `ENVIRONMENTS` arms, closing
+  over the loop variable. It read correctly only while called in the same
+  iteration — store one and call it later and every arm reports the last
+  arm's values. In the file that stands between a private key and a
+  public repository, the failure mode is a config check that passes while
+  describing the wrong environment.
+
+  `node_modules` is `devDependencies` only, ignored by git, and never
+  reachable by the deploy job, which copies `apps/web` and looks at no
+  sibling directory.
 - **No staging branch, but a non-production *environment* since
   2026-08-05.** The two are not the same thing, and conflating them is
   what kept the second one from existing for so long.
