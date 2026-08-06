@@ -224,6 +224,33 @@ implemented it. Say which it is.
   built, work goes to the `accounts` branch and `main` stays at the last
   complete release. The deploy job names `refs/heads/main` and nothing
   else.
+- **All six production Worker secrets are set** as of 2026-08-06:
+  `EXPORT_TOKEN`, `TELEGRAM_BOT_TOKEN`, `ACCOUNT_SECRET`,
+  `TELEGRAM_GROUP_CHAT_ID`, `ADMIN_TELEGRAM_IDS`,
+  `ALWAYS_ALLOW_TELEGRAM_IDS` — **secrets, not `[vars]`**, because a
+  `[vars]` block is committed and this repository is public. Do not write
+  any of them into `wrangler.toml`. The dev Worker still has no
+  `ACCOUNT_SECRET`; see the issue for why that is a guaranteed 500 rather
+  than a missing nicety.
+- **`wrangler secret put` cannot set them, and this is not an
+  authentication problem.** Production's script was hand-pasted, which
+  leaves the Worker in **version-upload state**, and `secret put` creates
+  *and deploys* a version in one step. Cloudflare refuses that with
+  `error 10220: Prod worker settings can not be deployed with a Version
+  Upload`, for anyone, however they authenticate. **The dashboard is the
+  tool** until cutover deploys from this repository — the same conclusion
+  `ALLOWED_ORIGINS` reached. Secrets survive a later `wrangler deploy`,
+  so they hold through cutover. Re-test the CLI after cutover rather than
+  assuming it stays broken or assuming it heals.
+- **Piping a value into `wrangler secret put` breaks its
+  authentication.** A piped stdin makes wrangler consider itself
+  non-interactive, and a non-interactive wrangler refuses the stored
+  OAuth login and demands `CLOUDFLARE_API_TOKEN` — which nobody here may
+  handle. A wrapper that feeds a secret on stdin is a dead end, not a bug
+  to fix.
+- **`npx --yes wrangler@latest` is not reproducible.** Two runs minutes
+  apart resolved to 4.45.0 and 4.119.0 and failed differently. Pin the
+  version in anything written down.
 
 ## Implementation invariants
 
@@ -286,6 +313,27 @@ implemented it. Say which it is.
 - A local preview serves stale JS — `python -m http.server` sends no
   `Cache-Control`. Confirm with `fetch(url, { cache: "reload" })` before
   concluding a change did not land.
+- **Check that a CI run *exists* for the head commit, not that no run
+  failed.** On 2026-08-06 a GitHub Actions incident failed runs in
+  `Set up job` with `Failed to resolve action download info. Error:
+  Service Unavailable` — before checkout, so no code was read — and then
+  dropped one push's run **entirely**: no run was created for the commit
+  at all, with no `paths` filter and the branch in the `push` trigger
+  list. A red run is visible in every listing; a missing run is listed
+  nowhere, so `gh run list` shows an unbroken column of green and the
+  unverified commit does not appear. **Absence reads as success.**
+
+  ```
+  gh api "repos/Potaetoe/hang-gangs-binder/actions/runs?head_sha=<sha>"
+  ```
+
+  `total_count: 0` means nothing ran. The fix is
+  `gh workflow run "Verify and deploy" --ref <branch>`, which is why
+  `workflow_dispatch` stays in the trigger list. Re-running a failed run
+  answers the loud failure and does nothing for the silent one.
+- **Do not call an intermittent outage over on one success.** That same
+  incident produced four failures and one pass inside half an hour, and
+  the pass was read as recovery.
 
 ## The slice checklist
 

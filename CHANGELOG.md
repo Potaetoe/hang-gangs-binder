@@ -18,6 +18,34 @@ history.
 
 On `accounts`, not released. `main` stays at the last complete release.
 
+### Configuration
+- **All six production Worker secrets are set** — `EXPORT_TOKEN`,
+  `TELEGRAM_BOT_TOKEN`, `ACCOUNT_SECRET`, `TELEGRAM_GROUP_CHAT_ID`,
+  `ADMIN_TELEGRAM_IDS`, `ALWAYS_ALLOW_TELEGRAM_IDS`, as secrets rather
+  than `[vars]`. `server/wrangler.toml` still describes the last three as
+  plaintext vars and is now wrong; correcting it is what #30 has left.
+- **`wrangler secret put` cannot set them.** Production's script was
+  hand-pasted, leaving the Worker in version-upload state, and
+  `secret put` creates and deploys a version in one step — refused with
+  `error 10220`, for anyone, however they authenticate. The dashboard is
+  the tool until cutover deploys from this repository.
+- The **development Worker still has no `ACCOUNT_SECRET`**, which makes
+  every `/auth/dev` sign-in a 500 rather than a missing convenience.
+
+### Documentation
+- `DESIGN.md` records why the sign-in page's policy needs a third
+  exception, `'unsafe-eval'`, and why redirect mode was rejected for it:
+  redirect returns the signed payload in a URL query string, putting the
+  numeric id and handle into history, `Referer` headers and access logs
+  on every sign-in. It also corrects the sentence the exception was first
+  argued with — the page is not one with nothing to steal, since after
+  sign-in it holds the session.
+- `AGENTS.md` gains the Worker-configuration reality above, and a
+  verification rule earned the hard way: **check that a CI run exists for
+  the head commit**, not that no run failed. An Actions incident dropped
+  one push's run entirely, and a missing run is listed nowhere — the
+  branch reads green.
+
 ### Security
 - **A published snapshot no longer describes fewer than five people.**
   `MIN_CELL = 5`. Before this, a plausible 24-person group published

@@ -404,26 +404,84 @@ Consolidated:
   byte-identical to what had already been merged here — nothing was
   lost, and PR #17 is now purely the step 3 code slice.
 
+### Later the same day — configuration, and two CI findings
+
+Claude. Issue #25 reviewed and merged (rebase, so the test-first commit
+survives as its own commit); #26 reviewed and **blocked**; the Worker's
+configuration finished with the owner.
+
+**All six production Worker secrets are now set** — `EXPORT_TOKEN`,
+`TELEGRAM_BOT_TOKEN`, `ACCOUNT_SECRET`, `TELEGRAM_GROUP_CHAT_ID`,
+`ADMIN_TELEGRAM_IDS`, `ALWAYS_ALLOW_TELEGRAM_IDS`, all as secrets. The
+group is a supergroup, so its `-100…` id is stable and will not shift
+under a basic-group upgrade.
+
+**Issue #30's prescribed fix does not work**, which is the finding rather
+than the chore. `wrangler secret put --name hgbinderworker` fails with
+`error 10220, Prod worker settings can not be deployed with a Version
+Upload`: production's script was hand-pasted, `secret put` creates *and
+deploys* a version in one step, and Cloudflare refuses the combination —
+for anyone, however they authenticate. The dashboard is the tool until
+cutover. `AGENTS.md` carries this, along with the two smaller traps: a
+piped stdin makes wrangler non-interactive and it then demands
+`CLOUDFLARE_API_TOKEN`, and `wrangler@latest` resolved to two different
+versions minutes apart that failed differently.
+
+**The widget's CSP needed a third exception, and the owner confirmed
+it.** `'unsafe-eval'`, because Telegram's script puts `data-onauth`
+through `__parseFunction`. Redirect mode avoids eval and was rejected:
+it returns the signed payload in a URL query string, putting the numeric
+id and handle into browser history, `Referer` headers and host access
+logs on every sign-in — the membership oracle the account-id design
+exists to prevent, relocated into a log. `DESIGN.md` `ef8c17c` carries
+the reasoning and one correction: the sign-in page is **not** a page with
+nothing to steal, because after sign-in it holds the session.
+
+**#26 is blocked on one item.** Check 12 skips `index.html`, so it
+enforces that the exception does not spread and not that it stays narrow
+— and narrowness is the only reason the exception is acceptable.
+Rewriting that page's policy with `'unsafe-inline'` and an arbitrary
+third-party origin left all eleven stages green.
+
+**Two CI findings, and the second is the one worth carrying.** A GitHub
+Actions incident failed five runs in `Set up job` before checkout; none
+of it reached the code, and `ffd48b2` was never broken. It was
+intermittent rather than a window, and one success was misread as
+recovery. Then a push to `accounts` produced **no run at all** — none
+created, no `paths` filter, branch in the `push` list. A red run is
+visible everywhere; a missing run is listed nowhere, so the branch looked
+green. Verified green afterwards by `workflow_dispatch`. `AGENTS.md`
+carries the check.
+
 ### Open threads
 
-**Blocked on the owner — the critical path:**
+**Blocked on the owner:**
 
-1. **BotFather.** `/newbot`, keep the username, then `/setdomain` →
-   `potaetoe.github.io`. Telegram will not accept `localhost`, so the
-   widget cannot be exercised anywhere else. **The only owner errand
-   blocking forward progress.**
-2. **A live `/auth/dev` mint**, to confirm a session reaches
+1. **The dev Worker has no `ACCOUNT_SECRET`** (#33). `handleDevAuth`
+   HMACs with it, so every development sign-in 500s at the last line of
+   the handler, after both guards have passed. One command, a fresh value
+   that is never production's.
+2. **Publish the production key fingerprint out-of-band** (#29).
+3. **A live `/auth/dev` mint**, to confirm a session reaches
    `submit.html`. Needs the owner-held `DEV_LOGIN_SECRET`; neither agent
    asks for or handles it.
 
+**Done, and previously listed here as the critical path: BotFather.** The
+bot is `@hanggangbinder_bot` and `/setdomain` → `potaetoe.github.io`
+succeeded. No owner errand blocks forward progress now.
+
 **Moved to the cutover:** step 2 — clear `submissions`, unpublish the
 snapshot, in one sitting with deploying the accounts Worker and merging
-`accounts` into `main`. Rehearse on the development database first.
+`accounts` into `main`. Rehearse on the development database first. Plus
+the widget's real render and callback, which BotFather's host binding
+makes unprovable from localhost.
 
-**Blocked on Codex:** the widget half of step 3, until the bot exists and
-its real CSP violations can be observed. Plus the #18 findings.
+**Blocked on Codex:** the check 12 pin on #26, and `wrangler.toml`'s
+comment block on #30 — it still calls the three id secrets plaintext
+vars, which is the sentence that would talk the next person into
+re-creating the defect. Plus the #18 findings.
 
-**Not started:** steps 4–7, 9, 10, all downstream of step 3.
+**Not started:** steps 4–7, 9, 10.
 
 ### Other projects
 
