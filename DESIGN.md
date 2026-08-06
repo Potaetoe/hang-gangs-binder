@@ -1899,6 +1899,44 @@ site without inheriting the data.
   was missing from a section titled "honestly stated" until 2026-08-05.
   The cheap mitigation is out-of-band: publish the key's fingerprint in
   the group description, so that somebody who wants to check, can.
+
+  **Narrowed twice on 2026-08-06, and still not closed.** Two things
+  changed and the sentence above needs both of them read alongside it.
+
+  `tools/check_web.py` now **pins production's public key and endpoint**
+  to literal constants, so "a substituted key is still a valid P-256
+  point" no longer passes — the gate fails. That turns a one-file silent
+  substitution into a two-file one, and the second file is the one whose
+  whole purpose is to be suspicious.
+
+  `main` is now a **protected branch**: pull request required, the
+  `verify` check required, force pushes and deletion refused, and
+  **administrators included**. Verified by attempting a direct push
+  rather than by reading the setting back — GitHub refused it with
+  *"Changes must be made through a pull request."*
+
+  Two choices in that configuration are worth explaining, because both
+  look wrong at a glance:
+
+  - **Zero required approvals.** GitHub forbids approving your own pull
+    request, and both agents publish as the owner's account. Requiring
+    one approval would deadlock every merge, including a hotfix. What
+    the rule actually buys is that nothing reaches `main` without a pull
+    request and a green `verify` — not a second pair of eyes, which this
+    setup cannot provide.
+  - **Administrators are not exempt**, which is the load-bearing half.
+    Both agents hold admin through the owner's account, so an exemption
+    for admins would be an exemption for exactly the actors this is
+    about. The cost is real and accepted: there is no emergency bypass,
+    and the hotfix procedure in `README.md` goes through a pull request
+    like everything else.
+
+  **What none of it fixes.** Someone with write access can still change
+  both files in one pull request and merge it. This raises the effort
+  and makes the change visible in a reviewable diff; it does not make it
+  impossible, and a static site still has no way for a submitter's
+  browser to pin a key. The out-of-band fingerprint remains the only
+  thing that would let a reader detect it, and it is still not published.
 - **The keyholder's own machine, while the key is in use.** `admin.html`
   holds the entire corpus in the clear for as long as the tab is open.
 - **A member lying, including about their handle.** Sign-in verifies who
