@@ -124,6 +124,16 @@ fails the build rather than letting that ship.
 A push to `main` is a release. `.github/workflows/deploy.yml` runs the
 checks and, if they pass, publishes `apps/web`.
 
+**While the accounts redesign is being built, work goes to the
+`accounts` branch, not to `main`.** Its steps are a chain, and the
+states in the middle of it are broken on purpose — a sign-in page
+exists several steps before the widget that signs anybody in. `main`
+stays at the last state worth serving until the chain is finished, so
+what is live is always complete. The branch publishes nothing: the
+deploy job names `refs/heads/main` and only that. See `REDESIGN.md` for
+the build order and `DESIGN.md`, "What is deliberately not here", for
+why this is not a staging branch.
+
 There is no staging environment, so **verify locally before pushing** —
 open the site as above, and run the same checks CI will run:
 

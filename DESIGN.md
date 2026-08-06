@@ -811,6 +811,34 @@ that head, so a page added later cannot quietly ship without the policy.
   environment requires one — the dev Worker is deployed on demand from
   whatever is being worked on.
 
+  **Amended 2026-08-05: there is an `accounts` integration branch, and
+  the paragraph above still stands.** The two are different objects and
+  the distinction is worth keeping sharp, because the objection above is
+  correct and this does not answer it by disagreeing with it.
+
+  A staging branch is a second *deployment target*: something that
+  publishes somewhere, so the site exists in two places and a change has
+  to be promoted between them. That is still rejected and `accounts`
+  is not one — the deploy job names `refs/heads/main` explicitly, so the
+  branch publishes nothing, anywhere, ever.
+
+  What `accounts` is: a place to accumulate a chain of steps whose
+  intermediate states are broken **on purpose**. The accounts redesign
+  is ten of those. `index.html` becomes a sign-in page several steps
+  before the widget that signs anybody in exists; `POST /submit` starts
+  requiring a session before any page can obtain one. Merged to `main`
+  one at a time, each of those is a release of a portal that refuses
+  everybody. The rule that produces it: **`main` is the last state worth
+  serving, not the newest state that passed its tests.**
+
+  The drift objection is answered by the branch being temporary rather
+  than by being denied. It exists for the length of one redesign and is
+  deleted when it merges; both agents work on it, so there is no second
+  history for `main` to diverge from, only a queue in front of it. If a
+  second one of these is ever wanted for something that is not a chain
+  of deliberately-broken steps, that is the point to re-read this
+  paragraph rather than to copy it.
+
   What forced the environment is a hazard that had been there from the
   beginning and was easy to miss because it never failed loudly:
   **`config.js` named one endpoint, so the local preview wrote to the
