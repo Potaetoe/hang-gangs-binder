@@ -35,6 +35,15 @@ than a stale one, because somebody follows it during an incident. Each
 carries a pointer here, and `server/README.md` carries the
 do-not-deploy warning in full.
 
+> **One exception, 2026-08-06: `server/wrangler.toml` is now wrong.** Its
+> comment block says `ADMIN_TELEGRAM_IDS`, `TELEGRAM_GROUP_CHAT_ID` and
+> `ALWAYS_ALLOW_TELEGRAM_IDS` "are plaintext vars rather than secrets".
+> All three are set as **secrets** on the live Worker. The paragraph
+> above is the reason this is being flagged rather than left: the file
+> claims to describe what currently runs, so a reader has no cue that
+> this part does not. Correcting it is what issue #30 has left, and it is
+> in `server/`. See Part 8b.
+
 ## What is done
 
 Updated 2026-08-06. Everything below is on `accounts`; `main` is still
@@ -502,6 +511,31 @@ than the two obvious directives, and this project has been bitten
 before by asserting a policy instead of testing one. The `blob:`
 question on `admin.html` was settled the same way.
 
+**Confirmed 2026-08-06, and the warning above earned its keep — it
+wanted a third directive.** The real policy is
+
+```
+script-src 'self' 'unsafe-eval' https://telegram.org;
+frame-src https://oauth.telegram.org
+```
+
+`telegram-widget.js` fails before creating its iframe with
+`EvalError: Evaluating a string as JavaScript violates script-src`,
+because Telegram's source puts `data-onauth` through `__parseFunction`,
+which uses `eval`. Callback mode cannot work without it. Redirect mode
+needs no eval and was rejected: it returns the signed payload in a URL
+query string, putting the numeric id and handle into browser history,
+`Referer` headers and host access logs on every sign-in. `DESIGN.md`,
+"The policy needed a third exception", carries the full reasoning and
+one correction to the sentence above this table — **the sign-in page is
+not a page with nothing to steal**, because after sign-in it holds the
+session. Trusting Telegram's script with that is inherent to using
+Telegram's widget, which is the honest form of the claim.
+
+Still unconfirmed: the real render and callback. BotFather binds the
+widget to `potaetoe.github.io`, so localhost shows "Bot domain invalid"
+and both remain cutover checks.
+
 ### New shared files
 
 - **`session.js` → `globalThis.BinderSession`.** Reads and writes the
@@ -616,7 +650,19 @@ running four; they just cover more.
 | 8 — units default | **Hardcoded to `index.html` as `FORM_PAGE`.** Must point at `submit.html`, or it fails against a page that no longer has unit radios. |
 | 10 — navigation identical | Now five pages, and the nav itself changes. |
 | **11 — new** | The sign-in page must not load `crypto.js`. The whole argument for allowing third-party script there is that there is no plaintext to see. |
-| **12 — new** | No page except the sign-in page may name `telegram.org` in its CSP. The exception is survivable because it is confined; this is what keeps it confined when somebody copies a head from whichever page they had open. |
+| **12 — new** | No page except the sign-in page may name `telegram.org` **or `'unsafe-eval'`** in its CSP, **and the sign-in page's own `script-src` and `frame-src` must name exactly the four permitted tokens.** The exception is survivable because it is confined; this keeps it confined when somebody copies a head from whichever page they had open, *and* keeps it narrow where it lives. |
+
+**The second half of check 12 was missing from the first
+implementation**, and that is worth stating rather than quietly fixing.
+As written it refused the exception on every *other* page and skipped
+`index.html` entirely — enforcing *the exception does not spread* while
+leaving *the exception stays narrow* unguarded, when narrowness is the
+only reason the exception is acceptable at all. Rewriting the sign-in
+page's policy as `script-src 'self' 'unsafe-eval' 'unsafe-inline'
+https://telegram.org https://evil.example` left the whole gate green.
+Same corollary as check 5's: **a check computed entirely from the file
+it guards cannot detect that the file's contents were rearranged** —
+something outside the file has to say what the file may contain.
 
 Check 6's rule has now met three cases it did not mean — "anything
 touching the network", then "anything sending a body", now this. Neither
@@ -818,13 +864,48 @@ these in the dashboard to keep them out of the repository means the next
 deploy silently erases them — and an erased `ADMIN_TELEGRAM_IDS` means
 no admin, discovered when somebody needs to be one.
 
-So neither of the two obvious placements works. **Set them with
-`wrangler secret put`** — not because they are credentials, but because
-"survives a deploy" and "not in a public repository" are exactly the two
-properties a secret has and a var does not. The cost is that they no
-longer appear in the config that documents the deployment; the comment
-block in `wrangler.toml` should say where they live and why, which keeps
-the file honest without printing the values.
+So neither of the two obvious placements works. **They must be
+secrets** — not because they are credentials, but because "survives a
+deploy" and "not in a public repository" are exactly the two properties
+a secret has and a var does not. The cost is that they no longer appear
+in the config that documents the deployment; the comment block in
+`wrangler.toml` should say where they live and why, which keeps the file
+honest without printing the values.
+
+**Done 2026-08-06 — and `wrangler secret put` is not how, which this
+section originally prescribed.** All six production secrets are set.
+`wrangler secret put --name hgbinderworker` fails:
+
+```
+✘ [ERROR] Prod worker settings can not be deployed with a Version Upload.
+  [code: 10220]
+```
+
+Production's script was hand-pasted, which leaves the Worker in
+**version-upload state**, and `secret put` creates a version *and
+deploys it* in one step — a combination Cloudflare refuses there. **This
+is not an authentication problem and not fixable by a wrapper; it fails
+for anyone, however they authenticate.** The documented alternative is
+`wrangler versions secret put` then `wrangler versions deploy`, which
+puts a hand-built version live and was not attempted while production
+must keep serving the pasted script until cutover.
+
+**The dashboard is the tool**, which is where `ALLOWED_ORIGINS` already
+landed for the same reason. Once cutover deploys from this repository
+the Worker leaves version-upload state and the CLI should work — re-test
+it then rather than assuming either way.
+
+Two traps found alongside, recorded so nobody rebuilds the wrapper that
+hit them: **piping a value into `wrangler secret put` breaks its
+authentication** (a piped stdin makes wrangler non-interactive, and it
+then demands `CLOUDFLARE_API_TOKEN`, which nobody here may handle), and
+**`npx --yes wrangler@latest` is not reproducible** — two runs minutes
+apart resolved to 4.45.0 and 4.119.0 and failed differently.
+
+**Still open, and it is the whole remaining point of this section:**
+`wrangler.toml`'s comment block still describes the three id secrets as
+plaintext vars. That is now false about the live Worker, and it is the
+sentence that would talk the next reader into re-creating the defect.
 
 ---
 
