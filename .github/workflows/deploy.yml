@@ -16,11 +16,18 @@ name: Verify and deploy
 # never happens cannot fail to happen. tools/check_web.py additionally
 # fails the build if anything key-shaped is sitting in apps/web.
 #
-# There is deliberately no staging branch: a push is a release. What
-# protects production is this job, plus running the site locally before
-# pushing. A non-production *environment* - a second Worker and D1, with
-# config.js choosing by hostname - is a different thing and is planned;
-# see DESIGN.md, "What is deliberately not here".
+# A push to main is a release. What protects production is this job, plus
+# running the site locally before pushing. A non-production *environment*
+# - a second Worker and D1, with config.js choosing by hostname - is a
+# different thing and exists; see DESIGN.md.
+#
+# `accounts` is an integration branch, added 2026-08-05, and it is the one
+# exception to "a branch is not a release" being the whole story. It is
+# not a staging environment and does not deploy: it exists because the
+# accounts redesign is a chain of ten steps whose intermediate states are
+# broken on purpose - a sign-in page before the widget exists refuses
+# everybody - and main must never hold one of them. Steps land there,
+# main stays at the last complete release, and the two meet once.
 #
 # This job never deploys server/. The Worker is deployed separately and
 # by hand, which means the repository and the endpoint can disagree -
@@ -32,11 +39,17 @@ name: Verify and deploy
 # enough; under branch-and-review it would mean every check ran after the
 # merge, which is the wrong way round. The deploy job stays main-only -
 # see its `if` below.
+#
+# `accounts` is listed in both lists deliberately. Leaving it out of
+# `pull_request` would mean a step merged into it with no checks at all,
+# which is the failure this trigger list was widened to fix in the first
+# place; leaving it out of `push` would mean the accumulated branch went
+# unverified between steps, and it is what main eventually becomes.
 on:
   push:
-    branches: [main]
+    branches: [main, accounts]
   pull_request:
-    branches: [main]
+    branches: [main, accounts]
   workflow_dispatch:
 
 # Read-only by default. The two write scopes a Pages release needs are
@@ -117,7 +130,21 @@ jobs:
     # A pull request gets the checks and nothing else. Publishing is what
     # merging to main is for, and a release triggered from a branch would
     # make the site something other than what main says it is.
-    if: github.event_name != 'pull_request'
+    #
+    # The ref test is the load-bearing half and it is not redundant. This
+    # condition was `event_name != 'pull_request'` alone, which was
+    # sufficient only while main was the single branch in the `push`
+    # trigger list; the moment `accounts` was added there, a push to it
+    # would have satisfied that test and published a half-built redesign
+    # to the live site. A branch that deploys because of what it is NOT
+    # is one trigger-list edit away from deploying. Name the branch that
+    # releases.
+    #
+    # github.ref on a pull_request event is refs/pull/<n>/merge, so the
+    # ref test already excludes pull requests; the event test is kept
+    # because two conditions that each fail closed is the pattern this
+    # repository uses wherever the cost of being wrong is a release.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
