@@ -143,14 +143,14 @@ Twelve checks:
     is what makes the duplication safe to have chosen.
 
 11. The sign-in page must not load crypto.js. It is the only page allowed
-    to load Telegram's third-party script, and that exception is survivable
-    only because the page has no submission plaintext or private key for
-    that script to reach.
+    to load Telegram's third-party script, and keeping submission plaintext
+    and the private key off that page limits what the trusted widget can
+    reach. The page still holds the session after sign-in.
 
-12. No page except the sign-in page may name telegram.org or unsafe-eval in
-    its CSP. The callback widget requires both exceptions, and they are
-    survivable only while confined to the page with nothing to steal; this
-    catches a copied head quietly spreading them to a plaintext page.
+12. The sign-in page's script-src and frame-src must be exactly the observed
+    callback policy, and no other page may name telegram.org or unsafe-eval
+    in its CSP. This catches both a widened exception on the page that holds
+    it and a copied head quietly spreading it to a plaintext page.
 """
 
 import base64
@@ -480,6 +480,14 @@ CRYPTO_FILE = "crypto.js"
 SIGN_IN_PAGE = "index.html"
 TELEGRAM_CSP_HOST = re.compile(r"\btelegram\.org\b", re.I)
 UNSAFE_EVAL_CSP = re.compile(r"(?:^|[\s;])'unsafe-eval'(?=[\s;]|$)", re.I)
+SIGN_IN_CSP_SOURCES = {
+    "script-src": frozenset({
+        "'self'",
+        "'unsafe-eval'",
+        "https://telegram.org",
+    }),
+    "frame-src": frozenset({"https://oauth.telegram.org"}),
+}
 
 # What "this file puts something on the wire" looks like in a directory
 # with no build step and no framework. A bare fetch() is a read and is
@@ -556,7 +564,7 @@ def unencrypted_paths():
 
 
 def sign_in_boundary_problems():
-    """(page, problem) when the sign-in-only third-party boundary spreads."""
+    """(page, problem) when the sign-in-only boundary widens or spreads."""
     problems = []
     sign_in_refs = {
         target for page, target in html_references()
@@ -566,8 +574,54 @@ def sign_in_boundary_problems():
         problems.append((
             SIGN_IN_PAGE,
             "loads crypto.js even though it is the only page permitted "
-            "Telegram's third-party widget. That exception is survivable only "
-            "while this page has no submission plaintext or key to expose"))
+            "Telegram's third-party widget. Keep submission plaintext and "
+            "the private key off this page; it already holds the session "
+            "after sign-in"))
+
+    sign_in_text = re.sub(
+        r"<!--.*?-->", "",
+        open(os.path.join(WEB, SIGN_IN_PAGE), encoding="utf-8").read(),
+        flags=re.S)
+    sign_in_policy = re.search(
+        r'http-equiv="Content-Security-Policy"[^>]*content="([^"]*)"',
+        sign_in_text, re.I)
+    if sign_in_policy:
+        directives = {}
+        for raw_directive in sign_in_policy.group(1).split(";"):
+            tokens = raw_directive.split()
+            if not tokens:
+                continue
+            directives.setdefault(tokens[0].lower(), []).append(tokens[1:])
+
+        for directive, expected in SIGN_IN_CSP_SOURCES.items():
+            occurrences = directives.get(directive, [])
+            if len(occurrences) != 1:
+                problems.append((
+                    SIGN_IN_PAGE,
+                    "must carry exactly one %s directive for the Telegram "
+                    "callback boundary; found %d"
+                    % (directive, len(occurrences))))
+                continue
+
+            actual_tokens = occurrences[0]
+            actual = frozenset(actual_tokens)
+            if actual == expected and len(actual_tokens) == len(actual):
+                continue
+
+            missing = sorted(expected - actual)
+            unexpected = sorted(actual - expected)
+            details = []
+            if missing:
+                details.append("missing %s" % ", ".join(missing))
+            if unexpected:
+                details.append("unexpected %s" % ", ".join(unexpected))
+            if len(actual_tokens) != len(actual):
+                details.append("duplicate source tokens")
+            problems.append((
+                SIGN_IN_PAGE,
+                "%s must name exactly %s; %s"
+                % (directive, ", ".join(sorted(expected)),
+                   "; ".join(details))))
 
     for name in html_pages():
         if name == SIGN_IN_PAGE:

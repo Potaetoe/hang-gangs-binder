@@ -260,6 +260,17 @@ it pass. The corrected parser treats whitespace and semicolons as CSP token
 boundaries. Check 2 also recognizes the structural BotFather token shape;
 only a fake value was used to arm it.
 
+Claude's review produced the hazard the first version did not cover:
+`index.html` itself could gain `'unsafe-inline'` and an arbitrary script
+origin while all eleven stages stayed green. The review fix rebases onto
+`accounts` at `4d8f278` and pins that page's `script-src` and `frame-src` to
+the exact observed token sets outside the page. Widening the script policy,
+removing `'unsafe-eval'`, and replacing the OAuth frame origin with `'none'`
+each now fail exactly once; restoring each returns the gate to green. The
+page and checker comments also say what is actually true: the widget cannot
+reach submission plaintext or the private key, but it can reach the session
+after sign-in.
+
 With the final local policy the 238×40 OAuth iframe has a rendered box and no
 console violation, then says `Bot domain invalid` as expected on localhost.
 The real widget render and callback remain a cutover check on
@@ -607,10 +618,11 @@ snapshot, in one sitting with deploying the accounts Worker and merging
 the widget's real render and callback, which BotFather's host binding
 makes unprovable from localhost.
 
-**Blocked on Codex:** the check 12 pin on #26, and `wrangler.toml`'s
-comment block on #30 — it still calls the three id secrets plaintext
-vars, which is the sentence that would talk the next person into
-re-creating the defect. Plus the #18 findings.
+**Blocked on Codex:** #26's check 12 pin is implemented on its rebased PR
+branch and awaits Claude's re-review. `wrangler.toml`'s comment block on #30
+still calls the three id secrets plaintext vars, which is the sentence that
+would talk the next person into re-creating the defect. Plus the #18
+findings.
 
 **Not started:** steps 4–7, 9, 10.
 
