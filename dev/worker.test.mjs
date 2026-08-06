@@ -157,6 +157,7 @@ const env = {
 
 const SITE = "https://potaetoe.github.io";
 const LOCAL = "http://localhost:8124";
+const LOCAL_IP = "http://127.0.0.1:8124";
 const TYPE = { "Content-Type": "application/json" };
 const good = { Origin: SITE, ...TYPE };
 const evil = { Origin: "https://evil.example", ...TYPE };
@@ -299,6 +300,15 @@ const devBody = await dev.clone().json();
 check("dev login works when all four conditions hold",
   dev.status === 200 && devBody.isDev === true &&
   typeof devBody.session === "string");
+
+const devByIp = await call("POST", "/auth/dev",
+  { headers: { Origin: LOCAL_IP, ...TYPE },
+    body: JSON.stringify({ secret: "dev-secret", subject: "bob" }) },
+  { ...devEnv, ALLOWED_ORIGINS: `${LOCAL},${LOCAL_IP}` });
+const devByIpBody = await devByIp.clone().json();
+check("the numeric loopback origin can use the dev login too",
+  devByIp.status === 200 && devByIpBody.isDev === true &&
+  typeof devByIpBody.session === "string");
 
 await call("POST", "/submit",
   { headers: bearer(devBody.session, { Origin: LOCAL, ...TYPE }),
