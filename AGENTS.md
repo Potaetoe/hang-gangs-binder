@@ -340,3 +340,27 @@ Stop and return to the owner rather than deciding alone when:
 Neither agent is an independent source of truth, and neither retains
 reliable memory outside the durable artifacts listed above. That is what
 this file is for.
+
+## Fixing production while `main` is frozen
+
+The full procedure is in `README.md`, on **`main`** as well as here — it
+lives there because `main` is what somebody has checked out when the site
+is broken, and this file may not exist on the branch they are standing on.
+
+Rehearsed once on 2026-08-06 rather than left as a plan: the procedure
+was delivered by the procedure it describes, verified not to change
+`apps/web`, merged through a pull request, and confirmed live. Every
+irreversible thing here has a rehearsal rule and this had none.
+
+Two things agents get wrong about it:
+
+- **The smallest change that fixes the thing**, not the correct one and
+  not the tidy one. `git diff --stat origin/main -- apps/web` before
+  merging should be short enough to read.
+- **Step 5 — cherry-pick forward to `accounts` — is the step that gets
+  skipped**, and its failure is silent. A fix that lands on `main` and
+  never reaches `accounts` disappears the day the redesign merges, while
+  every check passes and `accounts` overwrites it with older code.
+
+**Owner present.** A hotfix is a live release, the same category as
+clearing the table or deploying the Worker.
