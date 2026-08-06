@@ -15,10 +15,9 @@
     if (element) element.hidden = !visible;
   }
 
-  function checkedValue(name, fallback, scope) {
-    const owner = scope || document;
+  function checkedValue(name, fallback) {
     const inputs = Array.prototype.slice.call(
-      owner.querySelectorAll('input[name="' + name + '"]'));
+      document.querySelectorAll('input[name="' + name + '"]'));
     const chosen = inputs.filter(function (input) {
       return input.checked;
     })[0];

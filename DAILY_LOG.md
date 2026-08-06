@@ -18,7 +18,9 @@ Starts 2026-08-05.
 standards, and the suppression floor. `main` untouched at `b6a984f`
 throughout; every CI run shows `deploy: skipped`.
 
-Claude only. Codex's last slice merged and it has not started another.
+Claude and Codex. Codex resumed with the two deliberately ordered slices
+that both touch the sign-in page; issue #25 goes first so issue #26 starts
+from settled navigation.
 
 ### Standards, decided and built
 
@@ -129,6 +131,25 @@ Second-order, and the reason it went unnoticed for a day: this project
 verifies deployments with unauthenticated probes designed to tell
 failure modes apart, and a *successful* `GET /snapshot` reads as healthy.
 Nothing looks at what the success contains.
+
+### The sign-in route and honest UI contract — #25 (Codex)
+
+Started from the current `accounts` tree after reading the consolidated
+instructions and the issue handoff. `BinderUI.checkedValue` accepted a
+third `scope` argument that no product caller passed, so the apparent
+collision protection was inert. The parameter is removed rather than
+wiring three additional caller files outside the slice; the global lookup
+is now the visible, test-pinned choice.
+
+All five static navigation blocks gain an explicit route to `index.html`.
+The old navigation check only compared the blocks, so five identical
+omissions passed. Its contract now requires the sign-in route itself — the
+hazard is a signed-out visitor stranded away from the only page that can
+mint a session, not merely markup drift.
+
+The two contracts were committed before the implementation. Against the
+base, the UI suite failed the arity assertion and the publishability check
+reported all five missing routes; both passed after the product change.
 
 ### Open threads
 
