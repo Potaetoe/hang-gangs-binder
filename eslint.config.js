@@ -156,6 +156,7 @@ export default [
         // point.
         document: "writable",
         window: "writable",
+        location: "writable",
         localStorage: "writable",
         sessionStorage: "writable",
       },
