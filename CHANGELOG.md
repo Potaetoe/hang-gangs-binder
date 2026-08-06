@@ -47,6 +47,34 @@ On `accounts`, not released. `main` stays at the last complete release.
 - `render()` dereferenced the basis immediately, so a suppressed
   (`null`) basis would have white-screened the public dashboard for any
   group below the floor.
+- CI installs lint tooling with `npm ci --ignore-scripts`. Without it,
+  any of 87 transitive packages could run arbitrary code at install
+  time, in the job that decides whether a release is allowed. The
+  realistic attack was never site compromise — `verify` holds
+  `contents: read` — but a dependency quietly neutering ESLint gives a
+  gate that reports success on a repository that should fail.
+- `AGENTS.md` stated the mutation rule and the review bar side by side
+  and let the reader guess which governs. It now states the
+  relationship: a mutation is derived from the check, so it can only ask
+  whether the check enforces what it says, never whether that is the
+  right thing to enforce. When they disagree, the review bar wins.
+
+### Security
+- **`main` is a protected branch**: pull request required, `verify`
+  required, force pushes and deletion refused, **administrators
+  included**. Verified by attempting a real direct push, which GitHub
+  refused. Zero required approvals is deliberate — GitHub forbids
+  approving your own pull request and both agents publish as the owner's
+  account, so requiring one would deadlock every merge.
+- A documented, **rehearsed** path for fixing production while `main` is
+  frozen, in `README.md` on `main` where somebody with a broken site is
+  standing.
+
+### Added
+- `tools/keycheck.html` — names which of the three keypairs a private
+  key file is, and separately whether it still decrypts a real row.
+  Never published; nothing leaves the page; a self-test proves the tool
+  before you trust its answer about your key.
 
 ### Added
 - ESLint and Ruff, registered in **both** `tools/check.py` and the
