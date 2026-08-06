@@ -117,9 +117,26 @@ jobs:
       # Neither is a build step: apps/web is copied verbatim by the deploy
       # job below and nothing here rewrites a file. They refuse a release
       # rather than producing one.
+      # --ignore-scripts is not decoration. Linting brought 87 transitive
+      # packages into a repository whose design rejected libsodium.js -
+      # a better crypto primitive than the one written here - because it
+      # was third-party code near the plaintext. Without this flag every
+      # one of those packages may run arbitrary code at install time, in
+      # the job that decides whether a release is allowed.
+      #
+      # The realistic attack is not a compromised site: this job holds
+      # `contents: read` and cannot publish. It is a compromised
+      # dependency quietly neutering ESLint so the gate reports success
+      # on a repository that should fail - a check that looks armed and
+      # is not, which is the failure this project has twice called worse
+      # than having no check at all.
+      #
+      # Verified rather than assumed: `npm ci --ignore-scripts` installs
+      # all 87 packages and ESLint runs clean. Nothing here needs a
+      # native build.
       - name: Install the lint tooling
         run: |
-          npm ci
+          npm ci --ignore-scripts
           python -m pip install --quiet ruff
 
       - name: Lint the JavaScript

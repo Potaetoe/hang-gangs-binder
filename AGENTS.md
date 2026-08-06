@@ -268,6 +268,19 @@ implemented it. Say which it is.
 - **Confirm every new check is armed by mutation, in both directions.**
   Break it, watch it fail, restore it, watch it pass. State the mutations
   in the handoff.
+
+  **Then keep going, because this is necessary and not sufficient.** A
+  mutation is derived from the check, so it can only ever ask "does this
+  check enforce what it says?" — never "is this the right thing to
+  enforce?" Check 5's four bullets were each implemented correctly and
+  each confirmed armed, and the gate still passed with the production and
+  development keys exchanged. Nine mutations passed on the suppression
+  floor while the two unit systems were still publishing a partition a
+  reader could difference.
+
+  Mutation proves the check works. **The review bar below proves it is
+  the right check.** When the two seem to disagree, the review bar wins —
+  it is the one that has caught things.
 - Exercise affected pages in a real browser, including computed
   visibility.
 - A local preview serves stale JS — `python -m http.server` sends no
