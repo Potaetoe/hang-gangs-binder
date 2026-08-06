@@ -124,6 +124,64 @@ fails the build rather than letting that ship.
 A push to `main` is a release. `.github/workflows/deploy.yml` runs the
 checks and, if they pass, publishes `apps/web`.
 
+### `main` is frozen, and how to fix production anyway
+
+**Ordinary work does not go to `main` right now.** The accounts redesign
+is a chain of steps whose intermediate states are broken on purpose — a
+sign-in page exists several steps before the widget that signs anybody
+in — so they accumulate on the `accounts` branch and `main` stays at the
+last state worth serving. What is live is always complete.
+
+That leaves one thing this file has to answer, because the moment it is
+needed is the worst moment to work it out:
+
+**If something is wrong with the live site right now, do this.**
+
+1. Branch from `main`, not from `accounts`:
+
+   ```bash
+   git fetch origin && git checkout -b hotfix-<what> origin/main
+   ```
+
+2. Make the **smallest change that fixes the thing**. Not the correct
+   change, not the tidy one — the smallest. Everything else waits for
+   `accounts`.
+
+3. Run the gate, and confirm what you are about to publish:
+
+   ```bash
+   python tools/check.py
+   git diff --stat origin/main -- apps/web
+   ```
+
+   The second command is the one that matters. It lists exactly what
+   changes on the live site, and it should be short enough to read.
+
+4. Open a pull request against `main` so CI runs **before** the merge,
+   then merge it. Merging is the release.
+
+5. Carry it forward so it is not lost at cutover:
+
+   ```bash
+   git checkout accounts && git cherry-pick <the merge commit>
+   ```
+
+6. Confirm the live site actually changed — the deploy reporting success
+   is not the same as the change being served:
+
+   ```bash
+   curl -sI https://potaetoe.github.io/hang-gangs-binder/ | grep -i last-modified
+   ```
+
+**Owner present.** This is a live release, the same category as clearing
+the table or deploying the Worker, and it is not something an agent does
+alone.
+
+**Step 5 is the one that gets skipped.** A fix that lands on `main` and
+never reaches `accounts` is a fix that disappears the day the redesign
+merges, and nothing reports it — `accounts` will simply overwrite it
+with the older code and every check will pass.
+
 There is no staging environment, so **verify locally before pushing** —
 open the site as above, and run the same checks CI will run:
 
