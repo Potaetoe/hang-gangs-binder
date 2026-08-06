@@ -96,11 +96,53 @@ check named the bin sets I thought of rather than gathering them all.
 only on the default branch. #19 merged green and left its issue open.
 Now in `AGENTS.md`; every slice needs closing by hand until cutover.
 
+### The suppression floor shipped and the exposure stayed up
+
+Found while probing production to write the cutover procedure, hours
+after #19 was closed as fixed: `GET /snapshot` was still serving the
+snapshot published 2026-08-05T17:24, unauthenticated, describing
+**exactly one person** — gender, both roles, a 65–70 weight bin. The
+thing #19 is about, live, on the day it was fixed.
+
+**Neither half of the fix could have reached it.** The floor runs in the
+code that *assembles* a snapshot; the published artifact is an assembled
+row in the `snapshots` table, and nothing re-evaluates it. And the floor
+is on `accounts`, undeployed, so even rebuilding would not have applied
+it.
+
+**The plan had no one going back for it either.** Unpublishing belongs
+to step 2, and step 2 had moved to the cutover — so the live object was
+scheduled for retraction at the *end* of the redesign, on an unstated
+assumption that it was harmless meanwhile. At n=1 it was not.
+
+Taken down with `DELETE FROM snapshots WHERE id = 1` against
+`hg_binder_db`, verified at the endpoint. `submissions` untouched at 1
+row, so the snapshot is rebuildable from `admin.html` — nothing lost.
+Step 2 is now only the clear.
+
+**Carry forward: a fix that prevents producing a bad artifact does not
+retract the ones already produced.** When a privacy fix lands against a
+publisher, ask separately what is published *right now*. The code
+review answers "will this happen again", not "is it happening".
+
+Second-order, and the reason it went unnoticed for a day: this project
+verifies deployments with unauthenticated probes designed to tell
+failure modes apart, and a *successful* `GET /snapshot` reads as healthy.
+Nothing looks at what the success contains.
+
 ### Open threads
 
-Unchanged and still the only thing blocking the build order:
-**BotFather**. Everything else is either filed as a slice or waiting on
-an owner decision — see #20–#26.
+**BotFather is done** — bot created, `/setdomain` → `potaetoe.github.io`
+returned success. That was the only owner errand blocking the build
+order, and it is now clear. #26 unblocked and labeled `codex`, behind
+#25 because both touch `index.html`.
+
+Remaining owner items are not blocking: #29 (key fingerprint in the
+group description) and the live `/auth/dev` mint.
+
+Claude is writing the cutover procedure into `REDESIGN.md` — the sitting
+is now four irreversible acts, not the two Part 8 describes, and Part
+10's Worker rollback names a commit that production does not match.
 
 ---
 
