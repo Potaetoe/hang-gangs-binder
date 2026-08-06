@@ -9,11 +9,12 @@
   only on a page with no plaintext or key to expose.
 
   The legacy callback script parses data-onauth with eval, so unsafe-eval is
-  required as well as Telegram's script and frame origins. This remains
-  survivable only because the page is sign-in-only, which checks 11 and 12
-  enforce. The policy is provisional until the widget can be observed on
-  potaetoe.github.io; BotFather's binding prevents localhost from proving the
-  real render or callback.
+  required as well as Telegram's script and frame origins. Keeping the form,
+  submission plaintext, private key, and crypto.js off this page confines
+  what the widget can reach, though it still holds the session after sign-in.
+  Checks 11 and 12 pin that boundary. The policy is provisional until the
+  widget can be observed on potaetoe.github.io; BotFather's binding prevents
+  localhost from proving the real render or callback.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-eval' https://telegram.org; frame-src https://oauth.telegram.org; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Sign in — Hang Gang's Binder</title>

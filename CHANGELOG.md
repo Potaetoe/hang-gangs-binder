@@ -98,7 +98,8 @@ On `accounts`, not released. `main` stays at the last complete release.
   `https://telegram.org`, `https://oauth.telegram.org`, and `'unsafe-eval'`
   to `index.html`; no form, plaintext, key, or `crypto.js` is present there.
 - Publishability checks 11 and 12 enforce that separation: the sign-in page
-  cannot load `crypto.js`, and no other page can inherit Telegram or
+  cannot load `crypto.js`; its `script-src` and `frame-src` are pinned to the
+  exact observed callback policy; and no other page can inherit Telegram or
   `'unsafe-eval'` CSP permissions. Check 2 also refuses the structural shape
   of a BotFather token without recording a credential.
 - **A published snapshot no longer describes fewer than five people.**
