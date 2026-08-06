@@ -93,6 +93,32 @@ looks exactly like a working one until it quietly produces nothing.
 **There is no recovery from losing the key file.** Every submission is
 encrypted to it. Make the second copy the day you make the first.
 
+## Checking a key you already have
+
+Two different questions, and the second is the one that matters:
+
+- **Which key is this?** There is a production key, a development key
+  and a committed throwaway. They look alike and are easy to mix up.
+- **Does it still work?** Matching a public key proves identity.
+  Decrypting a real row proves function.
+
+```bash
+python -m http.server 8124 --directory .
+```
+
+Then <http://localhost:8124/tools/keycheck.html>. Drop the key file in
+and it names the key; paste a `ciphertext` value from the database and
+it tells you whether that key opens it.
+
+Serve the **repository root**, not `tools/` — the page uses the real
+`apps/web/crypto.js` rather than its own copy, so that a checker cannot
+agree with itself while disagreeing with the site.
+
+**Nothing leaves the page.** Its `connect-src` allows this origin only.
+There is a **Self-test** button that decrypts the committed fixture with
+the committed throwaway key: if that fails, the tool is broken rather
+than your key, and its other answers should be ignored.
+
 ## Repository layout
 
 ```

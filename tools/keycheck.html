@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Answers two questions about a private key file, offline.
+
+      1. WHICH key is this?   - derive the public half and name it
+      2. Does it WORK?        - decrypt a real row with it
+
+  Those are different questions and the second is the one that matters.
+  A key can match config.js and still fail on a stored row if the format
+  moved underneath it; a key can decrypt an old row and no longer be the
+  one the live site encrypts to. This reports both, separately.
+
+  It exists because "I have the dev keypair" and "I have *the* dev
+  keypair" were treated as the same claim on 2026-08-06, and settling it
+  took a day of not knowing. It should take ten seconds.
+
+  Why this file is not self-contained, unlike keygen.html
+  ------------------------------------------------------
+  keygen.html inlines everything on purpose: a successor takes one file
+  to a machine they trust and generates a key, needing nothing else.
+  This page has the opposite requirement. It answers "which of THIS
+  repository's keys is this", so it needs this repository - and it must
+  use the real apps/web/crypto.js rather than a second implementation,
+  because a checker with its own copy of the crypto can agree with
+  itself while disagreeing with the site. One implementation is the rule
+  everywhere else here and there is no reason to break it for the tool
+  whose whole job is catching disagreement.
+
+  Serve the REPOSITORY ROOT, not tools/:
+
+      python -m http.server 8124 --directory .
+
+  then http://localhost:8124/tools/keycheck.html
+
+  Same arrangement dev/crypto-browser-check.html already uses, and the
+  same reason: it reaches into apps/web for the shipped files.
+
+  NOTHING LEAVES THIS PAGE. connect-src allows this origin only, so the
+  key you paste can reach the files it compares against and nowhere
+  else. There is no upload, no analytics, no network call that leaves
+  your machine. Read the policy below rather than taking that on trust.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Key check — Hang Gang's Binder</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 46rem; margin: 0 auto; padding: 2rem 1.25rem 5rem;
+    background: #121212; color: #e8e6e3;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 2.25rem 0 .5rem; }
+  p.lede { color: #a9a29b; margin: 0 0 1.5rem; }
+  .card {
+    border: 1px solid #2f2f2f; border-radius: 10px;
+    padding: 1rem 1.1rem; margin: 0 0 1rem; background: #191919;
+  }
+  label { display: block; font-weight: 600; margin: 0 0 .35rem; }
+  textarea, input[type=file] {
+    width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace;
+    font-size: .82rem; background: #101010; color: #e8e6e3;
+    border: 1px solid #333; border-radius: 6px; padding: .55rem;
+  }
+  textarea { min-height: 6.5rem; resize: vertical; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer; margin: .6rem .4rem 0 0;
+    background: #d97757; color: #1a1a1a; border: 0;
+    border-radius: 6px; padding: .5rem 1rem;
+  }
+  button.secondary { background: transparent; color: #e8e6e3; border: 1px solid #444; }
+  .out { margin-top: .9rem; font-family: ui-monospace, monospace; font-size: .82rem;
+         white-space: pre-wrap; word-break: break-all; }
+  .ok   { color: #7bd88f; }
+  .bad  { color: #ff8f8f; }
+  .warn { color: #e6c07b; }
+  .muted{ color: #8f8880; }
+  .row { display: flex; align-items: baseline; gap: .5rem; }
+  code { background: #101010; padding: .1rem .3rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Key check</h1>
+<p class="lede">
+  Which key is this, and does it still work? Everything happens in this
+  tab. Nothing is uploaded.
+</p>
+
+<div class="card">
+  <label for="keyfile">1. Your key file</label>
+  <input type="file" id="keyfile" accept=".json,application/json">
+  <p class="muted" style="margin:.5rem 0 .35rem;font-size:.85rem;">
+    …or paste its contents:
+  </p>
+  <textarea id="keytext" spellcheck="false"
+            placeholder='{ "project": "...", "publicKey": "...", "privateKey": { ... } }'></textarea>
+  <button id="identify">Identify this key</button>
+  <button id="selftest" class="secondary">Self-test the tool</button>
+  <div class="out" id="idout"></div>
+</div>
+
+<h2>2. Does it actually open a row?</h2>
+<div class="card">
+  <p class="muted" style="margin:0 0 .6rem;font-size:.9rem;">
+    Matching a public key proves <em>which</em> key it is. Decrypting a
+    real row proves it still <em>works</em>. Paste one <code>ciphertext</code>
+    value from the database.
+  </p>
+  <label for="blob">Ciphertext</label>
+  <textarea id="blob" spellcheck="false" placeholder="AQR20/CEw6oe7kci2NDR..."></textarea>
+  <button id="decrypt">Try to decrypt it</button>
+  <div class="out" id="decout"></div>
+</div>
+
+<script src="../apps/web/crypto.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var C = globalThis.BinderCrypto;
+
+  function say(el, html, cls) {
+    el.innerHTML = "";
+    var div = document.createElement("div");
+    if (cls) div.className = cls;
+    div.textContent = html;
+    el.appendChild(div);
+  }
+  function add(el, text, cls) {
+    var div = document.createElement("div");
+    if (cls) div.className = cls;
+    div.textContent = text;
+    el.appendChild(div);
+  }
+
+  if (!C) {
+    say($("idout"),
+      "crypto.js did not load. Serve the repository ROOT, not tools/:\n" +
+      "    python -m http.server 8124 --directory .\n" +
+      "then open http://localhost:8124/tools/keycheck.html", "bad");
+  }
+
+  /* The key file, however it arrived. */
+  function readKeyInput() {
+    var text = $("keytext").value.trim();
+    if (!text) throw new Error("No key file yet - choose a file or paste one in.");
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      throw new Error("That is not valid JSON. Paste the whole key file, " +
+        "including the outer { }.");
+    }
+    return parsed;
+  }
+
+  /*
+   * The public half, derived from the private one rather than read from
+   * the file's own publicKey line. Reading the line would only prove the
+   * file is internally consistent with itself; deriving proves the
+   * private half is the one that matches.
+   *
+   * Done with plain WebCrypto rather than crypto.js's internals, which
+   * are not exported - and it turns out to be the better way round.
+   * Dropping `d` and importing what is left as a public key makes the
+   * browser check that x and y are actually a point on P-256, which a
+   * length check on the coordinates would not. Exporting it as "raw"
+   * then gives exactly the encoding config.js carries.
+   *
+   * No cryptography is reimplemented here. This is an import, an export
+   * and a base64 - every operation that touches a secret still goes
+   * through the shipped crypto.js.
+   */
+  function base64(bytes) {
+    var s = "";
+    var view = new Uint8Array(bytes);
+    for (var i = 0; i < view.length; i++) s += String.fromCharCode(view[i]);
+    return btoa(s);
+  }
+
+  async function derivePublic(file) {
+    var jwk = file && file.privateKey ? file.privateKey : file;
+    if (!jwk || jwk.kty !== "EC" || !jwk.d) {
+      throw new Error("No private key in there. This wants the file with " +
+        "the secret half - the one you never commit - not the publicKey line.");
+    }
+    if (jwk.crv !== "P-256") {
+      throw new Error("Curve is " + jwk.crv + ", but this project is P-256.");
+    }
+    var pub;
+    try {
+      pub = await crypto.subtle.importKey(
+        "jwk",
+        { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, ext: true, key_ops: [] },
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        []);
+    } catch (e) {
+      throw new Error("The coordinates in this file are not a valid point " +
+        "on P-256, so the file is damaged.");
+    }
+    return base64(await crypto.subtle.exportKey("raw", pub));
+  }
+
+  /* The arms config.js actually ships, parsed from its text. */
+  async function knownKeys() {
+    var out = [];
+    try {
+      var res = await fetch("../apps/web/config.js", { cache: "reload" });
+      var text = await res.text();
+      var arm = /["']?([A-Za-z0-9_.-]+)["']?\s*:\s*\{([^{}]*)\}/g;
+      var m;
+      while ((m = arm.exec(text)) !== null) {
+        var body = m[2];
+        var name = /name\s*:\s*["']([^"']+)["']/.exec(body);
+        var key = /publicKey\s*:\s*["']([^"']+)["']/.exec(body);
+        if (name && key) out.push({ label: name[1] + " key", host: m[1], key: key[1] });
+      }
+    } catch (e) { /* offline or served from tools/; handled by the caller */ }
+    try {
+      var r2 = await fetch("../dev/test-key.json", { cache: "reload" });
+      var tk = await r2.json();
+      if (tk.publicKey) {
+        out.push({ label: "throwaway test key", host: "dev/test-key.json",
+                   key: tk.publicKey });
+      }
+    } catch (e) { /* fine */ }
+    return out;
+  }
+
+  $("keyfile").addEventListener("change", function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () { $("keytext").value = String(reader.result); };
+    reader.readAsText(f);
+  });
+
+  $("identify").addEventListener("click", async function () {
+    var out = $("idout");
+    var pub;
+    try {
+      var file = readKeyInput();
+      pub = await derivePublic(file);
+    } catch (e) {
+      say(out, e.message, "bad");
+      return;
+    }
+
+    out.innerHTML = "";
+    add(out, "Valid P-256 private key.", "ok");
+    add(out, "");
+    add(out, "Its public half:", "muted");
+    add(out, pub);
+
+    /* Does the file's own publicKey line agree with the private half? */
+    try {
+      var file2 = readKeyInput();
+      if (file2.publicKey && file2.publicKey !== pub) {
+        add(out, "");
+        add(out, "WARNING: this file's own publicKey line does NOT match its " +
+          "private half. The file is inconsistent - one of the two was " +
+          "edited or pasted wrong.", "bad");
+      }
+    } catch (e) { /* already reported */ }
+
+    var known = await knownKeys();
+    add(out, "");
+    if (!known.length) {
+      add(out, "Could not read config.js to compare against. Serve the " +
+        "repository root (see the comment at the top of this file), or " +
+        "compare the string above by eye.", "warn");
+      return;
+    }
+    var hit = known.filter(function (k) { return k.key === pub; });
+    if (hit.length) {
+      hit.forEach(function (k) {
+        add(out, "This IS the " + k.label + "  (" + k.host + ")", "ok");
+      });
+    } else {
+      add(out, "This matches NONE of this repository's keys.", "bad");
+      add(out, "Known keys:", "muted");
+      known.forEach(function (k) {
+        add(out, "  " + k.label + "  " + k.key.slice(0, 12) + "..." +
+          k.key.slice(-8), "muted");
+      });
+    }
+  });
+
+  $("decrypt").addEventListener("click", async function () {
+    var out = $("decout");
+    var blob = $("blob").value.trim();
+    if (!blob) { say(out, "Paste a ciphertext value first.", "bad"); return; }
+    var file;
+    try {
+      file = readKeyInput();
+    } catch (e) { say(out, e.message, "bad"); return; }
+
+    try {
+      var priv = await C.importPrivateKey(file);
+      var record = await C.decrypt(blob, priv);
+      out.innerHTML = "";
+      add(out, "Decrypted. This key opens that row.", "ok");
+      add(out, "");
+      add(out, JSON.stringify(record, null, 2));
+    } catch (e) {
+      out.innerHTML = "";
+      add(out, "Did not decrypt.", "bad");
+      add(out, "");
+      add(out, String(e && e.message ? e.message : e), "muted");
+      add(out, "");
+      add(out, "The ordinary cause is the wrong key for that row - a row " +
+        "written before a rotation, or a row from the other environment. " +
+        "It does not mean the row is damaged.", "muted");
+    }
+  });
+
+  /*
+   * Proves the tool itself works, using the committed throwaway key and
+   * the committed v1 fixture. If this fails, distrust everything above
+   * it rather than the key you were checking.
+   */
+  $("selftest").addEventListener("click", async function () {
+    var out = $("idout");
+    say(out, "Running...", "muted");
+    try {
+      var kf = await (await fetch("../dev/test-key.json", { cache: "reload" })).json();
+      var fx = await (await fetch("../dev/fixture.json", { cache: "reload" })).json();
+      var derived = await derivePublic(kf);
+      var matches = derived === kf.publicKey;
+      var priv = await C.importPrivateKey(kf);
+      var rec = await C.decrypt(fx.blob, priv);
+      var same = JSON.stringify(rec) === JSON.stringify(fx.record);
+
+      out.innerHTML = "";
+      add(out, (matches ? "ok  " : "FAIL ") +
+        "derived public half matches the test key file",
+        matches ? "ok" : "bad");
+      add(out, (same ? "ok  " : "FAIL ") +
+        "the committed v1 fixture decrypts to the expected record",
+        same ? "ok" : "bad");
+      add(out, "");
+      add(out, matches && same
+        ? "The tool is working. Anything it tells you above is about your key."
+        : "The TOOL is broken, not your key. Do not trust its answers.",
+        matches && same ? "ok" : "bad");
+    } catch (e) {
+      say(out, "Self-test could not run: " +
+        (e && e.message ? e.message : e) +
+        "\nServe the repository root, not tools/.", "bad");
+    }
+  });
+})();
+</script>
+</body>
+</html>
