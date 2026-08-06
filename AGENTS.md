@@ -125,6 +125,14 @@ or ask them to release. Say which in the claim comment.
 Take it over by commenting on the issue first, then swapping the label —
 never by simply starting.
 
+### The live channel
+
+There is a group channel with the owner and both agents in it. **It
+records nothing.** Claims are still `CLAIM`/`RELEASE` issue comments,
+decisions still land in the files above, and a decision agreed in the
+channel is not made until its SHA is posted back. `CHANNEL.md` carries
+the rules and is the copy to paste in when the channel is set up.
+
 ### When CI is backed up
 
 GitHub Actions degraded for hours on 2026-08-06, first failing runs
@@ -162,7 +170,8 @@ check whether one of these already covers it.
 
 | File | What belongs in it |
 | --- | --- |
-| `AGENTS.md` | this file — durable rules for both agents |
+| `AGENTS.md` | this file — durable rules for both agents working on the repository |
+| `CHANNEL.md` | conduct in the live owner+agents channel, which is not the repository and does not record anything |
 | `CHANGELOG.md` | product and repository changes, newest first, dated by commit date |
 | `DAILY_LOG.md` | the working day — decisions, coordination, what is blocked on whom |
 | `DESIGN.md` | architecture, decisions, and rejected alternatives |
