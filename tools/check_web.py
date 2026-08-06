@@ -45,6 +45,29 @@ Ten checks:
    the dangerous half-finished copy-and-paste: a local preview that
    quietly encrypts to or writes into the live environment.
 
+   Distinctness alone was not enough, and the gap is worth recording
+   because the specification that produced it read as though it were.
+   REDESIGN.md asked for "no two arms share an endpoint or a public
+   key", which catches an arm copied *over* another - and passes
+   cleanly when the two are *swapped*, because swapped arms are still
+   distinct. DESIGN.md names that exact failure one paragraph before
+   prescribing the check: "production shipping the development
+   endpoint, or the development public key. Neither throws."
+
+   Confirmed by mutation before this was written: exchanging the two
+   publicKey values left the whole gate green. The endpoint half of
+   that swap fails loudly at runtime, since each Worker refuses the
+   other's origin - but the key half is silent and unrecoverable.
+   Production rows seal to a key the keyholder does not hold, the
+   export lists them down the rotated-key path, and nothing can turn
+   plaintext back into ciphertext.
+
+   So production's key and endpoint are pinned to their literal values
+   below rather than merely required to differ from development's. A
+   value that cannot be recomputed from the file it guards is the only
+   kind that catches a swap - the same reason dev/fixture.json is a
+   committed constant rather than something the suite regenerates.
+
 6. Nothing *sends* to the network except through crypto.js. This is the
    design's one rule restated as something a machine can check: the
    whole point is that plaintext never leaves the browser, so a file
@@ -190,6 +213,77 @@ def missing_head_pieces():
 
 CONFIG_FILE = "config.js"
 PRODUCTION_HOST = "potaetoe.github.io"
+
+# What production must ship, written down where config.js cannot reach it.
+#
+# These are not secrets - a public key is published on purpose and the
+# endpoint accepts writes from one origin - so the only thing they do here
+# is refuse to move. That is the point. Every other assertion about
+# config.js is computed *from* config.js, which means editing that file
+# edits the standard it is held to; two arms with their values exchanged
+# satisfy every one of them.
+#
+# PRODUCTION_KEY is safe to pin because it is already permanent. Replacing
+# it is a rotation, not an edit - every submission encrypted to the old key
+# stops being readable by the new one - so a change here should be rare,
+# deliberate, and accompanied by the archive step in HANDOFF.md. If this
+# check ever fires during ordinary work, the answer is almost never to
+# update the constant.
+PRODUCTION_KEY = ("BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD"
+                  "1d5PhnxXT9kD917khzW07MUT2yAX18Wc7rD4K0BTSQ8=")
+PRODUCTION_ENDPOINT = "https://hgbinderworker.sorcererbiggz.workers.dev"
+
+
+def crossed_wire_problems(environments):
+    """Problems where production carries a value that is not production's.
+
+    Two failures, and they are not the same one twice:
+
+    the swap - production's arm holding development's key or endpoint. The
+    endpoint half announces itself, because each Worker refuses the other's
+    origin, so the site fails at the first request rather than quietly. The
+    key half does not announce anything at all: submissions encrypt, POST,
+    store, and are unreadable by the only person who is supposed to read
+    them.
+
+    the copy - some *other* arm holding production's key. Development then
+    seals its test rows to production's key, so reading them back means
+    loading the real private key on a page served over plain HTTP from a
+    local directory. REDESIGN.md gives that as the whole reason development
+    has a keypair of its own.
+    """
+    problems = []
+    for environment in environments:
+        is_production = environment["name"] == "production"
+        key = environment["publicKey"]
+        endpoint = environment["endpoint"]
+
+        if is_production:
+            if key and key != PRODUCTION_KEY:
+                problems.append(
+                    "the production arm does not carry the production "
+                    "public key. Rows written by the live site would be "
+                    "sealed to a key the keyholder does not hold, and no "
+                    "export could ever read them back")
+            if endpoint and endpoint != PRODUCTION_ENDPOINT:
+                problems.append(
+                    "the production arm does not carry the production "
+                    "endpoint, so the live site would write somewhere it "
+                    "was never meant to")
+        else:
+            if key == PRODUCTION_KEY:
+                problems.append(
+                    "the %s arm carries the production public key. Reading "
+                    "its rows back would mean loading the real private key "
+                    "outside production, which is what a separate "
+                    "development keypair exists to avoid" %
+                    environment["host"])
+            if endpoint == PRODUCTION_ENDPOINT:
+                problems.append(
+                    "the %s arm carries the production endpoint, so local "
+                    "work would write into the live database" %
+                    environment["host"])
+    return problems
 
 
 def config_environments():
@@ -608,6 +702,9 @@ def main():
     for problem in config_problems:
         problems.append("%s: %s." % (CONFIG_FILE, problem))
 
+    for problem in crossed_wire_problems(environments):
+        problems.append("%s: %s." % (CONFIG_FILE, problem))
+
     origins = []
     for environment in environments:
         origin = endpoint_origin(environment["endpoint"])
@@ -666,7 +763,12 @@ def main():
         return 1
 
     pages = html_pages()
-    key_note = "%d distinct environment keys and endpoints" % len(environments)
+    # "distinct" was the whole claim once, and it was too weak to be worth
+    # printing on its own - two arms with their values exchanged are
+    # distinct. Say that production was pinned, so the line reports what
+    # was actually established rather than the part that is easy to check.
+    key_note = ("%d distinct environment keys and endpoints, production "
+                "pinned" % len(environments))
     print("apps/web OK - %d page(s), all references resolve, shared head "
           "intact, no key-shaped content, %s" % (len(pages), key_note))
     return 0
