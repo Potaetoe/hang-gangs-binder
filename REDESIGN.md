@@ -37,16 +37,28 @@ do-not-deploy warning in full.
 
 ## What is done
 
+Updated 2026-08-06. Everything below is on `accounts`; `main` is still
+the last complete release and nothing here is deployed.
+
 | Step | State |
 | --- | --- |
+| 0 — `ui.js` | **done** (#14) |
+| 0.5 — dev Worker and D1 | **done** (#16), isolation verified both directions |
 | 1 — Worker: auth, sessions, account id | **built, tested, not deployed** |
-| 0 — `ui.js` | not started |
-| 0.5 — dev Worker and D1 | not started; needs a Cloudflare errand |
-| 2 onwards | not started |
+| 2 — clear and unpublish | **unpublish done 2026-08-06**; the clear moves to the cutover, Part 8 |
+| 3 — sign-in page, form to `submit.html` | session half **done** (#17); widget half assigned, #26 |
+| 4–7 | not started, and all behind step 3 |
+| 8 — quantize the series | **done** (#12), plus the suppression floor (#19) |
+| 9–10 | not started |
 
-Step 1 landed before step 0 because it needs nothing from anybody: no
-bot, no Cloudflare, no secrets. Steps 0 and 0.5 are next, and 0.5 needs
-you rather than me.
+Step 1 landed before step 0 because it needed nothing from anybody: no
+bot, no Cloudflare, no secrets. The owner errands are now done — the bot
+exists and `/setdomain` is set — so nothing in the build order is
+blocked on anyone outside it.
+
+**The bot is `@hanggangbinder_bot`.** Its token and the owner's numeric
+id are not in this repository and must not be; see Part 8b for where
+they belong and why the obvious answer is wrong.
 
 ---
 
@@ -626,7 +638,7 @@ before moving on.
 | 0 | Bot, secrets, `ui.js` | `node dev/worker.test.mjs` passes; secrets exist in the dashboard |
 | 0.5 | **Dev Worker, dev D1, hostname-switched `config.js`** | A local preview submits to the dev database and **cannot** reach production; `check_web.py`'s new arm checks confirmed armed by mutation |
 | 1 | Worker: auth, sessions, account id | A real sign-in returns a session, and the Worker reports your numeric id so `ADMIN_TELEGRAM_IDS` can be set from fact |
-| 2 | **Clear the table, unpublish** | See Part 8 — this is the point of no return |
+| 2 | **Clear the table** (unpublish done 2026-08-06) | See Part 8 — it happens at the cutover, and it is the point of no return |
 | 3 | `index.html` → sign-in, form → `submit.html` | Sign-in works end to end on the **live site** — it cannot work locally, see Part 1 — with no gate yet behind it |
 | 4 | `POST /submit` requires a session | A submission arrives with an `account_id`, and a signed-out `curl` is refused |
 | 5 | The panel, `GET /me` | Counts match what is in the table |
@@ -642,27 +654,177 @@ is what makes them unchangeable.
 
 ---
 
-## Part 8 — The two irreversible things
+## Part 8 — The cutover
 
-**Clearing `submissions`.** There is no backup and an export is not one
-— nothing can turn plaintext back into ciphertext, and a downloaded
-export is unencrypted and should be deleted rather than filed. Take an
-export first anyway if the current rows are worth reading once, then
-delete the file when you are done with it.
+This part was "the two irreversible things" and understated the job. The
+redesign does not arrive gradually: it arrives in one sitting that
+contains three irreversible acts, one verification that cannot be done
+anywhere else, and a capture that has to happen before any of them.
 
-**Rehearse it on the dev database first.** That is most of what step 0.5
-is for: run the `DROP TABLE` and the recreate against `hg_binder_db_dev`,
-submit a row, and confirm the new shape works — before doing the same
-thing to data nobody can rebuild. Every schema change this project has
-made until now was first executed against production.
+**Unpublishing was the fourth and is already done** — 2026-08-06, ahead
+of schedule, because the published snapshot described exactly one person
+and was being served unauthenticated. See `DAILY_LOG.md`. What was left
+of step 2 is the clear.
 
-**Unpublishing.** Do it in the same sitting as the clear, not after. The
-live snapshot describes a group that is about to stop existing, and
-leaving it up publishes people whose rows are gone.
+### What is irreversible, and what only looks like it
 
-And one thing that is irreversible without looking like it:
-**setting `ACCOUNT_SECRET`.** The moment one row carries an id derived
-from it, it can never change.
+| Act | Reversible? |
+| --- | --- |
+| Clearing `submissions` | **No.** No backup, and an export is not one — nothing turns plaintext back into ciphertext |
+| Setting `ACCOUNT_SECRET` | **No, the moment one row carries an id derived from it.** Irreversible without looking it |
+| Deploying the accounts Worker | **Only if the current script was captured first** — see below |
+| Merging `accounts` → `main` | Yes. `apps/web` is the build, so a `git revert` restores the pages exactly |
+| Unpublishing | Done. Was always reversible — a snapshot is derived from rows |
+
+### Step 0, before anything else: capture what production is now
+
+**Part 10 promises a Worker rollback that does not exist.** It says to
+keep the working `worker.js` at a known commit and be ready to
+`wrangler deploy` from it. But the live production script reports
+`Source: Unknown (version_upload)` — verified 2026-08-06 — meaning it
+was hand-pasted and matches **no commit in this repository**. There is
+currently nothing to roll back *to*. A deploy overwrites the only copy.
+
+So the first act of the sitting is not a change at all: open the Worker
+in the Cloudflare dashboard, copy the live script, and save it outside
+the repository. It holds no secrets — bindings and secrets are stored
+separately — but do not commit it; it is a recovery artifact, not
+source.
+
+The live bindings, verified 2026-08-06, so a mistaken deploy can be
+repaired against fact rather than memory:
+
+```
+EXPORT_TOKEN         secret, present
+env.DB               D1 948f3464-e93c-4c8c-b64f-871065c3ee74
+env.ALLOWED_ORIGINS  "https://potaetoe.github.io"
+compatibility_date   2026-08-04
+```
+
+`server/wrangler.toml` already matches all of it, so a deploy will not
+silently move production's origin policy. That was worth checking rather
+than assuming: **`deploy` preserves secrets but applies `[vars]` over
+whatever the dashboard had**, so a var that lives only in the dashboard
+is erased by the next deploy — see Part 8b, which is about exactly that.
+
+### The order
+
+| # | Act | Do not continue until | Back out? |
+| --- | --- | --- | --- |
+| 0 | Capture the live script and bindings | The file exists outside the repo and is not empty | n/a |
+| 1 | Rehearse the migration on `hg_binder_db_dev` | A row submits and reads back under the new shape | Free |
+| 2 | Set `ACCOUNT_SECRET` and `TELEGRAM_BOT_TOKEN` on production | `wrangler versions view` lists both | `ACCOUNT_SECRET` is now permanent |
+| 3 | Set the admin id — **as a secret, not a var**, Part 8b | Listed alongside them | Free |
+| 4 | `DROP TABLE submissions`, then run `schema.sql` | The new table exists with `account_id NOT NULL` | **POINT OF NO RETURN** |
+| 5 | `wrangler deploy` the accounts Worker | The probe matrix in `server/README.md` agrees | Only via step 0's capture |
+| 6 | Merge `accounts` → `main` | CI shows `deploy` **ran**, not skipped | `git revert` |
+| 7 | Sign in on the live site through the widget | A session is minted and reaches `submit.html` | — |
+| 8 | One real submission, then one export | The export decrypts | — |
+| 9 | Aftercare | Below | — |
+
+Step 4 is both the clear and the migration, which is why they are one
+line. `DROP TABLE` takes the rows, the table and its `sqlite_sequence`
+entry together, and `schema.sql` then creates the new shape. The
+separate `DELETE FROM sqlite_sequence` is only needed on the
+clear-without-migrating path.
+
+### The trap in `schema.sql`
+
+It uses `CREATE TABLE IF NOT EXISTS`. Run it against production without
+dropping first and it **silently skips `submissions`**, creating
+`sessions` beside an unmigrated table and reporting success. Nothing in
+`dev/` can see this; the failure surfaces on the first real submission,
+against `NOT NULL account_id`.
+
+The drop must therefore be explicit and deliberate, not a side effect
+somebody assumes. Rehearse the whole sequence on `hg_binder_db_dev`
+first — that is most of what step 0.5 bought. Every schema change this
+project made before it was first executed against production.
+
+### After step 4, forward is the only direction
+
+**The data is not the frightening part.** It is discarded on purpose and
+the group re-submits; that is the point of doing it now, while there is
+almost nothing to lose.
+
+The frightening part is being live with a sign-in nobody can pass.
+Reverting the site does not help: the old form posts to a Worker that by
+then requires a session, so the previous pages refuse everybody too.
+There is no state left that serves anyone until sign-in works. That is
+the risk the sitting is really managing, and it is why step 7 is the one
+to rehearse hardest and why Part 8a exists.
+
+### Aftercare
+
+- Delete the `accounts` branch. It was temporary by design, and the
+  answer to the staging-branch objection in `DESIGN.md` depends on it
+  actually being deleted.
+- Unfreeze the runbooks — step 10, Part 9. They have been deliberately
+  stale and are now the last thing describing a system that does not
+  exist.
+- Remove the throwaway sign-in probe page if Part 8a was used.
+- Re-publish a snapshot only once the group has re-submitted and the
+  suppression floor has something to work with.
+
+---
+
+## Part 8a — Splitting the widget verification (recommended)
+
+Step 7 bundles two questions that fail for different reasons and can be
+separated. Only one of them genuinely has to wait.
+
+- **Does the widget render under our CSP, and does Telegram accept the
+  domain?** Testable on the live host *before* the point of no return.
+- **Does `POST /auth/telegram` mint a session?** Only testable after the
+  Worker is deployed. This half cannot be moved.
+
+The first is worth buying early, because a wrong CSP discovered at step
+7 is discovered with the table already dropped. Land a throwaway
+`noindex` page on `main` through the hotfix path in `README.md`,
+carrying only the widget markup and the candidate policy. Load it,
+watch `securitypolicyviolation`, record the real directive set, then
+remove the page in a second small PR.
+
+The callback will fail at the last hop, because production has no
+`/auth/telegram` route yet. That is expected and is precisely the half
+this cannot test.
+
+**The cost, stated plainly:** two small pull requests into a frozen
+`main`, and the discipline to actually remove the page. It is the
+owner's call, not an agent's — `main` is the live site.
+
+---
+
+## Part 8b — `ADMIN_TELEGRAM_IDS` must be a secret, not a var
+
+`wrangler.toml` currently plans for `ADMIN_TELEGRAM_IDS`,
+`TELEGRAM_GROUP_CHAT_ID` and `ALWAYS_ALLOW_TELEGRAM_IDS` to be plaintext
+`[vars]`, reasoning that they are numeric ids rather than credentials.
+The first half of that is true. The conclusion does not follow, for two
+reasons that point the same way.
+
+**This repository is public.** A `[vars]` block is committed. The
+allowlist in particular is a **list of the numeric Telegram ids of the
+members of this group** — which is the membership oracle the entire
+account-id design was built to avoid. `DESIGN.md` rejects handle-derived
+account ids precisely so the database cannot answer "is this person a
+member"; publishing the allowlist answers it directly, in the clear, for
+everyone at once. The admin id is smaller in degree and the same in
+kind: it links a named Telegram account to running this group.
+
+**A dashboard var does not survive a deploy.** `deploy` preserves
+secrets and applies `[vars]` over whatever the dashboard had, so setting
+these in the dashboard to keep them out of the repository means the next
+deploy silently erases them — and an erased `ADMIN_TELEGRAM_IDS` means
+no admin, discovered when somebody needs to be one.
+
+So neither of the two obvious placements works. **Set them with
+`wrangler secret put`** — not because they are credentials, but because
+"survives a deploy" and "not in a public repository" are exactly the two
+properties a secret has and a var does not. The cost is that they no
+longer appear in the config that documents the deployment; the comment
+block in `wrangler.toml` should say where they live and why, which keeps
+the file honest without printing the values.
 
 ---
 
@@ -707,13 +869,28 @@ The site is a `git revert` — `apps/web` is the build, so reverting the
 commit and letting CI run restores the previous pages exactly.
 
 **The Worker is not.** It deploys separately, so a bad Worker outlives a
-reverted site. Keep the working `worker.js` at a known commit and be
-ready to `wrangler deploy` from it; `server/README.md`'s probe table is
-how to tell which version is actually live, and it exists because
-"deployed" and "deployed the thing you meant" are different claims.
+reverted site. `server/README.md`'s probe table is how to tell which
+version is actually live, and it exists because "deployed" and "deployed
+the thing you meant" are different claims.
+
+**Corrected 2026-08-06 — this part used to say "keep the working
+`worker.js` at a known commit and be ready to `wrangler deploy` from
+it", and that rollback does not exist.** Production reports
+`Source: Unknown (version_upload)`: the live script was hand-pasted and
+matches no commit here, so there is no commit to deploy from and the
+first deploy overwrites the only copy. Capturing it is now step 0 of the
+cutover, Part 8.
+
+The general form is worth keeping, because it will recur wherever a
+deployment is edited by hand: **a rollback plan that names an artifact
+nobody has confirmed exists is not a rollback plan.** This one read as
+sound for a fortnight.
 
 **The data does not come back.** Nothing about steps 3 onwards is
-destructive, but step 2 is, and no rollback reaches it.
+destructive, but the clear is, and no rollback reaches it. That is
+deliberate and survivable — the group re-submits. What no rollback
+reaches *and* nobody plans for is a live site whose sign-in refuses
+everybody; see Part 8's closing section.
 
 ---
 
