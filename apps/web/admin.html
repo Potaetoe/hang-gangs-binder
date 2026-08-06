@@ -9,7 +9,7 @@
   page holds everyone's plaintext on the way out, plus the key that
   produced it. An injected script here would see the whole corpus.
 
-  connect-src names the Worker exactly, and deliberately does NOT list
+  connect-src names both Workers exactly, and deliberately does NOT list
   blob:. The CSV is built in this page and handed over as an object URL
   on a download link, and a download is not a fetch - confirmed by
   watching securitypolicyviolation while clicking it, which reports
@@ -17,7 +17,7 @@
   does; the only thing it would enable is reading an object URL back
   through fetch(), which is how the mistake was nearly made.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Export — Hang Gang's Binder</title>
 <meta name="description" content="Decrypt and export the submissions. Requires the export token and the private key.">
 <meta name="robots" content="noindex, nofollow">

@@ -33,25 +33,17 @@ Ten checks:
    page and trimmed the head" is exactly the mistake worth catching
    automatically rather than at review.
 
-4. The endpoint in config.js is permitted by the CSP of every page that
-   loads config.js. These are two files that must agree, and they fail
-   apart silently: change the endpoint alone and the pages still load,
-   still look right, and drop every submission at the connect-src
-   check. Whoever inherits this project and points it at their own
-   Worker will change the obvious file and not the other one - so the
-   build says so instead of the site failing quietly on their first
-   real submitter.
+4. Every endpoint arm in config.js is permitted by the CSP of every page
+   that loads config.js. These files must agree, and they fail apart
+   silently: change an endpoint alone and the page still looks right but
+   the browser drops every request at connect-src.
 
-5. The publicKey in config.js is a real P-256 point. It arrives by
-   copy-and-paste out of a browser window, which is a step that can
-   drop a character or clip an end without looking like it did. The
-   result passes every check above and every eye: a plausible base64
-   blob in the right place. It fails at the one moment nobody is
-   watching - in a submitter's browser, at importKey, after they have
-   filled the form. So this decodes it, checks it is a 65-byte
-   uncompressed point, and does the curve arithmetic to confirm it
-   actually lies on P-256. Cheap, and it moves the discovery from a
-   stranger's browser to the terminal of the person who pasted it.
+5. Every environment in config.js has a real, distinct P-256 public key
+   and a distinct endpoint. The production arm must be keyed by the
+   deployed hostname, both loopback names must select development, and
+   an unknown hostname must not fall back to production. This catches
+   the dangerous half-finished copy-and-paste: a local preview that
+   quietly encrypts to or writes into the live environment.
 
 6. Nothing *sends* to the network except through crypto.js. This is the
    design's one rule restated as something a machine can check: the
@@ -196,30 +188,120 @@ def missing_head_pieces():
     return gaps
 
 
-def endpoint_origin():
-    """The origin of the endpoint in config.js, or None if not set up."""
-    path = os.path.join(WEB, "config.js")
+CONFIG_FILE = "config.js"
+PRODUCTION_HOST = "potaetoe.github.io"
+
+
+def config_environments():
+    """([environment], [problem]) parsed from the shipped config.js.
+
+    This is deliberately a narrow parser for the literal object this project
+    ships, not a JavaScript interpreter. A computed endpoint or key would make
+    the publish-time invariant unknowable, which is itself a build failure.
+    """
+    path = os.path.join(WEB, CONFIG_FILE)
     if not os.path.exists(path):
-        return None  # not wired up yet; nothing to disagree about
-    text = open(path, encoding="utf-8").read()
-    match = re.search(r'endpoint\s*:\s*["\'](https://[^"\']+)["\']', text)
-    if not match:
-        return None
-    parts = match.group(1).split("/")
-    return "%s//%s" % (parts[0], parts[2])
+        return [], ["does not exist"]
+
+    text = strip_js_comments(open(path, encoding="utf-8").read())
+    block = re.search(
+        r"\bconst\s+ENVIRONMENTS\s*=\s*\{(.*?)\n\s*\};", text, re.S)
+    if not block:
+        return [], ["does not define a literal ENVIRONMENTS object"]
+
+    arms = re.compile(
+        r'(?:"([^"]+)"|\'([^\']+)\'|([A-Za-z0-9_.-]+))\s*:\s*'
+        r'\{([^{}]*)\}\s*,?', re.S)
+    environments = []
+    problems = []
+    for match in arms.finditer(block.group(1)):
+        host = next(value for value in match.groups()[:3]
+                    if value is not None)
+        body = match.group(4)
+
+        def field(name):
+            found = re.search(
+                r"\b%s\s*:\s*[\"']([^\"']+)[\"']" % name, body)
+            return found.group(1) if found else None
+
+        environment = {
+            "host": host,
+            "name": field("name"),
+            "endpoint": field("endpoint"),
+            "publicKey": field("publicKey"),
+        }
+        environments.append(environment)
+        for required in ("name", "endpoint", "publicKey"):
+            if not environment[required]:
+                problems.append("the %s arm has no literal %s" %
+                                (host, required))
+
+    if not environments:
+        problems.append("ENVIRONMENTS has no literal hostname arms")
+
+    hosts = [environment["host"] for environment in environments]
+    if len(hosts) != len(set(hosts)):
+        problems.append("ENVIRONMENTS defines one hostname more than once")
+
+    production = [environment for environment in environments
+                  if environment["name"] == "production"]
+    if len(production) != 1:
+        problems.append("must contain exactly one arm named production")
+    elif production[0]["host"] != PRODUCTION_HOST:
+        problems.append(
+            "the production arm is keyed by %s, not the deployed hostname %s"
+            % (production[0]["host"], PRODUCTION_HOST))
+
+    development = [environment for environment in environments
+                   if environment["name"] == "development"]
+    if len(development) != 1 or development[0]["host"] != "localhost":
+        problems.append(
+            "must contain exactly one localhost arm named development")
+
+    alias = re.search(
+        r'ENVIRONMENTS\s*\[\s*["\']127\.0\.0\.1["\']\s*\]\s*=\s*'
+        r'ENVIRONMENTS(?:\.localhost|\s*\[\s*["\']localhost["\']\s*\])',
+        text)
+    if not alias:
+        problems.append("127.0.0.1 is not aliased to the localhost arm")
+
+    no_default = re.search(
+        r'globalThis\.BINDER_CONFIG\s*=\s*'
+        r'ENVIRONMENTS\s*\[\s*location\.hostname\s*\]\s*\|\|\s*\{'
+        r'\s*name\s*:\s*["\']unknown["\']\s*,\s*'
+        r'publicKey\s*:\s*null\s*,?\s*\}', text, re.S)
+    if not no_default:
+        problems.append(
+            "an unknown hostname does not resolve to the closed, keyless arm")
+
+    for field_name in ("endpoint", "publicKey"):
+        values = [environment[field_name] for environment in environments
+                  if environment[field_name]]
+        if len(values) != len(set(values)):
+            problems.append("two environment arms share the same %s" %
+                            field_name)
+
+    return environments, problems
 
 
-def csp_gaps(origin):
-    """(page, origin) for pages whose CSP would block the endpoint.
+def endpoint_origin(endpoint):
+    """The HTTPS origin of one literal endpoint, or None if malformed."""
+    match = re.match(r"^(https://[^/]+)(?:/.*)?$", endpoint or "")
+    return match.group(1) if match else None
+
+
+def csp_gaps(origins):
+    """(page, origin) for pages whose CSP would block an endpoint.
 
     Only pages that actually load config.js are checked. A page with no
-    reason to reach the endpoint should not be given permission to - the
+    reason to reach an endpoint should not be given permission to - the
     404 page is the current example.
     """
-    if not origin:
+    origins = [origin for origin in origins if origin]
+    if not origins:
         return []
     users = set(page for page, target in html_references()
-                if target == "config.js")
+                if target == CONFIG_FILE)
     gaps = []
     for name in sorted(users):
         text = open(os.path.join(WEB, name), encoding="utf-8").read()
@@ -230,8 +312,10 @@ def csp_gaps(origin):
         if not policy:
             continue  # already reported by the shared-head check
         connect = re.search(r"connect-src ([^;\"]*)", policy.group(1))
-        if not connect or origin not in connect.group(1):
-            gaps.append((name, origin))
+        allowed = connect.group(1).split() if connect else []
+        for origin in origins:
+            if origin not in allowed:
+                gaps.append((name, origin))
     return gaps
 
 
@@ -242,37 +326,12 @@ P256_B = int("5ac635d8aa3a93e7b3ebbd55769886bc"
              "651d06b0cc53b0f63bce3c3e27d2604b", 16)
 
 
-def key_is_set():
-    """True once config.js names a key rather than null."""
-    path = os.path.join(WEB, "config.js")
-    if not os.path.exists(path):
-        return False
-    text = open(path, encoding="utf-8").read()
-    text = re.sub(r"^\s*//.*$", "", text, flags=re.M)
-    return bool(re.search(r"publicKey\s*:\s*[\"'][^\"']+[\"']", text))
-
-
-def public_key_problem():
-    """A description of what is wrong with config.js's publicKey, or None.
-
-    None also covers "not set yet" - publicKey: null is the honest state
-    before a key exists, and the form refuses to submit while it holds.
-    """
-    path = os.path.join(WEB, "config.js")
-    if not os.path.exists(path):
-        return None
-    text = open(path, encoding="utf-8").read()
-    text = re.sub(r"^\s*//.*$", "", text, flags=re.M)
-
-    if re.search(r"publicKey\s*:\s*null", text):
-        return None
-    match = re.search(r"publicKey\s*:\s*[\"']([^\"']*)[\"']", text)
-    if not match:
-        return ("no publicKey is set, and it is not null either - the form "
-                "will not know what to encrypt to")
-
+def public_key_problem(value):
+    """A description of what is wrong with one environment key, or None."""
+    if not value:
+        return "no publicKey is set"
     try:
-        raw = base64.b64decode(match.group(1), validate=True)
+        raw = base64.b64decode(value, validate=True)
     except Exception:
         return "the publicKey is not valid base64 - the paste was mangled"
 
@@ -536,6 +595,7 @@ def key_shaped_content():
 
 def main():
     problems = []
+    environments, config_problems = config_environments()
 
     for page, target in html_references():
         if not os.path.exists(os.path.join(WEB, target.replace("/", os.sep))):
@@ -545,18 +605,31 @@ def main():
     for page, description in missing_head_pieces():
         problems.append("%s is missing %s" % (page, description))
 
-    for page, origin in csp_gaps(endpoint_origin()):
+    for problem in config_problems:
+        problems.append("%s: %s." % (CONFIG_FILE, problem))
+
+    origins = []
+    for environment in environments:
+        origin = endpoint_origin(environment["endpoint"])
+        if environment["endpoint"] and not origin:
+            problems.append(
+                "%s: the %s endpoint is not a literal HTTPS URL." %
+                (CONFIG_FILE, environment["host"]))
+        if origin:
+            origins.append(origin)
+
+        problem = public_key_problem(environment["publicKey"])
+        if problem:
+            problems.append(
+                "%s: the %s arm has %s. Every submission on that hostname "
+                "would fail at encryption time." %
+                (CONFIG_FILE, environment["host"], problem))
+
+    for page, origin in csp_gaps(origins):
         problems.append(
             "%s does not allow %s in its CSP connect-src, but that is the "
-            "endpoint config.js points at - every submission would be "
+            "endpoint one config.js arm points at - every request would be "
             "blocked by the browser." % (page, origin))
-
-    problem = public_key_problem()
-    if problem:
-        problems.append(
-            "config.js: %s. Every submission would be encrypted to it - or "
-            "rather would not be, since the browser rejects it. Re-copy the "
-            "line from tools/keygen.html." % problem)
 
     problem = hidden_attribute_problem()
     if problem:
@@ -593,11 +666,7 @@ def main():
         return 1
 
     pages = html_pages()
-    # Say which state the key is in rather than a blanket "OK". "No key
-    # yet" is a legitimate state, but it is not the same as a working
-    # one, and a run that prints OK either way hides which you are in.
-    key_note = ("a valid P-256 public key" if key_is_set()
-                else "no public key yet (publicKey: null)")
+    key_note = "%d distinct environment keys and endpoints" % len(environments)
     print("apps/web OK - %d page(s), all references resolve, shared head "
           "intact, no key-shaped content, %s" % (len(pages), key_note))
     return 0

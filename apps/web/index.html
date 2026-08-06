@@ -10,7 +10,7 @@
   design exists to hide. The policy also enforces the rule DESIGN.md
   states in prose - no CDNs, no third-party code.
 
-  connect-src names the Worker exactly, and nothing else - not the whole
+  connect-src names both Workers exactly, and nothing else - not the whole
   of workers.dev, which would let an injected script post elsewhere on
   the same host. Change it here and in config.js together; the build
   fails if they disagree. form-action 'none' is here because this page
@@ -20,7 +20,7 @@
   so they are not written here - a header would be needed, and GitHub
   Pages does not serve one.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Hang Gang's Binder</title>
 <meta name="description" content="Submission portal for the Hang Gang. Entries are encrypted in your browser before they are sent.">
 <meta name="robots" content="noindex, nofollow">
