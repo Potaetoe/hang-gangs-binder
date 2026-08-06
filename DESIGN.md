@@ -1472,6 +1472,60 @@ Everything below — the pseudonyms, the dropped data-quality panel, the
 opt-in series, the quantization — is aimed at the reader who is now the
 only reader.
 
+**A published cell describes at least five people, and the reasoning
+this replaced was nearly right.** Added 2026-08-06 after a reproduction
+beat the argument.
+
+The argument was that rows are dangerous and aggregates are safe, so
+publishing counts, medians and histogram bins gave nothing away. That
+holds for large N. This group is a few dozen, and **at twenty-four an
+aggregate of one is a row**. A published snapshot of a plausible group
+said "exactly one member is in Japan" and "exactly one member is
+nonbinary", and `ROLE_VOCABULARY` is feeder / feedee / gainer /
+admirer, so a singleton there published a named person's kink role to
+the open web. `identify: false` drops handles and the height panel; it
+never dropped uniqueness.
+
+`MIN_CELL` is 5. It is a floor rather than a guarantee, and for a group
+this specific the keyholder may want it higher — raising it costs only
+detail.
+
+Three things it has to survive, and only the first is obvious:
+
+- **Subtraction, not redaction.** A reader knows the group size, so
+  dropping Japan and letting the rest sum to 23 of 24 discloses Japan
+  exactly. Everything removed goes into one `Other (fewer than 5)`
+  bucket, so the published cells always sum to the total. The bucket
+  must clear the floor itself, or it is the singleton wearing a hat; if
+  it cannot, the whole breakdown is suppressed.
+- **Histograms merge rather than bucket.** A histogram is ordered and
+  contiguous, so adjacent bins combine until each clears the floor. The
+  shape and the total survive and the tails simply get wider — and the
+  tails are where the lone heaviest person sits.
+- **One partition, not two.** This is the one found by attacking the
+  floor rather than confirming it. The two unit systems bin different
+  stored fields at different widths, 10 kg against 20 lb, so their
+  boundaries do not align: both sets can satisfy the floor while a
+  reader who overlays them recovers a finer partition. Differencing the
+  cumulative counts produced sub-floor cells in 2899 of 3000 random
+  groups. So a published document carries one partition, decided in the
+  default system, with every other system reporting the same groups
+  under converted edges. Those conversion factors are for axis labels on
+  a published document and nothing else — no record is written through
+  them and no export reads them.
+
+**A series line is one person by construction**, so the floor cannot
+apply to it cell by cell. Quantisation makes a shared *point*
+ambiguous; it does nothing about how many *lines* there are, and four
+lines on a public chart is four identifiable trajectories in a group
+where everybody knows everybody. The panel publishes only when there
+are at least `MIN_CELL` lines. It was already opt-in and off by
+default; this is the second condition, not the first.
+
+**None of this applies to the keyholder's own view.** That is their
+data in their own tab, it never leaves it, and reducing it would only
+hide the thing they opened the page to see.
+
 **The aggregation happens in the keyholder's browser, and only the
 result is published.** That is the sentence the whole feature turns on.
 A daily public dashboard sounds like it needs a server that can read

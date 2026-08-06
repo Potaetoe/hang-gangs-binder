@@ -459,18 +459,145 @@
    */
   const SNAPSHOT_VERSION = 1;
 
-  function basisOf(entries) {
+  /*
+   * The smallest number of people a published cell may describe.
+   *
+   * Five is the usual starting point for this and it is a floor, not a
+   * guarantee: for a group of a few dozen in a community this specific,
+   * the keyholder may want it higher, and raising it costs only detail.
+   *
+   * What it is for. Before this existed, a published snapshot of a
+   * two-dozen-person group said things like "exactly one member is in
+   * Japan" and "exactly one member is nonbinary" - and ROLE_VOCABULARY
+   * is feeder/feedee/gainer/admirer, so a singleton there published a
+   * named person's kink role to the open web. The reasoning that let
+   * that happen is worth naming because it was nearly right: rows are
+   * dangerous and aggregates are safe. That holds for large N. At
+   * twenty-four it is false, because an aggregate of one is a row.
+   *
+   * This applies only to the published document. The keyholder's own
+   * view is their own data in their own tab and is never reduced.
+   */
+  const MIN_CELL = 5;
+  const OTHER_LABEL = "Other (fewer than " + MIN_CELL + ")";
+
+  /*
+   * Categorical counts with every small cell folded into one bucket.
+   *
+   * The bucket has to clear the floor itself, or it is the singleton
+   * wearing a hat - one country with one person in it becomes "Other:
+   * 1", which discloses exactly what it was meant to hide. So small
+   * cells are pooled, and if the pool is still short the next-smallest
+   * *named* cell is absorbed until it clears.
+   *
+   * Subtraction is the attack this has to survive, not redaction. A
+   * reader knows the group size, so publishing US 8, GB 5, CA 3 against
+   * a total of 24 discloses CA outright and would also disclose it if
+   * CA were simply dropped and the rest left to sum to 21. Everything
+   * removed lands in the bucket, so the published cells always sum to
+   * the total and nothing is recoverable by arithmetic.
+   *
+   * A zero survives. "Nobody here is an admirer" describes no one.
+   */
+  function suppressCounts(rows, floor) {
+    if (!(floor > 1) || !rows.length) return rows;
+
+    const kept = [];
+    const small = [];
+    for (const row of rows) {
+      if (row.count === 0 || row.count >= floor) kept.push(row);
+      else small.push(row);
+    }
+    if (!small.length) return rows;
+
+    let other = 0;
+    for (const row of small) other += row.count;
+
+    // Absorb the smallest named cells until the bucket clears the floor.
+    // kept is in descending order, so the smallest non-zero is at the end
+    // of the non-zero run.
+    while (other < floor) {
+      let index = -1;
+      for (let i = 0; i < kept.length; i++) {
+        if (kept[i].count === 0) continue;
+        if (index === -1 || kept[i].count < kept[index].count) index = i;
+      }
+      if (index === -1) break;
+      other += kept[index].count;
+      kept.splice(index, 1);
+    }
+
+    // Two ways there is nothing safe to say. The bucket never reached the
+    // floor, so it is still describing too few people; or every cell went
+    // into it, leaving a breakdown that is one bucket and no breakdown at
+    // all.
+    //
+    // One named cell beside the bucket is fine and is deliberately not
+    // rejected: "male 19, Other 5" identifies nobody, and suppressing it
+    // would throw away a true and harmless answer. The test is whether a
+    // cell describes too few people, not how many cells there are.
+    const named = kept.filter(function (row) { return row.count > 0; });
+    if (other < floor || !named.length) return [];
+
+    return kept.concat([{ label: OTHER_LABEL, count: other }]);
+  }
+
+  /*
+   * Histogram bins merged rather than bucketed.
+   *
+   * A histogram is ordered and contiguous, so folding its small bins
+   * into an "Other" would destroy the shape that makes it worth
+   * drawing. Adjacent bins are combined instead until each one clears
+   * the floor, which keeps the total, keeps the order, and simply makes
+   * the tails wider - and the tails are exactly where a lone heaviest
+   * or lightest person sits.
+   *
+   * A trailing remainder merges backwards into the last emitted bin
+   * rather than being dropped, for the subtraction reason above.
+   */
+  function suppressBins(bins, floor) {
+    if (!(floor > 1) || !bins.length) return bins;
+
+    const out = [];
+    let open = null;
+    for (const bin of bins) {
+      open = open === null
+        ? { from: bin.from, to: bin.to, count: bin.count }
+        : { from: open.from, to: bin.to, count: open.count + bin.count };
+      if (open.count >= floor) {
+        out.push(open);
+        open = null;
+      }
+    }
+    if (open !== null) {
+      if (!out.length) return [];          // the whole set is below the floor
+      const last = out[out.length - 1];
+      last.to = open.to;
+      last.count += open.count;
+    }
+    return out;
+  }
+
+  function basisOf(entries, floor) {
+    // Below the floor there is no breakdown that is safe to publish, and
+    // a median over four people is not either. Publishing nothing is the
+    // honest answer, and the count above it already says how many there
+    // are.
+    if (floor > 1 && entries.length < floor) return null;
+
     const bmis = bmiValues(entries);
     const out = {
       count: entries.length,
       bmi: {
         median: median(bmis),
         mean: mean(bmis),
-        bins: histogram(bmis, 5),
+        bins: suppressBins(histogram(bmis, 5), floor),
       },
-      gender: countBy(entries, function (e) { return e.gender; }),
-      roles: countRoles(entries, ROLE_VOCABULARY),
-      country: countBy(entries, function (e) { return e.country; }),
+      gender: suppressCounts(
+        countBy(entries, function (e) { return e.gender; }), floor),
+      roles: suppressCounts(countRoles(entries, ROLE_VOCABULARY), floor),
+      country: suppressCounts(
+        countBy(entries, function (e) { return e.country; }), floor),
     };
     for (const name in UNITS) {
       if (!Object.prototype.hasOwnProperty.call(UNITS, name)) continue;
@@ -479,7 +606,80 @@
         height: measureFor(entries, UNITS[name].height),
       };
     }
+
+    /*
+     * Both unit systems are published in the same document, and
+     * suppressing each on its own is not enough - which is the second
+     * thing found here, by attacking the floor rather than confirming it.
+     *
+     * The systems bin different stored fields at different widths, 10 kg
+     * against 20 lb, so their boundaries do not line up. Each set can
+     * satisfy the floor while their INTERSECTION does not: over random
+     * groups, metric bins crossed with imperial bins produced a range of
+     * 80.0-81.6 kg holding exactly one person. Nothing was published that
+     * broke the rule; the rule was defeated by publishing two partitions
+     * of the same people and letting a reader overlay them.
+     *
+     * So a published document carries ONE partition. The people are
+     * grouped once, in the default system, and every other system reports
+     * the same groups with its own edges read from its own stored field -
+     * no conversion factor here, and nothing for a reader to intersect,
+     * because there is only one partition to intersect with itself.
+     */
+    if (floor > 1) repartition(entries, out, floor);
+
     return out;
+  }
+
+  /*
+   * Rewrite every unit system's bins to describe one shared grouping.
+   *
+   * The grouping is decided in the default system and then expressed in
+   * each other one, with each system's edges taken from the values it
+   * actually stores. A group's count is the same number in every system
+   * because it is the same people.
+   */
+  /*
+   * Edges are CONVERTED, never re-derived from the values inside a
+   * group, and that distinction is the whole fix.
+   *
+   * The first attempt took each system's edges from the smallest and
+   * largest value actually in the group, which reads like the honest
+   * thing to do and is strictly worse: an edge fitted to the data is
+   * tighter than the bin and reports someone's real weight. Overlaying
+   * the two systems then isolated a single person again - the same leak,
+   * arrived at from the opposite direction.
+   *
+   * Converting instead means every system draws the same boundaries in
+   * different units, so an overlay recovers the partition and nothing
+   * finer. These factors exist for axis labels on a published document
+   * and for nothing else: no record is written through them, no export
+   * reads them, and the stored fields are still what every count and
+   * every median is computed from. That is the drift DESIGN.md was
+   * guarding against, and it is not this.
+   */
+  const LABEL_FACTOR = { kg: 1, lb: 2.2046226218, cm: 1, totalInches: 1 / 2.54 };
+
+  function repartition(entries, out, floor) {
+    const base = unitsFor(DEFAULT_UNITS);
+    for (const measure of ["weight", "height"]) {
+      const spec = base[measure];
+      const merged = suppressBins(
+        histogram(numbers(entries, spec.field), spec.bin), floor);
+
+      for (const name in UNITS) {
+        if (!Object.prototype.hasOwnProperty.call(UNITS, name)) continue;
+        const field = UNITS[name][measure].field;
+        const scale = LABEL_FACTOR[field] / LABEL_FACTOR[spec.field];
+        out[name][measure].bins = merged.map(function (bin) {
+          return {
+            from: round(bin.from * scale, 1),
+            to: round(bin.to * scale, 1),
+            count: bin.count,
+          };
+        });
+      }
+    }
   }
 
   /*
@@ -552,13 +752,33 @@
     const identify = opts.identify === true;
     const label = labeller(identify);
 
-    const series = opts.series === false ? null :
+    // The published document reduces every cell to at least MIN_CELL
+    // people. The keyholder's own view does not: it is their data, it
+    // never leaves the tab, and reducing it would only hide the thing
+    // they opened the page to see.
+    const floor = identify ? 0 : MIN_CELL;
+
+    let series = opts.series === false ? null :
       weightSeries(entries).map(function (line) {
         return {
           label: label(line.telegram),
           points: identify ? line.points : line.points.map(quantize),
         };
       });
+
+    /*
+     * A series line is one person by construction, so the floor cannot
+     * be applied to it the way it is applied to a cell - every line is
+     * a cell of one. Quantisation makes a shared point ambiguous, which
+     * is what it was built for, but it does nothing about how many
+     * lines there are: four lines on a public chart is four identifiable
+     * trajectories in a group where everybody knows everybody.
+     *
+     * So the panel publishes only when there are enough lines to hide
+     * in, and otherwise not at all. It is already opt-in and off by
+     * default; this is the second condition, not the first.
+     */
+    if (series && !identify && series.length < floor) series = null;
 
     return {
       snapshot: SNAPSHOT_VERSION,
@@ -575,8 +795,8 @@
         ? { heightChanges: heightDisagreements(entries) }
         : null,
       bases: {
-        people: basisOf(latestPerPerson(entries)),
-        entries: basisOf(entries),
+        people: basisOf(latestPerPerson(entries), floor),
+        entries: basisOf(entries, floor),
       },
     };
   }
@@ -605,6 +825,10 @@
     ROLE_VOCABULARY: ROLE_VOCABULARY,
     basisOf: basisOf,
     snapshotOf: snapshotOf,
+    suppressCounts: suppressCounts,
+    suppressBins: suppressBins,
+    MIN_CELL: MIN_CELL,
+    OTHER_LABEL: OTHER_LABEL,
   };
 
   /* ---------------------------------------------------------------- */
@@ -841,6 +1065,24 @@
     const spec = unitsFor(units);
     const which = basis === "entries" ? "entries" : "people";
     const view = snapshot.bases[which];
+
+    /*
+     * A basis is null when the group was too small to publish a
+     * breakdown about. Say so, rather than drawing an empty page or
+     * throwing - this is the ordinary state of a new group, not an
+     * error, and a blank dashboard reads as broken.
+     */
+    if (view === null) {
+      const note = document.createElement("p");
+      note.className = "muted";
+      note.textContent =
+        "There are too few entries here to publish a breakdown without " +
+        "describing individual people. Nothing is shown until there are " +
+        "at least " + MIN_CELL + ".";
+      container.appendChild(note);
+      return;
+    }
+
     const measures = view[spec.name];
 
     const strip = document.createElement("div");

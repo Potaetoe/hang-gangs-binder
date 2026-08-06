@@ -26,6 +26,7 @@ const {
   median, mean, bmi, latestPerPerson, peopleCount,
   histogram, countBy, countRoles, weightSeries, heightDisagreements,
   summarise,
+  suppressCounts, suppressBins, MIN_CELL, OTHER_LABEL,
 } = globalThis.BinderDashboard;
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -415,6 +416,20 @@ await check("a row with no inches reports null rather than inventing them",
  */
 const { snapshotOf, SNAPSHOT_VERSION } = globalThis.BinderDashboard;
 
+/*
+ * Big enough to be publishable, which is a constraint the suppression
+ * floor added and this fixture predates.
+ *
+ * It used to be three people and two series lines. Every check below it
+ * was therefore asserting on a document that can no longer exist: under
+ * the floor, a group that small publishes no breakdown and no series at
+ * all. Growing the fixture is the honest fix - the alternative is
+ * testing the published path with data that would never be published.
+ *
+ * Seven people, six of them repeat submitters, so both the bases and
+ * the series clear MIN_CELL and the quantisation checks below are
+ * exercising the real published document.
+ */
 const CORPUS = REPEATER.concat([
   entry({ id: 10, telegram: "loner", kg: 70, lb: 154.3, cm: 165,
           totalInches: 65, gender: "female", country: "GB", roles: [],
@@ -423,7 +438,17 @@ const CORPUS = REPEATER.concat([
           totalInches: 70.9, submittedAt: "2026-03-01T00:00:00.000Z" }),
   entry({ id: 12, telegram: "shifty", kg: 82, lb: 180.8, cm: 165,
           totalInches: 65, submittedAt: "2026-05-01T00:00:00.000Z" }),
-]);
+]).concat([2, 3, 4, 5].flatMap((n, i) => [
+  entry({ id: 20 + i * 2, telegram: "gainer" + n,
+          kg: 88 + n, lb: (88 + n) * 2.20462, cm: 175, totalInches: 68.9,
+          submittedAt: "2026-02-0" + (n - 1) + "T00:00:00.000Z" }),
+  entry({ id: 21 + i * 2, telegram: "gainer" + n,
+          kg: 94 + n, lb: (94 + n) * 2.20462, cm: 175, totalInches: 68.9,
+          submittedAt: "2026-06-0" + (n - 1) + "T00:00:00.000Z" }),
+]));
+
+const CORPUS_ENTRIES = CORPUS.length;              // 14
+const CORPUS_PEOPLE = peopleCount(CORPUS);         // 7
 
 await check("a published snapshot contains no handle anywhere", () => {
   const text = JSON.stringify(snapshotOf(CORPUS, { identify: false }));
@@ -503,6 +528,24 @@ const QUANT = [
           submittedAt: "2026-02-03T04:02:59.999Z" }),
   entry({ id: 23, telegram: "beta", lb: 250.0, kg: 113.4,
           submittedAt: "2026-09-20T19:30:00.000Z" }),
+  /*
+   * Padding, and nothing more. The suppression floor will not publish a
+   * series with fewer than MIN_CELL lines, so alpha and beta alone now
+   * produce no series at all and every check below would read null.
+   *
+   * These carry deliberately unremarkable values, well away from the
+   * collision alpha and beta are here to create, so they raise the line
+   * count without touching what the quantisation checks are measuring.
+   * Their times and weights are off-midnight and off-bin like the rest,
+   * so they cannot pass a check by accident either.
+   */
+  ...[["gamma", 176.2, 79.9], ["delta", 189.4, 85.9],
+      ["epsilon", 262.6, 119.1]].flatMap(([who, lb, kg], i) => [
+    entry({ id: 30 + i * 2, telegram: who, lb, kg,
+            submittedAt: "2026-03-1" + i + "T11:23:45.678Z" }),
+    entry({ id: 31 + i * 2, telegram: who, lb: lb + 13.7, kg: kg + 6.2,
+            submittedAt: "2026-07-1" + i + "T16:05:33.210Z" }),
+  ]),
 ];
 
 const publishedPoints = (rows) =>
@@ -539,7 +582,11 @@ await check("a published point is ambiguous rather than a unique key", () => {
   const snap = snapshotOf(QUANT, { identify: false });
   const key = (p) => [p.at, p.imperial, p.metric].join("|");
   const first = snap.series.map((line) => key(line.points[0]));
-  return first.length === 2 && first[0] === first[1];
+  // Two distinct lines sharing a first point is the property. Asserting
+  // on the number of lines instead would only be describing the fixture,
+  // and it broke the moment the fixture grew to clear the floor.
+  const shared = first.filter((k, i) => first.indexOf(k) !== i);
+  return snap.series.length >= MIN_CELL && shared.length >= 1;
 });
 
 /* Coarsening the points must not flatten what the chart is for. */
@@ -557,8 +604,10 @@ await check("the shape of a line survives quantization", () => {
  */
 await check("both counting bases are precomputed", () => {
   const snap = snapshotOf(CORPUS, { identify: false });
-  return snap.bases.entries.count === 6 && snap.bases.people.count === 3 &&
-    snap.counts.entries === 6 && snap.counts.people === 3;
+  return snap.bases.entries.count === CORPUS_ENTRIES &&
+    snap.bases.people.count === CORPUS_PEOPLE &&
+    snap.counts.entries === CORPUS_ENTRIES &&
+    snap.counts.people === CORPUS_PEOPLE;
 });
 
 await check("both unit systems are precomputed, in both bases", () => {
@@ -592,13 +641,248 @@ await check("a snapshot says when it was made and which format it is", () => {
     snap.generated === "2026-08-05T12:00:00.000Z";
 });
 
-await check("a snapshot of nothing is still a drawable snapshot", () => {
+/*
+ * An empty corpus used to publish an empty-but-complete document. Under
+ * the floor it publishes no basis at all, which is the same answer for
+ * a better reason: zero people is below MIN_CELL, so there is nothing
+ * that can be said about them. The shape still has to be coherent, and
+ * render() has to draw it rather than dereference the null - that guard
+ * is in dashboard.js and this is the check that it is needed.
+ */
+await check("a snapshot of nothing publishes no basis, coherently", () => {
   const snap = snapshotOf([], { identify: false });
   return snap.counts.entries === 0 && snap.counts.people === 0 &&
-    same(snap.series, []) &&
-    snap.bases.people.imperial.weight.median === null &&
+    snap.series === null &&
+    snap.bases.people === null && snap.bases.entries === null;
+});
+
+/* The keyholder's own empty page is still fully formed - the floor is
+ * off for them, so the shape they draw is the shape they always drew. */
+await check("the keyholder's empty snapshot keeps its full shape", () => {
+  const snap = snapshotOf([], { identify: true });
+  return snap.bases.people.imperial.weight.median === null &&
     same(snap.bases.people.imperial.weight.bins, []);
 });
+
+
+/* ------------------------------------------------------------------ */
+/* The suppression floor on a published snapshot.                      */
+
+/*
+ * These exist because a real reproduction beat the design's reasoning.
+ * A published snapshot of a two-dozen-person group said "exactly one
+ * member is in Japan" and "exactly one member is nonbinary", and
+ * ROLE_VOCABULARY is feeder/feedee/gainer/admirer, so a singleton there
+ * published a named person's kink role to the open web.
+ *
+ * The belief that allowed it was that rows are dangerous and aggregates
+ * are safe. True for large N. At twenty-four an aggregate of one IS a
+ * row, and the whole point of these checks is that they are written
+ * against re-identification rather than against "the floor was applied".
+ */
+
+// A plausible private group: mostly US and GB, a long tail of one.
+const GROUP = [
+  "US", "US", "US", "US", "US", "US", "US", "US", "GB", "GB", "GB", "GB",
+  "GB", "CA", "CA", "CA", "DE", "DE", "MX", "MX", "AU", "BR", "JP", "NO",
+].map((country, i) => ({
+  telegram: "user" + i,
+  country,
+  gender: i === 21 ? "nonbinary" : (i >= 18 && i <= 20 ? "female" : "male"),
+  roles: i === 23 ? ["admirer"] : (i % 3 === 0 ? ["feedee"] : ["gainer"]),
+  kg: 70 + i * 3.7,
+  lb: (70 + i * 3.7) * 2.20462,
+  cm: 165 + (i % 20),
+  totalInches: (165 + (i % 20)) / 2.54,
+  at: new Date(Date.UTC(2026, 7, 1, 12, i)).toISOString(),
+}));
+
+const published = snapshotOf(GROUP, { identify: false }, Date.UTC(2026, 7, 6));
+const priv = snapshotOf(GROUP, { identify: true }, Date.UTC(2026, 7, 6));
+const cells = (rows) => rows.filter((r) => r.count > 0 && r.count < MIN_CELL);
+const total = (rows) => rows.reduce((s, r) => s + r.count, 0);
+
+await check("no published categorical cell describes fewer than MIN_CELL people", () =>
+  ["country", "gender", "roles"].every((k) =>
+    cells(published.bases.people[k]).length === 0));
+
+await check("the singleton country that started this is gone", () =>
+  !published.bases.people.country.some((r) => r.label === "JP"));
+
+await check("the singleton kink role is gone", () =>
+  !published.bases.people.roles.some(
+    (r) => r.label === "admirer" && r.count > 0 && r.count < MIN_CELL));
+
+/*
+ * The attack this has to survive is subtraction, not redaction. A reader
+ * knows the group size, so dropping a cell and leaving the rest to sum
+ * to 23 of 24 discloses the dropped one exactly.
+ */
+/*
+ * A breakdown either publishes and accounts for everybody, or does not
+ * publish. There is no third state, and the third state is the leak:
+ * naming US 8 and GB 5 against a known total of 24 while quietly
+ * dropping Japan discloses Japan by subtraction just as loudly as
+ * printing it.
+ *
+ * gender is the empty case here on purpose. female 3 plus nonbinary 1
+ * is four people, short of the floor, and the only cell left to absorb
+ * is male - which would leave one bucket and no breakdown. So it
+ * publishes nothing, and that is the correct answer rather than a gap.
+ */
+await check("a published breakdown either accounts for everybody or is empty", () =>
+  ["country", "gender", "roles"].every((k) => {
+    const rows = published.bases.people[k];
+    return rows.length === 0 || total(rows) === published.counts.people;
+  }));
+
+await check("country publishes and accounts for the whole group", () =>
+  published.bases.people.country.length > 0 &&
+  total(published.bases.people.country) === published.counts.people);
+
+await check("gender suppresses entirely rather than leaking by subtraction", () =>
+  same(published.bases.people.gender, []));
+
+await check("the Other bucket is itself at or above the floor", () => {
+  const other = published.bases.people.country
+    .find((r) => r.label === OTHER_LABEL);
+  return other !== undefined && other.count >= MIN_CELL;
+});
+
+await check("a zero survives - it describes nobody", () =>
+  published.bases.people.roles.some((r) => r.count === 0));
+
+/*
+ * Bins merge rather than bucket, so the shape and the total survive.
+ *
+ * Gathered rather than listed. The first version of this named
+ * metric.weight and imperial.weight, and a mutation that removed
+ * suppression from the BMI bins survived it untouched - the check was
+ * describing the two places somebody thought of, not the property. Any
+ * bin set added later is covered by this without being remembered.
+ */
+const allBinSets = (basis) => {
+  const out = [{ what: "bmi", bins: basis.bmi.bins }];
+  for (const system of ["metric", "imperial"]) {
+    for (const measure of ["weight", "height"]) {
+      out.push({ what: system + "." + measure, bins: basis[system][measure].bins });
+    }
+  }
+  return out;
+};
+
+await check("no published histogram bin describes fewer than MIN_CELL people", () =>
+  allBinSets(published.bases.people)
+    .every((set) => cells(set.bins).length === 0));
+
+await check("every published bin set still accounts for everybody", () =>
+  allBinSets(published.bases.people)
+    .every((set) => set.bins.length === 0 ||
+      total(set.bins) === published.counts.people));
+
+/*
+ * The two unit systems must publish ONE partition, not two.
+ *
+ * Found by attacking the floor rather than confirming it, and it is the
+ * same shape as the check 5 gap: each rule correctly applied, and the
+ * composition defeating them. Metric bins at 10 kg and imperial bins at
+ * 20 lb do not share boundaries, so both can satisfy the floor while a
+ * reader who overlays them recovers a finer partition. Differencing the
+ * cumulative counts of the two published sets produced sub-floor cells
+ * in 2899 of 3000 random groups.
+ *
+ * Counts must agree elementwise. That is the property - not that the
+ * edges look similar, which they cannot, being different units.
+ */
+await check("both unit systems publish the same partition, not two", () => {
+  for (const measure of ["weight", "height"]) {
+    const m = published.bases.people.metric[measure].bins;
+    const i = published.bases.people.imperial[measure].bins;
+    if (m.length !== i.length) return false;
+    if (m.some((bin, at) => bin.count !== i[at].count)) return false;
+  }
+  return true;
+});
+
+/* The keyholder sees each system binned in its own units, as before -
+ * there is nobody to hide from in their own tab. */
+await check("the keyholder's two unit systems are still independent", () => {
+  const own = snapshotOf(GROUP, { identify: true }, Date.UTC(2026, 7, 6));
+  return own.bases.people.metric.weight.bins.length > 0 &&
+    own.bases.people.imperial.weight.bins.length > 0;
+});
+
+await check("merged bins still account for everyone", () =>
+  total(published.bases.people.metric.weight.bins) === published.counts.people);
+
+await check("merged bins stay contiguous", () => {
+  const bins = published.bases.people.metric.weight.bins;
+  return bins.every((b, i) => i === 0 || b.from === bins[i - 1].to);
+});
+
+/* The keyholder is looking at their own data in their own tab. */
+await check("the keyholder's own view is not reduced", () =>
+  priv.bases.people.country.some((r) => r.label === "JP" && r.count === 1));
+
+/* A series line is one person by construction. */
+await check("a series with too few lines is not published at all", () => {
+  const repeats = GROUP.slice(0, 3).flatMap((e, i) => [
+    e, { ...e, kg: e.kg + 2, at: new Date(Date.UTC(2026, 7, 3, 12, i)).toISOString() },
+  ]);
+  const snap = snapshotOf(repeats, { identify: false }, Date.UTC(2026, 7, 6));
+  return snap.series === null;
+});
+
+/* Below the floor there is no breakdown worth publishing. */
+await check("a group smaller than the floor publishes no breakdown", () => {
+  const tiny = GROUP.slice(0, 3);
+  const snap = snapshotOf(tiny, { identify: false }, Date.UTC(2026, 7, 6));
+  return snap.bases.people === null && snap.bases.entries === null;
+});
+
+/* The pure halves, driven directly. */
+await check("a short bucket absorbs the smallest named cell until it clears", () => {
+  const out = suppressCounts(
+    [{ label: "a", count: 20 }, { label: "b", count: 6 },
+     { label: "c", count: 1 }], MIN_CELL);
+  const other = out.find((r) => r.label === OTHER_LABEL);
+  // c alone is 1, short of 5, so b (6) is absorbed: Other = 7, a stays.
+  return other.count === 7 && out.length === 2 &&
+    out[0].label === "a" && total(out) === 27;
+});
+
+await check("nothing publishes when no cell can ever clear the floor", () =>
+  same(suppressCounts(
+    [{ label: "a", count: 1 }, { label: "b", count: 2 }], MIN_CELL), []));
+
+await check("one named cell beside the bucket is allowed, not suppressed", () => {
+  const out = suppressCounts(
+    [{ label: "a", count: 19 }, { label: "b", count: 3 },
+     { label: "c", count: 2 }], MIN_CELL);
+  return out.length === 2 && out[0].label === "a" &&
+    out[1].count === 5 && total(out) === 24;
+});
+
+await check("counts already above the floor are returned untouched", () => {
+  const rows = [{ label: "a", count: 10 }, { label: "b", count: 8 }];
+  return suppressCounts(rows, MIN_CELL) === rows;
+});
+
+await check("a trailing short bin merges backwards rather than vanishing", () => {
+  const out = suppressBins(
+    [{ from: 0, to: 10, count: 6 }, { from: 10, to: 20, count: 5 },
+     { from: 20, to: 30, count: 1 }], MIN_CELL);
+  return out.length === 2 && out[1].to === 30 && out[1].count === 6 &&
+    total(out) === 12;
+});
+
+await check("bins below the floor in total publish nothing", () =>
+  same(suppressBins([{ from: 0, to: 10, count: 2 }], MIN_CELL), []));
+
+await check("the floor is off for the keyholder, on for everyone else", () =>
+  same(suppressCounts([{ label: "a", count: 1 }], 0),
+       [{ label: "a", count: 1 }]));
+
 
 /* ------------------------------------------------------------------ */
 
