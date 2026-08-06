@@ -1,0 +1,33 @@
+# Editor defaults, so a file does not change shape depending on who opened
+# it. This is the half of consistency that runs before any linter does.
+#
+# Kept deliberately small: it covers whitespace and nothing else. Style
+# that a machine should argue about lives in eslint.config.js and
+# pyproject.toml, where it can fail a build instead of relying on an
+# editor being configured.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# JavaScript, HTML, CSS, JSON, YAML: two spaces, matching what apps/web
+# already is.
+[*.{js,mjs,html,css,json,yml,yaml,svg}]
+indent_size = 2
+
+# Python: four, per PEP 8 and what tools/ already is.
+[*.py]
+indent_size = 4
+
+# Markdown: trailing spaces can be a deliberate line break, so leave them.
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

@@ -1,0 +1,33 @@
+# Line endings, decided once so three agents on three runtimes cannot
+# disagree about them.
+#
+# Why this file exists: on 2026-08-06 AGENTS.md was written with LF into a
+# repository where every other file was CRLF, and a merge-conflict
+# resolution left mixed \r\n\r\n\n inside tools/check_web.py. Neither was
+# visible in a diff. Claude runs on Windows, Codex runs its own bundled
+# runtime, and CI runs ubuntu-latest - three writers, three defaults, and
+# nothing that reconciled them.
+#
+# The repository stores LF. Windows working copies get CRLF on checkout
+# and are converted back on commit, so nobody has to think about it. LF in
+# the repository is what the Linux CI runner reads, which is the half that
+# was silently at risk.
+* text=auto
+
+# Explicit where the format cares, rather than trusting detection.
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.py    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+*.sql   text eol=lf
+*.svg   text eol=lf
+
+# Binary, never touched.
+*.png   binary
+*.jpg   binary
+*.ico   binary
