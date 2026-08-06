@@ -5,14 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
   This is the sign-in page and nothing else. It deliberately does not load
-  crypto.js or hold submission fields: the future Telegram widget is allowed
+  crypto.js or hold submission fields: the Telegram widget is allowed
   only on a page with no plaintext or key to expose.
 
-  The widget markup and its third-party CSP permissions remain blocked until
-  the real bot exists and the exact policy can be observed in a browser.
-  auth.js contains only the common POST/store/redirect half meanwhile.
+  The legacy callback script parses data-onauth with eval, so unsafe-eval is
+  required as well as Telegram's script and frame origins. This remains
+  survivable only because the page is sign-in-only, which checks 11 and 12
+  enforce. The policy is provisional until the widget can be observed on
+  potaetoe.github.io; BotFather's binding prevents localhost from proving the
+  real render or callback.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-eval' https://telegram.org; frame-src https://oauth.telegram.org; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Sign in — Hang Gang's Binder</title>
 <meta name="description" content="Sign in to the Hang Gang's submission portal.">
 <meta name="robots" content="noindex, nofollow">
@@ -71,9 +74,12 @@
     <p class="eyebrow">Telegram</p>
     <h2>Member sign-in</h2>
     <p>
-      The member sign-in control is being connected. Please check back
-      shortly.
+      Use the Telegram account that belongs to this group. Your sign-in is
+      kept only for this browser tab.
     </p>
+    <script async src="https://telegram.org/js/telegram-widget.js?22"
+            data-telegram-login="hanggangbinder_bot" data-size="large"
+            data-onauth="onTelegramAuth(user)"></script>
     <p class="status" id="auth-status" role="status"
        aria-live="polite" hidden></p>
   </div>

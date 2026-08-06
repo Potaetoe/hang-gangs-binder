@@ -237,12 +237,45 @@ The two contracts were committed before the implementation. Against the
 base, the UI suite failed the arity assertion and the publishability check
 reported all five missing routes; both passed after the product change.
 
+### The Telegram widget and the CSP it actually requires — #26 (Codex)
+
+The expected two-origin policy was not enough. On the real local page,
+Telegram's legacy `telegram-widget.js?22` failed before creating its iframe:
+callback mode turns `data-onauth` into a function with `eval`, so the browser
+reported the missing `'unsafe-eval'` directive. Reading the shipped script
+confirmed that behavior rather than inferring it from the design table.
+
+The owner chose the narrow callback policy over redirect mode. Redirect mode
+avoids eval by putting the signed Telegram payload in a URL, which would send
+the numeric id and handle through a GitHub Pages request before the page could
+clear it. The accepted policy instead confines `'unsafe-eval'`, Telegram's
+script origin, and the observed OAuth iframe origin to the sign-in-only page.
+That page holds no form, plaintext, key, or `crypto.js`.
+
+Checks 11 and 12 were committed first. Mutations proved that loading
+`crypto.js` on `index.html`, copying a Telegram origin to `submit.html`, or
+copying `'unsafe-eval'` there each fails independently. The unsafe-eval
+mutation found a bug in its own first regex: a semicolon after the token let
+it pass. The corrected parser treats whitespace and semicolons as CSP token
+boundaries. Check 2 also recognizes the structural BotFather token shape;
+only a fake value was used to arm it.
+
+With the final local policy the 238×40 OAuth iframe has a rendered box and no
+console violation, then says `Bot domain invalid` as expected on localhost.
+The real widget render and callback remain a cutover check on
+`potaetoe.github.io`; source and localhost cannot prove BotFather's binding.
+
+The spike also found the previous preview server still listening on 8124 and
+serving the #25 tree alongside the new process. PID 31516 was terminated only
+after its exact provenance was known. The final preview used one listener,
+and port 8124 was confirmed free afterward.
+
 ### Open threads
 
 **BotFather is done** — bot created, `/setdomain` → `potaetoe.github.io`
-returned success. That was the only owner errand blocking the build
-order, and it is now clear. #26 unblocked and labeled `codex`, behind
-#25 because both touch `index.html`.
+returned success. That was the only owner errand blocking the build order.
+#26 followed #25 from the settled `index.html` and is now implemented for
+review; live rendering and callback stay on the cutover checklist.
 
 Remaining owner items are not blocking: #29 (key fingerprint in the
 group description) and the live `/auth/dev` mint.
