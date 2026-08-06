@@ -14,6 +14,69 @@ form, the Worker and D1, the key generator — is recorded in `DESIGN.md`,
 which carries the reasoning rather than the sequence, and in the git
 history.
 
+## Unreleased — 2026-08-06
+
+On `accounts`, not released. `main` stays at the last complete release.
+
+### Security
+- **A published snapshot no longer describes fewer than five people.**
+  `MIN_CELL = 5`. Before this, a plausible 24-person group published
+  "exactly one member is in Japan" and "exactly one member is
+  nonbinary" — and `ROLE_VOCABULARY` is feeder/feedee/gainer/admirer,
+  so a singleton there published a named person's kink role to the open
+  web.
+- Categorical cells below the floor pool into one `Other (fewer than 5)`
+  bucket, which must clear the floor itself or the breakdown is
+  suppressed entirely.
+- Histograms **merge** adjacent bins rather than bucketing, so the shape
+  and the total survive and the tails simply widen.
+- Published cells still sum to the group. Subtraction is the attack, not
+  redaction: naming US 8 and GB 5 against a known total of 24 while
+  dropping Japan discloses Japan exactly as loudly as printing it.
+- The weight-over-time series publishes only above `MIN_CELL` lines. A
+  line is one person by construction, so the floor cannot apply cell by
+  cell.
+- **Both unit systems now publish one partition.** They bin different
+  stored fields at different widths, 10 kg against 20 lb, so their
+  boundaries did not align — both could satisfy the floor while a reader
+  who overlaid them recovered a finer partition. Differencing the
+  cumulative counts produced sub-floor cells in 2899 of 3000 random
+  groups.
+
+### Fixed
+- `render()` dereferenced the basis immediately, so a suppressed
+  (`null`) basis would have white-screened the public dashboard for any
+  group below the floor.
+
+### Added
+- ESLint and Ruff, registered in **both** `tools/check.py` and the
+  workflow. A linter here is a gate, not a build: `apps/web` still ships
+  verbatim, nothing is rewritten, and formatting is never applied
+  automatically. Ruff immediately found a loop-variable closure in
+  `check_web.py`'s config parser that would have reported the wrong
+  environment.
+- `.gitattributes` and `.editorconfig`, so line endings are a property
+  of the repository rather than of whichever agent committed last.
+- `AGENTS.md` as the single instructions file, absorbing `CODEX.md` and
+  `CODEX_CHECKLIST.md`.
+
+### Changed
+- American spelling throughout — prose, comments and our own
+  identifiers. Platform names keep their own spelling. 114 replacements;
+  `normaliseTelegram` was an exported API and was renamed in both the
+  export and its test.
+- `main` is frozen at `b6a984f` until the accounts redesign is complete.
+  The `deploy` job now names `refs/heads/main` explicitly rather than
+  merely excluding pull requests.
+
+### Notes
+- **The reasoning the suppression floor replaced was nearly right**, which
+  is why it survived: rows are dangerous and aggregates are safe. That
+  holds for large N. At twenty-four an aggregate of one is a row.
+- The unit-system leak was found by **attacking the hazard** rather than
+  confirming the rule, and is the same shape as the earlier `check 5`
+  gap — every rule correctly applied, the composition defeating them.
+
 ## Unreleased
 
 Proposed in [PR #17](https://github.com/Potaetoe/hang-gangs-binder/pull/17),

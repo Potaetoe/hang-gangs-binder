@@ -12,6 +12,98 @@ Starts 2026-08-05.
 
 ---
 
+## 2026-08-06
+
+**Landed on `accounts`:** step 3's session half merged, repo-wide code
+standards, and the suppression floor. `main` untouched at `b6a984f`
+throughout; every CI run shows `deploy: skipped`.
+
+Claude only. Codex's last slice merged and it has not started another.
+
+### Standards, decided and built
+
+The owner chose external linters, a full retrofit, American spelling,
+and a review bar of *attack the named threat*. Three of the four went
+against my recommendation and the fourth was mine.
+
+- **ESLint and Ruff**, registered in *both* suite lists. A linter is a
+  gate, not a build — `apps/web` still ships verbatim, nothing is
+  rewritten, formatting is never automatic. `DESIGN.md`'s no-bundler
+  paragraph is amended rather than contradicted, and the test for future
+  tooling is written down: **does it change what ships, or refuse to
+  ship?**
+- Ruff immediately found a **loop-variable closure** in
+  `check_web.py`'s config parser. It read correctly only while called in
+  the same iteration; stored and called later it would report the last
+  arm's values for every arm — a config check passing while describing
+  the wrong environment.
+- **`.gitattributes`** — and a correction: the repo was never broken.
+  `core.autocrlf=true` is one machine's setting and git storage was
+  uniformly LF all along. The exposure was that nothing in the repo said
+  what the answer should be, so it was whoever committed last.
+- **American spelling**, 114 replacements. Four were identifiers and one
+  crossed a file boundary: `normaliseTelegram` is an exported API.
+
+### The adversarial review
+
+Attacked the whole project on request. Seven findings, all filed as
+slices (#20–#26), and the sharpest ones were against **my own decisions
+from the same day**: 87 npm packages added to a repo that documented a
+rejection of third-party code, and a frozen `main` with no hotfix path.
+
+### The suppression floor — #19, merged as `265dfbe`
+
+The finding that mattered. A published snapshot of a plausible
+24-person group said *"exactly one member is in Japan"* and *"exactly
+one member is nonbinary"*, and `ROLE_VOCABULARY` is
+feeder/feedee/gainer/admirer, so a singleton published a named person's
+kink role to the open web.
+
+**The reasoning it replaced was nearly right**, which is why it lasted:
+rows are dangerous, aggregates are safe. True for large N. **At
+twenty-four an aggregate of one is a row.** Worse, the quantisation work
+had closed a real join key and left confidence *higher* than before.
+
+`MIN_CELL = 5`, with three properties that each took a mistake to find:
+
+- **Subtraction is the attack, not redaction.** Published cells still
+  sum to the group, so nothing is recoverable by arithmetic.
+- **Histograms merge rather than bucket**, so shape and total survive.
+- **One partition, not two.** Found by attacking the hazard rather than
+  confirming the rule, and the same shape as the check 5 gap: the two
+  unit systems bin different fields at different widths, so both could
+  satisfy the floor while an overlay recovered a finer partition.
+  Differencing cumulative counts produced sub-floor cells in **2899 of
+  3000** random groups.
+
+**My first fix for that was worse than the bug** — it took each
+system's edges from the min and max actually in the group, fitting the
+edge to a real person's weight. Edges are converted, never re-derived.
+
+**A false alarm worth keeping:** my initial intersection test measured
+against the raw values, which an attacker does not have. An attack must
+run against the published document alone or it measures the wrong thing.
+
+Also caught: `render()` dereferences the basis immediately, so a
+suppressed `null` basis would have **white-screened the public page**.
+
+Nine mutations. One survived the first pass — BMI bins — because the
+check named the bin sets I thought of rather than gathering them all.
+
+### Learned about the tooling
+
+**`Closes #N` does not fire while `main` is frozen.** GitHub auto-closes
+only on the default branch. #19 merged green and left its issue open.
+Now in `AGENTS.md`; every slice needs closing by hand until cutover.
+
+### Open threads
+
+Unchanged and still the only thing blocking the build order:
+**BotFather**. Everything else is either filed as a slice or waiting on
+an owner decision — see #20–#26.
+
+---
+
 ## 2026-08-05
 
 **Landed:** 17 commits, `main` at `b6a984f`, CI green. Later the same day

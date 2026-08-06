@@ -97,6 +97,14 @@ Both agents write `CHANGELOG.md` and `DAILY_LOG.md`. Append to the
 existing entry for the day rather than starting a parallel one; if both
 agents worked, the day has one entry describing both.
 
+**`Closes #N` does not close anything while `main` is frozen.** GitHub
+auto-closes an issue only when the commit reaches the **default** branch,
+and every slice merges to `accounts`. Write the reference anyway so the
+issue and the commit are linked, then **close the issue by hand** with a
+comment saying what landed and what is left. The suppression-floor slice
+(#19) merged green and left its own issue open, which is how this was
+found.
+
 **This table exists because on 2026-08-05 both agents independently wrote
 a changelog and a daily log for the same day, in the same repository,
 neither aware of the other.** The work was good in both cases and it still
