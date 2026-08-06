@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Everything this page is allowed to load, and nothing else. This is the
+  page that holds plaintext in memory before encrypting it: an injected
+  script that runs before the encryption step sees exactly what the
+  design exists to hide. The policy also enforces the rule DESIGN.md
+  states in prose - no CDNs, no third-party code.
+
+  connect-src names both Workers exactly, and nothing else - not the whole
+  of workers.dev, which would let an injected script post elsewhere on
+  the same host. Change it here and in config.js together; the build
+  fails if they disagree. form-action 'none' is here because this page
+  now has a <form>: the browser refuses a native submit, so a bug that
+  bypasses the submit handler cannot navigate the fields anywhere in the
+  clear. frame-ancestors and report-uri are ignored in a <meta> policy,
+  so they are not written here - a header would be needed, and GitHub
+  Pages does not serve one.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<title>Submit your stats — Hang Gang's Binder</title>
+<meta name="description" content="Submission portal for the Hang Gang. Entries are encrypted in your browser before they are sent.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<!-- Dark's --bg, the default palette. theme.js rewrites this to match
+     whichever palette is actually applied; this is what the browser
+     chrome uses before that runs. -->
+<meta name="theme-color" content="#121212">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<body>
+
+<header class="stack">
+  <!--
+    The same nav on every page, written out rather than built by
+    nav.js - a page whose navigation disappears when a script fails is
+    a page somebody can get stranded on. The cost is five copies, and
+    tools/check_web.py fails the build if they disagree.
+
+    `hidden` on the menu is what keeps it shut before nav.js runs. It
+    only works because theme.css forces [hidden] to display:none
+    !important - .nav-menu sets display:flex, which beats the browser's
+    own rule. See DESIGN.md, "The page shell".
+  -->
+  <nav class="nav" aria-label="Site">
+    <button type="button" class="nav-toggle" id="nav-toggle"
+            aria-expanded="false" aria-controls="nav-menu">
+      <span class="nav-bars" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
+      <span>Menu</span>
+    </button>
+
+    <ul class="nav-menu" id="nav-menu" hidden>
+      <li><a href="submit.html">Submit your stats</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li>
+        <a href="admin.html">Export</a>
+        <span class="nav-note">Keyholder only — needs the key</span>
+      </li>
+    </ul>
+
+    <div class="themes" role="group" aria-label="Colour theme">
+      <button type="button" data-set-theme="pink">Pink</button>
+      <button type="button" data-set-theme="light">Light</button>
+      <button type="button" data-set-theme="dark">Dark</button>
+    </div>
+  </nav>
+
+  <div class="stack-tight">
+    <p class="eyebrow">Submission portal</p>
+    <h1>Submit your stats</h1>
+    <p class="muted">Your session lasts for this tab. Fill the form, done.</p>
+  </div>
+</header>
+
+<main class="stack">
+
+  <div class="card narrow" data-dev-session hidden>
+    <p class="eyebrow">Development session</p>
+    <p class="muted small">
+      Signed in as <strong data-dev-identity></strong> through local
+      development auth. This is not a Telegram sign-in.
+    </p>
+  </div>
+
+  <!--
+    Shown instead of the form when the browser cannot encrypt, or when
+    no key is published. Both are states a submitter can do nothing
+    about, so they are said plainly rather than left as a button that
+    does not work. form.js fills in which one it is.
+  -->
+  <div class="card" id="closed" hidden>
+    <p class="eyebrow">Not open</p>
+    <p data-reason></p>
+  </div>
+
+  <!-- Replaces the form once a submission is stored. -->
+  <div class="card" id="done" hidden>
+    <p class="eyebrow">Received</p>
+    <p><strong>That's it — you're in the binder.</strong></p>
+    <p class="muted small">
+      Your entry was encrypted in this browser before it was sent, so
+      only the keyholder can read it. Your session stays in this tab; close
+      it when you are finished. If your numbers change, just fill the form
+      again — a new entry is added rather than replacing the old one.
+    </p>
+  </div>
+
+  <form class="stack" id="submission" novalidate>
+
+    <div class="card">
+      <div class="field">
+        <label for="telegram">Telegram username</label>
+        <input type="text" id="telegram" data-field="telegram" name="telegram"
+               autocomplete="off" autocapitalize="none" spellcheck="false"
+               inputmode="text" placeholder="@yourname"
+               aria-describedby="telegram-help error-telegram">
+        <p class="hint" id="telegram-help">
+          With or without the @. A link works too.
+        </p>
+        <p class="field-error" id="error-telegram" hidden></p>
+      </div>
+
+      <!--
+        Up here with the identifier rather than down by the button. It is
+        a required field, and the two required things a submitter must
+        actively assert belong together where they will be read, not
+        split across the page with the optional fields in between.
+      -->
+      <div class="field">
+        <label class="choice">
+          <input type="checkbox" id="over18" data-field="over18"
+                 aria-describedby="error-over18">
+          <span>I confirm I am 18 or older.</span>
+        </label>
+        <p class="field-error" id="error-over18" hidden></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <!--
+        Imperial first and checked. It is what most of the people this
+        form is for will type, and a default is not a neutral choice -
+        it is what gets used.
+
+        Changing it is safe here in a way it would not be in most forms,
+        and the reason is worth knowing before anyone changes it back:
+        every row stores both systems plus the `entered` string, so the
+        default decides what someone types, not what is recorded. No
+        stored row means anything different because of this line.
+
+        The markup's own hidden attributes must agree with the checked
+        radio. applyUnits() fixes them at DOMContentLoaded, but the
+        browser paints before that runs, and a form that shows the wrong
+        pair of boxes for a frame is a form somebody starts typing into.
+      -->
+      <fieldset class="field">
+        <legend>Units</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="units" value="imperial" checked>
+            <span>Imperial</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="units" value="metric">
+            <span>Metric</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <!--
+        Two sets of inputs, not one pair that changes label. Switching
+        the toggle must not silently reinterpret 200 lb as 200 kg, and
+        the only way to be sure it cannot is for the other system's
+        numbers to live somewhere else. form.js hides one group.
+      -->
+      <div id="imperial-fields" class="pair">
+        <div class="field">
+          <label for="weight-lb">Weight</label>
+          <div class="row">
+            <input type="text" id="weight-lb" data-field="weight"
+                   inputmode="decimal" autocomplete="off" placeholder="200"
+                   aria-describedby="error-weight">
+            <span class="suffix">lb</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="height-ft">Height</label>
+          <div class="row">
+            <input type="text" id="height-ft" data-field="height"
+                   inputmode="numeric" autocomplete="off" placeholder="5"
+                   aria-label="Height, feet" aria-describedby="error-height">
+            <span class="suffix">ft</span>
+            <input type="text" id="height-in" data-field="height"
+                   inputmode="decimal" autocomplete="off" placeholder="10"
+                   aria-label="Height, inches" aria-describedby="error-height">
+            <span class="suffix">in</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="metric-fields" class="pair" hidden>
+        <div class="field">
+          <label for="weight-kg">Weight</label>
+          <div class="row">
+            <input type="text" id="weight-kg" data-field="weight"
+                   inputmode="decimal" autocomplete="off" placeholder="90"
+                   aria-describedby="error-weight">
+            <span class="suffix">kg</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="height-cm">Height</label>
+          <div class="row">
+            <input type="text" id="height-cm" data-field="height"
+                   inputmode="decimal" autocomplete="off" placeholder="178"
+                   aria-describedby="error-height">
+            <span class="suffix">cm</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="field-error" id="error-weight" hidden></p>
+      <p class="field-error" id="error-height" hidden></p>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">Optional</p>
+
+      <!--
+        The values are unchanged - "roles" in the record, and feeder /
+        feedee / gainer / admirer within it. Only the label a submitter
+        reads has changed, which is exactly the split countries.js was
+        built around: rename what is displayed without touching a single
+        stored row.
+      -->
+      <fieldset class="field">
+        <legend>Feedism Affiliation(s)</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="checkbox" name="roles" value="feeder"><span>Feeder</span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" name="roles" value="feedee"><span>Feedee</span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" name="roles" value="gainer"><span>Gainer</span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" name="roles" value="admirer"><span>Fat admirer</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="pair">
+        <div class="field">
+          <label for="gender">Gender</label>
+          <select id="gender">
+            <option value="">Prefer not to say</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="nonbinary">Non-binary</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="country">Country</label>
+          <!-- Options are added by form.js from countries.js. -->
+          <select id="country">
+            <option value="">Prefer not to say</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <button type="submit" id="submit" class="primary">Submit</button>
+
+      <p class="status" id="status" role="status" aria-live="polite" hidden></p>
+
+      <p class="hint">
+        Everything above is encrypted in this browser before it is sent.
+        The service storing it cannot read it.
+      </p>
+    </div>
+  </form>
+
+  <div class="card">
+    <p class="eyebrow">How your entry is handled</p>
+    <p class="muted small">
+      Your submission is encrypted in your browser before it is sent, so
+      the service storing it cannot read it. Only the person holding the
+      key can — and that key is not kept online. Your username is not
+      stored in the clear anywhere.
+    </p>
+  </div>
+</main>
+
+<!-- The dashboard is linked here as well as in the nav: this link is at
+     the end of the form, which is where somebody who has just submitted
+     actually is.
+
+     admin.html is in the nav now, on instruction, and it costs nothing:
+     the page is public and useless without both secrets - DESIGN.md has
+     said so since the beginning under "Key custody". What it gains is
+     the keyholder not having to remember a URL nothing links to. The
+     menu entry says what it needs, so nobody follows it expecting a
+     page they can use. -->
+<footer>
+  <p>
+    <a href="dashboard.html">See what everyone adds up to</a> ·
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+<script src="config.js"></script>
+<script src="countries.js"></script>
+<script src="crypto.js"></script>
+<script src="ui.js"></script>
+<script src="session.js"></script>
+<script src="form.js"></script>
+<script src="nav.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

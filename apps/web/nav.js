@@ -6,9 +6,9 @@
  * so it is worth saying why: 250 country options would bury the six
  * fields that matter, whereas three links are the page's own structure,
  * and a page whose navigation vanishes when a script fails is a page
- * somebody can get stranded on. The cost is the same list written four
+ * somebody can get stranded on. The cost is the same list written five
  * times, which is real - so tools/check_web.py fails the build if the
- * four ever disagree.
+ * five ever disagree.
  *
  * All wiring, no pure half. There is nothing here to test under Node
  * that reading the file does not already tell you; what could break is
@@ -76,7 +76,7 @@
      * because the same markup is served from a directory root, from
      * /apps/web/ under a locally served repository root, and from
      * GitHub Pages under a project path. An empty segment is the
-     * directory index, which is the form.
+     * directory index, which is the sign-in page.
      */
     const here = location.pathname.split("/").pop() || "index.html";
     Array.prototype.forEach.call(menu.querySelectorAll("a"), function (link) {

@@ -141,6 +141,20 @@ messy as it needs to be.
   where the publishability check can require encryption for anything that
   sends a body.
 
+- `session.test.mjs` exercises `apps/web/session.js` and the common half of
+  `apps/web/auth.js`: tab-scoped storage, expiry, bearer headers, signed-out
+  redirects, the visible development marker, and the POST/store/redirect
+  handoff shared by `/auth/dev` and the future Telegram widget callback.
+
+  ```bash
+  node dev/session.test.mjs
+  ```
+
+  Its development secret is a literal test value consumed by a stub fetch;
+  the suite makes no network request and does not need an owner secret. The
+  successful live `/auth/dev` round trip remains an operational check because
+  the real secret must not enter the repository or a test log.
+
 - `crypto-browser-check.html` — the platform-dependent half of the same
   checks, in a real browser under the published pages' content security
   policy. Node is the same specification, which is why the Node test is
