@@ -1,6 +1,6 @@
 /*
  * Sign-in transport, deliberately separate from the page that will render
- * the Telegram widget. The widget eventually supplies one payload; local
+ * the Telegram widget. The widget supplies one payload; local
  * development supplies another. Downstream of the POST, both responses are
  * the same session and travel through the same code here.
  */
@@ -74,9 +74,8 @@
 
   root.BinderAuth = Object.freeze({ authenticate });
 
-  // This is the callback name the future widget can call. Defining it does
-  // not widen the page or name a bot; the blocked widget markup still owns
-  // that decision.
+  // The widget names this callback in index.html; transport remains here so
+  // the third-party script never owns the endpoint or session handling.
   root.onTelegramAuth = function (payload) {
     // The widget does not await callbacks. authenticate() has already put a
     // refusal on screen, so absorb it here rather than adding an unhandled

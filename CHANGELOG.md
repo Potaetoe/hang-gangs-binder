@@ -92,6 +92,15 @@ On `accounts`, not released. `main` stays at the last complete release.
   satisfies the deploy condition and releases the site.
 
 ### Security
+- The Telegram login widget now lives on the sign-in-only page and names
+  `hanggangbinder_bot`. Browser observation found that legacy callback mode
+  evaluates `data-onauth`, so its provisional CSP confines
+  `https://telegram.org`, `https://oauth.telegram.org`, and `'unsafe-eval'`
+  to `index.html`; no form, plaintext, key, or `crypto.js` is present there.
+- Publishability checks 11 and 12 enforce that separation: the sign-in page
+  cannot load `crypto.js`, and no other page can inherit Telegram or
+  `'unsafe-eval'` CSP permissions. Check 2 also refuses the structural shape
+  of a BotFather token without recording a credential.
 - **A published snapshot no longer describes fewer than five people.**
   `MIN_CELL = 5`. Before this, a plausible 24-person group published
   "exactly one member is in Japan" and "exactly one member is
