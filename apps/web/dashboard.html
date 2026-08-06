@@ -42,7 +42,7 @@
     </button>
 
     <ul class="nav-menu" id="nav-menu" hidden>
-      <li><a href="index.html">Submit your stats</a></li>
+      <li><a href="submit.html">Submit your stats</a></li>
       <li><a href="dashboard.html">Dashboard</a></li>
       <li>
         <a href="admin.html">Export</a>
@@ -68,6 +68,14 @@
 </header>
 
 <main class="stack">
+
+  <div class="card narrow" data-dev-session hidden>
+    <p class="eyebrow">Development session</p>
+    <p class="muted small">
+      Signed in as <strong data-dev-identity></strong> through local
+      development auth. This is not a Telegram sign-in.
+    </p>
+  </div>
 
   <!-- Shown instead of the charts when there is nothing to draw. -->
   <div class="card narrow" id="closed" hidden>
@@ -159,6 +167,7 @@
 <script src="config.js"></script>
 <script src="dashboard.js"></script>
 <script src="ui.js"></script>
+<script src="session.js"></script>
 <script src="public.js"></script>
 <script src="nav.js"></script>
 <script src="theme.js"></script>

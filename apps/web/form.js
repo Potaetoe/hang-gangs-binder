@@ -369,6 +369,18 @@
     const closed = $("closed");
     const done = $("done");
     const config = root.BINDER_CONFIG || {};
+    if (!root.BinderSession) {
+      throw new Error("This page did not load its session handling.");
+    }
+    const member = root.BinderSession.require();
+
+    // session.js starts the redirect before this setup runs. Keep the form
+    // hidden as well: if navigation is delayed, a signed-out visitor must not
+    // get a usable-looking form whose request the Worker will refuse.
+    if (!member) {
+      show(form, false);
+      return;
+    }
 
     /*
      * Two reasons this form cannot run, both checked before it is shown
@@ -505,7 +517,7 @@
     const unitInputs = Array.prototype.slice.call(
       document.querySelectorAll('input[name="units"]'));
 
-    // The fallback matches the radio index.html checks. It should be
+    // The fallback matches the radio submit.html checks. It should be
     // unreachable - a radio group with a `checked` member always has
     // one - but if the markup ever loses that attribute, the page and
     // this function should at least be wrong about the same thing.
@@ -583,7 +595,9 @@
       try {
         const response = await fetch(config.endpoint + "/submit", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: Object.assign(
+            { "Content-Type": "application/json" },
+            root.BinderSession.authorization()),
           body: JSON.stringify({ ciphertext: blob }),
         });
         if (!response.ok) {

@@ -68,12 +68,12 @@ Ten checks:
    kind that catches a swap - the same reason dev/fixture.json is a
    committed constant rather than something the suite regenerates.
 
-6. Nothing *sends* to the network except through crypto.js. This is the
-   design's one rule restated as something a machine can check: the
-   whole point is that plaintext never leaves the browser, so a file
-   that puts a body on the wire but does not encrypt is the shape of
-   the mistake that would break it. Two halves - a script that sends
-   must also name BinderCrypto, and a page loading such a script must
+6. Nothing *sends a submission* to the network except through crypto.js.
+   This is the design's one rule restated as something a machine can check:
+   submission plaintext never leaves the browser. A named exemption records
+   the one other body the site sends: auth.js forwards a sign-in payload and
+   must run on the page that deliberately does not load crypto.js. Every
+   other sender must name BinderCrypto, and every page loading one must
    actually load crypto.js.
 
    Sending, not touching. An earlier version of this check counted any
@@ -129,10 +129,10 @@ Ten checks:
 10. Every page carries the same navigation. The nav links are written
     out in each page's HTML rather than built by nav.js, so that a
     script failure cannot strand somebody on a page with no way off it.
-    The cost of that choice is the same list written four times, and
-    four copies of anything drift - a page added later gets the nav
+    The cost of that choice is the same list written five times, and
+    five copies of anything drift - a page added later gets the nav
     copied from whichever page was open, and a link added to one page
-    is missing from three.
+    is missing from four.
 
     Nothing about that is visible from the page you happen to be
     looking at. This compares the sets and fails if they differ, which
@@ -474,6 +474,14 @@ SENDS_TO_NETWORK = re.compile(
     r"\.open\s*\(\s*[\"'](?:POST|PUT|PATCH)[\"']",
     re.I)
 
+# Check 6 approximates "a submission never leaves before encryption" by
+# recognising scripts that send a request body. Authentication is the one
+# body with a different purpose, and naming it here keeps that exception
+# narrow and reviewable instead of weakening the rule for every sender.
+UNENCRYPTED_SENDERS = {
+    "auth.js": "forwards a sign-in payload and stores the issued session",
+}
+
 
 def strip_js_comments(text):
     """Prose about fetch() is not a fetch()."""
@@ -494,6 +502,8 @@ def unencrypted_paths():
         if not SENDS_TO_NETWORK.search(code):
             continue
         senders.add(name)
+        if name in UNENCRYPTED_SENDERS:
+            continue
         if "BinderCrypto" not in code:
             problems.append((
                 name,
@@ -503,6 +513,8 @@ def unencrypted_paths():
 
     for page, target in html_references():
         if target in senders:
+            if target in UNENCRYPTED_SENDERS:
+                continue
             loaded = {t for p, t in html_references() if p == page}
             if CRYPTO_FILE not in loaded:
                 problems.append((
@@ -510,6 +522,14 @@ def unencrypted_paths():
                     "loads %s, which sends to the endpoint, but does not "
                     "load %s - the encryption would not be there to call"
                     % (target, CRYPTO_FILE)))
+
+    for name in sorted(UNENCRYPTED_SENDERS):
+        if name not in senders:
+            problems.append((
+                name,
+                "is named as an unencrypted sender exemption but does not "
+                "send a body. Remove the stale exemption so a later POST "
+                "cannot inherit it silently"))
 
     return problems
 
@@ -632,7 +652,7 @@ def promoted_country_problems():
     return problems
 
 
-FORM_PAGE = "index.html"
+FORM_PAGE = "submit.html"
 
 # The two halves of the units default, as they appear in the markup.
 UNIT_SYSTEMS = ("imperial", "metric")

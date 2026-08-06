@@ -136,6 +136,13 @@ jobs:
       - name: Check the shared UI wiring
         run: node dev/ui.test.mjs
 
+      # A session is the credential every member page shares. This keeps it
+      # tab-scoped, expires malformed or stale values closed, and proves both
+      # development auth and the future widget callback pass through the same
+      # POST/store/redirect handoff.
+      - name: Check session storage and auth handoff
+        run: node dev/session.test.mjs
+
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
         # the endpoint broken is still a broken release. Since the

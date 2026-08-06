@@ -5,7 +5,7 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of eight remembered ones. It runs the seven
+it?" one command instead of nine remembered ones. It runs the eight
 Node suites in dev/ and the publishability check, and exits non-zero if
 any of them fails:
 
@@ -16,7 +16,8 @@ any of them fails:
     5. xlsx.js writes a ZIP that a reader can actually open
     6. dashboard.js aggregates the rows correctly
     7. ui.js keeps the shared DOM wiring and boot guard intact
-    8. worker.js routes, validates and enforces CORS
+    8. session.js stores a valid tab session and auth.js hands it off
+    9. worker.js routes, validates and enforces CORS
 
 What none of it can see is the Cloudflare dashboard. A Worker with no
 D1 binding, or no EXPORT_TOKEN, passes every check here and fails on
@@ -46,6 +47,7 @@ NODE_SUITES = [
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),
     ("dashboard aggregation", "dev/dashboard.test.mjs"),
     ("shared UI wiring", "dev/ui.test.mjs"),
+    ("session storage + auth handoff", "dev/session.test.mjs"),
     ("worker routing + CORS", "dev/worker.test.mjs"),
 ]
 
@@ -145,7 +147,7 @@ def main():
         print("SKIPPED - node was not found, on PATH or in the usual "
               "install locations. Every suite in dev/ needs it, so this run "
               "is reported as failed rather than passing on one check out "
-              "of seven.\n"
+              "of eight.\n"
               "dev/crypto-browser-check.html covers part of the same ground "
               "in a browser - see dev/README.md - but the CSV, xlsx, "
               "dashboard and worker suites have no browser equivalent.")
