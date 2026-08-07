@@ -77,6 +77,21 @@ keys. Decide which you are doing:
   so the old key gets **archived, not destroyed**, and whoever holds it
   stays able to read the history. Cleanest when the handover is a
   change of custody rather than a change of person.
+
+  **A rotation now has a second step, and it is not optional.** Since
+  2026-08-07 the production key's fingerprint is pinned as a message in
+  the Telegram group, and `submit.html` displays the key it is actually
+  encrypting with so a member can compare the two. The page updates
+  itself — it reads the live value — but **the pinned message does not.**
+
+  Update it in the same sitting as the rotation. A fingerprint that
+  disagrees with the live site is the one alarm this mechanism can
+  raise, and one that disagrees for a benign reason teaches everybody to
+  ignore it. A stale anchor is worse than no anchor, which is why this
+  is here rather than on a checklist somewhere.
+
+  Nothing enforces it. No agent can see a Telegram group, and no check
+  in this repository can reach one.
 - **Inheriting** — they use your key. One key, all rows readable, and
   you should no longer hold a copy.
 

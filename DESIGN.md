@@ -2018,9 +2018,20 @@ site without inheriting the data.
     from this repository, so it stops being a separate trust domain and
     inherits the same compromise.
 
-  The remaining gap is that a member has no easy way to read the *live*
-  key to compare against — today that means view-source on `config.js`.
-  Filed as #36.
+  **Closed 2026-08-07 (#36).** `submit.html` now shows the first 32
+  base64 characters of the key it is about to encrypt with, read from
+  `BINDER_CONFIG.publicKey` at runtime, so the comparison is a glance
+  rather than a view-source. Neither half works alone: the page is not
+  the anchor and an attacker controlling it controls what it displays —
+  but they do not control the pinned message, so a page honestly showing
+  a swapped key still fails the comparison, and a page showing the old
+  fingerprint while encrypting to a new key is what check 5 pins.
+
+  **Its obligation is on the rotation path, not here.** Rotating the
+  production key now silently invalidates the pinned message, and a
+  fingerprint that disagrees with the live site for a benign reason
+  teaches everyone to ignore the one alarm this whole mechanism
+  produces. `HANDOFF.md` carries that, under rotation.
 
   **Narrowed twice on 2026-08-06, and still not closed.** Two things
   changed and the sentence above needs both of them read alongside it.

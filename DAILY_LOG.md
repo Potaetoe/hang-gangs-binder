@@ -34,6 +34,29 @@ squashing collapses the one place a future reader can see that the test
 went in red first. History stays linear; `accounts` still has no merge
 commits.
 
+### Closing the day: two documents that had gone stale under us
+
+`DESIGN.md`'s threat model still said the member had no way to read the
+live key and pointed at #36 as open. #36 merged the same day, so the
+paragraph now records what closed it and — more usefully — **why neither
+half works alone**: the page is not the anchor, an attacker controlling
+it controls what it shows, and the pinned message is what they do not
+control.
+
+`HANDOFF.md` had a real gap rather than a stale sentence, and it was
+created today. It describes key rotation and knew nothing about the
+pinned fingerprint, so **rotating the key would silently invalidate the
+anchor**. The page updates itself because it reads the live value; the
+pinned message does not. A fingerprint disagreeing with the live site is
+the only alarm this mechanism can raise, and one that disagrees for a
+benign reason teaches everybody to ignore it — a stale anchor is worse
+than no anchor.
+
+Deliberately *not* the step 10 rewrite (#11), which is still blocked and
+is a whole slice. This is one obligation added where rotation is already
+discussed, because it became true today and the file that owns the
+subject did not know.
+
 ### #34 — the fix, and the check that could never fail
 
 Claude. Contract first: `dev/check_web.test.py` went in red, raising
