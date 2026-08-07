@@ -104,8 +104,89 @@ check("boot reports an asynchronous setup failure",
 check("ui.js contains no network operation",
   !source.includes("fetch") && !source.includes("POST"));
 
+/*
+ * The key fingerprint - #36.
+ *
+ * #29 published the production key's first 32 base64 characters to the
+ * Telegram group as an out-of-band anchor. An anchor is only half a
+ * mechanism: comparing against it needs the value the browser is actually
+ * about to encrypt with, and that meant view-source on config.js.
+ *
+ * The length is not a free choice. Base64 carries 6 bits a character and
+ * every uncompressed P-256 point starts 0x04, so a short prefix is ground
+ * out by generating keys until one matches. 32 is what was published, and
+ * matching it is the point - a fingerprint the group cannot compare
+ * against is decorative.
+ */
+const KEY = "BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD1d5PhnxXT9kD"
+  + "917khzW07MUT2yAX18Wc7rD4K0BTSQ8=";
+const OTHER = "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMPaE//xgG5GdS5tH8Atk24Mqkw"
+  + "NaVx5OMST/OsDWMJ5l4fSsvlFKZKyrc=";
+
+const slot = { textContent: "", hidden: true, className: "" };
+UI.showFingerprint(slot, KEY);
+check("the rendered fingerprint is the key's first 32 characters",
+  slot.textContent === KEY.slice(0, 32));
+check("a rendered fingerprint is 32 characters, the length #29 published",
+  slot.textContent.length === 32);
+check("rendering a fingerprint reveals its element",
+  slot.hidden === false);
+
+/*
+ * The assertion that carries this slice. A hard-coded fingerprint - the
+ * failure mode #36 names - satisfies every check above forever, and only
+ * this one can tell the difference.
+ */
+const first = slot.textContent;
+UI.showFingerprint(slot, OTHER);
+check("changing the configured key changes what is rendered",
+  slot.textContent === OTHER.slice(0, 32) && slot.textContent !== first);
+
+/*
+ * An unknown hostname gets no key at all - config.js has no production
+ * fallback, deliberately. Showing "null" or an empty box beside the words
+ * "compare this" is worse than showing nothing, because it invites a
+ * comparison against a value that does not exist.
+ */
+UI.showFingerprint(slot, null);
+check("no configured key renders nothing rather than an empty anchor",
+  slot.textContent === "" && slot.hidden === true);
+UI.showFingerprint(null, KEY);
+check("showFingerprint tolerates an optional missing element", true);
+
+check("showFingerprint truncates rather than hashing",
+  !source.includes("crypto") && !source.includes("digest"));
+
+const submitSource = await readFile(
+  new URL("../apps/web/submit.html", import.meta.url), "utf8");
+const signInSource = await readFile(
+  new URL("../apps/web/index.html", import.meta.url), "utf8");
+const formSource = await readFile(
+  new URL("../apps/web/form.js", import.meta.url), "utf8");
+
+check("the submission page carries a slot for the fingerprint",
+  /id="key-fingerprint"/.test(submitSource));
+check("the submission page says what to compare the fingerprint against",
+  /pinned/i.test(submitSource) && /group/i.test(submitSource));
+check("the page is filled from the configured key at runtime",
+  /showFingerprint\(/.test(formSource)
+  && /publicKey/.test(formSource));
+
+/*
+ * The hazard the issue names, and the reason it is asserted here rather
+ * than in check_web.py: every pattern in that file's KEY_PATTERNS targets
+ * a *private* key shape, so a public key pasted into a page passes it.
+ * #34 holds check_web.py, so this guards the same thing from the suite
+ * until an arm can be added there.
+ */
+const BASE64_KEY = /["'][A-Za-z0-9+/]{60,}={0,2}["']/;
+check("the submission page hard-codes no key of its own",
+  !BASE64_KEY.test(submitSource));
+check("the sign-in page does not gain the fingerprint",
+  !/key-fingerprint/.test(signInSource));
+
 if (failures) {
   console.error(`\nui.js FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nui.js OK - 16 checks");
+console.log("\nui.js OK - 28 checks");
