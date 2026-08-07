@@ -122,6 +122,44 @@ where it was, and a new `accounts` tracking `origin/accounts` was checked
 out beside it. Re-syncing before *every* delegation is now the rule rather
 than a thing to remember.
 
+### The key fingerprint is published — #29
+
+Pinned in the group by the owner. **Attested, not verified**: no agent
+here can see a Telegram group, and that distinction is the point of the
+verification rule rather than pedantry about it.
+
+Before posting, the key was compared across four sources — the live
+site, `main`, `accounts`, and the string quoted in the issue — and all
+four were byte-identical, decoding to a well-formed 65-byte uncompressed
+P-256 point. That comparison is a small version of the attack the issue
+exists to detect, so running it was worth more than a formality.
+
+**The recommendation changed while doing it.** The issue had said group
+description; a pinned message is strictly better on the property that
+matters. A description edited quietly by whoever compromised the account
+is indistinguishable from one never touched, while an edited message
+carries an "edited" marker and pinning posts a service message.
+Visibility was the lesser reason.
+
+**A correction to the issue's own advice.** It said "a short prefix is
+enough" with no floor. Base64 carries 6 bits a character and the leading
+~8 bits are structural — every uncompressed P-256 key starts `0x04` — so
+an 8-character prefix is ~40 effective bits and grindable in about a day
+at 10M keygens/sec. The attack is not breaking the key; it is generating
+keys until one matches the published prefix. 16 characters is safe with
+margin; 32 was published.
+
+Two structural alternatives were ruled out and written into `DESIGN.md`
+so they are not re-proposed: the Worker cannot verify which key a
+submission used, because the ciphertext carries an *ephemeral* public
+key rather than the recipient's; and the Worker cannot be the anchor
+either, because after cutover it deploys from this repository and stops
+being a separate trust domain.
+
+Filed #36 for the remaining gap — a member has no easy way to read the
+live key to compare against, so the anchor exists without being usable
+by anyone who will not view-source `config.js`.
+
 ### Step 2 — production cleared, and a check that could not run
 
 The owner cleared `submissions`: 1 row, dated 2026-08-05, gone, with

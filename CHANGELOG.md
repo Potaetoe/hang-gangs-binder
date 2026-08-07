@@ -18,6 +18,20 @@ history.
 
 On `accounts`, not released. `main` stays at the last complete release.
 
+### Security
+- **The production key fingerprint is published out-of-band** — a pinned
+  message in the Telegram group, 2026-08-07, by the owner. Reported
+  rather than verified here; no agent can see a Telegram group. It is
+  the only mitigation for the repository-integrity threat that does not
+  depend on trusting this repository, and it is a **detection** measure,
+  not a preventative one. Pinned rather than placed in the group
+  description, because an edited message carries an "edited" marker
+  while a quietly edited description leaves no trace. Verified before
+  posting that the live site, `main`, `accounts` and the issue all
+  carried a byte-identical key.
+- A member still has no easy way to read the *live* key to compare
+  against — today that means view-source on `config.js`. Filed as #36.
+
 ### Data
 - **Production `submissions` was cleared** — build step 2, by the owner,
   1 row → 0, with `sqlite_sequence` reset so the next real submission is

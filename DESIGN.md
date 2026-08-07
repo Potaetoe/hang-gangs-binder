@@ -1985,8 +1985,42 @@ site without inheriting the data.
   valid P-256 point — and nothing in a submitter's browser could tell.
   This is unfixable in a static site with no way to pin a key, and it
   was missing from a section titled "honestly stated" until 2026-08-05.
-  The cheap mitigation is out-of-band: publish the key's fingerprint in
-  the group description, so that somebody who wants to check, can.
+  The cheap mitigation is out-of-band: publish the key's fingerprint
+  where the repository cannot reach, so that somebody who wants to
+  check, can.
+
+  **Done 2026-08-07 — a pinned message in the group**, reported by the
+  owner; no agent can see a Telegram group, so this is attested rather
+  than verified here. A pinned message rather than the group
+  description, which is what this paragraph said until today: a
+  description edited quietly by whoever compromised the account looks
+  identical to one never touched, whereas an edited message carries an
+  "edited" marker and pinning posts a service message. Visibility was
+  the lesser reason and tamper-evidence the real one.
+
+  What the fingerprint buys is narrower than it sounds, and worth
+  stating so nobody banks on it: almost nobody will compare it. **One
+  person checking is enough**, it timestamps what the key was so a later
+  dispute is resolvable rather than a matter of memory, and it forces an
+  attacker to compromise Telegram *as well as* GitHub. That last is the
+  actual deterrent.
+
+  Two structural alternatives were considered and both fail, recorded
+  here so they are not re-proposed:
+
+  - **The Worker cannot verify the key.** The ciphertext carries an
+    *ephemeral* public key, not the recipient's, so nothing server-side
+    can tell which key a submission was encrypted to. Having the page
+    report the key alongside the submission defeats itself — an attacker
+    controlling the page sends the right fingerprint and encrypts to
+    their own key.
+  - **The Worker cannot be the anchor either.** After cutover it deploys
+    from this repository, so it stops being a separate trust domain and
+    inherits the same compromise.
+
+  The remaining gap is that a member has no easy way to read the *live*
+  key to compare against — today that means view-source on `config.js`.
+  Filed as #36.
 
   **Narrowed twice on 2026-08-06, and still not closed.** Two things
   changed and the sentence above needs both of them read alongside it.
@@ -2024,7 +2058,11 @@ site without inheriting the data.
   and makes the change visible in a reviewable diff; it does not make it
   impossible, and a static site still has no way for a submitter's
   browser to pin a key. The out-of-band fingerprint remains the only
-  thing that would let a reader detect it, and it is still not published.
+  thing that lets a reader detect it, and **as of 2026-08-07 it is
+  published** — pinned in the group. Detection is now possible by
+  somebody other than the person who would have made the change, which
+  is the property nothing else here has. Nothing about it is
+  preventative.
 - **The keyholder's own machine, while the key is in use.** `admin.html`
   holds the entire corpus in the clear for as long as the tab is open.
 - **A member lying, including about their handle.** Sign-in verifies who
