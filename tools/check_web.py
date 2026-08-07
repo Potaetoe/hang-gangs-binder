@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Twelve checks:
+Thirteen checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -147,10 +147,33 @@ Twelve checks:
     and the private key off that page limits what the trusted widget can
     reach. The page still holds the session after sign-in.
 
-12. The sign-in page's script-src and frame-src must be exactly the observed
-    callback policy, and no other page may name telegram.org or unsafe-eval
-    in its CSP. This catches both a widened exception on the page that holds
-    it and a copied head quietly spreading it to a plaintext page.
+12. No page except the sign-in page may name telegram.org or unsafe-eval
+    in its CSP. This catches a copied head quietly spreading the exception
+    to a page that holds plaintext.
+
+13. Every page's *whole* CSP is the pinned one - every directive, every
+    source, on every page. Checks 11 and 12 pinned two directives on one
+    page, which left default-src alone, and default-src governs every
+    directive a page does not set explicitly - object-src among them. So
+    a page could widen everything it had not named and nothing here
+    would say so.
+
+    The pin is a baseline plus declared deviations, each deviation
+    carrying its reason, and the pages it covers are listed rather than
+    read off the directory. Both of those are load-bearing. A table
+    derived from what exists cannot fail when a page is added, and
+    adding a page is exactly when somebody copies a head from whichever
+    page they had open.
+
+    All of this runs through one parser, and the parser reports rather
+    than skips. That is the actual lesson of #34: the old searches
+    matched http-equiv and then content within a tag, HTML does not care
+    about attribute order, and a miss made every CSP check silently pass
+    while check 3 still saw the marker. Two hazards were produced with
+    the gate green. Every mutation ever written against these rules had
+    passed, because a mutation exercises the rule and never the parser
+    that has to find the policy first - which is why check_web.py now
+    has a suite of its own in dev/check_web.test.py.
 """
 
 import base64
@@ -250,6 +273,16 @@ PRODUCTION_HOST = "potaetoe.github.io"
 PRODUCTION_KEY = ("BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD"
                   "1d5PhnxXT9kD917khzW07MUT2yAX18Wc7rD4K0BTSQ8=")
 PRODUCTION_ENDPOINT = "https://hgbinderworker.sorcererbiggz.workers.dev"
+
+# Both origins appear in every interactive page's connect-src, so the CSP
+# pin below needs to name them. Written out here rather than read from
+# config.js on purpose: csp_gaps() already checks the other direction -
+# that every endpoint config.js names is reachable under connect-src - and
+# deriving the pin from the same file would make both checks agree with
+# whatever config.js happens to say. One reconciles, the other pins, and
+# a pin that reads its expectation from the thing it guards is check 5's
+# mistake again.
+DEVELOPMENT_ENDPOINT = "https://hgbinderworker-dev.sorcererbiggz.workers.dev"
 
 
 def crossed_wire_problems(environments):
@@ -428,14 +461,17 @@ def csp_gaps(origins):
     gaps = []
     for name in sorted(users):
         text = open(os.path.join(WEB, name), encoding="utf-8").read()
-        text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
-        policy = re.search(
-            r'http-equiv="Content-Security-Policy"[^>]*content="([^"]*)"',
-            text, re.I)
-        if not policy:
+        # Through the shared parser since #34. This function carried the
+        # original `if not policy: continue`, which is where checks 11
+        # and 12 inherited it from - an unreadable policy silently became
+        # "no gaps found", so a page could have had every endpoint
+        # blocked and this would have said nothing.
+        directives, problem = parse_csp(text)
+        if problem:
+            continue  # csp_policy_problems() reports it, and once is enough
+        if directives is None:
             continue  # already reported by the shared-head check
-        connect = re.search(r"connect-src ([^;\"]*)", policy.group(1))
-        allowed = connect.group(1).split() if connect else []
+        allowed = directives.get("connect-src", [])
         for origin in origins:
             if origin not in allowed:
                 gaps.append((name, origin))
@@ -478,16 +514,172 @@ def public_key_problem(value):
 
 CRYPTO_FILE = "crypto.js"
 SIGN_IN_PAGE = "index.html"
-TELEGRAM_CSP_HOST = re.compile(r"\btelegram\.org\b", re.I)
-UNSAFE_EVAL_CSP = re.compile(r"(?:^|[\s;])'unsafe-eval'(?=[\s;]|$)", re.I)
-SIGN_IN_CSP_SOURCES = {
-    "script-src": frozenset({
-        "'self'",
-        "'unsafe-eval'",
-        "https://telegram.org",
-    }),
-    "frame-src": frozenset({"https://oauth.telegram.org"}),
+
+# The CSP meta tag, found by its marker and then read for its content -
+# in either order, because HTML does not care and the previous spelling
+# of this did.
+#
+# It wanted http-equiv and then content inside one tag. Reversing the two
+# attributes made the search return None, at which point every CSP check
+# skipped in silence while check 3 still passed on the http-equiv
+# substring alone. Both hazards were produced with the gate green. See
+# #34; the tests are in dev/check_web.test.py.
+CSP_MARKER = re.compile(
+    r'<meta\b[^>]*http-equiv\s*=\s*"Content-Security-Policy"[^>]*>', re.I)
+CSP_CONTENT = re.compile(r'\bcontent\s*=\s*"([^"]*)"', re.I)
+
+
+def parse_csp(text):
+    """(directives, problem) for the first CSP meta in a document.
+
+    directives maps a lowercased directive name to its source list, in
+    the order written. Both halves of the return can be None: no CSP at
+    all is *absence*, which is check 3's to report, not this function's.
+
+    A problem is returned when the marker is there and the policy cannot
+    be read from it. That distinction is the whole point. The bug this
+    replaces did not misread a policy - it failed to find one and said
+    nothing, and a checker that reports "no problem found" when it could
+    not read is worse than one that has no opinion, because the first is
+    believed.
+    """
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+    marker = CSP_MARKER.search(text)
+    if not marker:
+        return None, None
+
+    content = CSP_CONTENT.search(marker.group(0))
+    if not content:
+        return None, ("carries a Content-Security-Policy meta with no "
+                      "readable content attribute")
+    if not content.group(1).strip():
+        return None, "carries an empty Content-Security-Policy"
+
+    directives = {}
+    for raw in content.group(1).split(";"):
+        tokens = raw.split()
+        if not tokens:
+            continue
+        name = tokens[0].lower()
+        if name in directives:
+            return None, ("repeats the %s directive; a reader cannot tell "
+                          "which one is meant" % name)
+        directives[name] = tokens[1:]
+    if not directives:
+        return None, "carries a Content-Security-Policy with no directives"
+    return directives, None
+
+
+# Every page's whole policy, pinned from outside the page.
+#
+# This is the corollary DESIGN.md draws from check 5, applied to the CSP:
+# a check computed entirely from the file it guards cannot detect that
+# the file's contents were rearranged. Checks 11 and 12 pinned two
+# directives on one page, which left default-src - and therefore every
+# directive a page does not set explicitly, object-src among them - free
+# to widen with nothing to say so.
+#
+# Written as a baseline plus declared deviations rather than five copies,
+# because the interesting fact is *which pages differ and why*, and five
+# copies bury it in duplication somebody will later "tidy".
+CSP_BASELINE = {
+    "default-src": ["'none'"],
+    "script-src": ["'self'"],
+    "style-src": ["'self'"],
+    "img-src": ["'self'", "data:"],
+    "connect-src": ["'self'", PRODUCTION_ENDPOINT, DEVELOPMENT_ENDPOINT],
+    "base-uri": ["'none'"],
+    "form-action": ["'none'"],
 }
+
+# Each deviation carries its reason. A page that differs for a reason
+# nobody wrote down is the thing this table exists to make impossible.
+CSP_DEVIATIONS = {
+    # Static text and a link home. It talks to no Worker, so naming one
+    # would be a permission granted for nothing.
+    "404.html": {"connect-src": ["'self'"]},
+
+    # The sign-in page, and the only page permitted third-party script.
+    # Telegram's legacy widget builds its data-onauth handler with eval,
+    # so 'unsafe-eval' is required alongside the script and frame
+    # origins. Survivable only because it is confined: no form, no
+    # plaintext, no key, and check 11 keeps crypto.js off it.
+    #
+    # Provisional. BotFather binds the widget to a domain, so localhost
+    # cannot prove the real render or callback - the first sign-in on
+    # potaetoe.github.io is the observation, and if the policy differs
+    # this table changes with it. Pinned so that is a decision.
+    "index.html": {
+        "script-src": ["'self'", "'unsafe-eval'", "https://telegram.org"],
+        "frame-src": ["https://oauth.telegram.org"],
+    },
+}
+
+
+# The pages this table covers, written out rather than read off the
+# directory.
+#
+# Deriving it from html_pages() was the first version and it was wrong:
+# a new page would have been handed the baseline automatically, so the
+# check "every page has a pinned policy" could never fail. That is an
+# armed-looking check that is inert, which this repository holds to be
+# worse than no check at all.
+#
+# Listing them means adding a page fails the gate until somebody says
+# what its policy is - and adding a page is exactly when somebody copies
+# a head from whichever page they had open, which is the hazard
+# DESIGN.md names when it argues for check 12.
+CSP_PAGES = frozenset({
+    "404.html",
+    "admin.html",
+    "dashboard.html",
+    "index.html",
+    "submit.html",
+})
+
+EXPECTED_CSP = {
+    name: dict(CSP_BASELINE, **CSP_DEVIATIONS.get(name, {}))
+    for name in sorted(CSP_PAGES)
+}
+
+
+def csp_policy_problems():
+    """(page, problem) where a shipped policy is not the pinned one."""
+    problems = []
+    pages = set(html_pages())
+
+    for name in sorted(pages - CSP_PAGES):
+        problems.append((name, "has no pinned Content-Security-Policy. Add "
+                               "it to CSP_PAGES, with a deviation and a "
+                               "reason if it does not take the baseline"))
+    for name in sorted(CSP_PAGES - pages):
+        problems.append((name, "is pinned in CSP_PAGES but does not exist"))
+
+    for name in sorted(pages & CSP_PAGES):
+        text = open(os.path.join(WEB, name), encoding="utf-8").read()
+        directives, problem = parse_csp(text)
+        if problem:
+            problems.append((name, problem))
+            continue
+        if directives is None:
+            continue  # no policy at all is check 3's to report
+
+        expected = EXPECTED_CSP[name]
+        for directive in sorted(set(expected) | set(directives)):
+            want = expected.get(directive)
+            got = directives.get(directive)
+            if want is None:
+                problems.append((name, "sets %s, which is not pinned for "
+                                       "this page" % directive))
+            elif got is None:
+                problems.append((name, "is missing the %s directive" %
+                                 directive))
+            elif got != want:
+                problems.append((name, "%s is %r; pinned as %r"
+                                 % (directive, " ".join(got),
+                                    " ".join(want))))
+    return problems
 
 # What "this file puts something on the wire" looks like in a directory
 # with no build step and no framework. A bare fetch() is a read and is
@@ -564,7 +756,20 @@ def unencrypted_paths():
 
 
 def sign_in_boundary_problems():
-    """(page, problem) when the sign-in-only boundary widens or spreads."""
+    """(page, problem) when the sign-in-only boundary widens or spreads.
+
+    Check 11 - crypto.js must not be on the sign-in page - plus the
+    Telegram-specific half of check 12. The exact-token pinning that used
+    to live here is now csp_policy_problems(), which pins every directive
+    on every page rather than two on one.
+
+    The Telegram spread check stays even though a whole-policy pin
+    subsumes it, because it says *why* in its message. "submit.html names
+    telegram.org even though only index.html is allowed the callback
+    exception" tells a reader what rule they broke; "script-src is
+    'self' https://telegram.org; pinned as 'self'" tells them a value
+    disagrees. Both are true and only one is an explanation.
+    """
     problems = []
     sign_in_refs = {
         target for page, target in html_references()
@@ -578,67 +783,27 @@ def sign_in_boundary_problems():
             "the private key off this page; it already holds the session "
             "after sign-in"))
 
-    sign_in_text = re.sub(
-        r"<!--.*?-->", "",
-        open(os.path.join(WEB, SIGN_IN_PAGE), encoding="utf-8").read(),
-        flags=re.S)
-    sign_in_policy = re.search(
-        r'http-equiv="Content-Security-Policy"[^>]*content="([^"]*)"',
-        sign_in_text, re.I)
-    if sign_in_policy:
-        directives = {}
-        for raw_directive in sign_in_policy.group(1).split(";"):
-            tokens = raw_directive.split()
-            if not tokens:
-                continue
-            directives.setdefault(tokens[0].lower(), []).append(tokens[1:])
-
-        for directive, expected in SIGN_IN_CSP_SOURCES.items():
-            occurrences = directives.get(directive, [])
-            if len(occurrences) != 1:
-                problems.append((
-                    SIGN_IN_PAGE,
-                    "must carry exactly one %s directive for the Telegram "
-                    "callback boundary; found %d"
-                    % (directive, len(occurrences))))
-                continue
-
-            actual_tokens = occurrences[0]
-            actual = frozenset(actual_tokens)
-            if actual == expected and len(actual_tokens) == len(actual):
-                continue
-
-            missing = sorted(expected - actual)
-            unexpected = sorted(actual - expected)
-            details = []
-            if missing:
-                details.append("missing %s" % ", ".join(missing))
-            if unexpected:
-                details.append("unexpected %s" % ", ".join(unexpected))
-            if len(actual_tokens) != len(actual):
-                details.append("duplicate source tokens")
-            problems.append((
-                SIGN_IN_PAGE,
-                "%s must name exactly %s; %s"
-                % (directive, ", ".join(sorted(expected)),
-                   "; ".join(details))))
-
     for name in html_pages():
         if name == SIGN_IN_PAGE:
             continue
-        text = re.sub(
-            r"<!--.*?-->", "",
-            open(os.path.join(WEB, name), encoding="utf-8").read(),
-            flags=re.S)
-        policy = re.search(
-            r'http-equiv="Content-Security-Policy"[^>]*content="([^"]*)"',
-            text, re.I)
-        if not policy:
+        text = open(os.path.join(WEB, name), encoding="utf-8").read()
+        directives, problem = parse_csp(text)
+        if problem:
+            continue  # csp_policy_problems() reports it, and once is enough
+        if directives is None:
             continue  # the missing-policy case is check 3's to report
+
+        # Tokens, not a regex over the raw policy. The policy is already
+        # parsed by the time we get here, and matching tokens removes the
+        # delimiter question entirely - the first version of this check
+        # had a regex that a trailing semicolon slipped past, which is
+        # the kind of bug a source list cannot have.
+        sources = [source.lower()
+                   for values in directives.values() for source in values]
         permissions = []
-        if TELEGRAM_CSP_HOST.search(policy.group(1)):
+        if any("telegram.org" in source for source in sources):
             permissions.append("telegram.org")
-        if UNSAFE_EVAL_CSP.search(policy.group(1)):
+        if "'unsafe-eval'" in sources:
             permissions.append("'unsafe-eval'")
         if permissions:
             problems.append((
@@ -907,6 +1072,9 @@ def main():
             "whole design - see DESIGN.md." % (name, problem))
 
     for page, problem in sign_in_boundary_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for page, problem in csp_policy_problems():
         problems.append("%s %s." % (page, problem))
 
     for rel, description in key_shaped_content():
