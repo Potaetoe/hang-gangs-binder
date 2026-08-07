@@ -18,6 +18,34 @@ history.
 
 On `accounts`, not released. `main` stays at the last complete release.
 
+### Changed
+- **The Telegram handle on a submission comes from the verified session,
+  and `submit.html` no longer has a field to type one into.** Build step
+  4. `buildRecord` takes the session username as a mandatory third
+  argument and throws without it; `readForm` supplies it from
+  `BinderSession.read()`. Before this, a signed-in member could type
+  somebody else's handle and have it stored — the row's `account_id`
+  would have been right and the handle beside it a lie, which is the
+  divergence accounts exists to remove. The field is deleted rather than
+  hidden or made readonly, so there is nothing left for sign-out to
+  clear.
+- A session handle is checked for presence only, not against this page's
+  5–32 character `HANDLE` rule. The Worker already refuses a Telegram
+  account with no username, and past that the identity provider's rule
+  governs rather than ours.
+
+### Notes
+- `server/worker.js` was not touched. `POST /submit` was already gated on
+  a member session and already wrote `account_id` from that session
+  rather than from the body; this step confirmed that rather than
+  assuming it. **The live half of step 4 is still unproven** — a real row
+  arriving with an `account_id`, and a signed-out `curl` refused, need
+  the accounts Worker deployed, which happens at cutover with step 2.
+- `validate()`'s one-argument path still applies `HANDLE` to
+  `input.telegram`, and no page reaches it now, so three checks in
+  `dev/form.test.mjs` exercise code the product never takes. Left
+  visible for a later cleanup rather than folded into this slice.
+
 ### Documentation
 - **`AGENTS.md` describes Codex running as an MCP tool**, which is a
   second way of working that the file did not previously distinguish from
