@@ -16,7 +16,48 @@ Starts 2026-08-05.
 
 **Landed on `accounts`:** the MCP-delegation rules in `AGENTS.md`. `main`
 untouched. Step 3b is still open on #26 and PR #32 still holds
-`index.html`, `auth.js` and `check_web.py`.
+`index.html`, `auth.js` and `check_web.py`. Step 4 is open on a branch,
+built by Codex as an MCP tool and published by Claude — the first slice
+run under that arrangement.
+
+### Step 4, and the first delegation under the new rules
+
+Codex wrote it in its clone; Claude posted the claim, reviewed, ran the
+gate and the browser check, and pushed. Two rounds, and the review found
+something in each.
+
+**The first round's contract had a hole of exactly the shape the review
+bar describes.** Two checks pinned the new three-argument `buildRecord`
+while every pre-existing check still called it with two, so an
+implementation making the third argument optional — falling back to
+`input.telegram` when absent — would have satisfied every new criterion
+and every old one and handed the typed handle straight back into the
+record, gate green. That is check 5's failure again: each bullet correct,
+each armed, the hazard untouched. A third check now requires the throw,
+and thirteen call sites were updated to pass a session username. Twelve
+were unaffected in meaning; "the handle is stored normalized" genuinely
+depended on `input.telegram` reaching the record and now makes the same
+claim about the session argument.
+
+**The second round stopped at a file boundary, correctly.**
+`dev/admin.test.mjs` calls `buildRecord` as a pipeline check and was
+outside the claimed file list. The list was wrong, not the slice — the
+claim was amended on the issue rather than the boundary crossed.
+
+### Two operational findings about Codex-as-MCP
+
+**Codex cannot run `tools/check.py`.** The sandbox refused to execute a
+Python interpreter outside the workspace — `Access is denied`, from the
+restricted token, not a missing install. Node and eslint run fine. So a
+Codex report of "suites green" covers the Node suites and the linters
+and never checks 1 or 3, and **running the gate is Claude's job** under
+this arrangement. Working around it would be defeating a boundary, not
+fixing a fault.
+
+**The clone had no `node_modules` at all**, so checks 2 and 3 had never
+run there. Installed with `--ignore-scripts`, per the reasoning in #20.
+
+### The Codex clone had drifted, silently
 
 ### Codex as an MCP tool, and who pushes
 
