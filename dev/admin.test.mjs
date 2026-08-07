@@ -248,7 +248,7 @@ await check("a submitted record survives encryption and reaches the CSV",
       roles: ["feedee", "gainer"],
       country: "US",
       over18: true,
-    }, Date.UTC(2026, 7, 4, 12, 0, 0));
+    }, Date.UTC(2026, 7, 4, 12, 0, 0), "@SomeHandle");
 
     const blob = await globalThis.BinderCrypto.encrypt(
       record, keyFile.publicKey);

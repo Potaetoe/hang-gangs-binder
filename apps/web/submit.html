@@ -116,23 +116,10 @@
   <form class="stack" id="submission" novalidate>
 
     <div class="card">
-      <div class="field">
-        <label for="telegram">Telegram username</label>
-        <input type="text" id="telegram" data-field="telegram" name="telegram"
-               autocomplete="off" autocapitalize="none" spellcheck="false"
-               inputmode="text" placeholder="@yourname"
-               aria-describedby="telegram-help error-telegram">
-        <p class="hint" id="telegram-help">
-          With or without the @. A link works too.
-        </p>
-        <p class="field-error" id="error-telegram" hidden></p>
-      </div>
-
       <!--
-        Up here with the identifier rather than down by the button. It is
-        a required field, and the two required things a submitter must
-        actively assert belong together where they will be read, not
-        split across the page with the optional fields in between.
+        The verified session supplies the identifier now. This is the one
+        required assertion the member still makes in the form, so it stays
+        before the optional fields rather than being buried by the button.
       -->
       <div class="field">
         <label class="choice">
