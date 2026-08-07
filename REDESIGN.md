@@ -54,11 +54,25 @@ the last complete release and nothing here is deployed.
 | 0 — `ui.js` | **done** (#14) |
 | 0.5 — dev Worker and D1 | **done** (#16), isolation verified both directions |
 | 1 — Worker: auth, sessions, account id | **built, tested, not deployed** |
-| 2 — clear and unpublish | **unpublish done 2026-08-06**; the clear moves to the cutover, Part 8 |
-| 3 — sign-in page, form to `submit.html` | session half **done** (#17); widget half assigned, #26 |
-| 4–7 | not started, and all behind step 3 |
+| 2 — clear and unpublish | **both done** — unpublish 2026-08-06, clear 2026-08-07 (1 row → 0). **Re-run the clear at cutover**, see below |
+| 3 — sign-in page, form to `submit.html` | **done** — session half (#17), widget half (#26) |
+| 4 — `POST /submit` requires a session | **done 2026-08-07** (#5); the live half waits on cutover |
+| 5–7 | not started |
 | 8 — quantize the series | **done** (#12), plus the suppression floor (#19) |
-| 9–10 | not started |
+| 9–10 | not started; #10 needs re-scoping, since #26 already added checks 11 and 12 |
+
+**The clear is not durable until cutover, and this is new.** It was done
+ahead of Part 8 rather than at it. `main` still ships the pre-accounts
+public submission form, and production `POST /submit` still answers
+`400 Missing ciphertext` rather than `401` — it validates the body and
+never asks for a session. So any visitor can put a row back, and that row
+carries a `NULL` `account_id`, which is the state accounts exists to
+remove.
+
+**Re-run the clear immediately before cutover.** One line, already
+rehearsed, written out on #3. The alternative — taking the form off
+`main` now — is a live release, which is a much larger act for the same
+effect.
 
 Step 1 landed before step 0 because it needed nothing from anybody: no
 bot, no Cloudflare, no secrets. The owner errands are now done — the bot

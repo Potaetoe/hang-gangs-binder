@@ -18,6 +18,18 @@ history.
 
 On `accounts`, not released. `main` stays at the last complete release.
 
+### Data
+- **Production `submissions` was cleared** — build step 2, by the owner,
+  1 row → 0, with `sqlite_sequence` reset so the next real submission is
+  `id = 1`. Irreversible and rehearsed on `hg_binder_db_dev` first. With
+  the snapshot unpublished on 2026-08-06, step 2 is complete.
+- **The clear is not durable until cutover.** `main` still ships the
+  pre-accounts public form, and production `POST /submit` answers
+  `400 Missing ciphertext` rather than `401` — it validates the body and
+  never asks for a session. Any visitor can put a row back, and it would
+  carry a `NULL` `account_id`. Re-run the clear immediately before
+  cutover.
+
 ### Changed
 - **The Telegram handle on a submission comes from the verified session,
   and `submit.html` no longer has a field to type one into.** Build step

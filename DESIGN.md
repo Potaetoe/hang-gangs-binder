@@ -1825,24 +1825,47 @@ the two irreversible steps happen where they can be checked.
    think it does. A Worker wrong about either passes every local test
    and fails on the first real sign-in.
 
-2. **Clear the table, and unpublish.** Both irreversible, and this is
+2. ✅ **Clear the table, and unpublish.** Both irreversible, and this is
    the moment for them: after the schema is settled and before anybody
    has an account to lose. Unpublishing is not optional housekeeping —
    the live snapshot describes people whose rows are about to stop
    existing, and leaving it up would publish a group that is no longer
-   there.
+   there. **Unpublished 2026-08-06, cleared 2026-08-07** (1 row → 0,
+   with `sqlite_sequence` reset).
 
-3. **`index.html` becomes the sign-in page**, and the form moves to
+   Done in that order, and separating them was safe *only* in that
+   order: unpublishing first and clearing later cannot produce the state
+   this step guards against, and the reverse can.
+
+   **The clear has to be repeated at cutover.** It happened ahead of
+   Part 8, and until the accounts Worker is deployed the site still
+   carries a public form writing to an ungated `POST /submit`, so the
+   table can refill with rows that carry no `account_id`. See
+   `REDESIGN.md`.
+
+3. ✅ **`index.html` becomes the sign-in page**, and the form moves to
    `submit.html`. Nothing is gated yet; this is the page shell, the
    widget, the session in `sessionStorage`, and the two CSP exceptions.
    Doing it before the gate means a broken sign-in is visible as a
-   broken sign-in rather than as a form that refuses everybody.
+   broken sign-in rather than as a form that refuses everybody. **Split
+   in two and both done** — the session half 2026-08-06, the widget half
+   2026-08-07. The CSP turned out to need a *third* exception,
+   `'unsafe-eval'`; see "The policy needed a third exception". That
+   policy is provisional until a real sign-in is observed on the live
+   site, which BotFather's domain binding makes impossible locally.
 
-4. **`POST /submit` starts requiring a session**, and the form takes its
+4. ✅ **`POST /submit` starts requiring a session**, and the form takes its
    handle from the verified sign-in rather than from a text box. This is
    the step that makes the sign-in load-bearing, so it is the step where
    a mistake locks the group out — hence third, after the page it
-   depends on is known to work.
+   depends on is known to work. **Done 2026-08-07.** The Worker half was
+   already standing from step 1; what this step actually did was delete
+   the handle text box and make the session username a mandatory
+   argument to `buildRecord`.
+
+   **Its live half is unproven** and cannot be proved before cutover: a
+   real row arriving with an `account_id`, and a signed-out `curl` being
+   refused, both need the accounts Worker deployed.
 
 5. **The account panel.** Metadata only: how many entries are on record
    and when the last one was, from `GET /me`. No read-back, because the

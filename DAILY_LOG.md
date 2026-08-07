@@ -122,14 +122,47 @@ where it was, and a new `accounts` tracking `origin/accounts` was checked
 out beside it. Re-syncing before *every* delegation is now the rule rather
 than a thing to remember.
 
-### A correction worth carrying
+### Step 2 — production cleared, and a check that could not run
 
-`DESIGN.md`'s accounts build order still marks only steps 1 and 8. It does
-not record step 2's unpublish or step 3's session half, both of which
-landed on 2026-08-06. `REDESIGN.md`'s status table and the issue comments
-are current and agree with each other. Not fixed here — flagged, because
-the next agent to read the build order for status will be reading the
-stale copy.
+The owner cleared `submissions`: 1 row, dated 2026-08-05, gone, with
+`sqlite_sequence` reset. Rehearsed on `hg_binder_db_dev` first — that
+database was already empty, so the rehearsal proved the command ran
+cleanly rather than proving it deleted anything. Step 2 is complete.
+
+**The pre-clear snapshot check was skipped, and the reason is worth more
+than the near-miss.** It was written as `curl -s -H …`; PowerShell aliases
+`curl` to `Invoke-WebRequest`, which rejected `-s` with
+`Missing an argument for parameter 'SessionVariable'`. The clear went
+ahead without it. Checked immediately after: nothing had been
+republished, so the check would have passed.
+
+**A verification step that cannot run on the machine it was written for is
+not a verification step.** It failed in the way that matters — the
+sequence continued past it. The instructions now say `curl.exe`.
+
+### The clear has a shelf life
+
+Found after the fact, and it is the part that needs carrying forward.
+`main` still ships the pre-accounts public submission form, and
+production `POST /submit` answers **`400 Missing ciphertext`, not `401`**
+— it validates the body and never asks for a session. So the table is
+empty and refillable by any visitor, and a row arriving now carries a
+`NULL` `account_id`: exactly the state accounts exists to remove.
+
+That is why `REDESIGN.md` Part 8 put the clear *at* cutover. Doing it
+early is not wrong, but it is not finished either — **re-run the clear
+immediately before cutover.** One rehearsed line, against a live release
+as the alternative.
+
+### The correction that was flagged this morning, now made
+
+`DESIGN.md`'s accounts build order marked only steps 1 and 8, and had
+recorded neither step 2's unpublish nor step 3's session half. Steps 2, 3
+and 4 now carry ✅ with what actually happened, including the two things a
+status mark usually hides: step 3's CSP is provisional until a live
+sign-in is observed, and step 4's live half cannot be proved before
+cutover. `REDESIGN.md`'s table is updated in the same pass, and #10 is
+noted as needing re-scoping since #26 already landed checks 11 and 12.
 
 ---
 
