@@ -141,7 +141,59 @@ check("no page's shipped policy differs from its pin",
       check_web.csp_policy_problems() == [])
 
 
+# ------------------------------------------------------------------ #
+# Check 14 - a key literal outside config.js.                         #
+
+# The rule is exercised on strings, and the corpus mutation below is
+# built from the key config.js actually carries rather than from a
+# string shaped like the pattern. That distinction is the whole lesson
+# of #34: a mutation written against the regex proves the regex can
+# match, never that the check reaches the real content.
+CONFIG_TEXT = open(
+    os.path.join(check_web.WEB, check_web.CONFIG_FILE), encoding="utf-8"
+).read()
+
+check("the file allowed to carry a key does carry one",
+      check_web.key_literal_problem(CONFIG_TEXT) is not None)
+
+# The decisive one. If the pattern simply found nothing in this
+# repository, every check here would pass and the arm would be inert -
+# a null result wearing a positive result's clothes. This says the
+# exemption is what spares config.js, not the pattern failing to fire.
+check("config.js is spared by name, not by the pattern missing it",
+      check_web.CONFIG_FILE not in
+      [rel for rel, _ in check_web.hard_coded_key_hits()])
+check("apps/web carries no key literal outside config.js",
+      check_web.hard_coded_key_hits() == [])
+
+# The realistic accident #41 names: the production key, or a prefix of
+# it, pasted into a page to "check the layout". Taken verbatim out of
+# config.js so this cannot pass by testing a different string than the
+# one that matters.
+REAL_KEY = check_web.KEY_LITERAL.search(CONFIG_TEXT).group(0)
+PAGE = "<p id=\"key-fingerprint\">%s</p>\n<script>const k = %s;</script>"
+check("the real key pasted into a page is caught",
+      check_web.key_literal_problem(PAGE % ("", REAL_KEY)) is not None)
+
+# Both directions at the boundary. 60 is the threshold; 59 must pass, or
+# the check is a tripwire across ordinary content.
+check("a 60-character base64 run is caught",
+      check_web.key_literal_problem('"%s"' % ("A" * 60)) is not None)
+check("a 59-character base64 run is not",
+      check_web.key_literal_problem('"%s"' % ("A" * 59)) is None)
+check("ordinary long prose is not a key",
+      check_web.key_literal_problem(
+          '"the quick brown fox jumps over the lazy dog, and then does '
+          'it again, at considerable length, without stopping"') is None)
+
+# The message goes into a CI log. Reporting the literal would publish
+# the thing the check exists to keep out of public places.
+REPORT = check_web.key_literal_problem('"%s"' % REAL_KEY.strip('"\''))
+check("the report names a prefix and a length, not the literal",
+      REAL_KEY.strip('"\'') not in REPORT and "characters" in REPORT)
+
+
 if failures:
-    print("\ncheck_web.py FAILED %d of 17 checks" % failures)
+    print("\ncheck_web.py FAILED %d of 25 checks" % failures)
     sys.exit(1)
-print("\ncheck_web.py OK - 17 checks")
+print("\ncheck_web.py OK - 25 checks")

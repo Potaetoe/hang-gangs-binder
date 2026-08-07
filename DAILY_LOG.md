@@ -413,6 +413,78 @@ key pasted into a page passes check 2 today. The UI suite protects
 `submit.html` in the meantime; the publishability gate should own the
 repository-wide boundary next.
 
+### The gate owns it now — #41
+
+Claude. Check 14: no published file except `config.js` may carry a base64
+key-shaped literal. The interim assertion **left** `dev/ui.test.mjs` rather
+than being duplicated there, and the deletion is commented as deliberate so
+the next reader does not restore it "for safety".
+
+The design decision worth recording is where the exemption lives. Exempting
+`config.js` **by name** creates a way for this arm to be inert: if the
+pattern simply matched nothing in the repository, every test would pass and
+nobody would know the check was dead. So `dev/check_web.test.py` asserts the
+inverse — that `config.js`'s real content *does* match, and that it is the
+name-based exemption sparing it. That check is the one that would notice the
+arm rotting.
+
+The mutation was run on the real gate, not just on the rule: the production
+key pasted into `submit.html` fails `tools/check_web.py`. The message reports
+a length and a 12-character prefix rather than the literal, because it goes
+into a CI log and printing the value would publish the thing the check exists
+to keep out of public places.
+
+One honest limitation: base64's character class contains hex, so a 60+
+character hex constant in a published page would also trip this. Left as-is
+rather than narrowed — a long hex literal on a published page is worth a
+human look too, and narrowing the pattern to exclude it would be tuning the
+check against a false positive that has not happened.
+
+### Running Codex and Claude at the same time, and what it actually cost
+
+Coordination, not product. The two ran in parallel for the first time: Codex
+on step 7 (#8, PR #42) then step 6 (#7), Claude on #41 throughout.
+
+**The mechanism is batching, not backgrounding.** Claude Code auto-backgrounds
+an MCP call at two minutes, but a Codex call that stops to ask returns in
+well under that, so the auto-background rarely fires. What produced real
+overlap was issuing the `codex` call in the *same* tool block as Claude's own
+work. Waiting on the reply before starting is the failure mode, and it looked
+exactly like working.
+
+**Codex stopped and asked three times, and was right every time.** Twice it
+found that a suite's stated scope forbade what it had been told to do —
+`dev/admin.test.mjs` and `dev/dashboard.test.mjs` both declare themselves
+pure-half suites with no DOM harness — and once it found that registering a
+new suite would collide with an unmerged branch. That last one mattered: PR
+#42 renumbered `tools/check.py`'s docstring and both its counts, so #7
+branched off `accounts` would have disagreed with it about the total. #7 is
+therefore based on #42's branch, said out loud on the issue per `AGENTS.md`
+rather than discovered in a diff.
+
+**Both issues' file lists were wrong in the same direction**, and this is the
+reusable part: the Worker was gated ahead of the pages. #8 named
+`server/worker.js`, which needed nothing, and turned up a *fourth*
+unauthenticated request nobody had noticed — `refreshPublishedState` fetching
+`GET /snapshot` bare, with a comment above it still asserting the route was
+public. #7 named `dashboard.js`, which contains no `fetch` at all; the bare
+request was in `public.js`. **Anyone taking #6 or #10 should read the Worker
+before trusting the issue's file list.**
+
+**A third thing the MCP Codex cannot do:** create or switch a branch. Its
+clone's `.git` is not writable by the sandbox — `fatal: Unable to create
+'.git/index.lock': Permission denied`. Claude must create the branch before
+every delegation, alongside the re-sync. Unlike the network failures, Codex
+reports this one honestly instead of treating it as ordinary shell noise.
+
+**What did not parallelize**, and is the real ceiling: posting the claim,
+running the Python gate, reading the whole diff, and pushing are all Claude's.
+Reading a diff properly is not a rubber stamp, so the join is a genuine
+bottleneck and the throughput gain is smaller than two agents suggests.
+`AGENTS.md`'s "do not manufacture parallelism" held up — what made this work
+was that #41 and the two Codex slices had genuinely disjoint file lists, and
+the moment they stopped being disjoint the base had to change.
+
 ---
 
 ## 2026-08-06

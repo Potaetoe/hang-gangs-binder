@@ -52,6 +52,25 @@ On `accounts`, not released. `main` stays at the last complete release.
   half a mechanism while the browser's value remained buried in
   `config.js`; the page now reads the key it is about to encrypt with on
   every setup, and shows no fingerprint when no key exists. #36.
+- **The publishability gate now refuses a base64 key-shaped literal in any
+  published file except `config.js`** — check 14. Check 2 does not cover
+  this and is right not to: every one of its patterns targets a *private*
+  key shape, and publishing a public key is what a public key is for.
+  What #36 made dangerous is a public key written down where it cannot
+  rotate — a fingerprint or a whole key pasted into a page passes every
+  behavioral test on the day it is written, and after a rotation the page
+  certifies a key it is no longer encrypting to. An anchor that vouches
+  for the wrong key is worse than no anchor. The assertion **moved** out
+  of `dev/ui.test.mjs`, where it guarded `submit.html` alone, rather than
+  being copied: a page suite cannot own a repository-wide boundary, and
+  two checks making the same claim is how one gets quietly weakened.
+  `config.js` is exempt **by name**, and `dev/check_web.test.py` asserts
+  that the exemption is what spares it rather than the pattern failing to
+  fire — otherwise the arm could be inert and every test would still
+  pass. Verified by mutation on the real gate: the production key pasted
+  into `submit.html` fails it, reporting a length and a 12-character
+  prefix rather than the literal, since the message goes into a CI log.
+  #41.
 
 ### Data
 - **Production `submissions` was cleared** — build step 2, by the owner,

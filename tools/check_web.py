@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Thirteen checks:
+Fourteen checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -174,6 +174,35 @@ Thirteen checks:
     passed, because a mutation exercises the rule and never the parser
     that has to find the policy first - which is why check_web.py now
     has a suite of its own in dev/check_web.test.py.
+
+14. No file except config.js carries a base64 key-shaped literal. Check 2
+    is about private keys and every one of its patterns targets a private
+    shape - a PEM block, an assigned private_key, a JWK's "d" member. A
+    raw public key matches none of them, and it should not in general:
+    publishing a public key is what a public key is for, and config.js
+    legitimately carries two.
+
+    What makes a public key dangerous is being written down somewhere
+    that cannot rotate. submit.html displays the first 32 characters of
+    BINDER_CONFIG.publicKey so the group can compare it against the
+    fingerprint published out-of-band in #29, and the entire mechanism
+    rests on that value being derived at runtime from the key actually in
+    use. Paste a literal there - a fingerprint, or a whole key "just to
+    check the layout" - and every behavioral test still passes on the day
+    it is written. After a rotation the page confidently certifies a key
+    it is no longer encrypting to, and an anchor that vouches for the
+    wrong key is worse than no anchor.
+
+    So this is the same shape as check 5: the value belongs in one file
+    and nowhere else, and something outside that file has to say so. A
+    check computed entirely from the file it guards cannot detect that
+    the file's contents were rearranged - which is the lesson #34 paid
+    for.
+
+    This assertion was interim in dev/ui.test.mjs, where it guarded one
+    named page. It moved rather than being copied: a page suite cannot
+    own a repository-wide boundary, and two checks making the same claim
+    in different files is how one of them gets quietly weakened.
 """
 
 import base64
@@ -1007,6 +1036,53 @@ def key_shaped_content():
     return hits
 
 
+# A base64 literal long enough to be a key rather than a coincidence. An
+# uncompressed P-256 point is 65 bytes, so the real thing is 88 base64
+# characters; 60 leaves room for a truncated paste while staying clear of
+# ordinary long strings. Deliberately NOT anchored to a variable name -
+# the accident this catches is a bare literal, and giving it a name is
+# the one form of it somebody would notice while typing.
+KEY_LITERAL = re.compile(r"""["'][A-Za-z0-9+/]{60,}={0,2}["']""")
+
+
+def key_literal_problem(text):
+    """A description of a base64 key-shaped literal in text, or None.
+
+    Separate from the walk below so the rule can be tested on strings.
+    #34's mutations all passed because they were written against the
+    rule and never reached the parser that had to find the policy
+    first; a rule that can only be exercised through the directory it
+    guards is the same trap.
+    """
+    found = KEY_LITERAL.search(text)
+    if not found:
+        return None
+    return ("a base64 key-shaped literal (%d characters, starting %s)"
+            % (len(found.group(0)) - 2, found.group(0)[1:13]))
+
+
+def hard_coded_key_hits():
+    """(file, description) for a key literal outside config.js."""
+    hits = []
+    for root, _dirs, names in os.walk(WEB):
+        for name in sorted(names):
+            rel = os.path.relpath(os.path.join(root, name), WEB)
+            rel = rel.replace(os.sep, "/")
+            # The one file allowed to name a key. Its own arms are
+            # checked by check 5, which pins production by hostname -
+            # so "in config.js" is not the same as "unchecked".
+            if rel == CONFIG_FILE:
+                continue
+            try:
+                text = open(os.path.join(root, name), encoding="utf-8").read()
+            except (UnicodeDecodeError, OSError):
+                continue  # binary asset - not where a pasted key lands
+            problem = key_literal_problem(text)
+            if problem:
+                hits.append((rel, problem))
+    return hits
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -1082,6 +1158,14 @@ def main():
             "apps/web/%s contains %s. apps/web is published verbatim to a "
             "public site - this must not be committed." % (rel, description))
 
+    for rel, description in hard_coded_key_hits():
+        problems.append(
+            "apps/web/%s contains %s. Only %s may name a key, so that what "
+            "the page shows is derived from the key it actually encrypts to "
+            "- a literal still passes every behavioral test after a "
+            "rotation, and then certifies the wrong key."
+            % (rel, description, CONFIG_FILE))
+
     if problems:
         for p in problems:
             print("::error::%s" % p)
@@ -1096,7 +1180,8 @@ def main():
     key_note = ("%d distinct environment keys and endpoints, production "
                 "pinned" % len(environments))
     print("apps/web OK - %d page(s), all references resolve, shared head "
-          "intact, no key-shaped content, %s" % (len(pages), key_note))
+          "intact, no key-shaped content, no key literal outside %s, %s"
+          % (len(pages), CONFIG_FILE, key_note))
     return 0
 
 
