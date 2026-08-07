@@ -104,6 +104,9 @@ jobs:
       - name: Check the export's CSV
         run: node dev/admin.test.mjs
 
+      - name: Check the admin session and row deletion
+        run: node dev/admin-session.test.mjs
+
       # An .xlsx is a ZIP of XML written by hand here, because the page
       # that builds it may not load a library. Its failure is not a
       # wrong number - it is a file that will not open at all, and the

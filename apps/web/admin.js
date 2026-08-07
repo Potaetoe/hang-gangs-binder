@@ -1,10 +1,10 @@
 /*
  * The export page. The only place the submissions exist as plaintext.
  *
- * Two secrets meet here and neither is stored: the export token fetches
- * the ciphertext, and the key file opens it. Both are typed in, used,
- * and forgotten when the tab closes - nothing is written to
- * localStorage, nothing is sent anywhere, and the key never leaves the
+ * Two secrets meet here and neither outlives the tab: the admin session
+ * fetches the ciphertext, and the key file opens it. The session lives
+ * only in sessionStorage and the key is supplied here - neither is written
+ * to persistent storage, and the key is never sent or allowed to leave the
  * page. See DESIGN.md, "Export" and "Key custody".
  *
  * Split like form.js, and for the same reason. The pure half - turning
@@ -210,6 +210,28 @@
   });
 
   function setUp() {
+    if (!root.BinderSession) {
+      throw new Error("This page did not load its session handling.");
+    }
+    const admin = root.BinderSession.require();
+
+    // session.js starts the redirect for a signed-out visitor. Hide the
+    // tool as well in case navigation is delayed; none of its wiring or
+    // requests should run without an authenticated admin in this tab.
+    if (!admin) {
+      show($("tool"), false);
+      return;
+    }
+    if (!admin.isAdmin) {
+      show($("tool"), false);
+      const closed = $("closed");
+      show(closed, true);
+      closed.querySelector("[data-reason]").textContent =
+        "This page needs an admin session. Your current session is " +
+        "signed in as a member only.";
+      return;
+    }
+
     const config = root.BINDER_CONFIG || {};
     const unavailable = root.BinderCrypto
       ? root.BinderCrypto.unavailableReason()
@@ -222,9 +244,11 @@
       $("closed").querySelector("[data-reason]").textContent = unavailable;
       return;
     }
+    show($("tool"), true);
 
     // Everything decrypted so far, held only for as long as this tab is
-    // open. Cleared by the Clear button along with the two secrets.
+    // open. Clear discards it and the key; the admin session remains the
+    // tab-scoped credential shared by the site's member pages.
     let entries = [];
     let rows = [];
     let csv = "";
@@ -253,6 +277,22 @@
       const link = $(id);
       link.href = url;
       link.download = fileName(Date.now(), extension);
+    }
+
+    // Every consumer is rebuilt from entries. Keeping this in one place is
+    // what makes deletion remove a row from the downloads and a later
+    // published snapshot as well as from the visible table.
+    function rebuildDerived() {
+      rows = entries.map(rowFor);
+      csv = toCsv(rows);
+      json = toJson(entries);
+      // The rows as they are, not as the CSV writes them: csvCell's
+      // formula guard must not reach this file. A cell typed as a
+      // string in a spreadsheet is a string, so the leading apostrophe
+      // that stops Excel executing a CSV cell would just be an
+      // apostrophe here. See apps/web/xlsx.js.
+      xlsx = root.BinderXlsx.build(
+        COLUMNS, rows, "Submissions", Date.now());
     }
 
     function reset() {
@@ -297,7 +337,6 @@
     });
 
     $("clear").addEventListener("click", function () {
-      $("token").value = "";
       $("keyfile").value = "";
       $("keyfile-picker").value = "";
       reset();
@@ -308,7 +347,6 @@
     $("run").addEventListener("click", async function () {
       reset();
 
-      const tokenText = $("token").value.trim();
       const keyText = $("keyfile").value.trim();
 
       if (!keyText) {
@@ -316,11 +354,6 @@
           "tools/keygen.html saved.", "bad");
         return;
       }
-      if (!tokenText) {
-        say("The export token is needed to fetch the rows.", "bad");
-        return;
-      }
-
       /*
        * Import the key before asking the network for anything. A bad
        * key is the admin's own mistake and can be reported instantly;
@@ -342,10 +375,10 @@
       try {
         say("Fetching the rows…", null);
         const response = await fetch(config.endpoint + "/export", {
-          headers: { Authorization: "Bearer " + tokenText },
+          headers: root.BinderSession.authorization(),
         });
         if (response.status === 401) {
-          throw new Error("The export token was not accepted.");
+          throw new Error("The admin session was not accepted.");
         }
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
@@ -362,8 +395,7 @@
       const submissions = (payload && payload.submissions) || [];
       if (!submissions.length) {
         $("run").disabled = false;
-        say("The token worked, but there are no submissions stored yet.",
-          null);
+        say("There are no submissions stored yet.", null);
         return;
       }
 
@@ -390,15 +422,7 @@
         }
       }
 
-      rows = entries.map(rowFor);
-      csv = toCsv(rows);
-      json = toJson(entries);
-      // The rows as they are, not as the CSV writes them: csvCell's
-      // formula guard must not reach this file. A cell typed as a
-      // string in a spreadsheet is a string, so the leading apostrophe
-      // that stops Excel executing a CSV cell would just be an
-      // apostrophe here. See apps/web/xlsx.js.
-      xlsx = root.BinderXlsx.build(COLUMNS, rows, "Submissions", Date.now());
+      rebuildDerived();
       render(submissions.length, failures);
       $("run").disabled = false;
     });
@@ -457,11 +481,11 @@
     /*
      * What is currently published, and taking it down.
      *
-     * Both live outside everything the key gates. Reading the state
-     * needs no credentials at all - it is the same public route the
-     * dashboard reads - and unpublishing needs only the token. The
-     * moment someone wants a snapshot gone is not the moment to make
-     * them find a key file and decrypt the corpus first.
+     * Both live outside everything the key gates. Since 2026-08-05 the
+     * snapshot read has required a member session; an admin already has
+     * one, so checking and unpublishing still need no private key. The
+     * moment someone wants a snapshot gone is not the moment to make them
+     * find a key file and decrypt the corpus first.
      */
     function sayUnpublish(message, tone) {
       UI.setStatus($("unpublish-status"), message, tone);
@@ -470,7 +494,9 @@
     async function refreshPublishedState() {
       const state = $("published-state");
       try {
-        const response = await fetch(config.endpoint + "/snapshot");
+        const response = await fetch(config.endpoint + "/snapshot", {
+          headers: root.BinderSession.authorization(),
+        });
         if (response.status === 404) {
           state.textContent = "Nothing is published. The public dashboard " +
             "shows an empty notice.";
@@ -502,21 +528,15 @@
     }
 
     $("unpublish").addEventListener("click", async function () {
-      const tokenText = $("token").value.trim();
-      if (!tokenText) {
-        sayUnpublish("The export token is needed to unpublish.", "bad");
-        return;
-      }
-
       $("unpublish").disabled = true;
       sayUnpublish("Taking it down…", null);
       try {
         const response = await fetch(config.endpoint + "/snapshot", {
           method: "DELETE",
-          headers: { Authorization: "Bearer " + tokenText },
+          headers: root.BinderSession.authorization(),
         });
         if (response.status === 401) {
-          throw new Error("The export token was not accepted.");
+          throw new Error("The admin session was not accepted.");
         }
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
@@ -547,10 +567,9 @@
      * being kept around - there is no state to go stale and nothing to
      * publish by accident after Clear.
      *
-     * The token is the one already in the box. Publishing is a
-     * keyholder action and the Worker gates it the same way it gates
-     * the export; reading the result needs nothing at all, which is the
-     * entire point of the public page.
+     * Publishing is an admin action and the Worker gates it with the same
+     * tab-scoped session as the export. Reading the result needs a member
+     * session too, but still no private key.
      */
     function publishable() {
       return root.BinderDashboard.snapshotOf(entries, {
@@ -582,25 +601,18 @@
         sayPublish("There is nothing decrypted to publish.", "bad");
         return;
       }
-      const tokenText = $("token").value.trim();
-      if (!tokenText) {
-        sayPublish("The export token is needed to publish.", "bad");
-        return;
-      }
-
       $("publish").disabled = true;
       sayPublish("Publishing…", null);
       try {
         const response = await fetch(config.endpoint + "/snapshot", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + tokenText,
-          },
+          headers: Object.assign(
+            { "Content-Type": "application/json" },
+            root.BinderSession.authorization()),
           body: JSON.stringify(publishable()),
         });
         if (response.status === 401) {
-          throw new Error("The export token was not accepted.");
+          throw new Error("The admin session was not accepted.");
         }
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
@@ -619,6 +631,40 @@
       await refreshPublishedState();
     });
 
+    async function deleteEntry(entry, total, failures, button) {
+      button.disabled = true;
+      say("Deleting row " + entry.id + "…", null);
+      try {
+        const response = await fetch(
+          config.endpoint + "/submission/" +
+            encodeURIComponent(String(entry.id)),
+          {
+            method: "DELETE",
+            headers: root.BinderSession.authorization(),
+          });
+        if (response.status === 401) {
+          throw new Error("The admin session was not accepted.");
+        }
+        if (!response.ok) {
+          throw new Error("The server answered " + response.status + ".");
+        }
+      } catch (error) {
+        button.disabled = false;
+        say("Row " + entry.id + " could not be deleted. " +
+          (error && error.message ? error.message : "The connection failed."),
+        "bad");
+        return;
+      }
+
+      entries = entries.filter(function (candidate) {
+        return candidate.id !== entry.id;
+      });
+      rebuildDerived();
+      render(total - 1, failures);
+      say("Row " + entry.id + " was deleted. The remaining rows and " +
+        "downloads were rebuilt.", null);
+    }
+
     const PREVIEW = 50;
 
     function render(total, failures) {
@@ -635,11 +681,14 @@
         th.textContent = name;
         headRow.appendChild(th);
       }
+      const actionHead = document.createElement("th");
+      actionHead.textContent = "actions";
+      headRow.appendChild(actionHead);
       head.appendChild(headRow);
 
       const body = $("tbody");
       body.textContent = "";
-      rows.slice(0, PREVIEW).forEach(function (row) {
+      rows.slice(0, PREVIEW).forEach(function (row, index) {
         const tr = document.createElement("tr");
         row.forEach(function (cell) {
           const td = document.createElement("td");
@@ -648,6 +697,17 @@
           td.textContent = String(cell);
           tr.appendChild(td);
         });
+        const action = document.createElement("td");
+        const button = document.createElement("button");
+        const entry = entries[index];
+        button.type = "button";
+        button.className = "secondary";
+        button.textContent = "Delete row " + entry.id;
+        button.addEventListener("click", function () {
+          return deleteEntry(entry, total, failures, button);
+        });
+        action.appendChild(button);
+        tr.appendChild(action);
         body.appendChild(tr);
       });
 
@@ -671,6 +731,9 @@
         redraw();
         show($("dashboard"), true);
         show($("publish-card"), true);
+      } else {
+        show($("dashboard"), false);
+        show($("publish-card"), false);
       }
 
       say(rows.length

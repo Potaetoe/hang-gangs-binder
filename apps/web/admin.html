@@ -19,7 +19,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Export — Hang Gang's Binder</title>
-<meta name="description" content="Decrypt and export the submissions. Requires the export token and the private key.">
+<meta name="description" content="Decrypt and export the submissions. Requires an admin session and the private key.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#121212">
@@ -86,19 +86,9 @@
     <p data-reason></p>
   </div>
 
-  <div class="stack" id="tool">
+  <div class="stack" id="tool" hidden>
 
     <div class="card narrow">
-      <div class="field">
-        <label for="token">Export token</label>
-        <input type="password" id="token" autocomplete="off"
-               spellcheck="false" aria-describedby="token-help">
-        <p class="hint" id="token-help">
-          The Worker secret. It fetches the rows; on its own it gets you
-          nothing but ciphertext.
-        </p>
-      </div>
-
       <div class="field">
         <label for="keyfile">Private key</label>
         <textarea id="keyfile" rows="5" autocomplete="off" spellcheck="false"
@@ -124,10 +114,9 @@
       What is currently public, and how to stop it being public.
 
       This sits above the export and outside everything the key gates,
-      on purpose. Reading the state needs nothing at all, and taking a
-      snapshot down needs only the token - because the moment somebody
-      wants to retract one is not the moment to make them fetch a key
-      file and decrypt two hundred rows first.
+      on purpose. Reading needs the member session this admin already has;
+      taking one down needs admin authority. Neither needs the key, because
+      retraction should not require decrypting two hundred rows first.
     -->
     <div class="card narrow">
       <p class="eyebrow">Public dashboard</p>
@@ -139,7 +128,7 @@
         <a href="dashboard.html" class="secondary-link">Open it</a>
       </div>
       <p class="hint">
-        Unpublishing needs the export token above — not the key. It
+        Unpublishing needs the admin session — not the key. It
         takes the page down immediately and leaves the submissions
         untouched; publishing again rebuilds it.
       </p>
@@ -298,9 +287,10 @@
       <p class="eyebrow">Before you close this</p>
       <p class="muted small">
         This page is the only place the submissions exist in the clear.
-        Nothing here is saved — closing the tab discards the key, the
-        token and the decrypted rows. Press <strong>Clear</strong> if you
-        are leaving it open on a machine someone else can reach.
+        Nothing decrypted here is saved — closing the tab discards the key
+        and the rows, and the admin session is tab-scoped too. Press
+        <strong>Clear</strong> if you are leaving it open on a machine
+        someone else can reach.
       </p>
     </div>
   </div>
