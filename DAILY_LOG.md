@@ -14,11 +14,46 @@ Starts 2026-08-05.
 
 ## 2026-08-07
 
-**Landed on `accounts`:** the MCP-delegation rules in `AGENTS.md`. `main`
-untouched. Step 3b is still open on #26 and PR #32 still holds
-`index.html`, `auth.js` and `check_web.py`. Step 4 is open on a branch,
-built by Codex as an MCP tool and published by Claude — the first slice
-run under that arrangement.
+**Landed on `accounts`:** the MCP-delegation rules in `AGENTS.md`, **step
+4** (#5, merged, closed by hand) and **step 3b** (#26, merged, closed by
+hand). `main` untouched. Step 4 was built by Codex as an MCP tool and
+published by Claude — the first slice run under that arrangement.
+
+Both were rebase-merged rather than squashed, against this repository's
+convention. Each is a contract commit followed by its implementation, and
+squashing collapses the one place a future reader can see that the test
+went in red first. History stays linear; `accounts` still has no merge
+commits.
+
+### Step 3b, and a check that fails open
+
+Merged after review. Five mutations confirmed checks 11 and 12 armed in
+both directions — including the pair the earlier review asked for, where
+`index.html` can neither widen nor narrow its own policy, because the
+expected token sets live outside the page. That is the check 5 corollary
+applied correctly: a check computed entirely from the file it guards
+cannot detect that the file was rearranged.
+
+**Then the review found the thing the mutations could not.** Both CSP
+searches match `http-equiv` *and then* `content`, in that order, inside
+one tag. HTML does not care about attribute order; reverse them and the
+search returns `None`, the exact-token pin and the spread check both
+silently skip, and check 3 still passes because it only looks for the
+`http-equiv` substring. Produced, not inferred: `index.html` carrying
+`script-src * 'unsafe-inline' 'unsafe-eval'`, and `submit.html` carrying
+the Telegram origin, **both with the gate green.**
+
+Not fixed here and not a finding against the slice — `csp_gaps` already
+carried the identical `if not policy: continue`, so it is a house idiom
+reaching its limit. Filed on #34 with the reproduction. The lesson worth
+keeping is narrower than the bug: **a parser that cannot read a thing
+currently reports "no problem found".** Order-insensitivity fixes two
+cases; failing loudly on an unreadable policy fixes the shape.
+
+**Step 3b's CSP is provisional and its live check has not been made.**
+BotFather's domain binding means localhost cannot prove the real render
+or callback, so the first sign-in on `potaetoe.github.io` is the
+observation. Recorded as not performed.
 
 ### Step 4, and the first delegation under the new rules
 
