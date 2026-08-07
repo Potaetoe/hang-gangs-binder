@@ -75,6 +75,14 @@ jobs:
       - name: Check apps/web is publishable
         run: python tools/check_web.py
 
+      # The gate checking itself, and the only suite here that needs no
+      # node. check_web.py had no tests until #34, which is how its CSP
+      # parser could stop finding a policy while every mutation written
+      # against its rules still passed. A checker that cannot read is
+      # indistinguishable from a site with nothing wrong.
+      - name: Check the CSP parser and the policy pin
+        run: python dev/check_web.test.py
+
       # The one check whose failure is about the data rather than the
       # site. A crypto.js that no longer reads what is already stored
       # publishes a site that looks perfect and cannot be exported from,
