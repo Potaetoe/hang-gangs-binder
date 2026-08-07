@@ -18,6 +18,22 @@ history.
 
 On `accounts`, not released. `main` stays at the last complete release.
 
+### Configuration
+- **`ACCOUNT_SECRET` is set on `hgbinderworker-dev`**, by the owner, and
+  a live `POST /auth/dev` now returns a session. This corrects the
+  2026-08-06 entry below, which recorded the gap. A fresh random value,
+  deliberately not production's — `handleDevAuth` namespaces its subject
+  as `"dev:" + subject` so the two cannot collide even under a shared
+  secret, and reusing production's would discard that for nothing.
+  **Local dev sign-in works, so a session no longer has to be faked**;
+  step 4's browser check had to write one into `sessionStorage` by hand.
+- The 2026-08-06 entry called the failure a 500. It is closer to a
+  thrown `TypeError` — `hmacHex` guards with `typeof key === "string"`,
+  so an absent binding reaches `importKey` as `undefined` rather than
+  becoming an HMAC under an empty key. **That guard is why the failure
+  was loud**; without it the Worker would have issued working dev
+  account ids derived from nothing.
+
 ### Security
 - **The production key fingerprint is published out-of-band** — a pinned
   message in the Telegram group, 2026-08-07, by the owner. Reported

@@ -122,6 +122,48 @@ where it was, and a new `accounts` tracking `origin/accounts` was checked
 out beside it. Re-syncing before *every* delegation is now the rule rather
 than a thing to remember.
 
+### Dev sign-in works — #33, and how to debug a route that will not say why
+
+The owner set `ACCOUNT_SECRET` on `hgbinderworker-dev`. A live
+`POST /auth/dev` returns a session, which is the proof that matters: it
+can only be produced by `accountIdFor` completing, the exact line that
+was throwing. Local dev sign-in no longer has to be faked — step 4's
+browser check had to write a session into `sessionStorage` by hand.
+
+**The debugging is the part worth keeping.** The first attempt returned
+`404 Not found`, and my first diagnosis — an unset `$s` — was wrong;
+`$s.Length` came back `44` and disproved it.
+
+**All six of `handleDevAuth`'s early returns are the same 404.** Absent
+secret, non-loopback origin, oversized body, unparseable JSON, non-string
+secret, wrong secret: indistinguishable. That is correct — it refuses to
+tell an attacker which check they failed — and it means the response can
+never diagnose itself. The only method left is to enumerate the branches
+in source and eliminate them.
+
+Five fell. The one piece of real evidence *in* the response was the
+status code: a disallowed origin makes `allowed` null and returns **403**
+at the router, before this handler, so **a 404 proves the origin
+passed**. A code that says where it failed without saying why.
+
+What identified the last one was a length. **44 characters is base64 of
+32 bytes** — exactly what the `ACCOUNT_SECRET` generator emits — so `$s`
+was carrying the freshly-made account secret rather than the dev login
+secret. Re-running with the right value worked first time.
+
+**A deliberately uninformative error is good security and blinds the
+owner's own debugging.** Both halves are true and the design should keep
+the ambiguity; the answer is to write the elimination table down, which
+is now on the issue.
+
+Two smaller things. The 2026-08-06 note called this a 500; it is closer
+to a thrown `TypeError`, because `hmacHex` guards with
+`typeof key === "string"` and an absent binding reaches `importKey` as
+`undefined` instead of becoming an HMAC under an empty key — that guard
+is the reason the failure was loud rather than silently minting account
+ids from nothing. And an **admin** dev session is available by sending
+`admin: true`, which step 7 (#8) will want.
+
 ### The key fingerprint is published — #29
 
 Pinned in the group by the owner. **Attested, not verified**: no agent
