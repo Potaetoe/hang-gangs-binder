@@ -336,6 +336,60 @@ check that greps these comments would be computed entirely from the files
 it guards, so it could confirm wording while missing the deployment fact
 the wording is meant to preserve.
 
+### The pinned key became comparable — #36
+
+Contract first across the two agents, in the arrangement `AGENTS.md`
+describes: Claude committed the failing 28-check UI contract, then Codex
+implemented it to green. Claude read the diff, committed `a83cc1d` with
+Codex as author, and performed the local browser check. The submission
+page now prints the configured public key's first 32 base64 characters
+beside instructions to compare it with the pinned group message. The
+pinned anchor from #29 was only half a mechanism while reading the other
+half required view-source on `config.js`.
+
+**The contract had a defect, and its first repair was worse before it was
+better.** `showFingerprint truncates rather than hashing` searched the
+whole of `ui.js` for `crypto` and `digest`, so the comment explaining why
+the file contains no cryptography failed the check. Codex first replaced
+that with a comparison against a value an earlier assertion had already
+proved. It could not fail independently: a green line that added no
+coverage and therefore made the suite look more armed than it was.
+Review found it, not mutation. The final check guards actual Web Crypto
+access syntax; explanatory prose containing both words stays green, and
+a real `crypto.subtle.digest(...)` call makes that check fail alone.
+
+The coincidence matters. #34's entry above records the check Claude
+nearly shipped that could never fail; this is a second, independent
+instance in the same afternoon, written by the other agent and caught in
+review. Different code and different authors arrived at the same failure
+shape: a check whose reassuring output exceeded what it could prove.
+
+**Monospace is a security property here wearing cosmetic clothes.** A
+member compares 32 base64 characters by eye. In the body font `I` and
+`l` can be identical and `0` and `O` close enough to let a mismatch pass.
+The value therefore remains a `<code>` element, inline inside the sentence
+that refers to it rather than a bare child of `.card`; it gets the existing
+monospace rule without inline style or a CSP change.
+
+Source and local checks are distinct. The UI suite passed 28 checks and
+ESLint passed in Codex's clone. After rebasing over #30 and #34, Claude's
+twelve-check local gate passed. Claude also checked the rendered page on
+localhost: the development fingerprint appeared, changed when driven with
+production's key, and became computed `display: none` with zero client
+rects when handed no key; there were no console errors or CSP violations.
+**The widget-bound sign-in was not tested.** That browser session was
+written into `sessionStorage` by hand, so the local render proves nothing
+server-side and is not a live authentication check. No separate CI or
+live-site result is claimed here.
+
+One follow-up is newly unblocked rather than part of this slice. #34 held
+`tools/check_web.py` when #36 was claimed and has now merged, so the gate
+can gain the suggested hard-coded-public-key arm. It is worth doing:
+`KEY_PATTERNS` recognizes private-key shapes only, which means a public
+key pasted into a page passes check 2 today. The UI suite protects
+`submit.html` in the meantime; the publishability gate should own the
+repository-wide boundary next.
+
 ---
 
 ## 2026-08-06
