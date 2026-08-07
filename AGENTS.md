@@ -363,7 +363,27 @@ implemented it. Say which it is.
 
 - **A coding request does not authorize an adjacent act.** Code changes do
   not authorize deployments, secret changes, D1 mutations, or Wrangler
-  commands. Those are owner operations unless the owner explicitly asks.
+  commands. Those need the owner to ask — but **asking can be one line in
+  chat**, and an agent that has approval performs the act itself. See
+  "What `owner-only` means" below; irreversibility alone does not move
+  work to the owner.
+- **No authenticated Wrangler command can run from an agent shell, and
+  this is not a permissions decision.** The owner's OAuth login is on
+  this machine and current. An agent shell is non-interactive, and a
+  non-interactive wrangler **refuses a stored OAuth login** and demands
+  `CLOUDFLARE_API_TOKEN` — a secret nobody here may handle. Confirmed
+  2026-08-07 against a read-only `wrangler d1 list`.
+
+  **`wrangler whoami` misdescribes this.** It answers "You are not
+  authenticated. Please run `wrangler login`", which reads as a missing
+  or expired login and invites a fix that would not help. `d1 list` gives
+  the real reason. Diagnose with a subcommand, not with `whoami`.
+
+  This is the same root cause as the piped-stdin note further down, and
+  it is **wider than that note implies**: it is not about `secret put`
+  and not about pipes. It applies to every authenticated subcommand,
+  including read-only ones. Any plan whose steps include a wrangler
+  command is a plan for the owner, or for an interactive terminal.
 - **Never ask for, handle, or log a secret.** The export token, the
   private key, `DEV_LOGIN_SECRET`, `ACCOUNT_SECRET`, the Telegram bot
   token, and any Cloudflare API token stay with the owner. `admin.html`
@@ -575,9 +595,44 @@ Stop and return to the owner rather than deciding alone when:
 - the work would need a secret, a deployment, or anything irreversible;
 - a check cannot be made to fail, and you are about to ship it anyway.
 
+**Stopping to ask is not the same as handing the work over.** Ask, get
+an answer, then do it. The third item above is a reason to check first,
+not a reason to write instructions for somebody else.
+
 Neither agent is an independent source of truth, and neither retains
 reliable memory outside the durable artifacts listed above. That is what
 this file is for.
+
+## What `owner-only` means
+
+**Decided 2026-08-07, and it narrows the label.** It had been reading as
+"irreversible or account-level", which is a category, and a category
+quietly grew to cover work an agent could have done after one question.
+Clearing a table is irreversible; that is a reason to confirm before
+running it, not a reason to make somebody else run it.
+
+**`owner-only` now means: this cannot be done from an agent session at
+all, and the issue names why.** There are exactly three such reasons
+here, and any new one should be argued rather than assumed:
+
+1. **It needs a secret.** Agents never handle one — see the boundaries
+   above. Generating a fresh value is still handling one.
+2. **It is not on this machine.** A Telegram group description, a
+   BotFather setting, a Cloudflare dashboard.
+3. **It needs an authenticated Wrangler command.** Mechanically
+   impossible from an agent shell, for the reason recorded above — not a
+   policy choice, and not fixable by trying harder.
+
+**Every `owner-only` issue carries numbered steps.** Not context, not a
+rationale to reconstruct a procedure from: the exact command to run, the
+output to expect, and how to tell it worked. Somebody should be able to
+follow them without having read the thread.
+
+**Writing those steps is also the test.** If writing them out shows the
+work is reachable from an agent session, the label is wrong — take it
+off, ask in chat, and do the work. That check is the point of the rule,
+because the failure it replaces was an agent declining something it
+could do and calling the refusal a boundary.
 
 ## Fixing production while `main` is frozen
 

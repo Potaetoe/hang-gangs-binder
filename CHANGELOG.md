@@ -47,6 +47,24 @@ On `accounts`, not released. `main` stays at the last complete release.
   visible for a later cleanup rather than folded into this slice.
 
 ### Documentation
+- **`owner-only` no longer means "irreversible".** It now means the work
+  is unreachable from an agent session, and the issue has to name which
+  of three reasons applies: it needs a secret, it is not on this machine,
+  or it needs an authenticated Wrangler command. An irreversible act an
+  agent *can* perform takes a confirmation in chat, not a handover — the
+  old reading was a category that quietly grew to cover work an agent
+  could have done after one question. Every `owner-only` issue now
+  carries numbered steps, and writing them is the test: if the steps show
+  the work is reachable, the label was wrong.
+- **No authenticated Wrangler command can run from an agent shell**, and
+  it is mechanical rather than a policy choice. The owner's OAuth login is
+  present and current; an agent shell is non-interactive, and a
+  non-interactive wrangler refuses a stored OAuth login and demands
+  `CLOUDFLARE_API_TOKEN`. Wider than the existing piped-stdin note — it
+  covers every authenticated subcommand, including read-only ones. Note
+  that `wrangler whoami` misreports this as "You are not authenticated",
+  which invites a `wrangler login` that does not help; diagnose with a
+  subcommand instead.
 - **`AGENTS.md` describes Codex running as an MCP tool**, which is a
   second way of working that the file did not previously distinguish from
   Codex running as its own session. In that mode Codex has no network, so
