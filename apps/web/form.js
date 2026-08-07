@@ -153,18 +153,30 @@
    * fault per attempt is three round trips for someone who mistyped
    * two things.
    */
-  function validate(input) {
+  function validate(input, sessionUsername) {
     const problems = [];
     const imperial = input.units === "imperial";
 
-    const handle = normalizeTelegram(input.telegram);
+    /*
+     * The one-argument form preserves validation for unverified input in
+     * the pure API. The page passes the Worker's verified session username
+     * explicitly: it must exist, but this page must not reject a real
+     * Telegram account merely because its local HANDLE rule is narrower
+     * than the identity provider's.
+     */
+    const fromSession = sessionUsername !== undefined;
+    const handle = normalizeTelegram(
+      fromSession ? sessionUsername : input.telegram);
     if (!handle) {
       problems.push({
         field: "telegram",
-        message: "Your Telegram username is needed - it is how you are " +
-          "identified here.",
+        message: fromSession
+          ? "Your session no longer has a Telegram username. Sign in again " +
+            "before submitting."
+          : "Your Telegram username is needed - it is how you are " +
+            "identified here.",
       });
-    } else if (!HANDLE.test(handle)) {
+    } else if (!fromSession && !HANDLE.test(handle)) {
       problems.push({
         field: "telegram",
         message: "That does not look like a Telegram username. They are 5 to " +
@@ -246,6 +258,8 @@
   /*
    * A valid input to the record that gets encrypted. Assumes validate()
    * came back empty; callers that skip it get whatever they deserve.
+   * The session username is mandatory even then: without it the record
+   * builder refuses rather than falling back to member-editable input.
    *
    * `now` is a parameter rather than a call to Date.now() so the test
    * can assert on a fixed record. It is also the only clock in the
@@ -253,7 +267,12 @@
    * receipt timestamp, and the two disagreeing is information rather
    * than a bug.
    */
-  function buildRecord(input, now) {
+  function buildRecord(input, now, sessionUsername) {
+    const telegram = normalizeTelegram(sessionUsername);
+    if (!telegram) {
+      throw new Error("A verified session username is required.");
+    }
+
     const imperial = input.units === "imperial";
 
     let weight;
@@ -296,7 +315,7 @@
       // reasons, so they are different numbers.
       record: 1,
       submittedAt: new Date(now).toISOString(),
-      telegram: normalizeTelegram(input.telegram),
+      telegram: telegram,
       weight: weight,
       height: height,
       entered: {
@@ -468,7 +487,7 @@
      * error at load - which would take every listener registered after
      * it down with it, silently.
      */
-    const FIELDS = ["telegram", "weight", "height", "over18"];
+    const FIELDS = ["weight", "height", "over18"];
 
     // A field can be more than one input - height in imperial is two -
     // and both halves should be marked, so this returns all of them
@@ -538,8 +557,9 @@
     applyUnits();
 
     function readForm() {
+      const session = root.BinderSession.read();
       return {
-        telegram: $("telegram").value,
+        sessionUsername: session ? session.username : null,
         units: currentUnits(),
         weightKg: $("weight-kg").value,
         weightLb: $("weight-lb").value,
@@ -567,9 +587,13 @@
       event.preventDefault();
 
       const input = readForm();
-      const problems = validate(input);
+      const problems = validate(input, input.sessionUsername);
       if (problems.length) {
-        say("", null);
+        const sessionProblem = problems.find(function (problem) {
+          return problem.field === "telegram";
+        });
+        say(sessionProblem ? sessionProblem.message : "",
+          sessionProblem ? "bad" : null);
         showProblems(problems);
         return;
       }
@@ -580,7 +604,7 @@
 
       let blob;
       try {
-        const record = buildRecord(input, Date.now());
+        const record = buildRecord(input, Date.now(), input.sessionUsername);
         blob = await root.BinderCrypto.encrypt(record, config.publicKey);
       } catch (error) {
         submit.disabled = false;
