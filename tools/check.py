@@ -5,8 +5,8 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of thirteen remembered ones. It runs the two
-linters, the nine Node suites in dev/, the publishability check, and
+it?" one command instead of fourteen remembered ones. It runs the two
+linters, the ten Node suites in dev/, the publishability check, and
 the suite that checks the publishability check, and exits non-zero if
 any of them fails:
 
@@ -21,9 +21,10 @@ any of them fails:
      8. admin.js requires an admin session and keeps deletion state current
      9. xlsx.js writes a ZIP that a reader can actually open
     10. dashboard.js aggregates the rows correctly
-    11. ui.js keeps the shared DOM wiring and boot guard intact
-    12. session.js stores a valid tab session and auth.js hands it off
-    13. worker.js routes, validates and enforces CORS
+    11. public.js requires and sends a member session for the dashboard
+    12. ui.js keeps the shared DOM wiring and boot guard intact
+    13. session.js stores a valid tab session and auth.js hands it off
+    14. worker.js routes, validates and enforces CORS
 
 The linters are a gate, not a build. Nothing they run rewrites a file
 and apps/web is still copied verbatim to the published site; they refuse
@@ -58,6 +59,7 @@ NODE_SUITES = [
     ("admin session + row deletion", "dev/admin-session.test.mjs"),
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),
     ("dashboard aggregation", "dev/dashboard.test.mjs"),
+    ("member dashboard session", "dev/public.test.mjs"),
     ("shared UI wiring", "dev/ui.test.mjs"),
     ("session storage + auth handoff", "dev/session.test.mjs"),
     ("worker routing + CORS", "dev/worker.test.mjs"),

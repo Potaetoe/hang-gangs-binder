@@ -4,9 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  The same policy as the other pages, and it costs nothing to keep here
-  even though this is the one page with no secret on it: no key, no
-  token, and a document that carries no handles and no rows.
+  The same policy as the other pages. This page has no key or plaintext,
+  but it does hold the member session that authorizes its snapshot read.
 
   It is kept anyway because "this page has nothing to protect" is a
   claim about today. A page that starts without a policy is a page
@@ -17,7 +16,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Dashboard — Hang Gang's Binder</title>
-<meta name="description" content="Aggregate numbers from the submissions. No names, no individual entries.">
+<meta name="description" content="Aggregate submission numbers for signed-in members. No names, no individual entries.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#121212">
@@ -59,7 +58,7 @@
   </nav>
 
   <div class="stack-tight">
-    <p class="eyebrow">Everyone</p>
+    <p class="eyebrow">Members</p>
     <h1>Dashboard</h1>
     <p class="muted">
       What the submissions add up to. Counts, middles and distributions

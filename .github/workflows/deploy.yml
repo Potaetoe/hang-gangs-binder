@@ -119,6 +119,12 @@ jobs:
       - name: Check the dashboard's arithmetic
         run: node dev/dashboard.test.mjs
 
+      # The dashboard publishes no handles or rows, but its audience is the
+      # group rather than the world. This drives the shipped page wiring and
+      # keeps signed-out, expired-session and unpublished states distinct.
+      - name: Check the member dashboard session
+        run: node dev/public.test.mjs
+
       # The linters. Registered here AND in tools/check.py - there are two
       # suite lists in this repository and they have to be edited
       # together. A check that passes on a developer's machine and never
