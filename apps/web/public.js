@@ -1,12 +1,10 @@
 /*
- * The public dashboard. The only page here that needs nothing to work.
+ * The members' dashboard. It needs a tab session, but no key or plaintext.
  *
- * No key, no token, no login: it fetches one published aggregate and
- * hands it to dashboard.js, which is the same function that drew the
- * charts on admin.html. That is the whole design of this page - there
- * is no second implementation of the charts, and no way for the public
- * numbers to disagree with the keyholder's, because one produced the
- * other.
+ * The session authorizes one published aggregate read. The result goes to
+ * dashboard.js, the same function that drew the charts on admin.html. There
+ * is no second implementation of the charts, and no way for the member
+ * numbers to disagree with the keyholder's, because one produced the other.
  *
  * It also has no decryption, deliberately. crypto.js is not loaded
  * here, so no amount of confusion about what this page is for can turn
@@ -22,6 +20,7 @@
   if (typeof document === "undefined") return;
 
   const UI = root.BinderUI;
+  const Session = root.BinderSession;
   const $ = UI.byId;
   const show = UI.show;
 
@@ -74,6 +73,8 @@
   const STALE_AFTER_HOURS = 48;
 
   async function setUp() {
+    if (!Session.require()) return;
+
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
       unavailable("This site has no endpoint configured, so there is " +
@@ -83,7 +84,15 @@
 
     let payload;
     try {
-      const response = await fetch(config.endpoint + "/snapshot");
+      const response = await fetch(config.endpoint + "/snapshot", {
+        headers: Session.authorization(),
+      });
+      if (response.status === 401) {
+        Session.clear();
+        unavailable("Your sign-in is no longer valid. Sign in again to " +
+          "view the dashboard.");
+        return;
+      }
       if (response.status === 404) {
         unavailable("No figures have been published yet. This fills in the " +
           "first time the keyholder publishes a snapshot.");
