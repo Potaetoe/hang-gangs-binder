@@ -125,6 +125,76 @@ or ask them to release. Say which in the claim comment.
 Take it over by commenting on the issue first, then swapping the label —
 never by simply starting.
 
+### When Codex runs as an MCP tool
+
+Codex works here two ways and they are not interchangeable. As its own
+session it has network and a GitHub connector, and it claims, commits,
+pushes and comments for itself. As an **MCP tool driven by Claude** it
+runs in a sandboxed clone under `workspace-write`, where **the network is
+blocked** — so it cannot fetch, cannot pull, cannot push, and cannot
+comment on an issue. Those are not errors it reports back; from inside
+the sandbox they are ordinary failures in a shell it already expects to
+be noisy.
+
+**Decided 2026-08-07: under MCP, Claude publishes on Codex's behalf.**
+The alternatives were the owner pushing every commit by hand, or carrying
+diffs between the MCP Codex and the standalone one — the first puts the
+owner in the loop on trivial commits, and the second means two Codexes
+that cannot see each other's working tree.
+
+What that makes Claude responsible for, in order:
+
+1. **Sync the clone before every delegation, not once.** Codex cannot
+   fetch, so the clone goes stale the moment `accounts` moves and Codex
+   has no way to notice.
+2. **Post the `CLAIM` comment and apply the `codex` label** before the
+   first edit, exactly as the section above requires. Codex cannot reach
+   GitHub to do it for itself.
+3. **Read the whole diff.** A commit message here carries reasoning, and
+   a message written from the delegate's summary rather than from the
+   diff is a guess wearing a fact's clothes. If the diff cannot be
+   explained, it does not get pushed.
+4. **Commit with `--author` set to Codex.** Git separates author from
+   committer; the log should too, so that who wrote it and who published
+   it are both recoverable.
+5. Open the PR, then post `RELEASE` and remove the label when it merges.
+
+**Publishing a slice does not make it yours.** The label still says Codex
+holds those files, and Claude must not edit inside a slice it is only
+carrying. The lock is unchanged — the only thing that moved is whose
+hands are on `git push`.
+
+**A sandboxed claim goes stale differently.** The rule above reads
+staleness off pushes to a branch, and an MCP Codex never pushes, so that
+signal is absent by construction. The claim is stale when the thread is
+dead, and Claude knows that directly rather than by waiting a day.
+
+#### When Codex stops mid-slice
+
+A usage limit, a dead thread and a timeout all look the same from
+outside: the tool call returns something that is not a result, and the
+clone is left holding whatever had been written when it stopped. **That
+state is the hazard, because half-finished files look finished.** The
+clone has no failing marker in it and `git status` will describe the work
+as calmly as if it were complete.
+
+- **Nothing partial is published as if it were finished.** Run
+  `python tools/check.py` against what is actually in the clone and
+  report the real counts, naming the suites that did not run at all.
+- **Do not `codex-reply` into a dead thread hoping it resumes.** A
+  follow-up that omits the `threadId` is not a schema error — it starts a
+  cold Codex that reads like a continued conversation, which is worse
+  than a failure because it answers.
+- **Either finish it or hand it back, and say which.** Finishing it means
+  Claude takes the slice over: comment on the issue first, swap the
+  label, and write into the commit message that the handoff happened
+  mid-slice and where the seam is. Handing it back means committing
+  nothing, posting a stop comment naming the files held and what is
+  undone, and removing the label so the slice is free.
+- Continuing silently under Codex's label is the one option not
+  available, for the same reason a stale claim is never taken over by
+  simply starting.
+
 ### The live channel
 
 There is a group channel with the owner and both agents in it. **It

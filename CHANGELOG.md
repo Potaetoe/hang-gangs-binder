@@ -14,6 +14,21 @@ form, the Worker and D1, the key generator — is recorded in `DESIGN.md`,
 which carries the reasoning rather than the sequence, and in the git
 history.
 
+## Unreleased — 2026-08-07
+
+On `accounts`, not released. `main` stays at the last complete release.
+
+### Documentation
+- **`AGENTS.md` describes Codex running as an MCP tool**, which is a
+  second way of working that the file did not previously distinguish from
+  Codex running as its own session. In that mode Codex has no network, so
+  it cannot fetch, push, or comment on an issue — Claude posts the claim,
+  reads the whole diff, commits with `--author` set to Codex, and pushes.
+  Publishing a slice does not transfer it; the label remains the lock.
+  The section also says what to do when Codex stops mid-slice, because a
+  clone holding half-written files looks exactly like one holding
+  finished ones.
+
 ## Unreleased — 2026-08-06
 
 On `accounts`, not released. `main` stays at the last complete release.

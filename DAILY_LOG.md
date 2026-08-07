@@ -12,6 +12,53 @@ Starts 2026-08-05.
 
 ---
 
+## 2026-08-07
+
+**Landed on `accounts`:** the MCP-delegation rules in `AGENTS.md`. `main`
+untouched. Step 3b is still open on #26 and PR #32 still holds
+`index.html`, `auth.js` and `check_web.py`.
+
+### Codex as an MCP tool, and who pushes
+
+Codex now also runs as an MCP server that Claude drives, in its own clone,
+under `workspace-write` with the network blocked. The owner chose, from
+four options, that **Claude publishes what that Codex writes** — reading
+the whole diff first and setting `--author` to Codex. The rejected ones
+are worth recording: the owner pushing by hand puts them in the loop on
+trivial commits, and routing through the standalone Codex's GitHub
+connector means hand-carrying diffs between two Codexes that cannot see
+each other's working tree.
+
+The rule that keeps this honest is that **publishing a slice does not
+transfer it.** The label is still the lock and still says Codex; only the
+hands on `git push` moved.
+
+### The Codex clone had drifted, silently
+
+Found before any delegation: the clone was checked out on
+`step-3-session-plumbing`, tracking `origin/main`, four commits ahead of a
+branch that no longer exists on the remote. Two of those four had already
+landed as squashes under different SHAs (#16, #17). Its working tree was
+clean the whole time.
+
+**A clone that cannot fetch drifts without a symptom.** `git status`
+reports nothing to commit while the branch underneath it has been deleted
+upstream. Nothing was rebased or discarded — the old branch ref is left
+where it was, and a new `accounts` tracking `origin/accounts` was checked
+out beside it. Re-syncing before *every* delegation is now the rule rather
+than a thing to remember.
+
+### A correction worth carrying
+
+`DESIGN.md`'s accounts build order still marks only steps 1 and 8. It does
+not record step 2's unpublish or step 3's session half, both of which
+landed on 2026-08-06. `REDESIGN.md`'s status table and the issue comments
+are current and agree with each other. Not fixed here — flagged, because
+the next agent to read the build order for status will be reading the
+stale copy.
+
+---
+
 ## 2026-08-06
 
 **Landed on `accounts`:** step 3's session half merged, repo-wide code
