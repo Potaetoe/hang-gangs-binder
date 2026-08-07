@@ -248,15 +248,36 @@ await check("several problems are reported together", () =>
 /* The record. What actually gets stored.                              */
 
 const WHEN = Date.UTC(2026, 7, 4, 12, 0, 0);
+const SESSION_USERNAME = "verified_member";
+
+await check("a typed handle is refused without a session username", () => {
+  try {
+    buildRecord(GOOD_METRIC, WHEN);
+  } catch {
+    return true;
+  }
+  return false;
+});
+
+await check("a submission carries the session username", () =>
+  buildRecord(vary(GOOD_METRIC, { telegram: "" }), WHEN, SESSION_USERNAME)
+    .telegram === SESSION_USERNAME);
+
+await check("a typed handle cannot override the session username", () =>
+  buildRecord(
+    vary(GOOD_METRIC, { telegram: "different_member" }),
+    WHEN,
+    SESSION_USERNAME,
+  ).telegram === SESSION_USERNAME);
 
 await check("an imperial submission stores both systems", () => {
-  const r = buildRecord(GOOD_IMPERIAL, WHEN);
+  const r = buildRecord(GOOD_IMPERIAL, WHEN, SESSION_USERNAME);
   return same(r.weight, { kg: 90.7, lb: 200 }) &&
     same(r.height, { cm: 177.8, totalInches: 70, feet: 5, inches: 10 });
 });
 
 await check("a metric submission stores both systems", () => {
-  const r = buildRecord(GOOD_METRIC, WHEN);
+  const r = buildRecord(GOOD_METRIC, WHEN, SESSION_USERNAME);
   return r.weight.kg === 90 && r.weight.lb === 198.4 &&
     r.height.cm === 178 && r.height.feet === 5;
 });
@@ -264,20 +285,25 @@ await check("a metric submission stores both systems", () => {
 /* Rounding is lossy in both directions, so the honest answer to "what
  * did they actually type" is kept verbatim beside the derived numbers. */
 await check("what was typed is recorded verbatim", () =>
-  same(buildRecord(GOOD_IMPERIAL, WHEN).entered,
+  same(buildRecord(GOOD_IMPERIAL, WHEN, SESSION_USERNAME).entered,
     { units: "imperial", weight: "200 lb", height: "5 ft 10 in" }) &&
-  same(buildRecord(GOOD_METRIC, WHEN).entered,
+  same(buildRecord(GOOD_METRIC, WHEN, SESSION_USERNAME).entered,
     { units: "metric", weight: "90 kg", height: "178 cm" }));
 
 await check("the handle is stored normalized", () =>
-  buildRecord(vary(GOOD_METRIC, { telegram: "https://t.me/SomeHandle" }), WHEN)
+  buildRecord(
+    vary(GOOD_METRIC, { telegram: "https://t.me/SomeHandle" }),
+    WHEN,
+    "@SomeHandle",
+  )
     .telegram === "somehandle");
 
 await check("the timestamp is the one it was given", () =>
-  buildRecord(GOOD_METRIC, WHEN).submittedAt === "2026-08-04T12:00:00.000Z");
+  buildRecord(GOOD_METRIC, WHEN, SESSION_USERNAME).submittedAt ===
+    "2026-08-04T12:00:00.000Z");
 
 await check("the 18+ confirmation is recorded with the row", () =>
-  buildRecord(GOOD_METRIC, WHEN).over18 === true);
+  buildRecord(GOOD_METRIC, WHEN, SESSION_USERNAME).over18 === true);
 
 /*
  * The optional fields are the ones a tampered page or a future edit
@@ -285,20 +311,34 @@ await check("the 18+ confirmation is recorded with the row", () =>
  * the export has a fixed vocabulary to read.
  */
 await check("unknown roles are dropped", () =>
-  same(buildRecord(vary(GOOD_METRIC, { roles: ["feedee", "wizard"] }), WHEN)
-    .roles, ["feedee"]));
+  same(buildRecord(
+    vary(GOOD_METRIC, { roles: ["feedee", "wizard"] }),
+    WHEN,
+    SESSION_USERNAME,
+  ).roles, ["feedee"]));
 
 await check("an unknown gender becomes nothing rather than itself", () =>
-  buildRecord(vary(GOOD_METRIC, { gender: "made up" }), WHEN).gender === null);
+  buildRecord(
+    vary(GOOD_METRIC, { gender: "made up" }),
+    WHEN,
+    SESSION_USERNAME,
+  ).gender === null);
 
 await check("an unselected optional field is null, not empty string", () => {
   const r = buildRecord(
-    vary(GOOD_METRIC, { gender: "", country: "", roles: [] }), WHEN);
+    vary(GOOD_METRIC, { gender: "", country: "", roles: [] }),
+    WHEN,
+    SESSION_USERNAME,
+  );
   return r.gender === null && r.country === null && same(r.roles, []);
 });
 
 await check("a country that is not a two-letter code is dropped", () =>
-  buildRecord(vary(GOOD_METRIC, { country: "United States" }), WHEN)
+  buildRecord(
+    vary(GOOD_METRIC, { country: "United States" }),
+    WHEN,
+    SESSION_USERNAME,
+  )
     .country === null);
 
 /* ------------------------------------------------------------------ */
@@ -311,7 +351,7 @@ await check("a country that is not a two-letter code is dropped", () =>
  * three nulls, through encrypt and back, compared whole.
  */
 await check("a record encrypts and comes back identical", async () => {
-  const record = buildRecord(GOOD_IMPERIAL, WHEN);
+  const record = buildRecord(GOOD_IMPERIAL, WHEN, SESSION_USERNAME);
   const blob = await globalThis.BinderCrypto.encrypt(record, keyFile.publicKey);
   const back = await globalThis.BinderCrypto.decrypt(blob, keyFile);
   return same(back, record);
@@ -322,7 +362,7 @@ await check("a record encrypts and comes back identical", async () => {
  * after the submitter has filled everything in. */
 await check("the ciphertext is base64 the endpoint accepts", async () => {
   const blob = await globalThis.BinderCrypto.encrypt(
-    buildRecord(GOOD_METRIC, WHEN), keyFile.publicKey);
+    buildRecord(GOOD_METRIC, WHEN, SESSION_USERNAME), keyFile.publicKey);
   return /^[A-Za-z0-9+/]+={0,2}$/.test(blob) && blob.length < 16 * 1024;
 });
 
