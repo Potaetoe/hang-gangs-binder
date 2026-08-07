@@ -88,6 +88,38 @@ On `accounts`, not released. `main` stays at the last complete release.
   `dev/form.test.mjs` exercise code the product never takes. Left
   visible for a later cleanup rather than folded into this slice.
 
+### Security
+- **Every page's whole Content-Security-Policy is now pinned**, not two
+  directives on one page. Checks 11 and 12 left `default-src` unchecked,
+  and `default-src` governs every directive a page does not set
+  explicitly — `object-src` among them — so a page could widen
+  everything it had not named with nothing to say so. The pin is a
+  baseline plus declared deviations, each carrying its reason, and the
+  pages it covers are **listed** rather than read off the directory: a
+  table derived from what exists cannot fail when a page is added, and
+  adding a page is exactly when a head gets copied. #34.
+- **The CSP parser reports when it cannot read, instead of skipping.**
+  The old searches matched `http-equiv` and *then* `content` within one
+  tag; HTML does not care about attribute order, so reversing the two
+  made every CSP check pass in silence while check 3 still saw the
+  marker. Two hazards were produced against the old code with the gate
+  green — `index.html` carrying `script-src * 'unsafe-inline'
+  'unsafe-eval'`, and `submit.html` carrying the Telegram origin. Both
+  now fail. Absence and unreadability are kept distinct: a page with no
+  policy at all is still check 3's to report.
+- `csp_gaps()` routed through the same parser. It carried the original
+  `if not policy: continue` and is where checks 11 and 12 inherited it.
+
+### Added
+- **`dev/check_web.test.py` — the gate's first test of itself**, and the
+  local gate is twelve checks. `check_web.py` had never had tests, which
+  is the direct cause of the bug above: its only verification was manual
+  mutation, and a mutation is written against a *rule*, so it exercises
+  the rules and never the parser that has to find the policy first.
+  Every mutation on checks 11 and 12 passed while the policy was never
+  read. No framework and no new dependency, matching the `.mjs` suites;
+  registered in both `tools/check.py` and the CI workflow.
+
 ### Documentation
 - **Worker setup now records all three numeric id bindings as secrets, not
   vars.** Their being ids rather than credentials never made a public

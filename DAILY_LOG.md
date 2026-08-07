@@ -14,16 +14,86 @@ Starts 2026-08-05.
 
 ## 2026-08-07
 
-**Landed on `accounts`:** the MCP-delegation rules in `AGENTS.md`, **step
-4** (#5, merged, closed by hand) and **step 3b** (#26, merged, closed by
-hand). `main` untouched. Step 4 was built by Codex as an MCP tool and
-published by Claude — the first slice run under that arrangement.
+**Landed on `accounts`:** the MCP-delegation rules and the `owner-only`
+rewrite in `AGENTS.md`; **step 4** (#5) and **step 3b** (#26); the
+whole-CSP pin and the gate's first self-test (#34); and the id-bindings
+correction (#30). Owner-side: production `submissions` cleared (step 2,
+#3), the key fingerprint pinned in the group (#29), and dev
+`ACCOUNT_SECRET` set (#33). Every issue closed by hand. `main` untouched
+throughout.
+
+Step 4 was built by Codex as an MCP tool and published by Claude — the
+first slice run under that arrangement. #30 was the standalone Codex,
+which has its own GitHub access; the two are different instances and
+cannot see each other's working tree, which is why the publishing rule
+distinguishes them.
 
 Both were rebase-merged rather than squashed, against this repository's
 convention. Each is a contract commit followed by its implementation, and
 squashing collapses the one place a future reader can see that the test
 went in red first. History stays linear; `accounts` still has no merge
 commits.
+
+### #34 — the fix, and the check that could never fail
+
+Claude. Contract first: `dev/check_web.test.py` went in red, raising
+`AttributeError` on a `parse_csp` that did not exist. Left as a crash
+rather than wrapped in a `try`/`except` that would have reported a tidy
+failure — the contract was that the parser becomes testable, and "the
+function is not there" is the honest first state of that.
+
+**`check_web.py` had never had a test, and that is the whole cause.** Its
+only verification has been manual mutation, and a mutation is written
+against a *rule* — add `telegram.org` to a page, watch it fail — so it
+exercises the rules and never the parser that has to find the policy
+before any rule can apply. Every mutation on checks 11 and 12 passed
+while the policy was simply never read. That is not an argument about
+test coverage in general; it is the specific reason this bug was
+invisible to the method that was supposed to catch it.
+
+Nine mutations now fire, including three things that were not checkable
+before: `default-src` widening on any page, an unreadable `content`
+attribute (which now *reports* rather than skips), and a page nobody
+pinned. **And a control**, because the fix has to be about the policy and
+not the formatting: `admin.html` with its attributes reversed and its
+policy unchanged stays green.
+
+**One mistake worth keeping, caught before it was committed.** The first
+version of the pin derived its page list from `html_pages()`. That reads
+as thorough and is inert: a new page would silently inherit the baseline,
+so "every page has a pinned policy" could never fail. An armed-looking
+check that cannot fire is the thing this repository holds to be worse
+than no check, and I had just written one while fixing another. The page
+list is now written out. `DEVELOPMENT_ENDPOINT` is a literal for the
+adjacent reason — `csp_gaps()` already reconciles the two files, and a
+pin that reads its expectation from the thing it guards is check 5's
+mistake again.
+
+### #30 — six sentences, and a hazard the gate still cannot see
+
+Codex, reviewed by Claude, merged as `00798a6`. The correction was wider
+than the issue asked: six live statements across five files, found by
+going back to the hazard in its own words rather than re-checking the
+criterion — including `DESIGN.md`, which `AGENTS.md` ranks *above*
+`REDESIGN.md` and which was therefore the worst remaining copy. The
+argument in the commit message is better than the one the issue was filed
+with: the ids are secrets **not because they are credentials**, but
+because "survives a deploy" and "not in a public repository" are exactly
+the two properties a secret has and a var does not.
+
+**The review found that the hazard is still reachable.** Produced on the
+branch, not argued: adding `ADMIN_TELEGRAM_IDS`, `TELEGRAM_GROUP_CHAT_ID`
+and `ALWAYS_ALLOW_TELEGRAM_IDS` back under `[vars]` in
+`server/wrangler.toml` leaves **all eleven checks green**. That commit
+publishes the group's numeric ids in a public repository — the membership
+oracle the account-id design exists to prevent — by the exact route the
+issue was filed to close.
+
+The reason is structural: `check_web.py` is `WEB = apps/web`, so
+**nothing in the gate looks at `server/` at all.** Merged anyway, because
+the prose fix is correct and independent, and holding it hostage to work
+in another directory would pay for the check with the documentation.
+Filed separately.
 
 ### Step 3b, and a check that fails open
 
