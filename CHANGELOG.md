@@ -45,8 +45,13 @@ On `accounts`, not released. `main` stays at the last complete release.
   while a quietly edited description leaves no trace. Verified before
   posting that the live site, `main`, `accounts` and the issue all
   carried a byte-identical key.
-- A member still has no easy way to read the *live* key to compare
-  against — today that means view-source on `config.js`. Filed as #36.
+- **Members can now compare the live encryption key with the pinned group
+  message without opening source.** `submit.html` shows the first 32
+  base64 characters of the configured public key in monospace and tells a
+  member not to submit if they differ. #29's out-of-band anchor was only
+  half a mechanism while the browser's value remained buried in
+  `config.js`; the page now reads the key it is about to encrypt with on
+  every setup, and shows no fingerprint when no key exists. #36.
 
 ### Data
 - **Production `submissions` was cleared** — build step 2, by the owner,
