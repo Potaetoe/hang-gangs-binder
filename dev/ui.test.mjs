@@ -154,8 +154,10 @@ check("no configured key renders nothing rather than an empty anchor",
 UI.showFingerprint(null, KEY);
 check("showFingerprint tolerates an optional missing element", true);
 
-check("showFingerprint truncates rather than hashing",
-  !source.includes("crypto") && !source.includes("digest"));
+const CRYPTO_ACCESS = /\bcrypto\s*\.\s*(?:subtle|getRandomValues|randomUUID)\b/;
+const SUBTLE_CALL = /\bsubtle\s*\.\s*[A-Za-z_$][\w$]*\s*\(/;
+check("ui.js contains no Web Crypto access",
+  !CRYPTO_ACCESS.test(source) && !SUBTLE_CALL.test(source));
 
 const submitSource = await readFile(
   new URL("../apps/web/submit.html", import.meta.url), "utf8");

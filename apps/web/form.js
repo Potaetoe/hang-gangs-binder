@@ -421,6 +421,14 @@
         "encrypt to. Submissions are closed until there is."
       : null;
 
+    /*
+     * A signed-out visitor has no submission to verify, so their return
+     * stays above this. The blocked-form return stays below it because a
+     * member can still compare a configured key when local encryption is
+     * unavailable; with no key, the helper keeps the slot hidden.
+     */
+    UI.showFingerprint($("key-fingerprint"), config.publicKey);
+
     const blocked = unavailable || noKey;
     if (blocked) {
       show(form, false);

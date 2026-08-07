@@ -288,6 +288,18 @@
       key can — and that key is not kept online. Your username is not
       stored in the clear anywhere.
     </p>
+    <!--
+      A page that was changed to use an attacker's key could change this
+      display too. The page is not the anchor: the pinned group message is.
+      Printing the live key exposes a mismatch, while check_web.py pins the
+      production key outside config.js so printing an old key while using a
+      replacement cannot pass the build.
+    -->
+    <p class="muted small">
+      Before submitting, compare the key fingerprint
+      <code id="key-fingerprint" hidden></code> with the one pinned in the
+      group. If they differ, do not submit and tell an administrator.
+    </p>
   </div>
 </main>
 
