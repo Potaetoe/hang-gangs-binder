@@ -57,8 +57,6 @@ fixing a fault.
 **The clone had no `node_modules` at all**, so checks 2 and 3 had never
 run there. Installed with `--ignore-scripts`, per the reasoning in #20.
 
-### The Codex clone had drifted, silently
-
 ### Codex as an MCP tool, and who pushes
 
 Codex now also runs as an MCP server that Claude drives, in its own clone,
