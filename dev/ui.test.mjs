@@ -175,15 +175,13 @@ check("the page is filled from the configured key at runtime",
   && /publicKey/.test(formSource));
 
 /*
- * The hazard the issue names, and the reason it is asserted here rather
- * than in check_web.py: every pattern in that file's KEY_PATTERNS targets
- * a *private* key shape, so a public key pasted into a page passes it.
- * #34 holds check_web.py, so this guards the same thing from the suite
- * until an arm can be added there.
+ * The base64-key-literal assertion used to live here, guarding submit.html
+ * alone while #34 held check_web.py. It has moved to check 14 in that file,
+ * where it covers every page - #41. It moved rather than being copied: a
+ * page suite cannot own a repository-wide boundary, and two checks making
+ * the same claim in different files is how one of them gets quietly
+ * weakened. Deleting it here is the point, not an oversight.
  */
-const BASE64_KEY = /["'][A-Za-z0-9+/]{60,}={0,2}["']/;
-check("the submission page hard-codes no key of its own",
-  !BASE64_KEY.test(submitSource));
 check("the sign-in page does not gain the fingerprint",
   !/key-fingerprint/.test(signInSource));
 
@@ -191,4 +189,4 @@ if (failures) {
   console.error(`\nui.js FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nui.js OK - 28 checks");
+console.log("\nui.js OK - 27 checks");
