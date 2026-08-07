@@ -1903,7 +1903,7 @@ is testable against anything real:
 - `TELEGRAM_BOT_TOKEN` — verifies the login payload. Also the thing that
   must never be logged.
 - `ACCOUNT_SECRET` — the HMAC key behind every account id. Permanent.
-- `ADMIN_TELEGRAM_IDS` — plaintext var, comma-separated numeric ids.
+- `ADMIN_TELEGRAM_IDS` — secret, comma-separated numeric ids.
 
 `submissions` gains an `account_id` column and an index on it; a
 `sessions` table holds `SHA-256(token)`, the account id, whether it is

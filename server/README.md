@@ -119,10 +119,22 @@ Variables and Secrets, and `REDESIGN.md` Part 1 has the BotFather half.
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | **secret** | From BotFather. Verifies every login payload. Never logged. |
 | `ACCOUNT_SECRET` | **secret** | The HMAC key behind every account id. **Permanent** — see below. |
-| `ADMIN_TELEGRAM_IDS` | variable | Comma-separated **numeric** ids, not handles. |
-| `TELEGRAM_GROUP_CHAT_ID` | variable | Optional. Set it and only members of that group may sign in. |
-| `ALWAYS_ALLOW_TELEGRAM_IDS` | variable | Optional. Ids that skip the group check — and the way back in if the bot is ever removed from the group. |
+| `ADMIN_TELEGRAM_IDS` | **secret** | Comma-separated **numeric** ids, not handles. |
+| `TELEGRAM_GROUP_CHAT_ID` | **secret** | Optional. Set it and only members of that group may sign in. |
+| `ALWAYS_ALLOW_TELEGRAM_IDS` | **secret** | Optional. Ids that skip the group check — and the way back in if the bot is ever removed from the group. |
 | `DEV_LOGIN_SECRET` | **secret** | **Development only. Never set this on production** — its absence is what turns `POST /auth/dev` off. |
+
+The three numeric id bindings are secrets even though they are not
+credentials. A `[vars]` block would commit them to this public
+repository, exposing the group allowlist the account-id design
+exists to hide, while variables set only in the dashboard are
+silently erased by the next deploy. Secrets keep the ids out of the
+repository and survive a deploy. A Worker deployed from this
+repository can use `wrangler secret put` normally. The existing
+production Worker is different: its script was hand-pasted, leaving
+it in version-upload state, so the command fails with error 10220.
+Use the dashboard for that Worker until cutover, then re-test the
+CLI rather than assuming it works or remains broken.
 
 **`ACCOUNT_SECRET` can never change.** Once one row carries an id
 derived from it, changing it detaches every member from their own

@@ -44,24 +44,37 @@ preview_urls = false
 [vars]
 ALLOWED_ORIGINS = "https://potaetoe.github.io"
 
-# Every secret is deliberately absent. They are set with
-# `wrangler secret put` or in the dashboard, and must never appear in a
-# file that lives in a public repository:
+# Every secret is deliberately absent and must never appear in a file
+# that lives in a public repository. Production's six secrets are set in
+# the dashboard. DEV_LOGIN_SECRET is a separate, development-only secret
+# and must never be set on production.
+#
+# Production's hand-pasted script leaves the Worker in version-upload
+# state, so `wrangler secret put` tries to create and deploy a version and
+# fails with error 10220. Use the dashboard until cutover deploys this
+# config; then re-test the CLI rather than assuming it works or remains
+# broken.
+#
+# The three numeric id bindings are secrets even though they are not
+# credentials. A [vars] block would publish them in this repository, and
+# the allowlist would expose the group membership the account-id design
+# exists to hide. A dashboard-only var would be silently erased by the
+# next deploy. Secrets supply both properties the ids need: they stay
+# private and survive a deploy.
 #
 #     EXPORT_TOKEN         break-glass admin access
 #     TELEGRAM_BOT_TOKEN   verifies every login payload
 #     ACCOUNT_SECRET       the HMAC key behind every account id.
 #                          PERMANENT - changing it detaches every member
 #                          from their own history, with no way back.
+#     ADMIN_TELEGRAM_IDS   numeric ids allowed to administer the Worker
+#     TELEGRAM_GROUP_CHAT_ID
+#                          optional group whose members may sign in
+#     ALWAYS_ALLOW_TELEGRAM_IDS
+#                          optional ids that bypass the group check
 #     DEV_LOGIN_SECRET     DEVELOPMENT ONLY. Its absence is what turns
 #                          POST /auth/dev off, so it must never be set
 #                          here or on the production Worker.
-#
-# ADMIN_TELEGRAM_IDS, TELEGRAM_GROUP_CHAT_ID and
-# ALWAYS_ALLOW_TELEGRAM_IDS are plaintext vars rather than secrets - they
-# are numeric ids, not credentials - and they are not listed under
-# [vars] yet because the accounts Worker is not deployed. See
-# server/README.md.
 #
 # The id is account-scoped and not a credential - it identifies the
 # database but opens nothing without Cloudflare authentication, which is

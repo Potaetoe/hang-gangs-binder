@@ -33,13 +33,13 @@
  *   ACCOUNT_SECRET            secret, the HMAC key behind every account
  *                             id. PERMANENT - changing it detaches every
  *                             member from their own history.
- *   ADMIN_TELEGRAM_IDS        comma-separated numeric ids
+ *   ADMIN_TELEGRAM_IDS        secret, comma-separated numeric ids
  *   EXPORT_TOKEN              secret, break-glass admin access
- *   TELEGRAM_GROUP_CHAT_ID    optional; when set, only members of that
- *                             group may sign in
- *   ALWAYS_ALLOW_TELEGRAM_IDS optional; ids that bypass the group check,
- *                             and the way back in if the bot is ever
- *                             removed from the group
+ *   TELEGRAM_GROUP_CHAT_ID    secret, optional; when set, only members
+ *                             of that group may sign in
+ *   ALWAYS_ALLOW_TELEGRAM_IDS secret, optional; ids that bypass the group
+ *                             check, and the way back in if the bot is
+ *                             ever removed from the group
  *   ALLOWED_ORIGINS           optional, comma-separated
  *   DEV_LOGIN_SECRET          DEVELOPMENT ONLY. Its absence is what
  *                             turns POST /auth/dev off. Never set this

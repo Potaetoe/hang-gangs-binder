@@ -244,6 +244,28 @@ sign-in is observed, and step 4's live half cannot be proved before
 cutover. `REDESIGN.md`'s table is updated in the same pass, and #10 is
 noted as needing re-scoping since #26 already landed checks 11 and 12.
 
+### The three id bindings are recorded as secrets — #30
+
+Codex, under MCP. The remaining correction reached six live statements
+across five files, not the one Part 8b still named: `server/wrangler.toml`,
+the accounts setup table in `server/README.md`, the bindings header in
+`server/worker.js`, the authoritative `DESIGN.md` bullet, Part 1's setup
+table and `REDESIGN.md`'s top exception. All six now agree with the live
+Worker and explain the rejected inference: numeric ids are not credentials,
+but that does not make a committed `[vars]` block safe or make a
+dashboard-only var survive a deploy.
+
+The deployment notes also stop prescribing `wrangler secret put` for
+production. The production Worker's hand-pasted script leaves it in
+version-upload state, so the command fails with error 10220 for anyone;
+the dashboard remains the tool until cutover, when the CLI needs to be
+tested again rather than assumed fixed or permanently broken.
+
+No executable behavior changed and no regression test was invented. A
+check that greps these comments would be computed entirely from the files
+it guards, so it could confirm wording while missing the deployment fact
+the wording is meant to preserve.
+
 ---
 
 ## 2026-08-06
