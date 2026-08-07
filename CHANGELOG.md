@@ -89,6 +89,17 @@ On `accounts`, not released. `main` stays at the last complete release.
   visible for a later cleanup rather than folded into this slice.
 
 ### Documentation
+- **Worker setup now records all three numeric id bindings as secrets, not
+  vars.** Their being ids rather than credentials never made a public
+  `[vars]` block safe: the allowlist is the membership oracle the
+  account-id design exists to prevent, and a dashboard-only var is
+  silently erased by the next deploy. Six live statements across five
+  files — the Worker config, server setup table, bindings header,
+  authoritative design bullet, Part 1 setup table and top-of-file
+  exception — now agree with the six production secrets. They also
+  record that this production deployment must use the dashboard until
+  cutover because its version-upload state makes `wrangler secret put`
+  fail with error 10220.
 - **`owner-only` no longer means "irreversible".** It now means the work
   is unreachable from an agent session, and the issue has to name which
   of three reasons applies: it needs a secret, it is not on this machine,

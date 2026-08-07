@@ -35,14 +35,14 @@ than a stale one, because somebody follows it during an incident. Each
 carries a pointer here, and `server/README.md` carries the
 do-not-deploy warning in full.
 
-> **One exception, 2026-08-06: `server/wrangler.toml` is now wrong.** Its
-> comment block says `ADMIN_TELEGRAM_IDS`, `TELEGRAM_GROUP_CHAT_ID` and
-> `ALWAYS_ALLOW_TELEGRAM_IDS` "are plaintext vars rather than secrets".
-> All three are set as **secrets** on the live Worker. The paragraph
-> above is the reason this is being flagged rather than left: the file
-> claims to describe what currently runs, so a reader has no cue that
-> this part does not. Correcting it is what issue #30 has left, and it is
-> in `server/`. See Part 8b.
+> **One exception found 2026-08-06, corrected 2026-08-07:**
+> `server/wrangler.toml`'s comment block said `ADMIN_TELEGRAM_IDS`,
+> `TELEGRAM_GROUP_CHAT_ID` and `ALWAYS_ALLOW_TELEGRAM_IDS` "are plaintext
+> vars rather than secrets", while all three were already set as
+> **secrets** on the live Worker. The paragraph above is why this was
+> flagged rather than left: the file claimed to describe what currently
+> ran, so a reader had no cue that this part did not. Issue #30 corrected
+> the config and the other live copies of that claim. See Part 8b.
 
 ## What is done
 
@@ -160,11 +160,18 @@ Workers & Pages → the Worker → Settings → Variables and Secrets:
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | **secret** | From BotFather. Verifies every login payload. |
 | `ACCOUNT_SECRET` | **secret** | A long random string you generate. The HMAC key behind every account id. |
-| `ADMIN_TELEGRAM_IDS` | plaintext var | Comma-separated **numeric** Telegram ids. Not handles. |
+| `ADMIN_TELEGRAM_IDS` | **secret** | Comma-separated **numeric** Telegram ids. Not handles. |
+| `TELEGRAM_GROUP_CHAT_ID` | **secret** | Optional. Only members of this group may sign in. |
+| `ALWAYS_ALLOW_TELEGRAM_IDS` | **secret** | Optional. Ids that bypass the group check and preserve the way back in. |
 
-Secrets, not plaintext variables, for the first two — a plaintext
-variable is visible in the dashboard to anyone with account access, and
-these two are as sensitive as `EXPORT_TOKEN`.
+The first two are secrets because they are credentials: either one lets
+its holder cross a boundary the Worker trusts. The three numeric id
+bindings are not credentials, but they still need the two properties a
+secret has and a var does not here. A `[vars]` block is committed to this
+public repository, exposing the allowlist of group members, while a var
+set only in the dashboard is silently erased by the next deploy. Secrets
+keep the ids out of the repository and survive a deploy; Part 8b records
+the correction in full.
 
 **`ACCOUNT_SECRET` is permanent.** Change it and every account id
 changes, every member's entries detach from each other, and there is no
@@ -916,10 +923,16 @@ then demands `CLOUDFLARE_API_TOKEN`, which nobody here may handle), and
 **`npx --yes wrangler@latest` is not reproducible** — two runs minutes
 apart resolved to 4.45.0 and 4.119.0 and failed differently.
 
-**Still open, and it is the whole remaining point of this section:**
-`wrangler.toml`'s comment block still describes the three id secrets as
-plaintext vars. That is now false about the live Worker, and it is the
-sentence that would talk the next reader into re-creating the defect.
+**Done 2026-08-07 — the remaining correction reached six live
+statements across five files, not the one this section named.**
+`server/wrangler.toml`, `server/README.md`'s setup table, the bindings
+header in `server/worker.js`, the authoritative `DESIGN.md` bullet and
+Part 1's setup table all classified the id bindings as vars; this
+file's top exception still said the correction was open. All six now
+name or point to the completed secret classification, record why
+numeric ids still need the two properties only secrets provide here,
+and direct this production deployment to the dashboard until cutover
+without recording any value.
 
 ---
 
