@@ -5,22 +5,24 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of eleven remembered ones. It runs the two
-linters, the eight Node suites in dev/, and the publishability check,
-and exits non-zero if any of them fails:
+it?" one command instead of twelve remembered ones. It runs the two
+linters, the eight Node suites in dev/, the publishability check, and
+the suite that checks the publishability check, and exits non-zero if
+any of them fails:
 
      1. apps/web is publishable (references resolve, no key-shaped
         content)
-     2. eslint passes over the JavaScript
-     3. ruff passes over the Python
-     4. crypto.js round trips, and the v1 fixture still decrypts
-     5. form.js builds the record the way it always did
-     6. admin.js quotes CSV correctly and guards spreadsheet formulas
-     7. xlsx.js writes a ZIP that a reader can actually open
-     8. dashboard.js aggregates the rows correctly
-     9. ui.js keeps the shared DOM wiring and boot guard intact
-    10. session.js stores a valid tab session and auth.js hands it off
-    11. worker.js routes, validates and enforces CORS
+     2. check_web.py's own CSP parser and policy pin
+     3. eslint passes over the JavaScript
+     4. ruff passes over the Python
+     5. crypto.js round trips, and the v1 fixture still decrypts
+     6. form.js builds the record the way it always did
+     7. admin.js quotes CSV correctly and guards spreadsheet formulas
+     8. xlsx.js writes a ZIP that a reader can actually open
+     9. dashboard.js aggregates the rows correctly
+    10. ui.js keeps the shared DOM wiring and boot guard intact
+    11. session.js stores a valid tab session and auth.js hands it off
+    12. worker.js routes, validates and enforces CORS
 
 The linters are a gate, not a build. Nothing they run rewrites a file
 and apps/web is still copied verbatim to the published site; they refuse
@@ -143,6 +145,14 @@ def main():
 
     results.append(("apps/web publishable", run(
         "apps/web publishable", [sys.executable, "tools/check_web.py"]
+    )))
+
+    # The gate checking itself. It runs on the same interpreter and needs
+    # no node, so it is here rather than in NODE_SUITES - and it runs
+    # second because a broken checker makes the check above meaningless
+    # rather than merely wrong.
+    results.append(("check_web CSP parser + pin", run(
+        "check_web CSP parser + pin", [sys.executable, "dev/check_web.test.py"]
     )))
 
     node = find_node()
