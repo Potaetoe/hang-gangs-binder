@@ -356,6 +356,103 @@ If everyone is locked out — no admin id works, the bot is gone from the
 group — `ALWAYS_ALLOW_TELEGRAM_IDS` and `EXPORT_TOKEN` are the two ways
 back, both set in the dashboard.
 
+## When somebody leaves
+
+**Belonging here is four separate things, and they come apart
+separately.** Being in the Telegram group is what lets somebody sign
+in; a number in `ADMIN_TELEGRAM_IDS` is what makes them an admin; a
+live session is a credential already issued and already in their
+browser; and the rows they submitted are in the database. Removing one
+of these does nothing to the other three, and the ordering below exists
+because the step that feels most final is the one that leaves a working
+session behind.
+
+1. **Decide first whether this is a departure or a compromise.**
+   Somebody leaving on ordinary terms can be asked to press **Sign
+   out**, and that is the cleanest end a session has. Somebody whose
+   access is being removed against their wishes, or whose device is
+   gone, is "When a token or a session may be compromised" below — the
+   whole difference is whether the person holding the credential can be
+   relied on to end it. **Anyone.**
+2. **Take the admin id away first**, because it is the fastest lever
+   and it ends the larger authority: remove their number from
+   `ADMIN_TELEGRAM_IDS` in the dashboard. "Making someone an admin"
+   above says what that does and how soon, and the part worth
+   re-reading before you assume this finished the job is that demotion
+   is not revocation. **Owner only.**
+3. **Then remove them from the Telegram group — and check
+   `ALWAYS_ALLOW_TELEGRAM_IDS` in the same sitting.** Group membership
+   is checked when a session is *issued* and never again, so this stops
+   the next sign-in and does nothing whatever to the session they are
+   already holding. If their id is on the always-allow list, removing
+   them from the group has no effect at all: that list exists to bypass
+   exactly this check ("Secrets" above). It is the easiest step to
+   forget, because it is usually empty. **Owner only.**
+4. **End the session they still hold.** Three ways, and step 1 chooses
+   which:
+
+   - **They press Sign out**, which sends `DELETE /session`. Not every
+     page carries that control yet; "Making someone an admin" above
+     names which one does, and an admin ends their session there like
+     anybody else.
+   - **You wait.** It ends on its own at the lifetimes named under
+     "Routes and who may call them" — and for an admin session nobody
+     is using, at the idle window rather than the cap.
+   - **You end every session at once.** There is deliberately no route
+     that ends *somebody else's* session: one answering differently for
+     an account that has sessions than for one that does not would
+     disclose whether that account exists, which is what `DESIGN.md`,
+     "The identifier is the whole problem", is built to prevent. What
+     exists instead is the table, and clearing it signs everybody out.
+     That is a real option rather than a last resort — a session is
+     reissued by signing in, which is why `server/schema.sql` gives
+     that table no backup procedure — and the person who has just left
+     the group is the one member who cannot sign back in.
+
+   Clearing it is one command, run from `server/`. **Take a backup
+   first** ("Backing up the submissions" above): not because sessions
+   are worth keeping, but because this is a hand-typed `DELETE` against
+   production and the irreplaceable table in the same schema has a name
+   that looks like this one.
+
+   ```bash
+   npx wrangler d1 execute hg_binder_db --remote --command "DELETE FROM sessions;"
+   ```
+
+   **Owner only** — and **the verification is that it signed you out
+   too.** Your own session was a row in that table, so if the export
+   page still works without signing in again, the command did not do
+   what it appeared to: one that matched nothing, or ran against the
+   development arm, reports success exactly like one that worked.
+   `EXPORT_TOKEN` keeps working throughout, which is what it is for.
+5. **Rotate `EXPORT_TOKEN` if they ever held it.** It is attached to no
+   identity — no list names it, no session carries it — so every step
+   above leaves it working in their hands. How to rotate it, and how to
+   confirm the rotation took, is "When a token or a session may be
+   compromised" below. **Owner only.**
+6. **Their rows stay, unless they ask otherwise.** The weight history
+   is what this project accumulates and somebody leaving does not undo
+   it. It is also theirs: they handed it to a person rather than to a
+   website, so the honest move is to ask rather than to decide for
+   them. If they want it gone, an admin finds their rows in
+   `admin.html` (the handle is inside the decrypted record) and
+   `DELETE /submission/:id` takes them one at a time. Count what is
+   left rather than trusting the answers, for the reason the routes
+   table above gives. Afterwards the only copy is whatever backup
+   predates the deletion. **Admin, after asking.**
+
+**If the person leaving is the keyholder, this is the wrong
+procedure** — "Handing the project to someone else" below is, and the
+key is the part with no substitute.
+
+`[pre-cutover]` Steps 4 and 6 describe the accounts Worker. The
+deployed production Worker issues no sessions at all and has no per-row
+delete — see the tagged note under "Routes and who may call them" — so
+a departure today is steps 2, 3 and 5, and step 5 carries more weight
+than it will later, because `EXPORT_TOKEN` is the only credential
+production currently has. Which Worker is answering is a thing to
+check rather than remember: "Checking a deployment" above.
+
 ## Handing the project to someone else
 
 **The one thing to understand first: there is no recovery from a lost
@@ -475,6 +572,92 @@ failure "The keys" warns about from the other side.
 8. **Restore writes last.** Put `ALLOWED_ORIGINS` back, then use the
    probes in "Checking a deployment" and one real submission to confirm
    the site works before saying it does. **Owner.**
+
+## When a token or a session may be compromised
+
+**These credentials fail in different ways, and "rotate everything" is
+the one response that can cause permanent loss.** `ACCOUNT_SECRET` sits
+in the same list as the others and is not the same kind of thing:
+changing it detaches every member from their own history, which
+"Secrets" above states at length and `server/wrangler.toml` repeats. It
+is never part of an incident response, and the moment somebody proposes
+rotating the secrets is the moment that has to be said out loud. So the
+first act here is not a rotation — it is naming which credential is
+suspected, because each of the others has a different answer and the
+answers do not substitute for one another.
+
+1. **Name the credential, and write down why you think so.** The time,
+   what was seen, and where: a value pasted into a chat, a laptop gone
+   with a tab open on it, an export nobody remembers running. This
+   costs a minute and it is what tells you, later, which window to
+   describe to people. **Anyone.**
+2. **A suspected `EXPORT_TOKEN`: rotate it, and that is the entire
+   revocation.** It is a secret rather than a session — there is no row
+   to delete and nothing to expire, which is why `DELETE /session`
+   refuses it. Set a new value where the other secrets are set
+   ("Secrets" above; before the cutover the dashboard is the only tool
+   that works there, and "Deploying the Worker" says why). The old
+   value stops being accepted on the next request that presents it: it
+   is compared against the secret on every call rather than exchanged
+   for anything longer-lived. **Owner only.**
+3. **Verify the rotation from outside, using the old value.** A secret
+   saved into the wrong Worker, or saved with a stray newline, looks
+   exactly like a rotation that worked:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Origin: https://potaetoe.github.io" \
+     -H "Authorization: Bearer OLD_VALUE" \
+     https://hgbinderworker.sorcererbiggz.workers.dev/export
+   ```
+
+   `401` is the rotation holding. `200` is the retired value still
+   opening an admin route, and the rotation did not take. The body is
+   discarded deliberately: this asks whether the door opens, and there
+   is no reason to pull the corpus through a terminal to find out.
+   **Owner** — the one step that needs the value being retired, so
+   destroy whatever you pasted it into afterwards.
+4. **Get the new value to the copies, and fix what carried the old
+   one.** The token is kept reachable *without* the site ("Secrets"
+   above), so its copies are wherever that is; a rotation that does not
+   reach them leaves the next real emergency holding a token that no
+   longer works, which is the failure break-glass exists to prevent.
+   The `curl` under "Publishing and retracting the dashboard" is the
+   other place it is used. **Owner.**
+5. **A suspected session is a different mechanism, and no rotation
+   touches it.** Rotating `EXPORT_TOKEN` does nothing to an issued
+   session and clearing sessions does nothing to the token. If the
+   person still has the tab, **Sign out** ends it. If they do not — the
+   machine is gone, or somebody else has it — the levers are the ones
+   in "When somebody leaves" above: the idle window bounds an admin
+   session nobody is using, and clearing the table ends every session
+   at once. **Anyone** for the first, **owner** for the last.
+6. **Say what a captured session actually got them, because it is less
+   than it sounds.** Reading plaintext takes the private key **and** an
+   admin session, and neither alone is enough ("Handing the project to
+   someone else" above). A captured admin session pulls ciphertext it
+   cannot open; a captured member session appends rows to one account.
+   Neither is a key compromise, and neither is answered by rotating the
+   key — that alarm, and its response, is the section above. **Anyone**
+   telling the group.
+7. **A suspected `TELEGRAM_BOT_TOKEN`: revoke it in BotFather first,
+   re-paste second, and do not treat it as the small one.** "Secrets"
+   above prices it at a `/revoke` and a re-paste, which is the repair
+   and not the exposure. A login payload is signed under a key derived
+   from that token and nothing else, so whoever holds it can mint a
+   payload the Worker verifies — for any Telegram id, including one in
+   `ADMIN_TELEGRAM_IDS`. The revoke is what stops further sessions
+   being minted; it does not touch sessions already issued, so pair it
+   with step 5. That asymmetry is the opposite shape to the session
+   levers and is the thing most easily got backwards under pressure.
+   **Owner only.**
+
+**What this does not cover.** A compromise of the Cloudflare account
+itself — which holds the ciphertext, the secrets and the Worker — is a
+larger incident than these steps answer, and the honest state of this
+document is that there is no procedure for one. A compromise of the
+repository or the Pages deployment does have one: it is the section
+above, because a substituted key is how that becomes visible.
 
 ## Getting back
 
