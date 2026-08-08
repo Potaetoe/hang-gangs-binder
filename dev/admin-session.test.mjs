@@ -620,6 +620,7 @@ check("importing a key keeps the key object on this device",
  * identical from the page and be the thing #70 refused.
  */
 check("nothing that could be written down is stored beside it",
+  first.rows.size === 1 &&
   !JSON.stringify(first.rows.get("current")).includes("PRIVATE_KEY"));
 
 check("a granted persistence request is reported without promising more",
