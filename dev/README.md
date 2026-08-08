@@ -23,6 +23,7 @@ in both `tools/check.py` and CI — two lists, edited together.
 | `worker.test.mjs` | routing, validation, CORS, sign-in, the gating matrix — and that `POST /auth/dev` **fails closed**, the one place a silent pass is itself the compromise |
 | `check_web.test.py` | `check_web.py`'s own CSP parser — a checker that cannot read is indistinguishable from a site with nothing wrong (#34) |
 | `check_server.test.py` | `check_server.py`'s vars parser and rules, including that its key pattern still matches real key material |
+| `make-sample.test.mjs` | `make-sample.mjs` still runs and still writes what its summary claims — the generator loads the shipped `form.js` and `crypto.js`, and nothing else here exercises it (#66) |
 
 ## Two kinds of fixture, opposite rules
 
@@ -36,9 +37,17 @@ in both `tools/check.py` and CI — two lists, edited together.
 > nothing about whether the records moved. Regenerate when the record
 > shape changes, and say in the commit what moved.
 
-**Nothing in the gate runs `make-sample.mjs`** (#66), so it can break
-without a stage going red. Run it by hand after any change to
-`form.js`'s pure half or `crypto.js`.
+**The gate runs `make-sample.mjs` on every pass**, to a scratch path
+outside the checkout — `node dev/make-sample.mjs [output path]`, and
+`make-sample.test.mjs` is what passes one. So a change to `form.js`'s
+pure half or `crypto.js` that breaks the generator goes red instead of
+waiting to be noticed, the committed sample is never rewritten by a
+check, and regenerating it stays a decision somebody makes.
+
+That stage also holds the property above: a fresh run reproduces every
+record — same ids, same account ids, same `received_at` — and rewrites
+every blob. It fails when the table and the committed sample come
+apart, which is the change that has to regenerate.
 
 `test-key.json` and `test-member-key.json` are throwaway keypairs,
 committed on purpose; they open nothing real. The first stands in for
