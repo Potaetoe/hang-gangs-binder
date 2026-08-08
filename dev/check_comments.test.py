@@ -290,10 +290,17 @@ check("archive/ is never scanned",
 # If the extractor simply found nothing in real files, every string
 # check above would still pass and the tree check below would pass by
 # reading nothing - a null result wearing a positive result's clothes.
+#
+# The needle is a phrase from the comment above `[hidden]`, which is
+# the one comment in this stylesheet that cannot quietly go away:
+# tools/check_web.py check 7 refuses to publish a stylesheet without
+# that rule. A needle taken from any other comment is a needle the next
+# cleanup pull request deletes, leaving this arm passing on prose
+# nobody meant to keep.
 THEME = open(os.path.join(check_comments.REPO, "apps", "web",
                           "theme.css"), encoding="utf-8").read()
 check("the extractor reads real comments out of a real file",
-      "carried over from" in
+      "weakest possible specificity" in
       check_comments.comments_only(THEME, "css").lower())
 
 check("and a real file's code is not read as prose",

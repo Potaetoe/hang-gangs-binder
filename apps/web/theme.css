@@ -1,36 +1,45 @@
 /*
- * The three palettes and the page shell, in one place.
- * ---------------------------------------------------
+ * The four palettes and the page shell, in one place.
+ * --------------------------------------------------
  * Every page in this directory links this file instead of declaring its
- * own tokens. Carried over from Weight-Goal-Calculator, where two pages
- * each held a full copy with a "keep in sync" comment between them.
- * One file, one definition, nothing to keep in sync.
+ * own tokens: one file, one definition, nothing to keep in sync.
  *
  * How a palette is chosen (theme-init.js writes the attribute before
  * first paint, theme.js maintains it):
- *   no data-theme  -> Dark, unless the system prefers light, then Light
+ *   no data-theme  -> Dark; a system preferring light gets Light, and a
+ *                     system asking for more contrast gets High
+ *                     contrast, which wins when both apply
  *   data-theme=... -> that palette, in both directions
  *
  * Dark is the default rather than Pink: the portal opens on whatever
  * the visitor's system already asked for, and Pink is a choice they can
- * make rather than one made for them. Pink remains a full palette and
- * is otherwise unchanged.
+ * make rather than one made for them.
  *
  * Components below are styled through the tokens only - never inside a
- * media query - so adding a fourth palette is a block of variables and
- * nothing else.
+ * media query - so adding a palette is a block of variables and nothing
+ * else. Adding the fourth one was exactly that.
+ *
+ * EVERY VALUE HERE IS MEASURED, by tools/check_contrast.py - which
+ * also refuses a --color-* token that no pairing names, so a color
+ * cannot be added without something measuring it. A hex nudged one
+ * digit here fails the gate rather than the visitor.
  *
  * Color tokens are named --color-<role>: what the color is for, never
  * what it looks like, so a value can move without turning its own name
- * into a lie. Two roles the accent served alone are now separate names
- * carrying identical values - --color-accent-text is accent-colored
- * text on a surface, --color-on-accent is a label sitting on an accent
- * fill. They are measured against different backgrounds, so one of them
- * has to be able to move for contrast without dragging the other with
- * it, and one token could never do that. The six --color-series-N are
- * the chart lines, per palette for the same reason: a color legible on
- * a near-black chart need not be legible on a pale one. Spacing, type,
- * radius and measure tokens are not colors and keep their plain names.
+ * into a lie. Two pairs of roles look like duplicates and are not -
+ * each half is measured against a different background, so one has to
+ * be able to move without dragging the other:
+ *   --color-accent   a fill; --color-on-accent is the label on it, and
+ *                    --color-accent-text is accent-colored text on a
+ *                    surface rather than on the fill
+ *   --color-border   decorative edges - a card, a table rule, the
+ *                    footer line - which carry no information;
+ *                    --color-border-strong is the edge of a control,
+ *                    which is the only thing saying where it is
+ * The six --color-series-N are the chart lines, per palette because a
+ * color legible on a near-black chart need not be legible on a pale
+ * one. Spacing, type, radius and measure tokens are not colors and keep
+ * their plain names.
  *
  * The <meta name="theme-color"> tag in each page repeats --color-bg.
  * CSS cannot reach it, so that is the one duplication left; change a
@@ -54,18 +63,26 @@
   --color-text: #e4e4e7;
   --color-text-muted: #a1a1aa;
   --color-border: #33333a;
+  --color-border-strong: #75747e;
   --color-warn-bg: #3a2222;
   --color-warn-text: #f2b8b5;
   --color-field: #121212;
   --color-focus: #93c5fd;
-  --color-accent-text: #3b82f6;
+  /* One step brighter than --color-accent, which stays #3b82f6 for
+     fills. As text on a card the accent measures 4.53:1, and 4.53
+     against a 4.5 requirement is a rounding away from failing; this
+     reads 4.69:1 at the same hue and saturation. The two tokens carry
+     different values for the first time here, which is the whole
+     reason the role split exists - a fill and a label on a surface are
+     measured against different backgrounds. */
+  --color-accent-text: #4085f6;
   --color-on-accent: #121212;
   --color-series-0: var(--color-accent);
-  --color-series-1: #e8a33d;
-  --color-series-2: #4bb3a6;
-  --color-series-3: #b07de0;
-  --color-series-4: #e0685f;
-  --color-series-5: #6aa9e0;
+  --color-series-1: #d95926;
+  --color-series-2: #199e70;
+  --color-series-3: #c98500;
+  --color-series-4: #d55181;
+  --color-series-5: #008300;
 }
 
 /* "Pink": deep plum with pink accents. The project's own palette, now
@@ -79,6 +96,7 @@
   --color-text: #f5e6ee;
   --color-text-muted: #bfa8b6;
   --color-border: #473942;
+  --color-border-strong: #8b7a85;
   --color-warn-bg: #4a2626;
   --color-warn-text: #f3b0b0;
   --color-field: #241b21;
@@ -86,11 +104,14 @@
   --color-accent-text: #e87fa8;
   --color-on-accent: #241b21;
   --color-series-0: var(--color-accent);
-  --color-series-1: #e8a33d;
-  --color-series-2: #4bb3a6;
-  --color-series-3: #b07de0;
-  --color-series-4: #e0685f;
-  --color-series-5: #6aa9e0;
+  --color-series-1: #d95926;
+  --color-series-2: #199e70;
+  --color-series-3: #c98500;
+  /* Violet and red where Dark takes magenta and green. Magenta beside
+     this palette's pink accent reads as the same line twice, and green
+     is the one hue that does not clear 3:1 on a plum surface. */
+  --color-series-4: #9085e9;
+  --color-series-5: #e66767;
 }
 
 /* With no saved choice, a light-preferring system gets Light. Once a
@@ -101,49 +122,128 @@
     color-scheme: light;
     --color-bg: #f2efe9;
     --color-surface: #faf8f4;
-    --color-accent: #5f7d59;
+    --color-accent: #56724f;
     --color-accent-strong: #47613f;
     --color-text: #3a3d35;
-    --color-text-muted: #77796d;
+    --color-text-muted: #6a6c60;
     --color-border: #ddd8cb;
+    --color-border-strong: #8a8577;
     --color-warn-bg: #ece0d3;
     --color-warn-text: #7a4a33;
     --color-field: #ffffff;
     --color-focus: #3e5a38;
-    --color-accent-text: #5f7d59;
+    --color-accent-text: #56724f;
     --color-on-accent: #f2efe9;
     --color-series-0: var(--color-accent);
-    --color-series-1: #e8a33d;
-    --color-series-2: #4bb3a6;
-    --color-series-3: #b07de0;
-    --color-series-4: #e0685f;
-    --color-series-5: #6aa9e0;
+    --color-series-1: #b23a63;
+    --color-series-2: #9c6100;
+    --color-series-3: #2a78d6;
+    --color-series-4: #0a7d4f;
+    --color-series-5: #4a3aa7;
   }
 }
 
 /* "Light" is deliberately natural rather than bright: linen and stone
-   neutrals with a muted sage accent. */
+   neutrals with a muted sage accent.
+
+   The pale surfaces are what make this the palette that failed hardest.
+   A hue legible on near-black is a hue that disappears here, so the
+   sage accent is a step deeper than it looks like it needs to be and
+   the chart series are their own darkened set rather than the shared
+   one. tools/check_contrast.py holds every one of those numbers. */
 :root[data-theme="light"] {
   color-scheme: light;
   --color-bg: #f2efe9;
   --color-surface: #faf8f4;
-  --color-accent: #5f7d59;
+  --color-accent: #56724f;
   --color-accent-strong: #47613f;
   --color-text: #3a3d35;
-  --color-text-muted: #77796d;
+  --color-text-muted: #6a6c60;
   --color-border: #ddd8cb;
+  --color-border-strong: #8a8577;
   --color-warn-bg: #ece0d3;
   --color-warn-text: #7a4a33;
   --color-field: #ffffff;
   --color-focus: #3e5a38;
-  --color-accent-text: #5f7d59;
+  --color-accent-text: #56724f;
   --color-on-accent: #f2efe9;
   --color-series-0: var(--color-accent);
-  --color-series-1: #e8a33d;
-  --color-series-2: #4bb3a6;
-  --color-series-3: #b07de0;
-  --color-series-4: #e0685f;
-  --color-series-5: #6aa9e0;
+  --color-series-1: #b23a63;
+  --color-series-2: #9c6100;
+  --color-series-3: #2a78d6;
+  --color-series-4: #0a7d4f;
+  --color-series-5: #4a3aa7;
+}
+
+/* "High contrast", for a visitor who has said the other three are not
+   enough. Black page, white text, and every pairing held to AAA - 7:1
+   text, 4:1 for boundaries and marks - by tools/check_contrast.py,
+   which pins this palette at a different level from the other three.
+   Matching Dark would have been the failure mode here: a palette whose
+   whole purpose is contrast is not finished when it merely equals the
+   palette somebody turned away from.
+
+   The pink accent is kept rather than swapped for the usual yellow or
+   cyan, so this reads as the same site at higher contrast instead of a
+   different product. */
+:root[data-theme="contrast"] {
+  color-scheme: dark;
+  --color-bg: #000000;
+  --color-surface: #0a0a0a;
+  --color-accent: #f08090;
+  --color-accent-strong: #f8b0bc;
+  --color-text: #ffffff;
+  --color-text-muted: #d6d0ce;
+  --color-border: #3a3a3a;
+  --color-border-strong: #a0a0a0;
+  --color-warn-bg: #201500;
+  --color-warn-text: #ffd08a;
+  --color-field: #000000;
+  --color-focus: #ffffff;
+  --color-accent-text: #f08090;
+  --color-on-accent: #000000;
+  --color-series-0: var(--color-accent);
+  --color-series-1: #d95926;
+  --color-series-2: #199e70;
+  --color-series-3: #c98500;
+  --color-series-4: #9085e9;
+  --color-series-5: #e66767;
+}
+
+/* A system asking for more contrast and expressing no theme gets High
+   contrast, including a system that also prefers light.
+
+   That precedence is a decision and not an oversight. This block sits
+   after the prefers-color-scheme one so it wins the cascade when both
+   match, because between the two things such a visitor has asked for,
+   contrast is the one they need and lightness is the one they prefer.
+   A light-preferring reader who cannot read the light palette has been
+   given nothing. The data-theme attribute still beats both in either
+   direction, so a chip is never overridden by a system setting. */
+@media (prefers-contrast: more) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-bg: #000000;
+    --color-surface: #0a0a0a;
+    --color-accent: #f08090;
+    --color-accent-strong: #f8b0bc;
+    --color-text: #ffffff;
+    --color-text-muted: #d6d0ce;
+    --color-border: #3a3a3a;
+    --color-border-strong: #a0a0a0;
+    --color-warn-bg: #201500;
+    --color-warn-text: #ffd08a;
+    --color-field: #000000;
+    --color-focus: #ffffff;
+    --color-accent-text: #f08090;
+    --color-on-accent: #000000;
+    --color-series-0: var(--color-accent);
+    --color-series-1: #d95926;
+    --color-series-2: #199e70;
+    --color-series-3: #c98500;
+    --color-series-4: #9085e9;
+    --color-series-5: #e66767;
+  }
 }
 
 /* Derived from the palette rather than declared per theme, so a new
@@ -325,13 +425,11 @@ p {
 /* Numbers that will sit in columns once there is data to line up. */
 .tabular { font-variant-numeric: tabular-nums; }
 
-/* The header is an ordinary stack now: a nav bar, then the title. It
-   used to be a two-column grid so the theme chips could share the
-   title's line - they are a control rather than a heading, and a row of
-   their own made them look like one. The chips now sit in the nav bar,
-   which is a row of controls and exactly where they belong, so the grid
-   had nothing left to arrange. `.stack` already does the rest, which is
-   why no header rule survives here. */
+/* The header carries no rule of its own, and that is deliberate rather
+   than an omission: it is a nav bar above a title inside a `.stack`,
+   and `.stack` already spaces them. The theme chips sit in the nav bar
+   with the menu button because they are controls; given a row beside
+   the title they read as part of the heading. */
 
 /* ------------------------------------------------------------------ */
 /* Navigation.                                                         */
@@ -347,14 +445,15 @@ p {
 }
 
 /* Styled as a theme chip, so the two controls sharing this bar read as
-   the same kind of thing. */
+   the same kind of thing - including the boundary token, since it is a
+   control and its edge is what says so. */
 .nav-toggle {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   background: var(--color-surface);
   color: var(--color-text-muted);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-3);
   font: inherit;
@@ -471,10 +570,12 @@ p {
   justify-content: flex-end;
 }
 
+/* A segmented control: four chips, and the border is what makes each
+   one a separate target. Same 1.4.11 reasoning as the form fields. */
 .themes button {
   background: var(--color-surface);
   color: var(--color-text-muted);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-3);
   font: inherit;
@@ -521,7 +622,12 @@ p {
 
 /* Inputs and selects share one surface. --color-field rather than
    --color-surface so a control reads as a hole in the card it sits on,
-   in every palette. */
+   in every palette.
+
+   --color-border-strong, not --color-border: this edge is the only
+   thing saying where the control is, which is what WCAG 1.4.11 asks
+   3:1 of. The decorative token sits at 1.3:1 against a card in Dark
+   and is correct for a card's own edge and wrong for this. */
 input[type="text"],
 input[type="password"],
 textarea,
@@ -529,7 +635,7 @@ select {
   font: inherit;
   color: var(--color-text);
   background: var(--color-field);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
   width: 100%;
@@ -652,13 +758,16 @@ button.primary:disabled {
 
 /* `a.secondary` for the same reason `a.primary` exists: a download is a
    link because it points at a blob URL, but it is the same action as a
-   button and should not look like prose. */
+   button and should not look like prose.
+
+   This one has no fill, so its border is the entire control - the case
+   1.4.11 is written for, and the reason it takes the strong token. */
 button.secondary,
 a.secondary {
   font: inherit;
   color: var(--color-text-muted);
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
@@ -820,17 +929,31 @@ polyline.chart-series { fill: none; }
   font-weight: 600;
 }
 
-/* Six series colors, cycled. Enough to tell lines apart without
-   inventing a palette that fights the theme; the handle is printed at
-   the end of each line anyway, so color is a hint and not the only
-   way to read the chart.
+/* Six series colors, cycled. The values live in the palette blocks at
+   the top of this file, one set per theme, so these rules say which
+   series a shape belongs to and never what color that is.
 
-   The values live in the palette blocks at the top of this file, one
-   set per theme, so these rules say which series a shape belongs to and
-   never what color that is. Every other component here already worked
-   that way; the series were the exception, six literals shared by three
-   palettes, which is why a chart tuned for a near-black surface came
-   out unreadable on the pale one.
+   HOW THOSE VALUES WERE CHOSEN, since a hex here is not a matter of
+   taste. Slots 1-5 are a set per palette, validated together against
+   protan and deutan simulation in OKLab: adjacent slots separate by at
+   least 6 ΔE against a target of 8, and every slot clears 3:1 on both
+   the page and the card (4:1 in the high-contrast palette). The
+   ORDERING is the mechanism rather than decoration - orderings were
+   enumerated and only ones clearing every adjacent gate kept, which is
+   why Light runs magenta, amber, blue, green, violet: blue between
+   amber and green carries that pair from 6.6 to 9.2 under protan
+   simulation. Worst adjacent separation is 8.4 in Dark, Pink and High
+   contrast and 9.2 in Light, so nothing here leans on the 6-8 relief
+   band.
+
+   Slot 0 is --color-accent, and it is the one slot chosen another way:
+   it answers to the palette rather than to the chart. Two of them
+   could not pass a categorical gate at all - Pink's accent is too
+   light for the dark lightness band, and Light's sage is under the
+   chroma floor, which is to say it reads as gray beside a real hue.
+   That is affordable only because color is a hint and never the sole
+   way to read a chart: dashboard.js prints the handle at the end of
+   every line. Nothing here may take that away.
 
    Stroke on everything, fill only on the shapes that are meant to be
    solid - the dots and the label. */
@@ -924,13 +1047,10 @@ a { color: var(--color-accent-strong); }
 
   body.wide .narrow { max-width: 100%; }
 
-  /* The header needed unpicking here while it was a grid - the chips
-     sat beside the title and the heading had nowhere left to wrap to.
-     It is a plain stack now and needs nothing.
-
-     The nav bar does need one thing: on a narrow screen the button and
-     three theme chips will not share a line, so they wrap and the menu
-     hangs from whatever height that leaves. */
+  /* The header is a plain stack and needs nothing here. The nav bar
+     does need one thing: on a narrow screen the menu button and four
+     theme chips will not share a line, so they wrap and the menu hangs
+     from whatever height that leaves. */
   .nav { flex-wrap: wrap; }
 
   .pair { flex-direction: column; }

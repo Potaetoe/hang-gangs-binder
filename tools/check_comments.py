@@ -192,8 +192,6 @@ ALLOWLIST = {
     ("apps/web/admin.html", "used to"): 1,
     ("apps/web/dashboard.js", "originally"): 1,
     ("apps/web/dashboard.js", "used to"): 1,
-    ("apps/web/theme.css", "carried over from"): 1,
-    ("apps/web/theme.css", "used to"): 1,
     ("dev/dashboard.test.mjs", "used to"): 2,
     ("dev/ui.test.mjs", "used to"): 1,
     ("tools/check_web.py", "this replaces"): 1,
