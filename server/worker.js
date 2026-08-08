@@ -386,6 +386,14 @@ async function sessionFor(env, token) {
   };
 }
 
+// Shared with handleRevokeSession, which needs the raw token rather
+// than the caller it resolves to - a session is ended by hashing the
+// string presented, and there is nowhere else to get it from.
+function bearerToken(request) {
+  const auth = request.headers.get("Authorization") || "";
+  return auth.startsWith("Bearer ") ? auth.slice(7) : "";
+}
+
 /*
  * Who is calling, if anyone.
  *
@@ -398,11 +406,6 @@ async function sessionFor(env, token) {
  * Boolean(env.EXPORT_TOKEN) is deliberate: a Worker with no secret set
  * must refuse everybody rather than accept an empty string.
  */
-function bearerToken(request) {
-  const auth = request.headers.get("Authorization") || "";
-  return auth.startsWith("Bearer ") ? auth.slice(7) : "";
-}
-
 async function callerFor(request, env) {
   const given = bearerToken(request);
   if (!given) return null;
