@@ -565,6 +565,51 @@ this slice was in progress, by ignoring `.claude/**`. The base moved twice
 underneath this branch in the course of a documentation-only change, which is
 the workspace note about more than two live agents being right in practice.
 
+### The board was lying in three different ways — #48
+
+Claude, auditing labels after #46 merged. All three are fixed; the reusable
+part is that **none of them was visible from `gh issue list`**, which is the
+command `AGENTS.md` tells you to run before claiming anything.
+
+**Six closed issues still carried a lock label** — `codex` on #1, #2, #4 and
+#25, `claude` on #9 and #19, every one with a merged PR. The rule was already
+written: *"An issue whose PR has merged but whose label is still on it reads
+as held."* Nothing was wrong with it. It simply was not run six times, which
+is what a rule enforced only by remembering looks like after a month. Removed.
+
+**Two `blocked` labels outlived their blockers**, and each issue **names its
+own blocker in its body**, so the staleness was derivable without judgment.
+#6 says "blocked by step 4" and step 4 (#5) merged as PR #35. #10 says
+"blocked by steps 0 and 3" and both closed long ago.
+
+**#10 was worse than mislabelled — it was finished.** Every row of its table
+had already landed through #26, #34 and #41: check 2's bot-token shape, check
+6's named exemption list, `FORM_PAGE` pointing at `submit.html`, check 10's
+five-page nav, and checks 11 and 12 themselves. The gate is **14 checks, not
+the 12 this step planned**, because #34 and #41 added two nobody had planned
+at all. Its own "done when" — mutation coverage on 11 and 12 — is recorded as
+met further up this same entry.
+
+**So a build-order step can be completed by other slices without anyone
+updating the step that planned it**, and the board shows no sign of it. The
+label said blocked, the state said open, and the two were wrong for different
+reasons at the same time.
+
+That is the shape this repository keeps meeting rather than a new one. A run
+that was never created reads as green. A stale claim reads as held. An
+abbreviated `head_sha` reads as "never ran". **The common failure is an
+absence that renders as a normal state**, and the fix has been the same every
+time: find the second reading and write it down beside the first.
+
+The cheap check, worth doing at claim time rather than in an audit: **if an
+issue names a blocker, look at whether the blocker is closed.** It is one
+query and it would have caught both.
+
+Not closed: #10 itself. The evidence is a source read rather than work done,
+and closing a build-order step changes the build order, so it went on the
+issue as a recommendation. The label was fixed because a wrong label is wrong
+whoever fixes it; the close is a decision.
+
 ---
 
 ## 2026-08-06
