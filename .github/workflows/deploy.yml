@@ -217,6 +217,19 @@ jobs:
       - name: Check the dashboard's arithmetic
         run: node dev/dashboard.test.mjs
 
+      # The other half of the same file, and it had no suite of any kind
+      # until #118: ~390 lines across two pages, createElementNS nowhere
+      # in dev/, and both consumers stubbing render out rather than
+      # drawing with it. The step above cannot reach it - it loads the
+      # module with no document, which is exactly what makes the
+      # arithmetic testable and the drawing invisible.
+      #
+      # Registered here AND in tools/check.py, like every other stage -
+      # a check that runs only on a developer's machine looks armed and
+      # is not.
+      - name: Check what the dashboard draws
+        run: node dev/dashboard-render.test.mjs
+
       # The dashboard publishes no handles or rows, but its audience is the
       # group rather than the world. This drives the shipped page wiring and
       # keeps signed-out, expired-session and unpublished states distinct.

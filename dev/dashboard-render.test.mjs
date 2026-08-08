@@ -79,9 +79,9 @@ async function check(label, fn) {
  *
  * The attribute bag takes any name rather than a known list - the same
  * auto-vivifying idea as dev/form-wiring.test.mjs's element factory,
- * moved from ids to attributes, so a geometry attribute this harness
- * never thought of is recorded instead of failing the setup for a
- * reason no check is about.
+ * applied to attributes rather than to ids, so a geometry attribute this
+ * harness never thought of is recorded instead of failing the setup for
+ * a reason no check is about.
  *
  * Three behaviors here are load-bearing and are asserted below rather
  * than assumed: appendChild returns the child (dashboard.js writes the
