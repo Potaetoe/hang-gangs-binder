@@ -127,7 +127,24 @@ rather than by reasoning about it.
   tasks. Full table on #72. Workaround available immediately: browse
   `http://127.0.0.1:8124` — `config.js` and the dev Worker's origins
   already accept it. The `serve.py` fix is workspace tooling and was
-  deliberately not applied under a measurement-only claim.
+  deliberately not applied under a measurement-only claim — **and was then
+  applied the same day at the owner's direction**, see below.
+
+### Fixed — #72 follow-up, owner-directed
+- **The workspace `serve.py`** (outside this repository, not under version
+  control) now listens on `::1` beside `127.0.0.1` and speaks HTTP/1.1
+  with keep-alive, so either resolution of `localhost` connects on the
+  first try and a page's sub-resources share one connection. Verified:
+  `localhost` connect 0.210 s → 0.0005 s, `index.html` DOMContentLoaded
+  1568 ms → 85 ms, curl's `num_connects` showing connection reuse. If
+  `::1` cannot bind it says so at startup and names `127.0.0.1`.
+- **Every local-preview instruction in this repository points at
+  `127.0.0.1`** — `README.md`, `dev/README.md`, `UAT.md` — with the
+  reasoning stated once per file. Those docs prescribe the bare
+  `python -m http.server`, which has neither fix. Origin lists and
+  `config.js`'s hostname map untouched; both hostnames stay valid.
+- **#72 closed**: the product needed nothing, the tooling needed three
+  lines, and the felt slowness is gone on both hostnames.
 
 ### Fixed
 - **The Add entry tab is no longer one-shot (#64).** After a submission the

@@ -333,6 +333,42 @@ key to get rows into the page — and it is bounded from both sides:
 `snapshotOf` is ≤ 10 ms at 1000 entries and the DOM half drew seven charts
 instantly during UAT.
 
+### The #72 follow-up, and closing the day
+
+The owner directed both halves the measurement had left open, so the
+"deliberately not applied" above lasted about an hour — recorded here
+rather than rewritten there, because the sequence is the point: measure
+under a claim that promises no changes, then change with approval.
+
+`serve.py` now listens on `::1` beside `127.0.0.1` and speaks HTTP/1.1
+with keep-alive. Verified before trusting it: `localhost` connect 0.210 s
+→ 0.0005 s, DOMContentLoaded 1568 ms → 85 ms, and curl's `num_connects`
+showing the second request reusing the first connection. If `::1` cannot
+bind, it says so at startup and names `127.0.0.1` — a degraded state that
+announces itself, which is the lesson of this whole week applied to three
+lines of tooling. The docs commit (`93bf447`) points every browse
+instruction at `127.0.0.1`, because the repo's instructions prescribe the
+bare `python -m http.server`, which has neither fix. #72 closed.
+
+**Session end state, for whoever picks this up:**
+
+- `accounts` at `93bf447`, pushed, CI green, working tree clean
+- Gate is **18 stages** now — `dev/form-wiring.test.mjs` joined it with #64
+- `hg_binder_db_dev`: 0 submissions, 0 sessions, 0 snapshots, counters
+  reset. Production: read-only all day, still 0 rows, still the old Worker
+- No open PRs, no held claims, all preview ports free
+- Issues closed today: #64 (fixed and merged), #72 (measured, fixed,
+  documented). Filed today: #64–#75 except #63; ten remain open, all
+  sequenced for after the cutover, none blocking it
+- The cutover dashboard artifact is current at rev 3
+
+**The next act in this project is `CUTOVER.md` step 4 — the point of no
+return.** Steps 0–3 are done, UAT Part A is 34/34, and nothing sits in
+front of the sitting. What only the sitting can prove: the admin id
+(step 8) and the widget callback (step 7). Before step 8, any doubt about
+`ACCOUNT_SECRET`'s value resolves by rotating it from the dashboard — after
+step 8's first submission it is permanent.
+
 ### Where the cutover stands
 
 Steps 0 and 1 **done**. Step 2's secrets confirmed twice from two directions.
