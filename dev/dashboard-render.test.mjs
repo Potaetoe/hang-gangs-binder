@@ -414,15 +414,20 @@ await check("the wide panels are the time series and the two lists", () =>
 /* ------------------------------------------------------------------ */
 /* 3. Every chart is SVG, built through createElementNS.               */
 
+/* Seven, not nine: the two data-quality panels are figures without a
+   chart in them, because a list of handles is a list. */
 await check("every chart root is an svg element in the SVG namespace", () => {
   const roots = withTag(KEY_PEOPLE, "svg");
-  return roots.length === 6 &&
+  return roots.length === 7 &&
     roots.every((root) => root.namespace === SVG_NS);
 });
 
+/* A bar chart is as tall as it has rows - two categories at 26 apiece
+   plus 8 - so a viewBox pinned to one number is also pinning that the
+   canvas grew with the data instead of clipping it. */
 await check("a chart root declares its viewBox, scaling and role", () => {
   const root = withTag(figureNamed(KEY_PEOPLE, "Gender"), "svg")[0];
-  return root.getAttribute("viewBox") === "0 0 620 34" &&
+  return root.getAttribute("viewBox") === "0 0 620 60" &&
     root.getAttribute("preserveAspectRatio") === "xMidYMid meet" &&
     root.getAttribute("role") === "img";
 });
