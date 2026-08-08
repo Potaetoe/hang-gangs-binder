@@ -384,10 +384,13 @@ says it, the commit message should say it.
 
 Most of this is machine-checked, which is the point — a standard that
 only exists in this file is one three agents can each read differently.
-Run `python tools/check.py`; it is **seventeen** checks now and two of
-them are the linters. Two more read `server/` rather than `apps/web` —
-that scope did not exist until #39, and its absence let a commit publish
-the group's numeric Telegram ids past every check the gate had.
+Run `python tools/check.py`. **Do not write its stage count into prose,
+here or anywhere** — this file carried three different wrong counts in
+one week; the gate prints its own list and that printout is the number.
+Two of its stages are the linters, and two read `server/` rather than
+`apps/web` — that scope did not exist until #39, and its absence let a
+commit publish the group's numeric Telegram ids past every check the
+gate had.
 
 | Concern | Where it is decided | Enforced by |
 | --- | --- | --- |
@@ -697,10 +700,10 @@ implemented it. Say which it is.
 
 **Verify**
 
-- [ ] `python tools/check.py` — all eleven, with exact totals captured.
-      The linters are checks 2 and 3; a new file has never been linted
-      before it lands, so run the gate on the *merge result*, not only on
-      the branch.
+- [ ] `python tools/check.py` — every stage green, with the exact
+      totals it prints captured; never a remembered count. A new file
+      has never been linted before it lands, so run the gate on the
+      *merge result*, not only on the branch.
 - [ ] `git diff --check`, and read the whole diff.
 - [ ] Exercise every affected page in a browser, checking computed visibility.
 - [ ] Separate source, local, CI and live results. Name any live check not performed.
@@ -765,16 +768,24 @@ Clearing a table is irreversible; that is a reason to confirm before
 running it, not a reason to make somebody else run it.
 
 **`owner-only` now means: this cannot be done from an agent session at
-all, and the issue names why.** There are exactly three such reasons
+all, and the issue names why.** There are exactly two such reasons
 here, and any new one should be argued rather than assumed:
 
 1. **It needs a secret.** Agents never handle one — see the boundaries
    above. Generating a fresh value is still handling one.
 2. **It is not on this machine.** A Telegram group description, a
-   BotFather setting, a Cloudflare dashboard.
-3. **It needs an authenticated Wrangler command.** Mechanically
-   impossible from an agent shell, for the reason recorded above — not a
-   policy choice, and not fixable by trying harder.
+   BotFather setting, a Cloudflare dashboard screen no CLI reaches.
+
+**There used to be a third reason — "it needs an authenticated Wrangler
+command" — removed 2026-08-08**, when the boundary it cited was
+falsified: authenticated Wrangler commands do run from an agent shell,
+failing once and succeeding on retry, as recorded under "Operational
+and security boundaries" above. A Wrangler task is ask-then-do now, not
+owner-only. This list and that entry were corrected on different days
+once, and the stale copy sent Wrangler work back to the owner while the
+corrected copy said not to — which is the exact failure this file warns
+about under the sign-in CSP: a rule waiting on something that already
+happened reads as live and gets obeyed anyway.
 
 **Every `owner-only` issue carries numbered steps.** Not context, not a
 rationale to reconstruct a procedure from: the exact command to run, the

@@ -53,9 +53,10 @@ its own document: [CUTOVER.md](CUTOVER.md).
 
 > **Cutover progress, 2026-08-08.** Steps **0** (capture the live Worker) and
 > **1** (rehearse the migration) are **done**, and step **2**'s secrets are
-> confirmed from two independent sources. **UAT Part A is complete except
-> A2.7**, which #64 blocks. Nothing has been deployed to production and
-> nothing has been written to it.
+> confirmed from two independent sources. **UAT Part A is complete** — A2.7
+> was its last gap and #64's fix closed it the same day; `UAT.md` holds the
+> record. Nothing has been deployed to production and nothing has been
+> written to it.
 >
 > Step 1 falsified its own warning: running `schema.sql` against production's
 > shape fails **loudly and immediately**, leaving no half-migrated state,

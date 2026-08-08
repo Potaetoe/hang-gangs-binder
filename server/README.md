@@ -162,10 +162,13 @@ entry, with `DEV_LOGIN_SECRET` correctly absent. The table below is therefore
 what a *new* deployment needs, and a checklist to confirm against rather than
 a list of things to do.
 
-That it can only be confirmed by the owner is not a gap in the record:
-`wrangler` will not authenticate from a non-interactive shell, so no agent can
-read a live secret list. Anything here asserting the state of production
-secrets should name who checked it and when.
+Confirmed twice, two ways: by the owner from the dashboard (2026-08-07), and
+independently from an agent shell (2026-08-08) with `npx wrangler versions
+view`, which lists secret **names** while values stay encrypted — so presence
+is checkable from here and correctness is not. The first authenticated
+wrangler call in a session may fail once with error 10000 and succeed on
+retry; read that as a token refresh, not a wall. Anything here asserting the
+state of production secrets should still name who checked it and when.
 
 All of it is Settings → Variables and Secrets, and `REDESIGN.md` Part 1 has
 the BotFather half.
@@ -321,8 +324,8 @@ Run the whole gate, not just the Worker suite:
 python tools/check.py
 ```
 
-The Worker's own suite is one of the seventeen checks in it, and two of
-the others now read this directory: `tools/check_server.py` refuses a
+The Worker's own suite is one stage of that gate, and two of the others
+read this directory: `tools/check_server.py` refuses a
 `[vars]` block naming anything but `ALLOWED_ORIGINS`, an assigned
 `DEV_LOGIN_SECRET`, or key-shaped content anywhere under `server/`. That
 arm exists because a commit putting the numeric id bindings back as
