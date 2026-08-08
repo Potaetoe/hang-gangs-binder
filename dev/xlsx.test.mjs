@@ -40,7 +40,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  * one reader loop away from being unreachable - so the number of them
  * that ran is part of the claim. See dev/harness.mjs.
  */
-const { check, report } = suite("xlsx.js", 30);
+const { check, report } = suite("xlsx.js", 31);
 
 /* ------------------------------------------------------------------ */
 /* The shape of the export itself.                                     */

@@ -38,7 +38,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  * silent wrong number with it - the same failure the arithmetic below is
  * about, one level up. See dev/harness.mjs.
  */
-const { check, report } = suite("dashboard.js", 115);
+const { check, report } = suite("dashboard.js", 117);
 
 await check("the exported object is frozen", () =>
   // `suppressCounts` and MIN_CELL are the suppression floor standing
