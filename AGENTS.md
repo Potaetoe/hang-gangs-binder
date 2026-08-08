@@ -147,17 +147,29 @@ What that makes Claude responsible for, in order:
 1. **Sync the clone before every delegation, not once.** Codex cannot
    fetch, so the clone goes stale the moment `accounts` moves and Codex
    has no way to notice.
-2. **Post the `CLAIM` comment and apply the `codex` label** before the
+2. **Create the slice's branch, in the same breath as the re-sync.**
+   The MCP Codex cannot create or switch one: its clone's `.git` is not
+   writable by the sandbox, and `git checkout -b` dies on
+   `fatal: Unable to create '.git/index.lock': Permission denied`. So
+   the branch has to exist *before* the delegation, not be discovered
+   missing at commit time — otherwise the work arrives on whatever was
+   checked out, which is the shared base.
+
+   **Codex reports this one honestly**, which is why it belongs in the
+   list rather than in troubleshooting. The network failures above are
+   indistinguishable from ordinary noise in a shell Codex already expects
+   to be noisy; a refused `.git` write comes back as itself.
+3. **Post the `CLAIM` comment and apply the `codex` label** before the
    first edit, exactly as the section above requires. Codex cannot reach
    GitHub to do it for itself.
-3. **Read the whole diff.** A commit message here carries reasoning, and
+4. **Read the whole diff.** A commit message here carries reasoning, and
    a message written from the delegate's summary rather than from the
    diff is a guess wearing a fact's clothes. If the diff cannot be
    explained, it does not get pushed.
-4. **Commit with `--author` set to Codex.** Git separates author from
+5. **Commit with `--author` set to Codex.** Git separates author from
    committer; the log should too, so that who wrote it and who published
    it are both recoverable.
-5. Open the PR, then post `RELEASE` and remove the label when it merges.
+6. Open the PR, then post `RELEASE` and remove the label when it merges.
 
 **Publishing a slice does not make it yours.** The label still says Codex
 holds those files, and Claude must not edit inside a slice it is only
@@ -221,6 +233,52 @@ file**:
 - If nothing disjoint is left, branch from the unmerged branch and say so
   — an explicit dependency is fine, a silent one is what produces the
   conflict nobody expected.
+- **A stacked pull request gets no CI run at all, and that is the price
+  of the bullet above.** `deploy.yml` triggers on
+  `push: branches: [main, accounts]` and
+  `pull_request: branches: [main, accounts]`. **The `branches` filter on
+  `pull_request` matches the base, not the head**, so a pull request
+  based on another slice's branch matches neither list — and pushing the
+  head does not trigger one either, because the head branch is not in the
+  `push` list. Found on PR #44, based on `codex/issue-8-admin-session`,
+  which had no run of any kind.
+
+  Say it out loud and then fix it, because a stacked PR that reads as
+  reviewed while never having been verified is worse than the conflict
+  the stack was avoiding. Two remedies:
+
+  ```
+  gh workflow run "Verify and deploy" --ref <branch>
+  ```
+
+  **A dispatch on any branch but `main` runs `verify` only and cannot
+  publish**, because the deploy job is gated on
+  `github.event_name != 'pull_request' && github.ref == 'refs/heads/main'`.
+  That is the same condition Verification cites in the opposite
+  direction — a dispatch on `main` *is* a release — and the two halves
+  are worth holding together: the ref is what makes it safe here and
+  dangerous there.
+
+  Or **retarget the base to `accounts` once the parent merges** — but
+  see the ordering trap in the next bullet, which is what stops that
+  from working if you leave it until after.
+
+  This also defeats the "check that a run *exists* for the head commit"
+  rule under Verification, for a reason that rule does not name: there,
+  absence means an incident and may resolve by waiting. Here it is
+  structural, and waiting never produces the run.
+- **Retarget the child before merging the parent, or merge the parent
+  without `--delete-branch`.** Merging the parent with `--delete-branch`
+  **auto-closes the stacked child**, and a closed pull request whose base
+  branch no longer exists can be neither reopened nor retargeted — the
+  base is gone, so there is nothing to move it off. GitHub does this
+  quietly and it is not recoverable from the PR. #44 died this way and
+  had to be replaced by #45 off a rebased branch, losing its review
+  thread.
+
+  The order that works is: retarget the child to `accounts` first, *then*
+  merge the parent. Deleting the parent branch is safe once nothing is
+  based on it.
 - **Work in your own checkout.** Codex uses a separate clone; Claude uses
   the main working tree. Never check out a branch in the other agent's
   tree — an uncommitted edit sitting there while the other checks out
@@ -511,11 +569,22 @@ implemented it. Say which it is.
   a problem. Re-check before concluding, and prefer waiting to
   dispatching.
 
+  **A third case looks the same and never resolves:** a pull request
+  based on a branch other than `main` or `accounts` gets no run by
+  design, because the `pull_request` trigger filters on the base. Waiting
+  cannot help. See "When CI is backed up" — check the PR's base before
+  concluding this is an incident.
+
 - **`workflow_dispatch` on `main` deploys.** The deploy job's condition is
   `github.event_name != 'pull_request' && github.ref ==
   'refs/heads/main'`, and a manual dispatch satisfies both. On `accounts`
   a dispatch is harmless; on `main` it is a release. Never reach for it
   as a routine "just re-trigger the checks" move.
+
+  The same condition is what makes a dispatch the *right* move on a
+  stacked branch, where nothing else will produce a run — the ref test
+  refuses to publish from any ref but `main`. Read both directions
+  together rather than either alone.
 
 - **Do not call an intermittent outage over on one success.** That
   incident produced four failures and one pass inside half an hour, and
@@ -564,6 +633,9 @@ implemented it. Say which it is.
 - [ ] Wait for GitHub Actions and inspect the uploaded files on the remote branch.
       **Confirm a run exists for the full head SHA** — see Verification —
       and treat `queued` as pending, never as passing.
+- [ ] **If the PR's base is not `main` or `accounts`, no run will ever
+      appear.** Dispatch `verify` on the branch or retarget the base; see
+      "When CI is backed up". Do not wait for it.
 - [ ] Stop comment on the issue: PR, checks, exclusions, next action.
 - [ ] **Post the `RELEASE` comment and remove your label** once it merges
       or once you stop. A label left on a merged slice reads as held.

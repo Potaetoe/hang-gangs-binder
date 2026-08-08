@@ -208,6 +208,37 @@ On `accounts`, not released. `main` stays at the last complete release.
   The section also says what to do when Codex stops mid-slice, because a
   clone holding half-written files looks exactly like one holding
   finished ones.
+- **`AGENTS.md` now says a stacked pull request gets no CI run at all.**
+  `deploy.yml` filters `pull_request` on the **base** branch, so a PR
+  based on another slice's branch matches neither trigger list and never
+  runs — and pushing the head does not help, because the head branch is
+  not in the `push` list either. The file already told an agent to branch
+  from an unmerged branch when nothing disjoint is left, and did not say
+  that doing so costs the checks entirely; the recommended move led
+  straight into it. #46. Recorded with both remedies:
+  `gh workflow run "Verify and deploy" --ref <branch>`, which is safe
+  because the deploy job's `github.ref == 'refs/heads/main'` test means a
+  dispatch on any other ref runs `verify` and cannot publish; or
+  retargeting the base to `accounts`. Cross-referenced from the
+  Verification rules in both directions, since "no run exists" there
+  means an incident that may resolve by waiting, and here means a
+  structural absence that never will.
+- **And that the child must be retargeted before the parent merges.**
+  Merging a parent with `--delete-branch` auto-closes the stacked child,
+  and a closed PR whose base branch no longer exists can be neither
+  reopened nor retargeted. #44 was lost this way and replaced by #45.
+  Both hazards were recorded in `DAILY_LOG.md` when they happened and
+  deferred to a documentation slice; this is that slice.
+- **`AGENTS.md` adds branch creation to what Claude does on Codex's
+  behalf**, as a numbered step beside the per-delegation re-sync. The MCP
+  Codex cannot create or switch a branch — its clone's `.git` is not
+  writable by the sandbox, and `git checkout -b` fails with
+  `Unable to create '.git/index.lock': Permission denied`. Placed before
+  the delegation rather than left to commit time, since otherwise the
+  work lands on whatever was already checked out, which is the shared
+  base. Unlike the blocked network, **Codex reports this one honestly**
+  rather than as ordinary shell noise, so the failure surfaces instead of
+  being absorbed. #46.
 
 ## Unreleased — 2026-08-06
 
