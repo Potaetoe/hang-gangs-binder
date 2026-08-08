@@ -671,12 +671,95 @@ answers do not substitute for one another.
    levers and is the thing most easily got backwards under pressure.
    **Owner only.**
 
-**What this does not cover.** A compromise of the Cloudflare account
-itself — which holds the ciphertext, the secrets and the Worker — is a
-larger incident than these steps answer, and the honest state of this
-document is that there is no procedure for one. A compromise of the
-repository or the Pages deployment does have one: it is the section
-above, because a substituted key is how that becomes visible.
+## When the Cloudflare account itself may be compromised
+
+This is the incident the sections above cannot answer, because every
+lever they pull — the secrets, the sessions table, `ALLOWED_ORIGINS`,
+the Worker script, the database — sits inside the thing compromised.
+So the order inverts: control first, levers second, and no lever
+counts as pulled until control is back. (A compromise of the
+repository or the Pages deployment is the fingerprint section above —
+a substituted key is how that one becomes visible.)
+
+What this is **not** is a key compromise, and the write-up exists
+partly to let that be said with a straight face on a bad day: the
+private key has never been on Cloudflare, and the public key every
+submission encrypts to is published from the repository via Pages,
+which the Cloudflare account does not touch. `DESIGN.md`'s central
+property — plaintext exists in a submitting browser and wherever the
+keyholder decrypts, and nowhere else — holds even with the dashboard
+in hostile hands. Keeping that sentence true under exactly this
+incident is why the design keeps the key out of the place the data
+lives.
+
+1. **Recognize it from the account's own record, not from the site.**
+   The site can look perfect throughout. What tells the truth:
+   deployment and version history showing a deploy nobody here made,
+   the dashboard audit log showing sign-ins or secret edits at hours
+   nobody was working, `ALLOWED_ORIGINS` holding an origin this
+   repository does not name. The fingerprint alarm stays silent in
+   this incident — the key was never there for an attacker to swap —
+   so its silence says nothing either way. **Owner.**
+2. **Take the account back before touching anything inside it.**
+   Cloudflare's account recovery, in this order: the owning email
+   secured first (recovery flows through it, so a compromised inbox
+   re-loses the account behind you), then the password, then
+   two-factor re-established, then every active dashboard session
+   revoked, then **every API token deleted** — tokens survive a
+   password change, and a token is how the account was probably being
+   driven. Until this step holds, nothing later in this list can be
+   trusted to stay done. **Owner only.**
+3. **Write down what was readable, before deciding anything.** In the
+   account: the D1 rows — ciphertext and HMAC account ids — every
+   secret, the Worker script, and whatever the logs held. Not in the
+   account, and worth writing in the same breath: any plaintext, any
+   private key. An attacker who owned the dashboard outright holds
+   sealed envelopes they cannot open. The minute this costs is what
+   makes step 8's message accurate instead of reassuring. **Owner.**
+4. **Redeploy the Worker from the repository, not from what is
+   sitting there.** What is deployed is whatever the attacker last
+   left, however normal it looks; `server/` in this repository is
+   what it should be. Deploy per "Deploying the Worker", then run the
+   probes in "Checking a deployment" before believing it. Before the
+   cutover, the production reference is the `binder-recovery` capture
+   ("Getting back" below). **Owner only.**
+5. **Rotate from Secrets on — with the one standing exception, which
+   survives even this.** `EXPORT_TOKEN`: rotate and verify from
+   outside with the retired value, exactly as the token section
+   above does it. `TELEGRAM_BOT_TOKEN`: revoke in BotFather — its
+   revocation lives at Telegram, not Cloudflare, which makes it the
+   one credential the attacker cannot keep by holding the account —
+   and remember the revoke stops new sessions being minted, not
+   sessions already issued. `DEV_LOGIN_SECRET`, on the dev arm, the
+   same sitting. `ACCOUNT_SECRET` is the exception the token section
+   states and it holds here too: rotating it cannot un-read what was
+   read, and it detaches every member from their own history. What a
+   stolen copy changes is the future — whoever holds it can test a
+   guessed Telegram id against the account ids on new rows — so
+   whether continuity or unlinkability matters more from here is a
+   decision the owner puts to the group in plain terms, not a step
+   this list can take for them. **Owner only.**
+6. **Clear the sessions table.** While the bot token was readable,
+   sign-in payloads could be minted for any Telegram id, including an
+   admin's, and those sessions outlive every rotation in step 5 —
+   the same asymmetry the token section ends on. Clearing ends every
+   session at once; members sign back in with nothing lost. **Owner.**
+7. **Check the rows against the backup.** Reading was not the only
+   option — deletion and alteration were too, and altered ciphertext
+   does not announce itself; it just stops decrypting. The backup
+   procedure exists for this exact reading: compare row counts,
+   spot-check that a sample still opens, restore what is missing, and
+   write down the window anything restored came from. **Keyholder**
+   for the decrypt check, **owner** for the restore.
+8. **Tell the group two true sentences.** First: nobody's entries
+   were read — the key that opens them was never in the thing that
+   was taken, and that is by design rather than by luck. Second: what
+   *was* exposed — the sealed rows, the pseudonymous ids, the
+   operating credentials — and what was done about each, including
+   the `ACCOUNT_SECRET` decision from step 5 and any window step 7
+   restored. A member who reads both sentences knows exactly as much
+   as the owner does, which is the standard the fingerprint section
+   set. **Owner**, since every step here was theirs.
 
 ## Getting back
 
