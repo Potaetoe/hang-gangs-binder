@@ -503,6 +503,23 @@ async function handleDevAuth(request, env, origin) {
  * isDev travels with it so the page can say out loud that it is running
  * on a development session. One that looks like a real session is worse
  * than no development session at all.
+ *
+ * accountId is returned so the page can tell whose device-local data it
+ * is looking at - #56. It is safe to hand over and safe for the browser
+ * to keep, and both halves of that matter:
+ *
+ *   - It is an HMAC under ACCOUNT_SECRET, so somebody who reads it out
+ *     of another member's browser cannot work back to a Telegram id, and
+ *     cannot confirm a guessed handle by recomputing it. That is exactly
+ *     what a username, or a bare hash of one, would have allowed in a
+ *     group this small.
+ *   - It authorizes nothing. Every request is gated on the session
+ *     token, and handleSubmit takes account_id from the session and
+ *     never from the body, so a stolen account id opens no door.
+ *
+ * A break-glass EXPORT_TOKEN caller has no account and gets null,
+ * reported rather than special-cased. See DESIGN.md, "The prefill is
+ * scoped to an account".
  */
 async function handleMe(request, env, origin, caller) {
   const row = await env.DB.prepare(
@@ -512,6 +529,7 @@ async function handleMe(request, env, origin, caller) {
 
   return json({
     ok: true,
+    accountId: caller.accountId == null ? null : caller.accountId,
     entries: (row && row.entries) || 0,
     lastAt: (row && row.last_at) || null,
     isAdmin: caller.isAdmin === true,

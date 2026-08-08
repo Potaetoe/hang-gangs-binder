@@ -277,7 +277,15 @@ check("a signed-out visitor never reaches the panel or requests /me",
   !isPainted(signedOut.elements["your-entries-pane"]) &&
   !isPainted(signedOut.elements["add-entry-pane"]));
 
+/* #56. The prefill belongs to one account, and /me is what says which. The
+ * ids here are opaque on purpose - that is the property being relied on. */
+const ACCOUNT = "a9246ad96523241df2d10c4f7c2b5e8f";
+const OTHER_ACCOUNT = "1f0b7c3e5d8a49216b4e7f0c2a5d8e13";
+const mine = (extra) => response(200, Object.assign(
+  { ok: true, accountId: ACCOUNT, entries: 1, lastAt: null }, extra || {}));
+
 const storedPrefill = JSON.stringify({
+  accountId: ACCOUNT,
   units: "imperial",
   weightLb: "222.5",
   heightFeet: "6",
@@ -285,16 +293,14 @@ const storedPrefill = JSON.stringify({
 });
 const prefilled = await loadSubmit({
   prefill: storedPrefill,
-  replies: [response(200, { ok: true, entries: 1, lastAt: null })],
+  replies: [mine()],
 });
 check("device-local prefill restores weight and height on load",
   prefilled.elements["weight-lb"].value === "222.5" &&
   prefilled.elements["height-ft"].value === "6" &&
   prefilled.elements["height-in"].value === "1.5");
 
-const savingPrefill = await loadSubmit({
-  replies: [response(200, { ok: true, entries: 1, lastAt: null })],
-});
+const savingPrefill = await loadSubmit({ replies: [mine()] });
 savingPrefill.elements["weight-lb"].value = "240";
 savingPrefill.elements["height-ft"].value = "5";
 savingPrefill.elements["height-in"].value = "11";
@@ -305,16 +311,81 @@ catch { /* a missing or malformed stored value is a failed check below */ }
 check("editing body measurements writes the device-local prefill",
   savedPrefill && savedPrefill.weightLb === "240" &&
   savedPrefill.heightFeet === "5" && savedPrefill.heightInches === "11");
+check("and stamps it with the account it belongs to",
+  savedPrefill && savedPrefill.accountId === ACCOUNT);
+
+/*
+ * The leak #56 was filed for. Member A closes the tab rather than signing
+ * out - the session dies with sessionStorage, the prefill does not - and
+ * member B signs in on the same browser.
+ *
+ * Asserted in both directions, because "the fields are empty" would also be
+ * true of a prefill feature that simply stopped working. The pair is what
+ * distinguishes scoped from broken.
+ */
+const otherMember = await loadSubmit({
+  prefill: storedPrefill,
+  replies: [mine({ accountId: OTHER_ACCOUNT })],
+});
+check("another account's prefill is not shown to the member who signs in",
+  otherMember.elements["weight-lb"].value === "" &&
+  otherMember.elements["height-ft"].value === "" &&
+  otherMember.elements["height-in"].value === "");
+check("and it is erased rather than left readable on the device",
+  !localValues.has(PREFILL_KEY));
+
+/*
+ * A prefill written before #56 has no accountId. It is the already-leaked
+ * data on every device that ran step 5, so it must be discarded on the
+ * first load rather than merely stopped from growing - keying by name
+ * instead would have left it stranded and readable forever.
+ */
+const legacyPrefill = await loadSubmit({
+  prefill: JSON.stringify({
+    units: "imperial", weightLb: "199", heightFeet: "5", heightInches: "9",
+  }),
+  replies: [mine()],
+});
+check("an unscoped prefill from before this change is discarded, not read",
+  legacyPrefill.elements["weight-lb"].value === "" &&
+  !localValues.has(PREFILL_KEY));
+
+/*
+ * No account id - what a break-glass EXPORT_TOKEN caller gets from /me -
+ * is not a licence to fall back to whatever is stored. Nor may a keystroke
+ * write an unattributed prefill for the next person to inherit.
+ */
+const noAccount = await loadSubmit({
+  prefill: storedPrefill,
+  replies: [response(200, { ok: true, accountId: null, entries: 0,
+    lastAt: null })],
+});
+noAccount.elements["weight-lb"].value = "300";
+await noAccount.elements["weight-lb"].dispatch("input");
+check("with no account id nothing is restored and nothing is written",
+  noAccount.elements["height-ft"].value === "" &&
+  !localValues.has(PREFILL_KEY));
+
+/*
+ * And the case that would make all of the above vacuous: if /me fails, the
+ * page has no account id, so it must not fall back to the stored value.
+ */
+const meFailed = await loadSubmit({
+  prefill: storedPrefill,
+  replies: [response(500, { error: "down" })],
+});
+check("a failed /me restores no prefill rather than guessing whose it is",
+  meFailed.elements["weight-lb"].value === "");
 
 const absentPrefill = await loadSubmit({
-  replies: [response(200, { ok: true, entries: 1, lastAt: null })],
+  replies: [mine()],
 });
 check("an absent prefill does not prevent normal panel startup",
   absentPrefill.bootErrors.length === 0 &&
   absentPrefill.requests.length === 1);
 const malformedPrefill = await loadSubmit({
   prefill: "{not-json",
-  replies: [response(200, { ok: true, entries: 1, lastAt: null })],
+  replies: [mine()],
 });
 check("a malformed prefill is ignored without breaking the page",
   malformedPrefill.bootErrors.length === 0 &&
@@ -324,7 +395,7 @@ check("a malformed prefill is ignored without breaking the page",
 
 const signingOut = await loadSubmit({
   prefill: storedPrefill,
-  replies: [response(200, { ok: true, entries: 1, lastAt: null })],
+  replies: [mine()],
 });
 await signingOut.elements["sign-out"].dispatch("click");
 check("sign out clears body-measurement prefill, session, and returns home",
@@ -489,4 +560,4 @@ if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsubmit panel OK - 19 checks");
+console.log("\nsubmit panel OK - 25 checks");
