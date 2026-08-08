@@ -851,13 +851,23 @@ async function handleRevokeSession(request, env, origin) {
   return json({ ok: true }, 200, origin);
 }
 
-// A row is superseded when another row names it. Not restricted to the
-// same account, because handleSubmit refuses a pointer at anybody else's
-// row - a second copy of that rule here would be a second place it could
-// be true, and the two could disagree.
+// A row is superseded when another row OF THE SAME ACCOUNT names it.
+//
+// The account clause is not a second copy of handleSubmit's ownership
+// rule, and reading it as one is what left it off. That rule decides who
+// may WRITE a pointer; this one decides whose rows an account's own count
+// is computed from, and the second question needs an answer even where
+// the first one's enforcement is not the reason it has one. POST is not
+// the only door into this table - `wrangler d1 execute` validates nothing
+// and is how the schema, every backup and every restore are applied, and
+// an ACCOUNT_SECRET rotation renames every account in the clear column
+// while leaving these pointers untouched. Unscoped, a single row the
+// member cannot see and did not write makes their entry vanish from
+// their own panel.
 const SUPERSEDED =
   "EXISTS (SELECT 1 FROM submissions AS newer " +
-  "WHERE newer.supersedes = mine.id)";
+  "WHERE newer.supersedes = mine.id " +
+  "AND newer.account_id = mine.account_id)";
 
 /*
  * What this account has on record. Counts and dates, never contents -
@@ -929,6 +939,29 @@ async function handleMe(request, env, origin, caller) {
   }, 200, origin);
 }
 
+/*
+ * The two rules a correction is checked against, each written once.
+ *
+ * Both statements below are built from these fragments - one reports why
+ * a correction was refused, the other refuses it - and a rule spelled out
+ * twice is a rule that can be changed in one place and not the other.
+ * The ownership question binds the session's account and never anything
+ * from the body, and it asks about existence and ownership together so
+ * that no answer here distinguishes them.
+ */
+const OWNED_BY_CALLER =
+  "EXISTS (SELECT 1 FROM submissions WHERE id = ? AND account_id = ?)";
+const ALREADY_CORRECTED_ROW =
+  "EXISTS (SELECT 1 FROM submissions WHERE supersedes = ?)";
+
+// Byte-identical refusals are the point, so the text is a constant rather
+// than a string repeated at each exit. The 404 covers absent, foreign and
+// deleted alike; the 409 is answered both by the check and by the index,
+// and those two must not be tellable apart.
+const NOT_YOURS = "That entry is not one of yours.";
+const ALREADY_CORRECTED =
+  "That entry has already been corrected. Correct the correction instead.";
+
 async function handleSubmit(request, env, origin, caller) {
   let payload;
   try {
@@ -959,27 +992,35 @@ async function handleSubmit(request, env, origin, caller) {
    * at the row it replaces, and the row it replaces stays as a
    * tombstone. DESIGN.md, "Admin accounts and deletion", holds the rule.
    *
-   * All three checks run before anything is written, and the write is
-   * one statement, so a refused correction stores nothing. Storing it as
-   * an ordinary new row instead would be the worst available outcome:
-   * the member sees a success, and the row they meant to replace is
-   * still counted and still in the series.
+   * THE CHECKS AND THE WRITE ARE ONE BATCH, which is one transaction,
+   * and the write carries the rules in its own WHERE. Do not separate
+   * them back into a question and an insert that follows it: the gap
+   * between those is not theoretical, and two corrections of one entry -
+   * two tabs, or a request the browser retried - both pass the question
+   * before either reaches the write, so both commit. That is fan-in, two
+   * current rows where the design allows one. The database refuses it as
+   * well, by a UNIQUE index on `supersedes`, and server/schema.sql
+   * carries the reasoning for why the rule is stated in both places.
    *
-   * The first two failures answer identically on purpose. Telling "no
-   * such row" apart from "not your row" would make this route a probe
-   * for which ids are live across the whole corpus - more than the
+   * A refused correction stores nothing. Storing it as an ordinary new
+   * row instead would be the worst available outcome: the member sees a
+   * success, and the row they meant to replace is still counted and
+   * still in the series.
+   *
+   * Absent, foreign and deleted answer identically on purpose. Telling
+   * "no such row" apart from "not your row" would make this route a
+   * probe for which ids are live across the whole corpus - more than the
    * grouping DESIGN.md's threat model accepts, and reachable with any
-   * member session rather than with the database. One statement asks for
-   * a row that is both, so there is no branch here that knows a row
-   * exists without knowing it is the caller's.
+   * member session rather than with the database. One predicate asks for
+   * a row that is both there and the caller's, so no branch here learns
+   * that a row exists without also knowing whose it is.
    *
-   * The third is told apart, and safely: reaching it means the caller
-   * has already proved the row is theirs, so the answer is about their
-   * own data. It is also where the chain shape lives. A row may be
-   * superseded once, which is what keeps "current" meaning "the rows
+   * The already-corrected answer is told apart, and safely: reaching it
+   * means the caller has proved the row is theirs, so the answer is
+   * about their own data. It is where the chain shape lives. A row may
+   * be superseded once, which is what keeps "current" meaning "the rows
    * nobody names" - a total function needing no tie-break in a client
-   * this side cannot see. Two rows naming the same target would both be
-   * current, and the member would hold two claims where they meant one.
+   * this side cannot see.
    *
    * A pointer at a row that is gone is not checked for and not an error.
    * It resolves as no pointer everywhere that reads one, which is what
@@ -988,49 +1029,108 @@ async function handleSubmit(request, env, origin, caller) {
    * current ones, and no deletion ever becomes two.
    */
   const supersedes = payload.supersedes;
-  let pointer = null;
-  if (supersedes !== undefined && supersedes !== null) {
-    // The id of a row, or nothing. A client sending the string "1" has a
-    // bug worth hearing about rather than a value worth coercing.
-    if (!Number.isInteger(supersedes) || supersedes < 1) {
-      return json({
-        error: "supersedes must be the id of one of your entries.",
-      }, 400, origin);
-    }
-
-    const target = await env.DB.prepare(
-      "SELECT id FROM submissions WHERE id = ? AND account_id = ?"
-    ).bind(supersedes, caller.accountId).first();
-    if (!target) {
-      return json({ error: "That entry is not one of yours." }, 404, origin);
-    }
-
-    const corrected = await env.DB.prepare(
-      "SELECT id FROM submissions WHERE supersedes = ?"
-    ).bind(supersedes).first();
-    if (corrected) {
-      return json({
-        error: "That entry has already been corrected. Correct the " +
-          "correction instead.",
-      }, 409, origin);
-    }
-
-    pointer = supersedes;
-  }
 
   // The account id comes from the session and never from the body. It is
-  // the one identity on a row that a client cannot influence, and it is
-  // also what makes the ownership check above the only place the
-  // same-account rule has to be enforced.
-  await env.DB.prepare(
-    "INSERT INTO submissions " +
-    "(account_id, ciphertext, received_at, supersedes) " +
-    "VALUES (?, ?, ?, ?)"
-  )
-    .bind(caller.accountId, ciphertext, new Date().toISOString(), pointer)
-    .run();
+  // the one identity on a row that a client cannot influence, which is
+  // what lets the ownership rule below be asked about the session's
+  // account rather than about anything the caller said.
+  const columns = "INSERT INTO submissions " +
+    "(account_id, ciphertext, received_at, supersedes) ";
 
-  return json({ ok: true }, 200, origin);
+  if (supersedes === undefined || supersedes === null) {
+    await env.DB.prepare(columns + "VALUES (?, ?, ?, ?)")
+      .bind(caller.accountId, ciphertext, new Date().toISOString(), null)
+      .run();
+    return json({ ok: true }, 200, origin);
+  }
+
+  // The id of a row, or nothing. A client sending the string "1" has a
+  // bug worth hearing about rather than a value worth coercing.
+  if (!Number.isInteger(supersedes) || supersedes < 1) {
+    return json({
+      error: "supersedes must be the id of one of your entries.",
+    }, 400, origin);
+  }
+
+  const now = new Date().toISOString();
+  let checked;
+  let landed;
+  try {
+    [checked, , landed] = await env.DB.batch([
+      env.DB.prepare(
+        "SELECT " + OWNED_BY_CALLER + " AS mine, " +
+        ALREADY_CORRECTED_ROW + " AS corrected"
+      ).bind(supersedes, caller.accountId, supersedes),
+      env.DB.prepare(
+        columns + "SELECT ?, ?, ?, ? WHERE " +
+        OWNED_BY_CALLER + " AND NOT " + ALREADY_CORRECTED_ROW
+      ).bind(
+        caller.accountId, ciphertext, now, supersedes,
+        supersedes, caller.accountId, supersedes
+      ),
+      env.DB.prepare("SELECT ciphertext FROM submissions WHERE supersedes = ?")
+        .bind(supersedes),
+    ]);
+  } catch (error) {
+    /*
+     * The index refusing a correction of a row somebody else corrected
+     * in the same instant. It is the same event as the check below
+     * catching it a moment earlier, so it is the same answer - a member
+     * who lost a race and a member who corrected twice have identical
+     * work to do next, and telling them apart would publish which of
+     * them the database happened to serve first.
+     *
+     * Only that violation is absorbed. Anything else is a failure this
+     * route has no answer for and must not report as a refusal the
+     * member could act on, so it goes to fetch()'s handler.
+     */
+    if (!/UNIQUE constraint failed/i.test(String(error && error.message))) {
+      throw error;
+    }
+    return json({ error: ALREADY_CORRECTED }, 409, origin);
+  }
+
+  /*
+   * Whether the row LANDED, rather than whether it should have.
+   *
+   * The three statements are one batch and therefore one transaction,
+   * and the insert carries the rules in its own WHERE - so a refused
+   * correction stores nothing even if the diagnosis beside it were read
+   * wrong, and a stored one was stored under rules that held at the
+   * moment of the write rather than at the moment of the question.
+   * Reading the outcome back inside the same batch is what keeps this
+   * from depending on the isolation the store happens to offer: a
+   * diagnosis that says "fine" and a write that quietly did nothing is
+   * exactly the 200-with-no-row the member cannot see, and it is the
+   * worst outcome available on this route.
+   *
+   * The row is identified by its ciphertext because that is the one
+   * thing about it the caller already knows. Two seals of the same
+   * measurement never agree - a fresh ephemeral point and fresh nonces
+   * per submission, which apps/web/crypto.js is held to - so this cannot
+   * mistake somebody else's correction for its own.
+   */
+  const row = landed.results[0];
+  if (row && row.ciphertext === ciphertext) {
+    return json({ ok: true }, 200, origin);
+  }
+
+  /*
+   * It did not land, and the diagnosis says why. The first answer covers
+   * absent, foreign and deleted alike: one statement asks for a row that
+   * is both there and the caller's, so no branch here learns that a row
+   * exists without also knowing it belongs to the person asking, and
+   * telling those apart would make this route a probe for which ids are
+   * live across the whole corpus.
+   *
+   * Everything else is the chain rule, including the case where the
+   * diagnosis found nothing wrong and the write still did nothing -
+   * which is another correction of the same row arriving first.
+   */
+  if (!checked.results[0] || !checked.results[0].mine) {
+    return json({ error: NOT_YOURS }, 404, origin);
+  }
+  return json({ error: ALREADY_CORRECTED }, 409, origin);
 }
 
 /*
