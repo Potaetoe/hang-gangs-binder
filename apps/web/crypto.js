@@ -709,7 +709,15 @@
     }
   }
 
-  root.BinderCrypto = {
+  // Frozen because submit.html and admin.html both load this file while
+  // holding plaintext: an export a later script can rewrite is an
+  // `encrypt` that can be swapped for a passthrough, or a `decrypt`
+  // handed the private key admin.html just imported. Freezing does not
+  // stop the global itself being reassigned - nothing in a page can be
+  // stopped from doing that - but it removes the quiet edit, where the
+  // object every page already holds a reference to changes underneath
+  // them. dev/crypto.test.mjs asserts it.
+  root.BinderCrypto = Object.freeze({
     VERSION: VERSION,
     ENVELOPE_VERSION: ENVELOPE_VERSION,
     MAX_RECIPIENTS: MAX_RECIPIENTS,
@@ -721,5 +729,5 @@
     encrypt: encrypt,
     encryptTo: encryptTo,
     decrypt: decrypt,
-  };
+  });
 })(globalThis);
