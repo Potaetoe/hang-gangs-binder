@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Fifteen checks:
+Eighteen checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -223,10 +223,10 @@ Fifteen checks:
     the file's contents were rearranged - which is the lesson #34 paid
     for.
 
-    This assertion was interim in dev/ui.test.mjs, where it guarded one
-    named page. It moved rather than being copied: a page suite cannot
-    own a repository-wide boundary, and two checks making the same claim
-    in different files is how one of them gets quietly weakened.
+    This assertion belongs here rather than in dev/ui.test.mjs, where an
+    interim version guarded one named page: a page suite cannot own a
+    repository-wide boundary, and two checks making the same claim in
+    different files is how one of them gets quietly weakened.
 
 15. Every module's exported namespace is frozen, and the roster of which
     module publishes which namespace is pinned here rather than read off
@@ -271,6 +271,66 @@ Fifteen checks:
     genuinely publishes through `window.`, so a checker that knew only
     the two spellings its authors happened to use would have been blind
     to an entire export style already in this directory.
+
+16. Every small label above a block declares which of three jobs it is
+    doing, and the stylesheet can tell those three apart. #68 counted one
+    component used 24 times for at least four different jobs - a section's
+    name, an outcome, a warning, an instruction - and the finding is that
+    a token meaning four things carries none of them: `Received` and
+    `Unavailable` are outcomes and must not look like `Optional`, which is
+    a category.
+
+    The inventory is keyed by the label's words rather than by page, so a
+    phrase cannot mean one thing here and another there, and both
+    directions fail. The point of the missing-entry direction is not
+    tidiness: it makes "what job is this doing?" a question somebody has
+    to answer before a new label ships, which is the question nothing
+    asked while the old component grew.
+
+    The markup half cannot live in theme.css, because the drift happens
+    in the pages - a new status wearing the section-name component looks
+    right in a diff and reads as a section forever after. The stylesheet
+    half cannot live in the pages, because three roles painted one color
+    are one component with three names. So the table names the roles from
+    outside both files, and each file answers for its own half.
+
+    THE LIMIT, stated because this arm reads as though it had none. What
+    it enforces is that the question gets asked; it cannot check the
+    answer. A fourth job arriving as a NEW component - `.notice` above a
+    block - is not a role, so nothing here sees it at all; and a fourth
+    job filed under the nearest of these three passes cleanly, because a
+    label declaring itself a `flag` is taken at its word. Both are the
+    original overload arriving by a route the inventory does not watch.
+    What this buys is that neither can happen silently in the pages that
+    already exist: the entry has to be written, and writing it is where
+    somebody says out loud what the label is for. Catching a wrong
+    answer is the review bar's job, and AGENTS.md says so.
+
+17. Every destination answers to one name, and the nav, the title and
+    the heading all use it. #127 inventoried the drift and gave the
+    motivating example: the admin page was called Export, which is what
+    its first single job was, long after it had grown decryption, row
+    deletion, publishing and charts. That is a falsified label in exactly
+    the sense the comment ratchet polices for prose.
+
+    The name is pinned outside the markup because it is written in eight
+    places for four pages - three hand-copied rails, a title and a
+    heading - and a rename that reaches seven of them is not visible from
+    any one file. Checking the heading and the title as well as the rails
+    is the half rail parity cannot reach: three rails can agree with each
+    other and still disagree with the page they open.
+
+18. Each page says which surface it belongs to, and carries that
+    surface's clothes and no other. The owner's decision on #73 is that
+    admin.html is an instrument panel - deliberately cooler than the
+    member pages, and visibly labeled as the admin surface - so a reader
+    never has to infer from the content which one they are looking at.
+
+    Pinned outside the markup for the reason check 10's shell table
+    gives, and the arm worth having is the same copy-paste direction: a
+    page built by copying admin.html keeps its clothes, and a member page
+    announcing itself as the admin surface is a page somebody stops
+    trusting.
 """
 
 import base64
@@ -438,13 +498,13 @@ def literal_field(body, name):
     """One quoted `name: "value"` out of a single ENVIRONMENTS arm.
 
     Module level, and deliberately taking the body rather than closing
-    over it. It used to be defined inside the loop that walks the arms,
-    which reads correctly only for as long as it is called in the same
-    iteration it was defined in - store one of those closures and call it
-    later and it silently reports the last arm's values for every arm.
-    Nothing did that, and nothing had to for this to be worth removing:
-    the failure would be a config check that passed while describing the
-    wrong environment.
+    over it. A version defined inside the loop that walks the arms reads
+    correctly only for as long as it is called in the same iteration it
+    was defined in - store one of those closures, call it later, and it
+    silently reports the last arm's values for every arm. Keeping the
+    body a parameter is what makes that shape unavailable, and the
+    failure it forecloses is a config check that passes while describing
+    the wrong environment.
     """
     found = re.search(r"\b%s\s*:\s*[\"']([^\"']+)[\"']" % name, body)
     return found.group(1) if found else None
@@ -634,11 +694,10 @@ def parse_csp(text):
     all is *absence*, which is check 3's to report, not this function's.
 
     A problem is returned when the marker is there and the policy cannot
-    be read from it. That distinction is the whole point. The bug this
-    replaces did not misread a policy - it failed to find one and said
-    nothing, and a checker that reports "no problem found" when it could
-    not read is worse than one that has no opinion, because the first is
-    believed.
+    be read from it. That distinction is the whole point, and the hazard
+    it closes is silence rather than misreading: a checker that reports
+    "no problem found" when it could not read at all is worse than one
+    with no opinion, because the first is believed.
     """
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
@@ -884,9 +943,9 @@ def sign_in_boundary_problems():
     """(page, problem) when the sign-in-only boundary widens or spreads.
 
     Check 11 - crypto.js must not be on the sign-in page - plus the
-    Telegram-specific half of check 12. The exact-token pinning that used
-    to live here is now csp_policy_problems(), which pins every directive
-    on every page rather than two on one.
+    Telegram-specific half of check 12. Exact-token pinning belongs in
+    csp_policy_problems() rather than here, because it pins every
+    directive on every page rather than two on one.
 
     The Telegram spread check stays even though a whole-policy pin
     subsumes it, because it says *why* in its message. "submit.html names
@@ -1155,6 +1214,633 @@ def shell_problems():
 
     # A rail link to a page that does not exist is caught by check 1 as a
     # broken reference, so it is not repeated here.
+    return problems
+
+
+# The three jobs a small label above a block is allowed to do, and the
+# component that does each. The value is the sentence a failure prints,
+# so a reader who has never seen this table learns the distinction from
+# the error rather than from here.
+LABEL_ROLES = {
+    "runner": "names the section it stands on",
+    "flag": "reports an outcome the page has reached",
+    "caution": "tells the reader something they have to act on",
+}
+
+# Every label the published pages carry, and which of those three jobs
+# it does.
+#
+# Keyed by the words rather than by (page, words), and that is the arm
+# with teeth: one phrase doing one job here and another job on the next
+# page is the same overload arriving by a different route, so the table
+# cannot express it.
+#
+# Both directions fail. A label a page carries that this does not name
+# fails, which makes "what job is this doing?" a question somebody has
+# to answer before a new label ships - the question nothing asked while
+# one component quietly grew to mean four things. An entry no page
+# carries fails too, so the list cannot rot into a description of a
+# site that no longer exists.
+LABELS = {
+    "Before you close this": "caution",
+    "Charts": "runner",
+    "Development session": "caution",
+    "How your entry is handled": "runner",
+    "Members": "runner",
+    "Not open": "flag",
+    "Nothing to show": "flag",
+    "Optional": "runner",
+    "Publish": "runner",
+    "Published": "runner",
+    "Received": "flag",
+    "Result": "flag",
+    "Rows that would not open": "caution",
+    "Session": "runner",
+    "Telegram": "runner",
+    "Unavailable": "flag",
+    "What this is": "runner",
+    "Your account": "runner",
+}
+
+# The one component the three roles above stand in for. Refused in the
+# pages AND in the stylesheet, because either half surviving alone is
+# how it comes back:
+# a live rule invites the next label, and a page still wearing the class
+# renders as unstyled body text with nothing to say so.
+RETIRED_LABEL = "eyebrow"
+
+# Every reader in this file matches class="x" and class='x' alike, and
+# that is load-bearing rather than tidy. These pages are hand-written
+# HTML where both spellings are valid and neither is enforced, and every
+# rule reading a class here is a REFUSAL - so a reader pinned to one
+# spelling does not merely miss things, it fails open while the gate
+# reports the page as checked. class='eyebrow' brought the retired
+# component back with all eighteen checks green.
+#
+# The quotes are not required to match each other. Mismatched quotes are
+# malformed markup nothing here should be lenient about, and the error
+# on the strict side of this choice is a refusal that fires on garbage,
+# which is the direction a refusal is allowed to be wrong in.
+CLASS_ATTR = r'class\s*=\s*["\']([^"\']*)["\']'
+
+# A label is a paragraph. Restricting the tag is what makes the reader
+# below safe rather than merely convenient - <p> cannot nest, so a
+# non-greedy match to the next </p> cannot swallow a label inside a
+# card, which is exactly what a general "any element" reader does.
+LABEL_MARKUP = re.compile(r'<p\s+[^>]*%s[^>]*>(.*?)</p>' % CLASS_ATTR,
+                          re.S | re.I)
+
+# The evasion the rule above would otherwise leave open: the same class
+# on something that is not a paragraph is invisible to the reader and
+# paints identically on the page.
+ROLE_ON_OTHER_TAG = re.compile(
+    r'<(?!p[\s>])\w+\s+[^>]*class\s*=\s*["\'][^"\']*\b(%s)\b'
+    % "|".join(sorted(LABEL_ROLES)), re.I)
+
+# The retired component, read as a word inside the class list rather
+# than as the whole attribute. class="eyebrow small" is the same
+# component with a second class beside it, and an equality test on the
+# attribute never saw it.
+RETIRED_LABEL_MARKUP = re.compile(
+    r'class\s*=\s*["\'][^"\']*\b%s\b' % RETIRED_LABEL, re.I)
+
+TAG = re.compile(r"<[^>]+>")
+
+# What a role's color has to be written as. The residual is worth stating
+# rather than hiding: two DIFFERENT tokens that happen to hold the same
+# value in one palette still pass here, because resolving tokens per
+# palette is tools/check_contrast.py's machinery and not this file's.
+# What this closes is the evasion that needs no coincidence at all - a
+# literal that paints another role's exact pixels.
+COLOR_TOKEN = re.compile(r"^var\(\s*--color-[\w-]+\s*\)$")
+
+
+# A role rule's subject: the compound the rule actually paints. The
+# selector is read from its right-hand end because that is what the
+# cascade does - `body.instrument .flag` paints .flag, `.flag .runner`
+# paints .runner - and it must be the WHOLE compound, so that
+# `.runner::after` (the hairline, which carries no information) is not
+# read as the section-name role's color.
+ROLE_SUBJECT = re.compile(r"^\.(\w[\w-]*)$")
+
+
+def selector_role(part):
+    """(context, role) for one selector that paints a role, else None.
+
+    Context is everything left of the role's own compound - "" for a
+    bare `.flag`, "body.instrument" for the admin surface's override.
+    Modelling it is what closes the hole a reader of bare selectors
+    leaves open: such a reader sees one page's worth of the cascade, the
+    roles as they paint with nothing else on the body, and every
+    page-level override is invisible to it. That is enough to give two
+    roles the identical token on admin.html with the whole gate green.
+    """
+    compounds = part.split()
+    if not compounds:
+        return None
+    subject = ROLE_SUBJECT.match(compounds[-1])
+    if not subject or subject.group(1) not in LABEL_ROLES:
+        return None
+    return " ".join(compounds[:-1]), subject.group(1)
+
+
+def normalized_color(value):
+    """One color declaration with its spacing removed.
+
+    `var( --color-gold )` and `var(--color-gold)` are one paint and were
+    two strings to a comparison of written text, which is a way past the
+    distinctness arm that costs one keystroke and no coincidence at all.
+    Removing every space is total rather than a heuristic because the
+    rule above has already refused anything that is not a bare token.
+    """
+    return re.sub(r"\s+", "", value)
+
+
+def label_text(markup):
+    """The words a label shows, with its markup and spacing removed.
+
+    The section-name component wraps its text in a span so the rule can
+    run off it, so reading textContent rather than the raw match is the
+    difference between "Session" and "<span>Session</span>".
+    """
+    return " ".join(TAG.sub("", markup).split())
+
+
+def page_labels(text):
+    """[(role, words)] for every label in one page's markup, in order."""
+    found = []
+    for classes, inner in LABEL_MARKUP.findall(text):
+        roles = [role for role in classes.split() if role in LABEL_ROLES]
+        for role in roles:
+            found.append((role, label_text(inner)))
+    return found
+
+
+def page_text(name):
+    """One page's markup with its comments removed.
+
+    Comments go first everywhere a rule reads markup, because a shape
+    described in a comment is not a shape the page has - and every one
+    of these pages carries long comments that quote the very markup the
+    rules below refuse.
+    """
+    return re.sub(r"<!--.*?-->", "",
+                  open(os.path.join(WEB, name), encoding="utf-8").read(),
+                  flags=re.S)
+
+
+def page_label_problems(text):
+    """[problem] for the labels in one page's markup.
+
+    Takes markup rather than a filename for the reason
+    plain_page_problems() gives: a rule exercised only on the five files
+    that ship is a rule tested against today's content.
+    """
+    problems = []
+
+    if RETIRED_LABEL_MARKUP.search(text):
+        problems.append(
+            'still carries class="%s". That one component meant a '
+            "section's name, an outcome, a warning and an instruction "
+            "at once, which is why it means none of them - say which "
+            "of %s this label is"
+            % (RETIRED_LABEL, " / ".join(sorted(LABEL_ROLES))))
+
+    for role in sorted(set(ROLE_ON_OTHER_TAG.findall(text))):
+        problems.append(
+            'wears the "%s" role on something that is not a paragraph. A '
+            "label is a paragraph here, and one that is not is invisible "
+            "to this check while painting exactly like the labels it sits "
+            "beside" % role.lower())
+
+    for role, words in page_labels(text):
+        if words not in LABELS:
+            problems.append(
+                'carries the label "%s", which names no job in LABELS in '
+                "tools/check_web.py. Say whether it %s"
+                % (words, ", ".join(
+                    "%s (%s)" % (LABEL_ROLES[key], key)
+                    for key in sorted(LABEL_ROLES))))
+        elif LABELS[words] != role:
+            problems.append(
+                'labels "%s" as "%s", and LABELS in tools/check_web.py '
+                'says it is "%s" - it %s'
+                % (words, role, LABELS[words], LABEL_ROLES[LABELS[words]]))
+
+    return problems
+
+
+def label_problems():
+    """(page, problem) for labels whose role is missing, wrong or stale."""
+    problems = []
+    seen = set()
+
+    for name in html_pages():
+        text = page_text(name)
+        seen.update(words for _, words in page_labels(text))
+        for problem in page_label_problems(text):
+            problems.append((name, problem))
+
+    # The stale direction, which only the whole directory can answer: a
+    # label is gone when NO page carries it, and no single page knows
+    # that.
+    for words in sorted(set(LABELS) - seen):
+        problems.append((
+            "apps/web",
+            'has no label reading "%s", which LABELS in tools/check_web.py '
+            "still names. Delete the entry, or restore the label" % words))
+
+    return problems
+
+
+def stylesheet_text():
+    """The stylesheet with its comments removed, or None if it is missing.
+
+    Comments go first for the reason page_text() gives one file up: this
+    stylesheet quotes the very selectors the rules below refuse, at
+    length, in the block comments that explain why they are refused.
+    """
+    path = os.path.join(WEB, STYLESHEET)
+    if not os.path.exists(path):
+        return None  # check 1's to report
+    return re.sub(r"/\*.*?\*/", "", open(path, encoding="utf-8").read(),
+                  flags=re.S)
+
+
+# The stylesheet half of the same rule. The components have to exist,
+# and they have to be told apart: three roles painted the same color are
+# one component with three names, which is the state this split was made
+# to leave rather than a state to arrive back at.
+def label_style_problems():
+    """[problem] for a stylesheet that cannot tell the three roles apart."""
+    css = stylesheet_text()
+    return [] if css is None else css_role_problems(css)
+
+
+def css_role_problems(css):
+    """[problem] for stylesheet text that cannot tell the roles apart.
+
+    Takes the text rather than reading the file for the reason this
+    suite's own docstring gives: a rule that can only be exercised
+    through the directory it guards is a rule tested against today's
+    content, and #34's mutations all passed that way.
+    """
+    problems = []
+    if re.search(r"(^|[\s,}])\.%s\b" % RETIRED_LABEL, css):
+        problems.append(
+            'still defines .%s. A component kept alive for one last page '
+            "is how the next label joins it" % RETIRED_LABEL)
+
+    # Every rule that paints a role, keyed by (context, role), in
+    # document order. Reading every rule rather than the first is
+    # deliberate: the shared declarations and the per-role ones are
+    # separate blocks by design, so a reader that stopped at the first
+    # block a role's name appears in would find the grouped selector and
+    # conclude the role sets no color.
+    #
+    # Two things replace an earlier value here, and they are not the
+    # same thing. Within one context the last rule wins, which is what
+    # the cascade does between selectors of equal weight. Across
+    # contexts nothing wins: a context is kept separately and resolved
+    # against the base below, because `body.instrument .flag` beats
+    # `.flag` on specificity wherever the two are written.
+    defined = set()
+    colors = {}
+    for selectors, block in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        painted = set()
+        for part in selectors.split(","):
+            found = selector_role(part.strip())
+            if found:
+                painted.add(found)
+        if not painted:
+            continue
+        defined |= {role for context, role in painted if not context}
+        color = re.search(r"(?<![\w-])color\s*:\s*([^;]+);", block)
+        if color:
+            for key in painted:
+                colors[key] = color.group(1).strip()
+
+    for role in sorted(LABEL_ROLES):
+        if role not in defined:
+            problems.append(
+                "defines no .%s, so every label that %s renders as ordinary "
+                "body text" % (role, LABEL_ROLES[role]))
+        elif ("", role) not in colors:
+            problems.append(
+                ".%s sets no color of its own, so it cannot be told from "
+                "the label beside it" % role)
+
+    # The token rule reaches every context, not only the base one.
+    # Without it the distinctness arm below compares strings and can be
+    # walked straight past: `.caution { color: #e7b583 }` differs from
+    # `var(--color-warn-text)` as text while painting the identical
+    # pixels. Requiring a token is also this file's own rule - every
+    # component here is styled through the tokens, which is what lets a
+    # palette be a block of variables.
+    for (context, role), value in sorted(colors.items()):
+        if not COLOR_TOKEN.match(value):
+            problems.append(
+                ".%s takes the color %s%s rather than a --color-* token. Two "
+                "roles are told apart here by the token each one names, so "
+                "a literal is a distinction this cannot see - and a palette "
+                "cannot reach it either"
+                % (role, value, " under %s" % context if context else ""))
+
+    # Each context is resolved on its own, base colors standing in for
+    # the roles it does not override. That is the page as it actually
+    # paints: on admin.html the section names take the instrument's
+    # muted token and the other two roles keep theirs, and the three
+    # still have to be three.
+    for context in sorted({context for context, _ in colors}):
+        by_color = {}
+        for role in sorted(LABEL_ROLES):
+            value = colors.get((context, role), colors.get(("", role)))
+            if value is not None:
+                by_color.setdefault(normalized_color(value), []).append(role)
+
+        for value, roles in sorted(by_color.items()):
+            if len(roles) > 1:
+                problems.append(
+                    "paints %s the same %s%s. A label that %s and one that %s "
+                    "are different claims about the page and cannot look "
+                    "identical"
+                    % (" and ".join(".%s" % role for role in roles), value,
+                       " under %s" % context if context else "",
+                       LABEL_ROLES[roles[0]], LABEL_ROLES[roles[1]]))
+
+    return problems
+
+
+# The one name each destination answers to. Pinned here because the same
+# name is written in eight places - three hand-copied rails, a title and
+# a heading - and a rename that reaches seven of them leaves a site
+# arguing with itself about what its own pages are called (#127).
+#
+# The heading and the title are checked as well as the rails, which is
+# the half a rail-parity rule cannot reach: three rails agreeing with
+# each other and disagreeing with the page they open is exactly the
+# drift that issue inventoried.
+SITE_TITLE = "HangGang"
+
+DESTINATIONS = {
+    "404.html": "Not found",
+    "admin.html": "Admin",
+    "dashboard.html": "Progress",
+    "index.html": "Sign in",
+    "submit.html": "Your binder",
+}
+
+HEADING = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
+TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
+
+
+# An href that leaves this site. Read before anything is stripped,
+# because the scheme is what makes it somebody else's page - and the
+# name table has nothing to say about a page it does not publish.
+OFF_SITE = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)", re.I)
+
+
+def rail_target(href):
+    """The page one rail href names, or None if it names no page here.
+
+    #127's motivating example came back through the missing half of
+    this. `if href in DESTINATIONS` reads "./admin.html" as something
+    other than a destination and skips it in silence, so the rails could
+    call the admin page Export again with all eighteen checks green - a
+    membership test with no else-branch fails open, and the browser
+    resolves both spellings to the same file.
+
+    Only the spellings that mean the same page are folded together. A
+    directory in the path is left in place, so a rail pointing somewhere
+    this table does not name is reported rather than quietly renamed
+    into a page that exists.
+    """
+    target = href.strip().split("#", 1)[0].split("?", 1)[0]
+    if OFF_SITE.match(target):
+        return None
+    target = re.sub(r"^\./", "", target)
+    target = re.sub(r"^/", "", target)
+    return target or "index.html"  # the bare directory is its index
+
+
+def page_name_problems(text, expected):
+    """[problem] for one page's markup disagreeing about its own name."""
+    problems = []
+
+    heading = HEADING.search(text)
+    if not heading:
+        problems.append("carries no <h1>, so it does not say what page "
+                        "it is")
+    elif label_text(heading.group(1)) != expected:
+        problems.append('is called "%s" and its heading says "%s"'
+                        % (expected, label_text(heading.group(1))))
+
+    title = TITLE.search(text)
+    wanted = "%s — %s" % (expected, SITE_TITLE)
+    if not title:
+        problems.append("carries no <title>")
+    elif label_text(title.group(1)) != wanted:
+        problems.append(
+            'has the title "%s", and this page is "%s" - a tab and a '
+            "bookmark are where a name is read most often"
+            % (label_text(title.group(1)), wanted))
+
+    # Every rail on every page, not only the entry pointing at itself.
+    # A rename lands on the page being renamed first and on the two
+    # copies elsewhere last, so the copies are what this is for.
+    for href, shown in rail_links(text) or []:
+        target = rail_target(href)
+        if target is None:
+            continue  # somebody else's page, and not this table's to name
+        if target not in DESTINATIONS:
+            problems.append(
+                "has a rail entry pointing at %s, which names no destination "
+                "in DESTINATIONS in tools/check_web.py. Say what that page is "
+                "called, or fix the link - a rail entry this table cannot "
+                "resolve is one no rename will ever reach" % href)
+        elif label_text(shown) != DESTINATIONS[target]:
+            problems.append(
+                'has a rail calling %s "%s", and that page is called "%s"'
+                % (href, label_text(shown), DESTINATIONS[target]))
+
+    return problems
+
+
+def name_problems():
+    """(page, problem) for surfaces that disagree about a page's name."""
+    problems = []
+    pages = html_pages()
+
+    for name in sorted(set(pages) - set(DESTINATIONS)):
+        problems.append((
+            name,
+            "is published and names no destination in DESTINATIONS in "
+            "tools/check_web.py. Say what this page is called, once, so "
+            "its rail entry, its title and its heading cannot drift apart"))
+    for name in sorted(set(DESTINATIONS) - set(pages)):
+        problems.append((
+            name,
+            "is pinned in DESTINATIONS in tools/check_web.py and is not a "
+            "page in apps/web. Delete the entry, or restore the page"))
+
+    for name in pages:
+        if name not in DESTINATIONS:
+            continue
+        for problem in page_name_problems(page_text(name),
+                                          DESTINATIONS[name]):
+            problems.append((name, problem))
+
+    return problems
+
+
+# Which surface each page belongs to, pinned for the reason SHELLS gives
+# one table down: a rule derived from what a page happens to contain
+# cannot fail when a page arrives carrying the wrong one.
+#
+# INSTRUMENT is admin.html and the owner's decision on #73 - deliberately
+# cooler than the member pages, and visibly labeled as the admin surface
+# so nobody has to infer from the content which one they are looking at.
+# MEMBER is everything else, including the error page: whoever lands
+# there is not being told they have found the admin panel.
+SURFACES = {
+    "404.html": "member",
+    "admin.html": "instrument",
+    "dashboard.html": "member",
+    "index.html": "member",
+    "submit.html": "member",
+}
+
+INSTRUMENT_BODY = re.compile(
+    r'<body[^>]*\bclass\s*=\s*["\'][^"\']*\binstrument\b', re.I)
+SURFACE_MARK = re.compile(
+    r'<p\s+[^>]*class\s*=\s*["\'][^"\']*\bsurface-mark\b[^"\']*["\'][^>]*>'
+    r'(.*?)</p>', re.S | re.I)
+
+
+def surface_problems():
+    """(page, problem) for pages wearing the wrong surface, or none."""
+    problems = []
+    pages = html_pages()
+
+    for name in sorted(set(pages) - set(SURFACES)):
+        problems.append((
+            name,
+            "is published and names no surface in SURFACES in tools/"
+            "check_web.py. Say whether it is a member-facing page or the "
+            "admin instrument, so the next page copied from an open tab "
+            "cannot inherit the wrong one in silence"))
+    for name in sorted(set(SURFACES) - set(pages)):
+        problems.append((
+            name,
+            "is pinned in SURFACES in tools/check_web.py and is not a page "
+            "in apps/web. Delete the entry, or restore the page"))
+
+    for name in pages:
+        if name not in SURFACES:
+            continue
+        for problem in page_surface_problems(page_text(name), SURFACES[name]):
+            problems.append((name, problem))
+
+    return problems
+
+
+def page_surface_problems(text, surface):
+    """[problem] for one page's markup wearing the wrong surface."""
+    problems = []
+    marked = SURFACE_MARK.search(text)
+
+    if surface == "instrument":
+        if not INSTRUMENT_BODY.search(text):
+            problems.append(
+                "is the admin instrument and its <body> does not say so, "
+                "so it renders in the member pages' warmth")
+        if not marked or not label_text(marked.group(1)):
+            problems.append(
+                "is the admin instrument and carries no visible surface "
+                "mark. The owner's decision is that this page is "
+                "unmistakably the admin surface, and a reader cannot be "
+                "asked to infer that from the content")
+        return problems
+
+    # The copy-paste direction, which is the arm worth having: a page
+    # built by copying admin.html keeps its clothes, and a member page
+    # that announces itself as the admin surface is a page somebody
+    # stops trusting.
+    if INSTRUMENT_BODY.search(text):
+        problems.append("is member-facing and its <body> claims the admin "
+                        "instrument surface")
+    if marked:
+        problems.append("is member-facing and carries the admin surface "
+                        "mark")
+
+    return problems
+
+
+# The instrument's clothes, in the stylesheet. This half exists for the
+# reason check 16's does: the markup half makes a page DECLARE which
+# surface it belongs to, and a declaration nothing renders is a class
+# attribute. Deleting every body.instrument rule and the nameplate left
+# admin.html painting exactly like a member page with the markup half
+# still green, so "carries that surface's clothes" was a claim no arm
+# was making.
+INSTRUMENT_SELECTOR = re.compile(r"(^|[\s,>+~])body\.instrument\b", re.I)
+SURFACE_MARK_CLASS = ".surface-mark"
+
+# What "deliberately cooler" is a claim about. A body.instrument block
+# that only moves spacing around leaves the member pages' warmth exactly
+# where it was, which is the half of the owner's decision on #73 that a
+# reader actually sees.
+COLOR_PROPERTY = re.compile(
+    r"(?<![\w-])(?:color|background|background-color|border|border-color)"
+    r"\s*:", re.I)
+
+
+def surface_style_problems():
+    """[problem] for a stylesheet with no admin instrument in it."""
+    css = stylesheet_text()
+    return [] if css is None else css_surface_problems(css)
+
+
+def css_surface_problems(css):
+    """[problem] for stylesheet text that dresses no admin instrument."""
+    problems = []
+    instrument = []
+    nameplate = []
+
+    for selectors, block in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        for part in selectors.split(","):
+            part = part.strip()
+            if INSTRUMENT_SELECTOR.search(part):
+                instrument.append(block)
+            if part == SURFACE_MARK_CLASS:
+                nameplate.append(block)
+
+    if not instrument:
+        problems.append(
+            "defines nothing for body.instrument, so admin.html renders in "
+            "the member pages' clothes and the class its markup carries "
+            "means nothing. SURFACES in tools/check_web.py pins which page "
+            "is the instrument; this is where the instrument gets its look")
+    elif not any(COLOR_PROPERTY.search(block) for block in instrument):
+        problems.append(
+            "gives body.instrument no color of its own - every rule under it "
+            "moves spacing only, so the admin surface keeps the member "
+            "pages' warmth that the owner's decision on #73 spends to tell "
+            "the two apart")
+
+    if not nameplate:
+        problems.append(
+            "defines no %s, so the nameplate saying which surface this is "
+            "has no band to sit in. The decision is that a reader never has "
+            "to infer the surface from the content, and unstyled prose above "
+            "the page is what that decision was made against"
+            % SURFACE_MARK_CLASS)
+    elif not any(COLOR_PROPERTY.search(block) for block in nameplate):
+        problems.append(
+            "gives %s no color, background or border, so the nameplate "
+            "renders as an ordinary sentence and marks nothing"
+            % SURFACE_MARK_CLASS)
+
     return problems
 
 
@@ -1619,6 +2305,21 @@ def main():
 
     for name, problem in module_export_problems():
         problems.append("%s %s." % (name, problem))
+
+    for page, problem in label_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for problem in label_style_problems():
+        problems.append("%s %s." % (STYLESHEET, problem))
+
+    for page, problem in name_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for page, problem in surface_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for problem in surface_style_problems():
+        problems.append("%s %s." % (STYLESHEET, problem))
 
     for rel, description in key_shaped_content():
         problems.append(

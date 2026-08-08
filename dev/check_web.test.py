@@ -35,7 +35,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 73
+EXPECTED = 136
 
 
 def check(label, condition):
@@ -462,6 +462,297 @@ check("every module on the roster freezes its export in the shipped file",
       len(frozen_in_place) == 9 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 16 - the label roles.                                         #
+
+# The table itself, before any markup is read. A role with no sentence
+# behind it produces a failure message that cannot say what the reader
+# should have written instead.
+check("every label role says what job it does",
+      all(isinstance(why, str) and why
+          for why in check_web.LABEL_ROLES.values()))
+check("every label in the inventory names a role that exists",
+      set(check_web.LABELS.values()) <= set(check_web.LABEL_ROLES))
+
+# The reader, on strings. The section-name component wraps its words in
+# a span so its rule can run off it, so a reader that took the raw match
+# would compare "<span>Members</span>" against the inventory forever.
+check("a label is read as its role and its words",
+      check_web.page_labels('<p class="runner"><span>Members</span></p>') ==
+      [("runner", "Members")])
+check("a label's words survive the markup inside it",
+      check_web.label_text("<span>Rows that\n  would not open</span>") ==
+      "Rows that would not open")
+check("an ordinary paragraph is not a label",
+      check_web.page_labels("<p class='muted'>a sentence</p>") == [])
+
+# Both directions on the inventory, which is the arm that makes adding a
+# label an act that has to declare its job.
+check("a label carrying a declared role raises nothing",
+      check_web.page_label_problems('<p class="flag">Received</p>') == [])
+check("a label nobody has given a job is refused",
+      any("names no job" in p for p in check_web.page_label_problems(
+          '<p class="runner">Very nearly done</p>')))
+check("a label doing a different job from the one declared is refused",
+      any("says it is" in p for p in check_web.page_label_problems(
+          '<p class="runner">Received</p>')))
+
+# The overload itself, in the form #68 found it: an outcome wearing the
+# section-name component, which is what made `Received` look like
+# `Optional`.
+check("an outcome dressed as a section name names both roles",
+      any('"Received" as "runner"' in p and '"flag"' in p
+          for p in check_web.page_label_problems(
+              '<p class="runner">Received</p>')))
+
+# The retired component, refused in the markup and in the stylesheet.
+check("a page still wearing the retired label component is refused",
+      any("means none of them" in p for p in check_web.page_label_problems(
+          '<p class="eyebrow">Received</p>')))
+
+# The evasion: the same class on something that is not a paragraph
+# renders identically and would otherwise be invisible here.
+check("a role worn by something that is not a paragraph is refused",
+      any("not a paragraph" in p for p in check_web.page_label_problems(
+          '<div class="flag">Received</div>')))
+check("a role on a paragraph is not caught by that arm",
+      not any("not a paragraph" in p for p in check_web.page_label_problems(
+          '<p class="flag">Received</p>')))
+
+# A role class alongside another class still has to answer for itself.
+check("a role wearing a second class is still read as that role",
+      check_web.page_labels('<p class="flag small">Result</p>') ==
+      [("flag", "Result")])
+
+# Both quote styles, everywhere a class is read. These pages are
+# hand-written HTML and both spellings are valid, so a reader pinned to
+# one of them is a reader that one keystroke walks past - and the arm
+# walked past is a refusal, which fails open.
+check("a single-quoted role is read as that role",
+      check_web.page_labels("<p class='runner'>Members</p>") ==
+      [("runner", "Members")])
+check("a single-quoted retired component is refused",
+      any("means none of them" in p for p in check_web.page_label_problems(
+          "<p class='eyebrow'>Received</p>")))
+check("the retired component is refused beside another class",
+      any("means none of them" in p for p in check_web.page_label_problems(
+          '<p class="eyebrow small">Received</p>')))
+check("a single-quoted role on something that is not a paragraph is refused",
+      any("not a paragraph" in p for p in check_web.page_label_problems(
+          "<div class='flag'>Received</div>")))
+
+# A role's color has to be a token, because the distinctness arm compares
+# what is written. A literal that paints another role's exact pixels is
+# the evasion that needs no coincidence, and it reads as different text.
+check("a role color written as a token is accepted",
+      check_web.COLOR_TOKEN.match("var(--color-warn-text)") is not None)
+check("a role color written as a literal is not",
+      check_web.COLOR_TOKEN.match("#e7b583") is None and
+      check_web.COLOR_TOKEN.match("rgb(231, 181, 131)") is None)
+
+# The stylesheet half, on strings. A reader that accepted only bare
+# `.role` selectors modelled one page's worth of the cascade: the roles
+# as they paint with nothing else on the body. Every page-level override
+# was invisible to it, so `body.instrument .flag` could be given another
+# role's exact token and paint two roles identically on admin.html with
+# the whole gate green.
+DISTINCT = (".runner { color: var(--color-gold); }"
+            ".flag { color: var(--color-text); }"
+            ".caution { color: var(--color-warn-text); }")
+
+check("a stylesheet painting the three roles apart raises nothing",
+      check_web.css_role_problems(DISTINCT) == [])
+check("two roles painted the same token are refused",
+      any("the same" in p for p in check_web.css_role_problems(
+          DISTINCT.replace("var(--color-text);", "var(--color-gold);"))))
+check("a role repainted under a page-level context is read as that role",
+      check_web.selector_role("body.instrument .flag") ==
+      ("body.instrument", "flag"))
+check("a rule painting the role's pseudo-element is not the role's color",
+      check_web.selector_role(".runner::after") is None)
+check("a context that collides two roles on one page is refused",
+      any("body.instrument" in p for p in check_web.css_role_problems(
+          DISTINCT + "body.instrument .flag { color: var(--color-gold); }")))
+check("a context that leaves the roles apart raises nothing",
+      check_web.css_role_problems(
+          DISTINCT +
+          "body.instrument .runner { color: var(--color-text-muted); }") == [])
+check("a color written under a context still has to be a token",
+      any("--color-* token" in p for p in check_web.css_role_problems(
+          DISTINCT + "body.instrument .flag { color: #e7b583; }")))
+
+# The other one-keystroke way past a comparison of written text.
+check("a token's inner spacing does not make it a different color",
+      check_web.normalized_color("var( --color-gold )") ==
+      check_web.normalized_color("var(--color-gold)"))
+check("two roles painted one token spelled two ways are refused",
+      any("the same" in p for p in check_web.css_role_problems(
+          DISTINCT.replace("var(--color-text);", "var( --color-gold );"))))
+
+# And the pins have to match what actually ships.
+check("no shipped label's role differs from the inventory",
+      check_web.label_problems() == [])
+check("the stylesheet tells the three roles apart",
+      check_web.label_style_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 17 - one name per destination.                                #
+
+check("every published page is named once",
+      set(check_web.DESTINATIONS) == set(check_web.html_pages()))
+check("no two destinations answer to the same name",
+      len(set(check_web.DESTINATIONS.values())) ==
+      len(check_web.DESTINATIONS))
+
+NAMED = ('<title>Progress — HangGang</title><h1>Progress</h1>'
+         '<ul class="rail-links">'
+         '<li><a href="index.html">Sign in</a></li>'
+         '<li><a href="dashboard.html">Progress</a></li></ul>')
+
+check("a page whose surfaces agree raises nothing",
+      check_web.page_name_problems(NAMED, "Progress") == [])
+check("a heading disagreeing with the page's name is refused",
+      any("its heading says" in p for p in check_web.page_name_problems(
+          NAMED.replace("<h1>Progress</h1>", "<h1>Dashboard</h1>"),
+          "Progress")))
+check("a title disagreeing with the page's name is refused",
+      any("bookmark" in p for p in check_web.page_name_problems(
+          NAMED.replace("<title>Progress", "<title>Dashboard"), "Progress")))
+check("a page with no heading at all is refused",
+      any("what page it is" in p for p in check_web.page_name_problems(
+          NAMED.replace("<h1>Progress</h1>", ""), "Progress")))
+
+# The half rail parity cannot reach. Three rails can agree with each
+# other and disagree with the page they open, which is exactly the drift
+# #127 inventoried - the admin page called Export by every rail on the
+# site at once.
+check("a rail calling another page by a name it does not answer to "
+      "is refused",
+      any('calling index.html "Home"' in p
+          for p in check_web.page_name_problems(
+              NAMED.replace(">Sign in<", ">Home<"), "Progress")))
+
+# The spelling the browser resolves identically and a membership test
+# does not. `if href in DESTINATIONS` read "./admin.html" as something
+# other than a destination and skipped it in silence, which put #127's
+# own motivating example - the admin page called Export - back on all
+# three rails with the gate green. A rule that skips what it cannot
+# recognize fails open, so unknown hrefs are reported rather than passed.
+check("a rail href is read through its spelling",
+      check_web.rail_target("./dashboard.html") == "dashboard.html")
+check("a rail href's fragment is not part of the page it names",
+      check_web.rail_target("dashboard.html#top") == "dashboard.html")
+check("a rail href's query is not part of the page it names",
+      check_web.rail_target("dashboard.html?from=rail") == "dashboard.html")
+check("an off-site rail href names no destination here",
+      check_web.rail_target("https://example.com/admin.html") is None)
+check("a bare directory href is the index",
+      check_web.rail_target("") == "index.html")
+check("a dot-slash rail calling a page by a name it does not answer to "
+      "is refused",
+      any('calling ./index.html "Home"' in p
+          for p in check_web.page_name_problems(
+              NAMED.replace('href="index.html">Sign in',
+                            'href="./index.html">Home'), "Progress")))
+check("a rail entry naming no destination at all is refused",
+      any("names no destination" in p for p in check_web.page_name_problems(
+          NAMED.replace('href="dashboard.html"', 'href="reports.html"'),
+          "Progress")))
+
+check("no shipped page disagrees with its own name",
+      check_web.name_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 18 - the member pages and the admin instrument.               #
+
+check("every published page names a surface",
+      set(check_web.SURFACES) == set(check_web.html_pages()))
+check("exactly one page is the admin instrument",
+      [page for page, surface in check_web.SURFACES.items()
+       if surface == "instrument"] == ["admin.html"])
+
+INSTRUMENT = ('<body class="wide railed instrument">'
+              '<p class="surface-mark">Admin surface</p>')
+MEMBER = '<body class="railed"><h1>Progress</h1>'
+
+check("the instrument page wearing its own clothes raises nothing",
+      check_web.page_surface_problems(INSTRUMENT, "instrument") == [])
+check("a member page wearing none of them raises nothing",
+      check_web.page_surface_problems(MEMBER, "member") == [])
+
+check("the instrument page without its body class is refused",
+      any("does not say so" in p for p in check_web.page_surface_problems(
+          INSTRUMENT.replace(' instrument"', '"'), "instrument")))
+check("the instrument page without a visible surface mark is refused",
+      any("surface mark" in p for p in check_web.page_surface_problems(
+          '<body class="wide railed instrument">', "instrument")))
+check("a surface mark with no words in it does not count as one",
+      any("surface mark" in p for p in check_web.page_surface_problems(
+          INSTRUMENT.replace(">Admin surface<", "><"), "instrument")))
+
+# The copy-paste direction, which is the arm worth having.
+check("a member page claiming the instrument surface is refused",
+      any("claims the admin instrument" in p
+          for p in check_web.page_surface_problems(
+              MEMBER.replace('"railed"', '"railed instrument"'), "member")))
+check("a member page carrying the admin surface mark is refused",
+      any("carries the admin surface mark" in p
+          for p in check_web.page_surface_problems(
+              MEMBER + '<p class="surface-mark">Admin surface</p>',
+              "member")))
+
+# Both quote styles here too, for the reason the label roles give: the
+# arm a single quote walks past is a refusal, and a refusal that fails
+# open is worse than no refusal, because the gate says it was checked.
+check("a single-quoted instrument body wearing its clothes raises nothing",
+      check_web.page_surface_problems(
+          "<body class='wide railed instrument'>"
+          "<p class='surface-mark'>Admin surface</p>", "instrument") == [])
+check("a member page single-quoting the instrument class is refused",
+      any("claims the admin instrument" in p
+          for p in check_web.page_surface_problems(
+              "<body class='railed instrument'>", "member")))
+
+check("no shipped page wears the wrong surface",
+      check_web.surface_problems() == [])
+
+
+# The stylesheet half of the same rule. Check 16 built one for exactly
+# this reason and check 18 shipped without one: the pages were made to
+# declare which surface they belong to, and nothing anywhere said a
+# surface had to look like anything. Deleting every body.instrument rule
+# and the nameplate left admin.html rendering as a member page with the
+# markup half still green - the clothes the docstring promises were a
+# claim no arm was making.
+DRESSED = ("body.instrument .runner { color: var(--color-text-muted); }"
+           "body.instrument .card { padding: 1rem; }"
+           ".surface-mark { color: var(--color-text-muted);"
+           " background: var(--color-surface); }")
+
+check("a stylesheet that dresses the instrument raises nothing",
+      check_web.css_surface_problems(DRESSED) == [])
+check("a stylesheet with no body.instrument rule at all is refused",
+      any("defines nothing for body.instrument" in p
+          for p in check_web.css_surface_problems(
+              ".surface-mark { color: var(--color-text-muted); }")))
+check("an instrument that only moves spacing around is refused",
+      any("no color of its own" in p for p in check_web.css_surface_problems(
+          "body.instrument .card { padding: 1rem; }"
+          ".surface-mark { color: var(--color-text-muted); }")))
+check("a stylesheet with no nameplate is refused",
+      any("defines no .surface-mark" in p
+          for p in check_web.css_surface_problems(
+              "body.instrument .runner { color: var(--color-text-muted); }")))
+check("a nameplate with nothing to set it off is refused",
+      any("ordinary sentence" in p for p in check_web.css_surface_problems(
+          "body.instrument .runner { color: var(--color-text-muted); }"
+          ".surface-mark { padding: 1rem; }")))
+check("the shipped stylesheet dresses the admin instrument",
+      check_web.surface_style_problems() == [])
 
 
 if failures:

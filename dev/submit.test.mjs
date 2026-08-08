@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 45;
+const EXPECTED = 46;
 
 function check(label, condition) {
   performed++;
@@ -303,12 +303,63 @@ check("submit.html loads signout.js after config.js and before submit.js",
   submitHtml.indexOf('src="signout.js"') <
     submitHtml.indexOf('src="submit.js"'));
 
-/* The relocation, asserted where somebody would put it back. The tab
+/*
+ * The relocation, asserted where somebody would put it back. The tab
  * strip is a tablist, and a third control in it that is not a tab is
- * what the rail took away. */
+ * what the rail took away - a plain button inside role="tablist" is
+ * announced as a tab, so Sign out sitting there tells a screen-reader
+ * user there are three panes.
+ *
+ * Read as "every control in the strip is a tab" rather than by naming
+ * the classes the strip happens to wear. A regex pinned to the wrapper
+ * markup fails when the strip is restyled and passes when a second
+ * button is added beside the tabs, which is both directions the wrong
+ * way round.
+ */
+/* Void elements close themselves, so they never open a level. Without
+ * this list an <input> or an <img> in the strip would push everything
+ * after it a level deeper and out of sight of the count below. */
+const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr",
+  "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+
+/*
+ * The strip's element children, which is not the same list as its
+ * buttons. Collecting <button> only made "tabs and nothing else" a
+ * claim about the buttons present rather than about everything present:
+ * a <span> or an <a> dropped in beside the tabs is still announced
+ * inside role="tablist", which is the whole hazard, and it was invisible
+ * here. Depth is tracked because an element nested inside a tab is not
+ * a child of the strip and must not be counted as a third control.
+ */
+function elementChildren(html) {
+  const children = [];
+  const tag = /<(\/?)([a-z][\w-]*)\b[^>]*?(\/?)>/gi;
+  let depth = 0;
+  let match;
+  while ((match = tag.exec(html)) !== null) {
+    const [whole, closing, name, selfClosing] = match;
+    if (closing) {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0) children.push(whole);
+    if (!selfClosing && !VOID_ELEMENTS.has(name.toLowerCase())) depth += 1;
+  }
+  return children;
+}
+
+check("an element nested inside a tab is not a second control",
+  elementChildren(
+    '<button role="tab"><span>Entries</span></button><span>Sign out</span>'
+  ).length === 2);
+
+const tabStrip = submitHtml.match(/<div[^>]*role="tablist"[^>]*>([\s\S]*?)<\/div>/);
+const stripControls = tabStrip ? elementChildren(tabStrip[1]) : [];
 check("the tab strip holds tabs and nothing else",
-  /<div class="row" role="tablist"[\s\S]*?<\/div>/.test(submitHtml) &&
-  !/role="tablist"[\s\S]*?id="sign-out"[\s\S]*?<\/div>/.test(submitHtml));
+  tabStrip !== null && stripControls.length === 2 &&
+  stripControls.every((control) =>
+    /^<button\b/i.test(control) && /role="tab"/.test(control)) &&
+  !/id="sign-out"/.test(tabStrip[1]));
 
 const lastAt = "2026-08-07T14:30:00.000Z";
 const panel = await loadSubmit({
@@ -412,13 +463,13 @@ await tabs.elements["add-entry-tab"].dispatch("click");
 check("the add-entry tab paints exactly one pane",
   !isPainted(tabs.elements["your-entries-pane"]) &&
   isPainted(tabs.elements["add-entry-pane"]));
-check("choosing Add entry announces that the form is on screen",
+check("choosing New entry announces that the form is on screen",
   tabs.document.dispatchedHere.includes(ADD_ENTRY_SHOWN_EVENT));
 await tabs.elements["your-entries-tab"].dispatch("click");
 check("switching back never leaves both panes painted",
   isPainted(tabs.elements["your-entries-pane"]) &&
   !isPainted(tabs.elements["add-entry-pane"]));
-check("choosing Your entries announces nothing about the form",
+check("choosing Entries announces nothing about the form",
   tabs.document.dispatchedHere.filter(
     (type) => type === ADD_ENTRY_SHOWN_EVENT).length === 1);
 

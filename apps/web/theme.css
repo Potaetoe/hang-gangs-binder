@@ -428,10 +428,11 @@
   --measure: 46rem;
   --measure-wide: 84rem;
 
-  /* The rail's column. Wide enough for "Submit your stats" and the
-     keyholder note under Export without either wrapping, narrow enough
-     that the rail plus the reading measure still fits the width the
-     strip breakpoint below hands over at. */
+  /* The rail's column. The destination names are short and the
+     constraint is the keyholder note under Admin, which is the longest
+     line the rail carries; wide enough that it does not wrap, narrow
+     enough that the rail plus the reading measure still fits the width
+     the strip breakpoint below hands over at. */
   --rail-width: 15rem;
 }
 
@@ -594,16 +595,38 @@ p {
 
 .small { font-size: var(--text-sm); }
 
-/* Eyebrow above the title. Uppercase needs the extra tracking to stay
-   readable at this size, and the mono face is what makes it read as a
-   label on the page rather than as a very small sentence. */
-.eyebrow {
+/*
+ * The three labels, and why there are three.
+ * ------------------------------------------
+ * A small line above a block does one of three jobs here: it names the
+ * section, it reports an outcome, or it tells the reader to act. One
+ * component cannot do all three - #68 counted it doing four, and its
+ * finding is that a token meaning four things carries none of them:
+ * `Received` and `Unavailable` are outcomes and must not look like
+ * `Optional`, which is a category.
+ *
+ * So they differ in color AND in form, which is what makes the split
+ * survive a palette somebody adds later: a rule running off a name, an
+ * outlined chip around an outcome, a filled chip around a caution. Color
+ * alone would put the whole distinction inside one token's value.
+ *
+ * tools/check_web.py's LABELS names every label on every page and which
+ * of these three it wears, and refuses two of them painted the same
+ * color. Three roles one color is one component with three names.
+ *
+ * Each carries its own background rather than borrowing the block's, so
+ * a label is legible wherever it is put down. The alternative measures
+ * only the surfaces they sit on today, and the first one moved onto the
+ * page background is unmeasured.
+ */
+.runner,
+.flag,
+.caution {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--color-text-muted);
 }
 
 /* Numbers that will sit in columns once there is data to line up. The
@@ -620,24 +643,15 @@ p {
    of the header, so nothing about the title's spacing has to know that
    the page has a rail at all. */
 
-/* A section name with a rule running off it - the binder's running
-   head, which is where the name comes from. This is the component the
-   gold role was drawn for: neither the page's text nor its accent, so
-   a section name cannot be mistaken for a link or for a status.
-
-   Shipped here and used only by the shell. Replacing the eyebrows
-   through the page content is #68's role split and belongs to the
-   per-page pass; painting all of them gold today would hand statuses
-   and warnings the section-name color, which is the drift that issue
-   exists to undo. */
+/* ROLE ONE - the name of a section, with a rule running off it. The
+   binder's running head, which is where the name comes from, and the
+   component the gold role was drawn for: neither the page's text nor
+   its accent, so a section name cannot be mistaken for a link or for a
+   status. */
 .runner {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.13em;
   color: var(--color-gold);
 }
@@ -650,6 +664,41 @@ p {
   flex: 1;
   height: 1px;
   background: var(--color-border);
+}
+
+/* ROLE TWO - an outcome the page has reached. `Received`, `Not open`,
+   `Result`, `Nothing to show`, `Unavailable`.
+
+   A chip rather than a line, because an outcome is a thing that
+   happened and a section name is a place you are standing; the enclosed
+   shape is what says which of those you are reading before any word is.
+   It stays deliberately quiet in color - the news is in the sentence
+   below it, and an outcome painted like an alert would make "Received"
+   read as a problem. Its border is the whole control's edge, so it
+   takes the strong token that WCAG 1.4.11 asks 3:1 of. */
+.flag {
+  align-self: flex-start;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+}
+
+/* ROLE THREE - something the reader has to act on. `Development
+   session`, `Rows that would not open`, `Before you close this`.
+
+   The one filled chip of the three, and it shares its fill with
+   .field-error and .failure-list on purpose: a page should have exactly
+   one thing that looks like this, so that seeing it anywhere means the
+   same. Filled rather than outlined because this is the only role that
+   should catch an eye that was not reading carefully. */
+.caution {
+  align-self: flex-start;
+  color: var(--color-warn-text);
+  background: var(--color-warn-bg);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
 }
 
 /* ------------------------------------------------------------------ */
@@ -827,20 +876,13 @@ body.railed {
  * display:none !important, so chips hidden that way on a phone could
  * not be shown again on a desktop by any rule here.
  */
+/* Chip family, above. Only what makes this one the disclosure rather
+   than a palette is here: it is absent until the strip needs it, and
+   the media query at the bottom is what reveals it. */
 .theme-disclosure {
   display: none;
   align-items: center;
   gap: var(--space-2);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-pill);
-  padding: var(--space-1) var(--space-3);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease,
-              border-color 120ms ease;
 }
 
 .theme-disclosure:hover,
@@ -929,19 +971,20 @@ body.railed {
 
 .cover-leaf .wordmark-name { font-size: clamp(2.2rem, 1.6rem + 3vw, 3.4rem); }
 
-/* A segmented control: four chips, and the border is what makes each
-   one a separate target. Same 1.4.11 reasoning as the form fields. */
-.themes button {
+/* The CHIP family: a segmented control of four, plus the disclosure
+   that folds them away on a strip. The border is what makes each one a
+   separate target - same 1.4.11 reasoning as the form fields - and the
+   pill and the smaller type are what keep a row of settings from
+   carrying a row of actions' weight. The chassis above gives them their
+   face, weight, cursor and transition. */
+.themes button,
+.theme-disclosure {
   background: var(--color-surface);
   color: var(--color-text-muted);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-3);
-  font: inherit;
   font-size: var(--text-sm);
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease,
-              border-color 120ms ease;
 }
 
 .themes button:hover {
@@ -1086,65 +1129,143 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   padding: var(--space-2) var(--space-3);
 }
 
-/* a.primary is the CSV download, which is a link because it points at a
-   blob URL - but it is the same action as a button and should not look
-   like prose. */
-button.primary,
-a.primary {
+/* ------------------------------------------------------------------ */
+/* Controls.                                                           */
+
+/*
+ * One chassis, three families.
+ * ----------------------------
+ * Everything somebody can press shares the face, the weight, the border
+ * width, the transition and the cursor; a family then decides only what
+ * fills it, what edges it and how big it sits. Controls that differ in
+ * six properties read as six systems even when each one is defensible on
+ * its own, which is what the owner named: the buttons did not look
+ * designed, and they did not look like each other.
+ *
+ * The families are a real distinction rather than three sizes:
+ *
+ *   ACTION   .primary / .secondary - does something to the world. The
+ *            square-ish corner and the roomier padding are what make it
+ *            a target rather than a tag.
+ *   CHIP     the theme buttons and their disclosure - picks a setting.
+ *            Pill-shaped and small: a row of settings should not carry
+ *            the visual weight of a row of actions.
+ *   TAB      switches which pane is showing. It performs nothing, which
+ *            is why it is the one family with no fill and no border of
+ *            its own - see the strip below.
+ *
+ * `a.primary` and `a.secondary` are here because a download points at a
+ * blob URL and therefore has to be a link, while being the same act as
+ * a button and looking like prose otherwise.
+ */
+.primary,
+.secondary,
+.themes button,
+.theme-disclosure,
+[role="tab"] {
   font: inherit;
   font-weight: 600;
-  color: var(--color-on-accent);
-  background: var(--color-accent);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius);
-  padding: var(--space-3) var(--space-4);
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease,
+              border-color 120ms ease;
 }
 
-a.primary {
+/* A link doing a button's job needs both of these; a real button has
+   them already. Stated once for the family rather than twice per
+   variant. */
+a.primary,
+a.secondary {
   display: inline-block;
   text-decoration: none;
 }
 
-button.primary:hover:not(:disabled),
-a.primary:hover { background: var(--color-accent-strong); }
+.primary,
+.secondary {
+  border: 1px solid;
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* The filled one. Border in the fill's own color rather than none, so
+   it sits on exactly the same footprint as the outlined one beside it -
+   two buttons in a row whose text baselines differ by a pixel is what a
+   border-less fill next to a bordered outline produces. */
+.primary {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.primary:hover:not(:disabled) { background: var(--color-accent-strong); }
 
 button.primary:disabled {
   opacity: 0.55;
   cursor: progress;
 }
 
-/* `a.secondary` for the same reason `a.primary` exists: a download is a
-   link because it points at a blob URL, but it is the same action as a
-   button and should not look like prose.
-
-   This one has no fill, so its border is the entire control - the case
-   1.4.11 is written for, and the reason it takes the strong token. */
-button.secondary,
-a.secondary {
-  font: inherit;
+/* No fill, so its border is the entire control - the case WCAG 1.4.11
+   is written for, and the reason it takes the strong token rather than
+   the decorative one. */
+.secondary {
   color: var(--color-text-muted);
   background: transparent;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
+  border-color: var(--color-border-strong);
+}
+
+.secondary:hover {
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+
+/*
+ * The tab strip.
+ * --------------
+ * Tabs are the one family that performs nothing: pressing one changes
+ * what is on screen, not what is true. So they get the chassis' face
+ * and weight and none of its fill, and the selected one is marked by a
+ * rule under it rather than by a filled shape - a filled tab is a
+ * primary button that happens to be in a row, which is the confusion
+ * the owner called out from the other direction.
+ *
+ * The strip sits on the page rather than inside a card, and that is
+ * load-bearing twice over. It is what stops one form's controls
+ * arriving as a box on top of a box - #68's first candidate - and the
+ * selected mark takes --color-accent, which tools/check_contrast.py
+ * measures against the page background. Put this strip inside a card
+ * and the one thing distinguishing the selected tab is a color nothing
+ * has measured on that surface.
+ *
+ * Selection is never color alone: aria-selected carries it for
+ * assistive technology, the label goes from muted to full text, and the
+ * rule appears. Any one of the three failing still leaves two.
+ */
+[role="tablist"] {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+[role="tab"] {
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
   padding: var(--space-3) var(--space-4);
-  cursor: pointer;
+  /* The selected rule and the strip's own hairline are 1px apart, and
+     without this the tab's 2px rule paints above the strip's instead of
+     over it. */
+  margin-bottom: -1px;
 }
 
-a.secondary {
-  display: inline-block;
-  text-decoration: none;
-}
-
-a.secondary:hover {
-  border-color: var(--color-accent);
+[role="tab"]:hover {
   color: var(--color-text);
+  background: var(--color-accent-quiet);
 }
 
-button.secondary:hover {
+[role="tab"][aria-selected="true"] {
   color: var(--color-text);
-  border-color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1387,6 +1508,69 @@ footer {
    tools/check_contrast.py measures both roles separately now, including
    the label on the hovered fill, which nothing measured before. */
 a { color: var(--color-accent-text); }
+
+/* ------------------------------------------------------------------ */
+/* The admin instrument.                                               */
+
+/*
+ * admin.html, and the owner's decision on #73: an instrument panel,
+ * deliberately cooler than the member pages and visibly labeled as the
+ * admin surface.
+ *
+ * "Cooler" is spent on exactly two things, because everything else on
+ * this page is load-bearing and warmth was never what made it hard to
+ * read. The section names give up the gold - the running head is the
+ * binder's warmth and this surface is not the binder - and the title
+ * gives up the display serif, which is decoration on a page whose job
+ * is to be operated. Nothing about the palette changes: the same four
+ * themes, the same measured pairings.
+ *
+ * "Denser" is the other half, and it is what the page actually needed.
+ * Nine cards of prose spacing is a page somebody scrolls rather than
+ * reads, and this is the one surface with a single expert user who is
+ * looking for a control they already know is there.
+ *
+ * tools/check_web.py's SURFACES pins which page this is, and refuses
+ * these clothes on any other - a member page announcing itself as the
+ * admin surface is what copying this file produces.
+ */
+body.instrument .runner { color: var(--color-text-muted); }
+
+body.instrument h1 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  letter-spacing: 0.01em;
+}
+
+body.instrument .page { gap: var(--space-4); }
+
+body.instrument .card {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  gap: var(--space-2);
+}
+
+body.instrument main { gap: var(--space-3); }
+
+/*
+ * The nameplate. It says what surface this is before it says anything
+ * about what is on it, which is the decision - a reader should never
+ * have to work out from the content that they are on the admin page.
+ *
+ * It is prose in a band rather than one of the three label roles, and
+ * that is deliberate: the roles say what a BLOCK is, and this is about
+ * the whole page. Giving it .caution would have put the site's one
+ * "act on this" treatment on something nobody can act on.
+ */
+.surface-mark {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
 
 /* One focus ring for every interactive element, including the ones the
    form will add later. */

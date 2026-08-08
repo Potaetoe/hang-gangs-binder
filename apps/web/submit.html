@@ -21,8 +21,8 @@
   Pages does not serve one.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Submit your stats — HangGang</title>
-<meta name="description" content="Submission portal for the Hang Gang. Entries are encrypted in your browser before they are sent.">
+<title>Your binder — HangGang</title>
+<meta name="description" content="Your page in the Hang Gang's binder. Entries are encrypted in your browser before they are sent.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <!-- Dark's --bg, the default palette. theme.js rewrites this to match
@@ -59,10 +59,10 @@
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="index.html">Sign in</a></li>
-      <li><a href="submit.html">Submit your stats</a></li>
-      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="submit.html">Your binder</a></li>
+      <li><a href="dashboard.html">Progress</a></li>
       <li>
-        <a href="admin.html">Export</a>
+        <a href="admin.html">Admin</a>
         <span class="rail-note">Keyholder only — needs the key</span>
       </li>
     </ul>
@@ -91,16 +91,20 @@
 
 <div class="page">
 
+<!-- The running head names the section of the site, not the page: the
+     heading below already says which page this is, and a label that
+     restates the line under it is the redundancy #68 found on the
+     entries panel. -->
 <header class="stack-tight">
-  <p class="eyebrow">Submission portal</p>
-  <h1>Submit your stats</h1>
+  <p class="runner"><span>Members</span></p>
+  <h1>Your binder</h1>
   <p class="muted">Your session lasts for this tab. Fill the form, done.</p>
 </header>
 
 <main class="stack">
 
   <div class="card narrow" data-dev-session hidden>
-    <p class="eyebrow">Development session</p>
+    <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through local
       development auth. This is not a Telegram sign-in.
@@ -110,17 +114,24 @@
   <!-- A tablist that contains only tabs. Sign out belongs in the rail,
        where the session has one home on every page rather than only on
        this one, and a control that is not a tab sitting inside
-       role="tablist" is announced as one. -->
-  <div class="card" id="member-tabs" hidden>
-    <div class="row" role="tablist" aria-label="Submission page">
+       role="tablist" is announced as one.
+
+       The strip is not a card, and that is structural rather than
+       cosmetic. A bordered box holding two tabs, sitting on top of a
+       bordered box holding the pane they switch, is two containers for
+       one control - and the selected tab's mark takes the accent color,
+       which theme.css measures against the page rather than against a
+       card. -->
+  <div class="stack-tight" id="member-tabs" hidden>
+    <div role="tablist" aria-label="Your binder">
       <button type="button" id="your-entries-tab" role="tab"
               aria-controls="your-entries-pane" aria-selected="true">
-        Your entries
+        Entries
       </button>
       <button type="button" id="add-entry-tab" role="tab"
               aria-controls="add-entry-pane" aria-selected="false"
               tabindex="-1">
-        Add entry
+        New entry
       </button>
     </div>
     <p class="status" id="member-panel-status" role="status"
@@ -131,9 +142,11 @@
        BinderSession.require() confirms that this tab holds a member session. -->
   <section class="stack" id="your-entries-pane" role="tabpanel"
            aria-labelledby="your-entries-tab" hidden>
+    <!-- No heading. The tab that opened this pane is the heading, and
+         aria-labelledby already says so; restating its own label one
+         line below it orients nobody - #68's fourth candidate. -->
     <div class="card">
-      <p class="eyebrow">Your account</p>
-      <h2>Your entries</h2>
+      <p class="runner"><span>Your account</span></p>
       <p>
         Entries stored: <strong id="member-entry-count">&mdash;</strong>
       </p>
@@ -175,13 +188,13 @@
     does not work. form.js fills in which one it is.
   -->
   <div class="card" id="closed" hidden>
-    <p class="eyebrow">Not open</p>
+    <p class="flag">Not open</p>
     <p data-reason></p>
   </div>
 
-  <!-- Replaces the form once a submission is stored. -->
+  <!-- Shown in place of the form once a submission is stored. -->
   <div class="card" id="done" hidden>
-    <p class="eyebrow">Received</p>
+    <p class="flag">Received</p>
     <p><strong>That's it — you're in the binder.</strong></p>
     <p class="muted small">
       Your entry was encrypted in this browser before it was sent, so
@@ -202,9 +215,23 @@
     another one — your earlier entry is kept, not replaced.
   </p>
 
-  <form class="stack" id="submission" novalidate>
+  <!--
+    One card, because this is one act.
 
-    <div class="card">
+    #68 counted this form arriving as five bordered boxes - the age
+    confirmation alone in one, the numbers in another, the optional
+    fields in a third, the button in a fourth - and named the cost: the
+    eye is asked to cross a border between "confirm your age" and "type
+    your weight", which are two halves of the same thing. The borders
+    were doing work that spacing and one section name do better, so the
+    boxes are gone and the running head below is the only division left.
+
+    Nothing is merged that was actually separate: #closed and #done stay
+    their own cards above, because they replace this form rather than
+    living inside it.
+  -->
+  <form class="card" id="submission" novalidate>
+
       <!--
         The verified session supplies the identifier now. This is the one
         required assertion the member still makes in the form, so it stays
@@ -218,9 +245,7 @@
         </label>
         <p class="field-error" id="error-over18" hidden></p>
       </div>
-    </div>
 
-    <div class="card">
       <!--
         Imperial first and checked. It is what most of the people this
         form is for will type, and a default is not a neutral choice -
@@ -305,10 +330,11 @@
 
       <p class="field-error" id="error-weight" hidden></p>
       <p class="field-error" id="error-height" hidden></p>
-    </div>
 
-    <div class="card">
-      <p class="eyebrow">Optional</p>
+      <!-- The one division this form needs, and a section name with a
+           rule running off it is what draws it. Everything above is
+           required; everything below is not. -->
+      <p class="runner"><span>Optional</span></p>
 
       <!--
         The values are unchanged - "roles" in the record, and feeder /
@@ -355,9 +381,7 @@
           </select>
         </div>
       </div>
-    </div>
 
-    <div class="card">
       <button type="submit" id="submit" class="primary">Submit</button>
 
       <p class="status" id="status" role="status" aria-live="polite" hidden></p>
@@ -366,11 +390,15 @@
         Everything above is encrypted in this browser before it is sent.
         The service storing it cannot read it.
       </p>
-    </div>
   </form>
 
-  <div class="card">
-    <p class="eyebrow">How your entry is handled</p>
+  <!-- Not a card. This explains the form rather than asking anything of
+       the reader, and a bordered box around it makes it look like one
+       more thing to fill in. The words are untouched: #68 says the
+       explanatory copy is carrying real weight and should survive
+       whatever happens to the structure around it. -->
+  <div class="stack-tight">
+    <p class="runner"><span>How your entry is handled</span></p>
     <p class="muted small">
       Your submission is encrypted in your browser before it is sent, so
       the service storing it cannot read it. Only the person holding the
@@ -393,9 +421,15 @@
   </section>
 </main>
 
-<!-- The dashboard is linked here as well as in the rail: this link is at
+<!-- Progress is linked here as well as in the rail: this link is at
      the end of the form, which is where somebody who has just submitted
      actually is.
+
+     It says what that page is rather than naming it, which is the one
+     deliberate departure from the site's one-name-per-destination rule
+     (#127) on this page. The reason is that this is an invitation at
+     the end of an act, not a way of getting somewhere: somebody who has
+     just typed their weight in is being told what it joins.
 
      admin.html is in the rail, on instruction, and it costs nothing:
      the page is public and useless without both secrets - DESIGN.md has

@@ -18,8 +18,8 @@
   through fetch(), which is how the mistake was nearly made.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Export — HangGang</title>
-<meta name="description" content="Decrypt and export the submissions. Requires an admin session and the private key.">
+<title>Admin — HangGang</title>
+<meta name="description" content="The admin surface: decrypt, export and publish the submissions. Requires an admin session and the private key.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#120d10">
@@ -30,9 +30,16 @@
 <!-- The one page that reads as data rather than prose: an eighteen-column
      table and a grid of charts. `wide` widens the measure for those; the
      cards that are still prose or inputs opt back out with `narrow`,
-     which now centers them like everything else on the site rather than
-     flushing them left - #71. -->
-<body class="wide railed">
+     which centers them like everything else on the site rather than
+     flushing them left - #71.
+
+     `instrument` is the owner's decision on #73: this is a panel to be
+     operated rather than a page to be read, so it gives up the gold
+     running heads and the display serif and tightens its spacing. It is
+     the only page allowed to wear it, and tools/check_web.py's SURFACES
+     refuses it anywhere else - a member page that announces itself as
+     the admin surface is what copying this file produces. -->
+<body class="wide railed instrument">
 
 <!--
   The rail, identical on every signed-in page. See the longer note in
@@ -48,10 +55,10 @@
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="index.html">Sign in</a></li>
-      <li><a href="submit.html">Submit your stats</a></li>
-      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="submit.html">Your binder</a></li>
+      <li><a href="dashboard.html">Progress</a></li>
       <li>
-        <a href="admin.html">Export</a>
+        <a href="admin.html">Admin</a>
         <span class="rail-note">Keyholder only — needs the key</span>
       </li>
     </ul>
@@ -80,9 +87,18 @@
 
 <div class="page">
 
+<!-- The nameplate. It says what surface this is before it says anything
+     about what is on it, because a reader should never have to work
+     that out from the content - and it absorbs the "keyholder only"
+     line that stood above the heading, which said who may be here
+     without saying where here is. -->
+<p class="surface-mark">
+  Admin surface — keyholder only. Everything below this line is in the
+  clear.
+</p>
+
 <header class="stack-tight">
-  <p class="eyebrow">Keyholder only</p>
-  <h1>Export</h1>
+  <h1>Admin</h1>
   <p class="muted">
     Decrypts the submissions in this browser. Nothing is uploaded.
   </p>
@@ -91,7 +107,7 @@
 <main class="stack">
 
   <div class="card narrow" data-dev-session hidden>
-    <p class="eyebrow">Development session</p>
+    <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through local
       development auth. This is not a Telegram sign-in.
@@ -100,7 +116,7 @@
 
   <!-- Shown instead of the tool when the browser cannot decrypt. -->
   <div class="card narrow" id="closed" hidden>
-    <p class="eyebrow">Unavailable</p>
+    <p class="flag">Unavailable</p>
     <p data-reason></p>
   </div>
 
@@ -137,7 +153,10 @@
       retraction should not require decrypting two hundred rows first.
     -->
     <div class="card narrow">
-      <p class="eyebrow">Public dashboard</p>
+      <!-- Named for the state it reports rather than for the page it
+           points at: no destination is called "the public dashboard"
+           any more, and the link inside says where it goes (#127). -->
+      <p class="runner"><span>Published</span></p>
       <p id="published-state" class="muted">Checking…</p>
       <div class="row">
         <button type="button" id="unpublish" class="secondary" hidden>
@@ -155,7 +174,7 @@
     </div>
 
     <div class="card" id="failures" hidden>
-      <p class="eyebrow">Rows that would not open</p>
+      <p class="caution">Rows that would not open</p>
       <p class="muted small">
         Usually the key has been rotated and these predate it — the old
         key still reads them. Worth checking before assuming they are
@@ -165,13 +184,13 @@
     </div>
 
     <div class="card" id="results" hidden>
-      <p class="eyebrow">Result</p>
+      <p class="flag">Result</p>
       <p id="summary"></p>
       <!--
-        Three downloads, three buttons. The JSON link used to be small
-        grey text beside a filled button, which made two equal choices
-        look like a control and an afterthought. They are all the same
-        kind of thing now; Excel and JSON are outlined rather than
+        Three downloads, three buttons, all the same kind of thing. The
+        trap to avoid here is making one of them small grey text beside
+        a filled button, which turns two equal choices into a control
+        and an afterthought. Excel and JSON are outlined rather than
         filled only because the CSV is the one most people want.
       -->
       <div class="row buttons">
@@ -202,7 +221,11 @@
       style-src has no 'unsafe-inline' either.
     -->
     <div class="card" id="dashboard" hidden>
-      <p class="eyebrow">Dashboard</p>
+      <!-- Named for what it holds rather than for a destination. No page
+           on this site is called Dashboard any more (#127), and a panel
+           borrowing a page's name is how the vocabulary drifted in the
+           first place. -->
+      <p class="runner"><span>Charts</span></p>
 
       <fieldset class="field">
         <legend>Count</legend>
@@ -265,11 +288,11 @@
       is ticked. See DESIGN.md, "The dashboard and the snapshot".
     -->
     <div class="card narrow" id="publish-card" hidden>
-      <p class="eyebrow">Publish</p>
+      <p class="runner"><span>Publish</span></p>
       <p>
         Sends the charts above — as counts and medians, with no handles
-        and no rows — to the <a href="dashboard.html">public
-        dashboard</a>. It replaces whatever is there now.
+        and no rows — to the public <a href="dashboard.html">Progress</a>
+        page. It replaces whatever is there now.
       </p>
 
       <div class="field">
@@ -312,7 +335,7 @@
       that removes the key rather than the tab.
     -->
     <div class="card narrow">
-      <p class="eyebrow">Before you close this</p>
+      <p class="caution">Before you close this</p>
       <p class="muted small">
         This page is the only place the submissions exist in the clear.
         Closing the tab discards everything decrypted here, and the admin
@@ -329,7 +352,7 @@
 
 <footer>
   <p>
-    <a href="index.html">Submission portal</a> ·
+    <a href="index.html">Sign in</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
     GitHub</a>
   </p>

@@ -15,7 +15,7 @@
   decrypt, and a page that cannot decrypt cannot be talked into it.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Dashboard — HangGang</title>
+<title>Progress — HangGang</title>
 <meta name="description" content="Aggregate submission numbers for signed-in members. No names, no individual entries.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
@@ -44,10 +44,10 @@
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="index.html">Sign in</a></li>
-      <li><a href="submit.html">Submit your stats</a></li>
-      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="submit.html">Your binder</a></li>
+      <li><a href="dashboard.html">Progress</a></li>
       <li>
-        <a href="admin.html">Export</a>
+        <a href="admin.html">Admin</a>
         <span class="rail-note">Keyholder only — needs the key</span>
       </li>
     </ul>
@@ -77,8 +77,8 @@
 <div class="page">
 
 <header class="stack-tight">
-  <p class="eyebrow">Members</p>
-  <h1>Dashboard</h1>
+  <p class="runner"><span>Members</span></p>
+  <h1>Progress</h1>
   <p class="muted">
     What the submissions add up to. Counts, middles and distributions
     — no names, and no individual entries.
@@ -88,7 +88,7 @@
 <main class="stack">
 
   <div class="card narrow" data-dev-session hidden>
-    <p class="eyebrow">Development session</p>
+    <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through local
       development auth. This is not a Telegram sign-in.
@@ -97,7 +97,7 @@
 
   <!-- Shown instead of the charts when there is nothing to draw. -->
   <div class="card narrow" id="closed" hidden>
-    <p class="eyebrow">Nothing to show</p>
+    <p class="flag">Nothing to show</p>
     <p data-reason></p>
   </div>
 
@@ -158,7 +158,7 @@
     </div>
 
     <div class="card narrow">
-      <p class="eyebrow">What this is</p>
+      <p class="runner"><span>What this is</span></p>
       <p class="muted small">
         These figures are worked out from the submissions and published
         as totals. Nothing on this page identifies anybody: there are no
@@ -176,7 +176,7 @@
 
 <footer>
   <p>
-    <a href="index.html">Submission portal</a> ·
+    <a href="index.html">Sign in</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
     GitHub</a>
   </p>

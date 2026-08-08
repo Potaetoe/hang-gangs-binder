@@ -10,7 +10,7 @@
  *
  * SO THE WIRING HAS NEVER BEEN TESTED, and #64 is what that cost. The
  * submit handler replaced the form with a confirmation card one way, with no
- * path back; once submit.html grew tabs, "Add entry" led to that card and no
+ * path back; once submit.html grew tabs, "New entry" leads to that card and no
  * form, recoverable only by reloading - while the card's own text said "just
  * fill the form again". Every existing suite passed throughout, because
  * dev/submit.test.mjs asserts the panes and this lives one level down inside
@@ -255,11 +255,11 @@ function fillValidEntry(byId) {
   await page.byId("submission").dispatch("submit");
   await page.document.dispatch(ADD_ENTRY_SHOWN_EVENT);
 
-  check("returning to Add entry shows the form again",
+  check("returning to New entry shows the form again",
     page.byId("submission").hidden === false);
-  check("returning to Add entry hides the confirmation",
+  check("returning to New entry hides the confirmation",
     page.byId("done").hidden === true);
-  check("returning to Add entry explains that a repeat is kept",
+  check("returning to New entry explains that a repeat is kept",
     page.byId("repeat-note").hidden === false);
 }
 

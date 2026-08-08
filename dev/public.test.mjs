@@ -218,9 +218,14 @@ check("an authorized empty snapshot keeps its distinct first-publication message
   /first time the keyholder publishes a snapshot/i.test(emptyReason) &&
   !/sign in/i.test(emptyReason) && emptyReason !== unauthorizedReason);
 
-check("the page identifies the dashboard as a member view before scripts run",
-  /<p class="eyebrow">Members<\/p>/.test(dashboardHtml) &&
-  !/<p class="eyebrow">Everyone<\/p>/.test(dashboardHtml));
+/* Who these numbers are for, said in the page's own HTML rather than by
+ * a script - the audience is the one thing a visitor should not have to
+ * wait to learn. The section name carries it, which is the running-head
+ * role of #68's label split; "Everyone" is the wrong answer and is
+ * checked for by name because it is the plausible one to reach for. */
+check("the page identifies itself as a member view before scripts run",
+  /<p class="runner"><span>Members<\/span><\/p>/.test(dashboardHtml) &&
+  !/>Everyone</.test(dashboardHtml));
 
 /*
  * ageText's six arms and the staleness banner, pinned to the words on
