@@ -330,7 +330,11 @@
     };
   }
 
-  root.BinderForm = {
+  // Frozen because submit.html holds the submission before it is sealed:
+  // an export a later script can rewrite is a `validate` that waves
+  // anything through, or a `buildRecord` that quietly adds a field to
+  // what gets encrypted.
+  root.BinderForm = Object.freeze({
     KG_PER_LB: KG_PER_LB,
     CM_PER_IN: CM_PER_IN,
     LIMITS: LIMITS,
@@ -344,7 +348,7 @@
     heightFromFeetInches: heightFromFeetInches,
     validate: validate,
     buildRecord: buildRecord,
-  };
+  });
 
   /* ---------------------------------------------------------------- */
   /* The wiring. Everything above this line runs under Node.          */

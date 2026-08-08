@@ -934,7 +934,7 @@
     };
   }
 
-  root.BinderDashboard = {
+  const api = {
     NOT_STATED: NOT_STATED,
     UNITS: UNITS,
     DEFAULT_UNITS: DEFAULT_UNITS,
@@ -964,6 +964,26 @@
     MIN_CELL: MIN_CELL,
     OTHER_LABEL: OTHER_LABEL,
   };
+
+  // `render` is declared below the guard, and a function declaration is
+  // hoisted, so it is already defined here - which is what lets this
+  // module publish ONE object and freeze it once, instead of publishing
+  // a literal and bolting `render` on afterwards. A member added after
+  // the object is published cannot be covered by a freeze at the
+  // assignment: freezing would make that later line throw, so the object
+  // admin.html and dashboard.html both hold would have to stay editable
+  // for as long as this file is still running.
+  //
+  // The conditional is load-bearing and is NOT a redundant second guard.
+  // dev/dashboard-render.test.mjs pins this seam in both directions -
+  // "loaded with no document the module exports no render" and "loaded
+  // with a document the module exports render" - because it is the
+  // reason the drawing suite exists apart from dev/dashboard.test.mjs.
+  // Delete the conditional and `render` is exported under Node too,
+  // where calling it throws on its first `document`; that is a tested
+  // regression, not a tidy-up.
+  if (typeof document !== "undefined") api.render = render;
+  root.BinderDashboard = Object.freeze(api);
 
   /* ---------------------------------------------------------------- */
   /* Drawing. Everything above this line runs under Node.             */
@@ -1357,6 +1377,4 @@
     countryWrap.appendChild(barChart(view.country.slice(0, 12), view.count));
     container.appendChild(countryWrap);
   }
-
-  root.BinderDashboard.render = render;
 })(globalThis);

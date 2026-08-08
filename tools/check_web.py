@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Fourteen checks:
+Fifteen checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -227,6 +227,50 @@ Fourteen checks:
     named page. It moved rather than being copied: a page suite cannot
     own a repository-wide boundary, and two checks making the same claim
     in different files is how one of them gets quietly weakened.
+
+15. Every module's exported namespace is frozen, and the roster of which
+    module publishes which namespace is pinned here rather than read off
+    the directory.
+
+    AGENTS.md, "Code standards": "Exported objects are frozen, so a page
+    cannot quietly redefine a helper another page depends on." That was
+    a sentence in a document and nothing else. Four of the nine modules
+    broke it, and the three that complied appear to have complied
+    because they were written after the rule was stated - so the count
+    drifted every time a module was added, and each rediscovery of the
+    drift produced a fresh hand-written list that was wrong again by the
+    time anyone read it. The list in #114 named admin.js:203 after the
+    line had moved to 287, and omitted signout.js entirely because that
+    module was written after the list was.
+
+    A roster is what ends that, and it has to fail in BOTH directions to
+    be worth having. A module in MODULE_EXPORTS that assigns nothing is
+    reported as *absence* - that case is indistinguishable, to a checker
+    that merely scans for unfrozen assignments, from a directory with
+    nothing wrong in it, and #34 is what this repository paid to learn
+    the difference. A script that assigns a global while claiming to
+    publish none fails the other way.
+
+    Two rules beyond "the assignment says Object.freeze", because that
+    criterion alone does not reach the threat:
+
+    - The namespace must be assigned exactly once. Two publish sites for
+      one object is a freeze that covers whichever of them ran last.
+    - Nothing may assign a MEMBER of the namespace after it is
+      published. dashboard.js did exactly that: it built its literal,
+      published it, and then bolted `render` on 424 lines later, past
+      the document guard. A freeze at the assignment cannot cover a
+      member added afterwards - it would throw there instead - so the
+      object every page holds a reference to stays editable for as long
+      as the module is still running, which is precisely the quiet edit
+      the rule exists to remove. Build the whole object, then freeze
+      once.
+
+    The patterns recognize `window.` and `self.` alongside `root.` and
+    `globalThis.`, and that is not defensive padding: countries.js
+    genuinely publishes through `window.`, so a checker that knew only
+    the two spellings its authors happened to use would have been blind
+    to an entire export style already in this directory.
 """
 
 import base64
@@ -766,9 +810,29 @@ UNENCRYPTED_SENDERS = {
 
 
 def strip_js_comments(text):
-    """Prose about fetch() is not a fetch()."""
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"^\s*//.*$", "", text, flags=re.M)
+    """Prose about fetch() is not a fetch().
+
+    Comments are blanked rather than deleted: every character becomes a
+    space and every newline survives, so the result is the same length
+    as the input and an offset into it still names the right line of the
+    original file. Check 15 reports the line a global is assigned on,
+    and a stripper that removed comment text would have shifted every
+    number it printed - by hundreds of lines in these files, which open
+    with long comments. A checker that names the wrong line is not a
+    smaller problem than one that names none; it sends the reader to a
+    line that looks innocent and invites them to close the report.
+    """
+    def blank(match):
+        return re.sub(r"[^\n]", " ", match.group(0))
+
+    text = re.sub(r"/\*.*?\*/", blank, text, flags=re.S)
+    # Line-anchored, so the // inside an http:// URL is not a comment.
+    return re.sub(r"^[^\S\n]*//.*$", blank, text, flags=re.M)
+
+
+def line_of(text, offset):
+    """The 1-based line number an offset falls on."""
+    return text.count("\n", 0, offset) + 1
 
 
 def unencrypted_paths():
@@ -1242,6 +1306,247 @@ def hard_coded_key_hits():
     return hits
 
 
+# Which module publishes which global namespace. Pinned here, outside
+# every file it describes, for the reason CSP_PAGES and SHELLS give: a
+# roster derived from what apps/web happens to contain cannot fail when a
+# module is added, and a module being added is exactly when the freeze
+# gets left off.
+#
+# A hand-written list of the modules that satisfy this rule cannot hold.
+# #114's is wrong in two ways at once: it names admin.js:203 when the
+# line is 287, and it omits signout.js, which is a module and does
+# export. Neither is carelessness - a list of the files that satisfy a
+# property goes stale the moment a file changes, and nothing reads it to
+# find out.
+MODULE_EXPORTS = {
+    "admin.js": "BinderAdmin",
+    "auth.js": "BinderAuth",
+    "crypto.js": "BinderCrypto",
+    "dashboard.js": "BinderDashboard",
+    "form.js": "BinderForm",
+    "session.js": "BinderSession",
+    "signout.js": "BinderSignOut",
+    "ui.js": "BinderUI",
+    "xlsx.js": "BinderXlsx",
+}
+
+# The scripts that publish no namespace, each with the reason. Listed
+# rather than inferred, so that a page script quietly growing an export
+# is a gate failure instead of a diff nobody reads. AGENTS.md, "Code
+# standards": `(function () { ... })()` assigns no global, and that shape
+# is a decision these files have already made.
+NO_MODULE_EXPORT = {
+    "config.js": "resolves the environment arm; it exports no helpers",
+    "countries.js": "is two data tables the form reads",
+    "nav.js": "wires the rail disclosure in place and returns",
+    "public.js": "wires dashboard.html and calls into BinderDashboard",
+    "submit.js": "wires submit.html and calls into BinderForm",
+    "theme-init.js": "sets the pre-paint theme attribute and returns",
+    "theme.js": "wires the theme chips in place",
+}
+
+# Globals that are deliberately not frozen namespaces. Narrow, named, and
+# each carrying its reason - the same shape as UNENCRYPTED_SENDERS above,
+# and for the same argument: an exemption list stays reviewable, while
+# relaxing the rule for every global would not.
+#
+# Note what these are NOT: an assertion that freezing them would be
+# wrong. BINDER_CONFIG carries the publicKey form.js encrypts to, so a
+# script that can rewrite it can redirect every submission to a key the
+# keyholder does not hold - a worse outcome than any helper swap this
+# check exists to prevent. Freezing it is not done here because
+# config_environments() pins the exact text of that assignment, so the
+# change is a change to check 5's parser, and check 5 is not something to
+# edit as a side effect of a freeze pass. Raised on #114 instead.
+NON_NAMESPACE_GLOBALS = {
+    ("config.js", "BINDER_CONFIG"):
+        "the resolved environment arm, whose contents check 5 pins",
+    ("countries.js", "BINDER_COUNTRIES"):
+        "the country name table the form reads",
+    ("countries.js", "BINDER_COUNTRIES_PROMOTED"):
+        "the promoted country codes, which check 9 reconciles",
+    ("auth.js", "onTelegramAuth"):
+        "the callback Telegram's widget invokes by name from its own script",
+}
+
+# `root.`, `globalThis.`, `window.` and `self.` all reach the same
+# object. All four are recognized because countries.js genuinely
+# publishes through `window.` - a pattern that knew only the spellings
+# its author had in mind would have been blind to an export style
+# already in this directory, which is how a check ends up armed-looking
+# and inert.
+GLOBAL_OBJECT = r"(?:root|globalThis|window|self)"
+
+# `= ` and not `==`, `===`, `>=`, `<=` or `!=`: this is an assignment,
+# not a comparison.
+GLOBAL_ASSIGNMENT = re.compile(
+    r"(?<![\w$.])%s\.([A-Za-z_$][\w$]*)\s*=(?!=)" % GLOBAL_OBJECT)
+
+# The late edit. `root.BinderDashboard.render = render` matches this and
+# deliberately does NOT match GLOBAL_ASSIGNMENT, because what follows the
+# namespace there is a dot rather than an equals sign.
+GLOBAL_MEMBER_ASSIGNMENT = re.compile(
+    r"(?<![\w$.])%s\.([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*=(?!=)"
+    % GLOBAL_OBJECT)
+
+
+def frozen_publish(code, namespace):
+    """Whether a namespace is published through Object.freeze."""
+    return re.search(
+        r"(?<![\w$.])%s\.%s\s*=\s*Object\.freeze\s*\("
+        % (GLOBAL_OBJECT, re.escape(namespace)), code)
+
+
+def export_problems(name, text, namespace):
+    """[problem] for one script's global assignments.
+
+    Takes the source rather than a path so the rules can be exercised on
+    strings. That is #34's lesson applied again: a mutation written
+    against the nine files in this directory tests today's directory,
+    and what has to hold is the shape of the failure.
+
+    `namespace` is what this file is pinned to publish, or None for a
+    file pinned to publish nothing. Both are assertions. A file pinned
+    to publish that assigns nothing is reported as absence - the case a
+    checker that only scans for unfrozen assignments cannot tell apart
+    from a directory with nothing wrong in it.
+    """
+    code = strip_js_comments(text)
+
+    assignments = {}
+    for found in GLOBAL_ASSIGNMENT.finditer(code):
+        assignments.setdefault(found.group(1), []).append(
+            line_of(code, found.start()))
+
+    problems = []
+
+    if namespace is None:
+        for other in sorted(assignments):
+            if (name, other) in NON_NAMESPACE_GLOBALS:
+                continue
+            problems.append(
+                "assigns the global %s at line %d while pinned in "
+                "NO_MODULE_EXPORT as publishing nothing. Pin it in "
+                "MODULE_EXPORTS so it is held to the freeze rule, or record "
+                "in NON_NAMESPACE_GLOBALS why it is not a namespace"
+                % (other, assignments[other][0]))
+        return problems
+
+    lines = assignments.get(namespace)
+    if not lines:
+        problems.append(
+            "is pinned in MODULE_EXPORTS as publishing %s and assigns it "
+            "nowhere. Either the export was renamed or removed and this pin "
+            "is stale, or the file stopped exporting - say which. A roster "
+            "entry nothing answers to is a check that cannot fail, which is "
+            "worse than no check at all" % namespace)
+        return problems
+
+    if len(lines) > 1:
+        problems.append(
+            "assigns %s %d times, at lines %s. One object with two publish "
+            "sites is frozen only on whichever ran last, and a reader has "
+            "no way to tell which that is"
+            % (namespace, len(lines),
+               ", ".join(str(n) for n in lines)))
+
+    if not frozen_publish(code, namespace):
+        problems.append(
+            "assigns %s at line %d without Object.freeze. AGENTS.md, \"Code "
+            "standards\": exported objects are frozen, so a page cannot "
+            "quietly redefine a helper another page depends on"
+            % (namespace, lines[0]))
+
+    for found in GLOBAL_MEMBER_ASSIGNMENT.finditer(code):
+        if found.group(1) != namespace:
+            continue
+        problems.append(
+            "assigns %s.%s at line %d, after the object is published. A "
+            "member bolted on later cannot be covered by a freeze at the "
+            "assignment - freezing there makes this line throw instead - so "
+            "the object every page already holds a reference to stays "
+            "editable for as long as the module is still running. Build the "
+            "whole object, then freeze once"
+            % (namespace, found.group(2), line_of(code, found.start())))
+
+    for other in sorted(assignments):
+        if other == namespace or (name, other) in NON_NAMESPACE_GLOBALS:
+            continue
+        problems.append(
+            "assigns a second global %s at line %d, which no table in "
+            "tools/check_web.py names. Every global this directory "
+            "publishes is pinned somewhere, so that adding one is a "
+            "decision somebody wrote down"
+            % (other, assignments[other][0]))
+
+    return problems
+
+
+def module_export_problems():
+    """(file, problem) for the export roster and every module's freeze."""
+    problems = []
+    scripts = {n for n in os.listdir(WEB) if n.endswith(".js")}
+
+    # The roster itself, both directions, before a single file is read.
+    # Without these the rules below describe whichever scripts the tables
+    # happen to name, which is the failure the tables exist to prevent.
+    for name in sorted(scripts - set(MODULE_EXPORTS) - set(NO_MODULE_EXPORT)):
+        problems.append((
+            name,
+            "is published but is named in neither MODULE_EXPORTS nor "
+            "NO_MODULE_EXPORT in tools/check_web.py. Say which namespace it "
+            "publishes, or that it publishes none, so the next module "
+            "cannot start the count over"))
+
+    both = set(MODULE_EXPORTS) & set(NO_MODULE_EXPORT)
+    for name in sorted(both):
+        problems.append((
+            name,
+            "is named in both MODULE_EXPORTS and NO_MODULE_EXPORT in "
+            "tools/check_web.py. The tables contradict each other, so "
+            "whichever rule ran would look like the whole rule"))
+
+    for name in sorted((set(MODULE_EXPORTS) | set(NO_MODULE_EXPORT))
+                       - scripts):
+        problems.append((
+            name,
+            "is pinned in tools/check_web.py and is not a script in "
+            "apps/web. Delete the entry, or restore the file"))
+
+    for name in sorted(scripts):
+        if name in both:
+            continue  # already reported; the pin is ambiguous
+        if name not in MODULE_EXPORTS and name not in NO_MODULE_EXPORT:
+            continue  # already reported as unpinned
+        text = open(os.path.join(WEB, name), encoding="utf-8").read()
+        for problem in export_problems(name, text, MODULE_EXPORTS.get(name)):
+            problems.append((name, problem))
+
+    # The exemption list, checked for staleness in the same pass. An
+    # exemption that no longer matches anything is a standing permission
+    # nobody is using, and the next global to take that name inherits it
+    # in silence - the argument UNENCRYPTED_SENDERS makes above.
+    for name, other in sorted(NON_NAMESPACE_GLOBALS):
+        if name not in scripts:
+            problems.append((
+                name,
+                "is named in NON_NAMESPACE_GLOBALS in tools/check_web.py "
+                "and is not a script in apps/web. Remove the stale "
+                "exemption"))
+            continue
+        code = strip_js_comments(
+            open(os.path.join(WEB, name), encoding="utf-8").read())
+        if other not in [found.group(1)
+                         for found in GLOBAL_ASSIGNMENT.finditer(code)]:
+            problems.append((
+                name,
+                "is exempted in NON_NAMESPACE_GLOBALS for the global %s, "
+                "which it no longer assigns. Remove the stale exemption so "
+                "a later global cannot inherit it silently" % other))
+
+    return problems
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -1311,6 +1616,9 @@ def main():
 
     for page, problem in csp_policy_problems():
         problems.append("%s %s." % (page, problem))
+
+    for name, problem in module_export_problems():
+        problems.append("%s %s." % (name, problem))
 
     for rel, description in key_shaped_content():
         problems.append(

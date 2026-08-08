@@ -40,7 +40,17 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  * one reader loop away from being unreachable - so the number of them
  * that ran is part of the claim. See dev/harness.mjs.
  */
-const { check, report } = suite("xlsx.js", 30);
+const { check, report } = suite("xlsx.js", 31);
+
+/* ------------------------------------------------------------------ */
+/* The shape of the export itself.                                     */
+
+await check("the exported object is frozen", () =>
+  // admin.html builds this workbook out of decrypted rows, so an export
+  // a later script can rewrite is a `build` that keeps a copy of every
+  // submission it writes out. tools/check_web.py check 15 holds the rule
+  // across the whole directory; this asserts it for the shipped bytes.
+  Object.isFrozen(globalThis.BinderXlsx));
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

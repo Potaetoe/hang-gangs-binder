@@ -284,7 +284,11 @@
         "key file: it is what puts the key back.";
   }
 
-  root.BinderAdmin = {
+  // Frozen because admin.html is where decrypt output becomes a CSV: an
+  // export a later script can rewrite is a `toCsv` that can be swapped
+  // for one that keeps a copy, on the one page in this site that holds
+  // every submitter's plaintext at once.
+  root.BinderAdmin = Object.freeze({
     COLUMNS: COLUMNS,
     entryFor: entryFor,
     rowFor: rowFor,
@@ -294,7 +298,7 @@
     fileName: fileName,
     storedKeyVerdict: storedKeyVerdict,
     storedKeyNotice: storedKeyNotice,
-  };
+  });
 
   /* ---------------------------------------------------------------- */
   /* The wiring. Everything above this line runs under Node.          */

@@ -54,6 +54,14 @@ async function check(label, fn) {
   results.push([ok, label, note]);
 }
 
+await check("the exported object is frozen", () =>
+  // This is the module where decrypt output becomes a CSV, on the one
+  // page that holds every submitter's plaintext at once. An export a
+  // later script can rewrite is a `toCsv` swapped for one that keeps a
+  // copy. tools/check_web.py check 15 holds the rule across the whole
+  // directory; this asserts it for the shipped bytes.
+  Object.isFrozen(globalThis.BinderAdmin));
+
 /*
  * A stored row and the record inside it, as admin.js sees them.
  *
