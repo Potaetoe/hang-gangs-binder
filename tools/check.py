@@ -75,6 +75,12 @@ NODE_SUITES = [
     ("admin session + row deletion", "dev/admin-session.test.mjs"),
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),
     ("dashboard aggregation", "dev/dashboard.test.mjs"),
+    # Two stages for one file, because the two halves cannot be reached
+    # from one harness: the aggregation suite above loads dashboard.js
+    # with no document, which is what proves it runs under Node and what
+    # makes everything below its wiring line unreachable. A separate
+    # label also says which half broke.
+    ("dashboard drawing", "dev/dashboard-render.test.mjs"),
     ("member dashboard session", "dev/public.test.mjs"),
     ("shared UI wiring", "dev/ui.test.mjs"),
     ("session storage + auth handoff", "dev/session.test.mjs"),

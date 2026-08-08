@@ -17,6 +17,7 @@ in both `tools/check.py` and CI — two lists, edited together.
 | `admin-session.test.mjs` | the admin page runs on a session, no token box; deletion proved against a published snapshot, not the DOM |
 | `xlsx.test.mjs` | the hand-built ZIP opens at all — it ends with a reader that re-checks every CRC |
 | `dashboard.test.mjs` | aggregation, suppression floor, quantization — including that a published point is ambiguous rather than a join key |
+| `dashboard-render.test.mjs` | what the same file **draws**, which the row above cannot reach: it loads `dashboard.js` with no `document`, and the drawing half is behind that guard. Asserts the tree, not the call — the panel order, the classes `theme.css` styles against, the `MIN_CELL`-suppressed states, and that no handle survives into a published rendering |
 | `public.test.mjs` | signed-out, refused-session and nothing-published states stay distinct on the member dashboard |
 | `ui.test.mjs` | shared DOM wiring, and that `ui.js` contains no `fetch` or POST |
 | `session.test.mjs` | tab-scoped sessions, expiry, the auth POST/store/redirect handoff |
