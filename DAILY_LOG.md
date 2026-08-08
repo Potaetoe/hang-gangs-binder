@@ -802,6 +802,67 @@ wearing a positive result's clothes, which is precisely what the check existed
 to avoid. Now driven with a 403 and a 500, plus a positive control proving the
 harness reaches the network at all.
 
+### #56 — and the fix I recommended in the issue was the wrong one
+
+Claude; Codex is out of quota until 2026-08-12, so single-agent.
+
+**Reading the code changed the recommendation.** #56 led with "clear the
+prefill on sign-in" as the leading candidate. It does close the leak and it
+stores no identifier, and it is still wrong: the prefill only ever pays off
+*across* sessions, because within one tab the fields already hold what was
+typed. What it actually saves is retyping a height that never changes.
+Clearing on every sign-in leaves code that looks like a working feature and is
+not — so if that were the choice, deleting the prefill would be the honest
+form of it. Put to the owner as four options with that stated; the owner chose
+account scoping.
+
+**The identifier question is the whole slice.** Scoping needs something
+stored, and the obvious candidates make things worse. `username` tells another
+member on that device who else uses this binder. **A hash of it is not
+protection** — the group is small enough to hash candidate handles and
+compare, so the digest is a membership oracle with extra steps, which is the
+harm `DESIGN.md`'s "The identifier is the whole problem" exists to prevent.
+
+`account_id` is different in kind rather than in degree: `HMAC` under
+`ACCOUNT_SECRET`, so it cannot be recomputed from a guessed handle, identifies
+nobody when read, and authorizes nothing — every request is gated on the
+session token and `handleSubmit` takes `account_id` from the session, never the
+body. That is what made widening what the browser holds defensible, and it is
+written into `DESIGN.md` rather than left in a commit message, because it is a
+threat-model claim.
+
+**Two things that shaped the code rather than decorating it.**
+
+The id sits **inside** the stored value, not in the key name. That was not
+tidiness: a prefill written before this change has no id, fails the
+comparison, and is erased on the first load. Keying by name would have stopped
+new leakage and left the data already sitting on every device that ran step 5
+stranded and readable forever — the exposure, not a housekeeping detail. The
+migration falls out of the comparison instead of needing its own path.
+
+The restore now runs **after** `/me`, not before. The id only arrives with
+that response, and restoring first would paint the previous member's
+measurements for as long as the request takes — briefly, into a screen
+somebody is looking at.
+
+**Fails closed**, and the asymmetry is what decides it: no account id — a
+failed `/me`, or a break-glass caller that has no account — restores nothing
+and writes nothing. The cost is a lost convenience; the other cost is showing
+somebody else's body measurements.
+
+Both mutations run. Removing the scope comparison fails all five new checks,
+so they pin the leak collectively rather than one of them carrying it.
+Reordering the restore before the fetch fails thirteen. The pair of checks on
+the cross-member case is deliberate: "the fields are empty" would also be true
+of a prefill feature that had simply stopped working, so one check asserts the
+other member's data is not shown and the other asserts it was erased rather
+than left readable.
+
+Also asserted, because `handleMe`'s new comment claims it: a break-glass
+`EXPORT_TOKEN` caller gets `accountId: null` reported rather than
+special-cased. A claim in a comment that nothing checks is how the comment and
+the code drift apart.
+
 ---
 
 ## 2026-08-06

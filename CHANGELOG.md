@@ -170,6 +170,24 @@ On `accounts`, not released. `main` stays at the last complete release.
   the *server's* lifetime, which already exists — `SESSION_HOURS.member`.
   Moving the token to `localStorage` would widen a credential's exposure and
   is not a line change; `apps/web/session.js` was not touched.
+- **The measurement prefill is scoped to an account, and an unscoped one left
+  by an earlier version is erased on sight.** #56. The session dies with the
+  tab and `localStorage` does not, so a member who closed the tab rather than
+  signing out left weight and height for whoever signed in next on that
+  browser — sign out cleared it, which is the path nobody takes. `GET /me`
+  now returns `accountId` and the stored prefill carries the id it belongs
+  to; a mismatch is **erased**, not merely ignored. Keying by `username` or a
+  hash of one was rejected: the group is small enough to hash candidate
+  handles and compare, which makes a digest a membership oracle with extra
+  steps. `account_id` is `HMAC(ACCOUNT_SECRET, telegram id)`, so it cannot be
+  recomputed from a guessed handle and identifies nobody when read, and it
+  authorizes nothing — every request is gated on the session token. The id
+  sits **inside** the value rather than in the key name so that the migration
+  falls out of the comparison: keying by name would have stopped new leakage
+  and left the data already on every device readable forever. Fails closed —
+  a failed `/me`, or a break-glass caller with no account, restores nothing
+  and writes nothing. `DESIGN.md` carries the argument for putting an account
+  id in a browser at all.
 
 ### Notes
 - `server/worker.js` was not touched. `POST /submit` was already gated on

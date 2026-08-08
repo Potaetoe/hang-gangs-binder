@@ -38,13 +38,36 @@
     }
   }
 
-  function readPrefill() {
+  /*
+   * The prefill belongs to one account, and the check is here rather than
+   * in the key name - #56.
+   *
+   * sessionStorage dies with the tab and localStorage does not, so before
+   * this a member who closed the tab instead of signing out left weight and
+   * height behind for whoever signed in next on that browser. Sign out
+   * cleared it, which is the path nobody actually takes.
+   *
+   * Carrying the id inside the value rather than in the key is what makes
+   * the migration fall out of the comparison: a prefill written before this
+   * existed has no `accountId`, does not match, and is discarded on the
+   * first load. Keying by name would have left that one stranded and
+   * readable forever, which is the exposure rather than a tidiness problem.
+   *
+   * `expected` of null - no account to attribute it to, which is what a
+   * break-glass caller gets from /me - discards rather than restores. A
+   * prefill shown without knowing whose it is IS the bug.
+   */
+  function readPrefill(expected) {
     const store = localStore();
     if (!store) return null;
     try {
       const value = JSON.parse(store.getItem(PREFILL_KEY));
       if (!value || typeof value !== "object") return null;
       if (value.units !== "imperial" && value.units !== "metric") return null;
+      if (!expected || value.accountId !== expected) {
+        clearPrefill();
+        return null;
+      }
       return value;
     } catch (error) {
       return null;
@@ -69,10 +92,21 @@
     return chosen ? chosen.value : "imperial";
   }
 
+  /*
+   * Whose device-local data this is, as reported by /me. Held rather than
+   * re-read because savePrefill runs on every keystroke and must not write
+   * an unattributed prefill: if /me has not answered, or answered with no
+   * account, there is nothing to scope the data to and it is not stored.
+   * Refusing to write is the safe direction - the cost is a lost
+   * convenience, and the alternative cost is somebody else's measurements.
+   */
+  let account = null;
+
   function savePrefill() {
     const store = localStore();
-    if (!store) return;
+    if (!store || !account) return;
     const value = {
+      accountId: account,
       units: currentUnits(),
       weightLb: fieldValue("weight-lb"),
       heightFeet: fieldValue("height-ft"),
@@ -85,7 +119,7 @@
   }
 
   function restorePrefill() {
-    const value = readPrefill();
+    const value = readPrefill(account);
     if (!value) return;
 
     const fields = {
@@ -179,6 +213,12 @@
           !Number.isInteger(payload.entries) || payload.entries < 0) {
         throw new Error("The server returned an invalid account summary.");
       }
+      // Validated like the count is, rather than trusted: a non-string here
+      // would silently scope the prefill to nothing and read as "not my
+      // data" forever, which looks like the feature simply not working.
+      account = typeof payload.accountId === "string" && payload.accountId
+        ? payload.accountId
+        : null;
       renderAccount(payload);
       setStatus("", false);
     } catch (error) {
@@ -202,7 +242,6 @@
     if (!Session) throw new Error("This page did not load session handling.");
     if (!Session.require()) return;
 
-    restorePrefill();
     FIELD_IDS.forEach(function (id) {
       const field = $(id);
       if (field) field.addEventListener("input", savePrefill);
@@ -225,6 +264,14 @@
 
     show($("member-tabs"), true);
     chooseTab("entries");
+
+    // The prefill is restored AFTER /me, not before, and the order is the
+    // whole point of #56: the account id that says whose data this is only
+    // arrives with that response. Restoring first would paint the previous
+    // member's measurements for as long as the request takes, which is the
+    // exposure this closed - briefly, but into a screen somebody is looking
+    // at.
     await refreshPanel();
+    restorePrefill();
   }
 })(globalThis);

@@ -378,6 +378,29 @@ check("/me counts this account's rows and nobody else's",
   me.entries === 2 && me.isAdmin === false && me.isDev === false,
   `entries=${me.entries}`);
 
+/* #56 keys the device-local prefill on this value, so it has to be the
+ * account's real id rather than anything derived on the page. Asserted
+ * against the committed fixture rather than against itself: comparing it
+ * to `stored[0].account_id` would pass even if both were wrong together,
+ * which is the shape of check that #34 paid for. */
+check("/me returns the account's own id, matching the committed fixture",
+  me.accountId === FIXTURE_4242,
+  me.accountId ? me.accountId.slice(0, 20) + "…" : "absent");
+check("and it is the id the rows were actually written under",
+  me.accountId === stored[0].account_id);
+
+/* The break-glass caller is admin and is nobody, so it has no account id
+ * to report. Asserted because handleMe's comment claims it is reported
+ * rather than special-cased, and a claim in a comment that nothing checks
+ * is how the comment and the code drift apart. It also matters to the
+ * page: submit.js must not restore a device-local prefill when there is
+ * no account to attribute it to. */
+const glass = await (await call("GET", "/me",
+  { headers: bearer("sekrit-token-value") })).json();
+check("/me reports no account id for the break-glass token",
+  glass.ok === true && glass.accountId === null && glass.isAdmin === true,
+  `accountId=${JSON.stringify(glass.accountId)}`);
+
 const before = stored.length;
 await call("DELETE", "/submission/" + stored[0].id, { headers: bearer(ADMIN) });
 check("an admin can remove one submission",

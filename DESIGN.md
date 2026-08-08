@@ -493,6 +493,57 @@ expired rows are cleared opportunistically when one is looked up rather
 than by a scheduled job — the failure mode of a scheduled job is
 silence, and there is nothing here worth a moving part.
 
+### The prefill is scoped to an account
+
+`submit.html` keeps the last weight and height in `localStorage` so a
+member does not retype a height that never changes. That is cleartext
+body data rather than key material, which is why the rule above permits
+it at all — but it introduced a leak the session design does not have,
+and the fix is worth recording because it required putting an account id
+in a browser.
+
+**The leak.** The session lives in `sessionStorage` and dies with the
+tab; the prefill does not. Sign out cleared both, and closing the tab is
+what people actually do instead. So on a shared browser the next member
+to sign in saw the previous member's measurements already in the form.
+Found reviewing step 5, filed as #56, fixed there.
+
+**Why scoping needs an identifier, and why most identifiers make it
+worse.** Keeping the prefill only pays off *across* sessions — within one
+tab the fields already hold what was typed — so clearing it on sign-in
+removes the feature while looking like a fix. Distinguishing "my data"
+from "somebody else's" needs something stored, and the obvious choices
+are the wrong ones: `username`, or a hash of it, tells another member on
+that device who else uses this binder. **A hash is not protection here** —
+the group is small enough to hash candidate handles and compare, so the
+digest is a membership oracle with extra steps, which is the harm "The
+identifier is the whole problem" exists to prevent.
+
+**Why `account_id` is different in kind.** It is
+`HMAC(ACCOUNT_SECRET, telegram id)`. Without the secret it cannot be
+recomputed from a guessed handle, so it does not confirm anything about
+anyone; read out of a browser it is an opaque hex string that identifies
+nobody. And it authorizes nothing — every request is gated on the session
+token, and `handleSubmit` takes `account_id` from the session and never
+from the body — so a copy of it opens no door. `GET /me` returns it for
+this purpose.
+
+That is the whole argument for widening what the browser holds, and it
+rests on `ACCOUNT_SECRET` staying secret, which is already the assumption
+every account id depends on.
+
+**The id lives inside the stored value, not in the key name**, and that is
+not a style choice. A prefill written before this change carries no id, so
+it fails the comparison and is erased on the first load — the migration
+falls out of the check. Keying by name would have stopped new leakage and
+left the data already on every device stranded and readable, which is the
+exposure rather than a tidiness problem.
+
+**It fails closed.** No account id — a `/me` that failed, or a break-glass
+`EXPORT_TOKEN` caller, which has no account — restores nothing and writes
+nothing. The cost is a lost convenience; the alternative cost is showing
+somebody else's body measurements, so the asymmetry decides it.
+
 ### Admin accounts
 
 An admin account grants three things: pulling the ciphertext, publishing
