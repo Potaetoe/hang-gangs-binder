@@ -272,7 +272,12 @@
         "The cover is closed and opens once. Reload to see it again; " +
           "turn on reduced motion in the operating system and reload to " +
           "see it snap open instead of animating.",
-        "Switch Midnight, Parchment, Pink and Contrast. The wordmark is " +
+        // The chips are named by the page, not here. #122's own text
+        // calls one of them Parchment and the shipped chip says
+        // Daylight, and a walk-through that names them would have to be
+        // corrected every time one is renamed - the same drift this
+        // whole demo is built to avoid.
+        "Switch every palette chip in the rail in turn. The wordmark is " +
           "Playfair Display - if it renders as a plain serif the font " +
           "did not load, which is the thing to look for.",
         "There is no rail on Sign in, by decision on #73.",
