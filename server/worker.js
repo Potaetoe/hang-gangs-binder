@@ -18,6 +18,16 @@
  *   DELETE /snapshot         take it down. Admin, and no key - see the
  *                            handler for why that matters.
  *   DELETE /submission/:id   remove one row. Admin.
+ *   GET    /content          the site copy an admin has set. The one
+ *                            route here that answers without a
+ *                            credential - see handleReadContent.
+ *   POST   /content          set one name. Admin.
+ *   DELETE /content/:name    unset one, so the page shows the copy it
+ *                            ships with again. Admin.
+ *   GET    /membership       the admin and always-allow lists. Admin.
+ *   POST   /membership       add one, or relabel one. Admin.
+ *   DELETE /membership/:role/:accountId
+ *                            remove one. Admin.
  *
  * It never decrypts, holds no key, and cannot read what it stores. The
  * first two routes move opaque base64 - see DESIGN.md, which explains
@@ -84,6 +94,48 @@ const MAX_SNAPSHOT = 256 * 1024;
 // A login payload is a handful of short fields. Anything larger is not
 // one, and this route runs before any credential has been checked.
 const MAX_AUTH_BODY = 4 * 1024;
+
+/*
+ * Site content: what a page's own HTML says, when an admin has said
+ * something else. A value is a heading, a paragraph, a note - so the
+ * ceiling is generous for copy and far below anything worth parking
+ * here, and it is a cap on the stored value rather than on the request,
+ * because this route runs behind an admin session and there is no
+ * pre-credential body to bound the way POST /auth/telegram has.
+ */
+const MAX_CONTENT_VALUE = 8 * 1024;
+
+/*
+ * A content name addresses a slot a page reads; it is not prose and
+ * nothing renders it. Lowercase, digits and three separators, bounded -
+ * so a name is safe in a URL path without escaping, cannot collide with
+ * another by case, and a page and an admin pane can agree on one by
+ * spelling it.
+ *
+ * `name` rather than `key`: in this repository a key is a cryptographic
+ * key, and this table holds neither one nor anything derived from one.
+ */
+const CONTENT_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/*
+ * The two membership lists, named as roles rather than as tables. The
+ * set is closed here rather than accepted from the caller: an unknown
+ * role stored would be a row that grants nothing and looks exactly like
+ * one that does, which is the undetectable-wrong-value failure the
+ * whole issue is about.
+ */
+const MEMBERSHIP_ROLES = ["admin", "always_allow"];
+
+// A label is a nickname somebody types so the list can be read at all.
+const MAX_LABEL = 64;
+
+// An account id as this Worker writes one: SHA-256 HMAC, hex.
+const ACCOUNT_ID = /^[0-9a-f]{64}$/;
+
+// A Telegram numeric id, which is what an admin has to hand. Twenty
+// digits is past anything Telegram issues and short of a number no
+// string comparison should be asked to carry.
+const TELEGRAM_ID = /^[0-9]{1,20}$/;
 
 /*
  * How long a session lasts.
@@ -212,6 +264,10 @@ function idList(value) {
  * admin list living somewhere other than the secret, which is precisely
  * the stale-admin bug this function exists to remove; the list is a
  * handful of ids and an HMAC each.
+ *
+ * The secret is the enforcing list and the `membership` table is not -
+ * see handleReadMembership below for the whole of that seam. Reading
+ * both here would make two places the answer could be true.
  */
 async function adminAccountIds(env) {
   const ids = idList(env.ADMIN_TELEGRAM_IDS);
@@ -304,7 +360,9 @@ async function verifyTelegramPayload(payload, botToken) {
  *
  * ALWAYS_ALLOW_TELEGRAM_IDS passes regardless, and is not merely a
  * convenience: if the bot is ever removed from the group this call
- * starts refusing everybody, and that list is the way back in.
+ * starts refusing everybody, and that list is the way back in. It is
+ * read from the secret and not from the `membership` table, for the
+ * reason handleReadMembership gives.
  *
  * Unconfigured - no chat id - means the check is off and everybody with
  * a Telegram account passes. That is a deployment decision rather than a
@@ -961,9 +1019,12 @@ async function handlePublishSnapshot(request, env, origin) {
 }
 
 /*
- * The public read. No token, because there is nothing here to protect -
- * the document carries no handles and no rows. If that ever stops being
- * true, this route is the reason it matters.
+ * Reading it back. A member session, because the audience is exactly
+ * the people who might recognize somebody - and the gate decides who
+ * reads this document, not what may go in it. It carries no handles and
+ * no rows, which is why losing the session check here would be a
+ * smaller failure than losing one anywhere else and is still a failure.
+ * See DESIGN.md, "The dashboard and the snapshot".
  */
 async function handleReadSnapshot(env, origin) {
   const row = await env.DB.prepare(
@@ -1016,6 +1077,267 @@ async function handleReadSnapshot(env, origin) {
  */
 async function handleDeleteSnapshot(env, origin) {
   await env.DB.prepare("DELETE FROM snapshots WHERE id = 1").run();
+
+  return json({ ok: true }, 200, origin);
+}
+
+/*
+ * Who wrote a row, when the writer might be a secret rather than a
+ * person. A break-glass EXPORT_TOKEN caller is an admin with no
+ * account, so an audit column has to say that: inventing an account id
+ * would attribute an act to somebody who did not do it, and a null
+ * reads as "nobody recorded it" rather than as "this was the way back
+ * in being used". The literal cannot collide with an account id, which
+ * is sixty-four hex characters.
+ */
+const BREAK_GLASS = "break-glass";
+
+function writerOf(caller) {
+  return caller && caller.accountId ? caller.accountId : BREAK_GLASS;
+}
+
+/*
+ * The site copy an admin can change without a release.
+ *
+ * This route answers a caller with no credential at all, and it is the
+ * only one here that does. The argument is what these values are: each
+ * page ships the copy it needs in its own HTML and reads this document
+ * to override it, so the bytes this route serves stand in for bytes
+ * anybody can already fetch from the published site. Gating it would
+ * promise a confidentiality the fallback does not have, and the cost of
+ * promising it is that somebody eventually puts something private in a
+ * table designed for site copy.
+ *
+ * What follows from that is a rule with a structural expression rather
+ * than a warning: nothing about a person goes in this table. The lists
+ * of people are `membership`, on their own routes, gated admin - a
+ * filter on a shared route is one `if` away from serving the list to a
+ * member session, and that mistake would look like nothing at all.
+ *
+ * `/content` rather than `/config`, because the form definition is
+ * configuration and is refused this table on purpose: a wrong bound
+ * gets sealed into a record and is discovered on export day, so it
+ * stays a repo file the gate reads before it ships. A route named for
+ * configuration in general is an invitation to move it here.
+ * DESIGN.md, "Where configuration lives", holds the rule.
+ *
+ * An absent document is `{}` and a 200. A page whose value has never
+ * been set is in its normal state, not in an error, and answering 404
+ * would make every page treat first-run as a failure.
+ */
+async function handleReadContent(env, origin) {
+  const rows = await env.DB.prepare(
+    "SELECT name, value FROM site_content ORDER BY name"
+  ).all();
+
+  // Names and values only. `updated_by` is an account id, and a
+  // document anybody may fetch is the wrong place to publish which
+  // account did anything; the audit stays in the table for a surface
+  // that reads it behind the admin gate.
+  const content = {};
+  for (const row of rows.results) content[row.name] = row.value;
+
+  return json({ ok: true, content: content }, 200, origin);
+}
+
+/*
+ * Setting one name.
+ *
+ * One name per request rather than a whole document, because an admin
+ * pane that re-posted the document it rendered would delete every name
+ * added since it loaded - a second admin's work disappearing with no
+ * error anywhere. The last write of a name wins; names nobody wrote in
+ * this request are untouched.
+ */
+async function handleWriteContent(request, env, origin, caller) {
+  let payload;
+  try {
+    payload = await request.json();
+  } catch (e) {
+    return json({ error: "Body must be JSON." }, 400, origin);
+  }
+
+  const name = payload && payload.name;
+  if (typeof name !== "string" || !CONTENT_NAME.test(name)) {
+    return json({
+      error: "A content name is lowercase letters, digits, dot, dash or " +
+        "underscore, up to 64 characters.",
+    }, 400, origin);
+  }
+
+  // Text, and only text. A page renders these with textContent, so a
+  // value is never markup - and a route that accepted an object would
+  // be storing a shape no page knows how to draw.
+  const value = payload.value;
+  if (typeof value !== "string") {
+    return json({ error: "A content value is text." }, 400, origin);
+  }
+  if (value.length > MAX_CONTENT_VALUE) {
+    return json({ error: "Content too large." }, 413, origin);
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO site_content (name, value, updated_at, updated_by) " +
+    "VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET " +
+    "value = excluded.value, updated_at = excluded.updated_at, " +
+    "updated_by = excluded.updated_by"
+  )
+    .bind(name, value, new Date().toISOString(), writerOf(caller))
+    .run();
+
+  return json({ ok: true }, 200, origin);
+}
+
+/*
+ * Unsetting one name, which is how a page goes back to the copy it
+ * ships with. Without this route a value can only be written over, and
+ * the shipped fallback is unreachable for as long as anything sits on
+ * top of it - so the way back from a bad edit would be another edit.
+ *
+ * Deleting nothing succeeds, for the reason unpublishing twice does.
+ */
+async function handleDeleteContent(env, origin, name) {
+  if (!CONTENT_NAME.test(name)) {
+    return json({ error: "Not found." }, 404, origin);
+  }
+  await env.DB.prepare("DELETE FROM site_content WHERE name = ?")
+    .bind(name).run();
+
+  return json({ ok: true }, 200, origin);
+}
+
+/*
+ * The membership lists - who administers, and who bypasses the group
+ * check (#69).
+ *
+ * THE SEAM, because it is the first thing to know about all three of
+ * these routes: this table enforces nothing. adminAccountIds() reads
+ * ADMIN_TELEGRAM_IDS and isGroupMember() reads
+ * ALWAYS_ALLOW_TELEGRAM_IDS, and those secrets stay the enforcing copy
+ * until a slice that changes what a sign-in means migrates them
+ * deliberately. Two lists that both granted access would be two places
+ * the answer could be true, and the migration is where the lockout
+ * guards belong - refusing the removal of the last admin means nothing
+ * while a secret nobody here can read is what actually grants the
+ * authority, and a guard that refuses a safe act while explaining a
+ * danger that does not exist is worse than no guard. dev/worker.test.mjs
+ * asserts the inert half, so the day the seam closes a check says so.
+ *
+ * Read gated admin, and every refusal identical to every other refusal
+ * this Worker gives. The list of who administers is the list DESIGN.md's
+ * account design exists to keep private: a route that answered a member
+ * differently from a stranger, or answered differently for an account
+ * that is on the list than for one that is not, would be that oracle
+ * reachable with a member session rather than with the database. That is
+ * why the gate runs in the router, ahead of every shape check here - a
+ * 404 for a role that is not a role is an answer only an admin may have.
+ *
+ * The rows go out with the table's own column names. The admin surface
+ * that renders them maps them once; a second spelling of the same field
+ * would be a second thing to keep true.
+ */
+async function handleReadMembership(env, origin) {
+  const rows = await env.DB.prepare(
+    "SELECT account_id, role, label, added_at FROM membership " +
+    "ORDER BY role, added_at"
+  ).all();
+
+  return json({ ok: true, membership: rows.results }, 200, origin);
+}
+
+/*
+ * Adding somebody, or relabeling somebody already there.
+ *
+ * The caller sends a numeric Telegram id and the Worker HMACs it on
+ * receipt; the id itself is never stored and never sent back.
+ * DESIGN.md, "The identifier is the whole problem", states that as a
+ * prohibition - a numeric id resolves to a person for anyone who can
+ * point a bot at it, so a table of them turns a database breach into
+ * the group's membership by name, which is most of the harm the
+ * encryption exists to prevent.
+ *
+ * The numeric id rather than the account id on the wire, even though
+ * the account id is what gets stored and GET /me already hands a member
+ * their own. A 64-character HMAC typed or pasted by a human cannot be
+ * checked by anything: one wrong character produces a row that grants
+ * nothing, looks completely correct, and is discovered when somebody
+ * cannot get in - which is the undetectable-wrong-value complaint #69
+ * opens with, moved into the table it asked for. A numeric id has a
+ * shape this side can refuse, and it goes through the one function that
+ * derives account ids, so a row can never carry a value computed by
+ * some other rule.
+ *
+ * The label is required rather than optional. A list of HMACs answers
+ * nobody, and an admin who cannot tell which row is which will remove
+ * the wrong one; it is a label somebody typed and not a verified
+ * handle, which is the same id-is-identity, handle-is-display split a
+ * submission row already carries.
+ *
+ * Adding a row that is there relabels it and leaves `added_at` and
+ * `added_by` alone, because those answer when this account was given
+ * this role and by whom - questions a change of nickname does not
+ * change the answer to.
+ */
+async function handleAddMembership(request, env, origin, caller) {
+  let payload;
+  try {
+    payload = await request.json();
+  } catch (e) {
+    return json({ error: "Body must be JSON." }, 400, origin);
+  }
+
+  // String(anything) would accept an array of one id, which is a caller
+  // with a bug rather than a value worth coercing.
+  const given = payload && payload.telegramId;
+  const telegramId = typeof given === "number" || typeof given === "string"
+    ? String(given) : "";
+  if (!TELEGRAM_ID.test(telegramId)) {
+    return json({
+      error: "A numeric Telegram id is needed.",
+    }, 400, origin);
+  }
+
+  const role = payload.role;
+  if (!MEMBERSHIP_ROLES.includes(role)) {
+    return json({
+      error: "A role is one of: " + MEMBERSHIP_ROLES.join(", ") + ".",
+    }, 400, origin);
+  }
+
+  const label = typeof payload.label === "string" ? payload.label.trim() : "";
+  if (!label || label.length > MAX_LABEL) {
+    return json({
+      error: "A label of up to " + MAX_LABEL + " characters is needed, so " +
+        "the list can be read.",
+    }, 400, origin);
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO membership (account_id, role, label, added_at, added_by) " +
+    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id, role) " +
+    "DO UPDATE SET label = excluded.label"
+  )
+    .bind(await accountIdFor(env, telegramId), role, label,
+      new Date().toISOString(), writerOf(caller))
+    .run();
+
+  return json({ ok: true }, 200, origin);
+}
+
+/*
+ * Removing one row: one account, one role. Removing an account from one
+ * list is not removing them from the other, and a route that took only
+ * an account id would have to guess which was meant.
+ *
+ * Deleting nothing succeeds, the way every other deletion here does.
+ */
+async function handleDeleteMembership(env, origin, role, accountId) {
+  if (!MEMBERSHIP_ROLES.includes(role) || !ACCOUNT_ID.test(accountId)) {
+    return json({ error: "Not found." }, 404, origin);
+  }
+  await env.DB.prepare(
+    "DELETE FROM membership WHERE account_id = ? AND role = ?"
+  ).bind(accountId, role).run();
 
   return json({ ok: true }, 200, origin);
 }
@@ -1100,6 +1422,39 @@ export default {
     if (method === "DELETE" && submission) {
       if (!admin) return unauthorized(allowed);
       return handleDeleteSubmission(env, allowed, submission[1]);
+    }
+
+    // The site copy. The read takes no credential, which is the one
+    // exception in this router and is argued in handleReadContent; the
+    // two writes are an admin session like every other write here.
+    if (method === "GET" && path === "/content") {
+      return handleReadContent(env, allowed);
+    }
+    if (method === "POST" && path === "/content") {
+      if (!admin) return unauthorized(allowed);
+      return handleWriteContent(request, env, allowed, caller);
+    }
+    const contentName = /^\/content\/([^/]+)$/.exec(path);
+    if (method === "DELETE" && contentName) {
+      if (!admin) return unauthorized(allowed);
+      return handleDeleteContent(env, allowed, contentName[1]);
+    }
+
+    // Membership, admin in every direction. The gate is here rather
+    // than inside the handlers so that a malformed role and a real one
+    // are the same refusal to anybody who may not read the list at all.
+    if (method === "GET" && path === "/membership") {
+      if (!admin) return unauthorized(allowed);
+      return handleReadMembership(env, allowed);
+    }
+    if (method === "POST" && path === "/membership") {
+      if (!admin) return unauthorized(allowed);
+      return handleAddMembership(request, env, allowed, caller);
+    }
+    const listed = /^\/membership\/([^/]+)\/([^/]+)$/.exec(path);
+    if (method === "DELETE" && listed) {
+      if (!admin) return unauthorized(allowed);
+      return handleDeleteMembership(env, allowed, listed[1], listed[2]);
     }
 
     return json({ error: "Not found." }, 404, allowed);

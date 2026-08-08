@@ -27,13 +27,14 @@ const { default: worker } = await import(
 /*
  * A D1 binding that remembers what it was asked to store.
  *
- * It reads just enough of the SQL to tell the three tables apart,
- * because they behave differently in the ways that matter: snapshots
- * replaces rather than appends and is read with first(); sessions is
- * looked up by one key, swept by expiry, and has one row's deadline
- * moved forward when it is used; submissions appends, counts per
- * account, can lose a row, and answers the two lookups a correction is
- * checked against.
+ * It reads just enough of the SQL to tell the tables apart, because
+ * they behave differently in the ways that matter: snapshots replaces
+ * rather than appends and is read with first(); sessions is looked up
+ * by one key, swept by expiry, and has one row's deadline moved forward
+ * when it is used; submissions appends, counts per account, can lose a
+ * row, and answers the two lookups a correction is checked against;
+ * site_content and membership are keyed, so a second write of the same
+ * row must replace it rather than sit beside it.
  *
  * A stub that ignored the statement entirely would let a publish that
  * appended a second row pass, and would let a delete that removed
@@ -42,22 +43,65 @@ const { default: worker } = await import(
 let stored = [];
 let sessions = [];
 let snapshot = null;
+let content = [];
+let roster = [];
 let nextId = 1;
 
 function reset() {
   stored = [];
   sessions = [];
   snapshot = null;
+  content = [];
+  roster = [];
   nextId = 1;
 }
 
 const DB = {
   prepare: (sql) => {
-    const table = /snapshots/i.test(sql) ? "snapshots"
+    const table = /site_content/i.test(sql) ? "site_content"
+      : /membership/i.test(sql) ? "membership"
+      : /snapshots/i.test(sql) ? "snapshots"
       : /sessions/i.test(sql) ? "sessions"
       : "submissions";
     const verb = /^\s*(\w+)/.exec(sql)[1].toUpperCase();
     const counting = /COUNT\(\*\)/i.test(sql);
+
+    /*
+     * The keyed tables are modelled from the statement rather than by
+     * hand: the columns an INSERT names, the ones its ON CONFLICT
+     * clause re-writes, and the columns a WHERE binds.
+     *
+     * Reading them off the SQL is what keeps three mutations visible. A
+     * stub that mapped parameters by hand would agree with whatever
+     * this file expected rather than with what the Worker sent. One
+     * that replaced every column on a conflict would pass an upsert
+     * that resets `added_at`, so "when this row was added" would
+     * quietly become "when its label was last typed". One that ignored
+     * the WHERE would pass a delete that took the row out of both
+     * roles, or out of somebody else's.
+     */
+    const insertInto = /INSERT INTO \w+\s*\(([^)]*)\)/i.exec(sql);
+    const insertColumns = insertInto
+      ? insertInto[1].split(",").map((c) => c.trim()) : [];
+    const conflict = /DO UPDATE SET\s+([\s\S]+?)\s*$/i.exec(sql);
+    const conflictColumns = conflict
+      ? conflict[1].split(",").map((c) => c.trim().split(/\s*=\s*/)[0]) : [];
+    const where = /WHERE\s+([\s\S]+?)(?:\s+ORDER BY[\s\S]*)?$/i.exec(sql);
+    const bound = where
+      ? Array.from(where[1].matchAll(/(\w+)\s*=\s*\?/g)).map((m) => m[1]) : [];
+    const matches = (row, a) => bound.length > 0 &&
+      bound.every((column, index) => row[column] === a[index]);
+
+    const upsert = (rows, key, a) => {
+      const row = {};
+      insertColumns.forEach((column, index) => { row[column] = a[index]; });
+      const existing = rows.find((r) => key.every((k) => r[k] === row[k]));
+      if (!existing) {
+        rows.push(row);
+        return;
+      }
+      for (const column of conflictColumns) existing[column] = row[column];
+    };
 
     const exec = async (a) => {
       if (table === "snapshots") {
@@ -87,6 +131,12 @@ const DB = {
             is_dev: a[3], created_at: a[4], expires_at: a[5],
           });
         }
+      } else if (table === "site_content") {
+        if (verb === "DELETE") content = content.filter((r) => !matches(r, a));
+        else upsert(content, ["name"], a);
+      } else if (table === "membership") {
+        if (verb === "DELETE") roster = roster.filter((r) => !matches(r, a));
+        else upsert(roster, ["account_id", "role"], a);
       } else if (verb === "DELETE") {
         stored = stored.filter((r) => r.id !== a[0]);
       } else {
@@ -111,6 +161,17 @@ const DB = {
       if (table === "snapshots") return snapshot;
       if (table === "sessions") {
         return sessions.find((s) => s.token_hash === a[0]) || null;
+      }
+      // Answered from the bound WHERE rather than left null, so a
+      // future lookup against either keyed table is visible here. A
+      // stub that answered "no such row" whatever was asked would let
+      // a Worker that reads the membership table pass the assertions
+      // below that say it does not read it yet.
+      if (table === "site_content") {
+        return content.find((r) => matches(r, a)) || null;
+      }
+      if (table === "membership") {
+        return roster.find((r) => matches(r, a)) || null;
       }
       if (counting) {
         const mine = stored.filter((r) => r.account_id === a[0]);
@@ -167,7 +228,10 @@ const DB = {
       // Statements with no parameters run straight off prepare().
       run: () => exec([]),
       first: async () => read([]),
-      all: async () => ({ results: stored.map(project) }),
+      all: async () => ({
+        results: (table === "site_content" ? content
+          : table === "membership" ? roster : stored).map(project),
+      }),
     };
   },
 };
@@ -414,14 +478,56 @@ const matrix = [
   // every row below it. The rest of that route is its own section.
   ["DELETE", "/session", null, 401],
   ["DELETE", "/session", "sekrit-token-value", 401],
+  /*
+   * Site content is the one thing here that answers a caller with no
+   * credential at all, and both halves of that are in this table. The
+   * read is open because every page's shipped HTML is the fallback for
+   * these values and apps/web is copied verbatim to a public site, so
+   * the bytes this route enhances are world-readable already; the write
+   * is an admin session because an admin is who edits a site.
+   */
+  ["GET", "/content", null, 200],
+  ["GET", "/content", MEMBER, 200],
+  ["POST", "/content", null, 401],
+  ["POST", "/content", MEMBER, 401],
+  ["POST", "/content", ADMIN, 200],
+  ["POST", "/content", "sekrit-token-value", 200],
+  ["DELETE", "/content/matrix", null, 401],
+  ["DELETE", "/content/matrix", MEMBER, 401],
+  ["DELETE", "/content/matrix", ADMIN, 200],
+  /*
+   * Membership is admin in both directions and in every one. The list
+   * of who administers is the list DESIGN.md's whole account design
+   * exists to keep private, so a member reading it is the failure, and
+   * so is a member learning anything by being refused - which the
+   * byte-for-byte section below is what actually pins.
+   */
+  ["GET", "/membership", null, 401],
+  ["GET", "/membership", MEMBER, 401],
+  ["GET", "/membership", ADMIN, 200],
+  ["GET", "/membership", "sekrit-token-value", 200],
+  ["POST", "/membership", null, 401],
+  ["POST", "/membership", MEMBER, 401],
+  ["POST", "/membership", ADMIN, 200],
+  ["DELETE", "/membership/admin/" + FIXTURE_4242, null, 401],
+  ["DELETE", "/membership/admin/" + FIXTURE_4242, MEMBER, 401],
+  ["DELETE", "/membership/admin/" + FIXTURE_4242, ADMIN, 200],
   ["GET", "/whatever", ADMIN, 404],
 ];
+
+// One body per POST route rather than one shape for all of them. A
+// single "whatever this route wants" object would let a route that
+// stopped reading its body pass every row above.
+const MATRIX_BODY = {
+  "/submit": { ciphertext: "QUJDRA==" },
+  "/content": { name: "matrix", value: "A line of copy." },
+  "/membership": { telegramId: "31337", role: "admin", label: "Sam" },
+};
 
 for (const [method, path, token, want] of matrix) {
   const headers = token === null ? good : bearer(token);
   const body = method === "POST"
-    ? JSON.stringify(path === "/submit"
-      ? { ciphertext: "QUJDRA==" } : { snapshot: 1 })
+    ? JSON.stringify(MATRIX_BODY[path] || { snapshot: 1 })
     : undefined;
   await statusOf(`${method} ${path} as ${who(token)}`,
     call(method, path, { headers, body }), want);
@@ -1140,6 +1246,355 @@ check("deleting a correction puts the row it corrected back in the count",
 
 await statusOf("and that row can be corrected again",
   submit(OWNER, { ciphertext: "QWdhaW4=", supersedes: firstEntry.id }), 200);
+
+/* ------------------------------------------------------------------ */
+/* Site content - the one document served without a credential (#87).  */
+
+/*
+ * The read is open and the write is an admin session, and the asymmetry
+ * is the design rather than an oversight.
+ *
+ * Each page's shipped HTML is the fallback for these values, and
+ * apps/web is copied verbatim to a public site - so the bytes this
+ * route enhances can be fetched by anybody already. A session gate here
+ * would promise a confidentiality the fallback does not have, and the
+ * cost of promising it is that somebody eventually puts something
+ * private in a table designed for site copy. What follows from the open
+ * read is the rule the membership section below enforces structurally:
+ * nothing about a person goes in this table, and the list of people has
+ * a table and a gate of its own.
+ */
+reset();
+
+const CONTENT_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
+const editorId = (await (await call("GET", "/me",
+  { headers: bearer(CONTENT_ADMIN) })).json()).accountId;
+
+const setContent = (token, body) =>
+  call("POST", "/content",
+    { headers: bearer(token), body: JSON.stringify(body) });
+const readContent = () => call("GET", "/content", { headers: good });
+
+const blank = await readContent();
+const blankBody = await blank.clone().json();
+check("an absent site content document is not an error",
+  blank.status === 200 && blankBody.ok === true &&
+  JSON.stringify(blankBody.content) === "{}",
+  `${blank.status} ${JSON.stringify(blankBody.content)}`);
+
+await setContent(CONTENT_ADMIN, { name: "welcome", value: "Weigh in." });
+const written = await (await readContent()).json();
+check("a value an admin set reads back under its name, to anybody",
+  written.content.welcome === "Weigh in.", JSON.stringify(written.content));
+
+await setContent(CONTENT_ADMIN, { name: "welcome", value: "Weigh in weekly." });
+const replaced = await (await readContent()).json();
+check("writing a name again replaces it rather than adding a row",
+  content.length === 1 && replaced.content.welcome === "Weigh in weekly.",
+  `${content.length} row(s)`);
+
+await setContent(CONTENT_ADMIN,
+  { name: "dashboard.note", value: "Updated Fridays." });
+const both = await (await readContent()).json();
+check("a second name sits beside the first",
+  Object.keys(both.content).length === 2 &&
+  both.content["dashboard.note"] === "Updated Fridays.",
+  JSON.stringify(both.content));
+
+/*
+ * The document carries names and values and nothing else. `updated_by`
+ * is an account id, and a document anybody may fetch is the wrong place
+ * to publish which account did anything - the audit belongs to the
+ * table and to whatever admin surface reads it behind a gate.
+ */
+const publicText = await (await readContent()).text();
+check("the public document names no writer and no time",
+  !publicText.includes(editorId) && !publicText.includes("updated_by") &&
+  !publicText.includes("updated_at"), publicText.slice(0, 50) + "…");
+
+check("but the row records the admin who wrote it",
+  content[0].updated_by === editorId,
+  content[0].updated_by ? content[0].updated_by.slice(0, 20) + "…" : "absent");
+
+/* The break-glass caller is an admin and is nobody, so an audit column
+ * has to say that rather than invent an account or store a null that
+ * reads as "nobody knows". */
+await setContent("sekrit-token-value", { name: "welcome", value: "Back in." });
+const glassWrite = content.find((r) => r.name === "welcome");
+check("a break-glass write is recorded as break-glass, not as an account",
+  glassWrite.updated_by === "break-glass", glassWrite.updated_by);
+
+const contentBefore = content.length;
+for (const [label, name] of [
+  ["upper case", "Welcome"],
+  ["a path", "a/b"],
+  ["empty", ""],
+  ["a leading dash", "-lead"],
+  ["longer than sixty-four characters", "a".repeat(65)],
+]) {
+  await statusOf(`a content name that is ${label} is refused`,
+    setContent(CONTENT_ADMIN, { name: name, value: "x" }), 400);
+}
+
+await statusOf("a content value that is not text is refused",
+  setContent(CONTENT_ADMIN, { name: "welcome", value: { html: "<b>" } }), 400);
+await statusOf("an oversize content value is refused",
+  setContent(CONTENT_ADMIN, { name: "welcome", value: "A".repeat(9000) }), 413);
+await statusOf("a malformed content body is refused",
+  call("POST", "/content",
+    { headers: bearer(CONTENT_ADMIN), body: "{{{" }), 400);
+
+check("and not one refused write reached the table",
+  content.length === contentBefore &&
+  content.find((r) => r.name === "welcome").value === "Back in.",
+  `${contentBefore} -> ${content.length}`);
+
+/* Unsetting a name is how a page goes back to the copy it ships with.
+ * Without it a typo can only be written over, and the shipped fallback
+ * becomes unreachable for as long as any value sits on top of it. */
+await statusOf("an admin can unset a name",
+  call("DELETE", "/content/welcome",
+    { headers: bearer(CONTENT_ADMIN) }), 200);
+const afterUnset = await (await readContent()).json();
+check("that name is gone from the document and the others are not",
+  afterUnset.content.welcome === undefined &&
+  afterUnset.content["dashboard.note"] === "Updated Fridays.",
+  JSON.stringify(afterUnset.content));
+
+await statusOf("unsetting a name that is not there still succeeds",
+  call("DELETE", "/content/nothing.here",
+    { headers: bearer(CONTENT_ADMIN) }), 200);
+check("and removed nothing", content.length === 1, `${content.length} row(s)`);
+
+await statusOf("a content name that is not a name is not a route",
+  call("DELETE", "/content/Welcome",
+    { headers: bearer(CONTENT_ADMIN) }), 404);
+
+await statusOf("a session off the admin list cannot write content",
+  call("POST", "/content", { headers: bearer(CONTENT_ADMIN),
+    body: JSON.stringify({ name: "welcome", value: "x" }) }, demoted), 401);
+
+/* ------------------------------------------------------------------ */
+/* Membership - the list the account design exists to keep private.    */
+
+/*
+ * #69's id lists as rows, keyed by the account id rather than by the
+ * numeric Telegram id. A numeric id resolves to a person for anyone who
+ * can point a bot at it, so a table of them would turn a database
+ * breach from "some account submitted twelve times" - the grouping
+ * DESIGN.md accepts knowingly - into "here are the group's admins, by
+ * name". The HMAC is exactly as un-invertible as the ids stored beside
+ * it in `submissions`, under the same secret, for the same reason.
+ *
+ * The numeric id arrives in the request body and the Worker HMACs it on
+ * receipt. Taking the account id from the caller instead would move a
+ * 64-character string nobody can check through a human being: a typo in
+ * it produces a row that grants nothing and looks completely right,
+ * which is the undetectable-wrong-value complaint #69 opens with, moved
+ * into the table it asked for.
+ */
+reset();
+
+const ROOT = (await (await signIn({ id: 99 })).clone().json()).session;
+const ORDINARY = (await (await signIn({})).clone().json()).session;
+
+const addMember = (token, body) =>
+  call("POST", "/membership",
+    { headers: bearer(token), body: JSON.stringify(body) });
+
+await statusOf("an admin adds somebody by their numeric Telegram id",
+  addMember(ROOT, { telegramId: "4242", role: "admin", label: "Alex" }), 200);
+
+/* Against the committed fixture rather than against whatever the Worker
+ * computed a moment ago: comparing the row to a value derived the same
+ * way would pass even if both were wrong together. */
+check("the row is keyed by the account id, not by the numeric id",
+  roster.length === 1 && roster[0].account_id === FIXTURE_4242,
+  roster.length ? roster[0].account_id.slice(0, 20) + "…" : "no row");
+check("and the numeric id is nowhere in the row",
+  !JSON.stringify(roster[0]).includes("4242"), JSON.stringify(roster[0]));
+
+const listed = await (await call("GET", "/membership",
+  { headers: bearer(ROOT) })).json();
+check("the list an admin reads carries the label somebody typed",
+  listed.membership.length === 1 && listed.membership[0].label === "Alex" &&
+  listed.membership[0].account_id === FIXTURE_4242,
+  JSON.stringify(listed.membership[0]));
+check("and no numeric id travels back out with it",
+  !JSON.stringify(listed).includes("4242"));
+
+/* Backdated for the same reason the corrections above are: two writes
+ * inside one millisecond carry the same timestamp, and an assertion
+ * about which one survived would hold whatever the upsert did. */
+roster[0].added_at = new Date(Date.now() - 3 * DAY).toISOString();
+const addedAt = roster[0].added_at;
+await statusOf("adding the same account and role again relabels it",
+  addMember(ROOT,
+    { telegramId: "4242", role: "admin", label: "Alexandra" }), 200);
+check("one row, the new label, and the date it was added left alone",
+  roster.length === 1 && roster[0].label === "Alexandra" &&
+  roster[0].added_at === addedAt,
+  `${roster.length} row(s), label=${roster[0].label}`);
+
+await statusOf("the same account can hold both roles",
+  addMember(ROOT,
+    { telegramId: "4242", role: "always_allow", label: "Alexandra" }), 200);
+check("which is two rows rather than one being written over",
+  roster.length === 2 &&
+  roster.filter((r) => r.account_id === FIXTURE_4242).length === 2,
+  `${roster.length} row(s)`);
+
+const rosterBefore = roster.length;
+for (const [label, body] of [
+  ["an unknown role", { telegramId: "4242", role: "moderator", label: "A" }],
+  ["a role that is not a string", { telegramId: "4242", role: 1, label: "A" }],
+  ["a handle instead of an id", { telegramId: "@alex", role: "admin", label: "A" }],
+  ["an account id instead of an id",
+    { telegramId: FIXTURE_4242, role: "admin", label: "A" }],
+  ["no Telegram id at all", { role: "admin", label: "A" }],
+  ["an id inside an array", { telegramId: ["4242"], role: "admin", label: "A" }],
+  ["no label", { telegramId: "4242", role: "admin" }],
+  ["a label of spaces", { telegramId: "4242", role: "admin", label: "   " }],
+  ["an oversize label",
+    { telegramId: "4242", role: "admin", label: "N".repeat(65) }],
+]) {
+  await statusOf(`adding with ${label} is refused`,
+    addMember(ROOT, body), 400);
+}
+await statusOf("a malformed membership body is refused",
+  call("POST", "/membership", { headers: bearer(ROOT), body: "{{{" }), 400);
+check("and not one refused add reached the table",
+  roster.length === rosterBefore, `${rosterBefore} -> ${roster.length}`);
+
+await statusOf("an admin removes one role and leaves the other",
+  call("DELETE", "/membership/admin/" + FIXTURE_4242,
+    { headers: bearer(ROOT) }), 200);
+check("exactly that row is gone",
+  roster.length === 1 && roster[0].role === "always_allow",
+  `${roster.length} row(s)`);
+
+await statusOf("removing a membership row that is not there still succeeds",
+  call("DELETE", "/membership/admin/" + FIXTURE_4242,
+    { headers: bearer(ROOT) }), 200);
+check("and removed nothing else", roster.length === 1);
+
+await statusOf("a role that is not a role is not a route",
+  call("DELETE", "/membership/moderator/" + FIXTURE_4242,
+    { headers: bearer(ROOT) }), 404);
+await statusOf("an account id that is not one is not a route",
+  call("DELETE", "/membership/admin/4242", { headers: bearer(ROOT) }), 404);
+check("and neither refusal removed a row", roster.length === 1);
+
+await statusOf("a session off the admin list cannot read the list",
+  call("GET", "/membership", { headers: bearer(ROOT) }, demoted), 401);
+await statusOf("nor add to it",
+  call("POST", "/membership", { headers: bearer(ROOT),
+    body: JSON.stringify({ telegramId: "5", role: "admin", label: "S" }) },
+  demoted), 401);
+
+/*
+ * The refusals, byte for byte, the way POST /submit's two are.
+ *
+ * A membership route that answered a member differently from a stranger
+ * would say the route is worth pressing. One that answered differently
+ * for an account that is on the list than for one that is not would be
+ * the membership oracle itself, reachable with any member session
+ * rather than with the database. The shape checks are in here too - a
+ * role that is not a role answers an admin with 404, and a non-admin
+ * must not be able to tell that from anything else, which is only true
+ * if the gate runs before the shape check rather than after it.
+ */
+const refusalTo = async (token, method, path) => {
+  const res = await call(method, path, {
+    headers: token === null ? good : bearer(token),
+    body: method === "POST" ? JSON.stringify({}) : undefined,
+  });
+  return res.status + " " + (await res.text());
+};
+
+const UNLISTED = "0".repeat(64);
+const answers = [];
+for (const [method, path] of [
+  ["GET", "/membership"],
+  ["POST", "/membership"],
+  ["DELETE", "/membership/always_allow/" + FIXTURE_4242],
+  ["DELETE", "/membership/always_allow/" + UNLISTED],
+  ["DELETE", "/membership/admin/" + FIXTURE_4242],
+  ["DELETE", "/membership/moderator/" + FIXTURE_4242],
+]) {
+  answers.push(await refusalTo(null, method, path));
+  answers.push(await refusalTo(ORDINARY, method, path));
+}
+check("every membership route refuses a non-admin with the same bytes",
+  new Set(answers).size === 1, JSON.stringify(answers[0]));
+check("and it is the refusal every other admin route already gives",
+  answers[0] === await refusalTo(ORDINARY, "GET", "/export"), answers[0]);
+check("no refused call touched the list",
+  roster.length === 1 && roster[0].account_id === FIXTURE_4242,
+  `${roster.length} row(s)`);
+
+/*
+ * Two tables and two routes rather than one route with a filter: a
+ * filter is one `if` away from serving the list to a member session,
+ * and that mistake would look like nothing at all. Asserted against a
+ * document that has something in it, because a route serving an empty
+ * document mentions no membership either.
+ */
+await setContent(ROOT, { name: "welcome", value: "Weigh in." });
+const publicAfter = await (await call("GET", "/content",
+  { headers: good })).text();
+check("the public content document carries copy and knows no membership",
+  publicAfter.includes("Weigh in.") &&
+  !publicAfter.includes(FIXTURE_4242) && !publicAfter.includes("Alexandra"),
+  publicAfter.slice(0, 60) + "…");
+
+/* ------------------------------------------------------------------ */
+/* The seam: the table is managed here and enforced nowhere yet.       */
+
+/*
+ * ADMIN_TELEGRAM_IDS and ALWAYS_ALLOW_TELEGRAM_IDS stay the enforcing
+ * copy. Moving enforcement to the table changes what a sign-in means
+ * against a database that will by then hold real rows, and it needs the
+ * lockout guards and the rehearsal that go with that - so it is a slice
+ * of its own, and until it lands two lists that both granted access
+ * would be two places the answer could be true.
+ *
+ * Asserted rather than described. A comment saying the table grants
+ * nothing is a claim nothing falsifies; these fail the day somebody
+ * wires it up, which is the day the guards have to exist.
+ *
+ * One probe per place the table could be wired in, because they are
+ * four separate decisions and no one probe sees them all: what a
+ * sign-in mints, what the routes ask, what a handler asks for itself,
+ * and what the group check accepts.
+ */
+reset();
+
+const KEEPER = (await (await signIn({ id: 99 })).clone().json()).session;
+const HOPEFUL = (await (await signIn({})).clone().json()).session;
+
+await addMember(KEEPER, { telegramId: "4242", role: "admin", label: "Alex" });
+check("the account is listed as an admin in the table",
+  roster.length === 1 && roster[0].role === "admin" &&
+  roster[0].account_id === FIXTURE_4242, `${roster.length} row(s)`);
+
+await statusOf("and the row grants that account nothing yet",
+  call("GET", "/export", { headers: bearer(HOPEFUL) }), 401);
+await statusOf("not even the list it is on",
+  call("GET", "/membership", { headers: bearer(HOPEFUL) }), 401);
+
+const rejoined = await (await signIn({})).clone().json();
+check("nor does signing in again read the table",
+  rejoined.isAdmin === false);
+
+await addMember(KEEPER,
+  { telegramId: "4242", role: "always_allow", label: "Alex" });
+const beforeGroupStub = globalThis.fetch;
+globalThis.fetch = async () => new Response(
+  JSON.stringify({ ok: true, result: { status: "left" } }), { headers: TYPE });
+await statusOf("an always_allow row does not bypass the group check either",
+  signIn({}, gated), 403);
+globalThis.fetch = beforeGroupStub;
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
