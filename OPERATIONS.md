@@ -29,6 +29,7 @@ Worker is actually answering, from fact rather than memory.
 | --- | --- | --- |
 | `POST /auth/telegram` | anyone, allowed origin | verifies a login payload, issues a session |
 | `POST /auth/dev` | `DEV_LOGIN_SECRET` **and** loopback origin | development sign-in; `404` everywhere else |
+| `DELETE /session` | any session, its own | deletes that session's row; the pages send it on sign out |
 | `GET /me` | any session | entry count, last submission, admin flag, own account id |
 | `POST /submit` | member session | appends one ciphertext row, tagged with the account id |
 | `GET /export` | admin | returns every row |
@@ -41,16 +42,22 @@ Worker is actually answering, from fact rather than memory.
 member, so it cannot submit — there is no account for it to write to.
 Session lifetimes are constants in `server/worker.js` (member seven
 days, admin two hours — the admin session opens the whole corpus's
-ciphertext). Both `DELETE` routes are idempotent: deleting what is not
-there succeeds, so a success does not prove a row existed.
+ciphertext). The two admin `DELETE` routes are idempotent: deleting what
+is not there succeeds, so a success does not prove a row existed.
+`DELETE /session` is not, and the difference is deliberate — a token
+resolving to no row is refused with 401 rather than thanked, because
+telling somebody they are signed out when they are not is the failure
+that route exists to close. `EXPORT_TOKEN` is refused there too: it is a
+secret rather than a session, so there is no row to delete and ending it
+means rotating it.
 
 `[pre-cutover]` The deployed Worker still runs the pre-accounts routes:
 an open `POST /submit`, `EXPORT_TOKEN` on the read paths, an ungated
-`GET /snapshot`, no auth routes and no per-row delete. **Do not deploy
-`server/worker.js` ahead of the cutover** — against the live site it
-returns 401 to every submitter, and the new schema's `NOT NULL
-account_id` refuses the old form's rows. The ordering inside the
-sitting is `CUTOVER.md`'s.
+`GET /snapshot`, no auth routes, no `DELETE /session` and no per-row
+delete. **Do not deploy `server/worker.js` ahead of the cutover** —
+against the live site it returns 401 to every submitter, and the new
+schema's `NOT NULL account_id` refuses the old form's rows. The ordering
+inside the sitting is `CUTOVER.md`'s.
 
 ## Secrets
 
@@ -265,7 +272,11 @@ its two factors.
 1. Sign in on the live site with a Telegram account whose numeric id is
    in `ADMIN_TELEGRAM_IDS`, and open the export page in the same tab. A
    member session is refused with a message saying so. The session is
-   tab-scoped: closing the tab signs you out, deliberately.
+   tab-scoped: closing the tab takes the credential with it,
+   deliberately. It does not delete the session row — only
+   `DELETE /session` does, and this page has no **Sign out** control to
+   send it yet (#81), so a tab closed on an admin session leaves that
+   row live at the endpoint for the rest of its two hours.
 2. Provide the **key file** — pasted or picked; read in the page, never
    uploaded.
 3. **Fetch and decrypt**, then download CSV, Excel or JSON. Below them:
@@ -320,6 +331,22 @@ not a handle; handles change and get reused.
 3. They **sign out and back in.** The admin flag is minted at sign-in
    and stored on the session row — an existing session keeps being
    refused, which looks exactly like the id being wrong.
+
+**Taking it away is not the mirror of granting it, and nobody has to
+wait.** Removing the number from `ADMIN_TELEGRAM_IDS` takes effect on
+that session's *next request*: the Worker re-reads the list on every
+call rather than trusting the flag minted at sign-in, so there is
+nothing to press and nothing to expire. What it does not do is end the
+session — demotion is not revocation, the person is still in the group,
+and the session goes on working as the ordinary member session it also
+is. Ending one outright is `DELETE /session`, which a page sends when
+somebody presses **Sign out**; `submit.html` has that control, and
+`admin.html` and `dashboard.html` do not yet (#81).
+
+Both of those are endpoint behavior, so both arrive with the next
+`server/` deploy and not with a merge — see the `[pre-cutover]` note
+under "Routes and who may call them" for what the deployed Worker is
+still running. Production takes them at `CUTOVER.md` step 5.
 
 If everyone is locked out — no admin id works, the bot is gone from the
 group — `ALWAYS_ALLOW_TELEGRAM_IDS` and `EXPORT_TOKEN` are the two ways
