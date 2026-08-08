@@ -659,6 +659,45 @@ record.** `git branch --merged` would not have listed this branch, and the
 content diff makes it look thoroughly superseded — both true, and neither says
 anything about whether the commit messages are recoverable.
 
+### The test for that, found five minutes later — #52
+
+The paragraph above names a hazard and stops before the useful part, which is
+how to tell the safe case from the dangerous one. The answer turned up almost
+immediately, tidying two local branches left by an earlier session
+(`claude/issue-34-whole-csp`, `claude/issue-36-key-fingerprint`) once the owner
+confirmed no other session was live.
+
+**Three commits sat on them that were not on `accounts` by SHA — which looks
+exactly like the `codex/issue-25` situation and is not.** Those PRs (#38, #40)
+were **rebase**-merged, so the messages crossed verbatim and only the SHAs
+changed. #31 was **squash**-merged, so its two messages were collapsed into
+one. Same symptom, opposite consequence, and the symptom is what you see first.
+
+**So the discriminator is how the PR was merged, not what `git` reports about
+reachability.** After either a squash or a rebase, `git branch --merged`
+answers "not merged" for a branch whose content fully landed. It is the wrong
+question.
+
+`git cherry origin/accounts <branch>` is the right one for the code — `-`
+against every commit means patch-identical upstream. But it says nothing about
+the message, and **the message is the thing this repository recovers facts
+from**, so it needs a second check: hash `git log -1 --format=%B` on each side.
+All three bodies here came back identical to their upstream twins, so the
+branches were deleted with nothing copied out. `622aeb3` would have failed that
+comparison.
+
+Now in `AGENTS.md` beside the `--delete-branch` ordering rule, since both are
+things you want in front of you at the moment you are about to delete
+something.
+
+**Worth naming the near-miss.** The safe case and the dangerous case were four
+commits apart on the same afternoon, and the safe one came second. Having just
+rescued a commit, the available mistakes were both real: ceremonially copying
+three messages that were already upstream, or concluding from one rescue that
+branch deletion is always dangerous and leaving the clutter. A rule that says
+"be careful" produces both. One that says "compare the bodies" produces
+neither.
+
 ---
 
 ## 2026-08-06

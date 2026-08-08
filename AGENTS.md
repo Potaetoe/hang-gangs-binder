@@ -279,6 +279,32 @@ file**:
   The order that works is: retarget the child to `accounts` first, *then*
   merge the parent. Deleting the parent branch is safe once nothing is
   based on it.
+- **Before deleting a merged branch, check whether its commit messages
+  survived the merge.** After *either* a squash or a rebase the branch's
+  commits are not ancestors of `accounts`, so `git branch --merged` says
+  "not merged" for a branch whose content fully landed, and deleting it
+  makes those commit objects unreachable. Whether that costs anything
+  depends entirely on how it was merged:
+
+  - **Rebase-merged** — the message is carried across verbatim and only
+    the SHA changes. Nothing is lost.
+  - **Squash-merged** — the messages are collapsed into one, and whatever
+    the squash message did not absorb goes with the branch.
+
+  ```
+  git cherry origin/accounts <branch>     # '-' = patch-identical upstream
+  ```
+
+  That proves the *code* landed and says nothing about the message, which
+  is what this repository actually recovers facts from — so compare the
+  bodies too, `git log -1 --format=%B` on each side. Identical bodies:
+  delete freely. Differing: read the difference first and copy anything
+  the squash dropped into `DAILY_LOG.md` before the branch goes.
+
+  Found deleting `codex/issue-25-nav-and-ui`, squash-merged as PR #31
+  before rebase-merging became the convention. Its contract commit
+  `622aeb3` held the only record that the test went in red first, and the
+  squash message did not carry it.
 - **Work in your own checkout.** Codex uses a separate clone; Claude uses
   the main working tree. Never check out a branch in the other agent's
   tree — an uncommitted edit sitting there while the other checks out
