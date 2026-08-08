@@ -33,6 +33,25 @@
     { file: "admin.html", label: "Admin" },
   ];
 
+  /*
+   * The names the demo writes into the browser's own storage, and their
+   * one home.
+   *
+   * They are here rather than beside the code that writes them because
+   * dev/demo.test.mjs scans apps/web for them: a shipped page keyed on
+   * `hgb-demo-scenario` would read the staged scenario and change its
+   * behavior under the demo, which is exactly the hook apps/web is
+   * forbidden to carry - and it would name none of the four words the
+   * scan used to look for. A list the scan reads and the writers import
+   * cannot drift from what is actually written.
+   *
+   * The shipped keys `hgb-session` and `hgb-submit-prefill` are NOT here.
+   * Those belong to the product, apps/web is supposed to name them, and
+   * putting them in this list would fail the scan on the shipped code
+   * doing its job.
+   */
+  const STORAGE_KEYS = ["hgb-demo-scenario", "hgb-demo-data", "hgb-demo-world"];
+
   /* ---------------------------------------------------------------- */
   /* The mirror: the only bytes the demo changes, and why.             */
   /* ---------------------------------------------------------------- */
@@ -132,8 +151,8 @@
   /* ---------------------------------------------------------------- */
 
   /*
-   * Every path the shipped code asks the Worker for, read out of the
-   * shipped bytes rather than listed by hand.
+   * Every call the shipped code makes to the Worker - VERB and path,
+   * read out of the shipped bytes rather than listed by hand.
    *
    * This is what stops the demo going quietly wrong as PR 4 and PR 5
    * land. A slice that adds a call to a route the stub does not answer
@@ -142,51 +161,197 @@
    * to the live endpoint. dev/demo.test.mjs runs this over apps/web and
    * fails if anything it finds has no answer here.
    *
+   * THE VERB IS NOT DECORATION. server/worker.js routes on method AND
+   * path together; a reader that collected only paths let the stub
+   * answer GET /session where the Worker 404s, so flipping signout.js's
+   * DELETE to POST - a regression the live endpoint would refuse - kept
+   * the suite green and the demo still showing revocation working. The
+   * verb travels with the path from here to routeFor and answerFor.
+   *
+   * The method is taken from the fetch init that follows the call, up to
+   * the end of that call - `);` - and defaults to GET, which is what
+   * fetch itself does when no method is given. Bounded by the call's own
+   * end rather than a line count, because these init objects are written
+   * over four to six lines and a fixed window would clip the longest.
+   *
    * Two idioms, because the shipped code has two. Most call sites build
    * the URL as `config.endpoint + "/path"`; auth.js holds its two routes
-   * in a list and passes one in, so the list is read as well.
+   * in a list and passes the chosen one in as an identifier, so that
+   * call site's verb applies to every path in the list.
    */
-  const DIRECT_CALL = /config\.endpoint\s*\+\s*\n?\s*"(\/[^"]*)"/g;
+  const CALL_SITE =
+    /config\.endpoint\s*\+\s*\n?\s*(?:"(\/[^"]*)"|([A-Za-z_$][\w$]*))/g;
+  const METHOD_IN_INIT = /method:\s*"([A-Za-z]+)"/;
   const AUTH_LIST = /AUTH_PATHS\s*=\s*\[([^\]]*)\]/;
   const QUOTED_PATH = /"(\/[^"]*)"/g;
 
-  function endpointPathsIn(source) {
+  function methodAfter(text, from) {
+    const end = text.indexOf(");", from);
+    const window = text.slice(from, end === -1 ? from + 400 : end);
+    const found = METHOD_IN_INIT.exec(window);
+    return found ? found[1].toUpperCase() : "GET";
+  }
+
+  function endpointCallsIn(source) {
     const text = String(source);
     const found = [];
-    let match;
-
-    DIRECT_CALL.lastIndex = 0;
-    while ((match = DIRECT_CALL.exec(text)) !== null) found.push(match[1]);
+    const add = function (method, path) {
+      const seen = found.some(function (one) {
+        return one.method === method && one.path === path;
+      });
+      if (!seen) found.push({ method: method, path: path });
+    };
 
     const list = AUTH_LIST.exec(text);
+    const listed = [];
     if (list) {
       QUOTED_PATH.lastIndex = 0;
-      while ((match = QUOTED_PATH.exec(list[1])) !== null) found.push(match[1]);
+      let one;
+      while ((one = QUOTED_PATH.exec(list[1])) !== null) listed.push(one[1]);
     }
 
-    return found.filter(function (path, index) {
-      return found.indexOf(path) === index;
-    }).sort();
+    let match;
+    CALL_SITE.lastIndex = 0;
+    while ((match = CALL_SITE.exec(text)) !== null) {
+      const method = methodAfter(text, match.index + match[0].length);
+      if (match[1] !== undefined) {
+        add(method, match[1]);
+      } else {
+        // An identifier rather than a literal: this is auth.js handing in
+        // one of AUTH_PATHS. Every path that list holds is reachable
+        // through this one call site, so they all carry its verb.
+        listed.forEach(function (path) { add(method, path); });
+      }
+    }
+
+    return found.sort(function (a, b) {
+      return (a.path + a.method).localeCompare(b.path + b.method);
+    });
   }
 
   /*
-   * A path the stub knows, with the dynamic tails collapsed. The Worker
-   * routes /submission/<id> and /content/<name> by prefix, so the demo
-   * matches them the same way rather than pretending the id is part of
-   * the route name.
+   * What the stub knows, with the dynamic tails collapsed and the verbs
+   * spelled out. The Worker routes /submission/<id>, /content/<name> and
+   * /membership/<a>/<b> by pattern, so the demo matches them the same way
+   * rather than pretending the id is part of the route name.
+   *
+   * The method lists are server/worker.js's dispatch block, and
+   * dev/demo.test.mjs reads that block and refuses any verb here the
+   * Worker does not actually route - AGENTS.md's corollary that a check
+   * computed entirely from the file it guards cannot detect that the
+   * file was rearranged. Adding a verb here to make a demo work is
+   * therefore a gate failure, not a shortcut.
    */
   const ROUTES = [
-    "/auth/telegram", "/auth/dev", "/session", "/me", "/submit",
-    "/export", "/snapshot", "/content", "/membership",
+    { path: "/auth/telegram", methods: ["POST"] },
+    { path: "/auth/dev", methods: ["POST"] },
+    { path: "/session", methods: ["DELETE"] },
+    { path: "/me", methods: ["GET"] },
+    { path: "/submit", methods: ["POST"] },
+    { path: "/export", methods: ["GET"] },
+    { path: "/snapshot", methods: ["GET", "POST", "DELETE"] },
+    { path: "/content", methods: ["GET", "POST"] },
+    { path: "/membership", methods: ["GET", "POST"] },
   ];
-  const PREFIX_ROUTES = ["/submission/", "/content/", "/membership/"];
+  const PREFIX_ROUTES = [
+    { path: "/submission/", methods: ["DELETE"] },
+    { path: "/content/", methods: ["DELETE"] },
+    { path: "/membership/", methods: ["DELETE"] },
+  ];
 
-  function routeFor(path) {
+  /*
+   * The route a call names, or null. Null for an unknown path AND for a
+   * known path with a verb it does not answer, because those are the
+   * same 404 from the Worker and a demo that distinguished them would be
+   * demonstrating a behavior the product does not have.
+   */
+  function routeFor(path, method) {
     const clean = String(path).split("?")[0];
-    if (ROUTES.indexOf(clean) !== -1) return clean;
-    for (const prefix of PREFIX_ROUTES) {
-      if (clean.indexOf(prefix) === 0) return prefix;
+    const verb = String(method || "GET").toUpperCase();
+    for (const route of ROUTES) {
+      if (route.path === clean) {
+        return route.methods.indexOf(verb) === -1 ? null : route.path;
+      }
     }
+    for (const route of PREFIX_ROUTES) {
+      if (clean.indexOf(route.path) === 0) {
+        return route.methods.indexOf(verb) === -1 ? null : route.path;
+      }
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Which requests may leave, and which belong to the Worker.        */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * These two decide whether the demo's one promise holds - that nothing
+   * here reaches a real endpoint - so they live in the pure half where
+   * dev/demo.test.mjs can drive them, rather than in dev/demo-boot.js
+   * where they were only ever exercised by a person looking at a page.
+   *
+   * BOTH USED TO COMPARE SUBSTRINGS, AND TWO URL CLASSES WALKED PAST.
+   * `http://127.0.0.1:8126@evil.example/x` starts with the page's own
+   * origin as text, and everything before the `@` is userinfo: it
+   * resolves to evil.example. `https:/evil.example/x` has one slash, so
+   * a test for `//` concluded it was relative. Both were handed to the
+   * real fetch. Resolving against the page's own URL and comparing
+   * `.origin` is the only test that cannot be spelled around, because it
+   * asks the same parser the network stack will ask.
+   *
+   * A URL that will not parse is refused rather than allowed. An input
+   * this cannot make sense of is not evidence that it is harmless.
+   */
+
+  /*
+   * `base` omitted means "this is already absolute". Passing
+   * String(undefined) as a base throws even for an absolute URL, and a
+   * resolver that answers null for everything makes every refusal below
+   * pass for the wrong reason - which is how a check that refuses
+   * nothing looks identical to one that refuses everything.
+   */
+  function resolved(url, base) {
+    try {
+      return base === undefined || base === null
+        ? new URL(String(url))
+        : new URL(String(url), String(base));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function sameOriginAs(url, base) {
+    const here = resolved(base, undefined);
+    const there = resolved(url, base);
+    if (there === null || here === null) return false;
+    return there.origin === here.origin;
+  }
+
+  /*
+   * The path this call is asking the Worker for, or null if it is not a
+   * Worker call at all.
+   *
+   * The workers.dev arm is not redundant beside the configured endpoint:
+   * it catches a page that reaches the endpoint by some route other than
+   * the configured one. It is an origin test now for the same reason as
+   * above - as a substring it accepted an endpoint-prefixed userinfo
+   * trick, which would have answered from the stub a request that was
+   * actually addressed to somebody else's host.
+   */
+  function workerPathOf(url, base, endpoint) {
+    const there = resolved(url, base);
+    if (there === null) return null;
+
+    const target = endpoint ? resolved(endpoint, base) : null;
+    if (target !== null && there.origin === target.origin) {
+      return (there.pathname || "/") + (there.search || "");
+    }
+
+    if (/(^|\.)workers\.dev$/.test(there.hostname)) {
+      return (there.pathname || "/") + (there.search || "");
+    }
+
     return null;
   }
 
@@ -255,7 +420,9 @@
   /*
    * The scenarios, one per acceptance box on #122. The ids are cited by
    * UAT.md and by the console, so they are a contract: rename one and two
-   * documents stop agreeing.
+   * documents stop agreeing. dev/demo.test.mjs reads UAT.md's section
+   * headings and fails on any disagreement in either direction - until
+   * it did, "contract" was a word in this comment and nothing else.
    *
    * `start` is where the walk-through begins. Every destination stays
    * reachable in every scenario, because half of what this demo has to
@@ -414,6 +581,116 @@
     },
   ];
 
+  /* ---------------------------------------------------------------- */
+  /* Reading the shipped bytes for what a box needs.                  */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * A source file with its comments removed, so a probe cannot be
+   * satisfied by somebody writing about the feature.
+   *
+   * WHY THIS IS A SCANNER AND NOT TWO REGULAR EXPRESSIONS. Stripping
+   * `//` to end of line would delete the line holding
+   * "https://telegram.org", and deleting real code is how a probe
+   * arrives at "not yet" for a feature that shipped. So string, template
+   * and comment state are tracked together: whichever opens first wins,
+   * which is also how the language reads it. A `//` inside a string
+   * stays; a quote inside a comment cannot open a string.
+   *
+   * Regex literals are not tracked, and that is a bounded gamble rather
+   * than an oversight: a regular expression cannot contain an unescaped
+   * `//` or `/*` without ending itself, so the sequences this scanner
+   * reacts to cannot appear inside one.
+   */
+  function withoutComments(source, extension) {
+    const text = String(source);
+
+    if (extension === ".html") {
+      return text.replace(/<!--[\s\S]*?-->/g, " ");
+    }
+
+    let out = "";
+    let index = 0;
+    let quote = null;
+    const block = extension === ".css";
+
+    while (index < text.length) {
+      const here = text[index];
+      const next = text[index + 1];
+
+      if (quote !== null) {
+        out += here;
+        if (here === "\\") {
+          out += next === undefined ? "" : next;
+          index += 2;
+          continue;
+        }
+        if (here === quote) quote = null;
+        index += 1;
+        continue;
+      }
+
+      if (here === "/" && next === "*") {
+        const end = text.indexOf("*/", index + 2);
+        out += " ";
+        index = end === -1 ? text.length : end + 2;
+        continue;
+      }
+
+      if (!block && here === "/" && next === "/") {
+        const end = text.indexOf("\n", index);
+        out += " ";
+        index = end === -1 ? text.length : end;
+        continue;
+      }
+
+      if (!block && (here === '"' || here === "'" || here === "`")) {
+        quote = here;
+      }
+
+      out += here;
+      index += 1;
+    }
+
+    return out;
+  }
+
+  /*
+   * Only what is inside a tag - attributes, element names - with text
+   * content dropped.
+   *
+   * The second half of the same problem. "instrument" is an ordinary
+   * English word, and a page describing the panel in a paragraph carries
+   * it just as readily as a page implementing one. Markup is where a
+   * feature actually lands: a class, an id, an element. Prose is not.
+   *
+   * This can report "not yet" for a panel whose only occurrence of the
+   * word is a heading, and that is the direction to be wrong in. A box
+   * reading "not yet" when the work landed costs somebody a second look;
+   * a box reading "drivable" when nothing landed is a false PASS handed
+   * to the person deciding the cutover.
+   */
+  function markupOf(html) {
+    return (String(html).match(/<[^>]*>/g) || []).join("\n");
+  }
+
+  function extensionOf(file) {
+    const at = String(file).lastIndexOf(".");
+    return at === -1 ? "" : String(file).slice(at).toLowerCase();
+  }
+
+  /*
+   * Whether the shipped bytes carry what a box needs. The console paints
+   * this answer and dev/demo.test.mjs drives it, so the verdict the owner
+   * reads and the verdict the gate reasons about are one function.
+   */
+  function probeHit(source, probe) {
+    const extension = extensionOf(probe.file);
+    let text = withoutComments(source, extension);
+    if (probe.markup === true) text = markupOf(text);
+    return text.indexOf(probe.pattern) !== -1;
+  }
+
   /*
    * The acceptance boxes from #122, and how the console decides whether
    * each one is drivable yet.
@@ -425,10 +702,20 @@
    * than assert one. When PR 5 adds the pane, the pane's own bytes flip
    * its box to drivable and nobody edits this file.
    *
-   * dev/demo.test.mjs pins the mechanism - every box has a probe, and
-   * every probe names a file that exists - and deliberately does not pin
-   * the answers. A gate that failed the day PR 5 landed would be a gate
-   * asking the project to stand still.
+   * A PATTERN IS CHOSEN FOR WHAT ONLY THE IMPLEMENTATION CAN CONTAIN.
+   * The three boxes still waiting on a slice are the three whose probes
+   * were plain enough to be satisfied by a sentence - one TODO comment
+   * mentioning "instrument" flipped admin-panel to drivable with nothing
+   * built. Comments no longer count anywhere; `instrument` is anchored to
+   * markup on top of that; and the config probe asks for the quoted path
+   * as the call sites write it rather than for the four characters
+   * `/content` wherever they fall.
+   *
+   * dev/demo.test.mjs pins the mechanism - every box has a probe, every
+   * probe names a file that exists, and none of them can be satisfied
+   * from a comment - and deliberately does not pin the answers. A gate
+   * that failed the day PR 5 landed would be a gate asking the project
+   * to stand still.
    */
   const BOXES = [
     {
@@ -464,7 +751,10 @@
     {
       id: "config",
       title: "Admin edits site content through the config routes (#87)",
-      probe: { file: "apps/web/admin.js", pattern: "/content" },
+      // The quoted path, because that is how every call site in apps/web
+      // writes one: `config.endpoint + "/content"`. The bare four
+      // characters also occur in any sentence naming the route.
+      probe: { file: "apps/web/admin.js", pattern: "\"/content\"" },
     },
     {
       id: "dashboard",
@@ -474,7 +764,12 @@
     {
       id: "admin-panel",
       title: "The admin instrument panel reads as the admin surface (#68)",
-      probe: { file: "apps/web/admin.html", pattern: "instrument" },
+      // Anchored to markup: the word is ordinary English, and #68's own
+      // text uses it. A class or an id carrying it is the panel; a
+      // paragraph carrying it is a plan.
+      probe: {
+        file: "apps/web/admin.html", pattern: "instrument", markup: true,
+      },
     },
     {
       id: "signout",
@@ -518,16 +813,46 @@
    */
   function answerFor(request, world) {
     const method = String(request.method || "GET").toUpperCase();
-    const route = routeFor(request.path);
+    const route = routeFor(request.path, method);
     const state = world || {};
-    const scenario = scenarioFor(state.scenario) || {};
     const data = state.data || {};
     const next = Object.assign({}, state);
+
+    /*
+     * A staged id that names no scenario refuses, loudly, naming the id.
+     *
+     * It used to fall through to `{}` and answer as a generic member,
+     * which is a plausible screen built from a world nobody staged - the
+     * exact failure this file's own suite header calls the way demos
+     * fail. The state that produces it is ordinary: a scenario renamed
+     * while a tab still holds the old id in sessionStorage.
+     *
+     * An absent id is not an error. The console has not staged anything
+     * yet at first paint, and dev/demo.test.mjs drives routing with no
+     * world at all.
+     */
+    if (state.scenario !== undefined && state.scenario !== null &&
+        String(state.scenario) !== "" &&
+        scenarioFor(state.scenario) === null) {
+      return {
+        status: 500,
+        body: {
+          error: "The demo has no scenario \"" + state.scenario + "\". " +
+            "It was probably renamed - reset the demo and pick one again.",
+        },
+        next: next,
+      };
+    }
+
+    const scenario = scenarioFor(state.scenario) || {};
 
     if (route === null) {
       return {
         status: 404,
-        body: { error: "The demo has no answer for " + request.path + "." },
+        body: {
+          error: "The demo has no answer for " + method + " " +
+            request.path + ".",
+        },
         next: next,
       };
     }
@@ -536,10 +861,15 @@
     // what revocation is: the token is still well formed and names
     // nothing. Two ways to arrive here - the `revoked` scenario stages it
     // directly, and pressing Sign out in any scenario sets it below,
-    // which is what makes #90 drivable rather than described. /content is
-    // not gated, and answers either way.
+    // which is what makes #90 drivable rather than described.
+    //
+    // READING site copy is the one exemption, and it is the read alone:
+    // handleReadContent takes no credential and every write on that path
+    // is an admin session like all the others, so exempting the whole
+    // path would demonstrate an unauthenticated write the Worker refuses.
     if (scenario.revoked === true || state.revoked === true) {
-      if (route !== "/content") {
+      const openRead = route === "/content" && method === "GET";
+      if (!openRead) {
         return { status: REFUSED.status, body: REFUSED.body, next: next };
       }
     }
@@ -599,19 +929,42 @@
           next: next,
         };
       }
+      /*
+       * The published snapshot arrives from the demo's own
+       * sessionStorage, and anything in a browser's storage can be
+       * edited by whoever is sitting at it. A SyntaxError thrown here
+       * used to leave the replaced fetch as an unhandled rejection: the
+       * page just stopped, with nothing on screen saying the demo's
+       * storage was what broke rather than the product.
+       */
+      let snapshot = published;
+      if (typeof published === "string") {
+        try {
+          snapshot = JSON.parse(published);
+        } catch (error) {
+          return {
+            status: 500,
+            body: {
+              error: "The published snapshot in this demo's storage " +
+                "could not be read as JSON. Press Reset to stage it again.",
+            },
+            next: next,
+          };
+        }
+      }
+
       return {
         status: 200,
         body: {
           ok: true,
           published_at: state.publishedAt || new Date().toISOString(),
-          snapshot: typeof published === "string"
-            ? JSON.parse(published) : published,
+          snapshot: snapshot,
         },
         next: next,
       };
     }
 
-    if (route === "/content" || route === "/content/") {
+    if (route === "/content") {
       if (method === "GET") {
         // An absent document is {} and a 200, which is what the Worker
         // answers and what the config-fallback scenario is about.
@@ -629,21 +982,38 @@
       return { status: 200, body: { ok: true }, next: next };
     }
 
-    if (route === "/membership" || route === "/membership/") {
-      return {
-        status: 200,
-        body: { ok: true, membership: state.membership || [] },
-        next: next,
-      };
+    // DELETE /content/<name>, which is the only verb the Worker routes
+    // on that prefix.
+    if (route === "/content/") {
+      const content = Object.assign({}, state.content || {});
+      const name = decodeURIComponent(
+        String(request.path).split("?")[0].slice("/content/".length));
+      delete content[name];
+      next.content = content;
+      return { status: 200, body: { ok: true }, next: next };
     }
 
-    if (route === "/submission/") {
+    if (route === "/membership") {
+      if (method === "GET") {
+        return {
+          status: 200,
+          body: { ok: true, membership: state.membership || [] },
+          next: next,
+        };
+      }
+      return { status: 200, body: { ok: true }, next: next };
+    }
+
+    if (route === "/membership/" || route === "/submission/") {
       return { status: 200, body: { ok: true }, next: next };
     }
 
     return {
       status: 404,
-      body: { error: "The demo has no answer for " + request.path + "." },
+      body: {
+        error: "The demo has no answer for " + method + " " +
+          request.path + ".",
+      },
       next: next,
     };
   }
@@ -798,6 +1168,7 @@
     MIRROR_EDITS: MIRROR_EDITS,
     BOOT_SCRIPTS: BOOT_SCRIPTS,
     TELEGRAM_STANDIN: TELEGRAM_STANDIN,
+    STORAGE_KEYS: STORAGE_KEYS,
     SCENARIOS: SCENARIOS,
     BOXES: BOXES,
     ROUTES: ROUTES,
@@ -808,8 +1179,11 @@
     accountIdFor: accountIdFor,
     mirror: mirror,
     unmirror: unmirror,
-    endpointPathsIn: endpointPathsIn,
+    endpointCallsIn: endpointCallsIn,
     routeFor: routeFor,
+    probeHit: probeHit,
+    sameOriginAs: sameOriginAs,
+    workerPathOf: workerPathOf,
     scenarioFor: scenarioFor,
     answerFor: answerFor,
     meFor: meFor,

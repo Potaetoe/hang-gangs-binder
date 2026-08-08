@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 63);
+const { check, mustReject, report } = suite("demo", 70);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -728,9 +728,17 @@ await check("an encoded traversal cannot leave apps/web through the mirror",
     return answer.status === 400 && !answer.text.includes("Repository");
   });
 
+/*
+ * Percent-encoded rather than a literal "..", because node:http's client
+ * resolves a literal one in the request line before it is sent - so the
+ * literal form never reached this server's guard at all, and a check
+ * written that way passes without exercising anything. The encoded form
+ * is the one that came back 200 with dev/demo.html mirrored: the demo's
+ * own boot scripts injected into the console doing the injecting.
+ */
 await check("the mirror cannot reach dev/ and inject into the console itself",
   async () => {
-    const answer = await get(MIRROR_PREFIX + "../dev/demo.html");
+    const answer = await get(MIRROR_PREFIX + "..%2f..%2fdev%2fdemo.html");
     return answer.status === 400 && !answer.text.includes(BOOT_SRC);
   });
 
