@@ -7,9 +7,16 @@ a mystery.
 
 The product this accepts is the accounts redesign: rail navigation on
 signed-in pages, a plain sign-in page and a plain error page, the cover
-that opens once, the Midnight / Pink / Daylight / Contrast palettes,
-the wordmark **Muse's Binder** under the site title **HangGang**, and
-sign out reachable from every railed page.
+that opens once, a palette set switched from the rail — a dark default,
+a light one, a pink-leaning one and a high-contrast one — the wordmark
+**Muse's Binder** under the site title **HangGang**, and sign out
+reachable from every railed page.
+
+**Palettes are described by character here and never by chip label.**
+The labels are still moving (#127), so a step naming one would be
+falsified by the rename it is meant to survive — and worse, it would
+send a driver looking for a chip that is not there and let them record
+a pass for a palette they never opened. The rail is the list.
 
 **It is in two parts because the split is forced, not a convenience.**
 
@@ -122,12 +129,13 @@ request, so it is the cheapest section and the one that fails first.
 | A1.4 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
 | A1.5 | On `member`, open `submit.html`, `dashboard.html` and `admin.html` | All three carry the same rail, same four destinations, same order | Three hand-written copies; a rail that differs per page is how somebody gets stranded |
 | A1.6 | On each, check which destination is marked current | The one you are on, and only it | The rail is also the answer to "where am I" |
-| A1.7 | In the rail, switch through **Midnight**, **Pink**, **Daylight** and **Contrast** | Every one repaints the whole page, and the choice survives a reload | Midnight is the default; a preference that does not persist is not a preference |
-| A1.8 | On **Contrast**, read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test |
-| A1.9 | Narrow to a phone width | The rail becomes a strip, all four destinations stay in flow, the theme chips fold behind a disclosure, and the page never scrolls sideways | The destinations are what somebody needs; the chips are what can afford to fold |
-| A1.10 | Open the disclosure, then press Escape | It closes and focus returns to the button | Focus left inside something no longer on screen restarts the next Tab from the top |
-| A1.11 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
-| A1.12 | Read the browser tab on every page | Every title ends **— HangGang**, and the page's own name is the same word the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint |
+| A1.7 | Press **every chip the rail offers, in turn** — the rail is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the rail marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the rail rather than against a list written here is also what catches one going missing |
+| A1.8 | On the **high-contrast** palette — the one the site applies when the operating system asks for increased contrast — read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test. Identified by what it does, because that is the part of it that will not be renamed |
+| A1.9 | With no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The site answers each without a script running, and a chosen palette still beats all three afterwards | The signed-out pages carry no chips, so a visitor's expressed preference has to be honored some other way |
+| A1.10 | Narrow to a phone width | The rail becomes a strip, all four destinations stay in flow, the theme chips fold behind a disclosure, and the page never scrolls sideways | The destinations are what somebody needs; the chips are what can afford to fold |
+| A1.11 | Open the disclosure, then press Escape | It closes and focus returns to the button | Focus left inside something no longer on screen restarts the next Tab from the top |
+| A1.12 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
+| A1.13 | Read the browser tab on every page | Every title ends **— HangGang**, and the page's own name is the same word the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint |
 
 ### A2 · Signed out, nothing is reachable — scenario `signed-out`
 
