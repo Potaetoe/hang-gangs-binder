@@ -45,7 +45,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 44
+EXPECTED = 52
 
 
 def check(label, condition):
@@ -152,6 +152,26 @@ check("an anchor href is not a transfer",
 check("a script with no src is not a reference",
       check_budget.page_references(
           "<script>window.x = 1;</script>") == [])
+
+# A picture is the other way a page doubles in weight, and #73 asks for
+# a warmer site. Absent from #80's wording, and the hazard #80 names is
+# payload growth rather than the tag list it happens to enumerate.
+check("an image is a transfer",
+      check_budget.page_references('<img src="hero.avif" alt="">')
+      == ["hero.avif"])
+
+check("a <source> inside a picture is a transfer",
+      check_budget.page_references('<source src="hero.webp" '
+                                   'type="image/webp">') == ["hero.webp"])
+
+# A stated limit, pinned so that removing it is a decision somebody
+# makes rather than a coincidence. srcset is a list with descriptors,
+# and reading it needs a parser this check does not have; the docstring
+# says so alongside CSS image-set() and any URL a script assembles at
+# runtime.
+check("srcset is a known gap, not an accident",
+      check_budget.page_references(
+          '<img srcset="hero-2x.avif 2x" alt="">') == [])
 
 
 # ------------------------------------------------------------------ #
