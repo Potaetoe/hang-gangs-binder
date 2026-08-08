@@ -274,3 +274,7 @@ Hard-won platform facts, one line each, dated. The full stories are in
   retry, and the note claiming impossibility cost a day.
 - 2026-08-08: a rehearsal against the wrong starting state goes green
   and proves nothing; the starting state is the part nobody checks.
+- 2026-08-08: the same bytes do not gzip to the same size on both
+  machines — Python 3.14 here links zlib-ng, the runner links stock
+  zlib, and level 9 differs by up to 4%. Any size gate needs slack;
+  `tools/check_budget.py` has the measurements.

@@ -76,10 +76,20 @@ and five pins hundreds of percent above them. A growth-only budget
 would have reported that as a very light site.
 
 Ten percent of headroom against a twenty-five percent stale limit
-leaves a fifteen-point band for ordinary drift. That band is also what
-makes these numbers portable: zlib versions differ by well under a
-percent on the same input, so a local run and a CI run land inside the
-same band rather than having to agree byte for byte.
+leaves a fifteen-point band for ordinary drift. Most of that band is
+spent on something measured rather than assumed: THE SAME BYTES DO NOT
+GZIP TO THE SAME SIZE ON EVERY MACHINE. Python 3.14 on Windows links
+zlib-ng, the Ubuntu runner links stock zlib, and at level 9 zlib-ng
+compresses this tree 0.8% to 4.3% smaller - 404.html is 12,979 B on the
+owner's machine and 13,543 B in CI (run 31255416749).
+
+So a byte-exact budget is not available across the two machines that
+run this gate, and the ceilings below are pinned against the LARGER of
+the two figures. Pin a new one the same way: take the number CI prints
+if the two disagree, or the gate passes locally and fails on the
+runner. The 25% stale limit is what leaves room in the other
+direction - the machine that measures ~4% lower still sits well inside
+it.
 
 WHAT THIS CHECK DOES NOT DO
 ---------------------------
@@ -110,7 +120,8 @@ WEB = os.path.join(REPO, "apps", "web")
 
 # Gzipped bytes per page: the page plus everything it pulls in. Pinned
 # at roughly HEADROOM above what each measured on 2026-08-08, against
-# the tree at 4036d28.
+# the tree at 4036d28, taking the CI runner's figure wherever it and
+# the owner's machine disagree - see the docstring on zlib-ng.
 #
 # These live here, outside apps/web, and that is the point rather than
 # an accident of layout. AGENTS.md, "The review bar": a check computed
@@ -121,11 +132,11 @@ WEB = os.path.join(REPO, "apps", "web")
 # in the same diff as the weight it permits, where a reviewer sees the
 # number move next to the reason it moved.
 CEILINGS = {
-    "404.html": 14500,
-    "admin.html": 58500,
-    "dashboard.html": 39000,
-    "index.html": 20500,
-    "submit.html": 46000,
+    "404.html": 15000,
+    "admin.html": 59000,
+    "dashboard.html": 39500,
+    "index.html": 21000,
+    "submit.html": 46500,
 }
 
 # What a fresh pin gets: about ten percent of room to grow into. Small
@@ -254,8 +265,15 @@ def gzipped_size(path):
     """What one file costs on the wire, gzip level 9.
 
     mtime=0 keeps the header constant, so the same bytes measure the
-    same size on every run - a timestamp in the output would make the
-    numbers wobble for a reason that has nothing to do with the site.
+    same size on every run of the same interpreter - a timestamp in the
+    output would make the numbers wobble for a reason that has nothing
+    to do with the site.
+
+    Across interpreters they still wobble, because zlib-ng and stock
+    zlib do not agree at level 9. The docstring has the measurements
+    and what the ceilings do about it; the short version is that this
+    number is a good measure of the site and a poor one of the
+    machine, so nothing here may be pinned tighter than a few percent.
     """
     with open(path, "rb") as handle:
         return len(gzip.compress(handle.read(), 9, mtime=0))
