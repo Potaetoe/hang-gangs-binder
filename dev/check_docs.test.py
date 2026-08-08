@@ -51,7 +51,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 67
+EXPECTED = 74
 
 
 def check(label, condition):
@@ -370,6 +370,59 @@ check("the report says that editing REGISTRY is the approval",
 
 check("every registered document is accepted by name",
       check_docs.registry_problems(check_docs.REGISTRY) == [])
+
+# The other direction, added with UAT.md (#126). Until it existed,
+# registration only caught a document ARRIVING: one could be deleted and
+# the gate printed a clean tree, because absence had been made
+# unremarkable for CUTOVER.md's sake and nothing separated the document
+# that leaves by design from the ones whose loss is silent. Measured
+# before the arm was written - UAT.md moved out of the tree, whole run
+# still green.
+check("a registered document missing from the root is reported",
+      len(check_docs.missing_document_problems(
+          check_docs.REGISTRY - {"UAT.md"})) == 1)
+
+check("a complete set of documents is not",
+      check_docs.missing_document_problems(check_docs.REGISTRY) == [])
+
+# The exemption, and it is a fact about CUTOVER.md rather than a special
+# case: it deletes itself in its own aftercare, so it is left out of
+# REQUIRED instead of written in and skipped.
+check("CUTOVER.md is the one document allowed to be gone",
+      check_docs.missing_document_problems(
+          check_docs.REGISTRY - {"CUTOVER.md"}) == []
+      and "CUTOVER.md" not in check_docs.REQUIRED)
+
+check("the report says that editing REGISTRY records the removal",
+      "REGISTRY" in only(check_docs.missing_document_problems(
+          check_docs.REGISTRY - {"UAT.md"})))
+
+# Membership, the same shape RECORDED gives the tripwires and for the
+# same reason: a set read from the file it guards cannot notice its own
+# entry going missing (AGENTS.md, "The review bar"). UAT.md is the
+# document this arm was built for - the cutover is gated on the script
+# it holds - so it is named from outside rather than trusted from in.
+check("UAT.md is registered and required to exist",
+      "UAT.md" in check_docs.REGISTRY
+      and "UAT.md" in check_docs.REQUIRED)
+
+check("every required document is a registered one",
+      check_docs.REQUIRED <= check_docs.REGISTRY)
+
+# Wired, not merely defined - the same failure the floor's arm below
+# guards against, driven the same way. A helper problems() never calls
+# is absent however well it behaves when called directly, so the reader
+# is replaced and the real problems() is made to report through it.
+saved_documents = check_docs.top_level_documents
+check_docs.top_level_documents = lambda: set(check_docs.REGISTRY) - {"UAT.md"}
+try:
+    WIRED_MISSING = check_docs.problems()
+finally:
+    check_docs.top_level_documents = saved_documents
+
+check("the missing-document arm is wired into problems()",
+      any("UAT.md" in problem and "missing" in problem
+          for problem in WIRED_MISSING))
 
 REGISTERED = set(check_docs.SECURITY)
 ONE = sorted(REGISTERED)[0]

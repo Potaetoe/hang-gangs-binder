@@ -13,7 +13,7 @@ can is not stored online anywhere.
 > then what a visitor sees is unchanged on purpose: the site is always
 > the last complete release, never a half-state.
 
-The five documents here, and what each is for:
+The operative documents here, and what each is for:
 
 | Document | What it answers |
 | --- | --- |
@@ -21,6 +21,7 @@ The five documents here, and what each is for:
 | [AGENTS.md](AGENTS.md) | how agents work on this repository, including how documentation is written |
 | [DESIGN.md](DESIGN.md) | why the architecture is what it is |
 | [OPERATIONS.md](OPERATIONS.md) | running, deploying, and handing over the deployed system |
+| [UAT.md](UAT.md) | the acceptance pass: what to drive, and what passing looks like |
 | [CUTOVER.md](CUTOVER.md) | the one-sitting switch to the accounts system; deleted after it |
 
 Anything mutable — who is working on what, current blockers, live

@@ -8,9 +8,11 @@ Three checks, all born from the same week of failures (issue #77):
 
  1. REGISTRY - the top-level markdown documents are exactly the ones
     AGENTS.md names, and the files in security/ are exactly the ones
-    named here. Adding either is an owner decision, so an unregistered
-    file fails the gate until the list here is edited - and editing it
-    is the act that records the approval.
+    named here. Adding one is an owner decision and so is removing one,
+    so both directions fail the gate until the list here is edited -
+    and editing it is the act that records the approval. CUTOVER.md is
+    the single document allowed to leave on its own, which REQUIRED
+    below states by omitting it.
  2. TRIPWIRES - phrases this project has falsified must never reappear
     in an operative document. Three corrections in one week each
     missed at least one hand-made copy of the fact they corrected, so
@@ -51,16 +53,38 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # The operative documents. AGENTS.md, "The documentation system", is
-# the prose statement of this set; this is the enforced one. CUTOVER.md
-# deletes itself in its own aftercare, so absence is never an error -
-# only an unregistered presence is.
+# the prose statement of this set; this is the enforced one. Membership
+# is checked in both directions - an unregistered presence here, and a
+# registered absence through REQUIRED below.
+#
+# UAT.md is here by the owner's directive on #126, and this line is
+# where that approval is recorded - editing this set IS the act, which
+# is why nothing else in the repository needs to assert it.
 REGISTRY = {
     "README.md",
     "AGENTS.md",
     "DESIGN.md",
     "OPERATIONS.md",
+    "UAT.md",
     "CUTOVER.md",
 }
+
+# The registered documents that have no story for leaving.
+#
+# CUTOVER.md is the one that does - it deletes itself in its own
+# aftercare - so it is absent from this set rather than written in and
+# exempted, which keeps the exemption a fact about CUTOVER.md instead of
+# a special case somebody has to remember.
+#
+# Without this arm, registration only ever caught a document ARRIVING.
+# A registered document could be deleted and the gate printed a clean
+# tree, because absence was made unremarkable for CUTOVER.md's sake and
+# nothing distinguished the one document that leaves by design from the
+# ones that would be a silent loss. Measured on #126: with UAT.md moved
+# out of the tree the whole run still passed, and the acceptance script
+# the cutover is gated on had simply stopped existing. Same reasoning as
+# SECURITY below, which has always been checked in both directions.
+REQUIRED = REGISTRY - {"CUTOVER.md"}
 
 # Directory guides: scanned for content, not part of the top-level
 # registry.
@@ -280,6 +304,24 @@ def registry_problems(present):
     ]
 
 
+def missing_document_problems(present):
+    """Registered documents that are gone, over a given set of names.
+
+    The other direction, and the one registration lacked. Deleting a
+    document is as much an owner decision as adding one, so it is
+    recorded the same way: by editing the registry, which is what this
+    message asks for.
+    """
+    return [
+        "%s: registered as an operative document and missing from the "
+        "repository root. Removing one is an owner decision on the same "
+        "terms as adding one; recording it IS editing REGISTRY in "
+        "tools/check_docs.py. Only CUTOVER.md leaves on its own, and it "
+        "is kept out of REQUIRED for exactly that reason." % name
+        for name in sorted(REQUIRED - present)
+    ]
+
+
 def security_problems():
     """Both directions on the security/ registry: unregistered, and gone.
 
@@ -345,12 +387,16 @@ def null_scan_problems(scanned):
     because 'nothing unregistered here' and 'nothing read here' print
     identically" - and it holds for the documents on the same terms.
 
-    Absence of any one registered document is deliberately not an
-    error, because CUTOVER.md deletes itself in its own aftercare. That
-    is precisely why their absence in total has to be: no other arm in
-    this file remarks on a document that is simply gone, so an empty
-    target list is the one state that would otherwise print success on
-    a scan that read nothing at all.
+    This is about the READER, not the tree, which is what keeps it
+    necessary now that missing_document_problems() watches the tree.
+    That arm reads the repository root directly, so it stays quiet when
+    every document is present and targets() is what broke - a renamed
+    helper, an early return, a filter that matches nothing. In that
+    state the tree is complete, no other arm has anything to say, and a
+    scan that read not one byte would otherwise print exactly like a
+    clean one. CUTOVER.md is why absence of a single document is still
+    unremarkable HERE: it deletes itself in its own aftercare, so the
+    floor sits on the empty list and nowhere else.
     """
     if scanned:
         return []
@@ -361,7 +407,9 @@ def null_scan_problems(scanned):
 
 
 def problems():
-    found = registry_problems(top_level_documents())
+    present = top_level_documents()
+    found = registry_problems(present)
+    found += missing_document_problems(present)
     found += security_problems()
 
     scanned = targets()
