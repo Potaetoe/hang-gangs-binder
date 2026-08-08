@@ -27,7 +27,16 @@ import globals from "globals";
 export default [
   {
     // Never linted: not ours, or not source.
-    ignores: ["node_modules/**", "_site/**", ".wrangler/**",
+    //
+    // .claude/** holds agent-tool state, and .claude/worktrees/ in
+    // particular holds whole checkouts of this repository at other
+    // commits. Without this the gate lints a second, older copy of the
+    // tree and fails on code that is not the code being checked - which
+    // happened on 2026-08-07, 168 errors from a worktree sitting at
+    // main. A gate that fails for a reason the author cannot act on is
+    // worse than a slow one: it teaches you to read red as noise, and
+    // that is how a real failure gets waved through.
+    ignores: ["node_modules/**", "_site/**", ".wrangler/**", ".claude/**",
               "dev/sample-submissions.json", "dev/fixture.json"],
   },
 
