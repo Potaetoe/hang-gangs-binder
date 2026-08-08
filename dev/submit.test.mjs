@@ -303,12 +303,27 @@ check("submit.html loads signout.js after config.js and before submit.js",
   submitHtml.indexOf('src="signout.js"') <
     submitHtml.indexOf('src="submit.js"'));
 
-/* The relocation, asserted where somebody would put it back. The tab
+/*
+ * The relocation, asserted where somebody would put it back. The tab
  * strip is a tablist, and a third control in it that is not a tab is
- * what the rail took away. */
+ * what the rail took away - a plain button inside role="tablist" is
+ * announced as a tab, so Sign out sitting there tells a screen-reader
+ * user there are three panes.
+ *
+ * Read as "every control in the strip is a tab" rather than by naming
+ * the classes the strip happens to wear. A regex pinned to the wrapper
+ * markup fails when the strip is restyled and passes when a second
+ * button is added beside the tabs, which is both directions the wrong
+ * way round.
+ */
+const tabStrip = submitHtml.match(/<div[^>]*role="tablist"[^>]*>([\s\S]*?)<\/div>/);
+const stripControls = tabStrip
+  ? tabStrip[1].match(/<button[\s\S]*?>/g) || []
+  : [];
 check("the tab strip holds tabs and nothing else",
-  /<div class="row" role="tablist"[\s\S]*?<\/div>/.test(submitHtml) &&
-  !/role="tablist"[\s\S]*?id="sign-out"[\s\S]*?<\/div>/.test(submitHtml));
+  tabStrip !== null && stripControls.length === 2 &&
+  stripControls.every((control) => /role="tab"/.test(control)) &&
+  !/id="sign-out"/.test(tabStrip[1]));
 
 const lastAt = "2026-08-07T14:30:00.000Z";
 const panel = await loadSubmit({
@@ -412,13 +427,13 @@ await tabs.elements["add-entry-tab"].dispatch("click");
 check("the add-entry tab paints exactly one pane",
   !isPainted(tabs.elements["your-entries-pane"]) &&
   isPainted(tabs.elements["add-entry-pane"]));
-check("choosing Add entry announces that the form is on screen",
+check("choosing New entry announces that the form is on screen",
   tabs.document.dispatchedHere.includes(ADD_ENTRY_SHOWN_EVENT));
 await tabs.elements["your-entries-tab"].dispatch("click");
 check("switching back never leaves both panes painted",
   isPainted(tabs.elements["your-entries-pane"]) &&
   !isPainted(tabs.elements["add-entry-pane"]));
-check("choosing Your entries announces nothing about the form",
+check("choosing Entries announces nothing about the form",
   tabs.document.dispatchedHere.filter(
     (type) => type === ADD_ENTRY_SHOWN_EVENT).length === 1);
 

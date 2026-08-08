@@ -198,17 +198,41 @@ WEB = os.path.join(REPO, "apps", "web")
 # ceiling that has stopped tracking its page has stopped being a budget.
 #
 # admin.html is the one to watch. It sat at 98% of its old ceiling on
-# this machine BEFORE re-pinning, and the docstring's zlib-ng-versus-
-# stock-zlib gap runs to 4.3% in the direction that matters - so the old
+# this machine BEFORE that re-pin, and the docstring's zlib-ng-versus-
+# stock-zlib gap runs to 4.3% in the direction that matters - so the
 # number was one CI run away from failing on bytes nobody had added
 # since. That is the case for re-pinning against the measurement rather
 # than against whichever pin happens to still be clear.
+#
+# The per-page structural pass (#68/#127) moves all five again, and by
+# less than the shell did - gzipped, on this machine:
+#
+#   404.html        116,455 -> 119,092   (+2.3%)
+#   admin.html      172,866 -> 175,925   (+1.8%)
+#   dashboard.html  145,616 -> 148,149   (+1.7%)
+#   index.html      122,580 -> 125,129   (+2.1%)
+#   submit.html     155,819 -> 159,263   (+2.2%)
+#
+# One source this time, and it is why the five numbers are so alike:
+# theme.css is in every total and carries all of it - three label
+# components where there was one, the control chassis and the tab strip
+# the owner asked for, and the instrument surface. The markup itself is
+# roughly a wash. submit.html deletes four card wrappers and gains the
+# comments explaining why; admin.html gains a nameplate and loses a
+# label. A page whose HTML barely moves still pays for a stylesheet that
+# did, and that is the shape to expect from any component work here.
+#
+# Re-pinned at HEADROOM against the new measurement, all five again and
+# for the reason above: 93% of a pin is not a failure, but it is 4.3%
+# from being one on a runner whose zlib compresses this tree larger than
+# the one that measured it, and a ceiling nobody re-pinned is a ceiling
+# that stopped tracking its page.
 CEILINGS = {
-    "404.html": 127900,
-    "admin.html": 190000,
-    "dashboard.html": 160000,
-    "index.html": 134600,
-    "submit.html": 171200,
+    "404.html": 131000,
+    "admin.html": 193500,
+    "dashboard.html": 163000,
+    "index.html": 137600,
+    "submit.html": 175200,
 }
 
 # What a fresh pin gets: about ten percent of room to grow into. Large

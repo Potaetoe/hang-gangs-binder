@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Same policy as index.html. See the comment there. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
-<title>Page not found — HangGang</title>
+<title>Not found — HangGang</title>
 <meta name="description" content="That page does not exist on Hang Gang's Binder.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
@@ -35,15 +35,19 @@
   and still requires the one link out that keeps "plain" from meaning
   "a dead end".
 -->
+<!-- The status code carries no label component of its own. It is the
+     one decorated thing this page had, and the error page is the one
+     surface the design keeps as plain as it will go - so it loses the
+     treatment rather than gaining a new one. -->
 <header class="stack-tight">
-  <p class="eyebrow">404</p>
-  <h1>That page isn't here</h1>
+  <p class="muted small">404</p>
+  <h1>Not found</h1>
   <p class="muted">The link may be old, or the address mistyped.</p>
 </header>
 
 <main class="stack">
   <div class="card">
-    <p><a href="index.html">Go to the submission portal</a></p>
+    <p><a href="index.html">Go to sign in</a></p>
   </div>
 </main>
 

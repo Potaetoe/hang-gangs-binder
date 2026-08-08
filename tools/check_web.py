@@ -1238,8 +1238,8 @@ LABELS = {
     "Not open": "flag",
     "Nothing to show": "flag",
     "Optional": "runner",
-    "Public dashboard": "runner",
     "Publish": "runner",
+    "Published": "runner",
     "Received": "flag",
     "Result": "flag",
     "Rows that would not open": "caution",
@@ -1389,23 +1389,42 @@ def label_style_problems():
             'still defines .%s. A component kept alive for one last page '
             "is how the next label joins it" % RETIRED_LABEL)
 
+    # Every rule the three roles appear in, in document order, because
+    # the shared declarations and the per-role ones are separate blocks
+    # by design: reading only the first block a role's name appears in
+    # finds a grouped selector and concludes the role sets no color.
+    # The last color wins, which is what the cascade does with these -
+    # they are all one selector deep.
+    defined = set()
     colors = {}
+    for selectors, block in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        named = {part.strip().lstrip(".")
+                 for part in selectors.split(",")
+                 if part.strip().startswith(".")
+                 and part.strip().lstrip(".") in LABEL_ROLES}
+        if not named:
+            continue
+        defined |= named
+        color = re.search(r"(?<![\w-])color\s*:\s*([^;]+);", block)
+        if color:
+            for role in named:
+                colors[role] = color.group(1).strip()
+
     for role in sorted(LABEL_ROLES):
-        block = re.search(r"(^|[\s,}])\.%s\s*\{([^{}]*)\}" % role, css, re.M)
-        if not block:
+        if role not in defined:
             problems.append(
                 "defines no .%s, so every label that %s renders as ordinary "
                 "body text" % (role, LABEL_ROLES[role]))
-            continue
-        color = re.search(r"(?<![\w-])color\s*:\s*([^;]+);", block.group(2))
-        if not color:
+        elif role not in colors:
             problems.append(
                 ".%s sets no color of its own, so it cannot be told from "
                 "the label beside it" % role)
-            continue
-        colors.setdefault(color.group(1).strip(), []).append(role)
 
-    for value, roles in sorted(colors.items()):
+    by_color = {}
+    for role, value in sorted(colors.items()):
+        by_color.setdefault(value, []).append(role)
+
+    for value, roles in sorted(by_color.items()):
         if len(roles) > 1:
             problems.append(
                 "paints %s the same %s. A label that %s and one that %s are "
