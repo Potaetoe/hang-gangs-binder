@@ -145,6 +145,17 @@ const blockByteAt = (index, offset) =>
 let failures = 0;
 const results = [];
 
+/*
+ * Asserted at the end, the way dev/check_budget.test.py and its
+ * siblings do it. Everything below is a top-level `await` in a file
+ * that reports on what it ran, so a row that is deleted, commented out
+ * or moved behind an early return leaves a suite that still prints
+ * "all checks passed" - armed-looking and not armed, which this
+ * repository holds to be worse than no check at all. Adding a row here
+ * raises this number in the same diff.
+ */
+const EXPECTED = 63;
+
 async function check(label, fn) {
   let ok = false;
   let note = "";
@@ -175,6 +186,19 @@ async function mustReject(label, fn, fragment) {
   if (!ok) failures++;
   results.push([ok, label, note]);
 }
+
+// ---------------------------------------------------------------------
+// The shape of the export itself
+// ---------------------------------------------------------------------
+
+await check("the exported object is frozen", () =>
+  // submit.html and admin.html both load this file and both hold
+  // plaintext. An unfrozen export lets anything later on the page
+  // replace `encrypt` with a passthrough, or hand admin's imported
+  // private key to a substituted `decrypt`, and every round trip below
+  // still passes because they all go through whatever is installed.
+  // AGENTS.md, "Code standards", is where the rule lives.
+  Object.isFrozen(globalThis.BinderCrypto));
 
 // ---------------------------------------------------------------------
 // The format, as already stored
@@ -638,5 +662,15 @@ await mustReject("a mangled recipient is refused before encrypting",
 for (const [ok, label, note] of results) {
   console.log(`${ok ? "pass" : "FAIL"}  ${label.padEnd(50)} ${note}`);
 }
-console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
-process.exit(failures ? 1 : 0);
+
+if (failures) {
+  console.log(`\n${failures} FAILURE(S)`);
+  process.exit(1);
+}
+if (results.length !== EXPECTED) {
+  console.log(`\nran ${results.length} checks, expected ${EXPECTED} - a ` +
+    "check stopped running, or one was added without updating EXPECTED");
+  process.exit(1);
+}
+console.log(`\nall checks passed - ${results.length} checks`);
+process.exit(0);
