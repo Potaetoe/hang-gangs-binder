@@ -32,7 +32,8 @@ const { default: worker } = await import(
  * replaces rather than appends and is read with first(); sessions is
  * looked up by one key, swept by expiry, and has one row's deadline
  * moved forward when it is used; submissions appends, counts per
- * account, and can now lose a row.
+ * account, can lose a row, and answers the two lookups a correction is
+ * checked against.
  *
  * A stub that ignored the statement entirely would let a publish that
  * appended a second row pass, and would let a delete that removed
@@ -91,10 +92,20 @@ const DB = {
       } else {
         stored.push({
           id: nextId++, account_id: a[0], ciphertext: a[1], received_at: a[2],
+          // A row with no pointer holds null rather than leaving the key
+          // off, so a stub row answers `"supersedes" in row` the way a
+          // D1 row does - the export assertion reads exactly that.
+          supersedes: a[3] === undefined ? null : a[3],
         });
       }
       return {};
     };
+
+    // Which rows a correction hides. `stored` rather than the account's
+    // own rows because that is what the Worker's predicate says, and a
+    // stub that quietly narrowed it would hide the difference.
+    const namedByAnother = (row) =>
+      stored.some((r) => r.supersedes === row.id);
 
     const read = (a) => {
       if (table === "snapshots") return snapshot;
@@ -103,13 +114,43 @@ const DB = {
       }
       if (counting) {
         const mine = stored.filter((r) => r.account_id === a[0]);
+        const live = mine.filter((r) => !namedByAnother(r));
         return {
-          entries: mine.length,
-          last_at: mine.length
-            ? mine.map((r) => r.received_at).sort().pop() : null,
+          total: mine.length,
+          superseded: mine.length - live.length,
+          last_at: live.length
+            ? live.map((r) => r.received_at).sort().pop() : null,
         };
       }
+      // The two lookups POST /submit makes before it stores anything,
+      // modelled by their predicates rather than by a fixed answer. A
+      // stub that always found a row would pass an implementation that
+      // never checked ownership; one that never found a row would pass
+      // an implementation whose checks refuse everything.
+      if (/WHERE id = \? AND account_id = \?/i.test(sql)) {
+        return stored.find(
+          (r) => r.id === a[0] && r.account_id === a[1]) || null;
+      }
+      if (/WHERE supersedes = \?/i.test(sql)) {
+        return stored.find((r) => r.supersedes === a[0]) || null;
+      }
       return null;
+    };
+
+    // The column list the statement actually asked for. Handing back the
+    // whole stored row whatever was selected would pass an export that
+    // dropped `supersedes`, which is the one field the keyholder's
+    // browser needs in order to tell a correction from a repeat.
+    const selected = /^\s*SELECT\s+([\s\S]+?)\s+FROM/i.exec(sql);
+    const columns = selected
+      ? selected[1].split(",").map((c) => c.trim()) : null;
+    const project = (row) => {
+      if (!columns) return row;
+      const out = {};
+      for (const column of columns) {
+        if (column in row) out[column] = row[column];
+      }
+      return out;
     };
 
     return {
@@ -120,7 +161,7 @@ const DB = {
       // Statements with no parameters run straight off prepare().
       run: () => exec([]),
       first: async () => read([]),
-      all: async () => ({ results: stored.slice() }),
+      all: async () => ({ results: stored.map(project) }),
     };
   },
 };
@@ -891,6 +932,208 @@ await statusOf("an admin row with an unreadable created_at still answers",
   call("GET", "/export", { headers: bearer(ODD_ADMIN) }), 200);
 check("and falls back to the window rather than to anything longer",
   near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
+/* ------------------------------------------------------------------ */
+/* Corrections - a new row that names the row it supersedes (#84).     */
+
+/*
+ * The Worker cannot modify a record, because it cannot read one. A
+ * correction is therefore an insert plus a pointer, and the pointer is a
+ * clear column so that this side can check three things it could never
+ * check from inside a blob: the row exists, it belongs to the caller,
+ * and nothing has corrected it already.
+ *
+ * The third check is the chain shape. Allowing two rows to name the same
+ * target would leave both of them current - neither is named by anything
+ * - so a member would hold two claims where they meant one and the
+ * resolver would need a tie-break rule living in a client this side
+ * cannot see. Refusing it keeps "current" meaning "the rows nobody
+ * names", which is a total function with no tie-break anywhere.
+ */
+
+reset();
+
+const OWNER = (await (await signIn({})).clone().json()).session;
+const STRANGER = (await (await signIn({ id: 7777 })).clone().json()).session;
+const CURATOR = (await (await signIn({ id: 99 })).clone().json()).session;
+
+const submit = (token, body) =>
+  call("POST", "/submit",
+    { headers: bearer(token), body: JSON.stringify(body) });
+
+await submit(OWNER, { ciphertext: "QUJDRA==" });
+await submit(OWNER, { ciphertext: "RUZHSA==" });
+await submit(STRANGER, { ciphertext: "SUpLTA==" });
+
+const mineOnly = stored.filter((r) => r.account_id === FIXTURE_4242);
+const firstEntry = mineOnly[0];
+const secondEntry = mineOnly[1];
+const strangersEntry = stored.find((r) => r.account_id !== FIXTURE_4242);
+
+const CORRECTION = "Y29ycmVjdGlvbg==";
+const accepted = await submit(OWNER,
+  { ciphertext: CORRECTION, supersedes: firstEntry.id });
+const correctionRow = stored.find((r) => r.ciphertext === CORRECTION);
+check("a correction stores the new row and the pointer together",
+  accepted.status === 200 && correctionRow !== undefined &&
+  correctionRow.supersedes === firstEntry.id,
+  `${accepted.status}, supersedes=${correctionRow &&
+    correctionRow.supersedes}`);
+
+/* Erasing the earlier row is the admin deletion, not this. A correction
+ * that removed what it replaced would leave the keyholder unable to tell
+ * a typo fix from a rewrite, which is the whole reason the tombstone is
+ * retained rather than tidied away. */
+const tombstone = stored.find((r) => r.id === firstEntry.id);
+check("and the row it supersedes stays as a tombstone",
+  tombstone !== undefined && tombstone.ciphertext === "QUJDRA==");
+
+const corrected = await (await call("GET", "/me",
+  { headers: bearer(OWNER) })).json();
+check("/me counts what this account currently claims, not rows written",
+  corrected.entries === 2 && corrected.superseded === 1,
+  `entries=${corrected.entries} superseded=${corrected.superseded}`);
+
+/*
+ * The tombstone is dated after the correction by hand here, which cannot
+ * arise through the routes: a correction is always inserted after the
+ * row it names. It is the only corpus that tells a last-submitted time
+ * computed over current entries from one computed over every row, and
+ * without it that clause would agree with a plain MAX on every input the
+ * Worker can actually produce - an assertion that cannot fail.
+ */
+const realDate = tombstone.received_at;
+tombstone.received_at = new Date(Date.now() + 60 * 1000).toISOString();
+const dated = await (await call("GET", "/me",
+  { headers: bearer(OWNER) })).json();
+check("and the last-submitted time skips a tombstone the same way",
+  dated.lastAt !== tombstone.received_at, `lastAt=${dated.lastAt}`);
+tombstone.received_at = realDate;
+
+/*
+ * The refusals. Each one refuses the whole submission - a correction
+ * that quietly became an ordinary new row is a failure the member cannot
+ * see, and the row they meant to replace would still be counted.
+ */
+const rowsBeforeRefusals = stored.length;
+
+const unknown = await submit(OWNER,
+  { ciphertext: "QUJDRA==", supersedes: 99999 });
+const unknownBody = await unknown.clone().json();
+check("superseding a row that is not there is refused",
+  unknown.status === 404, `${unknown.status}`);
+
+const foreign = await submit(OWNER,
+  { ciphertext: "QUJDRA==", supersedes: strangersEntry.id });
+const foreignBody = await foreign.clone().json();
+check("superseding somebody else's row is refused",
+  foreign.status === 404, `${foreign.status}`);
+
+/*
+ * And the two are the same answer, to the byte. Telling "no such row"
+ * apart from "not your row" would make this route a probe for which ids
+ * are live across the whole corpus - more than the grouping DESIGN.md's
+ * threat model accepts, and reachable with any member session rather
+ * than with the database.
+ */
+check("neither refusal says whether that row exists",
+  foreign.status === unknown.status &&
+  JSON.stringify(foreignBody) === JSON.stringify(unknownBody),
+  JSON.stringify(foreignBody.error));
+
+/* Told apart from the two above, and safely: reaching this means the
+ * caller has already proved the row is theirs, so the answer is about
+ * their own data and nobody else's. */
+const already = await submit(OWNER,
+  { ciphertext: "QUJDRA==", supersedes: firstEntry.id });
+check("superseding a row that has already been corrected is refused",
+  already.status === 409 && already.status !== unknown.status,
+  `${already.status}`);
+
+/*
+ * A row cannot supersede itself. It cannot name its own id honestly
+ * either, since the id is assigned by the insert - so this is really the
+ * assertion that every check runs BEFORE anything is stored. An
+ * implementation that inserted first and validated after would find the
+ * row present, accept it, and leave a member holding an entry that hides
+ * itself from their own count.
+ */
+const ownId = nextId;
+const selfRef = await submit(OWNER,
+  { ciphertext: "QUJDRA==", supersedes: ownId });
+check("a row cannot supersede itself, because the checks precede the insert",
+  selfRef.status === 404 && !stored.some((r) => r.id === ownId),
+  `${selfRef.status}`);
+
+/* The id of a row, or nothing. A client sending the string "1" has a bug
+ * worth hearing about rather than a value worth coercing. */
+for (const [label, value] of [
+  ["a string", "1"],
+  ["zero", 0],
+  ["a negative id", -1],
+  ["a fraction", 1.5],
+]) {
+  await statusOf(`supersedes as ${label} is refused`,
+    submit(OWNER, { ciphertext: "QUJDRA==", supersedes: value }), 400);
+}
+
+check("and not one refused correction reached the database",
+  stored.length === rowsBeforeRefusals,
+  `${rowsBeforeRefusals} -> ${stored.length}`);
+
+await statusOf("an explicit null supersedes is an ordinary submission",
+  submit(OWNER, { ciphertext: "bnVsbA==", supersedes: null }), 200);
+check("and it stores no pointer",
+  stored[stored.length - 1].supersedes === null);
+
+/* Correcting the correction is how a second correction lands, and the
+ * chain still resolves to one current entry per measurement. */
+const TWICE = "dHdpY2U=";
+await statusOf("correcting the correction is how a member corrects twice",
+  submit(OWNER, { ciphertext: TWICE, supersedes: correctionRow.id }), 200);
+const chained = await (await call("GET", "/me",
+  { headers: bearer(OWNER) })).json();
+check("a chain of corrections leaves one current entry, not a pile",
+  chained.entries === 3 && chained.superseded === 2,
+  `entries=${chained.entries} superseded=${chained.superseded}`);
+
+/*
+ * The export is where resolution becomes possible at all: the Worker
+ * knows which row a correction replaces and cannot know what either of
+ * them says, so dropping tombstones from a series happens in the
+ * keyholder's browser. Without the column in this response it cannot.
+ */
+const exported = await (await call("GET", "/export",
+  { headers: bearer(CURATOR) })).json();
+const exportedCorrection = exported.submissions.find(
+  (r) => r.id === correctionRow.id);
+const exportedPlain = exported.submissions.find(
+  (r) => r.id === secondEntry.id);
+check("the export carries the pointer the keyholder's browser resolves",
+  exportedCorrection !== undefined &&
+  exportedCorrection.supersedes === firstEntry.id &&
+  exportedPlain !== undefined && "supersedes" in exportedPlain &&
+  exportedPlain.supersedes === null,
+  `supersedes=${exportedCorrection && exportedCorrection.supersedes}`);
+
+/*
+ * The pointer is advisory, which is what keeps DELETE /submission/:id
+ * needing no cascade and no change at all. Removing a correction puts
+ * the row it corrected back among the current ones, and the dangling
+ * pointer left on the row that corrected THAT one hides nothing. Any
+ * other rule would make one deletion silently become two, or refuse a
+ * deletion that answers "please take mine down".
+ */
+await call("DELETE", "/submission/" + correctionRow.id,
+  { headers: bearer(CURATOR) });
+const afterDelete = await (await call("GET", "/me",
+  { headers: bearer(OWNER) })).json();
+check("deleting a correction puts the row it corrected back in the count",
+  afterDelete.entries === 4 && afterDelete.superseded === 0,
+  `entries=${afterDelete.entries} superseded=${afterDelete.superseded}`);
+
+await statusOf("and that row can be corrected again",
+  submit(OWNER, { ciphertext: "QWdhaW4=", supersedes: firstEntry.id }), 200);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
