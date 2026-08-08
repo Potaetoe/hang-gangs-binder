@@ -14,6 +14,52 @@ form, the Worker and D1, the key generator — is recorded in `DESIGN.md`,
 which carries the reasoning rather than the sequence, and in the git
 history.
 
+## Unreleased — 2026-08-08
+
+On `accounts`, not released. `main` stays at the last complete release.
+Nothing in this entry changes the product — it is cutover preparation and
+three corrections to `CUTOVER.md`, all of them made by reading production
+rather than by reasoning about it.
+
+### Operations
+- **`CUTOVER.md` step 0 is done.** The live Worker script is captured to
+  `binder-recovery/` outside the repository, with a `README.md` naming the
+  version it copies, how to restore it, and what it does not cover. It is
+  version `2d3c73a5-1095-42db-a810-c8c0ba1a5c24`, and it was confirmed to be
+  the **pre-accounts** Worker by reading it — no `account_id`, no
+  `/auth/telegram`, `POST /submit` answering `400 Missing ciphertext`.
+  Until now the plan's only Worker rollback was an artifact nobody had
+  confirmed existed, which is the exact failure `REDESIGN.md` Part 10
+  already records once.
+
+### Documentation
+- **`CUTOVER.md` step 1's rehearsal would have passed without testing
+  anything, and now says so.** The two databases are not in the same state:
+  production's `submissions` is the old shape with no `account_id`, while
+  `hg_binder_db_dev` is **already migrated** and has `sessions` beside it.
+  Dropping and recreating on dev therefore never gives
+  `CREATE TABLE IF NOT EXISTS` the chance to skip anything — the one trap
+  the rehearsal exists to find. The step now carries production's exact DDL
+  and the reset that has to run first. **This is the second time a rehearsal
+  was aimed at the wrong starting state**; the 2026-08-07 clear was
+  rehearsed against an empty dev database.
+- **`CUTOVER.md` no longer says a deploy overwrites the only copy.**
+  Cloudflare retains prior versions and `2d3c73a5` is still listed, so
+  `wrangler rollback` is a second restore path. Recorded as **not
+  exercised**, because a path nobody has run is not a path anybody has.
+- **The claim that no agent could read the live secret list is removed.**
+  It was true when written. `wrangler versions view` lists the six secret
+  *names* and both bindings from an agent shell, which re-confirms
+  2026-08-07's dashboard check independently. Values stay encrypted, so
+  `ADMIN_TELEGRAM_IDS` holding the *right* id is still unprovable before
+  step 8.
+
+### Data
+- Read from production 2026-08-08, and recorded in step 4: `submissions`
+  **0 rows**, `snapshots` **0 rows**. The 2026-08-07 clear and unpublish
+  both still hold. Noted as a reading rather than a guarantee — the window
+  in which any visitor can refill the table stays open until step 5.
+
 ## Unreleased — 2026-08-07
 
 On `accounts`, not released. `main` stays at the last complete release.

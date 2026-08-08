@@ -12,6 +12,91 @@ Starts 2026-08-05.
 
 ---
 
+## 2026-08-08
+
+**Cutover preparation, owner-directed, no product change.** `CUTOVER.md`
+step 0 is done and three of its claims are corrected. Nothing was deployed
+and nothing on production was written — every finding below is a read.
+
+### The capture exists now
+
+The live Worker script is at `binder-recovery/`, outside the repository,
+with a README naming the version, the two restore paths and what neither
+covers. Confirmed by reading it rather than trusting the label: no
+`account_id`, no `/auth/telegram`, `400 Missing ciphertext` on `POST
+/submit`. That is the pre-accounts Worker, which is what it should be.
+
+### The thing that unblocked all of it was a wrong note
+
+`wrangler` **does** authenticate from an agent shell here. The standing
+note said it could not, and that note cost a day of work handed back to the
+owner. What actually happens: the first authenticated call fails once with
+`Authentication error [code: 10000]`, refreshes the stored OAuth token, and
+**the next identical call succeeds**. One failure had been generalised into
+an impossibility.
+
+Worth carrying beyond this repo: the earlier diagnosis was not lazy — it
+noted that `wrangler whoami` misdescribes the state, which is true. It
+stopped one retry short. **A negative result from a single call is a
+hypothesis, not a capability boundary.**
+
+The script itself came from the REST API, since wrangler has no download
+command — `GET /accounts/{id}/workers/scripts/{name}` returns
+`multipart/form-data`. The `/content` sub-path answers 405 to a GET, which
+is a misleading way to say "wrong verb".
+
+### Step 1's rehearsal would have proved nothing, for the second time
+
+The two databases are not in the same state. Production's `submissions` is
+the old shape, no `account_id`, no `sessions` table. `hg_binder_db_dev` is
+**already migrated** — `account_id NOT NULL`, `sessions` present.
+
+So the rehearsal as written drops a table that is already the right shape,
+and `CREATE TABLE IF NOT EXISTS` never gets the chance to skip anything.
+That skip is the entire trap the step exists to find. It would have gone
+green and meant nothing.
+
+**This is the same shape of error as 2026-08-07's clear**, rehearsed
+against a dev database that was already empty and recorded here as proving
+"the command ran cleanly rather than proving it deleted anything." Twice
+now the rehearsal has been run against a database that could not exhibit
+the failure. The pattern is worth naming: **a rehearsal is only a rehearsal
+if the starting state matches, and the starting state is the part nobody
+checks.** `CUTOVER.md` step 1 now carries production's exact DDL and the
+reset to run first.
+
+### Two corrections to CUTOVER.md, both in the same direction
+
+Both were statements of impossibility that had stopped being true, and both
+were making the plan more frightening than the facts:
+
+1. *"A deploy overwrites the only copy."* Cloudflare retains versions;
+   `2d3c73a5` is still listed and `wrangler rollback` targets it. Recorded
+   as **not exercised** — it is a second line, not a replacement for the
+   capture, which is why step 0 was done anyway.
+2. *"No agent can read the live secret list."* `wrangler versions view`
+   lists the six secret names and both bindings, independently confirming
+   the owner's 2026-08-07 dashboard check. Values stay encrypted, so
+   **`ADMIN_TELEGRAM_IDS` holding the right id is still unprovable until
+   step 8** — that has not moved.
+
+### Production state, read today
+
+`submissions` 0 rows, `snapshots` 0 rows, `submissions` still on the old
+DDL. The clear and the unpublish both held. Recorded in step 4 as a reading
+rather than a guarantee: `main` still ships the public form, so the window
+in which a visitor can refill the table is open until step 5.
+
+Also: `wrangler d1 list` reports `num_tables: 0` for both databases while
+`sqlite_master` lists four. The list metric lags; do not read state off it.
+
+### Where the cutover stands
+
+Step 0 done. Step 1 blocked on the dev reset above, and it is now a real
+rehearsal rather than a green no-op. Step 2's secrets confirmed twice, from
+two directions. **UAT Part A is still not performed** — that remains the
+largest gap between here and a deploy, and none of today's work touched it.
+
 ## 2026-08-07
 
 **Landed on `accounts`:** the MCP-delegation rules and the `owner-only`

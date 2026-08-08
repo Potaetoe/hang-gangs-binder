@@ -33,7 +33,7 @@ and it is the only thing it says.
 | --- | --- |
 | Clearing `submissions` (step 4) | **No.** There is no backup, and an export is not one — nothing turns plaintext back into ciphertext |
 | Changing `ACCOUNT_SECRET` | **Not yet — it becomes irreversible at step 8.** It is already set, but no row carries an id derived from it, so today changing it costs nothing. The first real submission closes that |
-| Deploying the accounts Worker | **Only if step 0 captured the current script.** A deploy overwrites the only copy |
+| Deploying the accounts Worker | **Reversible — step 0 is done.** The script is captured outside the repo, and Cloudflare still retains version `2d3c73a5` to roll back to. Neither path has been exercised |
 | Merging `accounts` → `main` | Yes — `apps/web` *is* the build, so `git revert` restores the pages exactly |
 
 `ACCOUNT_SECRET` is configuration in appearance and part of the stored format
@@ -53,8 +53,23 @@ EXPORT_TOKEN              TELEGRAM_BOT_TOKEN        TELEGRAM_GROUP_CHAT_ID
 `https://potaetoe.github.io`. `DEV_LOGIN_SECRET` is **absent**, which is what
 keeps `POST /auth/dev` off — that check has already passed.
 
-This is the only way it could be confirmed: `wrangler` will not authenticate
-from a non-interactive shell, so no agent can read the live secret list.
+**Re-confirmed independently on 2026-08-08**, from an agent shell, by reading
+the live version rather than the dashboard:
+
+```bash
+npx wrangler versions view 2d3c73a5-1095-42db-a810-c8c0ba1a5c24 --name hgbinderworker
+```
+
+It lists the six secret **names** — values stay encrypted and unreadable, so
+this confirms presence and nothing more. It also prints the bindings, which
+is how step 0's binding record was re-checked.
+
+> This corrects a sentence that stood here until 2026-08-08: *"the only way
+> it could be confirmed … no agent can read the live secret list."* That was
+> true when written and is not now. The stored OAuth login **does** work from
+> an agent shell; the first authenticated call in a session may fail once
+> with `Authentication error [code: 10000]` and refresh the token, and the
+> next one succeeds. Read that failure as a refresh, not a wall.
 
 **So step 2 below is a confirmation, not an act.** Glance at the list before
 you start and move on.
@@ -87,17 +102,38 @@ there — the steps after it assume it.
 
 ### 0 — Capture what production is now
 
+**Done 2026-08-08.** The capture is at
+`C:\Users\potae\Desktop\Claude Co-work\binder-recovery\`, outside the
+repository, with a `README.md` describing what it is a copy of. It holds the
+exact `multipart/form-data` bytes the API returned, the same script with the
+envelope stripped, and the version metadata. No secret values — those are
+stored separately from the script.
+
+It is a copy of version `2d3c73a5-1095-42db-a810-c8c0ba1a5c24`, created
+2026-08-06T17:15:53Z. Confirmed by reading it, not by assuming it: no
+`account_id`, no `/auth/telegram`, `POST /submit` answers
+`400 Missing ciphertext`. That is the pre-accounts Worker.
+
 `REDESIGN.md` Part 10 used to promise a rollback that does not exist. The live
 script reports `Source: Unknown (version_upload)`: it was hand-pasted and
 matches **no commit in this repository**, so there is nothing to deploy back
-from. A deploy overwrites the only copy.
+from.
 
-Open the Worker in the dashboard, copy the live script, save it **outside the
-repository**. It holds no secrets — bindings and secrets are stored
-separately — but do not commit it. It is a recovery artifact, not source.
+**But "a deploy overwrites the only copy" was too strong, and it is worth
+correcting rather than leaving as useful fear.** Cloudflare retains prior
+versions, and `2d3c73a5` is still listed. So a second restore path exists:
+
+```bash
+npx wrangler rollback 2d3c73a5-1095-42db-a810-c8c0ba1a5c24 --name hgbinderworker
+```
+
+**This has not been exercised**, retention is not unlimited, and a path
+nobody has run is not a path anybody has. It is a second line, not a
+replacement for the capture — which is why step 0 was done anyway.
 
 Also record the live bindings, so a mistaken deploy is repaired against fact
-rather than memory. Verified 2026-08-06:
+rather than memory. Verified 2026-08-06, and re-read from the live version
+2026-08-08 — unchanged:
 
 ```
 EXPORT_TOKEN         secret, present
@@ -126,6 +162,39 @@ it back.
 `submissions` and it **silently skips that table**, creates `sessions` beside
 an unmigrated one, and reports success. Nothing in `dev/` can see this. The
 failure surfaces on the first real submission, against `NOT NULL account_id`.
+
+> **Read this before running it — 2026-08-08.** As written, this rehearsal
+> passes without testing anything, because **the two databases are not in the
+> same state.** Read from the live schemas:
+>
+> | | `submissions` | `sessions` |
+> | --- | --- | --- |
+> | production | **old shape** — `id, ciphertext, received_at`, no `account_id` | absent |
+> | dev | **already migrated** — carries `account_id NOT NULL` | present |
+>
+> Dev is already on the far side of the migration. Dropping and recreating
+> there exercises a `DROP` against a table that is already the right shape,
+> and `IF NOT EXISTS` never gets the chance to skip anything. It would go
+> green and mean nothing.
+>
+> **This is the same error the project already made once** — 2026-08-07's
+> clear was rehearsed against a dev database that was empty, which
+> `DAILY_LOG.md` records as proving "the command ran cleanly rather than
+> proving it deleted anything". A rehearsal against the wrong starting state
+> is not a rehearsal.
+>
+> To make it real, put dev back into production's shape first:
+>
+> ```sql
+> DROP TABLE IF EXISTS submissions;
+> DROP TABLE IF EXISTS sessions;
+> CREATE TABLE submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, ciphertext TEXT NOT NULL, received_at TEXT NOT NULL);
+> ```
+>
+> That `CREATE` is production's exact DDL, read off the live database on
+> 2026-08-08. Put a row in it, then run the real sequence — `DROP TABLE
+> submissions`, then the whole of `schema.sql` — and confirm the new shape
+> and the lost row. **Then** submit through a local preview and read it back.
 
 **Continue when:** a row submits and reads back under the new shape.
 **Back out:** free — it is the development database.
@@ -202,6 +271,14 @@ still answers `400 Missing ciphertext` rather than `401`, so any visitor can
 put a row back — and that row carries a `NULL` `account_id`, the state
 accounts exists to remove. So re-run it here rather than trusting the earlier
 one.
+
+Read from production on 2026-08-08: `submissions` **0 rows**, `snapshots`
+**0 rows**, and `submissions` still carries the old DDL with no `account_id`.
+So nothing has refilled it yet and the unpublish held. **That is a reading,
+not a guarantee** — the window is open until the accounts Worker is live at
+step 5, which is the whole reason the clear is re-run here. Check the count
+again immediately before you drop, and if it is not zero, somebody submitted
+and the earlier clear is exactly as durable as this paragraph says.
 
 **Continue when:** the new `submissions` exists with `account_id NOT NULL`,
 and `sessions` and `snapshots` exist.
