@@ -83,7 +83,8 @@ NODE_SUITES = [
     ("dashboard drawing", "dev/dashboard-render.test.mjs"),
     ("member dashboard session", "dev/public.test.mjs"),
     ("shared UI wiring", "dev/ui.test.mjs"),
-    ("session storage + auth handoff", "dev/session.test.mjs"),
+    ("session storage + auth handoff + sign-out boundary",
+     "dev/session.test.mjs"),
     ("worker routing + CORS", "dev/worker.test.mjs"),
     # Last, because it spawns a second node and does eighteen ECDH
     # seals - the slowest entry here, and the one whose failure is

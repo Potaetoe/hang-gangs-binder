@@ -958,6 +958,70 @@ def local_links(text):
             if not re.match(r"^(?:https?:)?//|^mailto:|^#|^data:", href)]
 
 
+def plain_page_problems(text):
+    """[problem] for one page that is pinned plain.
+
+    Takes the markup rather than a filename so the rules can be
+    exercised on strings. That is #34's lesson applied here: a mutation
+    written against the five files tests today's markup, and what has to
+    hold is the shape of the failure.
+    """
+    problems = []
+
+    # The copy-paste direction. A rail on the cover would offer the
+    # session home - signed-in state and Sign out - to somebody who has
+    # not signed in yet.
+    if RAIL_MARKUP.search(text) or rail_links(text) is not None:
+        problems.append(
+            "is pinned plain and carries rail markup. The rail holds the "
+            "session home, and a signed-out visitor has no session for it "
+            "to be the home of")
+
+    # Plain is a treatment, not a dead end.
+    if not local_links(text):
+        problems.append(
+            "is pinned plain and carries no link to anywhere else on this "
+            "site, so a visitor who lands here with scripts blocked has no "
+            "way off it")
+
+    return problems
+
+
+def rail_page_problems(text):
+    """[problem] for one page that is pinned to the rail."""
+    links = rail_links(text)
+    if links is None:
+        return ["has no rail"]
+    if not links:
+        return ["has a rail with no destinations"]
+
+    problems = []
+
+    # Identical incomplete rails still strand somebody. Sign-in is the
+    # route a member whose session died needs most, so comparing the
+    # copies is not enough: every copy must name the directory index
+    # explicitly.
+    if not any(href == "index.html" for href, _ in links):
+        problems.append(
+            "has no index.html route to sign-in, so a member whose session "
+            "has expired can be stranded away from the page that mints a "
+            "new one")
+
+    for missing in [i for i in STRIP_IDS if 'id="%s"' % i not in text]:
+        problems.append(
+            "has a rail but no id=\"%s\", which nav.js and aria-controls "
+            "both rely on to fold the theme chips behind the strip "
+            "disclosure" % missing)
+
+    for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
+        problems.append(
+            "still carries id=\"%s\" from the hamburger the rail replaced. "
+            "The destinations are visible now and the disclosure opens the "
+            "theme chips instead" % retired)
+
+    return problems
+
+
 def shell_problems():
     """(page, problem) for pages whose shell is missing, wrong or drifted."""
     problems = []
@@ -989,57 +1053,16 @@ def shell_problems():
                       flags=re.S)
 
         if SHELLS[name] == "plain":
-            # The copy-paste direction. A rail on the cover would offer
-            # the session home - signed-in state and Sign out - to
-            # somebody who has not signed in yet.
-            if RAIL_MARKUP.search(text) or rail_links(text) is not None:
-                problems.append((
-                    name,
-                    "is pinned plain and carries rail markup. The rail "
-                    "holds the session home, and a signed-out visitor "
-                    "has no session for it to be the home of"))
-            # Plain is a treatment, not a dead end.
-            if not local_links(text):
-                problems.append((
-                    name,
-                    "is pinned plain and carries no link to anywhere else "
-                    "on this site, so a visitor who lands here with "
-                    "scripts blocked has no way off it"))
+            for problem in plain_page_problems(text):
+                problems.append((name, problem))
             continue
+
+        for problem in rail_page_problems(text):
+            problems.append((name, problem))
 
         links = rail_links(text)
-        if links is None:
-            problems.append((name, "has no rail"))
-            continue
-        if not links:
-            problems.append((name, "has a rail with no destinations"))
-            continue
-        rails[name] = links
-
-        # Identical incomplete rails still strand somebody. Sign-in is
-        # the route a member whose session died needs most, so comparing
-        # the copies is not enough: every copy must name the directory
-        # index explicitly.
-        if not any(href == "index.html" for href, _ in links):
-            problems.append((
-                name,
-                "has no index.html route to sign-in, so a member whose "
-                "session has expired can be stranded away from the page "
-                "that mints a new one"))
-
-        for missing in [i for i in STRIP_IDS if 'id="%s"' % i not in text]:
-            problems.append((
-                name,
-                "has a rail but no id=\"%s\", which nav.js and "
-                "aria-controls both rely on to fold the theme chips "
-                "behind the strip disclosure" % missing))
-
-        for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
-            problems.append((
-                name,
-                "still carries id=\"%s\" from the hamburger the rail "
-                "replaced. The destinations are visible now and the "
-                "disclosure opens the theme chips instead" % retired))
+        if links:
+            rails[name] = links
 
     # Compared against whichever page sorts first, so the message names a
     # specific page to go and look at rather than "they differ".

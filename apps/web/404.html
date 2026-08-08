@@ -23,48 +23,22 @@
 </head>
 <body>
 
-<header class="stack">
-  <!-- Identical on every page; tools/check_web.py holds the four
-       copies to agreeing. See the longer note in index.html.
+<!--
+  The quietest treatment the system has: no rail, no session, one link
+  home. A page that failed is not a stage, and the rail's session home
+  would be actively wrong here - this page is reachable signed out, and
+  the hrefs below resolve against whatever path was requested rather
+  than the site root, so a rail's four links would be four chances to
+  guess wrong instead of one.
 
-       These hrefs inherit the caveat in the head comment above: they
-       resolve against the URL that was requested, not the site root.
-       The site is flat, so they are right for anything a visitor could
-       plausibly land on and wrong only for a made-up path two levels
-       deep - where the nav being slightly off is not the visitor's
-       biggest problem. -->
-  <nav class="nav" aria-label="Site">
-    <button type="button" class="nav-toggle" id="nav-toggle"
-            aria-expanded="false" aria-controls="nav-menu">
-      <span class="nav-bars" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </span>
-      <span>Menu</span>
-    </button>
-
-    <ul class="nav-menu" id="nav-menu" hidden>
-      <li><a href="index.html">Sign in</a></li>
-      <li><a href="submit.html">Submit your stats</a></li>
-      <li><a href="dashboard.html">Dashboard</a></li>
-      <li>
-        <a href="admin.html">Export</a>
-        <span class="nav-note">Keyholder only — needs the key</span>
-      </li>
-    </ul>
-
-    <div class="themes" role="group" aria-label="Color theme">
-      <button type="button" data-set-theme="midnight">Midnight</button>
-      <button type="button" data-set-theme="pink">Pink</button>
-      <button type="button" data-set-theme="daylight">Daylight</button>
-      <button type="button" data-set-theme="contrast">Contrast</button>
-    </div>
-  </nav>
-
-  <div class="stack-tight">
-    <p class="eyebrow">404</p>
-    <h1>That page isn't here</h1>
-    <p class="muted">The link may be old, or the address mistyped.</p>
-  </div>
+  tools/check_web.py pins this page as plain, refuses rail markup on it,
+  and still requires the one link out that keeps "plain" from meaning
+  "a dead end".
+-->
+<header class="stack-tight">
+  <p class="eyebrow">404</p>
+  <h1>That page isn't here</h1>
+  <p class="muted">The link may be old, or the address mistyped.</p>
 </header>
 
 <main class="stack">
@@ -80,7 +54,8 @@
   </p>
 </footer>
 
-<script src="nav.js"></script>
+<!-- nav.js is not loaded here, for the reason index.html gives: its
+     whole job is the rail, and this page is plain. -->
 <script src="theme.js"></script>
 </body>
 </html>

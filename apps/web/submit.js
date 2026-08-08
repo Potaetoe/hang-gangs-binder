@@ -3,16 +3,27 @@
  *
  * Counts come only from GET /me. The form announces when the Worker has
  * accepted a submission, and this file responds by reading /me again; it
- * never guesses that the count rose by one. It also owns the device-local
- * measurement prefill. That prefill is not a credential, but it is cleartext
- * body data, so the visible sign-out action removes it with the session.
+ * never guesses that the count rose by one. It also reads and writes the
+ * device-local measurement prefill. That prefill is not a credential, but
+ * it is cleartext body data, so signing out removes it with the session -
+ * and the erasing is signout.js's, because Sign out is in the rail on
+ * three pages and this file is loaded on one of them.
  */
 (function (root) {
   "use strict";
 
   if (typeof document === "undefined") return;
 
-  const PREFILL_KEY = "hgb-submit-prefill";
+  const SignOut = root.BinderSignOut;
+
+  /*
+   * Borrowed rather than declared. Two files touch this value - the one
+   * that writes it and the one that erases it on sign-out - and a
+   * second copy of the name is a rename waiting to leave the erase
+   * pointing at a key nobody writes any more. dev/session.test.mjs
+   * asserts the two are the same constant.
+   */
+  const PREFILL_KEY = SignOut.prefillKey;
   const SUBMITTED_EVENT = "binder:submitted";
 
   // The other direction: form.js tells this file a row was stored, and this
@@ -90,11 +101,11 @@
     return null;
   }
 
-  function clearPrefill() {
-    const store = localStore();
-    if (!store) return;
-    try { store.removeItem(PREFILL_KEY); } catch (error) {}
-  }
+  // The same erase the sign-out performs, called here whenever a stored
+  // prefill is rejected. One implementation rather than two, so a
+  // rejection on this page and a sign-out from any page cannot end up
+  // meaning different things.
+  const clearPrefill = SignOut.clearPrefill;
 
   function fieldValue(id) {
     const field = $(id);
@@ -284,61 +295,6 @@
     }
   }
 
-  /*
-   * Ask the endpoint to delete the session row, and do not wait to hear
-   * back - #90.
-   *
-   * Dropping this tab's copy of the token is not the end of a session.
-   * The row is, and without this request it survives to its natural
-   * expiry: a token captured beforehand stays a working credential for
-   * up to seven days, which is exactly the window somebody pressing
-   * Sign out is trying to close.
-   *
-   * Best-effort is the design and not a shortcut. Awaiting this would
-   * put the network between a member and signing out - a dead
-   * connection, or a Worker that never answers, and the button does
-   * nothing while the credential sits in this tab. The row expires on
-   * its own either way, so a failed revoke costs the hardening; a failed
-   * sign-out costs the thing the button is for. Nothing is reported for
-   * it either: the user-visible act is the local clear below, it always
-   * succeeds, and a message about the other half would describe a
-   * sign-out that did not happen.
-   *
-   * keepalive is load-bearing, not decoration. signOut() navigates in
-   * the same turn, and a browser cancels in-flight fetches when the page
-   * goes; without it this is a request that reliably never arrives.
-   *
-   * No session, no request. The endpoint refuses a DELETE it cannot
-   * authenticate, and there is no row to end.
-   */
-  function revokeSession() {
-    const config = root.BINDER_CONFIG || {};
-    const headers = Session.authorization();
-    if (!config.endpoint || !headers.Authorization) return;
-
-    fetch(config.endpoint + "/session", {
-      method: "DELETE",
-      headers: headers,
-      keepalive: true,
-    }).catch(function () {
-      // Handled so an abandoned promise cannot log a rejection about a
-      // sign-out that, from here, worked.
-    });
-  }
-
-  function signOut() {
-    // Ordered: the revoke needs the token that the next two lines
-    // destroy. The session is authority and the prefill is cleartext
-    // body data, so both leave together - "Sign out" means this device
-    // retains neither, and the endpoint keeps neither either.
-    revokeSession();
-    clearPrefill();
-    Session.clear();
-    if (root.location && typeof root.location.replace === "function") {
-      root.location.replace("index.html");
-    }
-  }
-
   async function setUp() {
     if (!Session) throw new Error("This page did not load session handling.");
     const session = Session.require();
@@ -354,14 +310,12 @@
 
     const entriesTab = $("your-entries-tab");
     const addTab = $("add-entry-tab");
-    const signOutButton = $("sign-out");
     if (entriesTab) {
       entriesTab.addEventListener("click", function () { chooseTab("entries"); });
     }
     if (addTab) {
       addTab.addEventListener("click", function () { chooseTab("add"); });
     }
-    if (signOutButton) signOutButton.addEventListener("click", signOut);
     document.addEventListener(SUBMITTED_EVENT, refreshPanel);
 
     show($("member-tabs"), true);

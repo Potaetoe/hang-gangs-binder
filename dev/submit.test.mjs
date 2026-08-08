@@ -10,6 +10,8 @@ import { readFile } from "node:fs/promises";
 
 const sessionSource = await readFile(
   new URL("../apps/web/session.js", import.meta.url), "utf8");
+const signOutSource = await readFile(
+  new URL("../apps/web/signout.js", import.meta.url), "utf8");
 const formSource = await readFile(
   new URL("../apps/web/form.js", import.meta.url), "utf8");
 const submitHtml = await readFile(
@@ -26,7 +28,18 @@ const SUBMITTED_EVENT = "binder:submitted";
 const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
 
 let failures = 0;
+let performed = 0;
+
+// Counted AND asserted, which are two different jobs. Printing the count
+// keeps a machine-knowable number out of prose - AGENTS.md's rule 4 - and
+// comparing it catches the other direction: a check that stops running,
+// behind an early return or a renamed helper, still prints a confident
+// "OK" for every check that remains. dev/check_budget.test.py argues this
+// at length and is where the pattern comes from.
+const EXPECTED = 45;
+
 function check(label, condition) {
+  performed++;
   if (!condition) failures++;
   console.log(condition ? "pass " : "FAIL ", label);
 }
@@ -110,7 +123,16 @@ function makePage() {
     // Present so a check can read what the panel said, rather than
     // watching setStatus write into a null that swallows every message.
     "member-panel-status": makeElement("member-panel-status", true),
-    "sign-out": makeElement("sign-out"),
+    // The rail's session home. Sign out moved off this page's tab strip
+    // into the rail, which is on every signed-in page - so these two are
+    // signout.js's elements now, not the panel's, and the harness draws
+    // them because the shipped page does.
+    //
+    // The button starts hidden, as the markup does: signout.js reveals
+    // it only once a session is confirmed, and a stub that began painted
+    // would let that reveal stop happening without a check noticing.
+    "session-who": makeElement("session-who"),
+    "sign-out": makeElement("sign-out", true),
     "weight-lb": makeElement("weight-lb"),
     "height-ft": makeElement("height-ft"),
     "height-in": makeElement("height-in"),
@@ -226,6 +248,15 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill } = {}) {
   };
 
   scenario++;
+  /*
+   * In the page's own order: signout.js before submit.js, because
+   * submit.html loads them that way and submit.js reads the prefill key
+   * off BinderSignOut at module scope. Loading them the other way round
+   * here would test an arrangement the site does not ship, and would
+   * fail for a reason no page can produce.
+   */
+  await import("data:text/javascript," + encodeURIComponent(signOutSource) +
+    "#binder-signout-" + scenario);
   await import("data:text/javascript," + encodeURIComponent(submitSource) +
     "#submit-panel-" + scenario);
   await new Promise((resolve) => setImmediate(resolve));
@@ -244,12 +275,40 @@ function authorization(request) {
 
 const panelIds = [
   "your-entries-tab", "add-entry-tab", "your-entries-pane",
-  "add-entry-pane", "member-entry-count", "member-last-at", "sign-out",
+  "add-entry-pane", "member-entry-count", "member-last-at",
   "member-telegram-id-line", "member-telegram-id",
 ];
 check("submit.html declares the panel controls and loads its shipped module",
   panelIds.every((id) => submitHtml.includes(`id="${id}"`)) &&
   /src="submit\.js"/.test(submitHtml));
+
+/*
+ * The session home is in the rail now, and this page has to declare it
+ * and load the file that wires it - #73. Both halves, because either
+ * one alone is a Sign out that does nothing: markup with no module is a
+ * dead button, and a module with no markup is a page whose rail cannot
+ * end a session.
+ */
+check("submit.html carries the rail's session home and loads signout.js",
+  submitHtml.includes('id="sign-out"') &&
+  submitHtml.includes('id="session-who"') &&
+  /src="signout\.js"/.test(submitHtml));
+
+/* Load order, pinned because it is invisible until it breaks: the
+ * revoke reads BINDER_CONFIG.endpoint, and submit.js reads the prefill
+ * key off BinderSignOut while its module body runs. */
+check("submit.html loads signout.js after config.js and before submit.js",
+  submitHtml.indexOf('src="config.js"') <
+    submitHtml.indexOf('src="signout.js"') &&
+  submitHtml.indexOf('src="signout.js"') <
+    submitHtml.indexOf('src="submit.js"'));
+
+/* The relocation, asserted where somebody would put it back. The tab
+ * strip is a tablist, and a third control in it that is not a tab is
+ * what the rail took away. */
+check("the tab strip holds tabs and nothing else",
+  /<div class="row" role="tablist"[\s\S]*?<\/div>/.test(submitHtml) &&
+  !/role="tablist"[\s\S]*?id="sign-out"[\s\S]*?<\/div>/.test(submitHtml));
 
 const lastAt = "2026-08-07T14:30:00.000Z";
 const panel = await loadSubmit({
@@ -795,4 +854,10 @@ if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsubmit panel OK - 38 checks");
+if (performed !== EXPECTED) {
+  console.error(`\nsubmit panel ran ${performed} checks, expected ` +
+    `${EXPECTED} - a check stopped running, or one was added without ` +
+    "updating EXPECTED");
+  process.exit(1);
+}
+console.log(`\nsubmit panel OK - ${performed} checks`);
