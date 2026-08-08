@@ -7,7 +7,8 @@
  *   POST   /auth/dev         development only; 404 everywhere else.
  *   DELETE /session          end the session presented, now.
  *   GET    /me               what this account has on record.
- *   POST   /submit           append one row. Needs a member session.
+ *   POST   /submit           append one row, optionally naming the row
+ *                            it supersedes. Needs a member session.
  *   GET    /export           return every row. Admin.
  *   POST   /snapshot         replace the published aggregate. Admin.
  *   GET    /snapshot         return it. Members only since 2026-08-05 -
@@ -680,6 +681,14 @@ async function handleRevokeSession(request, env, origin) {
   return json({ ok: true }, 200, origin);
 }
 
+// A row is superseded when another row names it. Not restricted to the
+// same account, because handleSubmit refuses a pointer at anybody else's
+// row - a second copy of that rule here would be a second place it could
+// be true, and the two could disagree.
+const SUPERSEDED =
+  "EXISTS (SELECT 1 FROM submissions AS newer " +
+  "WHERE newer.supersedes = mine.id)";
+
 /*
  * What this account has on record. Counts and dates, never contents -
  * the Worker could not read the contents if it wanted to.
@@ -704,17 +713,46 @@ async function handleRevokeSession(request, env, origin) {
  * A break-glass EXPORT_TOKEN caller has no account and gets null,
  * reported rather than special-cased. See DESIGN.md, "The prefill is
  * scoped to an account".
+ *
+ * `entries` is what this account currently claims rather than how many
+ * rows it has written. A correction supersedes a row, so a member who
+ * corrects twice would otherwise be told they have five entries for
+ * three measurements - and the panel that exists to reassure them would
+ * read as the correction not having worked. That is the count a pointer
+ * inside the ciphertext could never produce, and half of why the pointer
+ * is a clear column.
+ *
+ * The tombstones are reported beside it rather than subtracted in
+ * silence. A count that does not move looks the same whether a
+ * correction landed or was refused, and `entries + superseded` is still
+ * every row this account has written.
+ *
+ * `lastAt` counts tombstones, and is the one field here that does. It
+ * answers when this account last sent something, and a correction is
+ * something sent - so the two questions have the same answer on every
+ * corpus this Worker can produce anyway: `received_at` is taken from
+ * this side's clock at the insert, a correction is always inserted after
+ * the row it names, and the newest row therefore can never be one that
+ * something else supersedes.
  */
 async function handleMe(request, env, origin, caller) {
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS entries, MAX(received_at) AS last_at " +
-    "FROM submissions WHERE account_id = ?"
+    "SELECT COUNT(*) AS total, " +
+    "SUM(CASE WHEN " + SUPERSEDED + " THEN 1 ELSE 0 END) AS superseded, " +
+    "MAX(mine.received_at) AS last_at " +
+    "FROM submissions AS mine WHERE mine.account_id = ?"
   ).bind(caller.accountId).first();
+
+  // An account with no rows counts nothing and sums to NULL, which is
+  // not the same zero and would arrive as null in the response.
+  const total = (row && row.total) || 0;
+  const superseded = (row && row.superseded) || 0;
 
   return json({
     ok: true,
     accountId: caller.accountId == null ? null : caller.accountId,
-    entries: (row && row.entries) || 0,
+    entries: total - superseded,
+    superseded: superseded,
     lastAt: (row && row.last_at) || null,
     isAdmin: caller.isAdmin === true,
     isDev: caller.isDev === true,
@@ -742,13 +780,84 @@ async function handleSubmit(request, env, origin, caller) {
     return json({ error: "Ciphertext must be base64." }, 400, origin);
   }
 
+  /*
+   * A correction, if this is one.
+   *
+   * There is no UPDATE path here and there cannot be one: the Worker
+   * cannot read what it stores, so it cannot modify a record. A
+   * correction is an insert of freshly-sealed ciphertext plus a pointer
+   * at the row it replaces, and the row it replaces stays as a
+   * tombstone. DESIGN.md, "Admin accounts and deletion", holds the rule.
+   *
+   * All three checks run before anything is written, and the write is
+   * one statement, so a refused correction stores nothing. Storing it as
+   * an ordinary new row instead would be the worst available outcome:
+   * the member sees a success, and the row they meant to replace is
+   * still counted and still in the series.
+   *
+   * The first two failures answer identically on purpose. Telling "no
+   * such row" apart from "not your row" would make this route a probe
+   * for which ids are live across the whole corpus - more than the
+   * grouping DESIGN.md's threat model accepts, and reachable with any
+   * member session rather than with the database. One statement asks for
+   * a row that is both, so there is no branch here that knows a row
+   * exists without knowing it is the caller's.
+   *
+   * The third is told apart, and safely: reaching it means the caller
+   * has already proved the row is theirs, so the answer is about their
+   * own data. It is also where the chain shape lives. A row may be
+   * superseded once, which is what keeps "current" meaning "the rows
+   * nobody names" - a total function needing no tie-break in a client
+   * this side cannot see. Two rows naming the same target would both be
+   * current, and the member would hold two claims where they meant one.
+   *
+   * A pointer at a row that is gone is not checked for and not an error.
+   * It resolves as no pointer everywhere that reads one, which is what
+   * lets DELETE /submission/:id stay a single unconditional delete:
+   * removing a correction puts the row it corrected back among the
+   * current ones, and no deletion ever becomes two.
+   */
+  const supersedes = payload.supersedes;
+  let pointer = null;
+  if (supersedes !== undefined && supersedes !== null) {
+    // The id of a row, or nothing. A client sending the string "1" has a
+    // bug worth hearing about rather than a value worth coercing.
+    if (!Number.isInteger(supersedes) || supersedes < 1) {
+      return json({
+        error: "supersedes must be the id of one of your entries.",
+      }, 400, origin);
+    }
+
+    const target = await env.DB.prepare(
+      "SELECT id FROM submissions WHERE id = ? AND account_id = ?"
+    ).bind(supersedes, caller.accountId).first();
+    if (!target) {
+      return json({ error: "That entry is not one of yours." }, 404, origin);
+    }
+
+    const corrected = await env.DB.prepare(
+      "SELECT id FROM submissions WHERE supersedes = ?"
+    ).bind(supersedes).first();
+    if (corrected) {
+      return json({
+        error: "That entry has already been corrected. Correct the " +
+          "correction instead.",
+      }, 409, origin);
+    }
+
+    pointer = supersedes;
+  }
+
   // The account id comes from the session and never from the body. It is
-  // the one identity on a row that a client cannot influence.
+  // the one identity on a row that a client cannot influence, and it is
+  // also what makes the ownership check above the only place the
+  // same-account rule has to be enforced.
   await env.DB.prepare(
-    "INSERT INTO submissions (account_id, ciphertext, received_at) " +
-    "VALUES (?, ?, ?)"
+    "INSERT INTO submissions " +
+    "(account_id, ciphertext, received_at, supersedes) " +
+    "VALUES (?, ?, ?, ?)"
   )
-    .bind(caller.accountId, ciphertext, new Date().toISOString())
+    .bind(caller.accountId, ciphertext, new Date().toISOString(), pointer)
     .run();
 
   return json({ ok: true }, 200, origin);
@@ -766,6 +875,14 @@ async function handleSubmit(request, env, origin, caller) {
  *
  * Deleting nothing succeeds, for the same reason unpublishing twice
  * does: the caller has got what they wanted.
+ *
+ * It stays a single unconditional delete now that rows can point at each
+ * other, and the temptation to make it more than that is worth naming:
+ * `supersedes` is advisory, so a pointer at a row that is gone resolves
+ * as no pointer, and removing a correction simply puts the row it
+ * corrected back among the current ones. Cascading instead would turn
+ * one "please take mine down" into two rows disappearing, and refusing
+ * instead would make a row undeletable because somebody corrected it.
  */
 async function handleDeleteSubmission(env, origin, id) {
   if (!/^\d+$/.test(id)) {
@@ -789,9 +906,16 @@ async function handleExport(request, env, origin, caller) {
   // account_id travels with the row. The export page groups by it rather
   // than by the decrypted handle, which is what makes "one per person" a
   // fact instead of a guess about two rows spelling a name the same way.
+  //
+  // `supersedes` travels for the same reason and is resolved in the same
+  // place. This side knows which row a correction replaces and cannot
+  // know what either of them says, so dropping tombstones from a series
+  // is work for the keyholder's browser, where the plaintext already is.
+  // Without the column in this response that resolution is not possible
+  // at all, and a correction reads as a repeat measurement.
   const rows = await env.DB.prepare(
-    "SELECT id, account_id, ciphertext, received_at FROM submissions " +
-    "ORDER BY id"
+    "SELECT id, account_id, ciphertext, received_at, supersedes " +
+    "FROM submissions ORDER BY id"
   ).all();
 
   return json({ ok: true, submissions: rows.results }, 200, origin);

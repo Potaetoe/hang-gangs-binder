@@ -127,9 +127,15 @@ const DB = {
       // stub that always found a row would pass an implementation that
       // never checked ownership; one that never found a row would pass
       // an implementation whose checks refuse everything.
-      if (/WHERE id = \? AND account_id = \?/i.test(sql)) {
-        return stored.find(
-          (r) => r.id === a[0] && r.account_id === a[1]) || null;
+      //
+      // The owner is matched only when the statement bound one, so a
+      // lookup that drops `AND account_id = ?` finds somebody else's row
+      // here exactly as it would in D1. Reading the parameter list is
+      // what keeps that mutation visible rather than turning it into a
+      // statement this stub simply fails to recognise.
+      if (/WHERE id = \?/i.test(sql)) {
+        return stored.find((r) => r.id === a[0] &&
+          (a.length < 2 || r.account_id === a[1])) || null;
       }
       if (/WHERE supersedes = \?/i.test(sql)) {
         return stored.find((r) => r.supersedes === a[0]) || null;
@@ -988,27 +994,27 @@ const tombstone = stored.find((r) => r.id === firstEntry.id);
 check("and the row it supersedes stays as a tombstone",
   tombstone !== undefined && tombstone.ciphertext === "QUJDRA==");
 
+/* The earlier entries are backdated, because four rows inserted inside
+ * one millisecond all carry the same timestamp and any assertion about
+ * which one `lastAt` picked would hold whatever the route returned. Rows
+ * written on different days are what the corpus really looks like. */
+const DAY = 24 * 3600 * 1000;
+firstEntry.received_at = new Date(Date.now() - 2 * DAY).toISOString();
+secondEntry.received_at = new Date(Date.now() - DAY).toISOString();
+
 const corrected = await (await call("GET", "/me",
   { headers: bearer(OWNER) })).json();
 check("/me counts what this account currently claims, not rows written",
   corrected.entries === 2 && corrected.superseded === 1,
   `entries=${corrected.entries} superseded=${corrected.superseded}`);
 
-/*
- * The tombstone is dated after the correction by hand here, which cannot
- * arise through the routes: a correction is always inserted after the
- * row it names. It is the only corpus that tells a last-submitted time
- * computed over current entries from one computed over every row, and
- * without it that clause would agree with a plain MAX on every input the
- * Worker can actually produce - an assertion that cannot fail.
- */
-const realDate = tombstone.received_at;
-tombstone.received_at = new Date(Date.now() + 60 * 1000).toISOString();
-const dated = await (await call("GET", "/me",
-  { headers: bearer(OWNER) })).json();
-check("and the last-submitted time skips a tombstone the same way",
-  dated.lastAt !== tombstone.received_at, `lastAt=${dated.lastAt}`);
-tombstone.received_at = realDate;
+/* `lastAt` answers when this account last sent something, and a
+ * correction is something sent - so it counts tombstones where `entries`
+ * does not. The two questions coincide on every corpus reachable through
+ * these routes anyway: a correction is inserted after the row it names,
+ * so the newest row is never one that something supersedes. */
+check("and the last-submitted time is the correction's own",
+  corrected.lastAt === correctionRow.received_at, `lastAt=${corrected.lastAt}`);
 
 /*
  * The refusals. Each one refuses the whole submission - a correction
