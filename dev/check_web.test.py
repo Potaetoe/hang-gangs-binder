@@ -35,7 +35,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 106
+EXPECTED = 108
 
 
 def check(label, condition):
@@ -324,6 +324,15 @@ check("a role on a paragraph is not caught by that arm",
 check("a role wearing a second class is still read as that role",
       check_web.page_labels('<p class="flag small">Result</p>') ==
       [("flag", "Result")])
+
+# A role's color has to be a token, because the distinctness arm compares
+# what is written. A literal that paints another role's exact pixels is
+# the evasion that needs no coincidence, and it reads as different text.
+check("a role color written as a token is accepted",
+      check_web.COLOR_TOKEN.match("var(--color-warn-text)") is not None)
+check("a role color written as a literal is not",
+      check_web.COLOR_TOKEN.match("#e7b583") is None and
+      check_web.COLOR_TOKEN.match("rgb(231, 181, 131)") is None)
 
 # And the pins have to match what actually ships.
 check("no shipped label's role differs from the inventory",

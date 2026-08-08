@@ -1273,6 +1273,14 @@ ROLE_ON_OTHER_TAG = re.compile(
 
 TAG = re.compile(r"<[^>]+>")
 
+# What a role's color has to be written as. The residual is worth stating
+# rather than hiding: two DIFFERENT tokens that happen to hold the same
+# value in one palette still pass here, because resolving tokens per
+# palette is tools/check_contrast.py's machinery and not this file's.
+# What this closes is the evasion that needs no coincidence at all - a
+# literal that paints another role's exact pixels.
+COLOR_TOKEN = re.compile(r"^var\(\s*--color-[\w-]+\s*\)$")
+
 
 def label_text(markup):
     """The words a label shows, with its markup and spacing removed.
@@ -1419,6 +1427,19 @@ def label_style_problems():
             problems.append(
                 ".%s sets no color of its own, so it cannot be told from "
                 "the label beside it" % role)
+        elif not COLOR_TOKEN.match(colors[role]):
+            # Without this the distinctness arm below compares strings and
+            # can be walked straight past: `.caution { color: #e7b583 }`
+            # differs from `var(--color-warn-text)` as text while painting
+            # the identical pixels. Requiring a token is also this file's
+            # own rule - every component here is styled through the tokens,
+            # which is what lets a palette be a block of variables.
+            problems.append(
+                ".%s takes the color %s rather than a --color-* token. Two "
+                "roles are told apart here by the token each one names, so "
+                "a literal is a distinction this cannot see - and a palette "
+                "cannot reach it either"
+                % (role, colors[role]))
 
     by_color = {}
     for role, value in sorted(colors.items()):
