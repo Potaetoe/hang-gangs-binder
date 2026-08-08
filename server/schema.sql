@@ -94,7 +94,36 @@ CREATE INDEX IF NOT EXISTS submissions_account
 -- name it": GET /me counts the rows nobody names, and POST /submit
 -- refuses a second correction of a row already corrected. The first runs
 -- on an ordinary page load.
-CREATE INDEX IF NOT EXISTS submissions_supersedes
+--
+-- UNIQUE is the chain shape enforced by the database instead of only by
+-- the endpoint that checks it. A row may be superseded ONCE, which is
+-- what keeps "current" meaning "the rows nobody names" - a total
+-- function needing no tie-break in a client this side cannot see. Two
+-- rows naming one target are both current, and the member holds two
+-- claims where they meant one. POST /submit asks the question and then
+-- writes; between those there is a gap, and a second correction of the
+-- same entry - two tabs, or one retried request - lands in it. The
+-- endpoint closes the gap by sending its question and its write as one
+-- batch, and this index is what stays true if that ever comes apart.
+--
+-- NULLs are DISTINCT in a SQLite UNIQUE index, so this constrains
+-- corrections only: every ordinary submission stores NULL here and any
+-- number of them sit beside each other untouched. That is the property
+-- this line depends on, not an oversight to be tidied up later.
+--
+-- RENAMED rather than made unique in place, and the DROP below is half
+-- of the same act. `CREATE UNIQUE INDEX IF NOT EXISTS` under the old
+-- name does NOTHING against a database that already carries the
+-- non-unique index - it skips, says nothing, and leaves the constraint
+-- absent - which is precisely the half-migration the block at the top of
+-- this file exists to warn about. Under a new name the statement runs.
+-- Against a database that already holds two rows naming one target it
+-- fails loudly, and that is the correct outcome rather than a problem
+-- with this file: those rows have to be resolved before the rule can be
+-- true of them.
+DROP INDEX IF EXISTS submissions_supersedes;
+
+CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
   ON submissions(supersedes);
 
 -- Sessions. Only the SHA-256 of a token is kept, so reading this table
