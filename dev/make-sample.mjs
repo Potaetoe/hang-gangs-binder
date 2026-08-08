@@ -2,7 +2,14 @@
  * Builds dev/sample-submissions.json - disposable test data for
  * admin.html and its dashboard.
  *
- *     node dev/make-sample.mjs
+ *     node dev/make-sample.mjs [output path]
+ *
+ * The output path is how dev/make-sample.test.mjs runs this on every
+ * gate run without rewriting the committed sample. A check that writes
+ * a tracked file to prove something about it leaves a clean checkout
+ * dirty, and a real change to that file then hides inside the churn.
+ * Left out, the path is dev/sample-submissions.json, which is what a
+ * person regenerating the sample by hand wants.
  *
  * Why this exists: admin.html and the dashboard were the only parts of
  * this project with no repeatable way to exercise them. Every test of
@@ -34,9 +41,19 @@
  * to ship to a live site.
  */
 import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
+
+// Two names for one destination. OUT is where the bytes go, resolved
+// against the working directory so a relative argument means what the
+// caller typed; OUT_LABEL is what the summary line says, so the default
+// run still prints the repository-relative name a reader can act on
+// rather than an absolute path that depends on the checkout.
+const OUT_ARG = process.argv[2];
+const OUT = OUT_ARG ? resolve(OUT_ARG) : HERE("sample-submissions.json");
+const OUT_LABEL = OUT_ARG || "dev/sample-submissions.json";
 
 const load = async (path) => {
   const src = await readFile(HERE(path), "utf8");
@@ -398,8 +415,7 @@ const payload = {
   submissions: submissions,
 };
 
-await writeFile(
-  HERE("sample-submissions.json"), JSON.stringify(payload, null, 2) + "\n");
+await writeFile(OUT, JSON.stringify(payload, null, 2) + "\n");
 
 // Normalized before counting, or the three spellings of one handle in
 // the table above would be reported as three people.
@@ -407,6 +423,6 @@ const people = new Set(
   SAMPLE.map((row) => globalThis.BinderForm.normalizeTelegram(row.telegram))
 ).size;
 console.log(
-  "dev/sample-submissions.json written - " + submissions.length +
+  OUT_LABEL + " written - " + submissions.length +
   " row(s), " + people + " handle(s), 1 unopenable.");
 console.log("Load it into admin.html with the snippet in dev/README.md.");
