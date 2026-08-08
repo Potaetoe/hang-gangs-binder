@@ -45,7 +45,8 @@ needs owner approval first, asked in chat:**
    editing the registry is the owner-approval act and says so.
 6. American spelling in prose and identifiers (machine-checked now);
    platform names keep their own spelling. Comments and docs explain
-   *why*, not *what*.
+   *why*, not *what* — for code comments the enforced statement, and
+   the ratchet behind it, is under "Code standards" below.
 
 `archive/` is the pre-2026-08-08 documentation, frozen. Never edit it,
 never cite it as current; it is where the full reasoning lives when a
