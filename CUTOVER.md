@@ -15,7 +15,7 @@ completes. That is why the Worker deploys before the site.
 
 | Act | Reversible? |
 | --- | --- |
-| Step 4, dropping `submissions` | **No.** There is no backup, and an export is not one |
+| Step 4, dropping `submissions` | **Only via the precondition backup below** — and only as reversible as that file's rehearsed restore; without it, still a No (#92) |
 | `ACCOUNT_SECRET` after step 8 | **No.** The first real submission stores an id derived from it; changing it after that orphans every member's history |
 | Step 5, deploying the Worker | Yes — the capture at `binder-recovery/`, or `wrangler rollback` (never exercised) |
 | Step 6, merging to `main` | Yes — `git revert` restores the pages exactly |
@@ -42,6 +42,10 @@ completes. That is why the Worker deploys before the site.
       what you put in it. (Your id: sign in, then devtools → Session
       storage → `hgb-session` → `telegramId` — no page shows it yet,
       #58.)
+- [ ] **Back up production `submissions` immediately before the
+      sitting** — `OPERATIONS.md`, "Backing up the submissions" — and
+      open the file to confirm it holds `INSERT` rows. Step 4 is only
+      as reversible as this file (#92).
 - [ ] UAT Part A green on the current `accounts` head (record:
       `archive/UAT.md`; re-run only what changed since).
 
