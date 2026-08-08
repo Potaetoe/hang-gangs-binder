@@ -242,11 +242,44 @@ Part A, run on:            2026-08-08  against hgbinderworker-dev
                            A2.5 pass - count moved 0 -> 1 without a reload
                            A2.6 pass - no handle field on the form
                            A2.7 BLOCKED - see #64
-  A3 prefill and #56       not performed
-  A4 dashboard             not performed
-  A5 admin surface         not performed
-  A6 privacy               not performed
+  A3 prefill and #56       PASS - all five
+                           A3.1 pass - 275/5/8 and units restored on reload
+                           A3.2 pass - sign out emptied localStorage entirely
+                           A3.3 pass - bob's form empty after alice's tab died
+                           A3.4 pass - alice's prefill ERASED, before bob typed
+                           A3.5 pass - malformed prefill, page fine, no errors
+                           (but see #65 - only one of four rejection paths
+                           erases; not a failure today, a latent one)
+  A4 dashboard             PARTIAL
+                           A4.1 pass - "No figures have been published yet",
+                                and it stayed on dashboard.html
+                           A4.2 BLOCKED - needs a published snapshot
+                           A4.3 pass - signed out goes to sign-in, NOT the
+                                "nothing published" message
+  A5 admin surface         PARTIAL
+                           A5.1 pass - opens on an admin session, NO token box
+                           A5.3 pass - a member is refused with a message
+                                naming the reason, not a blank page
+                           A5.9 pass - a wrong key LISTS the row with its id
+                                ("row 2: ... encrypted to a different key"),
+                                summary "0 of 1 row(s) decrypted", and the
+                                publish card correctly hidden
+                           A5.2, A5.4, A5.5, A5.6, A5.7, A5.8 BLOCKED
+  A6 privacy               PARTIAL
+                           A6.5 pass - 32 chars, matches the DEV public key in
+                                config.js and NOT production's, as expected
+                           A6.6 pass - on submit, admin and dashboard the
+                                session is in sessionStorage and never in
+                                localStorage
+                           A6.1, A6.2, A6.3, A6.4 BLOCKED
   Console clean of CSP violations throughout:  yes - no console output at all
+
+  EVERYTHING STILL BLOCKED HAS ONE CAUSE: the development private key, which
+  is held offline by the owner. Nothing can be decrypted without it, so no
+  snapshot can be published, which in turn blocks A4.2 and all of A6.1-A6.4.
+  A5.4's delete button is only drawn on a row that decrypted, so row deletion
+  and the resurrection check (A5.5) are behind the same door. This is one
+  errand, not six.
   Not covered here: a real numeric id, and the widget CALLBACK only - the
   CSP and the widget's script and frame were confirmed, see A7
 
