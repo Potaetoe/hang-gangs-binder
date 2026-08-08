@@ -28,7 +28,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { suite } from "./harness.mjs";
+import { nodeTestSuite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -152,7 +152,7 @@ const blockByteAt = (index, offset) =>
  * repository holds to be worse than no check at all. Adding a row here
  * raises this number in the same diff.
  */
-const { check, mustReject, report } = suite("crypto.js", 63);
+const { check, mustReject, report } = nodeTestSuite("crypto.js", 63);
 
 // ---------------------------------------------------------------------
 // The shape of the export itself
