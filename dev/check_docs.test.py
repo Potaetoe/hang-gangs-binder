@@ -51,7 +51,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 65
+EXPECTED = 67
 
 
 def check(label, condition):
@@ -179,6 +179,29 @@ check("a heading marker does not continue a phrase",
 # as a gap.
 check("a phrase interrupted by another word is not a tripwire",
       clean("The tool %s really %s, we wrote.\n" % (HEAD, TAIL)))
+
+# PINNED, NOT ENDORSED - a fourth finding, parked on #121 the way #121
+# itself was parked rather than widened here. Emphasis inside a phrase
+# defeats it: these documents bold heavily, so "**will not
+# authenticate** from a non-interactive shell" is the shape a falsified
+# claim plausibly comes back in, and "*" is not a gap character.
+#
+# It is parked rather than fixed because the fix is a genuine fork,
+# not an oversight. tools/check_comments.py admits "*" to GAP, where it
+# can only be a continuation marker; in markdown "*" is emphasis AND a
+# list bullet, so admitting it here buys the emphasis case at the cost
+# of gluing two star-bulleted list items into one phrase nobody wrote.
+# The second arm states that cost in the bullet style that pays it, so
+# the two flip together under the same mutation and whoever takes the
+# fork meets both halves of it at once.
+EMPHASIZED = "The tool **%s** %s, we wrote.\n" % (
+    " ".join(WORDS[:3]), " ".join(WORDS[3:]))
+
+check("a tripwire broken by emphasis is not detected",
+      clean(EMPHASIZED))
+
+check("two star-bulleted list items are not one phrase",
+      clean("* The tool %s\n* %s, we wrote.\n" % (HEAD, TAIL)))
 
 
 # ------------------------------------------------------------------ #
