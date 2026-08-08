@@ -69,6 +69,18 @@ def clean(text):
     return scanned(text) == []
 
 
+def only(problems):
+    """The single problem expected, or "" when there is not exactly one.
+
+    Indexing straight into the list would raise instead of reporting,
+    and a suite that raises stops: the remaining contracts never run,
+    so a mutation shows one break at a time rather than all of them.
+    Returning a string keeps a broken rule a FAIL row with a label on
+    it.
+    """
+    return problems[0] if len(problems) == 1 else ""
+
+
 # ------------------------------------------------------------------ #
 # Tripwires - a claim this project has falsified, back in a document.  #
 
@@ -78,13 +90,14 @@ check("a falsified claim in a document is reported",
       len(scanned("The tool %s, we wrote." % PHRASE)) == 1)
 
 check("the report names the document and the line it is on",
-      scanned("first\nsecond\n%s\n" % PHRASE)[0].startswith("README.md:3:"))
+      only(scanned("first\nsecond\n%s\n" % PHRASE))
+      .startswith("README.md:3:"))
 
 # The reason travels with the report because the reader's next action
 # depends on it: the phrase is banned as a *finding*, and somebody
 # meeting it for the first time needs to know what falsified it.
 check("the report carries why the claim is falsified",
-      WHY in scanned(PHRASE)[0])
+      WHY in only(scanned(PHRASE)))
 
 check("a falsified claim is matched regardless of case",
       len(scanned(PHRASE.upper())) == 1)
@@ -175,7 +188,7 @@ check("a British spelling is matched regardless of case",
       len(scanned("Colour")) == 1)
 
 check("the report names the word it found",
-      "'colour'" in scanned("the colour of it").pop().replace('"', "'"))
+      "'colour'" in only(scanned("the colour of it")).replace('"', "'"))
 
 # PINNED, NOT ENDORSED (#121). Every pattern is anchored with \b at the
 # front only, so a British spelling reached through a URL path or a
@@ -217,7 +230,8 @@ check("a number in front of another noun is not a gate count",
       clean("The eleven checkers each have a suite."))
 
 check("the report says where to look instead of what the number was",
-      "prints its own list" in scanned("The gate runs eleven checks.")[0])
+      "prints its own list"
+      in only(scanned("The gate runs eleven checks.")))
 
 # PINNED, NOT ENDORSED (#121). The pattern requires the number and the
 # noun to be adjacent, so any word between them evades it. The "all
@@ -239,7 +253,7 @@ check("a registered top-level document is not",
 # The message is the mechanism: the approval is not recorded anywhere
 # else, so the report has to say where to record it.
 check("the report says that editing REGISTRY is the approval",
-      "REGISTRY" in check_docs.registry_problems({"NOTES.md"})[0])
+      "REGISTRY" in only(check_docs.registry_problems({"NOTES.md"})))
 
 check("every registered document is accepted by name",
       check_docs.registry_problems(check_docs.REGISTRY) == [])
@@ -283,7 +297,7 @@ with tempfile.TemporaryDirectory() as empty:
         check_docs.REPO = saved_repo
 
 check("a missing security/ folder is reported, not skipped",
-      len(gone) == 1 and "missing" in gone[0])
+      "missing" in only(gone))
 
 
 # ------------------------------------------------------------------ #
@@ -335,8 +349,7 @@ PLANTED = REAL + "The tool %s, we wrote.\n" % PHRASE
 FOUND = check_docs.scan_text("AGENTS.md", PLANTED)
 
 check("the rules run over a real document's real bytes",
-      len(FOUND) == 1
-      and FOUND[0].startswith(
+      only(FOUND).startswith(
           "AGENTS.md:%d:" % len(PLANTED.splitlines())))
 
 check("so the gate passes on the tree as it stands",
@@ -357,7 +370,7 @@ check("a scan that read something is not",
       check_docs.null_scan_problems(["README.md"]) == [])
 
 check("the report says the scan found nothing to read",
-      "read" in check_docs.null_scan_problems([])[0])
+      "read" in only(check_docs.null_scan_problems([])))
 
 # Defined and not called is the same as absent. This drives the floor
 # through problems(), which is what the gate actually runs.
@@ -369,7 +382,7 @@ finally:
     check_docs.targets = saved_targets
 
 check("the floor is wired into problems(), not merely defined",
-      check_docs.null_scan_problems([])[0] in WIRED)
+      only(check_docs.null_scan_problems([])) in WIRED)
 
 # The floor sits on the empty list and nowhere else. CUTOVER.md deletes
 # itself in its own aftercare, so one registered document going absent
