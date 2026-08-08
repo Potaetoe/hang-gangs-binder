@@ -37,6 +37,21 @@ Worker is actually answering, from fact rather than memory.
 | `GET /snapshot` | any session | returns it — members only |
 | `DELETE /snapshot` | admin | takes it down |
 | `DELETE /submission/:id` | admin | removes one row |
+| `GET /content` | anyone, allowed origin | returns the site copy overrides — **no credential, deliberately** |
+| `POST /content` | admin | sets one name; last write of a name wins |
+| `DELETE /content/:name` | admin | removes one name, so the page falls back to its shipped copy |
+| `GET /membership` | admin | lists the rows — account id, role, label, added date |
+| `POST /membership` | admin | adds or relabels one person, sent as a numeric Telegram id |
+| `DELETE /membership/:role/:id` | admin | removes one row |
+
+`GET /content` is the only route here that answers without a
+credential, and the argument for it is in `server/worker.js` above
+`handleReadContent`: the values stand in for bytes anybody can already
+fetch from the published site, so gating them would promise a
+confidentiality the fallback does not have. What follows is a rule, not
+a preference — **nothing about a person goes in that table.** The lists
+of people are `membership`, on their own routes, admin in every
+direction.
 
 `EXPORT_TOKEN` opens every admin route as break-glass. It is not a
 member, so it cannot submit — there is no account for it to write to.
@@ -56,8 +71,8 @@ means rotating it.
 
 `[pre-cutover]` The deployed Worker still runs the pre-accounts routes:
 an open `POST /submit`, `EXPORT_TOKEN` on the read paths, an ungated
-`GET /snapshot`, no auth routes, no `DELETE /session` and no per-row
-delete. **Do not deploy `server/worker.js` ahead of the cutover** —
+`GET /snapshot`, no auth routes, no `DELETE /session`, no per-row
+delete, and neither the `/content` nor the `/membership` routes. **Do not deploy `server/worker.js` ahead of the cutover** —
 against the live site it returns 401 to every submitter, and the new
 schema's `NOT NULL account_id` refuses the old form's rows. The ordering
 inside the sitting is `CUTOVER.md`'s.
