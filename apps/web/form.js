@@ -649,6 +649,11 @@
         return;
       }
 
+      // The panel owns the account summary and responds by re-reading /me.
+      // Dispatching only after the Worker accepts the row means a refused or
+      // failed request can never make the panel claim something was stored.
+      document.dispatchEvent(new CustomEvent("binder:submitted"));
+
       show(form, false);
       say("", null);
       show(done, true);

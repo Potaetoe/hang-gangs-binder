@@ -366,6 +366,26 @@ await check("the ciphertext is base64 the endpoint accepts", async () => {
   return /^[A-Za-z0-9+/]+={0,2}$/.test(blob) && blob.length < 16 * 1024;
 });
 
+/*
+ * The member panel re-reads /me when this event fires. Its placement is the
+ * contract: every network refusal returns before it, and the success UI comes
+ * after it. More than one dispatch would make one stored row trigger several
+ * route reads and would obscure which result the panel is rendering.
+ */
+await check("the stored event exists only on the successful network path",
+  () => {
+    const dispatch =
+      'document.dispatchEvent(new CustomEvent("binder:submitted"));';
+    const occurrences = formSrc.split(dispatch).length - 1;
+    const failureMessage = formSrc.indexOf(
+      '" Nothing was stored - try again.", "bad");');
+    const failureReturn = formSrc.indexOf("return;", failureMessage);
+    const dispatchAt = formSrc.indexOf(dispatch);
+    const successUi = formSrc.indexOf("show(form, false);", dispatchAt);
+    return occurrences === 1 && failureMessage !== -1 && failureReturn !== -1 &&
+      failureReturn < dispatchAt && dispatchAt < successUi;
+  });
+
 /* ------------------------------------------------------------------ */
 
 for (const [ok, label, note] of results) {
