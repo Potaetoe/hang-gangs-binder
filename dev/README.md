@@ -9,6 +9,13 @@ in `tools/check.py` — the single registry, whose printed stage table is
 the roster; CI runs that same gate as one step. The table below maps
 what each suite defends, not where it is registered.
 
+`harness.mjs` holds the `check`/`report` pair and the assertion that the
+number of checks a run performed is the number the suite says it has —
+so a check that stops running goes red instead of vanishing under a
+confident summary. A suite adopting it keeps its own stubs, fixtures and
+labels, and passes its own count; the header of that file explains the
+two ways a check may be written and why both are still accepted.
+
 | Suite | What it proves |
 | --- | --- |
 | `crypto.test.mjs` | round trips for both stored formats, and the **committed fixtures still decrypt** — the one check standing between a format change and an unreadable database. The v2 fixture is asserted twice, once per recipient, because a change that locks one of the two out passes every round trip |

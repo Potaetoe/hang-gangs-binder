@@ -17,6 +17,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { suite } from "./harness.mjs";
 
 const SOURCE = fileURLToPath(new URL("../server/worker.js", import.meta.url));
 const src = await readFile(SOURCE, "utf8");
@@ -294,11 +295,14 @@ const call = (method, path, opts = {}, e = env) =>
 const bearer = (t, headers = good) =>
   ({ ...headers, Authorization: "Bearer " + t });
 
-let failures = 0;
-function check(label, ok, detail = "") {
-  if (!ok) failures++;
-  console.log(`${ok ? "pass" : "FAIL"}  ${label.padEnd(54)} ${detail}`);
-}
+/*
+ * The count is asserted rather than only printed. This file is the
+ * gating matrix - the one place where a check that stops running reads
+ * as "nothing refused anybody" rather than as a missing row, and where
+ * POST /auth/dev failing open is itself the compromise. See
+ * dev/harness.mjs.
+ */
+const { check, report } = suite("worker.js", 216);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1596,5 +1600,4 @@ await statusOf("an always_allow row does not bypass the group check either",
   signIn({}, gated), 403);
 globalThis.fetch = beforeGroupStub;
 
-console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
-process.exit(failures ? 1 : 0);
+report();
