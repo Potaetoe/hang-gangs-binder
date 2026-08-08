@@ -201,9 +201,21 @@ check("the inert 404 page does not load session.js",
 check("the submission request carries the session authorization header",
   formSource.includes("BinderSession.authorization()"));
 
+/*
+ * The third pin is a module boundary rather than a style rule - #90.
+ *
+ * `clear()` is also what `read()` calls on a malformed or expired stored
+ * value, and what the member panel calls when `/me` answers 401. A revoke
+ * living in here would fire a doomed `DELETE` on both of those, one of
+ * them for a session the endpoint has just refused. Ending a session is
+ * an act somebody performs, so that request belongs at the sign-out call
+ * site; this file stays the credential store, with no endpoint of its own
+ * and no knowledge of BINDER_CONFIG.
+ */
 for (const [label, pattern] of [
   ["session.js never touches persistent localStorage", /\blocalStorage\b/],
   ["session.js never puts a credential in a URL", /URLSearchParams|location\.hash/],
+  ["session.js keeps no network surface of its own", /\bfetch\s*\(|sendBeacon/],
 ]) {
   check(label, !pattern.test(sessionSource));
 }
@@ -212,4 +224,4 @@ if (failures) {
   console.error(`\nsession/auth FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsession/auth OK - 27 checks");
+console.log("\nsession/auth OK - 28 checks");
