@@ -17,10 +17,12 @@
   const Demo = root.BinderDemo;
   const $ = function (id) { return document.getElementById(id); };
 
+  // The demo's own three come from demo-stub.js, which is their one home
+  // and the list dev/demo.test.mjs scans apps/web for. The other two are
+  // the PRODUCT's keys: apps/web names them because they are its own, so
+  // they are deliberately not in that list and are written out here.
+  const [SCENARIO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
   const SESSION_KEY = "hgb-session";
-  const SCENARIO_KEY = "hgb-demo-scenario";
-  const DATA_KEY = "hgb-demo-data";
-  const WORLD_KEY = "hgb-demo-world";
   const PREFILL_KEY = "hgb-submit-prefill";
 
   const MIRROR = "/demo/";
@@ -187,6 +189,13 @@
    * cannot read its file is reported as unreadable rather than as a
    * missing feature, because those are different facts and only one of
    * them is about the product.
+   *
+   * The verdict itself is demo-stub.js's, so this table and
+   * dev/demo.test.mjs reason about one function. Do not inline a
+   * substring test here to save a call: a raw `indexOf` paints
+   * admin-panel as drivable off one TODO comment mentioning
+   * "instrument", and this is the table the owner reads while deciding
+   * the cutover. A false PASS here is the worst thing this tool can do.
    */
   async function paintBoxes() {
     const body = $("boxes");
@@ -222,7 +231,7 @@
       if (source === null) {
         verdict.textContent = "unreadable";
         where.textContent = box.probe.file + " could not be read.";
-      } else if (source.indexOf(box.probe.pattern) !== -1) {
+      } else if (Demo.probeHit(source, box.probe)) {
         verdict.textContent = "drivable";
         verdict.classList.add("yes");
       } else {

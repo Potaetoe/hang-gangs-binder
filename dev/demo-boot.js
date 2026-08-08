@@ -20,9 +20,11 @@
     throw new Error("demo-boot.js loaded without demo-stub.js.");
   }
 
-  const SCENARIO_KEY = "hgb-demo-scenario";
-  const DATA_KEY = "hgb-demo-data";
-  const WORLD_KEY = "hgb-demo-world";
+  // Named by demo-stub.js rather than here, because dev/demo.test.mjs
+  // scans apps/web for these strings: a shipped page keyed on one would
+  // be a demo hook in the published bytes. A second copy of the names is
+  // a second copy that can drift out from under that scan.
+  const [SCENARIO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
 
   /*
    * The real fetch, kept before anything can take it away, and used for
@@ -70,14 +72,14 @@
   }
 
   /*
-   * Which requests belong to the Worker.
+   * Which requests belong to the Worker, and which may leave at all.
    *
-   * Read off BINDER_CONFIG at call time rather than at load time,
-   * because config.js has not run yet when this file does. The
-   * workers.dev test beside it is not redundant: it catches a page that
-   * reaches the endpoint by some route other than the configured one,
-   * and the whole promise of this demo is that no request leaves the
-   * machine.
+   * BINDER_CONFIG is read at call time rather than at load time, because
+   * config.js has not run yet when this file does. Both decisions
+   * themselves are demo-stub.js's - this file is wiring, and a decision
+   * living here is a decision no suite can drive. They compared
+   * substrings while they lived here, and two URL classes walked past
+   * the refusal; demo-stub.js states what changed and why.
    */
   function endpointOf() {
     const config = root.BINDER_CONFIG || {};
@@ -85,21 +87,11 @@
   }
 
   function targetOf(url) {
-    const text = String(url);
-    const endpoint = endpointOf();
-    if (endpoint && text.indexOf(endpoint) === 0) {
-      return text.slice(endpoint.length) || "/";
-    }
-    if (/^https?:\/\/[^/]*workers\.dev/.test(text)) {
-      return text.replace(/^https?:\/\/[^/]*/, "") || "/";
-    }
-    return null;
+    return Demo.workerPathOf(url, root.location.href, endpointOf());
   }
 
   function sameOrigin(url) {
-    const text = String(url);
-    if (text.indexOf("//") === -1) return true;
-    return text.indexOf(root.location.origin) === 0;
+    return Demo.sameOriginAs(url, root.location.href);
   }
 
   function respond(answer) {
