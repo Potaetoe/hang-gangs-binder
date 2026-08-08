@@ -304,3 +304,14 @@ Hard-won platform facts, one line each, dated. The full stories are in
   emptied the primary checkout's node_modules through a junctioned
   one. Sever junctions (non-recursive delete of the link) before any
   recursive removal touches a tree that might hold one.
+- 2026-08-08: `getComputedStyle()` inside a `display:none` subtree
+  serves stale resolved colors — two palettes read back identical
+  while the custom properties under them do change. Reveal the element
+  and read one palette per script call. It is the inverse of the
+  `hidden`-reads-true trap under "Verification", and both defeat a
+  property read rather than what renders.
+- 2026-08-08: a worktree warm-up that races the agent already working
+  in it detaches HEAD mid-slice — the commit lands on no branch, the
+  branch stays at base, and the branch signaled as ready then pushes
+  nothing. Move no worktree that has a branch checked out or commits
+  of its own.
