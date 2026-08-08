@@ -27,6 +27,10 @@ drift.) In outline:
     - each page stays inside its gzipped transfer budget, in both
       directions (tools/check_budget.py carries the ceilings; a change
       that adds weight raises them in its own diff)
+    - every palette in theme.css meets WCAG with margin, and every
+      color it declares is measured by something
+      (tools/check_contrast.py carries the pairings and the scope
+      table; a palette that table does not name fails)
     - eslint and ruff pass
     - every dev/ suite passes, from the crypto fixture to the Worker's
       gating matrix - NODE_SUITES below is the roster
@@ -220,6 +224,20 @@ def main():
     results.append(("check_budget extractor + budgets", run(
         "check_budget extractor + budgets",
         [sys.executable, "dev/check_budget.test.py"]
+    )))
+
+    # Every palette against WCAG, with a written margin. #81 measured
+    # nineteen failing pairings by hand and nothing in this gate would
+    # have found the twentieth - or noticed a fifth palette shipping
+    # unmeasured, which is the arm that outlives the values.
+    results.append(("palettes meet WCAG", run(
+        "palettes meet WCAG",
+        [sys.executable, "tools/check_contrast.py"]
+    )))
+
+    results.append(("check_contrast parser + pairings", run(
+        "check_contrast parser + pairings",
+        [sys.executable, "dev/check_contrast.test.py"]
     )))
 
     node = find_node()

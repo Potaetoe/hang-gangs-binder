@@ -142,6 +142,28 @@ jobs:
       - name: Check the budget extractor and the ceilings
         run: python dev/check_budget.test.py
 
+      # Every palette in theme.css against WCAG, computed from the
+      # declared hexes rather than trusted. #81 measured nineteen
+      # failing pairings by hand - Light's muted text, its filled
+      # button label, nine of its ten chart-series pairings - and
+      # nothing here would have found the twentieth. See issue #81.
+      #
+      # Two ratchets, not one. Every ratio must clear its threshold by
+      # 0.1 rather than merely reach it, because #81 found a pairing
+      # passing at 4.53 against 4.5 and named that luck. And a palette
+      # block whose selector is not in the pinned scope table fails, so
+      # a fifth palette cannot ship unmeasured - which is the arm that
+      # still matters once today's values are correct.
+      - name: Check every palette meets WCAG
+        run: python tools/check_contrast.py
+
+      # The parser and the arms behind it, tested on strings.
+      # Registered here AND in tools/check.py, like every other stage -
+      # a check that runs only on a developer's machine looks armed and
+      # is not.
+      - name: Check the contrast parser and the pairing list
+        run: python dev/check_contrast.test.py
+
       # The one check whose failure is about the data rather than the
       # site. A crypto.js that no longer reads what is already stored
       # publishes a site that looks perfect and cannot be exported from,

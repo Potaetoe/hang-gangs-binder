@@ -8,7 +8,10 @@
 (function () {
   "use strict";
   const KEY = "hgb-theme";
-  const BG = { pink: "#241b21", light: "#f2efe9", dark: "#121212" };
+  const BG = {
+    pink: "#241b21", light: "#f2efe9", dark: "#121212",
+    contrast: "#000000",
+  };
   const buttons = document.querySelectorAll("[data-set-theme]");
   if (!buttons.length) return;
 
@@ -24,14 +27,30 @@
     });
   }
 
+  // What the stylesheet gives a page carrying no data-theme attribute.
+  // This function is a mirror of the two :root:not([data-theme]) media
+  // blocks in theme.css and has to stay one: apply() writes the
+  // attribute, which outranks both of them, so a disagreement here does
+  // not degrade quietly - the page paints the palette the CSS chose and
+  // then repaints to this one the moment this file runs.
+  //
+  // Contrast is tested first for the same reason it sits last in
+  // theme.css: a system asking for more contrast AND for light matches
+  // both blocks, and contrast is the need while lightness is the
+  // preference.
+  function preferred() {
+    if (!window.matchMedia) return "dark";
+    if (matchMedia("(prefers-contrast: more)").matches) return "contrast";
+    if (matchMedia("(prefers-color-scheme: light)").matches) return "light";
+    return "dark";
+  }
+
   let stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
-  // No saved choice: reflect what the CSS is already doing (Light on a
-  // light-preferring system, Dark otherwise) without persisting. This
-  // pairing is load-bearing - if it disagrees with theme.css the page
-  // repaints to a different palette the moment this file runs.
-  apply(stored || (window.matchMedia &&
-    matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+  // Reflected without persisting: a visitor who has never touched a
+  // chip has not made a choice, and writing one would freeze today's
+  // system setting into storage.
+  apply(stored || preferred());
 
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
