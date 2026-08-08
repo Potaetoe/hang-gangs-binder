@@ -6,14 +6,15 @@
  *
  * How a palette is chosen (theme-init.js writes the attribute before
  * first paint, theme.js maintains it):
- *   no data-theme  -> Dark; a system preferring light gets Light, and a
- *                     system asking for more contrast gets High
- *                     contrast, which wins when both apply
+ *   no data-theme  -> Midnight; a system preferring light gets
+ *                     Parchment Daylight, and a system asking for more
+ *                     contrast gets High contrast, which wins when both
+ *                     apply
  *   data-theme=... -> that palette, in both directions
  *
- * Dark is the default rather than Pink: the portal opens on whatever
- * the visitor's system already asked for, and Pink is a choice they can
- * make rather than one made for them.
+ * Midnight is the default rather than Pink: the portal opens on
+ * whatever the visitor's system already asked for, and Pink is a choice
+ * they can make rather than one made for them.
  *
  * Components below are styled through the tokens only - never inside a
  * media query - so adding a palette is a block of variables and nothing
@@ -46,133 +47,223 @@
  * background here and check theme.js's BG map.
  */
 
-/* "Dark", the default: a standard neutral web dark - near-black
-   surfaces, gray text, blue accent.
+/*
+ * The three faces, vendored into apps/web/fonts.
+ * ---------------------------------------------
+ * Same-origin files, not a CDN request. The rule DESIGN.md states is
+ * positional - nothing third-party where plaintext is in reach - and a
+ * font served from somebody else's host on the page a member types
+ * their weight into is exactly that, quite apart from what it tells
+ * that host about who is reading. Each family's OFL text sits beside
+ * its file, which is what the license asks of anyone redistributing it.
+ *
+ * Latin subsets only, and one static instance per weight rather than
+ * the variable file: this site has five weights' worth of type in it,
+ * and a variable axis nobody varies is payload with no reader.
+ *
+ * font-display: swap on every face. The alternative is a page that
+ * paints nothing until a font arrives, and the first thing any of these
+ * pages says is either "sign in" or "this is encrypted before it is
+ * sent" - text worth reading in the fallback face rather than not
+ * reading at all.
+ *
+ * CSP: these are unreachable without `font-src 'self'`, which every
+ * page carries and tools/check_web.py pins. A page that loses it still
+ * renders, in the system stack, which is why that pin exists.
+ */
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/playfair-display-600-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Playfair Display";
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/playfair-display-600-italic-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/dm-sans-400-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/dm-sans-600-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/jetbrains-mono-400-latin.woff2") format("woff2");
+}
+
+/* "Midnight", the default: near-black warmed toward plum, cream text,
+   crimson doing the talking.
 
    Stated once, for two selectors. A page with no data-theme gets this
    (unless the system asks for light, below), and so does one that
-   explicitly selects dark - they are the same palette, and writing the
-   values twice would be two blocks to keep in step. */
+   explicitly selects Midnight - they are the same palette, and writing
+   the values twice would be two blocks to keep in step. */
 :root,
-:root[data-theme="dark"] {
+:root[data-theme="midnight"] {
   color-scheme: dark;
-  --color-bg: #121212;
-  --color-surface: #1e1e1e;
-  --color-accent: #3b82f6;
-  --color-accent-strong: #60a5fa;
-  --color-text: #e4e4e7;
-  --color-text-muted: #a1a1aa;
-  --color-border: #33333a;
-  --color-border-strong: #75747e;
-  --color-warn-bg: #3a2222;
-  --color-warn-text: #f2b8b5;
-  --color-field: #121212;
-  --color-focus: #93c5fd;
-  /* One step brighter than --color-accent, which stays #3b82f6 for
-     fills. As text on a card the accent measures 4.53:1, and 4.53
-     against a 4.5 requirement is a rounding away from failing; this
-     reads 4.69:1 at the same hue and saturation. The two tokens carry
-     different values for the first time here, which is the whole
-     reason the role split exists - a fill and a label on a surface are
-     measured against different backgrounds. */
-  --color-accent-text: #4085f6;
-  --color-on-accent: #121212;
+  --color-bg: #120d10;
+  --color-surface: #1c1417;
+  /* The approved mockup draws this fill at #a62e38, which measures
+     2.81:1 against the page and 2.64:1 against a card - under the 3:1
+     WCAG asks of a shape somebody has to find. Raised along its own
+     hue and saturation until it clears both, and no further: every
+     step up here costs the cream label sitting on it, and the two
+     requirements close on this value from opposite sides. */
+  --color-accent: #c73743;
+  /* The hover fill, and nothing else - links take --color-accent-text.
+     It goes DOWN from the accent rather than up, which is the opposite
+     of the other dark palettes here and is forced by the same pair of
+     constraints: the label on this button is the light half, so a
+     lighter hover is the one direction that makes it harder to read. */
+  --color-accent-strong: #bd3440;
+  --color-text: #f1e9e2;
+  --color-text-muted: #bba9a6;
+  --color-border: #4a3a40;
+  --color-border-strong: #7a6870;
+  --color-warn-bg: #3a2a18;
+  --color-warn-text: #e7b583;
+  --color-field: #120d10;
+  --color-focus: #f2a9b4;
+  /* Crimson as text, which the fill cannot be: a value dark enough to
+     carry a cream label is a value nothing can read at body size. This
+     is the token that role split exists for, and Midnight is the
+     palette where the two are furthest apart. */
+  --color-accent-text: #e4737c;
+  --color-on-accent: #fff7f1;
   --color-series-0: var(--color-accent);
-  --color-series-1: #d95926;
-  --color-series-2: #199e70;
-  --color-series-3: #c98500;
-  --color-series-4: #d55181;
-  --color-series-5: #008300;
+  --color-series-1: #c98500;
+  --color-series-2: #d55181;
+  --color-series-3: #9085e9;
+  --color-series-4: #199e70;
+  --color-series-5: #d95926;
 }
 
 /* "Pink": deep plum with pink accents. The project's own palette, now
-   chosen rather than assumed. */
+   leaning toward the identity beside it rather than standing apart from
+   it - the plum is deeper and warmer than it was, close enough to
+   Midnight that the two read as the same book in two moods, while the
+   accent stays unmistakably pink. That was the owner's call on #73:
+   lean, do not preserve.
+
+   Its buttons keep the shape the other dark palettes have and Midnight
+   had to break - a light fill under a dark label - so here
+   --color-accent-strong still goes up for hover, and the label gets
+   easier to read rather than harder. */
 :root[data-theme="pink"] {
   color-scheme: dark;
-  --color-bg: #241b21;
-  --color-surface: #322730;
+  --color-bg: #1e141a;
+  --color-surface: #2a1d26;
   --color-accent: #e87fa8;
   --color-accent-strong: #f4a6c6;
   --color-text: #f5e6ee;
-  --color-text-muted: #bfa8b6;
-  --color-border: #473942;
-  --color-border-strong: #8b7a85;
-  --color-warn-bg: #4a2626;
-  --color-warn-text: #f3b0b0;
-  --color-field: #241b21;
+  --color-text-muted: #c2aab8;
+  --color-border: #493742;
+  --color-border-strong: #8b7784;
+  /* Warn moves with the surfaces: the old #4a2626 was a red box on a
+     cooler plum, and beside this one it reads as a third accent rather
+     than as a warning. Amber-brown keeps it distinct from both the
+     accent and the crimson next door. */
+  --color-warn-bg: #3f2320;
+  --color-warn-text: #f0b49f;
+  --color-field: #1e141a;
   --color-focus: #ffa8c8;
   --color-accent-text: #e87fa8;
-  --color-on-accent: #241b21;
+  --color-on-accent: #1e141a;
   --color-series-0: var(--color-accent);
   --color-series-1: #d95926;
   --color-series-2: #199e70;
   --color-series-3: #c98500;
-  /* Violet and red where Dark takes magenta and green. Magenta beside
-     this palette's pink accent reads as the same line twice, and green
-     is the one hue that does not clear 3:1 on a plum surface. */
+  /* Red where Midnight takes rose. Rose beside this palette's pink
+     accent reads as the same line twice, and a green dark enough to
+     separate from #199e70 is the one hue that cannot clear 3:1 on a
+     plum surface. */
   --color-series-4: #9085e9;
   --color-series-5: #e66767;
 }
 
-/* With no saved choice, a light-preferring system gets Light. Once a
-   theme is picked, the data-theme attribute wins in both directions.
-   Same values as [data-theme="light"] below. */
+/* With no saved choice, a light-preferring system gets Parchment
+   Daylight. Once a theme is picked, the data-theme attribute wins in
+   both directions. Same values as [data-theme="daylight"] below. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --color-bg: #f2efe9;
-    --color-surface: #faf8f4;
-    --color-accent: #56724f;
-    --color-accent-strong: #47613f;
-    --color-text: #3a3d35;
-    --color-text-muted: #6a6c60;
-    --color-border: #ddd8cb;
-    --color-border-strong: #8a8577;
-    --color-warn-bg: #ece0d3;
-    --color-warn-text: #7a4a33;
-    --color-field: #ffffff;
-    --color-focus: #3e5a38;
-    --color-accent-text: #56724f;
-    --color-on-accent: #f2efe9;
+    --color-bg: #f3eadb;
+    --color-surface: #fbf5ea;
+    --color-accent: #8e2530;
+    --color-accent-strong: #75161f;
+    --color-text: #2e2226;
+    --color-text-muted: #61524b;
+    --color-border: #d6c6b0;
+    --color-border-strong: #857567;
+    --color-warn-bg: #ebdcc2;
+    --color-warn-text: #6e4a1f;
+    --color-field: #fffdf6;
+    --color-focus: #5e1b23;
+    --color-accent-text: #8e2530;
+    --color-on-accent: #fbf1e4;
     --color-series-0: var(--color-accent);
-    --color-series-1: #b23a63;
-    --color-series-2: #9c6100;
-    --color-series-3: #2a78d6;
-    --color-series-4: #0a7d4f;
-    --color-series-5: #4a3aa7;
+    --color-series-1: #9c6100;
+    --color-series-2: #2a78d6;
+    --color-series-3: #b23a63;
+    --color-series-4: #4a3aa7;
+    --color-series-5: #0a7d4f;
   }
 }
 
-/* "Light" is deliberately natural rather than bright: linen and stone
-   neutrals with a muted sage accent.
+/* "Parchment Daylight": cream paper, plum ink, the same crimson doing
+   the talking. Daylight rather than a generic light mode - it is the
+   same book in the morning, which is the whole reason it replaced the
+   linen-and-sage palette that shared nothing with the dark ones but a
+   token list.
 
-   The pale surfaces are what make this the palette that failed hardest.
-   A hue legible on near-black is a hue that disappears here, so the
-   sage accent is a step deeper than it looks like it needs to be and
+   The pale surfaces are still what make this the palette that fails
+   hardest. A hue legible on near-black is a hue that disappears here,
+   so the crimson is deep enough to carry a cream label AND to be read
+   as text - one value doing both, which Midnight cannot manage - and
    the chart series are their own darkened set rather than the shared
    one. tools/check_contrast.py holds every one of those numbers. */
-:root[data-theme="light"] {
+:root[data-theme="daylight"] {
   color-scheme: light;
-  --color-bg: #f2efe9;
-  --color-surface: #faf8f4;
-  --color-accent: #56724f;
-  --color-accent-strong: #47613f;
-  --color-text: #3a3d35;
-  --color-text-muted: #6a6c60;
-  --color-border: #ddd8cb;
-  --color-border-strong: #8a8577;
-  --color-warn-bg: #ece0d3;
-  --color-warn-text: #7a4a33;
-  --color-field: #ffffff;
-  --color-focus: #3e5a38;
-  --color-accent-text: #56724f;
-  --color-on-accent: #f2efe9;
+  --color-bg: #f3eadb;
+  --color-surface: #fbf5ea;
+  --color-accent: #8e2530;
+  --color-accent-strong: #75161f;
+  --color-text: #2e2226;
+  --color-text-muted: #61524b;
+  --color-border: #d6c6b0;
+  --color-border-strong: #857567;
+  --color-warn-bg: #ebdcc2;
+  --color-warn-text: #6e4a1f;
+  --color-field: #fffdf6;
+  --color-focus: #5e1b23;
+  --color-accent-text: #8e2530;
+  --color-on-accent: #fbf1e4;
   --color-series-0: var(--color-accent);
-  --color-series-1: #b23a63;
-  --color-series-2: #9c6100;
-  --color-series-3: #2a78d6;
-  --color-series-4: #0a7d4f;
-  --color-series-5: #4a3aa7;
+  --color-series-1: #9c6100;
+  --color-series-2: #2a78d6;
+  --color-series-3: #b23a63;
+  --color-series-4: #4a3aa7;
+  --color-series-5: #0a7d4f;
 }
 
 /* "High contrast", for a visitor who has said the other three are not
@@ -253,6 +344,25 @@
   --color-accent-quiet: color-mix(in oklab, var(--color-accent) 12%,
                                   transparent);
 
+  /*
+   * Three faces, three jobs, and the job is what the token is named
+   * after. A stack is not a preference list to pick from: whichever
+   * face arrives, the role is the same, and the system names after
+   * each vendored one are what a reader sees while the woff2 is in
+   * flight or if it never comes.
+   *
+   * --font-display  headings, and the wordmark when it arrives
+   * --font-body     everything a person reads in sentences
+   * --font-mono     numbers, eyebrows, keys, machine output - anything
+   *                 whose job is to line up or to look machine-set
+   */
+  --font-display: "Playfair Display", Georgia, "Palatino Linotype",
+                  "Book Antiqua", serif;
+  --font-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+               sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+               Consolas, monospace;
+
   /* One type scale. Only the display step is fluid - body text that
      resizes with the viewport is harder to read, not easier. */
   --text-xs: 0.8125rem;
@@ -332,8 +442,7 @@ body {
   gap: var(--space-6);
   background: var(--color-bg);
   color: var(--color-text);
-  font: var(--text-base)/1.55 system-ui, -apple-system, "Segoe UI", Roboto,
-        sans-serif;
+  font: var(--text-base)/1.55 var(--font-body);
 }
 
 /* Every direct child of the page centers on the same measure, so the
@@ -386,10 +495,26 @@ body.wide .narrow {
 
 main { flex: 1; }
 
+/* Every heading is the display face, not only the page title. A serif
+   h1 above a sans h2 reads as two designs arguing, and h2 is the
+   heading a card carries - which is most of the headings on this
+   site. 600 rather than the browser's bold: this face has a real
+   semibold, and synthesized bold on a high-contrast serif thickens the
+   stems until the thin ones disappear. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
 h1 {
   font-size: var(--display);
   line-height: 1.2;
-  letter-spacing: -0.015em;
+  /* Negative tracking was there to tighten a system sans set large.
+     The display face is drawn tight already, and pulling it further
+     collides the crossbars. */
+  letter-spacing: 0;
   text-wrap: balance;
   margin: 0;
 }
@@ -414,16 +539,24 @@ p {
 .small { font-size: var(--text-sm); }
 
 /* Eyebrow above the title. Uppercase needs the extra tracking to stay
-   readable at this size. */
+   readable at this size, and the mono face is what makes it read as a
+   label on the page rather than as a very small sentence. */
 .eyebrow {
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   color: var(--color-text-muted);
 }
 
-/* Numbers that will sit in columns once there is data to line up. */
-.tabular { font-variant-numeric: tabular-nums; }
+/* Numbers that will sit in columns once there is data to line up. The
+   mono face gives them one width whether or not the face underneath
+   offers tabular figures, which not every fallback does. */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
 
 /* The header carries no rule of its own, and that is deliberate rather
    than an omission: it is a nav bar above a title inside a `.stack`,
@@ -646,7 +779,7 @@ input[type="text"] { font-variant-numeric: tabular-nums; }
 
 /* The key file is JSON. Monospace makes a truncated paste visible. */
 textarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
   resize: vertical;
 }
@@ -823,7 +956,7 @@ th {
 tbody tr:last-child td { border-bottom: 0; }
 
 .failure-list {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--color-warn-text);
   background: var(--color-warn-bg);
@@ -835,7 +968,7 @@ tbody tr:last-child td { border-bottom: 0; }
 }
 
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
@@ -934,26 +1067,31 @@ polyline.chart-series { fill: none; }
    series a shape belongs to and never what color that is.
 
    HOW THOSE VALUES WERE CHOSEN, since a hex here is not a matter of
-   taste. Slots 1-5 are a set per palette, validated together against
-   protan and deutan simulation in OKLab: adjacent slots separate by at
-   least 6 ΔE against a target of 8, and every slot clears 3:1 on both
-   the page and the card (4:1 in the high-contrast palette). The
-   ORDERING is the mechanism rather than decoration - orderings were
-   enumerated and only ones clearing every adjacent gate kept, which is
-   why Light runs magenta, amber, blue, green, violet: blue between
-   amber and green carries that pair from 6.6 to 9.2 under protan
-   simulation. Worst adjacent separation is 8.4 in Dark, Pink and High
-   contrast and 9.2 in Light, so nothing here leans on the 6-8 relief
-   band.
+   taste. Each palette's set is validated together against protan,
+   deutan and tritan simulation in OKLab: adjacent slots separate by at
+   least 6 ΔE against a target of 8, every slot sits inside the mode's
+   lightness band and over the chroma floor, and every slot clears 3:1
+   on both the page and the card (4:1 in the high-contrast palette).
 
-   Slot 0 is --color-accent, and it is the one slot chosen another way:
-   it answers to the palette rather than to the chart. Two of them
-   could not pass a categorical gate at all - Pink's accent is too
-   light for the dark lightness band, and Light's sage is under the
-   chroma floor, which is to say it reads as gray beside a real hue.
-   That is affordable only because color is a hint and never the sole
-   way to read a chart: dashboard.js prints the handle at the end of
-   every line. Nothing here may take that away.
+   The ORDERING is the mechanism rather than decoration - orderings are
+   enumerated and only ones clearing every adjacent gate are kept, and
+   which orderings those are is not guessable. Midnight leads with gold
+   rather than with the rose the mockup drew first, because every
+   ordering starting rose puts orange beside green, and that pair
+   collapses to 2.7 ΔE under protan simulation. Parchment Daylight puts
+   blue between amber and magenta for the same kind of reason.
+
+   Slot 0 is --color-accent, which answers to the palette rather than
+   to the chart, and in Midnight and Parchment Daylight the enumeration
+   was run WITH it in place - both sets clear every gate as a full six,
+   worst adjacent 9.4 ΔE (deutan) and 12.2 ΔE (deutan) respectively, on
+   both of the surfaces each is drawn on. Pink cannot: its accent is
+   too light for the dark lightness band, so its five remaining slots
+   are validated as a set on their own at 8.4 ΔE and the accent joins
+   them unmeasured, as High contrast's does. That is affordable only
+   because color is a hint and never the sole way to read a chart:
+   dashboard.js prints the handle at the end of every line. Nothing
+   here may take that away.
 
    Stroke on everything, fill only on the shapes that are meant to be
    solid - the dots and the label. */
@@ -1011,7 +1149,18 @@ footer {
   padding-top: var(--space-4);
 }
 
-a { color: var(--color-accent-strong); }
+/* Links take the accent AS TEXT, which is what that token has always
+   said it was for; --color-accent-strong is the primary button's hover
+   fill and nothing else.
+
+   They were one token until Midnight, and the two jobs only look alike
+   while a palette labels its buttons in the dark half of the pair -
+   then one lighter value happens to serve both. Midnight labels a
+   crimson fill in cream, and there a hover light enough to read as
+   link text on the page leaves the button's own label at 2.75:1.
+   tools/check_contrast.py measures both roles separately now, including
+   the label on the hovered fill, which nothing measured before. */
+a { color: var(--color-accent-text); }
 
 /* One focus ring for every interactive element, including the ones the
    form will add later. */

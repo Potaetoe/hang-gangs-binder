@@ -35,7 +35,8 @@ standing on the line.
 THE LEVEL BELONGS TO THE SCOPE
 ------------------------------
 SCOPES pins which palette each :root block is, and which level it
-answers to. Dark, Pink and Light are held to AA - 4.5 text, 3 non-text.
+answers to. Midnight, Pink and Parchment Daylight are held to AA - 4.5
+text, 3 non-text.
 The high-contrast palette is held to AAA - 7 text, 4 non-text - because
 a palette whose entire purpose is contrast is not finished when it
 merely matches the palette a visitor turned away from.
@@ -126,12 +127,12 @@ THRESHOLDS = {
 # are told apart only by their media condition. Dropping the condition
 # would measure one of them twice and the other never.
 SCOPES = {
-    (None, ':root,:root[data-theme="dark"]'): ("Dark", "AA"),
+    (None, ':root,:root[data-theme="midnight"]'): ("Midnight", "AA"),
     (None, ':root[data-theme="pink"]'): ("Pink", "AA"),
-    (None, ':root[data-theme="light"]'): ("Light", "AA"),
+    (None, ':root[data-theme="daylight"]'): ("Parchment Daylight", "AA"),
     (None, ':root[data-theme="contrast"]'): ("High contrast", "AAA"),
     ("(prefers-color-scheme: light)", ":root:not([data-theme])"):
-        ("Light (prefers-color-scheme)", "AA"),
+        ("Parchment Daylight (prefers-color-scheme)", "AA"),
     ("(prefers-contrast: more)", ":root:not([data-theme])"):
         ("High contrast (prefers-contrast)", "AAA"),
 }
@@ -161,8 +162,23 @@ PAIRINGS = [
     # serving both roles is why Light's button label sat at 4.0:1.
     ("--color-on-accent", "--color-accent", "text"),
 
-    # Ordinary links take --color-accent-strong.
-    ("--color-accent-strong", "--color-bg", "text"),
+    # --color-accent-strong is the primary button's hover fill, and only
+    # that. It was also the color of every ordinary link until Midnight,
+    # and the two jobs turn out to be incompatible whenever the button
+    # label is the light half of the pair: a hover light enough to read
+    # as link text on the page is a hover the cream label cannot sit on.
+    # Every earlier palette hid that, because all of them label their
+    # buttons in the dark half, where one lighter value happens to serve
+    # both. Links moved to --color-accent-text, which is what theme.css's
+    # own token comment always said that token was for.
+    #
+    # So this is measured as a shape rather than as text - and the label
+    # on it gets the pairing nothing had before. A hovered button is
+    # still a button: its fill has to be findable against the page, and
+    # what is written on it has to stay readable while the pointer is
+    # there.
+    ("--color-accent-strong", "--color-bg", "mark"),
+    ("--color-on-accent", "--color-accent-strong", "text"),
 
     # A focus ring nobody can see is not a focus indicator.
     ("--color-focus", "--color-bg", "mark"),

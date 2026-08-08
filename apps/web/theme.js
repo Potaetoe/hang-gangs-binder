@@ -1,15 +1,22 @@
 /*
- * Theme picker, shared by every page in this directory - one copy so
- * the pages cannot drift. The saved theme is applied before first paint
- * by a tiny inline script in each page's <head>; this file wires the
+ * Palette picker, shared by every page in this directory - one copy so
+ * the pages cannot drift. The saved palette is applied before first
+ * paint by theme-init.js in each page's <head>; this file wires the
  * chip buttons, keeps the browser-chrome color (meta theme-color) in
  * step with the palette, and persists the choice.
  */
 (function () {
   "use strict";
-  const KEY = "hgb-theme";
+  // A new key rather than the old "hgb-theme": the stored values are
+  // renamed in this same change, and a browser holding "dark" would
+  // otherwise set data-theme="dark", which matches no palette and
+  // paints the default while claiming a choice was honored. Nobody has
+  // used the site yet, so there is nothing to migrate - but a stale
+  // value read under a live key is a silent wrong answer, and a key
+  // nobody has written is a clean one.
+  const KEY = "hgb-palette";
   const BG = {
-    pink: "#241b21", light: "#f2efe9", dark: "#121212",
+    pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
     contrast: "#000000",
   };
   const buttons = document.querySelectorAll("[data-set-theme]");
@@ -39,10 +46,10 @@
   // both blocks, and contrast is the need while lightness is the
   // preference.
   function preferred() {
-    if (!window.matchMedia) return "dark";
+    if (!window.matchMedia) return "midnight";
     if (matchMedia("(prefers-contrast: more)").matches) return "contrast";
-    if (matchMedia("(prefers-color-scheme: light)").matches) return "light";
-    return "dark";
+    if (matchMedia("(prefers-color-scheme: light)").matches) return "daylight";
+    return "midnight";
   }
 
   let stored = null;
