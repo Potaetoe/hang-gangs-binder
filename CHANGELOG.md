@@ -234,6 +234,32 @@ On `accounts`, not released. `main` stays at the last complete release.
   registered in both `tools/check.py` and the CI workflow.
 
 ### Documentation
+- **The runbooks describe the accounts design, and now say which statements
+  are true today and which become true at the cutover.** Build step 10, #11.
+  `server/README.md`, `HANDOFF.md`, `README.md` and `server/schema.sql`.
+  **The do-not-deploy warning was kept, not removed** — the issue said it
+  should come out, and the cutover has not happened, so removing it was the
+  most dangerous thing this slice could have done. Its *reasoning* was stale
+  instead: it said the site was unbuilt, which stopped being true at step 3,
+  and it now names the ordering constraint that is actually load-bearing —
+  the Worker goes after the site, never before. `HANDOFF.md` was
+  restructured to state each affected procedure both ways rather than being
+  rewritten after the cutover as originally planned: making the rewrite a
+  step inside a busy, partly irreversible operation is how it gets dropped,
+  which reaches the same failure by a different road. Corrected along the
+  way: `GET /snapshot` is no longer "the one route with no token on it";
+  there are **two** destructive routes, not one; `EXPORT_TOKEN` stops being
+  what the admin page asks for and becomes break-glass only; and
+  `schema.sql` no longer calls `snapshots` the only table readable without a
+  credential. `server/wrangler.toml` needed nothing — #30 and step 0.5 had
+  already done what Part 9 asked of it.
+- **Two runbook claims were caught by checking them instead of writing
+  them.** `DELETE /submission/:id` returns 200 for an id that matches no
+  row, so a success does not confirm a row existed — the 404 on that route
+  means only that the id was not a number. And `worker.js`'s comment says a
+  first-time admin can read their numeric id off the page, which no page
+  does; `HANDOFF.md` documents the devtools route today and the gap is
+  filed as #58.
 - **Worker setup now records all three numeric id bindings as secrets, not
   vars.** Their being ids rather than credentials never made a public
   `[vars]` block safe: the allowlist is the membership oracle the

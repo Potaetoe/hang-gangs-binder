@@ -75,9 +75,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_expiry
   ON sessions(expires_at);
 
--- The published aggregate, and the only table anything can read without
--- a token. It holds counts, medians and histogram bins - no handles, no
--- rows - computed in the keyholder's browser and sent here as JSON.
+-- The published aggregate. It holds counts, medians and histogram bins -
+-- no handles, no rows - computed in the keyholder's browser and sent here
+-- as JSON.
+--
+-- This used to say it was "the only table anything can read without a
+-- token", and that stopped being true on 2026-08-05: GET /snapshot needs
+-- a member session, so every table now requires a credential to read.
+-- Gating it was not a reason to relax what goes in it, and nothing did -
+-- the document still carries no handles and no rows, which is why losing
+-- the session check would be a smaller failure here than anywhere else
+-- and is still a failure. See DESIGN.md, "The members' dashboard".
 --
 -- Exactly one row, forced by the CHECK. A history of snapshots would be
 -- more published data about the same people kept for nobody's benefit;

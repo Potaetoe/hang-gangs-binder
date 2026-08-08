@@ -5,23 +5,31 @@ because the transfer story is a design constraint here and not a
 postscript. `DESIGN.md` explains *why* it works this way; this file is
 the checklist.
 
-> **This describes the deployment as it runs today, and every procedure
-> in it works right now.** The export token still opens the export page;
-> the dashboard is still public; nothing here needs a Telegram sign-in.
+> **Every procedure in this file works against the deployment as it runs
+> today.** The export token still opens the export page; the dashboard is
+> still public; nothing here needs a Telegram sign-in.
 >
-> An accounts redesign was decided on 2026-08-05 and is **partly built**:
-> the Worker exists in the repository and is tested, but is **not
-> deployed**, and the site is untouched. When it does land, four things
-> in this file change — the four-things-move table gains admin accounts,
-> the export procedure loses the token box, the `curl` recovery becomes
-> the only place the export token is used, and there is a new bootstrap
-> step for making a successor an admin.
+> The accounts redesign, decided 2026-08-05, is **fully built as of
+> 2026-08-07 and not deployed.** Every build step is done and the live
+> endpoint and site are unchanged — see `server/README.md` for why the
+> Worker goes after the site and never before.
 >
-> It is deliberately not rewritten in advance. A runbook describing a
-> system that does not exist yet is worse than a stale one, because
-> somebody follows it during an incident. See `REDESIGN.md`, and
-> `server/README.md` for why the repository and the endpoint currently
-> disagree on purpose.
+> **What changed here on 2026-08-07, and why the earlier plan was wrong.**
+> This file used to say it would be rewritten *after* the cutover, on the
+> grounds that a runbook describing a system that does not exist is worse
+> than a stale one. That reasoning is right and the conclusion drawn from
+> it was not: it makes the rewrite a step **inside** the cutover, which is
+> a busy, partly irreversible operation with a table drop in it, and
+> "remember to also rewrite the prose" is exactly the step that gets
+> dropped. The failure it was protecting against is then reached by a
+> different road — the keyholder following a stale file, during the one
+> hour it is most likely to be stale.
+>
+> So each affected procedure now states **both**: what it is today, and
+> what it becomes after the cutover, marked. Nothing here describes a
+> system that does not exist without saying so. The four places it matters
+> are the four-things-move table, reading the submissions, unpublishing,
+> and a new bootstrap step for making a successor an admin.
 
 ## The one thing to understand first
 
@@ -46,6 +54,47 @@ touching the rest.
 
 Read access to the data is the private key **plus** the export token.
 Neither alone is enough, and neither is an account you have to share.
+
+**After the cutover there is a fifth thing, and it is the only one that is
+not a file or an account.** Admin rights are a **numeric Telegram id** in
+the Worker secret `ADMIN_TELEGRAM_IDS` — not a handle, because a handle can
+be changed and reused and a numeric id cannot.
+
+| Thing | What it gets you | How to hand it over |
+| --- | --- | --- |
+| **An admin id** | Fetches the ciphertext, publishes, deletes a row | Add their numeric id to `ADMIN_TELEGRAM_IDS` in the Worker's secrets. |
+
+Read access becomes the private key **plus** an admin session, and the
+export token stops being the routine credential — see "Reading the
+submissions". It does not stop mattering: it is what gets you in when
+sign-in itself is broken.
+
+**Getting a successor's numeric id, which is the part with a chicken-and-egg
+in it.** They cannot read it off the export page, because they cannot open
+the export page until they are an admin.
+
+They sign in on the live site first — any member can. The sign-in response
+carries their own numeric id, and `session.js` keeps it in the tab, so
+**today the way to read it is the browser's devtools**: after signing in,
+Application → Session storage → the `hgb-session` entry, field
+`telegramId`.
+
+That is clumsier than it should be. `worker.js` returns the id with a
+comment saying it is *"so a first-time admin can read their own id off the
+page"* — and **no page displays it.** The value arrives, is stored, and is
+never shown. Filed as its own issue rather than patched here; when a page
+shows it, this paragraph gets shorter.
+
+Then add that number to `ADMIN_TELEGRAM_IDS` in the Worker's secrets, and
+have them **sign out and back in**. The session is minted with its admin
+flag at sign-in and the flag is stored on the session row, so changing the
+secret does not upgrade a session already sitting in a tab — it will keep
+being refused until a new one is issued, which looks exactly like the id
+being wrong.
+
+If both of you are locked out — no admin id works, or the bot has been
+removed from the group — `ALWAYS_ALLOW_TELEGRAM_IDS` and `EXPORT_TOKEN` are
+the two ways back, and both are set in the Cloudflare dashboard.
 
 ## If they are deploying their own storage
 
@@ -114,6 +163,18 @@ key and the token that gate the data, not the address.
 1. Open it, paste the **export token**, and give it the **key file** —
    either paste the JSON or use the file picker. The file is read in
    the page. It is not uploaded, and nothing is saved.
+
+   **After the cutover there is no token box.** The page requires an
+   **admin session** — sign in on the live site with a Telegram account
+   whose numeric id is in `ADMIN_TELEGRAM_IDS`, and open the export page in
+   the same tab. A member session is refused with a message saying so
+   rather than an empty page. The key file step is unchanged: it is still
+   the second of two secrets, still read in the page, still never
+   uploaded.
+
+   The session is tab-scoped, so closing the tab signs you out. That is
+   deliberate and it is the same property that makes "close the tab" a
+   safe way to leave this page.
 2. **Fetch and decrypt.** It pulls the ciphertext, opens each row in
    your browser and builds the CSV there.
 3. **Download CSV**, or **JSON** if something other than a spreadsheet
@@ -149,6 +210,12 @@ Things worth knowing before you rely on it:
 `apps/web/dashboard.html` shows the group's numbers to anyone, with no
 key and no token. It is not live: it shows whatever was last published,
 and publishing is a button you press.
+
+**After the cutover it is members-only.** Reading the published snapshot
+needs a member session — any signed-in member, not an admin. What it
+contains did not change and was not relaxed: still counts, medians and
+histogram bins, still no handles and no rows. Gating it narrowed who can
+see the aggregate; it did not make the aggregate carry more.
 
 At the bottom of the export page, after decrypting:
 
@@ -188,6 +255,14 @@ Things worth knowing:
   down is immediate, leaves the submissions untouched, and is undone by
   publishing again.
 
+  **After the cutover: the admin session, not the token — and the "what is
+  currently published" line needs a credential too.** Reading the snapshot
+  became members-only on 2026-08-05, so that part is no longer
+  credential-free; it works because an admin already holds a member
+  session. Still no key either way, which is the property that matters: the
+  moment somebody wants a snapshot retracted is not the moment to make them
+  find a key file and decrypt the corpus first.
+
   To change part of it rather than remove it, republish: untick weight
   over time and press Publish. The previous snapshot is replaced, not
   kept.
@@ -199,10 +274,26 @@ Things worth knowing:
     -H "Authorization: Bearer YOUR_EXPORT_TOKEN" \
     https://hgbinderworker.sorcererbiggz.workers.dev/snapshot
   ```
+
+  **This command does not change at the cutover, and after it this is the
+  only place the export token is used.** `EXPORT_TOKEN` stays break-glass in
+  the Worker — resolved ahead of any session, deliberately — precisely so
+  that a retraction does not depend on sign-in working. Keep it set and keep
+  it stored somewhere you can reach without the site: the case it exists for
+  is Telegram sign-in being broken, the bot token being wrong, or your admin
+  id having been edited out.
+
+  It cannot submit, and that is not an oversight — it is admin without being
+  anybody, so there is no account for it to write a row to.
 - **Publishing needs the export token but not the key**, and reading
   needs neither. That asymmetry is the point: the public page can be
   handed to anyone, permanently, because it never contained anything
   worth protecting.
+
+  **After the cutover: publishing needs an admin session, and reading needs
+  a member one.** The half that still holds is the half worth keeping —
+  neither needs the key. What the page contains is unchanged, so it remains
+  safe to hand to anyone; it is simply no longer handed to everyone.
 - **A height that changed between entries is flagged.** Height does not
   change in adults, so that panel means a typo, a unit mix-up, or one
   handle used by two people. Check it before quoting a height figure.
@@ -221,9 +312,19 @@ the public half.
       actual row from the live database, through `admin.html` on their
       own machine. Nothing else proves the key, the token and the
       endpoint all reached them intact.
+
+      **After the cutover this checks one more thing**, and it is the one
+      most likely to be wrong: it proves their numeric id actually reached
+      `ADMIN_TELEGRAM_IDS`. A wrong id there looks exactly like a working
+      deployment until somebody tries to export.
 - [ ] They have two copies of the private key, in two places.
 - [ ] They have submitted through the live form themselves and seen the
       row arrive.
+
+      **After the cutover they must sign in to do this**, and it is worth
+      doing in that order — sign-in first, submission second — because the
+      two fail for different reasons and a single "it did not work" cannot
+      tell them apart.
 - [ ] You have removed your own copies of anything you are no longer
       meant to hold.
 - [ ] The people submitting know who the keyholder is now. They handed
