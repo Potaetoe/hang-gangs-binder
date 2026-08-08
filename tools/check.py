@@ -5,8 +5,8 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of sixteen remembered ones. It runs the two
-linters, the ten Node suites in dev/, the publishability check, the
+it?" one command instead of seventeen remembered ones. It runs the two
+linters, the eleven Node suites in dev/, the publishability check, the
 deployment-config check, and the suite behind each of those two, and
 exits non-zero if any of them fails:
 
@@ -19,14 +19,15 @@ exits non-zero if any of them fails:
      6. ruff passes over the Python
      7. crypto.js round trips, and the v1 fixture still decrypts
      8. form.js builds the record the way it always did
-     9. admin.js quotes CSV correctly and guards spreadsheet formulas
-    10. admin.js requires an admin session and keeps deletion state current
-    11. xlsx.js writes a ZIP that a reader can actually open
-    12. dashboard.js aggregates the rows correctly
-    13. public.js requires and sends a member session for the dashboard
-    14. ui.js keeps the shared DOM wiring and boot guard intact
-    15. session.js stores a valid tab session and auth.js hands it off
-    16. worker.js routes, validates and enforces CORS
+     9. submit.js shows counts from /me, and a failed send stores nothing
+    10. admin.js quotes CSV correctly and guards spreadsheet formulas
+    11. admin.js requires an admin session and keeps deletion state current
+    12. xlsx.js writes a ZIP that a reader can actually open
+    13. dashboard.js aggregates the rows correctly
+    14. public.js requires and sends a member session for the dashboard
+    15. ui.js keeps the shared DOM wiring and boot guard intact
+    16. session.js stores a valid tab session and auth.js hands it off
+    17. worker.js routes, validates and enforces CORS
 
 Checks 1 and 3 are siblings and not one check with two scopes, because
 the two directories are dangerous for opposite reasons: apps/web is
@@ -62,6 +63,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_SUITES = [
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
     ("form record building", "dev/form.test.mjs"),
+    ("member panel + failed-send guard", "dev/submit.test.mjs"),
     ("admin CSV + formula guard", "dev/admin.test.mjs"),
     ("admin session + row deletion", "dev/admin-session.test.mjs"),
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),

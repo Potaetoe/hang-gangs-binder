@@ -748,6 +748,60 @@ comment as a real directive and warn. Both were fixed rather than lived with:
 the file that argues a gate must not cry wolf is a poor place to leave a
 warning.
 
+### Step 5, and Codex running out of quota mid-review — #6
+
+Codex built it; the panel, the tabs, the prefill, sign-out and the one
+`form.js` hook are its work and the commit is authored to it. Third slice in a
+row where the Worker turned out to be built ahead of the page — `GET /me` was
+already routed and `handleMe` already returned counts rather than rows — and
+the third time an issue's stated file list named `server/worker.js` for a
+change that was entirely client-side. That pattern is now reliable enough to
+act on: read the Worker before trusting the file list.
+
+**The spec contradicted `DESIGN.md` and the contradiction went to the owner
+rather than being resolved by an agent.** #6 asked for a "7-day persisted"
+session; `DESIGN.md` says `sessionStorage`, for the life of the tab, and spends
+a paragraph on why a session token is not key material but still should not
+outlive the tab. The reconciliation taken: the seven days is the *server's*
+lifetime, which already exists as `SESSION_HOURS.member`. `session.js` was left
+alone. Moving a credential to `localStorage` is a threat-model change, not a
+line change.
+
+**Then Codex hit its usage limit**, returning *"try again at Aug 12th"* — five
+days out — on the reply asking for one more test. `AGENTS.md`'s mid-slice rule
+applied: finish it or hand it back, and say which. Finished, label swapped, and
+**the seam is a commit boundary** rather than a sentence: one commit authored
+to Codex, one to Claude. Handing it back would have stranded a gate-green slice
+for five days over a single test. There is no way to see remaining quota from
+the MCP surface, so this was not something to pace around.
+
+### What the outstanding test was, and the mutation that justified it
+
+The property is that a refused or failed submit must never make the panel
+claim something was stored — the step's whole acceptance criterion. It was
+asserted in **both** suites by source position: the dispatch appears after
+`if (!response.ok)`, and there is exactly one of it.
+
+Removing the `return;` from the send-failure `catch` is caught by those. So
+they are not useless, and the first honest answer was that they were
+sufficient for the obvious mutation.
+
+**They are not sufficient for a realistic one.** Narrowing
+`if (!response.ok)` to `if (response.status >= 500)` — the shape of somebody
+"tidying" status handling — passes every source-position assertion, because
+the dispatch is still textually where it was. A 4xx then falls through and the
+panel refreshes on a refusal.
+
+And the part worth writing down, because it is the same error one level up:
+**the new behavioural check did not catch it either, at first.** It drove the
+failure with a 500, which the mutation still treats as a failure. Every
+refusal `handleSubmit` actually produces is a 4xx — 400 for a malformed body,
+413 for oversize, 401 with no session — so 500 was the status the code is
+least likely to receive. Testing the unlikely path is its own null result
+wearing a positive result's clothes, which is precisely what the check existed
+to avoid. Now driven with a 403 and a 500, plus a positive control proving the
+harness reaches the network at all.
+
 ---
 
 ## 2026-08-06

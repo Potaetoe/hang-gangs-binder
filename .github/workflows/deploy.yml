@@ -98,6 +98,14 @@ jobs:
       - name: Check the form's conversions and validation
         run: node dev/form.test.mjs
 
+      # The panel's numbers must be the route's, not a local tally, or the
+      # page can disagree with the table it is reporting on. The check that
+      # earns its place here is the failed-send one: a refused submit must
+      # dispatch nothing, and two source-position assertions covering the
+      # same claim both pass a mutation that lets a 4xx through.
+      - name: Check the member panel and the failed-send guard
+        run: node dev/submit.test.mjs
+
       # The CSV is what the whole project is for. A quoting bug does not
       # throw - it shifts one column into the next and produces a file
       # that opens cleanly and is wrong.
