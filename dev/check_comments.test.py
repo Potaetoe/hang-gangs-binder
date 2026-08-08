@@ -44,7 +44,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 40
+EXPECTED = 52
 
 
 def check(label, condition):
@@ -112,18 +112,22 @@ check("a Python single-quoted string is not read",
       clean('MESSAGE = "used to be"\n', "py"))
 
 # A comment block is one comment however it is laid out. Both of these
-# straddle a line break, and both are real shapes in this tree.
+# straddle a line break, and both are real shapes in this tree. Three
+# words rather than two on purpose: "used to" completes on one line, so
+# it would pass these without the phrase ever having been joined up.
 check("a phrase split across a block comment's continuation is caught",
-      labels("/*\n * it used to\n * be a grid\n */\n", "js")
-      == ["used to"])
+      labels("/*\n * it is carried over\n * from the other project\n */\n",
+             "js")
+      == ["carried over from"])
 
 check("a phrase split across two line comments is caught",
-      labels("// it used to\n// be a grid\n", "js") == ["used to"])
+      labels("// it is carried over\n// from the other project\n", "js")
+      == ["carried over from"])
 
 # The other side of that. Two comments with code between them are two
-# comments, and bridging them would invent a phrase nobody wrote.
+# comments, and bridging them would report a phrase nobody wrote.
 check("code between two comments is not bridged",
-      clean("// it used to\nrender();\n// be a grid\n", "js"))
+      clean("// it is carried over\nrender();\n// from here\n", "js"))
 
 # A regex literal is code, and this tree is full of them -
 # server/worker.js alone holds `/\//g`. Read as a comment opener, the
@@ -168,10 +172,25 @@ check("'no longer used' is caught",
       labels("// the third argument is no longer used\n", "js")
       == ["no longer used"])
 
-# "used to be" alone would miss three of the offenders in this tree.
+# "used to be" alone would miss four of the offenders in this tree.
 check("'used to' catches more than 'used to be'",
       labels("// the assertion used to live in the page suite\n", "js")
       == ["used to"])
+
+# English gives "used to" a second reading with the same surface form,
+# and apps/web/crypto.js is it: "The uncompressed point a JWK spells
+# out as two coordinates. Used to check a key file against itself."
+# That is the passive "employed to" - present tense, and correct.
+# Running the check found it; a subject is what separates the two.
+check("the passive 'used to' reading is not narration",
+      clean("/* Two coordinates. Used to check a key file. */\n", "js"))
+
+check("and it is the missing subject that does it, not the full stop",
+      labels("/* Two coordinates. The check used to live here. */\n", "js")
+      == ["used to"])
+
+check("a phrase opening its own comment has no subject either",
+      clean("<!-- Used to check a key file against itself -->\n", "html"))
 
 for phrase, expected in [
     ("carried over from the other project", "carried over from"),
@@ -219,7 +238,7 @@ check("a pinned occurrence is suppressed",
       ratchet({("apps/web/theme.css", "used to"): [(284, "used to")]},
               {("apps/web/theme.css", "used to"): 1}) == [])
 
-# The pin is a count, not a licence for the file. A second one in a
+# The pin is a count, not a license for the file. A second one in a
 # file that already has one is exactly the new offense this exists to
 # stop, and it is the case a line-number pin would have got right and a
 # file-level pin would have missed.

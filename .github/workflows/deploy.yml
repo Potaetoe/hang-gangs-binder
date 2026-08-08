@@ -102,6 +102,25 @@ jobs:
       - name: Check the documents stay registered and tripwire-free
         run: python tools/check_docs.py
 
+      # The same rule for code that the step above holds for documents:
+      # a comment says why, and what changed - together with whatever
+      # triggered it - says so in the commit message, the pull request
+      # and the issue. Owner decision, 2026-08-08; see issue #83.
+      #
+      # A ratchet rather than a sweep. Every offending comment already
+      # in the tree is pinned in an allowlist, a new one fails, and a
+      # pin that stops matching fails too, so the list can only shrink
+      # and cannot go stale. Cleanup rides the pull requests that touch
+      # those files.
+      - name: Check the comments explain why
+        run: python tools/check_comments.py
+
+      # The extractor behind it, tested on strings. Registered here AND
+      # in tools/check.py, like every other stage - a check that runs
+      # only on a developer's machine looks armed and is not.
+      - name: Check the comment extractor and the ratchet
+        run: python dev/check_comments.test.py
+
       # The one check whose failure is about the data rather than the
       # site. A crypto.js that no longer reads what is already stored
       # publishes a site that looks perfect and cannot be exported from,
