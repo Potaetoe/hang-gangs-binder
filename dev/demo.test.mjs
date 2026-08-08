@@ -24,6 +24,8 @@
  */
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { get as httpGet } from "node:http";
+import { suite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -44,21 +46,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX } = await import("./demo-server.mjs");
 
-let failures = 0;
-const results = [];
-
-async function check(label, fn) {
-  let ok = false;
-  let note = "";
-  try {
-    ok = (await fn()) === true;
-    if (!ok) note = "returned false";
-  } catch (error) {
-    note = "threw: " + (error && error.message ? error.message : error);
-  }
-  if (!ok) failures++;
-  results.push([ok, label, note]);
-}
+const { check, report } = suite("demo", 38);
 
 const PAGES = ["index.html", "submit.html", "dashboard.html", "admin.html"];
 const shipped = {};
@@ -338,11 +326,29 @@ await check("nothing published carries a handle", () =>
 /* The server serves the mirror, and only inside this repository.      */
 
 const server = await start({ port: 0 });
-const base = "http://127.0.0.1:" + server.address().port;
-const get = async (path) => {
-  const response = await fetch(base + path);
-  return { status: response.status, text: await response.text() };
-};
+const port = server.address().port;
+
+/*
+ * node:http with the agent off, rather than the global fetch.
+ *
+ * fetch keeps its connections in a pool that outlives the request, and
+ * this is the one suite here that both opens a listening socket and
+ * closes it: reaching the end of the run with those sockets still being
+ * torn down prints a libuv assertion to stderr after the result table,
+ * so a passing run reports in the shape of a crash. `agent: false` means
+ * there is nothing left holding the loop open when the report exits.
+ */
+const get = (path) => new Promise((resolve, reject) => {
+  const request = httpGet({
+    host: "127.0.0.1", port, path, agent: false,
+  }, (response) => {
+    let text = "";
+    response.setEncoding("utf8");
+    response.on("data", (chunk) => { text += chunk; });
+    response.on("end", () => resolve({ status: response.statusCode, text }));
+  });
+  request.on("error", reject);
+});
 
 await check("the mirror serves a page the demo has booted", async () => {
   const answer = await get(MIRROR_PREFIX + "index.html");
@@ -375,32 +381,8 @@ await check("a missing file is a 404 rather than a blank page", async () => {
   return answer.status === 404;
 });
 
-/*
- * Waited on rather than fired and forgotten. fetch() leaves its
- * connections alive, and reaching process.exit() while libuv is still
- * tearing them down prints an assertion failure to stderr after the
- * result table - a run that passed, reported in the shape of a crash.
- */
-await new Promise((done) => {
-  server.closeAllConnections();
-  server.close(done);
-});
+// Waited on rather than fired and forgotten, so the report below runs
+// against a socket that is already gone.
+await new Promise((done) => server.close(done));
 
-/* ------------------------------------------------------------------ */
-
-for (const [ok, label, note] of results) {
-  console.log((ok ? "  ok   " : "  FAIL ") + label + (note ? " - " + note : ""));
-}
-console.log(
-  failures === 0
-    ? "\ndemo OK - " + results.length + " checks"
-    : "\ndemo FAILED " + failures + " of " + results.length + " checks");
-
-/*
- * exitCode rather than exit(). This is the one suite here that opens a
- * listening socket, and calling process.exit() while libuv is still
- * tearing the last connections down prints an assertion failure to
- * stderr after the result table - a passing run wearing the shape of a
- * crash. Setting the code lets the loop drain and exit on its own.
- */
-process.exitCode = failures === 0 ? 0 : 1;
+report();
