@@ -1312,12 +1312,12 @@ def hard_coded_key_hits():
 # module is added, and a module being added is exactly when the freeze
 # gets left off.
 #
-# The hand-written lists this replaces were wrong twice in the same
-# issue. #114's table named admin.js:203 after the line had moved to 287,
-# and left signout.js out altogether because signout.js was written after
-# the table was. Neither error was careless - a list of files that
-# satisfy a property is out of date the moment a file changes, and
-# nothing was reading it.
+# A hand-written list of the modules that satisfy this rule cannot hold.
+# #114's is wrong in two ways at once: it names admin.js:203 when the
+# line is 287, and it omits signout.js, which is a module and does
+# export. Neither is carelessness - a list of the files that satisfy a
+# property goes stale the moment a file changes, and nothing reads it to
+# find out.
 MODULE_EXPORTS = {
     "admin.js": "BinderAdmin",
     "auth.js": "BinderAuth",

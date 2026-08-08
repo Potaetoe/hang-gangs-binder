@@ -335,7 +335,7 @@
     ], now === undefined ? Date.now() : now);
   }
 
-  root.BinderXlsx = {
+  root.BinderXlsx = Object.freeze({
     build: build,
     // Exported for the tests. Each is a place this can be wrong without
     // throwing: a bad checksum, a column past Z, an unescapable
@@ -345,5 +345,5 @@
     escapeXml: escapeXml,
     cellXml: cellXml,
     sheetXml: sheetXml,
-  };
+  });
 })(globalThis);

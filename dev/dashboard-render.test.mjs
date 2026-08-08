@@ -295,6 +295,16 @@ await check("loaded with no document the module exports no render", () =>
 await check("loaded with a document the module exports render", () =>
   typeof D.render === "function");
 
+await check("the export is frozen on the side of the seam that draws", () =>
+  // The half of the freeze rule this file is the only one able to see.
+  // `render` is the sole member that exists on this side, so if the
+  // module ever goes back to publishing a literal and bolting `render`
+  // on afterwards, THIS is where it shows: a freeze at the assignment
+  // would make that later line throw, and a freeze after it would leave
+  // the headless path unfrozen. One object, every key it will ever have,
+  // frozen once.
+  Object.isFrozen(D) && Object.isFrozen(HEADLESS));
+
 /* ------------------------------------------------------------------ */
 /* The corpus. Twelve people, five of whom submitted twice.            */
 

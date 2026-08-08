@@ -35,7 +35,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 48
+EXPECTED = 73
 
 
 def check(label, condition):
@@ -313,6 +313,155 @@ check("ordinary long prose is not a key",
 REPORT = check_web.key_literal_problem('"%s"' % REAL_KEY.strip('"\''))
 check("the report names a prefix and a length, not the literal",
       REAL_KEY.strip('"\'') not in REPORT and "characters" in REPORT)
+
+
+# ------------------------------------------------------------------ #
+# Check 15 - every module's exported namespace is frozen.             #
+
+# Exercised on strings, for #34's reason: a mutation written against the
+# nine modules in apps/web tests today's apps/web, and what has to hold
+# is the shape of the failure. The live directory is asserted too, but
+# separately and for a different claim - see "reaches real content".
+
+FROZEN = """(function (root) {
+  function helper() { return 1; }
+  root.BinderThing = Object.freeze({ helper: helper });
+})(globalThis);
+"""
+UNFROZEN = FROZEN.replace("Object.freeze({ helper: helper })",
+                          "{ helper: helper }")
+
+check("a frozen namespace raises nothing",
+      check_web.export_problems("thing.js", FROZEN, "BinderThing") == [])
+check("an unfrozen namespace is refused",
+      len(check_web.export_problems("thing.js", UNFROZEN, "BinderThing")) == 1)
+
+# The #34 direction, and the one this whole table exists for. A checker
+# that cannot find what it was pointed at must not answer "no problem
+# found" - that reading is indistinguishable from a clean file, and it
+# is the one people believe.
+EMPTY = ("(function (root) {\n  function helper() { return 1; }\n"
+         "})(globalThis);\n")
+absent = check_web.export_problems("thing.js", EMPTY, "BinderThing")
+check("a module that assigns nothing is reported as absence, not a pass",
+      len(absent) == 1 and "assigns it nowhere" in absent[0])
+check("the absence report says the pin may be the stale half",
+      "stale" in absent[0])
+
+# A file with no exports at all, pinned as having none, is the legitimate
+# state - so absence is only a failure against a pin that claims one.
+check("a file pinned to publish nothing, publishing nothing, raises nothing",
+      check_web.export_problems("thing.js", EMPTY, None) == [])
+
+TWICE = FROZEN.replace(
+    "})(globalThis);",
+    "  root.BinderThing = Object.freeze({ helper: helper });\n})(globalThis);")
+twice = check_web.export_problems("thing.js", TWICE, "BinderThing")
+check("a namespace published twice is refused",
+      any("2 times" in p for p in twice))
+
+# dashboard.js's actual shape before this issue: frozen at the
+# assignment is not the same claim as frozen when the module finishes.
+LATE = FROZEN.replace(
+    "})(globalThis);",
+    "  root.BinderThing.render = render;\n})(globalThis);")
+late = check_web.export_problems("thing.js", LATE, "BinderThing")
+check("a member assigned after publication is refused even when frozen",
+      len(late) == 1 and "after the object is published" in late[0])
+check("the late-member report names the member",
+      "BinderThing.render" in late[0])
+
+# The regex boundary that makes the rule above possible: what follows
+# the namespace in `root.X.y = ...` is a dot, not an equals sign, so a
+# late member must not also read as a second publish site.
+check("a member assignment does not read as a second publish site",
+      not any("2 times" in p for p in late))
+
+# countries.js publishes through `window.`, so a pattern that knew only
+# root/globalThis would have been blind to an export style already here.
+check("a namespace published through window. is recognized",
+      check_web.export_problems(
+          "thing.js", FROZEN.replace("root.Binder", "window.Binder"),
+          "BinderThing") == [])
+check("an unfrozen window. namespace is still refused",
+      len(check_web.export_problems(
+          "thing.js", UNFROZEN.replace("root.Binder", "window.Binder"),
+          "BinderThing")) == 1)
+
+# The other direction on the roster: a script pinned as publishing
+# nothing that grows an export.
+sneak = check_web.export_problems("thing.js", FROZEN, None)
+check("a global in a file pinned to publish nothing is refused",
+      len(sneak) == 1 and "publishing nothing" in sneak[0])
+
+# A second, unpinned global inside a real module.
+second = check_web.export_problems(
+    "thing.js",
+    FROZEN.replace("})(globalThis);",
+                   "  root.BinderExtra = Object.freeze({});\n})(globalThis);"),
+    "BinderThing")
+check("a second unpinned global in a module is refused",
+      len(second) == 1 and "BinderExtra" in second[0])
+
+# Prose about an export is not an export - the same distinction
+# strip_js_comments draws for fetch() in check 6.
+check("a commented-out assignment is not an assignment",
+      check_web.export_problems(
+          "thing.js", FROZEN + "// root.BinderGhost = {};\n",
+          "BinderThing") == [])
+check("a comparison is not an assignment",
+      check_web.export_problems(
+          "thing.js",
+          FROZEN.replace("})(globalThis);",
+                         "  if (root.BinderOther === 1) return;\n"
+                         "})(globalThis);"),
+          "BinderThing") == [])
+
+# Line numbers are the reason strip_js_comments blanks rather than
+# deletes. A report that names a line hundreds of rows off sends the
+# reader somewhere innocent, which is worse than naming no line at all.
+PADDED = "/*\n%s\n*/\n%s" % ("\n".join([" * filler"] * 40), UNFROZEN)
+padded = check_web.export_problems("thing.js", PADDED, "BinderThing")
+check("a line number survives a comment block above it",
+      "line 45" in padded[0])
+check("blanking a comment preserves the length of the source",
+      len(check_web.strip_js_comments(PADDED)) == len(PADDED))
+check("blanking a comment preserves every newline",
+      check_web.strip_js_comments(PADDED).count("\n") == PADDED.count("\n"))
+
+# ------------------------------------------------------------------ #
+# The roster tables, for completeness rather than for today's files.  #
+
+SCRIPTS = {n for n in os.listdir(check_web.WEB) if n.endswith(".js")}
+
+check("every published script is pinned in exactly one table",
+      SCRIPTS == (set(check_web.MODULE_EXPORTS)
+                  ^ set(check_web.NO_MODULE_EXPORT)))
+check("the two tables name no script in common",
+      not (set(check_web.MODULE_EXPORTS) & set(check_web.NO_MODULE_EXPORT)))
+check("neither table names a script that does not exist",
+      (set(check_web.MODULE_EXPORTS) | set(check_web.NO_MODULE_EXPORT))
+      <= SCRIPTS)
+check("the roster covers both kinds of script",
+      check_web.MODULE_EXPORTS and check_web.NO_MODULE_EXPORT)
+check("every exemption names a script that exists",
+      all(name in SCRIPTS for name, _ in check_web.NON_NAMESPACE_GLOBALS))
+
+# REACHES REAL CONTENT. Every check above this line would pass against a
+# directory the rule never actually read - the null result wearing a
+# positive result's clothes that dev/check_web.test.py already guards
+# against for the key-literal arm. This says the freeze was found in the
+# shipped bytes of every module on the roster.
+frozen_in_place = []
+for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
+    source = open(os.path.join(check_web.WEB, module), encoding="utf-8").read()
+    frozen_in_place.append(
+        bool(check_web.frozen_publish(check_web.strip_js_comments(source),
+                                      namespace)))
+check("every module on the roster freezes its export in the shipped file",
+      len(frozen_in_place) == 9 and all(frozen_in_place))
+check("apps/web raises no export problem",
+      check_web.module_export_problems() == [])
 
 
 if failures:

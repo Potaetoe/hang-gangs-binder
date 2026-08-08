@@ -51,6 +51,14 @@ async function check(label, fn) {
   results.push([ok, label, note]);
 }
 
+await check("the exported object is frozen", () =>
+  // submit.html holds the submission before crypto.js seals it, so an
+  // export a later script can rewrite is a `validate` that waves
+  // anything through, or a `buildRecord` that adds a field to what gets
+  // encrypted. tools/check_web.py check 15 holds the rule across the
+  // whole directory; this asserts it for the shipped bytes.
+  Object.isFrozen(globalThis.BinderForm));
+
 /* Every problem `validate` reports for this input, as field names. */
 const fieldsFlagged = (input) => validate(input).map((p) => p.field).sort();
 

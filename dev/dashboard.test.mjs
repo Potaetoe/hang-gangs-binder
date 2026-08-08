@@ -40,6 +40,22 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  */
 const { check, report } = suite("dashboard.js", 115);
 
+await check("the exported object is frozen", () =>
+  // `suppressCounts` and MIN_CELL are the suppression floor standing
+  // between an aggregate and a re-identifiable one, so an export a later
+  // script can rewrite is a floor that can be lowered on the page that
+  // publishes the numbers. tools/check_web.py check 15 holds the rule
+  // across the whole directory; this asserts it for the shipped bytes.
+  Object.isFrozen(globalThis.BinderDashboard));
+
+await check("the headless export carries no drawing half", () =>
+  // The other side of the seam dev/dashboard-render.test.mjs pins. This
+  // file is what proves the arithmetic runs with no document, and the
+  // freeze is taken on one object that already has every key it will
+  // ever have - so `render` being absent HERE is what says the
+  // conditional above the freeze is doing its job.
+  globalThis.BinderDashboard.render === undefined);
+
 /*
  * A row as entryFor() hands it to this file, carrying both identities.
  *
