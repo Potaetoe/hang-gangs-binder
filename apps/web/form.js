@@ -659,5 +659,30 @@
       show(done, true);
       done.scrollIntoView({ block: "center", behavior: "smooth" });
     });
+
+    /*
+     * Putting the form back - #64.
+     *
+     * The swap above is one way, which was right for the pre-accounts page:
+     * a one-shot public form where reloading was how you submitted again.
+     * With tabs, "Add entry" led back to a confirmation card and no form,
+     * and only a reload recovered it - while that card's own text promised
+     * "just fill the form again". The copy was right and the code was not.
+     *
+     * This listener is the counterpart to the `binder:submitted` dispatch
+     * above, and the direction matters: submit.js owns the tabs and never
+     * learns that #done and #submission are a pair, because that knowledge
+     * belongs wherever the swap lives, which is here.
+     *
+     * Doing nothing when #done is already hidden is what keeps this from
+     * clearing a note the member is still reading, or fighting the boot
+     * path that hides the form for a signed-out visitor.
+     */
+    document.addEventListener("binder:add-entry-shown", function () {
+      if (done.hidden) return;
+      show(done, false);
+      show(form, true);
+      show($("repeat-note"), true);
+    });
   }
 })(globalThis);

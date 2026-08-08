@@ -14,6 +14,11 @@
 
   const PREFILL_KEY = "hgb-submit-prefill";
   const SUBMITTED_EVENT = "binder:submitted";
+
+  // The other direction: form.js tells this file a row was stored, and this
+  // file tells form.js the form is on screen again. Two events rather than
+  // one shared object, so neither file reaches into the other's elements.
+  const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
   const FIELD_IDS = [
     "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
   ];
@@ -155,6 +160,17 @@
     const entries = name === "entries";
     show($("your-entries-pane"), entries);
     show($("add-entry-pane"), !entries);
+
+    /*
+     * Announce that the form is being shown, rather than reaching into it -
+     * #64. After a submission form.js replaces the form with a confirmation
+     * card, and before this the tab led back to that card with no way to the
+     * form but a reload. What to do about it is form.js's decision: it owns
+     * that swap, and this file does not know those two elements exist.
+     */
+    if (!entries) {
+      document.dispatchEvent(new CustomEvent(ADD_ENTRY_SHOWN_EVENT));
+    }
 
     const entriesTab = $("your-entries-tab");
     const addTab = $("add-entry-tab");

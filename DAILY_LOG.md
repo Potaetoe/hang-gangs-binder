@@ -233,15 +233,85 @@ says it mattered on. Confirmed by observation: two previews of the same
 corpus produce identical labels. The real defense, quantization, is working;
 the stated reason for safety is the wrong one.
 
+### #64 fixed, and the coverage hole it came out of
+
+The Add entry tab is no longer one-shot. Returning to it brings the form back
+with a note saying the earlier entry is kept. **UAT A2.7 now runs as written**
+— a second entry at a different weight stored and the count moved 2 → 3, no
+reload — so Part A is complete.
+
+Two decisions, both named in the issue as needing a deliberate call rather
+than a default.
+
+**The reset lives in `form.js`.** It owns the one-way swap, so it owns the
+un-swap; `submit.js` announces that the form is on screen and never learns
+`#done` and `#submission` are a pair. Two events rather than a shared object,
+mirroring the `binder:submitted` channel that already ran the other way. A
+check now pins that the panel does not name those ids, because the two files
+disagreeing about which is showing is the same defect in another shape.
+
+**The note reassures rather than warns.** Repeat entries *are* the weight
+history the published series is built from, so a caution would suppress the
+data. A check asserts the copy contains no warning words — the wording is
+load-bearing, not decoration.
+
+**The real finding is why it shipped.** `form.js`'s wiring half had **no DOM
+coverage at all**, because `dev/form.test.mjs` deliberately loads the module
+with no document so the arithmetic is testable under Node. That trick is
+good and it hid half the file from its own suite. `dev/form-wiring.test.mjs`
+now runs the shipped module against a small DOM — 24 checks, gate stage 18,
+registered in CI. Both mutation directions fire: disabling the listener fails
+the three defect checks, removing its guard fails the two controls.
+
+The control matters more than the defect checks. Without it, a listener that
+simply showed everything unconditionally would pass — and would put "you
+already added an entry" in front of a member who had submitted nothing.
+
+### Seven issues filed, and one claim of mine corrected
+
+#69 an admin page for the id lists, steered away from "a page that writes
+Cloudflare secrets" — that needs an API token the Worker can reach, which
+would let anyone with an admin session rewrite its own bindings. Moving the
+**id lists** to D1 is the likely shape; the keys stay secrets. #70 stop
+handing `admin.html` the raw private key, with the trade named: persisting it
+is what makes the file unnecessary and also what makes the browser
+sufficient. #71 pages disagree about where content sits — confirmed in the
+CSS, `body.wide .narrow` is `margin-inline: 0` while everything else centers.
+#72 verify performance **before** cutover. #73 more soul. #74 a refactor pass
+after cutover. #75 re-evaluate what we hand-rolled against open source.
+
+**#75 exists because the owner caught me repeating a rule nobody set.** I had
+been citing "no third-party code, no frameworks" as a project constraint
+across several issues. The owner asked where they had said that. They had
+not. The provenance is `DESIGN.md`, and what it actually rejects is
+libsodium.js **on the cleartext path** — one dependency in one position, for
+a stated reason. Meanwhile `index.html` already loads a third-party script
+from telegram.org, and the gate already runs eslint. The real constraint is
+narrow: nothing third-party where it can see plaintext, and nothing unvetted
+in `apps/web/`, which ships verbatim. Everything else was mine.
+
+Worth keeping separately from the correction: **a constraint absorbed from a
+document reads exactly like one the owner set.** I could not have told the
+difference without being asked.
+
 ### Where the cutover stands
 
 Steps 0 and 1 **done**. Step 2's secrets confirmed twice from two directions.
 Step 3 still unprovable before step 8 — `ADMIN_TELEGRAM_IDS` existing is not
 it holding the right id.
 
-**UAT Part A is complete except A2.7.** A6 — one of the two sections whose
-failure stops the cutover — passes on every check, with A6.2 re-run against
-data that could actually fail it.
+**UAT Part A is complete**, all six sections, after #64 closed A2.7. A6 — one
+of the two sections whose failure stops the cutover — passes on every check,
+with A6.2 re-run against data that could actually fail it.
+
+**One item is now queued before the cutover rather than after**: #72, the
+performance pass, at the owner's request. It is a measurement issue and
+changes nothing by itself, but it is the first thing since step 0 that sits
+between here and step 4.
+
+`hg_binder_db_dev` was cleared to empty at the end of the day at the owner's
+request — no submissions, no sessions, no snapshot, id counters reset.
+Production was read and never written throughout, and still reads 0 rows.
 
 So the largest gap is no longer Part A. What remains before a deploy is the
 sitting itself: steps 4 through 8, of which only step 8 can confirm

@@ -63,6 +63,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_SUITES = [
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
     ("form record building", "dev/form.test.mjs"),
+    ("form wiring + reopen after submit", "dev/form-wiring.test.mjs"),
     ("member panel + failed-send guard", "dev/submit.test.mjs"),
     ("admin CSV + formula guard", "dev/admin.test.mjs"),
     ("admin session + row deletion", "dev/admin-session.test.mjs"),
