@@ -208,18 +208,21 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- account - the id-is-identity, handle-is-display split a submission row
 -- already carries.
 --
--- THIS TABLE ENFORCES NOTHING. server/worker.js reads
--- ADMIN_TELEGRAM_IDS in adminAccountIds() and ALWAYS_ALLOW_TELEGRAM_IDS
--- in isGroupMember(), and those secrets stay the enforcing copy until a
--- slice that changes what a sign-in means migrates them on purpose -
--- handleReadMembership carries that whole argument, and
--- dev/worker.test.mjs asserts the inert half so the day it changes a
--- check says so. Anybody reading this file to build an admin surface
--- needs it before anything else: rows here grant no authority.
+-- THIS TABLE IS ENFORCING. A row here grants what it says it grants:
+-- server/worker.js unions `admin` rows with ADMIN_TELEGRAM_IDS in
+-- adminAccountIds(), and `always_allow` rows with
+-- ALWAYS_ALLOW_TELEGRAM_IDS in isGroupMember(). Both arms are live, and
+-- handleReadMembership carries the whole argument for why dual-read is
+-- what ships rather than a step passed through. Anybody reading this
+-- file to build an admin surface needs it before anything else: a write
+-- here is a change to who has authority, taking effect on that
+-- session's next request.
 --
 -- Whatever else moves, the founding admin stays in the secret. A table
 -- that could rewrite the whole list would leave no root of trust outside
--- itself, and an empty table would lock everybody out permanently.
+-- itself, and an empty table would lock everybody out permanently -
+-- which is why the last `admin` row cannot be deleted, guarded inside
+-- the DELETE statement rather than by a count read beforehand.
 --
 -- TELEGRAM_GROUP_CHAT_ID does not belong here and is not coming. It has
 -- to be recoverable in the clear because isGroupMember() interpolates it

@@ -1461,6 +1461,23 @@ const addMember = (token, body) =>
   call("POST", "/membership",
     { headers: bearer(token), body: JSON.stringify(body) });
 
+/*
+ * An admin writing their own row emits a record, which the last section
+ * of this file is about. Where such a write is only scaffolding for a
+ * different assertion, it goes through here - a log line printed into
+ * the middle of a check list is the kind of noise that teaches people to
+ * skim the output, and skimmed output is how a FAIL gets missed.
+ */
+const quietly = async (run) => {
+  const before = console.log;
+  console.log = () => {};
+  try {
+    return await run();
+  } finally {
+    console.log = before;
+  }
+};
+
 await statusOf("an admin adds somebody by their numeric Telegram id",
   addMember(ROOT, { telegramId: "4242", role: "admin", label: "Alex" }), 200);
 
@@ -1530,9 +1547,14 @@ check("and not one refused add reached the table",
  * below refuses to remove the last one. Without this the delete that
  * follows would be asserting the guard's refusal while calling itself a
  * successful removal - the same row count, the wrong reason.
+ *
+ * ROOT's own account, which is also what the demotion probe further
+ * down needs: a session whose authority the table carries and the
+ * secret does not have to.
  */
 await statusOf("a second admin joins the list",
-  addMember(ROOT, { telegramId: "99", role: "admin", label: "Root" }), 200);
+  quietly(() =>
+    addMember(ROOT, { telegramId: "99", role: "admin", label: "Root" })), 200);
 
 await statusOf("an admin removes one role and leaves the other",
   call("DELETE", "/membership/admin/" + FIXTURE_4242,
@@ -1707,6 +1729,9 @@ reset();
 
 const CHAIR = (await (await signIn({ id: 99 })).clone().json()).session;
 await addMember(CHAIR, { telegramId: "4242", role: "admin", label: "Alex" });
+// A second admin row, or the removal below meets the last-admin guard
+// and this section would be testing that instead.
+await addMember(CHAIR, { telegramId: "31337", role: "admin", label: "Sam" });
 const PROMOTED = (await (await signIn({})).clone().json()).session;
 
 await statusOf("a table admin can read the list",
@@ -1772,7 +1797,7 @@ check("which leaves the admin row untouched",
   roster.length === 1 && roster[0].role === "admin", `${roster.length} row(s)`);
 
 await statusOf("a second admin is what unlocks the removal",
-  addMember(SOLE, { telegramId: "99", role: "admin", label: "Root" }), 200);
+  addMember(SOLE, { telegramId: "31337", role: "admin", label: "Sam" }), 200);
 await statusOf("and then the first one comes off",
   call("DELETE", "/membership/admin/" + FIXTURE_4242,
     { headers: bearer(SOLE) }), 200);
@@ -1910,15 +1935,31 @@ check("and a sign-in that cannot read the table mints a member",
 
 /*
  * An unreadable row grants nothing either, and is dropped rather than
- * coerced. String(undefined) is "undefined", which is a perfectly good
- * Set member that matches nobody - a near-miss that reads as a working
- * list right up until somebody cannot get in.
+ * coerced.
+ *
+ * The third row is the one that makes this check worth running, and it
+ * is why the guard tests `typeof` and not only the pattern:
+ * RegExp.test() stringifies whatever it is handed, so a value that is
+ * not a string but spells one passes a check written with the pattern
+ * alone. The first two rows are the ordinary junk - and on their own
+ * they prove nothing, because "null" and "not-an-account-id" are
+ * perfectly good Set members that simply match nobody. A check that
+ * only had those would pass whether the guard existed or not.
  */
+const OUTSIDER = { id: 31337, username: "junk" };
+const strangerId = (await (await call("GET", "/me",
+  { headers: bearer(
+    (await (await signIn(OUTSIDER)).clone().json()).session) })).json())
+  .accountId;
+
 roster.push({ account_id: null, role: "admin", label: "Broken",
   added_at: "", added_by: "" });
 roster.push({ account_id: "not-an-account-id", role: "admin", label: "Broken",
   added_at: "", added_by: "" });
-const afterJunk = await (await signIn({ id: 31337, username: "junk" })).json();
+roster.push({ account_id: { toString: () => strangerId }, role: "admin",
+  label: "Broken", added_at: "", added_by: "" });
+
+const afterJunk = await (await signIn(OUTSIDER)).json();
 check("a row this side cannot read grants nobody anything",
   afterJunk.isAdmin === false, `isAdmin=${afterJunk.isAdmin}`);
 
@@ -1977,7 +2018,8 @@ check("and never as the numeric id it was derived from",
   !String(JSON.stringify(notYet.secretOnly)).includes("99"),
   JSON.stringify(notYet.secretOnly));
 
-await addMember(AUDITOR, { telegramId: "99", role: "admin", label: "Root" });
+await quietly(() =>
+  addMember(AUDITOR, { telegramId: "99", role: "admin", label: "Root" }));
 const backfilled = await (await call("GET", "/membership",
   { headers: bearer(AUDITOR) })).json();
 check("and once the row exists the list is empty, which is the go-signal",
