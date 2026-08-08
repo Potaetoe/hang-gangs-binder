@@ -134,6 +134,9 @@ Aftercare:
 - [ ] Strip every paragraph tagged `[pre-cutover]` from
       `OPERATIONS.md`, and delete this file. Both are one grep:
       `pre-cutover`.
+- [ ] Repoint `.github/dependabot.yml`'s `target-branch` to `main` and
+      enable Dependabot automated security fixes — both waited on the
+      freeze (#93).
 - [ ] Update the pinned fingerprint **only if the key changed** — it
       did not, if you followed this file.
 - [ ] Update the status artifact.

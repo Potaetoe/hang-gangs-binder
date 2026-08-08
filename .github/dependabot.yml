@@ -1,0 +1,22 @@
+# Dependency update PRs, watched by Dependabot. target-branch is
+# accounts because main is frozen until the cutover; the cutover
+# aftercare repoints it to main and turns automated security fixes on
+# (#93 - security-fix PRs always target the default branch, which is
+# why that half waits). The alerts themselves are a repository
+# setting, enabled 2026-08-08.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "accounts"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "accounts"
+    open-pull-requests-limit: 5
