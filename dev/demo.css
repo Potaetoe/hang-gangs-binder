@@ -1,0 +1,158 @@
+/*
+ * The demo console's own appearance.
+ *
+ * Deliberately plain, and deliberately not apps/web/theme.css. The
+ * product's palette is one of the things this demo exists to have judged,
+ * and a console sharing its colors would sit in the same visual field as
+ * the frame and make that judgement harder. Neutral grey around a bright
+ * frame is the whole idea.
+ */
+
+:root {
+  color-scheme: dark;
+  --ink: #e8e8ea;
+  --dim: #a2a2ab;
+  --edge: #3a3a42;
+  --back: #17171b;
+  --panel: #1f1f25;
+  --warn: #ffc46b;
+  --yes: #7bd88f;
+  --no: #ff8f8f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--back);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 1.4rem; margin: 0 0 0.3rem; }
+h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
+     color: var(--dim); margin: 1.6rem 0 0.6rem; }
+h2:first-of-type { margin-top: 0.4rem; }
+
+code { font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+       font-size: 0.92em; }
+a { color: #9ec5ff; }
+
+.top { max-width: 60rem; margin-bottom: 1.2rem; }
+.lede { margin: 0 0 0.5rem; color: var(--dim); }
+.warn {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border-left: 3px solid var(--warn);
+  background: var(--panel);
+  color: var(--warn);
+  font-size: 0.9rem;
+}
+.muted { color: var(--dim); }
+.small { font-size: 0.88rem; }
+
+main {
+  display: grid;
+  grid-template-columns: minmax(20rem, 26rem) 1fr;
+  gap: 1.2rem;
+  align-items: start;
+}
+
+/* One column as soon as two would squeeze the frame narrower than the
+ * product's own layout breakpoint - a demo that forces the mobile strip
+ * on a desktop reviewer is showing them the wrong page. */
+@media (max-width: 60rem) {
+  main { grid-template-columns: 1fr; }
+}
+
+.driver, .stage, .record {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+  padding: 1rem 1.1rem;
+}
+.record { margin-top: 1.2rem; }
+.stage { padding: 0.6rem; }
+
+.scenarios { list-style: none; margin: 0; padding: 0; }
+.scenarios li { margin: 0 0 0.35rem; }
+.scenarios button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--edge);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.scenarios button:hover { border-color: var(--dim); }
+.scenarios button[aria-pressed="true"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.scenarios .id {
+  display: block;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+
+.steps { margin: 0; padding-left: 1.2rem; }
+.steps li { margin-bottom: 0.5rem; }
+
+.destinations { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.destinations button, #open-tab, #reset {
+  font: inherit;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--edge);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.destinations button[aria-pressed="true"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.status { min-height: 1.4em; color: var(--warn); font-size: 0.88rem; }
+
+.frame-path {
+  margin: 0 0 0.5rem;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--dim);
+}
+
+/* The frame is tall enough to hold a whole page, because scrolling a
+ * short frame hides the thing being judged - the shape of a full page. */
+iframe {
+  width: 100%;
+  height: 78vh;
+  min-height: 34rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: #fff;
+}
+
+.boxes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.boxes td { border-top: 1px solid var(--edge); padding: 0.45rem 0.5rem;
+            vertical-align: top; }
+.boxes tr:first-child td { border-top: 0; }
+.boxes .verdict { white-space: nowrap; font-weight: 600; }
+.boxes .verdict.yes { color: var(--yes); }
+.boxes .verdict.no { color: var(--no); }
+.boxes .why { color: var(--dim); }
+
+footer {
+  max-width: 60rem;
+  margin-top: 1.4rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--edge);
+  color: var(--dim);
+  font-size: 0.9rem;
+}

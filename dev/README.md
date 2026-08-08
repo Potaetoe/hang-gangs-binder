@@ -34,6 +34,7 @@ two ways a check may be written and why both are still accepted.
 | `check_web.test.py` | `check_web.py`'s own CSP parser — a checker that cannot read is indistinguishable from a site with nothing wrong (#34) |
 | `check_server.test.py` | `check_server.py`'s vars parser and rules, including that its key pattern still matches real key material |
 | `make-sample.test.mjs` | `make-sample.mjs` still runs and still writes what its summary claims — the generator loads the shipped `form.js` and `crypto.js`, and nothing else here exercises it (#66) |
+| `demo.test.mjs` | the drivable demo cannot drift. Undoing the mirror's declared edits returns the shipped page byte for byte, every Worker path `apps/web` calls has an answer in the stub, and `apps/web` names nothing under `dev/`. It binds a socket and drives the real mirror |
 
 ## Two kinds of fixture, opposite rules
 
@@ -95,3 +96,42 @@ stub catches the Publish request too, so nothing can leave the page;
 **there is deliberately no `?sample=` hook and there must not be one**,
 because `apps/web` ships verbatim and a console cannot be deployed by
 accident.
+
+## The drivable demo
+
+The same idea, made walkable end to end for #122 — the demonstration the
+owner drives before the cutover:
+
+```bash
+./run demo
+```
+
+then <http://127.0.0.1:8126/dev/demo.html>. `--port N` moves it, which is
+what a parallel agent session's preview block uses; the committed port is
+what `UAT.md` cites.
+
+Pick a scenario, and the console stages the session, the prefill and the
+published corpus that scenario needs, then puts a **shipped page** in the
+frame. Nothing reaches a real endpoint: `demo-boot.js` replaces `fetch`
+before any shipped script runs and refuses any URL it has no answer for,
+and the only keys anywhere near it are the throwaway pairs above.
+
+The pages come from a mirror at `/demo/`, read out of `apps/web` on every
+request — so a page PR 4 or PR 5 changes is a page the demo shows changed,
+with no work here. **`apps/web` still takes no hook.** The mirror applies
+exactly two edits on the way out, both listed in `demo-stub.js` and both
+rendered by the console so nobody has to take that on trust: it adds the
+two dev scripts ahead of the page's own, and it points the Telegram
+widget at a local stand-in. `demo.test.mjs` fails if a mirrored page
+differs from the shipped one in any other way.
+
+Two things the console derives rather than states, because both would go
+stale the week they were written: which acceptance box is drivable yet
+(read out of the shipped bytes, so a box flips when its slice lands), and
+which Worker routes the stub must answer (read out of `apps/web`, so a
+route a later slice adds fails the gate rather than the walk-through).
+
+The offline arm is not the only one. `./run serve` against the dev Worker
+is the live end-to-end feel, and the console names it; what the offline
+arm adds is the states a live database cannot be asked for on demand — a
+revoked session, a correction that supersedes, a cell under the floor.

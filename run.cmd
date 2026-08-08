@@ -33,6 +33,17 @@ if "%~1"=="keygen" (
   %PY% -m http.server 8125 --directory tools
   exit /b
 )
+if "%~1"=="demo" (
+  rem Mirrors ./run demo - see the reasoning there, including why this
+  rem one is node rather than %PY%.
+  rem
+  rem %2 %3 rather than a shift: inside a parenthesized block cmd expands
+  rem the arguments when it PARSES the block, so a shift here would move
+  rem nothing and --port would silently never arrive.
+  echo Open http://127.0.0.1:8126/dev/demo.html  ^(127.0.0.1, not localhost - #72^)
+  node dev\demo-server.mjs %2 %3
+  exit /b
+)
 if "%~1"=="bootstrap" (
   rem Mirrors ./run bootstrap - see the reasoning there, including why
   rem the probe is the eslint binary rather than the directory.
@@ -44,6 +55,6 @@ if "%~1"=="bootstrap" (
 )
 
 echo usage: .\run ^<command^>
-echo   bootstrap ^| check ^| docs ^| serve ^| serve-root ^| keygen
+echo   bootstrap ^| check ^| docs ^| serve ^| serve-root ^| keygen ^| demo
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2

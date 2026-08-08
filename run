@@ -37,6 +37,17 @@ case "${1:-}" in
   keygen)
     echo "Open http://127.0.0.1:8125/keygen.html"
     exec $PY -m http.server 8125 --directory tools ;;
+  demo)
+    # Node rather than $PY: this one is not a static server. It mirrors
+    # apps/web with the demo's two edits applied on the way out, which
+    # http.server has no way to do. dev/demo-server.mjs says why the
+    # mirror exists.
+    echo "Open http://127.0.0.1:8126/dev/demo.html  (127.0.0.1, not localhost - #72)"
+    # Shifted so `./run demo --port 8160` passes the port through and not
+    # the verb. The override exists for parallel agent sessions, whose
+    # preview blocks must not take the port the owner's demo answers on.
+    shift
+    exec node dev/demo-server.mjs "$@" ;;
   bootstrap)
     # A fresh checkout or worktree has no node_modules, and the gate's
     # eslint stage reports that absence as FAILED - which reads as a
@@ -70,6 +81,8 @@ usage: ./run <command>          (PowerShell: .\run <command>)
   serve       serve the site at http://127.0.0.1:8124
   serve-root  serve the repository root on 8124 (keycheck, browser checks)
   keygen      serve the key generator at http://127.0.0.1:8125
+  demo        drive every enhancement offline on http://127.0.0.1:8126
+              (--port N to move it)
 EOF
     exit 2 ;;
 esac

@@ -151,6 +151,53 @@ export default [
   },
 
   {
+    /*
+     * The demo's browser files.
+     *
+     * Classic scripts like everything in apps/web, and in dev/ for the
+     * same reason crypto-browser-check.js is: apps/web is copied verbatim
+     * to the live site and a demo harness is not something to publish.
+     *
+     * The worker globals are not decoration. dev/demo-corpus.js runs in a
+     * Web Worker precisely because a worker has no `document`, which is
+     * what makes apps/web/admin.js and apps/web/dashboard.js define their
+     * pure halves and skip their wiring - the same condition the Node
+     * suites rely on. So `self` and `importScripts` are real here and
+     * `document` is real in the others, and one block covers both rather
+     * than splitting four files across two.
+     */
+    files: ["dev/demo-boot.js", "dev/demo-console.js", "dev/demo-corpus.js",
+            "dev/demo-stub.js", "dev/demo-telegram.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "script",
+      globals: {
+        ...globals.browser,
+        ...globals.worker,
+        BinderDemo: "readonly",
+        BinderAdmin: "readonly",
+        BinderDashboard: "readonly",
+        BinderForm: "readonly",
+        BINDER_CONFIG: "readonly",
+      },
+    },
+    rules: {
+      strict: ["error", "function"],
+      "no-var": "error",
+      "prefer-const": "error",
+      eqeqeq: ["error", "always", { null: "ignore" }],
+      "no-eval": "error",
+      "no-implied-eval": "error",
+      "no-new-func": "error",
+      quotes: ["error", "double", { avoidEscape: true }],
+      semi: ["error", "always"],
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_",
+                                    caughtErrors: "none" }],
+    },
+  },
+
+  {
     /* The Node test suites, which load the shipped files. */
     files: ["dev/**/*.mjs"],
     languageOptions: {
