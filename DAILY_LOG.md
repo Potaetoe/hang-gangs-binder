@@ -165,15 +165,91 @@ Worth keeping: this was found by a person using the page, on the same
 afternoon that seventeen gate stages and every browser assertion went green.
 The rehearsal was justified by the migration and paid off in the UI.
 
+### Part A finished, and the check that had to be run twice
+
+The owner loaded the development private key and the rest of Part A followed.
+It passes except A2.7, which #64 blocks. Full record in `UAT.md`.
+
+**A6.2 was recorded as passing and was not a test.** The published document
+had `quality: null`, which is what the check asks for — but the corpus held
+no height that had changed, so the height-discrepancy panel was absent for
+lack of anything to say. It could not have failed. Seeding a real
+discrepancy (175 → 183 cm) and repeating it makes it mean something: the
+keyholder's own view names him, `@gus: 5'9" to 6'0"`, and the published
+document still carries `quality: null` with no per-person height anywhere.
+
+**That is the third time today the same error appeared** — the clear
+rehearsed against an empty database, the migration rehearsed against a
+database already migrated, and now a privacy check run against data that
+could not trigger it. The shape is always the same: the *procedure* is
+right, the *starting state* cannot exhibit the failure, and the green result
+is indistinguishable from a real one. `UAT.md` now says it in the general
+form: when a privacy check reads "absent", confirm the thing would otherwise
+have been present.
+
+**A5.5 is the one that mattered most and it held.** Delete a row, publish
+immediately: counts 13/8, five series instead of six, and no trace of the
+deleted 150.5 kg. The deleted person's whole line dropped out — correctly,
+since one remaining entry is not a repeat submitter. That is derived state
+being rebuilt rather than reused.
+
+Two smaller things worth keeping. **A5.8 was verified with `od -c`** rather
+than by looking at the cell, because "starts with an apostrophe" is exactly
+the claim an eye confirms wrongly. And **A5.7 unpublished with the key field
+empty**, which proves the page's own sentence that unpublishing needs the
+admin session and not the key.
+
+**A5.9 was nearly filed as a failure.** With a wrong key the status reads
+"Nothing could be decrypted with this key." and the table is empty, which
+looks precisely like the silent skipping the check forbids. The rows are
+listed in `#failure-list`, a different element. Reading `admin.js` before
+writing the verdict is what caught it.
+
+Method, recorded because it changes what the pass proves: `POST /auth/dev`
+needs `DEV_LOGIN_SECRET`, which no agent handles, so sessions were minted
+straight into `hg_binder_db_dev` — generate a token, insert its SHA-256, hand
+the token to the page. The owner did the two things that genuinely required
+them: the first real sign-in and submission, and loading the private key. All
+seeded rows and minted sessions were deleted afterwards; dev is back to one
+submission and one session.
+
+### Two more issues, both found by using the thing
+
+**#66** — `dev/make-sample.mjs` throws on `accounts`. `buildRecord` gained a
+third parameter when the handle moved to the session, and this caller still
+passes two. The only edit it received on this branch was a spelling fix, so
+the file was opened, edited and committed while already broken. Nothing in
+the gate runs it. It matters because its own header promises a successor can
+exercise `admin.html` without production data, and that promise is currently
+false.
+
+**#67** — `admin.html` still tells the keyholder that renumbering means "two
+snapshots cannot be lined up to follow one person". `DESIGN.md` records that
+exact sentence as **false**, and says it was recorded rather than quietly
+rewritten *because the keyholder was making the opt-in decision on the
+strength of it*. The correction reached `DESIGN.md` and `dashboard.js`'s
+comment and never reached the page — which is the one surface the correction
+says it mattered on. Confirmed by observation: two previews of the same
+corpus produce identical labels. The real defense, quantization, is working;
+the stated reason for safety is the wrong one.
+
 ### Where the cutover stands
 
 Steps 0 and 1 **done**. Step 2's secrets confirmed twice from two directions.
 Step 3 still unprovable before step 8 — `ADMIN_TELEGRAM_IDS` existing is not
 it holding the right id.
 
-**UAT Part A is half-run.** A1 and A2 recorded; A3, A4, A5 and A6 not
-performed, and A6 is one of the two sections whose failure stops the cutover.
-That is now the largest gap between here and a deploy.
+**UAT Part A is complete except A2.7.** A6 — one of the two sections whose
+failure stops the cutover — passes on every check, with A6.2 re-run against
+data that could actually fail it.
+
+So the largest gap is no longer Part A. What remains before a deploy is the
+sitting itself: steps 4 through 8, of which only step 8 can confirm
+`ADMIN_TELEGRAM_IDS` holds the right id, and Part B's widget callback, which
+no amount of local work can reach.
+
+Four issues opened today — #64, #65, #66, #67 — none of them blocking the
+cutover, and all four found by using the product rather than by reading it.
 
 ## 2026-08-07
 

@@ -92,6 +92,24 @@ rather than by reasoning about it.
   invalid" — the domain binding, not the policy. `UAT.md` A7 narrowed from
   "the widget" to "the widget's callback".
 
+### Verified — UAT Part A, complete
+- **Part A passes except A2.7**, which #64 blocks. A4, A5 and A6 finished
+  once the owner loaded the development private key. The results are in
+  `UAT.md` check by check; the ones worth naming here:
+- **A5.5, the resurrection hazard.** A row was deleted and a snapshot
+  published *immediately*. The published document carried counts 13/8, five
+  series rather than six, and no trace of the deleted 150.5 kg — that
+  person's whole line dropped out, correctly, because one entry is not a
+  repeat submitter.
+- **A6.4, quantization.** A point stored at `10:00:00Z` published as
+  `00:00:00Z`, and 96 kg published as 90. A date rather than an instant, and
+  a bin edge rather than a weight, which is what makes cross-snapshot
+  matching an inference instead of a join.
+- **A5.8** verified at byte level rather than by eye: `od -c` shows the
+  handle cell as `' = c m d ...`, so a spreadsheet reads it as text.
+- **A5.7** unpublished with the key field empty, confirming the page's claim
+  that it needs the admin session and not the key.
+
 ### Fixed
 - Nothing yet — but **#64 filed**: the Add entry tab is one-shot. After a
   submission the Received card replaces the form and switching tabs never

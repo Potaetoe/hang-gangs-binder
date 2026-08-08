@@ -83,6 +83,14 @@ Sign in with `admin: false`, subject `alice`.
 | A2.6 | Look for a handle field | **There is none.** The handle comes from the session | While it was typed, a member could store somebody else's handle beside their own account id |
 | A2.7 | Submit again with a different weight | Second row; count 2 | Storage is append-only — repeats are the weight history, not an error |
 
+> **A6.2's first run was vacuous, and that is worth carrying.** It was
+> recorded as passing because the published document had `quality: null` —
+> but the corpus contained no height that had changed, so the panel was
+> absent for lack of anything to say rather than because it is excluded. The
+> check could not have failed. Re-run against a seeded discrepancy it passes
+> properly. **When a privacy check reads "absent", confirm the thing would
+> otherwise have been present.**
+
 > **A2.7 cannot be run through the UI today — #64.** After a submission the
 > Received card replaces the form and never gives it back; switching tabs does
 > not restore it, and only a reload does. Record A2.7 as **blocked**, not as a
@@ -250,36 +258,78 @@ Part A, run on:            2026-08-08  against hgbinderworker-dev
                            A3.5 pass - malformed prefill, page fine, no errors
                            (but see #65 - only one of four rejection paths
                            erases; not a failure today, a latent one)
-  A4 dashboard             PARTIAL
+  A4 dashboard             PASS - all three
                            A4.1 pass - "No figures have been published yet",
                                 and it stayed on dashboard.html
-                           A4.2 BLOCKED - needs a published snapshot
+                           A4.2 pass - 7 charts drew, "13 entries from 8
+                                people", "Figures worked out just now
+                                (2026-08-08 08:02 UTC)", no handle on the page
                            A4.3 pass - signed out goes to sign-in, NOT the
                                 "nothing published" message
-  A5 admin surface         PARTIAL
+  A5 admin surface         PASS - all nine
                            A5.1 pass - opens on an admin session, NO token box
+                           A5.2 pass - 14 of 14 decrypted; CSV, Excel and JSON
+                                all offered; the row matched what was typed
                            A5.3 pass - a member is refused with a message
                                 naming the reason, not a blank page
+                           A5.4 pass - row 12 deleted, table and downloads
+                                rebuilt, summary 13 of 13
+                           A5.5 pass - published IMMEDIATELY after the delete:
+                                counts 13/8, five series not six, and the
+                                deleted 150.5 kg absent (no metric 150). That
+                                person's whole line dropped, correctly - one
+                                entry is not a repeat submitter
+                           A5.6 pass - the deleted-from member's panel read 1,
+                                agreeing with the table
+                           A5.7 pass - Unpublish worked with the key field
+                                EMPTY, confirming it needs the session and not
+                                the key; submissions left untouched
+                           A5.8 pass - verified at byte level with od -c: the
+                                handle cell is '=cmd()|calc, apostrophe first
                            A5.9 pass - a wrong key LISTS the row with its id
                                 ("row 2: ... encrypted to a different key"),
                                 summary "0 of 1 row(s) decrypted", and the
                                 publish card correctly hidden
-                           A5.2, A5.4, A5.5, A5.6, A5.7, A5.8 BLOCKED
-  A6 privacy               PARTIAL
+  A6 privacy               PASS - all six
+                           A6.1 pass - on the REAL published document: no
+                                handle, no @ sign, no individual row
+                           A6.2 pass, and re-run to make it mean something.
+                                The first run was vacuous - quality was null
+                                because no height had changed, so the check
+                                could not have failed. Seeded a real
+                                discrepancy (175 -> 183 cm) and repeated it:
+                                the keyholder's own view NAMES him,
+                                "@gus: 5'9" to 6'0"", and the published
+                                document still carries quality: null with no
+                                per-person height anywhere
+                           A6.3 pass - series ticked, fewer than five repeat
+                                submitters, and series published as null.
+                                bases were null too - #19's singleton floor
+                           A6.4 pass - with six repeat submitters the series
+                                published. A point stored at 10:00:00Z
+                                published as 00:00:00Z (a date, not an
+                                instant) and 96 kg published as 90 (a bin
+                                edge). Labels "Person 1".. never handles
                            A6.5 pass - 32 chars, matches the DEV public key in
                                 config.js and NOT production's, as expected
                            A6.6 pass - on submit, admin and dashboard the
                                 session is in sessionStorage and never in
                                 localStorage
-                           A6.1, A6.2, A6.3, A6.4 BLOCKED
   Console clean of CSP violations throughout:  yes - no console output at all
 
-  EVERYTHING STILL BLOCKED HAS ONE CAUSE: the development private key, which
-  is held offline by the owner. Nothing can be decrypted without it, so no
-  snapshot can be published, which in turn blocks A4.2 and all of A6.1-A6.4.
-  A5.4's delete button is only drawn on a row that decrypted, so row deletion
-  and the resurrection check (A5.5) are behind the same door. This is one
-  errand, not six.
+  PART A IS COMPLETE EXCEPT A2.7, which #64 blocks.
+
+  How the sessions were obtained, because it matters for what this proves:
+  POST /auth/dev needs DEV_LOGIN_SECRET, which no agent handles, so sessions
+  were minted directly in hg_binder_db_dev - generate a token, insert its
+  SHA-256, hand the token to the page. The owner performed the two steps that
+  genuinely required them: the first real sign-in and submission, and loading
+  the development private key for A5.2 onward.
+
+  Test data: 13 rows across 7 extra people were seeded through the real
+  form.js and crypto.js, sealed to the DEV public key. All of it, and every
+  minted session, was deleted afterwards - dev is back to one submission and
+  one session.
   Not covered here: a real numeric id, and the widget CALLBACK only - the
   CSP and the widget's script and frame were confirmed, see A7
 
