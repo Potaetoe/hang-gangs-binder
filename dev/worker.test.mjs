@@ -664,6 +664,21 @@ await statusOf("an empty admin list leaves nobody an admin",
   call("GET", "/export", { headers: bearer(STALE_ADMIN) },
     { ...env, ADMIN_TELEGRAM_IDS: "" }), 401);
 
+/*
+ * The re-read may take adminness away and must never hand it out. Adding
+ * an id to ADMIN_TELEGRAM_IDS still needs a fresh sign-in, which is what
+ * OPERATIONS.md tells a keyholder to do - and the reason it is worth
+ * asserting is that the cheapest way to write the re-read is as the only
+ * condition, which would silently promote every live member session
+ * belonging to a newly-listed id. sessionFor()'s comment claims the
+ * stored flag stays necessary; this is what stops that being a claim
+ * nothing checks.
+ */
+const MEMBER_SESSION = (await (await signIn({})).clone().json()).session;
+await statusOf("listing an id does not promote a session already issued",
+  call("GET", "/export", { headers: bearer(MEMBER_SESSION) },
+    { ...env, ADMIN_TELEGRAM_IDS: "4242" }), 401);
+
 /* Demotion is not revocation. The person is still a member of the group,
  * and the session that stops being an admin session keeps working as the
  * member session it also is - so /me must say so rather than refuse. */
