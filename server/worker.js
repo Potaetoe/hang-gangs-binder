@@ -369,8 +369,8 @@ function unauthorized(origin) {
  * before encrypting. That does NOT make it trustworthy - the record is
  * sealed in the member's own browser and they can write whatever they
  * like into it. The account id is the identity that cannot be forged;
- * the handle is a label. See DESIGN.md, "Telegram is the identity
- * provider".
+ * the handle is a label. See DESIGN.md, "The identifier is the whole
+ * problem".
  */
 async function handleTelegramAuth(request, env, origin) {
   const body = await request.text();
@@ -577,7 +577,7 @@ async function handleSubmit(request, env, origin, caller) {
  * It is what answers "please take mine down" without a Cloudflare
  * console, and it is what makes junk recoverable - which is the reason
  * spam protection was allowed to stay "nothing until it appears". See
- * DESIGN.md, "Deleting a submission", including why members cannot yet
+ * DESIGN.md, "Admin accounts and deletion", including why members cannot yet
  * do this for themselves.
  *
  * Deleting nothing succeeds, for the same reason unpublishing twice
@@ -766,7 +766,7 @@ export default {
     if (method === "GET" && path === "/snapshot") {
       // Members only since 2026-08-05. The document still carries no
       // handles and no rows - gating it is not a reason to relax what
-      // goes in it. See DESIGN.md, "The members' dashboard".
+      // goes in it. See DESIGN.md, "The dashboard and the snapshot".
       if (!caller) return unauthorized(allowed);
       return handleReadSnapshot(env, allowed);
     }

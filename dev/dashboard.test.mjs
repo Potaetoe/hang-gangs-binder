@@ -498,7 +498,7 @@ await check("weight over time can be left out entirely", () =>
  * Person 3's line reappeared verbatim in the next document with one
  * point on the end. Matching was a join on an exact key.
  *
- * REDESIGN.md Part 5 then specified the missing test as "two snapshots
+ * archive/REDESIGN.md Part 5 then specified the missing test as "two snapshots
  * of the same corpus, one with an extra entry, share no exact series
  * point". **That criterion cannot hold, and correcting it is part of
  * this step.** Quantization is a deterministic function of a point, so

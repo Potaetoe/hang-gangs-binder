@@ -22,7 +22,7 @@
 --
 -- The real migration DROPs and recreates, because SQLite cannot add a
 -- NOT NULL column to a table with rows in it. That is destructive and
--- deliberate; it is step 2 of REDESIGN.md's build order, and it comes
+-- deliberate; it is step 2 of archive/REDESIGN.md's build order, and it comes
 -- after the dev database has been used to rehearse it.
 -- ---------------------------------------------------------------------
 --
@@ -39,7 +39,7 @@
 --
 -- Adding account_id to a table that already has rows is not possible in
 -- SQLite for a NOT NULL column, so the accounts migration DROPs and
--- recreates. That is deliberate and destructive; REDESIGN.md, Part 2.
+-- recreates. That is deliberate and destructive; archive/REDESIGN.md, Part 2.
 
 CREATE TABLE IF NOT EXISTS submissions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

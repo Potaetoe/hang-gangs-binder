@@ -24,14 +24,14 @@ const ENVIRONMENTS = {
     endpoint: "https://hgbinderworker.sorcererbiggz.workers.dev",
 
     // Generated 2026-08-04 by tools/keygen.html. A raw uncompressed
-    // P-256 point in base64 - see DESIGN.md, "How the key itself is
+    // P-256 point in base64 - see archive/DESIGN.md, "How the key itself is
     // written down". The matching private half is held by the keyholder
     // and exists nowhere in this repository.
     //
     // Replacing this makes every submission encrypted to the old key
     // unreadable by the new one. That is a rotation, not an edit: the old
     // key gets archived rather than destroyed, or the history it
-    // encrypted is gone. See HANDOFF.md.
+    // encrypted is gone. See OPERATIONS.md, "The keys".
     publicKey: "BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD1d5PhnxXT9kD917khzW07MUT2yAX18Wc7rD4K0BTSQ8=",
   },
   "localhost": {

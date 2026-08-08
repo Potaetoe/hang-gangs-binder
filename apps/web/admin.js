@@ -5,7 +5,7 @@
  * fetches the ciphertext, and the key file opens it. The session lives
  * only in sessionStorage and the key is supplied here - neither is written
  * to persistent storage, and the key is never sent or allowed to leave the
- * page. See DESIGN.md, "Export" and "Key custody".
+ * page. See DESIGN.md, "Encryption".
  *
  * Split like form.js, and for the same reason. The pure half - turning
  * a decrypted record into a CSV row, and rows into a file - is exported
