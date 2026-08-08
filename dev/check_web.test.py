@@ -12,8 +12,7 @@ happens to guard, and it tests the pin table for completeness rather than
 for the pages that exist today.
 
 No framework and no new dependency, matching the `.mjs` suites beside it -
-this repository refuses third-party code it does not need, and a test
-runner is not needed to compare values.
+a test runner is not needed to compare values.
 """
 
 import os

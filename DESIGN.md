@@ -152,10 +152,15 @@ the weight-over-time history.
 ## The sign-in page and the CSP
 
 Every page carries `default-src 'none'` with `script-src 'self'` in a
-`<meta>` policy — no CDNs, no third-party code, enforced by the
-browser in the window that matters: between the form being filled and
-the ciphertext leaving. The Telegram widget is third-party script, so
-sign-in is a page of its own and the exception is confined there:
+`<meta>` policy — nothing loads on a page that its own policy does
+not name, enforced by the browser in the window that matters: between
+the form being filled and the ciphertext leaving. That is a per-page
+boundary, not a project-wide ban on third-party code — #75 records
+the correction after it was over-read as one. The positional rule is
+what holds: nothing third-party runs where plaintext is in reach, and
+`apps/web/` ships only what this repository vouches for. The Telegram
+widget is third-party script, so sign-in is a page of its own and the
+exception is confined there:
 
 ```
 index.html:  script-src 'self' 'unsafe-eval' https://telegram.org;
