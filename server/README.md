@@ -156,8 +156,19 @@ No CLI required; all of this is in the Cloudflare dashboard.
 
 ### What the accounts version additionally needs
 
-Not yet, but before `worker.js` is deployed. All of it is Settings →
-Variables and Secrets, and `REDESIGN.md` Part 1 has the BotFather half.
+**All of these are already set on production** — confirmed by the owner from
+the dashboard on 2026-08-07, each as a **Secret** rather than a `[vars]`
+entry, with `DEV_LOGIN_SECRET` correctly absent. The table below is therefore
+what a *new* deployment needs, and a checklist to confirm against rather than
+a list of things to do.
+
+That it can only be confirmed by the owner is not a gap in the record:
+`wrangler` will not authenticate from a non-interactive shell, so no agent can
+read a live secret list. Anything here asserting the state of production
+secrets should name who checked it and when.
+
+All of it is Settings → Variables and Secrets, and `REDESIGN.md` Part 1 has
+the BotFather half.
 
 | Name | Kind | Notes |
 | --- | --- | --- |
@@ -187,6 +198,13 @@ entries to each other, and there is no way back. Generate it once, store
 it beside the private key, and treat editing it as data loss. It is
 configuration in appearance and part of the stored format in fact, in
 the same way `crypto.js`'s derivation label is.
+
+**On production that clause has not bitten yet, and the distinction is worth
+holding.** The secret has been set since 2026-08-07, but no stored row carries
+an id derived from it: the table was cleared, and the live Worker is still the
+pre-accounts one that writes no `account_id`. So "set" and "permanent" are two
+different states, and production is in the first. It moves to the second at
+the first real submission after the cutover — `CUTOVER.md` step 8.
 
 Leaving `TELEGRAM_GROUP_CHAT_ID` unset means **anyone with a Telegram
 account can sign in**, which is a deployment decision rather than an

@@ -993,6 +993,51 @@ irreversible step in it. Both new files are registered in the record table
 with the split stated, so the next agent inherits the boundary rather than
 guessing at it.
 
+### The secrets were set all along — #62
+
+The owner produced a dashboard screenshot the same day: **all six production
+secrets exist**, each a Secret rather than a `[vars]` entry, `ALLOWED_ORIGINS`
+the one plaintext variable, and `DEV_LOGIN_SECRET` absent.
+
+It is production rather than the dev Worker, and the screenshot settles that by
+itself without showing a Worker name: `ALLOWED_ORIGINS` reads
+`https://potaetoe.github.io`, where dev's value is the localhost pair.
+
+**So #60 removed a true sentence, and the reasoning that removed it was the
+error.** `server/wrangler.toml` had asserted the secrets were set with no
+source. I replaced it with a note implying doubt, because it contradicted Part
+8 and because the only recorded setting of `ACCOUNT_SECRET` was on the dev
+Worker. Every one of those observations was correct and the conclusion did not
+follow: **unverified and false are different claims.** The honest handling of
+the first is to name who can confirm it — which the restored sentence does, with
+a date and a source, and the original did not. `CUTOVER.md` had it right by
+opening with a confirmation step; the config comment overshot into implying the
+opposite.
+
+Worth keeping because it is the same failure as the cutover-order mistake
+earlier the same day, in the other direction: there, a plausible inference
+displaced a document that had the answer; here, an absence of evidence was
+written up as evidence of absence. Both were confident, both were about
+production, and both were caught by somebody checking rather than by reasoning
+harder.
+
+**The distinction the cutover actually needed.** `ACCOUNT_SECRET` is set and is
+**not yet irreversible.** No production row carries an id derived from it — the
+table was cleared, and the live Worker writes no `account_id`, so anything
+submitted since carries `NULL`. Changing it today would cost nothing. That
+window closes at the first real submission after the deploy. "Set" and
+"permanent" are now separate lines in `CUTOVER.md`, `server/README.md` and the
+irreversibility table, because collapsing them would have made the one genuinely
+irreversible moment invisible by putting it in the past.
+
+Also written down, since the screenshot cannot show it: `ADMIN_TELEGRAM_IDS`
+existing is not the same as it holding the right numeric id. The value is
+encrypted, nothing outside the dashboard can check it, and a wrong one looks
+exactly like a working deployment until the first export.
+
+No secret values are recorded anywhere — only which names exist, their kind, and
+the plaintext `ALLOWED_ORIGINS`, which is already public in `wrangler.toml`.
+
 ---
 
 ## 2026-08-06

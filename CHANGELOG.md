@@ -296,15 +296,36 @@ On `accounts`, not released. `main` stays at the last complete release.
   with no `/auth/telegram` route. What the warning actually protects is
   narrower and still true: do not deploy the Worker on its own, ahead of the
   cutover.
-- **`server/wrangler.toml` no longer asserts that production's six secrets
-  are set.** Nobody had checked, it contradicted Part 8's own instruction to
-  set two of them at cutover, and the only recorded setting of
-  `ACCOUNT_SECRET` was on the **development** Worker (#33). No agent can
-  settle it — `wrangler` will not authenticate from a non-interactive shell —
-  so the comment now says where the secrets belong, and `CUTOVER.md` opens by
-  confirming what exists. This matters more than a stale sentence usually
-  does: `ACCOUNT_SECRET` is permanent once a row carries an id derived from
-  it.
+- **Production's six secrets are confirmed set, with a source.** #62. Verified
+  by the owner from the Cloudflare dashboard on 2026-08-07: `ACCOUNT_SECRET`,
+  `ADMIN_TELEGRAM_IDS`, `ALWAYS_ALLOW_TELEGRAM_IDS`, `EXPORT_TOKEN`,
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_GROUP_CHAT_ID`, **each a Secret rather
+  than a `[vars]` entry** — which is what #30 and #39 argued for.
+  `ALLOWED_ORIGINS` is the one plaintext variable, and `DEV_LOGIN_SECRET` is
+  **absent**, so the off switch for `POST /auth/dev` is in place. It is
+  production and not the dev Worker, which the plaintext
+  `https://potaetoe.github.io` establishes on its own — dev's value is the
+  localhost pair. `REDESIGN.md` Part 8 steps 2 and 3 are therefore
+  confirmations rather than acts, struck through rather than deleted so the
+  table still reads as the plan it was.
+- **Corrected: #60 replaced a true sentence with one implying doubt.**
+  `server/wrangler.toml` had said production's six secrets were set;
+  #60 removed it because nothing had verified it and it contradicted Part 8.
+  The sentence was **right**. *Unverified* and *false* are different, and the
+  honest handling of the first is to name who can confirm it — which the
+  restored version does and the original did not. No agent could have settled
+  it either way: `wrangler` will not authenticate from a non-interactive shell.
+- **"Set" and "permanent" are now different states in the documents, because
+  for `ACCOUNT_SECRET` they are.** It has been set since 2026-08-07 and is
+  **not yet irreversible**: no production row carries an id derived from it,
+  since the table was cleared and the live Worker still writes no
+  `account_id`. Changing it today would cost nothing. That window closes at
+  the first real submission after the cutover deploy — `CUTOVER.md` step 8,
+  which now says so, as do `server/README.md` and the irreversibility table.
+  Also recorded: `ADMIN_TELEGRAM_IDS` **existing** does not mean it holds the
+  right numeric id — the value is encrypted, nothing outside the dashboard can
+  check it, and a wrong one looks exactly like a working deployment until that
+  same step 8.
 - **Worker setup now records all three numeric id bindings as secrets, not
   vars.** Their being ids rather than credentials never made a public
   `[vars]` block safe: the allowlist is the membership oracle the

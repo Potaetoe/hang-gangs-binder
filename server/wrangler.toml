@@ -45,23 +45,34 @@ preview_urls = false
 ALLOWED_ORIGINS = "https://potaetoe.github.io"
 
 # Every secret is deliberately absent and must never appear in a file
-# that lives in a public repository. The six below belong in the
-# dashboard, or in `wrangler secret put` once this config is what
-# deploys. DEV_LOGIN_SECRET is a separate, development-only secret and
-# must never be set on production.
+# that lives in a public repository. DEV_LOGIN_SECRET is a separate,
+# development-only secret and must never be set on production.
 #
-# This comment used to say "Production's six secrets are set in the
-# dashboard", and that was a claim nobody had checked. It contradicted
-# REDESIGN.md Part 8, which lists setting ACCOUNT_SECRET and
-# TELEGRAM_BOT_TOKEN on production as a cutover step, and the only
-# recorded setting of ACCOUNT_SECRET was on hgbinderworker-DEV (#33).
+# ALL SIX ARE SET ON PRODUCTION, as Secrets rather than [vars].
+# Confirmed by the owner from the dashboard on 2026-08-07 - the only way
+# it can be confirmed, because wrangler will not authenticate from a
+# non-interactive shell and no agent can read the live secret list.
+# DEV_LOGIN_SECRET is absent there, which is what keeps POST /auth/dev
+# off. ALLOWED_ORIGINS above is the one plaintext variable.
 #
-# No agent can settle which is true: wrangler will not authenticate from
-# a non-interactive shell, so the live secret list is owner knowledge.
-# CUTOVER.md therefore opens by confirming what exists rather than
-# assuming - and ACCOUNT_SECRET is the one where a wrong assumption does
-# not come back, because it is permanent once a row carries an id
-# derived from it.
+# So REDESIGN.md Part 8 step 2 is a confirmation now, not an act, and
+# CUTOVER.md says so.
+#
+# Two notes on how this sentence got here, both worth keeping.
+#
+# It used to read "Production's six secrets are set in the dashboard"
+# with no source. #60 replaced that with a note implying doubt, because
+# it contradicted Part 8 and the only recorded setting of ACCOUNT_SECRET
+# was on hgbinderworker-DEV (#33). The original was RIGHT. It was
+# unverifiable from a session, which is not the same as false, and the
+# honest handling of the first is to name who can confirm it - which is
+# what this version does and the unsourced one did not.
+#
+# ACCOUNT_SECRET being set is NOT yet the irreversible moment. It becomes
+# permanent when a row carries an id derived from it, and no production
+# row does: the table was cleared 2026-08-07 and the live Worker still
+# writes no account_id, so anything added since carries NULL. The window
+# closes at the first real submission after the cutover deploy.
 #
 # Production's hand-pasted script leaves the Worker in version-upload
 # state, so `wrangler secret put` tries to create and deploy a version and
