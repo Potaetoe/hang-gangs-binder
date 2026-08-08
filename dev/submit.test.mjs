@@ -421,6 +421,41 @@ check("a malformed prefill is ignored without breaking the page",
   malformedPrefill.elements["weight-lb"].value === "" &&
   malformedPrefill.elements["height-ft"].value === "");
 
+/*
+ * #65. Erasure is the principle, and an account mismatch is only one of the
+ * ways a stored prefill gets rejected.
+ *
+ * "The fields are empty and the page did not break" is the criterion the
+ * check above holds, and a prefill left sitting in localStorage satisfies
+ * it. That is the same gap A3.4 was written to close for the account case -
+ * gone, not merely ignored - so it is asserted here for the other three.
+ *
+ * The third value below is the one that shows why this is worth a check
+ * rather than tidiness: it is a real member's real weight and height, under
+ * the right account, rejected only because a later format narrows what
+ * `units` may hold. It fails an earlier guard than the mismatch does, and
+ * the shared browser it is sitting on is the entire scenario #56 exists
+ * for.
+ */
+const unusablePrefills = [
+  ["it does not parse", "{not-json"],
+  ["it is not an object", JSON.stringify("222.5|6|1.5")],
+  ["its units are unreadable", JSON.stringify({
+    accountId: ACCOUNT,
+    units: "stone",
+    weightLb: "222.5",
+    heightFeet: "6",
+    heightInches: "1.5",
+  })],
+];
+for (const [why, stored] of unusablePrefills) {
+  const rejected = await loadSubmit({ prefill: stored, replies: [mine()] });
+  check(`a prefill rejected because ${why} is erased, not left readable`,
+    !localValues.has(PREFILL_KEY) &&
+    rejected.elements["weight-lb"].value === "" &&
+    rejected.bootErrors.length === 0);
+}
+
 const signingOut = await loadSubmit({
   prefill: storedPrefill,
   replies: [mine()],
@@ -588,4 +623,4 @@ if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsubmit panel OK - 25 checks");
+console.log("\nsubmit panel OK - 28 checks");

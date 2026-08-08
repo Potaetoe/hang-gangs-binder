@@ -61,22 +61,33 @@
    * `expected` of null - no account to attribute it to, which is what a
    * break-glass caller gets from /me - discards rather than restores. A
    * prefill shown without knowing whose it is IS the bug.
+   *
+   * Every rejection erases, and there is one place that does it - #65.
+   * A value this page will not read is unusable by definition, so nothing
+   * is weighed against removing it, and a rejection that merely returns
+   * leaves weight and height readable on a shared device for the next
+   * person. Spreading the erase across the guards is what makes the fifth
+   * guard somebody adds silently keep the data, so the shape here is a
+   * single accept and one exit: to keep a prefill it has to pass all of
+   * them at once.
    */
   function readPrefill(expected) {
     const store = localStore();
     if (!store) return null;
     try {
       const value = JSON.parse(store.getItem(PREFILL_KEY));
-      if (!value || typeof value !== "object") return null;
-      if (value.units !== "imperial" && value.units !== "metric") return null;
-      if (!expected || value.accountId !== expected) {
-        clearPrefill();
-        return null;
+      if (value && typeof value === "object" && expected &&
+          value.accountId === expected &&
+          (value.units === "imperial" || value.units === "metric")) {
+        return value;
       }
-      return value;
     } catch (error) {
-      return null;
+      // A value that will not parse is erased below with every other
+      // rejection; the catch is here so a hostile store cannot throw
+      // past it.
     }
+    clearPrefill();
+    return null;
   }
 
   function clearPrefill() {
