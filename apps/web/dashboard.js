@@ -174,6 +174,41 @@
   }
 
   /*
+   * Which person a row belongs to. Every grouping in this file goes
+   * through here, so there is one answer to "is this the same person"
+   * rather than one per chart.
+   *
+   * DESIGN.md, "The identifier is the whole problem": the account id is
+   * set server-side from a verified sign-in and cannot be forged by the
+   * page, while the handle inside the encrypted blob is a label the
+   * member's own browser wrote. Grouping on the handle makes a rename
+   * two people, and makes two members who typed the same handle one
+   * person with a single impossible history. The id decides; the handle
+   * is only ever a caption.
+   *
+   * The prefixes keep the three key spaces apart. Without them an
+   * account id that happens to read like somebody's handle would group
+   * with that handle, which is the merge this function exists to stop.
+   *
+   * A row with no account id falls back to its handle, and a row with
+   * neither stands alone under its own row id. That is not a second
+   * identity scheme - it is the rule that an absent id must never act
+   * as a shared one, because the id is the identity and nothing is not
+   * an identity. Rows the Worker stores always carry one
+   * (`server/schema.sql` declares the column NOT NULL and
+   * `handleExport` selects it), so a row without one arrived some other
+   * way: an export file saved from an earlier database, or a payload
+   * put together by hand. Letting them share a key would gather every
+   * unidentifiable row into one enormous submitter, which is the same
+   * failure the "#id" case exists to prevent for blank handles.
+   */
+  function identityOf(entry) {
+    if (entry.accountId) return "a:" + entry.accountId;
+    if (entry.telegram) return "@" + entry.telegram;
+    return "#" + entry.id;
+  }
+
+  /*
    * One entry per person, keeping the most recent.
    *
    * Storage is append-only and the form cannot detect a repeat, so a
@@ -181,20 +216,53 @@
    * those rows as separate people would report the group as larger than
    * it is and drag every distribution toward whoever submits most
    * often.
-   *
-   * A row with no handle is its own person rather than being lumped in
-   * with every other blank, which would invent one enormous submitter.
    */
   function latestPerPerson(entries) {
-    const byHandle = new Map();
+    const byPerson = new Map();
     for (const entry of entries) {
-      const key = entry.telegram ? "@" + entry.telegram : "#" + entry.id;
-      const previous = byHandle.get(key);
+      const key = identityOf(entry);
+      const previous = byPerson.get(key);
       if (!previous || timeOf(entry) >= timeOf(previous)) {
-        byHandle.set(key, entry);
+        byPerson.set(key, entry);
       }
     }
-    return Array.from(byHandle.values());
+    return Array.from(byPerson.values());
+  }
+
+  /*
+   * Rows gathered per person, each group carrying the handle to caption
+   * it with.
+   *
+   * `take` returns what the caller wants off a row, or null to leave
+   * that row out. Grouping and captioning are the same problem for
+   * every panel that is about a person rather than a measurement, and
+   * two copies of it would be two chances for the charts to disagree
+   * about who somebody is.
+   *
+   * The caption is the handle from that person's most recent row that
+   * carries one. Where an account holds two handles the newer spelling
+   * is the one the keyholder will recognize, and where a row holds none
+   * an older row supplies it rather than the group going unlabelled - a
+   * blank handle is a missing caption, not a missing person.
+   */
+  function groupByPerson(entries, take) {
+    const groups = new Map();
+    for (const entry of entries) {
+      const value = take(entry);
+      if (value === null) continue;
+      const key = identityOf(entry);
+      if (!groups.has(key)) {
+        groups.set(key, { telegram: null, at: -Infinity, values: [] });
+      }
+      const group = groups.get(key);
+      group.values.push(value);
+      const at = timeOf(entry);
+      if (entry.telegram && at >= group.at) {
+        group.telegram = entry.telegram;
+        group.at = at;
+      }
+    }
+    return groups;
   }
 
   function peopleCount(entries) {
@@ -296,26 +364,29 @@
    * old record, and dropping it beats threading a null through the
    * chart geometry.
    */
+  /*
+   * A line needs a caption to sit at the end of it, so a person whose
+   * rows carry no handle at all gets no line - "@undefined" on a chart
+   * is worse than an absent one. That is the only thing the handle
+   * decides here; which points belong to which line is decided by
+   * identityOf.
+   */
   function weightSeries(entries) {
-    const byHandle = new Map();
-    for (const entry of entries) {
-      if (!entry.telegram) continue;
+    const groups = groupByPerson(entries, function (entry) {
       const imperial = num(entry[UNITS.imperial.weight.field]);
       const metric = num(entry[UNITS.metric.weight.field]);
-      if (imperial === null || metric === null) continue;
       const at = timeOf(entry);
-      if (!at) continue;
-      if (!byHandle.has(entry.telegram)) byHandle.set(entry.telegram, []);
-      byHandle.get(entry.telegram).push({
-        at: at, imperial: imperial, metric: metric,
-      });
-    }
+      if (imperial === null || metric === null || !at) return null;
+      return { at: at, imperial: imperial, metric: metric };
+    });
+
     const series = [];
-    for (const pair of byHandle) {
-      if (pair[1].length < 2) continue;
+    for (const pair of groups) {
+      const group = pair[1];
+      if (group.values.length < 2 || !group.telegram) continue;
       series.push({
-        telegram: pair[0],
-        points: pair[1].sort(function (a, b) { return a.at - b.at; }),
+        telegram: group.telegram,
+        points: group.values.sort(function (a, b) { return a.at - b.at; }),
       });
     }
     return series.sort(function (a, b) {
@@ -327,11 +398,16 @@
   /*
    * People whose height moved between entries.
    *
-   * Height does not change in adults, so a difference here is a typo, a
-   * unit mix-up, or two people sharing a handle - all of them things
-   * the keyholder wants to know before trusting a distribution. A
-   * centimetre of slack absorbs the rounding between the two unit
-   * systems; anything more was typed differently.
+   * Height does not change in adults, so a difference here is a typo or
+   * a unit mix-up - both things the keyholder wants to know before
+   * trusting a distribution. A centimetre of slack absorbs the rounding
+   * between the two unit systems; anything more was typed differently.
+   *
+   * Two members sharing a handle is not on that list and must not be,
+   * because this groups by account: two accounts are two people, and
+   * reporting them here would send the keyholder to correct a typo
+   * nobody made while the real finding went unsaid.
+   * handleDisagreements() below is where that one belongs.
    *
    * The detection is always metric and takes no units argument, which
    * is the one thing in this file that must not follow the toggle. Who
@@ -342,29 +418,28 @@
    * both are carried here so the caller never has to convert either.
    */
   function heightDisagreements(entries) {
-    const byHandle = new Map();
-    for (const entry of entries) {
+    const groups = groupByPerson(entries, function (entry) {
       const cm = num(entry.cm);
-      if (!entry.telegram || cm === null) continue;
-      if (!byHandle.has(entry.telegram)) byHandle.set(entry.telegram, []);
-      byHandle.get(entry.telegram).push({
+      if (cm === null) return null;
+      return {
         cm: cm,
         // The same height, as the row already stores it. Reading it
         // rather than dividing by 2.54 keeps the conversion where it
         // belongs, in form.js.
         totalInches: num(entry.totalInches),
-      });
-    }
+      };
+    });
     const out = [];
-    for (const pair of byHandle) {
-      const values = pair[1];
-      if (values.length < 2) continue;
-      const sorted = values.slice().sort(function (a, b) { return a.cm - b.cm; });
+    for (const pair of groups) {
+      const group = pair[1];
+      if (group.values.length < 2 || !group.telegram) continue;
+      const sorted = group.values.slice().sort(
+        function (a, b) { return a.cm - b.cm; });
       const low = sorted[0];
       const high = sorted[sorted.length - 1];
       if (high.cm - low.cm > 1) {
         out.push({
-          telegram: pair[0],
+          telegram: group.telegram,
           low: round(low.cm, 1),
           high: round(high.cm, 1),
           lowInches: low.totalInches === null ? null : round(low.totalInches, 1),
@@ -375,6 +450,52 @@
     }
     return out.sort(function (a, b) {
       return (b.high - b.low) - (a.high - a.low);
+    });
+  }
+
+  /*
+   * Accounts whose rows carry more than one handle.
+   *
+   * DESIGN.md, "The identifier is the whole problem", says this is
+   * there to be found: "Two handles under one account id is a rename or
+   * a lie, and is detectable." Detectable is not detected. Every chart
+   * on this page draws such an account as one person, correctly and
+   * silently, so the one reader who can tell a rename from somebody
+   * writing a handle that is not theirs is told separately - the same
+   * job the height panel does for a height that moved.
+   *
+   * Only rows carrying an account id can say anything here. A group
+   * assembled by the handle fallback has one handle by construction and
+   * can never disagree with itself, so including it would be the panel
+   * reporting on its own grouping rule rather than on the data.
+   *
+   * Newest spelling first, because that is the one the keyholder can
+   * look up.
+   */
+  function handleDisagreements(entries) {
+    const byAccount = new Map();
+    for (const entry of entries) {
+      if (!entry.accountId || !entry.telegram) continue;
+      if (!byAccount.has(entry.accountId)) {
+        byAccount.set(entry.accountId, new Map());
+      }
+      const handles = byAccount.get(entry.accountId);
+      const at = timeOf(entry);
+      if (!handles.has(entry.telegram) || at > handles.get(entry.telegram)) {
+        handles.set(entry.telegram, at);
+      }
+    }
+    const out = [];
+    for (const pair of byAccount) {
+      if (pair[1].size < 2) continue;
+      out.push({
+        handles: Array.from(pair[1])
+          .sort(function (a, b) { return b[1] - a[1]; })
+          .map(function (seen) { return seen[0]; }),
+      });
+    }
+    return out.sort(function (a, b) {
+      return b.handles.length - a.handles.length;
     });
   }
 
@@ -694,15 +815,23 @@
    * to follow one person across them", which was false: the points
    * themselves were the join key. See quantize() below, and DESIGN.md,
    * "Renumbering does not prevent linkage - a correction".
+   *
+   * The pseudonym is keyed on the line, not on the handle captioning
+   * it. A series line is one person, because weightSeries groups by
+   * account - and two accounts are free to carry the same handle, which
+   * is the case DESIGN.md calls "a rename or a lie". Numbering by the
+   * caption would give both of those lines the label "Person 1", and
+   * the published document would be claiming one person submitted two
+   * contradictory histories.
    */
   function labeller(identify) {
     if (identify) {
-      return function (handle) { return "@" + handle; };
+      return function (line) { return "@" + line.telegram; };
     }
     const seen = new Map();
-    return function (handle) {
-      if (!seen.has(handle)) seen.set(handle, "Person " + (seen.size + 1));
-      return seen.get(handle);
+    return function (line) {
+      if (!seen.has(line)) seen.set(line, "Person " + (seen.size + 1));
+      return seen.get(line);
     };
   }
 
@@ -761,7 +890,7 @@
     let series = opts.series === false ? null :
       weightSeries(entries).map(function (line) {
         return {
-          label: label(line.telegram),
+          label: label(line),
           points: identify ? line.points : line.points.map(quantize),
         };
       });
@@ -790,9 +919,13 @@
       },
       series: series,
       // A data-quality panel is for whoever can act on it. Published,
-      // it would be a list of strangers' heights and no use to anyone.
+      // it would be a list of strangers' heights and the handles they
+      // answer to, and no use to anyone.
       quality: identify
-        ? { heightChanges: heightDisagreements(entries) }
+        ? {
+            heightChanges: heightDisagreements(entries),
+            handleChanges: handleDisagreements(entries),
+          }
         : null,
       bases: {
         people: basisOf(latestPerPerson(entries), floor),
@@ -819,6 +952,7 @@
     countRoles: countRoles,
     weightSeries: weightSeries,
     heightDisagreements: heightDisagreements,
+    handleDisagreements: handleDisagreements,
     measureFor: measureFor,
     summarise: summarise,
     SNAPSHOT_VERSION: SNAPSHOT_VERSION,
@@ -1137,12 +1271,38 @@
       container.appendChild(timeWrap);
     }
 
+    /*
+     * Two handles under one account. The charts above draw this as one
+     * person, which is right - the account is the identity - so this is
+     * the only place it is visible at all, and DESIGN.md says it is
+     * either a rename or a lie and that the keyholder is the one who
+     * can tell.
+     */
+    const handlesMoved =
+      (snapshot.quality && snapshot.quality.handleChanges) || [];
+    if (handlesMoved.length) {
+      const wrap = figure("Accounts using more than one handle",
+        "These rows are counted as one person, because the account is " +
+        "the identity and the handle is only a label the member's own " +
+        "browser wrote. Two handles under one account is a rename or a " +
+        "lie; most recent spelling first.");
+      wrap.classList.add("chart-wide");   // a list, not a chart
+      const list = document.createElement("pre");
+      list.className = "failure-list";
+      list.textContent = handlesMoved.map(function (item) {
+        return item.handles.map(function (handle) {
+          return "@" + handle;
+        }).join(", ");
+      }).join("\n");
+      wrap.appendChild(list);
+      container.appendChild(wrap);
+    }
+
     const heightMoved = snapshot.quality ? snapshot.quality.heightChanges : [];
     if (heightMoved.length) {
       const wrap = figure("Heights that changed between entries",
-        "Height does not change in adults, so these are typos, a unit " +
-        "mix-up, or one handle used by two people. Worth checking before " +
-        "trusting the height figures.");
+        "Height does not change in adults, so these are typos or a unit " +
+        "mix-up. Worth checking before trusting the height figures.");
       wrap.classList.add("chart-wide");   // a list, not a chart
       const list = document.createElement("pre");
       list.className = "failure-list";
