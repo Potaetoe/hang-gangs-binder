@@ -57,8 +57,18 @@ const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
 /*
  * A readable table, because the point of this file is that someone can
  * see what the sample covers without decrypting it. Each row is one
- * submission exactly as the form would have collected it - the same
- * input object readForm() builds - plus `at`, the moment it was sent.
+ * submission as the form collected it, plus two things the form does not
+ * put in that object: `at`, the moment it was sent, and `telegram`, the
+ * person it came from.
+ *
+ * `telegram` sits inside the row rather than beside it because three
+ * separate things read it, and they want it in the same place:
+ * validate() below checks it as unverified input, buildRecord is handed
+ * it as the verified session username the live page takes from the
+ * session instead, and the person-count at the bottom normalizes it.
+ * Naming it `sessionUsername` to match readForm() would satisfy one of
+ * those three and blind the other two - validate() would see no handle
+ * at all and reject every row here.
  *
  * Every row here is deliberate. The branches they exercise are named in
  * dev/README.md; the short version is that each of these is otherwise
@@ -260,6 +270,15 @@ const SAMPLE = [
  */
 const rejected = [];
 for (const row of SAMPLE) {
+  /*
+   * One argument on purpose, where buildRecord below gets the handle as
+   * a third. validate()'s two-argument form treats the handle as already
+   * verified by Telegram and skips the local HANDLE pattern - so passing
+   * it here would make the `expect: "invalid"` row come back accepted,
+   * and this loop would report the table as wrong. The one-argument form
+   * is the unverified-input contract, and an unverified spreadsheet
+   * formula is the entire point of that row.
+   */
   const problems = validate(row);
   if (row.expect === "invalid") {
     if (!problems.length) {
@@ -313,7 +332,16 @@ const submissions = [];
 let id = 0;
 for (const row of ordered) {
   const submittedAt = Date.parse(row.at);
-  const record = buildRecord(row, submittedAt);
+  /*
+   * The third argument is the verified session username, which the live
+   * page takes from the Worker's session; buildRecord refuses to build a
+   * record without one rather than falling back to anything a member can
+   * type. Here the row's own handle plays that part, which is what keeps
+   * the three spellings of one person in the table above meaningful -
+   * normalizeTelegram folds them together, and the count at the bottom
+   * of this file is the assertion that it did.
+   */
+  const record = buildRecord(row, submittedAt, row.telegram);
   const ciphertext = await encrypt(
     record, row.wrongKey ? lostKey : keyFile.publicKey);
   submissions.push({

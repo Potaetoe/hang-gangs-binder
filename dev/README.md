@@ -31,9 +31,14 @@ in both `tools/check.py` and CI — two lists, edited together.
 | Purpose | prove the stored formats still read | disposable test data for `admin.html` |
 | Regenerate? | **never** — a failure means stored rows are at stake; add a version byte and a decoder for both | yes, freely, via `make-sample.mjs` |
 
-> `make-sample.mjs` is **broken on `accounts`** (#66): `buildRecord`
-> gained a third argument and this caller still passes two. The
-> committed sample predates the change and still loads.
+> Regenerating rewrites every ciphertext even when nothing changed —
+> each row gets a fresh ephemeral key, by design — so the diff says
+> nothing about whether the records moved. Regenerate when the record
+> shape changes, and say in the commit what moved.
+
+**Nothing in the gate runs `make-sample.mjs`** (#66), so it can break
+without a stage going red. Run it by hand after any change to
+`form.js`'s pure half or `crypto.js`.
 
 `test-key.json` is a throwaway keypair, committed on purpose; it opens
 nothing real. The real keypairs and their custody: `OPERATIONS.md`,
