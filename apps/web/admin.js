@@ -587,6 +587,43 @@
      * offline file stays the recovery root.
      */
     async function rememberKey(key) {
+      /*
+       * Which key this is, established by using it rather than by
+       * taking the page's own word for it.
+       *
+       * The record has to name the key it holds, and a non-extractable
+       * CryptoKey cannot be asked what it is - that is the property
+       * being bought. What it can do is open something sealed to the
+       * public half `config.js` publishes, which asks the same question
+       * the one way that cannot be wrong. Writing `config.publicKey`
+       * beside whatever was imported would record what this site was
+       * configured with rather than which key is in the store, and the
+       * two come apart in exactly the case the check exists for.
+       *
+       * This gates KEEPING the key and never using it. A rotated key
+       * still opens every row written before the rotation, and the file
+       * is how a keyholder reaches them; refusing it here would take
+       * away the recovery path the issue asks to keep.
+       */
+      let isSiteKey = false;
+      try {
+        if (config.publicKey) {
+          const probe = await root.BinderCrypto.encrypt(
+            { probe: true }, config.publicKey);
+          const back = await root.BinderCrypto.decrypt(probe, key);
+          isSiteKey = Boolean(back) && back.probe === true;
+        }
+      } catch (error) {
+        isSiteKey = false;
+      }
+
+      if (!isSiteKey) {
+        kept = "This is not the private half of the key this site " +
+          "encrypts to, so it opens this export and is not kept on this " +
+          "device.";
+        return;
+      }
+
       let persisted = false;
       try {
         if (root.navigator && root.navigator.storage &&
@@ -598,8 +635,10 @@
       }
 
       try {
+        // Sound only because the probe above proved it: this key is the
+        // private half of that public one.
         await writeStoredKey({
-          publicKey: config.publicKey || null,
+          publicKey: config.publicKey,
           privateKey: key,
           storedAt: new Date().toISOString(),
         });

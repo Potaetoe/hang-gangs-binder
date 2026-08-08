@@ -380,13 +380,28 @@ async function loadAdmin(session, options = {}) {
       try { setUp(); } catch (error) { failed(error); }
     },
   };
+  /*
+   * The probe the page seals to config.js's public half and tries to
+   * open with the key in hand - the only way to ask a non-extractable
+   * CryptoKey which key it is. `opensSiteKey: false` is the key that
+   * imports cleanly and belongs to a different keypair, which is the
+   * one this page must use and must not keep.
+   */
+  const PROBE = "probe-sealed-to:";
   globalThis.BinderCrypto = {
     unavailableReason() { return null; },
     async importPrivateKey(text) {
       imported.push(text);
       return IMPORTED_KEY;
     },
+    async encrypt(record, publicKey) { return PROBE + publicKey; },
     async decrypt(ciphertext, key) {
+      if (String(ciphertext).startsWith(PROBE)) {
+        if (options.opensSiteKey === false) {
+          throw new Error("this row could not be opened with this key");
+        }
+        return { probe: true };
+      }
       keysUsed.push(key);
       if (!RECORDS[ciphertext]) {
         throw new Error("could not be opened with this key");
@@ -647,6 +662,23 @@ await settle();
 check("after Clear the page asks for the key file rather than fetching",
   requestsFor(first, "/export", "GET").length === exportsBeforeCleared &&
   /key file/i.test(first.elements.status.textContent));
+
+/*
+ * A key that imports cleanly and belongs to a different keypair - the
+ * ordinary shape of a rotated key, or of the wrong file picked out of a
+ * folder with two in it. It has to keep working, because the old key is
+ * how pre-rotation rows are read; it must not be kept, because a record
+ * naming a key it does not hold is a label rather than a fact, and the
+ * next load would accept it.
+ */
+const foreign = await loadAdmin(ADMIN, { opensSiteKey: false });
+await foreign.elements.run.click();
+await settle();
+check("a key that is not the site's opens the export and is not kept",
+  requestsFor(foreign, "/export", "GET").length === 1 &&
+  JSON.stringify(rowIds(foreign)) === JSON.stringify([41, 99]) &&
+  foreign.rows.size === 0 &&
+  /not kept on this device/.test(foreign.elements.status.textContent));
 
 const refused = await loadAdmin(ADMIN, { persist: false });
 await refused.elements.run.click();
