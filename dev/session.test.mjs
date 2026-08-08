@@ -192,16 +192,22 @@ check("a Telegram sign-in carries the caller's own numeric id into the session",
 Session.clear();
 redirects.length = 0;
 /*
- * The refusal body carries an id deliberately. A 403 for somebody
- * outside the group is still an answer about a real Telegram account,
- * and a transport that read the body before it read the status would
- * both mint a session and hand a stranger their own number beside "this
- * binder is for members of the group only".
+ * A refusal whose body is a complete, well-formed session, id and all.
+ * That is the shape the status has to be load-bearing against: a 403
+ * for somebody outside the group is still an answer about a real
+ * Telegram account, and a transport that read the body before it read
+ * the status would mint a session from a refusal and hand a stranger
+ * their own number beside "this binder is for members of the group
+ * only". A stub carrying only an error message cannot tell the two
+ * apart, because write() rejects it for being incomplete rather than
+ * for being refused.
  */
 nextResponse = {
   ok: false,
   status: 403,
-  async json() { return { error: "No entry.", telegramId: 4242 }; },
+  async json() {
+    return { ...GOOD, isDev: false, telegramId: 4242, error: "No entry." };
+  },
 };
 let refused = null;
 try { await Auth.authenticate("/auth/dev", devPayload); }
