@@ -31,6 +31,14 @@ function check(label, condition) {
   console.log(condition ? "pass " : "FAIL ", label);
 }
 
+// Sign-out fires a request it does not wait for, so the promise it
+// abandons has to be handled or the page logs a rejection nobody can
+// act on. Collected rather than left to Node's default, which is to
+// kill the process: a suite that dies mid-run reports one crash instead
+// of one failed check and every check after it.
+const unhandled = [];
+process.on("unhandledRejection", function (reason) { unhandled.push(reason); });
+
 function storage(values) {
   return {
     getItem(key) { return values.has(key) ? values.get(key) : null; },
@@ -94,6 +102,9 @@ function makePage() {
     "add-entry-pane": makeElement("add-entry-pane", true),
     "member-entry-count": makeElement("member-entry-count"),
     "member-last-at": makeElement("member-last-at"),
+    // Present so a check can read what the panel said, rather than
+    // watching setStatus write into a null that swallows every message.
+    "member-panel-status": makeElement("member-panel-status", true),
     "sign-out": makeElement("sign-out"),
     "weight-lb": makeElement("weight-lb"),
     "height-ft": makeElement("height-ft"),
@@ -195,9 +206,18 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill } = {}) {
       }
     },
   };
-  globalThis.fetch = async function (url, options) {
+  // A reply may be a function returning the promise itself, because the
+  // two cases sign-out has to survive - a request that rejects and one
+  // that never settles - are not expressible as a response object. The
+  // stub is a plain function rather than an async one for the same
+  // reason: `async` would turn a synchronous throw into a rejection and
+  // hide the difference.
+  globalThis.fetch = function (url, options) {
     requests.push({ url, options: options || {} });
-    return replies.shift() || response(500, { error: "No stub response." });
+    const next = replies.shift();
+    if (typeof next === "function") return next();
+    return Promise.resolve(
+      next || response(500, { error: "No stub response." }));
   };
 
   scenario++;
@@ -456,14 +476,104 @@ for (const [why, stored] of unusablePrefills) {
     rejected.bootErrors.length === 0);
 }
 
+/*
+ * #90. Signing out ends the session at the endpoint as well as in this
+ * tab: without the request below the row survives to its natural expiry,
+ * so a token captured beforehand stays a working credential for up to
+ * seven days - which is the window the button is pressed to close.
+ *
+ * The local clear is the sign-out and the request is hardening on top of
+ * it, and every check here asserts both halves. Asserting only the
+ * request would pass on a page that revokes and then strands the member;
+ * asserting only the clear is what the code did before the route existed.
+ */
 const signingOut = await loadSubmit({
   prefill: storedPrefill,
-  replies: [mine()],
+  replies: [mine(), response(200, { ok: true })],
 });
 await signingOut.elements["sign-out"].dispatch("click");
 check("sign out clears body-measurement prefill, session, and returns home",
   !localValues.has(PREFILL_KEY) && Session.read() === null &&
   redirects.at(-1) === "index.html");
+
+/* The header is the ordering check as well as the routing one: the token
+ * only exists to be read before Session.clear() runs, so a revoke sent
+ * after the local clear arrives with no credential and ends nothing. */
+const revoke = signingOut.requests[1] || { url: null, options: {} };
+check("sign out asks the endpoint to end the session it is leaving",
+  signingOut.requests.length === 2 &&
+  revoke.url === "https://worker.example/session" &&
+  revoke.options.method === "DELETE" &&
+  authorization(revoke) === "Bearer member-session-token");
+
+/*
+ * Source-level, and said plainly: this harness never navigates, so it
+ * pins that the flag is sent rather than that a browser honors it. It is
+ * worth pinning anyway. The redirect happens in the same turn as the
+ * request, and a browser cancels in-flight fetches when the page goes -
+ * so without `keepalive` the revoke is a request that reliably never
+ * arrives, and the whole wiring passes its other checks while doing
+ * nothing at all.
+ */
+check("and sends it in a form that survives the redirect that follows",
+  revoke.options.keepalive === true);
+
+/*
+ * Pressing Sign out twice, which a redirect that has not repainted yet
+ * makes easy. There is no token on the second press, and a DELETE with
+ * no credential is one the endpoint refuses by design - nothing to end,
+ * and nothing to authenticate ending it with.
+ */
+await signingOut.elements["sign-out"].dispatch("click");
+check("pressing sign out again sends no unauthenticated revoke",
+  signingOut.requests.length === 2);
+
+/*
+ * The property that makes this best-effort rather than a step: a member
+ * on a dead connection still signs out. The race turns a hang into a
+ * failed check - `dispatch` resolves through microtasks when signOut
+ * returns without awaiting, and setImmediate runs only after those
+ * drain, so the true branch wins whenever the request is not awaited and
+ * loses whenever it is.
+ */
+const stalled = await loadSubmit({
+  prefill: storedPrefill,
+  replies: [mine(), function () { return new Promise(function () {}); }],
+});
+const leftPromptly = await Promise.race([
+  stalled.elements["sign-out"].dispatch("click").then(function () {
+    return true;
+  }),
+  new Promise(function (resolve) {
+    setImmediate(function () { resolve(false); });
+  }),
+]);
+check("a revoke that never answers does not hold the member in the session",
+  leftPromptly === true && stalled.requests.length === 2 &&
+  !localValues.has(PREFILL_KEY) && Session.read() === null &&
+  redirects.at(-1) === "index.html");
+
+/* And the failure a dead connection actually produces. Nothing is shown
+ * for it either: the user-visible act is the local clear, which
+ * succeeded, and an error about the half that is hardening would report
+ * a sign-out that did not happen. */
+const failedRevoke = await loadSubmit({
+  prefill: storedPrefill,
+  replies: [mine(), function () {
+    return Promise.reject(new Error("the connection failed"));
+  }],
+});
+const unhandledBefore = unhandled.length;
+await failedRevoke.elements["sign-out"].dispatch("click");
+await new Promise(function (resolve) { setImmediate(resolve); });
+const revokeStatus = failedRevoke.elements["member-panel-status"];
+check("a revoke the network refuses still signs the member out here",
+  failedRevoke.requests.length === 2 &&
+  !localValues.has(PREFILL_KEY) && Session.read() === null &&
+  redirects.at(-1) === "index.html");
+check("and says nothing about it, having signed the member out anyway",
+  revokeStatus.textContent === "" && revokeStatus.hidden === true &&
+  unhandled.length === unhandledBefore);
 
 /*
  * The property this whole step is measured on, exercised rather than read.
@@ -623,4 +733,4 @@ if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsubmit panel OK - 28 checks");
+console.log("\nsubmit panel OK - 34 checks");
