@@ -228,8 +228,9 @@
    * accept and one exit, so every rejection erases and the guard
    * somebody adds next cannot silently keep what it refused. Nothing
    * stored is not a rejection - it is the ordinary state of a device
-   * that has never done an export, and erasing there would create the
-   * database it claims to be cleaning.
+   * that has never done an export, so it erases nothing and says
+   * nothing. Treating it as one would mean a delete that matches
+   * nothing, under a message announcing that something was removed.
    */
   const STORED_KEY_WRONG = "The key stored on this device is not the one " +
     "this site encrypts to, so it has been removed. Choose your key file.";
@@ -459,7 +460,14 @@
     // the same click, and a disclosure nobody is left looking at is not
     // a disclosure.
     function finish(message, tone) {
-      say(kept ? message + " " + kept : message, tone);
+      // The stop is added rather than assumed. This is the one line that
+      // carries two facts at once, and the message in front is often a
+      // browser's own error text, which does not reliably end in one -
+      // without this the storage sentence runs into whatever the
+      // platform said and both read as one garbled claim.
+      const text = message.trim();
+      say(kept ? text + (/[.!?]$/.test(text) ? " " : ". ") + kept : message,
+        tone);
       kept = "";
     }
 

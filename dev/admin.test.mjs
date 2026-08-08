@@ -320,9 +320,8 @@ await check("a stored key for the configured public key is the one to use",
 
 /* An empty store is the ordinary state of a device that has never been
  * used for an export. It is not a rejection, so it erases nothing and
- * says nothing - a page that announced "no key found" on every first
- * visit would be noise, and the erase would create the database it
- * claims to be cleaning. */
+ * says nothing: a page announcing "no key found" on every first visit
+ * would be noise, and the delete under it would match nothing. */
 await check("nothing stored is nothing to erase and nothing to say", () =>
   [undefined, null].every((nothing) => {
     const verdict = storedKeyVerdict(nothing, EXPECTED_PUBLIC_KEY);
