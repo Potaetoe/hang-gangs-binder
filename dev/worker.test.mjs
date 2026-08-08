@@ -63,8 +63,15 @@ const DB = {
         else snapshot = { body: a[0], updated_at: a[1] };
       } else if (table === "sessions") {
         if (verb === "DELETE") {
-          const cutoff = Date.parse(a[0]);
-          sessions = sessions.filter((s) => Date.parse(s.expires_at) > cutoff);
+          if (/token_hash/i.test(sql)) {
+            // Revoking removes exactly the row presented. A stub that
+            // swept here instead would let a revoke that signed the
+            // whole group out pass every assertion in this file.
+            sessions = sessions.filter((s) => s.token_hash !== a[0]);
+          } else {
+            const cutoff = Date.parse(a[0]);
+            sessions = sessions.filter((s) => Date.parse(s.expires_at) > cutoff);
+          }
         } else {
           sessions.push({
             token_hash: a[0], account_id: a[1], is_admin: a[2],

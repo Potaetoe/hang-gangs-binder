@@ -5,6 +5,7 @@
  *
  *   POST   /auth/telegram    verify a login payload, issue a session.
  *   POST   /auth/dev         development only; 404 everywhere else.
+ *   DELETE /session          end the session presented, now.
  *   GET    /me               what this account has on record.
  *   POST   /submit           append one row. Needs a member session.
  *   GET    /export           return every row. Admin.
@@ -166,6 +167,27 @@ function idList(value) {
     : [];
 }
 
+/*
+ * The configured admins, as account ids rather than Telegram ids.
+ *
+ * This is what lets sessionFor() re-check the admin list on every
+ * request without the sessions table ever having to record who a session
+ * belongs to. The row already carries the account id, which is the HMAC
+ * of a Telegram id under ACCOUNT_SECRET; HMAC the configured ids the
+ * same way and the two are comparable. Nothing new is stored and no
+ * identity is written down anywhere - both sides of the comparison are
+ * things this Worker already had, and the answer lives for one request.
+ *
+ * Recomputed per request on purpose. A cache would be a copy of the
+ * admin list living somewhere other than the secret, which is precisely
+ * the stale-admin bug this function exists to remove; the list is a
+ * handful of ids and an HMAC each.
+ */
+async function adminAccountIds(env) {
+  const ids = idList(env.ADMIN_TELEGRAM_IDS);
+  return new Set(await Promise.all(ids.map((id) => accountIdFor(env, id))));
+}
+
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -314,6 +336,26 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  * Expired rows are cleared when one is looked up rather than by a
  * scheduled job. The ordinary failure of a scheduled job is silence, and
  * there is nothing here worth a moving part.
+ *
+ * The admin flag is re-checked here rather than trusted from the row.
+ * The row says what was true at sign-in, and the question every caller
+ * below is actually asking is whether it is true now: without this,
+ * taking an id out of ADMIN_TELEGRAM_IDS does nothing for up to two
+ * hours and nothing can force it sooner. The stored flag stays a
+ * necessary condition - a member session cannot be promoted by editing a
+ * secret, which would be a promotion nobody signed in for - and the list
+ * is what turns it off.
+ *
+ * Demotion is not revocation. A session that stops being an admin
+ * session keeps working as the member session it also is; the person is
+ * still in the group. Ending a session is DELETE /session.
+ *
+ * A development session is exempt, because its adminness never came from
+ * ADMIN_TELEGRAM_IDS: a "dev:"-namespaced account id cannot be in that
+ * list, so checking it there would drop every dev admin instantly. What
+ * minted it was DEV_LOGIN_SECRET, so that is what is re-read for it -
+ * the same "must be SET" shape handleDevAuth uses, so turning the dev
+ * login off also drops the sessions it issued.
  */
 async function sessionFor(env, token) {
   if (!token) return null;
@@ -328,10 +370,19 @@ async function sessionFor(env, token) {
       .bind(new Date().toISOString()).run();
     return null;
   }
+
+  const isDev = row.is_dev === 1;
+  let isAdmin = row.is_admin === 1;
+  if (isAdmin) {
+    isAdmin = isDev
+      ? Boolean(env.DEV_LOGIN_SECRET)
+      : (await adminAccountIds(env)).has(row.account_id);
+  }
+
   return {
     accountId: row.account_id,
-    isAdmin: row.is_admin === 1,
-    isDev: row.is_dev === 1,
+    isAdmin: isAdmin,
+    isDev: isDev,
   };
 }
 
@@ -347,9 +398,13 @@ async function sessionFor(env, token) {
  * Boolean(env.EXPORT_TOKEN) is deliberate: a Worker with no secret set
  * must refuse everybody rather than accept an empty string.
  */
-async function callerFor(request, env) {
+function bearerToken(request) {
   const auth = request.headers.get("Authorization") || "";
-  const given = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  return auth.startsWith("Bearer ") ? auth.slice(7) : "";
+}
+
+async function callerFor(request, env) {
+  const given = bearerToken(request);
   if (!given) return null;
 
   if (env.EXPORT_TOKEN && tokenMatches(given, env.EXPORT_TOKEN)) {
@@ -494,6 +549,38 @@ async function handleDevAuth(request, env, origin) {
     isDev: true,
     telegramId: null,
   }, 200, origin);
+}
+
+/*
+ * Ending a session, now.
+ *
+ * A page dropping its copy of the token is not the end of a session -
+ * the row is, and without this route the row survives to its natural
+ * expiry, seven days for a member. A token captured before sign-out
+ * therefore stays a working credential for all of it, and that window is
+ * exactly what somebody pressing Sign out is trying to close. Closing it
+ * needs the row gone, which only the endpoint can do.
+ *
+ * Authenticated by the token it destroys, so it grants no new authority
+ * and needs no new one: presenting a session is the only proof of
+ * ownership a session has. The routing above hands this only a caller
+ * that resolved to a live row, which is what keeps this DELETE from
+ * being reachable with a string somebody made up.
+ *
+ * It deletes by token hash and by nothing else. There is no route here
+ * that ends anybody else's session, deliberately: a route taking an
+ * account id would be an admin capability nothing needs, and answering
+ * differently for an id that has sessions than for one that does not is
+ * the membership oracle the whole account design exists to prevent.
+ * Removing an admin is handled where it belongs - sessionFor() re-reads
+ * the list, so delisting an id takes effect on that session's next
+ * request without anybody having to reach for a button.
+ */
+async function handleRevokeSession(request, env, origin) {
+  await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?")
+    .bind(await sha256Hex(bearerToken(request))).run();
+
+  return json({ ok: true }, 200, origin);
 }
 
 /*
@@ -746,6 +833,19 @@ export default {
     const caller = await callerFor(request, env);
     const admin = Boolean(caller && caller.isAdmin);
 
+    // Only a live session may be ended, and only its own. A token that
+    // resolves to no row is refused rather than thanked: answering 200
+    // would make this an unauthenticated DELETE keyed on a string the
+    // caller chose, and would tell somebody they were signed out when
+    // they were not - which is the failure this route exists to fix.
+    // The break-glass EXPORT_TOKEN is refused for the same honesty: it
+    // is a secret rather than a session, there is no row to remove, and
+    // ending it means rotating it. Nothing is trapped by any of this,
+    // because the page clears its local copy whatever the answer is.
+    if (method === "DELETE" && path === "/session") {
+      if (!caller || caller.breakGlass) return unauthorized(allowed);
+      return handleRevokeSession(request, env, allowed);
+    }
     if (method === "GET" && path === "/me") {
       if (!caller) return unauthorized(allowed);
       return handleMe(request, env, allowed, caller);
