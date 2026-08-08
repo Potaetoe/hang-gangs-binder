@@ -8,8 +8,8 @@ A push to main publishes the site, so this exists to make "did I break
 it?" one command instead of a list of remembered ones. It runs the two
 linters, every Node suite in dev/, the publishability check, the
 deployment-config check, the documentation check, the comment check,
-and the suite behind each checker, and exits non-zero if any of them
-fails.
+the per-page transfer budget, and the suite behind each checker, and
+exits non-zero if any of them fails.
 (The previous version of this docstring enumerated the stages with a
 count, listed one suite short, and was stale within a week - the
 printout at the end of a run is the list, and the only one that cannot
@@ -24,6 +24,9 @@ drift.) In outline:
     - code comments explain why, and no new one narrates a change
       (tools/check_comments.py carries the allowlist that pins the
       offenders still here)
+    - each page stays inside its gzipped transfer budget, in both
+      directions (tools/check_budget.py carries the ceilings; a change
+      that adds weight raises them in its own diff)
     - eslint and ruff pass
     - every dev/ suite passes, from the crypto fixture to the Worker's
       gating matrix - NODE_SUITES below is the roster
@@ -203,6 +206,20 @@ def main():
     results.append(("check_comments extractor + ratchet", run(
         "check_comments extractor + ratchet",
         [sys.executable, "dev/check_comments.test.py"]
+    )))
+
+    # Each page against a pinned number of gzipped bytes. #72 measured
+    # the load and acquitted it; this is what keeps that ground while a
+    # redesign touches every page, since nothing else in this gate would
+    # notice the payload doubling.
+    results.append(("per-page transfer budget", run(
+        "per-page transfer budget",
+        [sys.executable, "tools/check_budget.py"]
+    )))
+
+    results.append(("check_budget extractor + budgets", run(
+        "check_budget extractor + budgets",
+        [sys.executable, "dev/check_budget.test.py"]
     )))
 
     node = find_node()

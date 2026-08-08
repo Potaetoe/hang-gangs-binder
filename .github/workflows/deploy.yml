@@ -121,6 +121,27 @@ jobs:
       - name: Check the comment extractor and the ratchet
         run: python dev/check_comments.test.py
 
+      # Each page against a pinned number of gzipped bytes - the page
+      # plus everything it references, fonts inside the stylesheet
+      # included. #72 measured the load and acquitted the product, so
+      # this keeps that ground rather than winning it: the redesign is
+      # about to touch every page and nothing else in this job would
+      # notice the payload doubling. See issue #80.
+      #
+      # It fails in both directions. Over the ceiling fails, and a
+      # ceiling far above what its page measures fails as stale
+      # headroom - so a change that adds weight raises the number in
+      # its own diff, where a reviewer sees it move.
+      - name: Check the per-page transfer budget
+        run: python tools/check_budget.py
+
+      # The extractor and the arithmetic behind it, tested on strings.
+      # Registered here AND in tools/check.py, like every other stage -
+      # a check that runs only on a developer's machine looks armed and
+      # is not.
+      - name: Check the budget extractor and the ceilings
+        run: python dev/check_budget.test.py
+
       # The one check whose failure is about the data rather than the
       # site. A crypto.js that no longer reads what is already stored
       # publishes a site that looks perfect and cannot be exported from,
