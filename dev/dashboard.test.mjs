@@ -694,6 +694,69 @@ await check("a published snapshot contains no handle anywhere", () => {
     !text.includes("shifty");
 });
 
+/*
+ * A corpus with a rename in it.
+ *
+ * The two checks below are about what a document may carry, and both of
+ * them read the quality panel. Run against a corpus where no account
+ * holds two handles, that panel is empty and the checks pass whatever
+ * the panel would have put in it - which is what a first version of
+ * them did, and two mutations that leaked an account id survived both.
+ * So the fixture has to reach the branch, and each check says out loud
+ * that it did.
+ */
+const CORPUS_RENAMED = CORPUS.concat([
+  entry({ id: 40, accountId: "acct-gainer1", telegram: "gainer1_after",
+          kg: 106, lb: 233.7, submittedAt: "2026-08-01T00:00:00.000Z" }),
+]);
+
+/*
+ * And no account id either, which is a second thing to guard now that
+ * the entries carry one.
+ *
+ * The handle check above would not catch it: an account id is not a
+ * handle and does not spell like one. DESIGN.md accepts the id sitting
+ * in the clear *in the database*, where it makes rows groupable and
+ * reveals that some account submitted twelve times, never who. A
+ * published document is a different place with a different reader, and
+ * a stable per-person identifier in one is a join key across every
+ * snapshot ever published - the exact linkage quantize() exists to
+ * break, handed back whole.
+ *
+ * Written against the identifier itself rather than against a field
+ * name, so a basis or a panel added later carries one at its own peril.
+ */
+await check("a published snapshot contains no account id anywhere", () => {
+  const snap = snapshotOf(CORPUS_RENAMED, { identify: false });
+  const text = JSON.stringify(snap);
+  return snap.series.length > 0 &&
+    CORPUS_RENAMED.every((row) => !text.includes(row.accountId));
+});
+
+/*
+ * The keyholder's own document does not carry one either. Nothing on
+ * the page needs it - the panel names handles, which is what they can
+ * look up - and the preview they read before publishing should differ
+ * from what goes out in its labels and its panel, not in which
+ * identifiers happen to be lying in it.
+ */
+await check("the keyholder's snapshot carries no account id either", () => {
+  const snap = snapshotOf(CORPUS_RENAMED, { identify: true });
+  const text = JSON.stringify(snap);
+  return snap.quality.handleChanges.length === 1 &&
+    CORPUS_RENAMED.every((row) => !text.includes(row.accountId));
+});
+
+/* The rename does not add a person, and the panel says which account it
+ * is - by the handles, the only names the keyholder has for it. */
+await check("a rename inside the corpus is one person and one finding", () => {
+  const snap = snapshotOf(CORPUS_RENAMED, { identify: true });
+  return snap.counts.people === CORPUS_PEOPLE &&
+    snap.counts.entries === CORPUS_ENTRIES + 1 &&
+    same(snap.quality.handleChanges[0].handles,
+      ["gainer1_after", "gainer1"]);
+});
+
 await check("a published snapshot labels people by number", () => {
   const snap = snapshotOf(CORPUS, { identify: false });
   return snap.series.every((line) => /^Person \d+$/.test(line.label));
