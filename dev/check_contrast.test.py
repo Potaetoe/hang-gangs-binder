@@ -274,27 +274,40 @@ check("a pinned scope that matches nothing fails as stale",
 # ------------------------------------------------------------------ #
 # The pairing arm, over synthetic palettes.                           #
 
-PASSING = {
-    "--color-bg": "#000000",
-    "--color-surface": "#000000",
-    "--color-field": "#000000",
-    "--color-text": "#ffffff",
-    "--color-accent": "#ffffff",
-}
-
-
 def one(level, **overrides):
-    """A palette holding every token a pairing can name."""
+    """A palette holding every token the pinned pairings can name.
+
+    White on black throughout, so every pairing measures 21:1 and any
+    failure the arms report is the one the check under test put there.
+    The accent is a background as well as a foreground - a label sits
+    on it - so it takes white and its label takes black.
+    """
     tokens = dict.fromkeys(
         {fg for fg, _bg, _kind in check_contrast.PAIRINGS}
         | {bg for _fg, bg, _kind in check_contrast.PAIRINGS}, "#ffffff")
-    tokens["--color-bg"] = "#000000"
-    tokens["--color-surface"] = "#000000"
-    tokens["--color-field"] = "#000000"
-    tokens["--color-warn-bg"] = "#000000"
-    tokens["--color-accent"] = "#ffffff"
+    tokens.update({
+        "--color-bg": "#000000",
+        "--color-surface": "#000000",
+        "--color-field": "#000000",
+        "--color-warn-bg": "#000000",
+        "--color-accent": "#ffffff",
+        "--color-on-accent": "#000000",
+    })
     tokens.update(overrides)
     return {"Test": (level, tokens)}
+
+
+def only(level, foreground, background, kind="text"):
+    """One pairing on its own, so a threshold can be aimed at exactly.
+
+    The pinned list shares --color-bg across a dozen pairings, so
+    moving it to test one of them moves the other eleven. A list of one
+    is the only way to ask what a single threshold does.
+    """
+    return check_contrast.pairing_problems(
+        {"Test": (level, {"--color-fg": foreground,
+                          "--color-bg": background})},
+        pairings=[("--color-fg", "--color-bg", kind)])
 
 
 check("a palette of white on black passes every pairing",
@@ -306,31 +319,34 @@ check("and it passes at AAA too, since 21:1 clears seven",
 # Text on a background it barely clears must fail. #767676 on white is
 # 4.54 - over the 4.5 threshold and inside the 0.1 margin this check
 # demands, which is the whole point of the margin.
-squeezed = check_contrast.pairing_problems(
-    one("AA", **{"--color-bg": "#ffffff", "--color-text": "#767676"}))
+squeezed = only("AA", "#767676", "#ffffff")
 check("a text pairing that clears 4.5 by less than the margin fails",
-      len(squeezed) >= 1)
+      len(squeezed) == 1)
 
 check("and the failure names the palette, the pairing and both numbers",
-      any("Test" in problem and "--color-text" in problem
-          and "4.54" in problem for problem in squeezed))
+      "Test" in squeezed[0] and "--color-fg" in squeezed[0]
+      and "4.54" in squeezed[0] and "4.60" in squeezed[0])
 
 check("a text pairing with the margin to spare passes",
-      check_contrast.pairing_problems(
-          one("AA", **{"--color-bg": "#ffffff",
-                       "--color-text": "#595959"})) == [])
+      only("AA", "#595959", "#ffffff") == [])
 
 # The AAA palette is the reason the level is a property of the scope
 # rather than a constant. The same pairing that passes at AA fails at
 # AAA, and a checker with one threshold would have called the
 # high-contrast palette finished.
 check("a pairing that passes at AA fails at AAA",
-      check_contrast.pairing_problems(
-          one("AA", **{"--color-bg": "#ffffff",
-                       "--color-text": "#595959"})) == []
-      and check_contrast.pairing_problems(
-          one("AAA", **{"--color-bg": "#ffffff",
-                        "--color-text": "#595959"})) != [])
+      only("AA", "#595959", "#ffffff") == []
+      and only("AAA", "#595959", "#ffffff") != [])
+
+# The non-text rule is looser than the text one, and a checker that
+# applied one figure to both would either fail every focus ring or let
+# body copy ship at 3:1.
+check("a mark passes at 3:1 where the same pair fails as text",
+      only("AA", "#888888", "#ffffff", kind="mark") == []
+      and only("AA", "#888888", "#ffffff") != [])
+
+check("and AAA holds a mark to four rather than three",
+      only("AAA", "#888888", "#ffffff", kind="mark") != [])
 
 # A missing token cannot be measured, and skipping it silently is how a
 # palette ships one token short of the set every other palette holds.
@@ -352,23 +368,32 @@ check("a palette set with nothing in it fails as a null scan",
 # ------------------------------------------------------------------ #
 # Coverage, both directions.                                          #
 
-check("the pinned pairings cover every color the real palettes define",
-      check_contrast.coverage_problems(PALETTES) == [])
+DEFINED = check_contrast.defined_colors(REAL)
+
+# The whole stylesheet, not the palette blocks alone.
+# --color-accent-quiet is declared in the shared :root block beside the
+# type and spacing tokens, so a coverage arm reading only palettes
+# would leave a real color unaccounted for while reporting its
+# exemption as dead.
+check("the color scan reaches tokens outside the palette blocks",
+      "--color-accent-quiet" in DEFINED)
+
+check("the pinned pairings cover every color the stylesheet defines",
+      check_contrast.coverage_problems(DEFINED) == [])
 
 # Direction one: a pairing naming a token nothing defines is a stale
 # list entry, and it reads as coverage while measuring nothing.
 check("a pairing naming a token no palette defines fails",
       any("--color-ghost" in problem for problem in
           check_contrast.coverage_problems(
-              PALETTES,
+              DEFINED,
               pairings=[*check_contrast.PAIRINGS,
                         ("--color-ghost", "--color-bg", "text")])))
 
 # Direction two, and the one that matters more: a color defined and
 # never measured is an unguarded color. Six chart-series hexes sat in
 # three palettes tuned for one of them, and no check said anything.
-extra = {name: (level, {**tokens, "--color-invented": "#ff00ff"})
-         for name, (level, tokens) in PALETTES.items()}
+extra = DEFINED | {"--color-invented"}
 check("a color token in no pairing and no exemption fails",
       any("--color-invented" in problem
           for problem in check_contrast.coverage_problems(extra)))
@@ -390,7 +415,7 @@ check("the exemptions are exactly the two colors that cannot be measured",
 check("an exemption naming a token nothing defines fails as stale",
       any("--color-gone" in problem for problem in
           check_contrast.coverage_problems(
-              PALETTES,
+              DEFINED,
               exempt=frozenset({*check_contrast.EXEMPT,
                                 "--color-gone"}))))
 
