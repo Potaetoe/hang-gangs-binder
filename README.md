@@ -18,17 +18,26 @@ project's private key can, and that key is not stored online anywhere.
 > showing what the submissions add up to, with nobody's name in it. See
 > [DESIGN.md](DESIGN.md) for how it all fits together and why.
 >
-> **Changing, and partly built.** An accounts redesign was decided on
+> **Changing, and now fully built.** An accounts redesign was decided on
 > 2026-08-05: members sign in with Telegram before submitting, entries
 > are tied to an account so they can be updated and removed, and the
 > dashboard moves behind a sign-in.
 >
-> The Worker for it is **written and tested but not deployed** — the
-> live endpoint is still the open one described below, and
-> [server/README.md](server/README.md) explains why deploying it before
-> the pages catch up would break the form. Everything a visitor sees is
-> unchanged. The reasoning is in [DESIGN.md](DESIGN.md) under
-> "Accounts", and the build plan in [REDESIGN.md](REDESIGN.md).
+> As of 2026-08-07 **every build step of it is done** — the sign-in page,
+> the member panel, the session gates on the dashboard and the export,
+> row deletion, and the checks that guard all of it. None of it is
+> **deployed**.
+>
+> **What a visitor sees today is unchanged**, and that is the point of the
+> arrangement rather than a delay in it: the live site is the last
+> complete release, and the redesign lands in one cutover instead of
+> arriving in ten half-states, several of which refuse everybody by
+> design. The Worker goes **after** the site, never before —
+> [server/README.md](server/README.md) has the ordering and what breaks if
+> it is reversed.
+>
+> The reasoning is in [DESIGN.md](DESIGN.md) under "Accounts", and the
+> cutover order in [REDESIGN.md](REDESIGN.md) Part 8.
 
 ---
 
@@ -36,6 +45,13 @@ project's private key can, and that key is not stored online anywhere.
 
 Required: **Telegram username**, **weight**, **height**, and a
 confirmation that you are 18 or older.
+
+After the cutover the username is **not typed** — it comes from the
+Telegram sign-in, and the field is gone from the form rather than hidden or
+made read-only. That closes a gap rather than tidying one: while it was
+typed, a signed-in member could enter somebody else's handle and have it
+stored beside their own account id, which is a row whose identity and
+label disagree.
 
 Optional: gender, which roles you take in the kink (feeder, feedee,
 gainer, fat admirer), and your country.
@@ -70,6 +86,29 @@ Then visit <http://localhost:8124>.
 Serving it matters — opening `index.html` as a `file://` URL breaks the
 crypto APIs the form depends on, because they require a secure context.
 `http://localhost` counts as one; a bare file path does not.
+
+**Use port 8124.** `config.js` selects an environment by hostname and the
+Worker's allowed origins name that port; another port fails CORS quietly,
+which looks like the endpoint being down.
+
+**A local preview talks to the development Worker and database, not
+production** — `config.js` maps `localhost` and `127.0.0.1` to
+`hgbinderworker-dev` with its own D1 and its own key. That is the opposite
+of what it used to do, and it is the reason this section is safe to follow
+at all: before the development environment existed, running the site
+locally wrote rows into the live database. An unknown hostname gets **no**
+endpoint and no key rather than falling back to production, so a preview
+served from anywhere else refuses to submit instead of guessing.
+
+**Telegram sign-in cannot work on localhost.** BotFather binds the widget
+to `potaetoe.github.io`, so the widget renders "Bot domain invalid" on any
+other host — that is configuration, not a bug, and it cannot be tested
+locally. Local work signs in through `POST /auth/dev` instead, which
+exists only when `DEV_LOGIN_SECRET` is set on the development Worker and
+only from a loopback origin. Its absence is what turns the route off, and
+it must never be set on production. Every page shows a banner while a
+development session is in use, because a development session that looks
+real is worse than none.
 
 ## Generating the key
 

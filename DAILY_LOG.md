@@ -863,6 +863,68 @@ Also asserted, because `handleMe`'s new comment claims it: a break-glass
 special-cased. A claim in a comment that nothing checks is how the comment and
 the code drift apart.
 
+### Step 10 — the runbooks, and the one sentence that must not come out
+
+The last build step. #11's `blocked` label was stale: every step 0–9 is
+closed, and what remains is cutover action rather than build work.
+
+**Rewriting now is safe for a reason worth stating, because the issue was
+right to worry.** A runbook describing a system that does not exist is worse
+than a stale one — somebody follows it during an incident. What makes it safe
+is the branch layout, not optimism: `main` is the default branch, frozen, and
+its runbooks still describe the live deployment, so anyone reaching for a
+procedure during an incident lands on accurate prose. The rewrite sits on
+`accounts` next to the code it describes and goes live when that code does.
+
+**The issue asked for something that would have been actively dangerous.** It
+says of the `REDESIGN.md` pointers and `server/README.md`'s do-not-deploy
+warning: *"Both come out here."* The pointer came out. **The warning stayed.**
+The accounts *work* has landed; the *cutover* has not, and deploying the
+Worker against the live old form still 401s every submitter. Removing the one
+sentence preventing that would have been the worst thing this slice could do.
+
+What *was* stale is the warning's reasoning: it said the site was not written,
+`index.html` still the old form. False since step 3. A warning kept for a
+reason that has expired is how it gets deleted by the next person who checks
+the reason — so it now names the ordering constraint that is actually
+load-bearing.
+
+**`HANDOFF.md` was restructured rather than deferred, and the original plan
+was wrong.** It said it would be rewritten after the cutover, for the same
+does-not-exist-yet reason. That makes the rewrite a step *inside* a busy,
+partly irreversible operation with a table drop in it — and "remember to also
+rewrite the prose" is precisely the step that gets dropped, reaching the
+feared failure by a different road. Each affected procedure now states both
+forms, marked. The keyholder makes live decisions from that file, so it has to
+be correct on both sides of the cutover, not correct afterwards.
+
+**Two claims were caught by checking them rather than writing them**, and both
+had already been typed:
+
+- `DELETE /submission/:id` was described as failing for an id that matches no
+  row. It does not: `handleDeleteSubmission` returns `200 {"ok":true}`, and
+  `dev/worker.test.mjs:410` asserts exactly that. The 404 means only that the
+  id was not a number. So a success does not confirm a row existed — which
+  matters if two admins are working at once. Corrected before it shipped as a
+  false safety property.
+- `HANDOFF.md` was about to say a successor reads their numeric id off the
+  page, because `worker.js`'s comment says the value is returned *"so a
+  first-time admin can read their own id off the page"*. **No page shows
+  it** — the value arrives, is stored in `sessionStorage`, and is never
+  rendered. The runbook now documents the devtools route, and the gap is
+  filed as #58. Worth noting the comment names the alternative it exists to
+  avoid, "asking a third-party bot", which is what the gap pushes people
+  toward — a numeric id handed to a bot nobody here controls.
+
+Both are the same lesson as the mutation earlier today: the difference between
+a document that is plausible and one that is true is whether somebody ran the
+thing it describes.
+
+`server/wrangler.toml` needed nothing. #30 named all six secrets and step 0.5
+added `[env.dev]`, so Part 9's request for it had already been satisfied by
+work that came after Part 9 was written — the fifth time today an issue's
+stated scope predated the repository.
+
 ---
 
 ## 2026-08-06

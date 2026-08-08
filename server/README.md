@@ -9,27 +9,35 @@ It is kept in the repo so the endpoint's behavior is reviewable and so
 a new owner can stand up their own copy without reverse engineering the
 one that exists.
 
-> ## ⚠ Do not deploy `worker.js` yet
+> ## ⚠ Do not deploy `worker.js` before the site
 >
-> **As of 2026-08-05 this file is ahead of the deployment.** The accounts
-> Worker is written and tested, and the site is not: `index.html` is
-> still the old form with no sign-in on it.
+> **This file is ahead of the deployment, and the order matters.**
 >
-> Deploying now would return **401 to every submitter** — the form would
-> encrypt correctly and then be refused, and the only way back is
-> re-deploying the previous version. The same is true of the schema: the
-> new `submissions` table has a `NOT NULL account_id` that nothing on the
-> live site knows how to send.
+> Updated 2026-08-07, and the reason changed rather than the warning. It
+> used to say the site was not written — that `index.html` was still the
+> old form with no sign-in on it. That is no longer true: every build
+> step is done, and on this branch `index.html` **is** the sign-in page.
 >
-> The live endpoint is the last commit before this one, and it still
-> works exactly as the rest of this file describes: an open `POST
-> /submit`, an `EXPORT_TOKEN` on the read paths, and a `GET /snapshot`
-> anyone can call.
+> What is still true is the ordering. The **live** site is `main`, frozen
+> at the last complete release, and it is still the old form that sends
+> no session. Deploying this Worker against it would return **401 to
+> every submitter** — the form would encrypt correctly and then be
+> refused — and the only way back is re-deploying the previous version,
+> which per `REDESIGN.md` Part 10 does not exist as a commit and has to
+> be captured by hand first.
 >
-> `REDESIGN.md`'s build order says when this changes — step 1 for the
-> Worker, and not before step 3 has moved sign-in onto the site. Until
-> then, read everything below as *what the deployed Worker does*, and
-> `worker.js` as *what it will do*.
+> The same is true of the schema: the new `submissions` table has a
+> `NOT NULL account_id` that nothing on the live site knows how to send.
+>
+> **So the Worker goes after the site, never before.** The cutover order
+> is `REDESIGN.md` Part 8; the short form is that `accounts` reaches
+> `main` first, and the Worker and the schema follow.
+>
+> Until then the live endpoint still behaves as the "Deployed today"
+> table below describes: an open `POST /submit`, an `EXPORT_TOKEN` on the
+> read paths, and a `GET /snapshot` anyone can call. Read that table as
+> *what the deployed Worker does* and the accounts table as *what
+> `worker.js` will do*.
 
 **Deployed today** — five routes:
 
@@ -47,7 +55,7 @@ one that exists.
 | --- | --- | --- |
 | `POST /auth/telegram` | anyone, from an allowed origin | verifies a login payload, issues a session |
 | `POST /auth/dev` | `DEV_LOGIN_SECRET` **and** a loopback origin | development sign-in; `404` everywhere else |
-| `GET /me` | any session | entry count, last submission, admin flag |
+| `GET /me` | any session | entry count, last submission, admin flag, and the caller's own account id |
 | `POST /submit` | a member session | appends one row, tagged with the account id |
 | `GET /export` | an admin | returns every row |
 | `POST /snapshot` | an admin | replaces the published aggregate |
@@ -64,19 +72,34 @@ export token is not what keeps the data confidential — the rows are
 ciphertext either way — it just stops the corpus being casually
 harvestable. See DESIGN.md, "Export".
 
-`GET /snapshot` is the one route with no token on it, and that is
-deliberate: what it returns has no handles and no rows in it, only
-counts, medians and histogram bins. The Worker cannot compute a
-snapshot — doing that requires reading the submissions — so it is built
-in the keyholder's browser and this endpoint only holds the result. See
+`GET /snapshot` **used to be the one route with no token on it.** Since
+2026-08-05 it needs a member session, so every route here now requires a
+credential. Gating it was not a reason to relax what goes in it, and
+nothing did: what it returns still has no handles and no rows, only
+counts, medians and histogram bins. The Worker cannot compute a snapshot
+— that requires reading the submissions — so it is built in the
+keyholder's browser and this endpoint only holds the result. See
 DESIGN.md, "The members' dashboard".
 
-`DELETE /snapshot` is the only destructive route here, and the only one
-in the Worker at all — the submissions table has no `DELETE` and no
-`UPDATE` path and is not touched by it. It needs the export token and
-**not** the private key, so a retraction never waits on decrypting the
-corpus first. Deleting nothing succeeds, so pressing Unpublish twice is
-not an error.
+**Two destructive routes, not one.** `DELETE /snapshot` takes the
+published aggregate down. `DELETE /submission/:id` removes one stored
+submission, added at step 7 — it is what answers "please take mine down"
+and what makes a junk row recoverable. The submissions table still has
+no `UPDATE` path: a correction is a new row, which is what the
+weight-over-time history is made of.
+
+Neither needs the private key, so a retraction never waits on decrypting
+the corpus first. Both need an admin — a session, or `EXPORT_TOKEN` as
+break-glass.
+
+**Both are idempotent, and one consequence is worth knowing before you
+rely on it.** Deleting a snapshot that is not there succeeds, so pressing
+Unpublish twice is not an error. `DELETE /submission/:id` behaves the same
+way: a well-formed id that matches no row returns `200 {"ok":true}`, not a
+404. So a success does **not** confirm that a row existed — if two admins
+are working at once, or a page is showing a stale table, the second delete
+reports the same success as the first. The 404 on that route means
+something narrower: the id was not a number at all.
 
 ## Setting it up
 
@@ -102,9 +125,15 @@ No CLI required; all of this is in the Cloudflare dashboard.
    and the first real request still fails on `env.DB` being undefined.
 4. **Add the export token.** Settings → Variables and Secrets → add a
    **secret** named **`EXPORT_TOKEN`**. Generate a long random value and
-   store it the same way as the private key; the admin page will ask for
-   it. A secret, not a plaintext variable — plaintext variables are
-   visible in the dashboard to anyone with account access.
+   store it the same way as the private key. A secret, not a plaintext
+   variable — plaintext variables are visible in the dashboard to anyone
+   with account access.
+
+   On the deployed Worker this is what `admin.html` asks for. **After the
+   cutover it is not**: the admin page runs on an admin session and has no
+   token box, and `EXPORT_TOKEN` becomes break-glass only — the way in when
+   sign-in itself is broken. Keep it set and keep it stored; it stops being
+   the routine credential and does not stop mattering.
 5. **Deploy**, then put the Worker's URL in `apps/web/config.js` and add
    its origin to the `connect-src` of every page that loads
    `config.js`. Until both are done the site cannot talk to it, by
@@ -253,21 +282,35 @@ Neither breaks the form or the export, which keep working throughout.
 
 ## Changing it
 
-Run the checks before pasting a new version into the dashboard:
+Run the whole gate, not just the Worker suite:
+
+```bash
+python tools/check.py
+```
+
+The Worker's own suite is one of the seventeen checks in it, and two of
+the others now read this directory: `tools/check_server.py` refuses a
+`[vars]` block naming anything but `ALLOWED_ORIGINS`, an assigned
+`DEV_LOGIN_SECRET`, or key-shaped content anywhere under `server/`. That
+arm exists because a commit putting the numeric id bindings back as
+plaintext `[vars]` passed every check the gate had — see `DESIGN.md` and
+issue #39. Running only the Worker suite skips it.
+
+To exercise the routing alone while iterating:
 
 ```bash
 node dev/worker.test.mjs
 ```
 
-That exercises the real routing, validation and CORS logic against a
-stub database — no account and no network needed. It now also covers
-sign-in, sessions, the account id, group membership, and the full
-route-by-caller gating matrix.
+That runs the real routing, validation and CORS logic against a stub
+database — no account and no network needed. It covers sign-in, sessions,
+the account id, group membership, and the full route-by-caller gating
+matrix.
 
-What it cannot check is the part only the dashboard knows: that `DB` is
-bound, that the secrets are set, and that every table exists. A Worker
-missing any of them will pass every test here and fail on the first real
-request. After the accounts deploy that list grows — a wrong
+What no test here can check is the part only the dashboard knows: that
+`DB` is bound, that the secrets are set, and that every table exists. A
+Worker missing any of them will pass every test here and fail on the
+first real request. After the accounts deploy that list grows — a wrong
 `TELEGRAM_BOT_TOKEN` refuses every sign-in with the same 401 a tampered
 payload gets, and an `ADMIN_TELEGRAM_IDS` holding the wrong number looks
 exactly like a working deployment until somebody tries to export.
