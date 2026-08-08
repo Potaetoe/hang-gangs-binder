@@ -282,7 +282,11 @@ its two factors.
    endpoint until it expires on its own — for a session nobody is using,
    the idle window rather than the two-hour cap.
 2. Provide the **key file** — pasted or picked; read in the page, never
-   uploaded.
+   uploaded. This is a first-visit step per browser: the page imports
+   the key once and keeps the working copy on that device, so a later
+   export there opens without a file and says on the status line that it
+   has. `DESIGN.md`, "Key custody", carries what that costs and why the
+   offline copy is still the one that matters.
 3. **Fetch and decrypt**, then download CSV, Excel or JSON. Below them:
    the keyholder dashboard.
 
@@ -298,7 +302,10 @@ wrong; cells starting `=`, `+`, `-` or `@` arrive with a leading
 apostrophe so a spreadsheet reads text rather than running a formula;
 a height that changed between entries is flagged — a typo, a unit
 mix-up, or one handle used by two people. Close the tab when done: that
-page is the only place the data exists in the clear.
+page is the only place the data exists in the clear. **The key does not
+close with it.** Press **Clear** to remove it from this browser — that
+is the step that matters on a machine anyone else can reach, and the
+same button the departure and compromise procedures below name.
 
 ## Publishing and retracting the dashboard
 
@@ -442,7 +449,11 @@ session behind.
 
 **If the person leaving is the keyholder, this is the wrong
 procedure** — "Handing the project to someone else" below is, and the
-key is the part with no substitute.
+key is the part with no substitute. One step belongs to them wherever
+they leave from: **Clear** on the export page, in every browser they
+used it in, which is what removes the working copy of the key from
+their devices. Nobody else can press it, and a departure that skips it
+leaves a device that opens the submissions.
 
 `[pre-cutover]` Steps 4 and 6 describe the accounts Worker. The
 deployed production Worker issues no sessions at all and has no per-row
@@ -632,13 +643,22 @@ answers do not substitute for one another.
    session nobody is using, and clearing the table ends every session
    at once. **Anyone** for the first, **owner** for the last.
 6. **Say what a captured session actually got them, because it is less
-   than it sounds.** Reading plaintext takes the private key **and** an
-   admin session, and neither alone is enough ("Handing the project to
-   someone else" above). A captured admin session pulls ciphertext it
-   cannot open; a captured member session appends rows to one account.
-   Neither is a key compromise, and neither is answered by rotating the
-   key — that alarm, and its response, is the section above. **Anyone**
-   telling the group.
+   than it sounds — and say where that stops being true.** Reading
+   plaintext takes the private key **and** an admin session, and neither
+   alone is enough ("Handing the project to someone else" above). A
+   captured admin session pulls ciphertext it cannot open; a captured
+   member session appends rows to one account. Neither is a key
+   compromise, and neither is answered by rotating the key — that alarm,
+   and its response, is the section above. **The keyholder's own machine
+   is the exception, and it is a large one:** the export page keeps the
+   working copy of the key on the device it was imported on
+   (`DESIGN.md`, "Key custody"), so a keyholder's unlocked browser is
+   one factor by itself and both of them while an admin tab is live.
+   Treat that as a key compromise rather than a session one. **Clear**
+   is what removes the stored key and only whoever holds the machine can
+   press it; rotating under "The keys" protects rows written after the
+   rotation and not one row already stored. Say which of the two you are
+   describing when you tell the group. **Anyone** telling the group.
 7. **A suspected `TELEGRAM_BOT_TOKEN`: revoke it in BotFather first,
    re-paste second, and do not treat it as the small one.** "Secrets"
    above prices it at a `/revoke` and a re-paste, which is the repair

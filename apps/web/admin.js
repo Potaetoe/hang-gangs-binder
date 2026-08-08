@@ -1,11 +1,13 @@
 /*
  * The export page. The only place the submissions exist as plaintext.
  *
- * Two secrets meet here and neither outlives the tab: the admin session
- * fetches the ciphertext, and the key file opens it. The session lives
- * only in sessionStorage and the key is supplied here - neither is written
- * to persistent storage, and the key is never sent or allowed to leave the
- * page. See DESIGN.md, "Encryption".
+ * Two secrets meet here and they keep different company: the admin
+ * session fetches the ciphertext and dies with the tab, and the private
+ * key opens it and stays on the device. The session lives only in
+ * sessionStorage because it is revocable authority; the key lives in
+ * IndexedDB as a non-extractable CryptoKey because it is not authority
+ * at all, and the note on KEY_DB below carries that reasoning in full.
+ * Neither is ever sent anywhere. See DESIGN.md, "Key custody".
  *
  * Split like form.js, and for the same reason. The pure half - turning
  * a decrypted record into a CSV row, and rows into a file - is exported
@@ -200,6 +202,87 @@
     return "hang-gangs-binder-" + date + "." + (extension || "csv");
   }
 
+  /*
+   * Whether a key this device kept is the key this device should use.
+   *
+   * What comes back out of IndexedDB is a `CryptoKey` object rather
+   * than a JWK or bytes, so there are only two properties worth
+   * trusting about it and both are checked: it is a private key, and it
+   * cannot be exported. `importPrivateKey` in crypto.js is the only
+   * thing here that mints one, and it mints them non-extractable - so a
+   * stored key that *can* be exported was not written by this page, and
+   * accepting it would hand an exportable key to the one page that also
+   * holds every submission in the clear.
+   *
+   * The record names which key it is by carrying the public half, and
+   * the comparison against `config.js` is the whole scope rule. Origin
+   * separation already keeps the development and production arms apart
+   * - they are different hosts, so different stores - which leaves
+   * rotation as the case this catches: a `config.js` naming a new key
+   * means the stored private half is the previous one, and it opens
+   * everything written before the rotation and nothing since. That is
+   * an export that looks complete and is not, so it is refused out
+   * loud rather than used.
+   *
+   * The shape is the prefill's, for the prefill's reason (#65): one
+   * accept and one exit, so every rejection erases and the guard
+   * somebody adds next cannot silently keep what it refused. Nothing
+   * stored is not a rejection - it is the ordinary state of a device
+   * that has never done an export, and erasing there would create the
+   * database it claims to be cleaning.
+   */
+  const STORED_KEY_WRONG = "The key stored on this device is not the one " +
+    "this site encrypts to, so it has been removed. Choose your key file.";
+  const STORED_KEY_DAMAGED = "What was stored on this device is not a " +
+    "usable key, so it has been removed. Choose your key file.";
+
+  function storedKeyVerdict(record, expectedPublicKey) {
+    if (record === null || record === undefined) {
+      return { key: null, erase: false, why: null };
+    }
+    if (record && typeof record === "object" &&
+        record.privateKey && record.privateKey.type === "private" &&
+        record.privateKey.extractable === false &&
+        typeof record.publicKey === "string" && record.publicKey &&
+        typeof expectedPublicKey === "string" && expectedPublicKey &&
+        record.publicKey === expectedPublicKey) {
+      return { key: record.privateKey, erase: false, why: null };
+    }
+    const named = record && typeof record === "object" &&
+      typeof record.publicKey === "string" && record.publicKey &&
+      record.publicKey !== expectedPublicKey;
+    return {
+      key: null,
+      erase: true,
+      why: named ? STORED_KEY_WRONG : STORED_KEY_DAMAGED,
+    };
+  }
+
+  /*
+   * What the keyholder is told about how long the key will be there,
+   * which is the half of this that can only be got wrong in words.
+   *
+   * `navigator.storage.persist()` is a request rather than a setting:
+   * Chrome and Safari answer it from their own record of how the site
+   * is used and show nothing, Firefox asks. Granted, the origin is
+   * exempt from eviction under storage pressure and from the seven-day
+   * rule WebKit applies to origins without it. Refused is not a
+   * failure - it is the ordinary answer for a site somebody has just
+   * started using, and the copy has to say so, because a keyholder who
+   * reads "stored" as "safe" is the one who finds out otherwise on the
+   * day the file is not in reach. The measurements are in #85's spike.
+   */
+  function storedKeyNotice(persisted) {
+    return persisted
+      ? "Your key is kept on this device, and the browser has marked " +
+        "this site's storage persistent, so ordinary cleanup leaves it " +
+        "alone. Clearing this site's data removes it, and so does Clear."
+      : "Your key is kept on this device, but the browser did not mark " +
+        "this site's storage persistent, so it can be evicted - some " +
+        "browsers drop it after about a week without a visit. Keep your " +
+        "key file: it is what puts the key back.";
+  }
+
   root.BinderAdmin = {
     COLUMNS: COLUMNS,
     entryFor: entryFor,
@@ -208,6 +291,8 @@
     toCsv: toCsv,
     toJson: toJson,
     fileName: fileName,
+    storedKeyVerdict: storedKeyVerdict,
+    storedKeyNotice: storedKeyNotice,
   };
 
   /* ---------------------------------------------------------------- */
@@ -218,6 +303,86 @@
   const UI = root.BinderUI;
   const $ = UI.byId;
   const show = UI.show;
+
+  /*
+   * Where the keyholder's key lives between visits.
+   *
+   * The stored value is the `CryptoKey` object itself, structure-cloned
+   * into IndexedDB - never a JWK, never bytes, nothing this page could
+   * write down again. crypto.js imports the private half
+   * non-extractable, so what comes back can derive and cannot be
+   * exported by anything that gets script execution here. That is
+   * strictly better than the textarea it replaces, where the same key
+   * sat as a plain string for the life of the tab.
+   *
+   * NOT sessionStorage, and the distinction is a reason rather than a
+   * convenience. Session material is authority the Worker issued and
+   * can revoke, which is why DESIGN.md bounds it to the tab and why
+   * signing out destroys it. This key is not authority: nothing issued
+   * it, nothing can revoke it, it opens rows that are already stored,
+   * and it is the keyholder's own property rather than the site's. So
+   * the session rules have nothing to say about it, and moving it under
+   * them would mean storing exportable bytes - the one property this
+   * whole design exists to avoid. The levers that end it are Clear and
+   * clearing site data; the recovery root is the offline file.
+   *
+   * Its own database rather than a store inside a shared one, because
+   * two features sharing a database have to agree on a version number
+   * to add a store, and the member device key (#85) is a separate
+   * feature on a separate page with a separate lifetime.
+   */
+  const KEY_DB = "hgb-keyholder-key";
+  const KEY_STORE = "key";
+  const KEY_ROW = "current";
+
+  function openKeyDb() {
+    return new Promise(function (resolve, reject) {
+      if (!root.indexedDB) {
+        reject(new Error("this browser keeps no database for this site"));
+        return;
+      }
+      const request = root.indexedDB.open(KEY_DB, 1);
+      request.onupgradeneeded = function () {
+        request.result.createObjectStore(KEY_STORE);
+      };
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+
+  // close() waits for outstanding transactions before it takes effect,
+  // so a write resolved here is still committed after this returns.
+  async function withKeyStore(mode, act) {
+    const db = await openKeyDb();
+    try {
+      return await new Promise(function (resolve, reject) {
+        const transaction = db.transaction(KEY_STORE, mode);
+        const request = act(transaction.objectStore(KEY_STORE));
+        request.onsuccess = function () { resolve(request.result); };
+        request.onerror = function () { reject(request.error); };
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  function readStoredKey() {
+    return withKeyStore("readonly", function (store) {
+      return store.get(KEY_ROW);
+    });
+  }
+
+  function writeStoredKey(record) {
+    return withKeyStore("readwrite", function (store) {
+      return store.put(record, KEY_ROW);
+    });
+  }
+
+  function forgetStoredKey() {
+    return withKeyStore("readwrite", function (store) {
+      return store.delete(KEY_ROW);
+    });
+  }
 
   /* Same guard as form.js: a throw during setup would leave a page that
    * looks fine and a button that does nothing. */
@@ -279,8 +444,23 @@
     let xlsx = null;
     let urls = [];
 
+    // The key this device kept, if it kept one, and what to tell the
+    // keyholder about having kept it. Unlike everything above, the
+    // first of these outlives the tab - see the note on KEY_DB.
+    let storedKey = null;
+    let kept = "";
+
     function say(message, tone) {
       UI.setStatus($("status"), message, tone);
+    }
+
+    // The last thing said in a click, which is where the storage
+    // sentence has to go: every message before it is replaced within
+    // the same click, and a disclosure nobody is left looking at is not
+    // a disclosure.
+    function finish(message, tone) {
+      say(kept ? message + " " + kept : message, tone);
+      kept = "";
     }
 
     // Object URLs pin their blob in memory until revoked, and the blob
@@ -324,6 +504,7 @@
       csv = "";
       json = "";
       xlsx = null;
+      kept = "";
       revoke();
       $("tbody").textContent = "";
       $("summary").textContent = "";
@@ -359,37 +540,107 @@
       reader.readAsText(file);
     });
 
-    $("clear").addEventListener("click", function () {
+    /*
+     * Clear means two things now and has to do both: end this page, and
+     * end the key this device kept. OPERATIONS.md names it as a lever in
+     * the departure and compromise procedures, which is why the failure
+     * to remove is said out loud rather than swallowed - a lever that
+     * silently did nothing is worse than no lever, because it gets
+     * ticked off a list.
+     */
+    $("clear").addEventListener("click", async function () {
       $("keyfile").value = "";
       $("keyfile-picker").value = "";
+      storedKey = null;
       reset();
-      say("Cleared. Nothing from the last export is still on this page.",
-        null);
+
+      let removed;
+      try {
+        await forgetStoredKey();
+        removed = true;
+      } catch (error) {
+        // A browser with no database for this site never kept a key, so
+        // there is nothing left behind to warn about. Any other failure
+        // is a key still on this machine.
+        removed = !root.indexedDB;
+      }
+
+      say(removed
+        ? "Cleared. Nothing from the last export is on this page, and no " +
+          "key is stored on this device - the next export needs your key " +
+          "file."
+        : "This page is cleared, but the key stored on this device could " +
+          "not be removed. Clear this site's data in the browser's " +
+          "settings, and treat the key as still on this machine until " +
+          "you have.",
+        removed ? null : "bad");
     });
+
+    /*
+     * Keeping the key, and reporting honestly what keeping it is worth.
+     *
+     * The persistence request goes first because its answer is part of
+     * what the keyholder is told: asking after the write would mean
+     * describing durability the browser has not agreed to yet. A refused
+     * request is not a failure and does not stop the write - the key is
+     * best-effort then, which is the ordinary state and the reason the
+     * offline file stays the recovery root.
+     */
+    async function rememberKey(key) {
+      let persisted = false;
+      try {
+        if (root.navigator && root.navigator.storage &&
+            root.navigator.storage.persist) {
+          persisted = await root.navigator.storage.persist() === true;
+        }
+      } catch (error) {
+        persisted = false;
+      }
+
+      try {
+        await writeStoredKey({
+          publicKey: config.publicKey || null,
+          privateKey: key,
+          storedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        kept = "This key could not be kept on this device, so the next " +
+          "export needs the file again.";
+        return;
+      }
+      kept = storedKeyNotice(persisted);
+    }
 
     $("run").addEventListener("click", async function () {
       reset();
 
       const keyText = $("keyfile").value.trim();
+      let key;
 
-      if (!keyText) {
+      if (keyText) {
+        /*
+         * Import the key before asking the network for anything. A bad
+         * key is the admin's own mistake and can be reported instantly;
+         * spending a request first would report it as a failure of the
+         * fetch, which is the wrong thing to go and check.
+         */
+        try {
+          say("Reading the key…", null);
+          key = await root.BinderCrypto.importPrivateKey(keyText);
+        } catch (error) {
+          say("That key was not usable. " +
+            (error && error.message ? error.message : ""), "bad");
+          return;
+        }
+        storedKey = key;
+        await rememberKey(key);
+      } else if (storedKey) {
+        // Nothing to import: this device already holds the key, which is
+        // the whole point of holding it.
+        key = storedKey;
+      } else {
         say("Paste or choose your key file first - the one " +
           "tools/keygen.html saved.", "bad");
-        return;
-      }
-      /*
-       * Import the key before asking the network for anything. A bad
-       * key is the admin's own mistake and can be reported instantly;
-       * spending a request first would report it as a failure of the
-       * fetch, which is the wrong thing to go and check.
-       */
-      let key;
-      try {
-        say("Reading the key…", null);
-        key = await root.BinderCrypto.importPrivateKey(keyText);
-      } catch (error) {
-        say("That key was not usable. " +
-          (error && error.message ? error.message : ""), "bad");
         return;
       }
 
@@ -409,7 +660,7 @@
         payload = await response.json();
       } catch (error) {
         $("run").disabled = false;
-        say("The rows could not be fetched. " +
+        finish("The rows could not be fetched. " +
           (error && error.message ? error.message : "The connection failed."),
           "bad");
         return;
@@ -418,7 +669,7 @@
       const submissions = (payload && payload.submissions) || [];
       if (!submissions.length) {
         $("run").disabled = false;
-        say("There are no submissions stored yet.", null);
+        finish("There are no submissions stored yet.", null);
         return;
       }
 
@@ -579,6 +830,45 @@
       await refreshPublishedState();
     });
 
+    /*
+     * What this device already holds, read before the page can be used.
+     *
+     * Fetch and decrypt waits for the answer rather than racing it: a
+     * keyholder who presses it in the moment before this settles would
+     * be told to go and find a file they no longer need, and the second
+     * press would work, which is the shape of bug that gets reported as
+     * "it is flaky".
+     */
+    async function loadStoredKey() {
+      $("run").disabled = true;
+      try {
+        let record = null;
+        try {
+          record = await readStoredKey();
+        } catch (error) {
+          // No database for this site, or one this browser refuses to
+          // open. There is no stored key, which is the state this page
+          // has always started in.
+          return;
+        }
+
+        const verdict = storedKeyVerdict(record, config.publicKey);
+        if (verdict.key) {
+          storedKey = verdict.key;
+          say("This device holds your key, so Fetch and decrypt needs no " +
+            "file. Closing the tab leaves it here; Clear removes it.", null);
+          return;
+        }
+        if (verdict.erase) {
+          try { await forgetStoredKey(); } catch (error) {}
+        }
+        if (verdict.why) say(verdict.why, "bad");
+      } finally {
+        $("run").disabled = false;
+      }
+    }
+
+    loadStoredKey();
     refreshPublishedState();
 
     /*
@@ -759,7 +1049,7 @@
         show($("publish-card"), false);
       }
 
-      say(rows.length
+      finish(rows.length
         ? "Done. Both files are built in this page - nothing was uploaded."
         : "Nothing could be decrypted with this key.",
         rows.length ? null : "bad");
