@@ -81,6 +81,7 @@ NODE_SUITES = [
     # makes everything below its wiring line unreachable. A separate
     # label also says which half broke.
     ("dashboard drawing", "dev/dashboard-render.test.mjs"),
+    ("member query engine + floor properties", "dev/query.test.mjs"),
     ("member dashboard session", "dev/public.test.mjs"),
     ("shared UI wiring", "dev/ui.test.mjs"),
     ("session storage + auth handoff + sign-out boundary",
