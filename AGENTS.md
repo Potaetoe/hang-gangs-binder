@@ -13,9 +13,17 @@ goal, approves material trade-offs, and is the final decision-maker.
 
 Five operative documents, and only five: `README.md`, `AGENTS.md`,
 `DESIGN.md`, `OPERATIONS.md`, `CUTOVER.md` (which is deleted after the
-cutover it describes). `tools/check_docs.py` holds that registry and
-**fails the gate on any unregistered top-level document** — so adding
-one is a two-file act that cannot happen by accident.
+cutover it describes). Beside them the registered `security/` folder
+holds dated security records — an assessment against a named baseline,
+the STIG checklist, a later audit. Those are snapshots of what was found
+on a date, never corrected in place, which is why they are not operative
+documents and do not enlarge the five; `security/README.md` is that
+folder's charter and says what belongs there and how a record is
+stamped. `tools/check_docs.py` holds both registries and **fails the
+gate on any unregistered top-level document, and on any file in
+`security/` it does not name** — so adding either is a two-file act that
+cannot happen by accident, and putting a record in `security/` takes the
+same owner approval as adding a document.
 
 **How documentation is written here. Deviating from any of these rules
 needs owner approval first, asked in chat:**
@@ -41,8 +49,9 @@ needs owner approval first, asked in chat:**
    state where to look and how to check, not what the answer was on the
    day of writing. The gate's stage count was wrong in three places in
    one week because it was prose.
-5. **New documents need the owner.** The registry above enforces it;
-   editing the registry is the owner-approval act and says so.
+5. **New documents need the owner**, and so does a new record in
+   `security/`. The registries above enforce it; editing one is the
+   owner-approval act and says so.
 6. American spelling in prose and identifiers (machine-checked now);
    platform names keep their own spelling. Comments and docs explain
    *why*, not *what* — for code comments the enforced statement, and

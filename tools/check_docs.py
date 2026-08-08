@@ -7,9 +7,10 @@ Hold the documentation system to its own rules.
 Three checks, all born from the same week of failures (issue #77):
 
  1. REGISTRY - the top-level markdown documents are exactly the ones
-    AGENTS.md names. Adding one is an owner decision, so an
-    unregistered document fails the gate until the list here is
-    edited - and editing it is the act that records the approval.
+    AGENTS.md names, and the files in security/ are exactly the ones
+    named here. Adding either is an owner decision, so an unregistered
+    file fails the gate until the list here is edited - and editing it
+    is the act that records the approval.
  2. TRIPWIRES - phrases this project has falsified must never reappear
     in an operative document. Three corrections in one week each
     missed at least one hand-made copy of the fact they corrected, so
@@ -24,6 +25,17 @@ archive/ is deliberately not scanned. It is frozen history, and the
 falsified claims inside it are allowed to survive there as history -
 the same reason a correction is recorded in a commit message rather
 than erased from it.
+
+security/ IS scanned, and the difference from archive/ is the point.
+Both hold documents nobody edits after the fact, but archive/ records
+what this project believed, while a security record states what is
+true of it - and it is the document somebody hands to an outside
+reader. A claim this project has already falsified does more damage
+there than in a document only agents read, so the tripwires and the
+spelling rule reach into it. A requirement quotation that ever
+collides with a tripwire phrase gets paraphrased or taken to the
+owner; exempting the folder would remove an entry from the list below
+by another route, which needs the owner either way.
 """
 
 import os
@@ -50,6 +62,28 @@ ALSO_SCANNED = [
     os.path.join("dev", "README.md"),
     os.path.join("server", "README.md"),
 ]
+
+# security/ holds dated security records, registered by name for the
+# same reason the documents above are: arriving quietly is the failure
+# mode. Two differences from that registry, both deliberate.
+#
+# Every entry is checked, whatever its extension. The scan above is
+# bounded to .md because the repository root legitimately holds code and
+# configuration; this folder holds records only, and the artifact most
+# likely to land here unnoticed is a .ckl, which is XML.
+#
+# A registered file that is ABSENT also fails. A record here is what one
+# reviewer found on one date; it is superseded by a later record beside
+# it rather than corrected, so nothing in this folder has a reason to
+# disappear. CUTOVER.md's absence is allowed because it deletes itself
+# in its own aftercare - there is no counterpart to that here, and a
+# vanished assessment reads as a passing gate on evidence nobody can
+# see.
+SECURITY_DIR = "security"
+SECURITY = {
+    "README.md",
+    "stig-asd-v6r4.md",
+}
 
 # (lowercase substring, why it must not reappear). Append an entry
 # every time a documented claim is falsified; never remove one without
@@ -119,6 +153,41 @@ def scan(relpath, problems):
                 "number was" % (relpath, lineno, match.group(0)))
 
 
+def security_problems():
+    """Both directions on the security/ registry: unregistered, and gone.
+
+    The folder itself is reported when it is missing, the #34 way: a
+    scanner that cannot find what it was pointed at has to say so,
+    because "nothing unregistered here" and "nothing read here" print
+    identically.
+    """
+    folder = os.path.join(REPO, SECURITY_DIR)
+    if not os.path.isdir(folder):
+        return ["%s/: the registered security folder is missing. "
+                "AGENTS.md, 'The documentation system', names it - "
+                "removing it is an owner decision that empties SECURITY "
+                "in tools/check_docs.py in the same change."
+                % SECURITY_DIR]
+
+    present = {name for name in os.listdir(folder)
+               if os.path.isfile(os.path.join(folder, name))}
+    problems = [
+        "%s/%s: not in the security registry. A record here needs owner "
+        "approval on the same terms as a top-level document; recording "
+        "the approval IS editing SECURITY in tools/check_docs.py (see "
+        "security/README.md, 'Adding one')." % (SECURITY_DIR, name)
+        for name in sorted(present - SECURITY)
+    ]
+    problems += [
+        "%s/%s: registered here and missing from the folder. A dated "
+        "record is superseded by a later one beside it, never deleted - "
+        "restore it, or take it off SECURITY deliberately."
+        % (SECURITY_DIR, name)
+        for name in sorted(SECURITY - present)
+    ]
+    return problems
+
+
 def main():
     problems = []
 
@@ -134,10 +203,20 @@ def main():
                 "IS editing REGISTRY in tools/check_docs.py (see "
                 "AGENTS.md, 'The documentation system')." % name)
 
+    problems.extend(security_problems())
+
     targets = [n for n in sorted(REGISTRY)
                if os.path.isfile(os.path.join(REPO, n))]
     targets += [p for p in ALSO_SCANNED
                 if os.path.isfile(os.path.join(REPO, p))]
+    # Registered records that are prose. A non-markdown artifact is held
+    # to the registry but not read for tripwires or spelling: its words
+    # are the catalog's rather than this project's, so a rule this
+    # project settled has no jurisdiction over them - and a .ckl or a
+    # zip is not text this scanner can open.
+    targets += [os.path.join(SECURITY_DIR, n) for n in sorted(SECURITY)
+                if n.lower().endswith(".md")
+                and os.path.isfile(os.path.join(REPO, SECURITY_DIR, n))]
     for relpath in targets:
         scan(relpath, problems)
 
@@ -147,8 +226,8 @@ def main():
             print("  " + problem)
         return 1
 
-    print("check_docs: registry, tripwires and style all hold "
-          "(%d documents scanned)." % len(targets))
+    print("check_docs: both registries, tripwires and style all hold "
+          "(%d files scanned)." % len(targets))
     return 0
 
 
