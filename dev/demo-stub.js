@@ -41,9 +41,10 @@
    * dev/demo.test.mjs scans apps/web for them: a shipped page keyed on
    * `hgb-demo-scenario` would read the staged scenario and change its
    * behavior under the demo, which is exactly the hook apps/web is
-   * forbidden to carry - and it would name none of the four words the
-   * scan used to look for. A list the scan reads and the writers import
-   * cannot drift from what is actually written.
+   * forbidden to carry - and a hook like that names none of the demo's
+   * file or symbol names, so the scan for those cannot see it. One list,
+   * read by the scan and destructured by both writers, is what keeps the
+   * scan looking for the names actually written.
    *
    * The shipped keys `hgb-session` and `hgb-submit-prefill` are NOT here.
    * Those belong to the product, apps/web is supposed to name them, and
@@ -288,17 +289,19 @@
   /*
    * These two decide whether the demo's one promise holds - that nothing
    * here reaches a real endpoint - so they live in the pure half where
-   * dev/demo.test.mjs can drive them, rather than in dev/demo-boot.js
-   * where they were only ever exercised by a person looking at a page.
+   * dev/demo.test.mjs can drive them. In dev/demo-boot.js the only thing
+   * that ever exercises them is a person looking at a page.
    *
-   * BOTH USED TO COMPARE SUBSTRINGS, AND TWO URL CLASSES WALKED PAST.
-   * `http://127.0.0.1:8126@evil.example/x` starts with the page's own
-   * origin as text, and everything before the `@` is userinfo: it
-   * resolves to evil.example. `https:/evil.example/x` has one slash, so
-   * a test for `//` concluded it was relative. Both were handed to the
-   * real fetch. Resolving against the page's own URL and comparing
-   * `.origin` is the only test that cannot be spelled around, because it
-   * asks the same parser the network stack will ask.
+   * COMPARE ORIGINS, NEVER SUBSTRINGS. Two URL classes defeat a text
+   * comparison against the page's own origin.
+   * `http://127.0.0.1:8126@evil.example/x` STARTS WITH this origin as
+   * text, but everything before the `@` is userinfo and it resolves to
+   * evil.example. `https:/evil.example/x` has one slash, so a test for
+   * `//` reads it as relative; it resolves to evil.example too. Both
+   * would be handed to the real fetch by any test spelled that way.
+   * Resolving against the page's own URL and comparing `.origin` is the
+   * one test that cannot be spelled around, because it asks the same
+   * parser the network stack will ask.
    *
    * A URL that will not parse is refused rather than allowed. An input
    * this cannot make sense of is not evidence that it is harmless.
@@ -821,11 +824,12 @@
     /*
      * A staged id that names no scenario refuses, loudly, naming the id.
      *
-     * It used to fall through to `{}` and answer as a generic member,
-     * which is a plausible screen built from a world nobody staged - the
+     * Falling through to `{}` here would answer as a generic member:
+     * a plausible screen built from a world nobody staged, which is the
      * exact failure this file's own suite header calls the way demos
-     * fail. The state that produces it is ordinary: a scenario renamed
-     * while a tab still holds the old id in sessionStorage.
+     * fail. The state that produces it is ordinary rather than exotic -
+     * a scenario renamed while a tab still holds the old id in
+     * sessionStorage.
      *
      * An absent id is not an error. The console has not staged anything
      * yet at first paint, and dev/demo.test.mjs drives routing with no
@@ -932,10 +936,10 @@
       /*
        * The published snapshot arrives from the demo's own
        * sessionStorage, and anything in a browser's storage can be
-       * edited by whoever is sitting at it. A SyntaxError thrown here
-       * used to leave the replaced fetch as an unhandled rejection: the
-       * page just stopped, with nothing on screen saying the demo's
-       * storage was what broke rather than the product.
+       * edited by whoever is sitting at it. An uncaught SyntaxError here
+       * escapes the replaced fetch as an unhandled rejection: the page
+       * stops, with nothing on screen saying the demo's own storage is
+       * what broke rather than the product.
        */
       let snapshot = published;
       if (typeof published === "string") {

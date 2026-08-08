@@ -71,12 +71,13 @@ const { check, mustReject, report } = suite("demo", 70);
 /*
  * The page list is READ, not written down (F4).
  *
- * It used to be four names typed out beside a readdir of the same
- * directory that ran three checks later. apps/web ships five pages, so
- * an undeclared third mirror edit that fired only on the page missing
- * from the list - 404.html - passed every round-trip check here. A list
- * maintained by hand beside an enumeration of the same thing is a list
- * that will disagree with it; the enumeration is the one that cannot.
+ * Do not replace this with a hand-written list of page names. apps/web
+ * ships five pages, and a list that names four leaves the fifth
+ * unchecked: an undeclared mirror edit firing only on 404.html passes
+ * every round-trip check below without ever being applied to a page any
+ * of them looks at. A list maintained by hand beside an enumeration of
+ * the same directory is a list that will disagree with it, and the
+ * enumeration is the one that cannot.
  */
 const webFiles = await readdir(HERE("../apps/web"));
 const PAGES = webFiles.filter((name) => name.endsWith(".html")).sort();
@@ -101,8 +102,8 @@ await check("the page list is read from apps/web and finds every page there", ()
 /* ------------------------------------------------------------------ */
 /* The mirror changes what it says it changes, and nothing else.       */
 
-const STUB_SRC = '/dev/demo-stub.js';
-const BOOT_SRC = '/dev/demo-boot.js';
+const STUB_SRC = "/dev/demo-stub.js";
+const BOOT_SRC = "/dev/demo-boot.js";
 
 /*
  * F1. The literal, not the constant.
@@ -389,11 +390,12 @@ await check("the export rows come from the committed sample, by path", () => {
 /* F8. The two silent degradations.                                    */
 
 /*
- * A stale scenario id - the state after a rename, which is exactly the
- * failure this suite's own header names - used to fall through to a
- * generic member and draw a plausible screen. A demo that answers
- * plausibly from a world nobody staged is the false-confidence failure
- * in its purest form, so it refuses with the id it could not find.
+ * A stale scenario id is the state a tab is in after a rename, which is
+ * exactly the failure this suite's own header names. Left to fall
+ * through, it draws a generic member: a demo answering plausibly from a
+ * world nobody staged, which is the false-confidence failure in its
+ * purest form. The refusal has to name the id, because the id is the
+ * only thing that tells the reader a rename is what happened.
  */
 await check("an unknown scenario id refuses, and names the id", () => {
   const answer = Demo.answerFor({ method: "GET", path: "/me" },
@@ -586,11 +588,12 @@ await check("the Worker path is derived by origin, not by substring", () => {
 /* F7. --port refuses loudly rather than landing on somebody's port.   */
 
 /*
- * Every bad argument used to fall back to 8126 - the owner's own demo
- * port - in silence, and 0x1FE0 was worse than silent: Number() reads
- * hex, so it bound 8160, inside the block the agent fleet assigns itself
- * previews from. A launcher that binds a port nobody asked for is how
- * two servers end up serving two different trees on one number.
+ * A silent fallback sends every bad argument to 8126 - the owner's own
+ * demo port. 0x1FE0 is worse than silent: Number() reads hex, so it
+ * binds 8160, inside the block the agent fleet assigns itself previews
+ * from. A launcher that binds a port nobody asked for is how two
+ * servers end up serving two different trees on one number, and the
+ * operator reads whichever they find first.
  */
 await mustReject("--port refuses a value that is not a plain number",
   async () => portFrom(["node", "demo-server.mjs", "--port", "8199x"]),

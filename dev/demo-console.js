@@ -191,11 +191,11 @@
    * them is about the product.
    *
    * The verdict itself is demo-stub.js's, so this table and
-   * dev/demo.test.mjs reason about one function. It used to be a raw
-   * substring test written here, which meant a TODO comment mentioning
-   * "instrument" painted admin-panel as drivable with nothing built -
-   * a false PASS, on the table the owner reads while deciding the
-   * cutover, produced by somebody writing about the work.
+   * dev/demo.test.mjs reason about one function. Do not inline a
+   * substring test here to save a call: a raw `indexOf` paints
+   * admin-panel as drivable off one TODO comment mentioning
+   * "instrument", and this is the table the owner reads while deciding
+   * the cutover. A false PASS here is the worst thing this tool can do.
    */
   async function paintBoxes() {
     const body = $("boxes");

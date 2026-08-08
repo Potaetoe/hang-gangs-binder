@@ -68,14 +68,14 @@ const MIRROR_PREFIX = "/demo/";
 /*
  * The port to bind, or a refusal naming the argument.
  *
- * WHY THIS THROWS INSTEAD OF FALLING BACK. Every bad argument used to
- * become 8126 in silence - the port the owner's own demo answers on -
- * so `--port 8199x` and a `--port` with nothing after it both took a
- * port somebody else was told to expect, and the operator saw the
- * server start normally. Worse, Number() reads hexadecimal: `0x1FE0`
- * became 8160, inside the 8130-8185 range agent sessions assign
- * themselves preview blocks from, so a typo could bind another
- * session's port while looking like it had honored the request.
+ * WHY THIS THROWS INSTEAD OF FALLING BACK. A fallback to DEFAULT_PORT
+ * turns every bad argument into 8126 in silence - the port the owner's
+ * own demo answers on - so `--port 8199x` and a `--port` with nothing
+ * after it take a port somebody else was told to expect, while the
+ * operator sees the server start normally. Worse, Number() reads
+ * hexadecimal: `0x1FE0` is 8160, inside the 8130-8185 range agent
+ * sessions assign themselves preview blocks from, so a typo can bind
+ * another session's port while looking like it honored the request.
  *
  * The parse is a digits-only test rather than Number(), for that last
  * reason: `0x1FE0`, `8e3` and ` 8160 ` are all numbers to Number() and
@@ -111,6 +111,19 @@ function portFrom(argv) {
 // "this is apps/web", so apps/web is the boundary it is held to -
 // containment at the repository root was never the promise that prefix
 // makes.
+//
+// THIS IS DEFENSE IN DEPTH AND NO SUITE PINS IT INDEPENDENTLY. Measured,
+// not assumed: with the ".." guard below running in the right order,
+// there is no request that distinguishes a mirror rooted here from one
+// rooted at the repository - every path is stripped of leading
+// separators and joined, so it can only ever go downward, and the guard
+// refuses the one construct that goes up. Reverting this line alone
+// leaves dev/demo.test.mjs green; reverting the guard's position, or
+// both, turns three checks red. The guard is the load-bearing half.
+// Keeping this one anyway, because it is the line that stays correct if
+// a future decode path reaches fileFor by some route the guard has not
+// been taught about - but a reader should not mistake it for something
+// the gate is watching.
 const WEB_ROOT = resolve(join(ROOT, "apps", "web"));
 
 /*
