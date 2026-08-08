@@ -465,23 +465,39 @@ implemented it. Say which it is.
   chat**, and an agent that has approval performs the act itself. See
   "What `owner-only` means" below; irreversibility alone does not move
   work to the owner.
-- **No authenticated Wrangler command can run from an agent shell, and
-  this is not a permissions decision.** The owner's OAuth login is on
-  this machine and current. An agent shell is non-interactive, and a
-  non-interactive wrangler **refuses a stored OAuth login** and demands
-  `CLOUDFLARE_API_TOKEN` — a secret nobody here may handle. Confirmed
-  2026-08-07 against a read-only `wrangler d1 list`.
+- **Authenticated Wrangler commands DO run from an agent shell. Retry
+  once before concluding otherwise.** Corrected 2026-08-08; this entry
+  previously said the opposite and cost a day of work handed back to the
+  owner for no reason.
 
-  **`wrangler whoami` misdescribes this.** It answers "You are not
-  authenticated. Please run `wrangler login`", which reads as a missing
-  or expired login and invites a fix that would not help. `d1 list` gives
-  the real reason. Diagnose with a subcommand, not with `whoami`.
+  The owner's stored OAuth login (`C:\Users\potae\.wrangler\config\
+  default.toml`, account `cc79f1736c32acd8025d6cd33680fdbc`) works.
+  **The first authenticated call in a session may fail once** with
+  `Authentication error [code: 10000]` — that is the access token
+  expiring and being refreshed, and **the next identical call
+  succeeds.** Verified against `d1 list`, `deployments list`,
+  `deployments status`, `versions view`, and `d1 execute --remote`.
 
-  This is the same root cause as the piped-stdin note further down, and
-  it is **wider than that note implies**: it is not about `secret put`
-  and not about pipes. It applies to every authenticated subcommand,
-  including read-only ones. Any plan whose steps include a wrangler
-  command is a plan for the owner, or for an interactive terminal.
+  The earlier entry was not lazy: it observed one real failure and that
+  `wrangler whoami` misdescribes the state. It stopped one retry short.
+  **A single negative result is a hypothesis, not a capability
+  boundary** — which is the general lesson worth more than the specific
+  correction.
+
+  **`wrangler whoami` still misdescribes it.** It answers "You are not
+  authenticated. Please run `wrangler login`". Diagnose with a real
+  subcommand, not with `whoami`.
+
+  Wrangler has **no command to download a live Worker's script.** The
+  REST API does: `GET /accounts/{id}/workers/scripts/{name}` returns
+  `multipart/form-data`. The `/content` sub-path answers 405 to a GET,
+  which is a misleading way to say "wrong verb".
+
+  **`--env dev` is not optional on any deploy.** A bare
+  `npx wrangler deploy` resolves to the top-level config, which is
+  `hgbinderworker` — **production**. Dry-run first and read the bindings
+  back: a dev deploy must report `hg_binder_db_dev` and the localhost
+  origins.
 - **Never ask for, handle, or log a secret.** The export token, the
   private key, `DEV_LOGIN_SECRET`, `ACCOUNT_SECRET`, the Telegram bot
   token, and any Cloudflare API token stay with the owner. `admin.html`
@@ -502,9 +518,17 @@ implemented it. Say which it is.
   `TELEGRAM_GROUP_CHAT_ID`, `ADMIN_TELEGRAM_IDS`,
   `ALWAYS_ALLOW_TELEGRAM_IDS` — **secrets, not `[vars]`**, because a
   `[vars]` block is committed and this repository is public. Do not write
-  any of them into `wrangler.toml`. The dev Worker still has no
-  `ACCOUNT_SECRET`; see the issue for why that is a guaranteed 500 rather
-  than a missing nicety.
+  any of them into `wrangler.toml`. Re-confirmed 2026-08-08 from an agent
+  shell with `wrangler versions view` — it lists secret **names** while
+  values stay encrypted, so presence is checkable and correctness is not.
+- **The dev Worker carries three secrets and must not carry more:**
+  `ACCOUNT_SECRET` (set 2026-08-07, #33), `DEV_LOGIN_SECRET`,
+  `EXPORT_TOKEN`. The four Telegram-path bindings are **deliberately
+  absent** — no development path reads them, `handleDevAuth` takes
+  admin-ness from its own payload, and the widget cannot be exercised on
+  localhost anyway. Do not "fix" the asymmetry with production's bot
+  token. `server/wrangler.toml`'s `[env.dev]` block carries the full
+  reasoning.
 - **`wrangler secret put` cannot set them, and this is not an
   authentication problem.** Production's script was hand-pasted, which
   leaves the Worker in **version-upload state**, and `secret put` creates

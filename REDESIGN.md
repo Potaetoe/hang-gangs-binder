@@ -51,6 +51,19 @@ do-not-deploy warning in full.
 deployed.** What remains is not build work — it is the cutover, and it has
 its own document: [CUTOVER.md](CUTOVER.md).
 
+> **Cutover progress, 2026-08-08.** Steps **0** (capture the live Worker) and
+> **1** (rehearse the migration) are **done**, and step **2**'s secrets are
+> confirmed from two independent sources. **UAT Part A is complete except
+> A2.7**, which #64 blocks. Nothing has been deployed to production and
+> nothing has been written to it.
+>
+> Step 1 falsified its own warning: running `schema.sql` against production's
+> shape fails **loudly and immediately**, leaving no half-migrated state,
+> because `CREATE INDEX ... (account_id)` dies before `sessions` is reached.
+> `CUTOVER.md` step 1 carries the detail.
+>
+> The next act is step **4**, which is the point of no return.
+
 | Step | State |
 | --- | --- |
 | 0 — `ui.js` | **done** (#14, #1) |
