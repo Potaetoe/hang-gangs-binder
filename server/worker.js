@@ -1109,9 +1109,15 @@ async function handleSubmit(request, env, origin, caller) {
    * measurement never agree - a fresh ephemeral point and fresh nonces
    * per submission, which apps/web/crypto.js is held to - so this cannot
    * mistake somebody else's correction for its own.
+   *
+   * Every row naming the target is examined rather than the first one,
+   * and the difference is only visible against a database this index has
+   * not reached yet: there, two rows can already name one target, and
+   * taking whichever came back first would answer 409 to the member
+   * whose row did land. The reply must not depend on the order a result
+   * set happens to arrive in.
    */
-  const row = landed.results[0];
-  if (row && row.ciphertext === ciphertext) {
+  if (landed.results.some((r) => r.ciphertext === ciphertext)) {
     return json({ ok: true }, 200, origin);
   }
 
