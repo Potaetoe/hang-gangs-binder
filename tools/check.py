@@ -203,6 +203,14 @@ def main():
         [sys.executable, "tools/check_docs.py"]
     )))
 
+    # The reader behind it, tested on strings. The registries and the
+    # rules are only as good as the half that finds a document to apply
+    # them to, and that half is the one a mutation never reaches.
+    results.append(("check_docs registries + rules", run(
+        "check_docs registries + rules",
+        [sys.executable, "dev/check_docs.test.py"]
+    )))
+
     # The same rule for code that check_docs.py holds for documents: a
     # comment says why, and what changed says it in the commit message.
     # A ratchet rather than a sweep - every offender already here is
