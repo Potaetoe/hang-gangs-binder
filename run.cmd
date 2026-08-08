@@ -33,8 +33,16 @@ if "%~1"=="keygen" (
   %PY% -m http.server 8125 --directory tools
   exit /b
 )
+if "%~1"=="bootstrap" (
+  rem Mirrors ./run bootstrap - see the reasoning there.
+  if not exist node_modules ( call npm ci --ignore-scripts ) else ( echo node_modules present - nothing to install )
+  %PY% --version
+  node --version
+  echo gate-ready: .\run check
+  exit /b
+)
 
 echo usage: .\run ^<command^>
-echo   check ^| docs ^| serve ^| serve-root ^| keygen
+echo   bootstrap ^| check ^| docs ^| serve ^| serve-root ^| keygen
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2

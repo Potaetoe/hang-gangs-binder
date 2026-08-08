@@ -37,10 +37,25 @@ case "${1:-}" in
   keygen)
     echo "Open http://127.0.0.1:8125/keygen.html"
     exec $PY -m http.server 8125 --directory tools ;;
+  bootstrap)
+    # A fresh checkout or worktree has no node_modules, and the gate's
+    # eslint stage reports that absence as FAILED - which reads as a
+    # broken tree to anyone who has not hit it before. This makes
+    # "get gate-ready" one command. --ignore-scripts for the reason
+    # deploy.yml states at length: install scripts are the supply
+    # chain's favorite door.
+    if [ ! -d node_modules ]; then
+      npm ci --ignore-scripts
+    else
+      echo "node_modules present - nothing to install"
+    fi
+    $PY --version && node --version
+    echo "gate-ready: ./run check" ;;
   *)
     cat <<'EOF'
 usage: ./run <command>          (PowerShell: .\run <command>)
 
+  bootstrap   make a fresh checkout gate-ready (installs lint deps)
   check       run every check the project has - the same set CI runs
   docs        run only the documentation checks
   serve       serve the site at http://127.0.0.1:8124
