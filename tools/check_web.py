@@ -130,17 +130,41 @@ Fourteen checks:
    The country simply would not be in the promoted block, and the only
    way to notice is to know it should have been there.
 
-10. Every page carries the same navigation. The nav links are written
-    out in each page's HTML rather than built by nav.js, so that a
-    script failure cannot strand somebody on a page with no way off it.
-    The cost of that choice is the same list written five times, and
-    five copies of anything drift - a page added later gets the nav
-    copied from whichever page was open, and a link added to one page
-    is missing from four.
+10. Every page carries the shell it is pinned to carry, and the rail
+    pages carry the same one. The destinations are written out in each
+    page's HTML rather than built by nav.js, so that a script failure
+    cannot strand somebody on a page with no way off it. The cost of
+    that choice is the same list written several times, and copies of
+    anything drift - a page added later gets its rail copied from
+    whichever page was open, and a link added to one page is missing
+    from the others.
 
-    Nothing about that is visible from the page you happen to be
-    looking at. This compares the sets and fails if they differ, which
-    is what makes the duplication safe to have chosen.
+    Which shell each page carries is pinned in SHELLS, outside the
+    markup, for the reason CSP_PAGES gives: a table derived from what
+    exists cannot fail when a page is added, and a page being added is
+    exactly when somebody copies a shell from whichever page they had
+    open. A published page missing from that table FAILS, and a table
+    naming a page that does not exist FAILS as stale.
+
+    Two shells, because the site has two kinds of page and one rule
+    could not describe both:
+
+    - RAIL. The signed-in pages. Each carries the wordmark, the same
+      destinations in the same order, the theme disclosure the strip
+      folds its chips behind, and the session home at the bottom.
+      Compared against each other and failing if they differ.
+    - PLAIN. The pages a signed-out visitor meets - the cover, which
+      the owner decided carries no rail before sign-in, and the error
+      page, which goes plain on principle. These must NOT carry rail
+      markup, which is the copy-paste direction: a session home on the
+      cover would offer Sign out to somebody who has not signed in.
+
+    The anti-stranding rule survives both shells rather than being
+    spent on the rail. A rail must name the directory index, because
+    sign-in is the route a visitor whose session died needs most; and
+    a plain page must still carry at least one local link out of
+    itself, in its own HTML, which is what stops "plain" from becoming
+    "a dead end with nice typography".
 
 11. The sign-in page must not load crypto.js. It is the only page allowed
     to load Telegram's third-party script, and keeping submission plaintext
@@ -879,66 +903,160 @@ def hidden_attribute_problem():
             % STYLESHEET)
 
 
-def nav_links(text):
-    """The (href, label) pairs inside a page's .nav-menu, in order."""
-    menu = re.search(r'<ul[^>]*class="nav-menu".*?</ul>', text, re.S | re.I)
+# Which shell each published page carries. Pinned here rather than read
+# off the markup: a rule derived from what the pages happen to contain
+# cannot fail when a page arrives carrying the wrong one, and arriving
+# is exactly when a shell gets copied from whichever page was open.
+#
+# RAIL is the signed-in surface. PLAIN is what a signed-out visitor
+# meets: the cover, which the owner decided carries no rail before
+# sign-in (#73), and the error page, which goes plain on principle.
+SHELLS = {
+    "404.html": "plain",
+    "admin.html": "rail",
+    "dashboard.html": "rail",
+    "index.html": "plain",
+    "submit.html": "rail",
+}
+
+# The ids the strip disclosure is wired through. They are a pair rather
+# than one id because aria-controls has to name the thing the button
+# opens, and a button whose aria-controls points at nothing is a control
+# that announces a relationship the page does not have.
+#
+# Note what these are NOT. Before the rail, the disclosure hid the
+# navigation itself; now the four destinations are always visible and
+# the disclosure folds only the theme chips on a narrow screen, which is
+# the owner's decision on #73. A page still carrying nav-toggle or
+# nav-menu is a page that kept the old hamburger, so those names are
+# refused below rather than merely unused.
+STRIP_IDS = ("theme-toggle", "theme-chips")
+RETIRED_IDS = ("nav-toggle", "nav-menu")
+
+RAIL_MARKUP = re.compile(r'class="rail[\s"]', re.I)
+
+
+def rail_links(text):
+    """The (href, label) pairs inside a page's .rail-links, in order."""
+    menu = re.search(r'<ul[^>]*class="rail-links".*?</ul>', text, re.S | re.I)
     if not menu:
         return None
     return re.findall(r'<a\s+href="([^"]+)"[^>]*>(.*?)</a>',
                       menu.group(0), re.S | re.I)
 
 
-def nav_problems():
-    """(page, problem) for pages whose navigation is missing or differs."""
+def local_links(text):
+    """Every same-origin href in a page, in order.
+
+    Used only to answer "can somebody leave this page without a
+    script", so a fragment or an off-site link does not count: a
+    fragment goes nowhere and an external link leaves the site rather
+    than moving through it.
+    """
+    return [href for href in re.findall(r'<a\s+[^>]*href="([^"]+)"', text,
+                                        re.I)
+            if not re.match(r"^(?:https?:)?//|^mailto:|^#|^data:", href)]
+
+
+def shell_problems():
+    """(page, problem) for pages whose shell is missing, wrong or drifted."""
     problems = []
-    found = {}
-    for name in html_pages():
+    pages = html_pages()
+
+    # Both directions on the table itself, before anything is read out
+    # of a page. Without these the rules below describe whichever pages
+    # the table happens to name, which is the failure mode the table
+    # exists to prevent.
+    for name in sorted(set(pages) - set(SHELLS)):
+        problems.append((
+            name,
+            "is published but names no shell in SHELLS in tools/"
+            "check_web.py. Say whether it carries the rail or is plain, "
+            "so the next page copied from an open tab cannot inherit the "
+            "wrong one in silence"))
+    for name in sorted(set(SHELLS) - set(pages)):
+        problems.append((
+            name,
+            "is pinned in SHELLS in tools/check_web.py and is not a page "
+            "in apps/web. Delete the entry, or restore the page"))
+
+    rails = {}
+    for name in pages:
+        if name not in SHELLS:
+            continue
         text = re.sub(r"<!--.*?-->", "", open(os.path.join(WEB, name),
                                               encoding="utf-8").read(),
                       flags=re.S)
-        links = nav_links(text)
+
+        if SHELLS[name] == "plain":
+            # The copy-paste direction. A rail on the cover would offer
+            # the session home - signed-in state and Sign out - to
+            # somebody who has not signed in yet.
+            if RAIL_MARKUP.search(text) or rail_links(text) is not None:
+                problems.append((
+                    name,
+                    "is pinned plain and carries rail markup. The rail "
+                    "holds the session home, and a signed-out visitor "
+                    "has no session for it to be the home of"))
+            # Plain is a treatment, not a dead end.
+            if not local_links(text):
+                problems.append((
+                    name,
+                    "is pinned plain and carries no link to anywhere else "
+                    "on this site, so a visitor who lands here with "
+                    "scripts blocked has no way off it"))
+            continue
+
+        links = rail_links(text)
         if links is None:
-            problems.append((name, "has no navigation menu"))
+            problems.append((name, "has no rail"))
             continue
         if not links:
-            problems.append((name, "has a navigation menu with no links"))
+            problems.append((name, "has a rail with no destinations"))
             continue
-        found[name] = links
+        rails[name] = links
 
-        # Identical incomplete menus still strand somebody. Sign-in is the
-        # route a signed-out visitor needs most, so comparing the five copies
-        # is not enough: every copy must name the directory index explicitly.
+        # Identical incomplete rails still strand somebody. Sign-in is
+        # the route a member whose session died needs most, so comparing
+        # the copies is not enough: every copy must name the directory
+        # index explicitly.
         if not any(href == "index.html" for href, _ in links):
             problems.append((
                 name,
-                "has no index.html route to sign-in, so a signed-out visitor "
-                "can be stranded away from the page that mints a session"))
+                "has no index.html route to sign-in, so a member whose "
+                "session has expired can be stranded away from the page "
+                "that mints a new one"))
 
-        # A menu that cannot be opened is a menu that is not there. The
-        # toggle and the list have to agree about the id, or the button
-        # controls nothing and nav.js gives up.
-        if 'id="nav-toggle"' not in text or 'id="nav-menu"' not in text:
+        for missing in [i for i in STRIP_IDS if 'id="%s"' % i not in text]:
             problems.append((
                 name,
-                "has nav markup but is missing the nav-toggle or nav-menu "
-                "id that nav.js and aria-controls both rely on"))
+                "has a rail but no id=\"%s\", which nav.js and "
+                "aria-controls both rely on to fold the theme chips "
+                "behind the strip disclosure" % missing))
+
+        for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
+            problems.append((
+                name,
+                "still carries id=\"%s\" from the hamburger the rail "
+                "replaced. The destinations are visible now and the "
+                "disclosure opens the theme chips instead" % retired))
 
     # Compared against whichever page sorts first, so the message names a
     # specific page to go and look at rather than "they differ".
-    if len(found) > 1:
-        reference = sorted(found)[0]
-        for name in sorted(found):
-            if name != reference and found[name] != found[reference]:
+    if len(rails) > 1:
+        reference = sorted(rails)[0]
+        for name in sorted(rails):
+            if name != reference and rails[name] != rails[reference]:
                 problems.append((
                     name,
-                    "has different navigation from %s. Every page carries "
+                    "has a different rail from %s. Every page carries "
                     "its own copy, so they have to be kept identical by "
                     "hand - %s has %s, this has %s"
                     % (reference, reference,
-                       [h for h, _ in found[reference]],
-                       [h for h, _ in found[name]])))
+                       [h for h, _ in rails[reference]],
+                       [h for h, _ in rails[name]])))
 
-    # A nav link to a page that does not exist is caught by check 1 as a
+    # A rail link to a page that does not exist is caught by check 1 as a
     # broken reference, so it is not repeated here.
     return problems
 
@@ -1136,7 +1254,7 @@ def main():
     if problem:
         problems.append(problem + ".")
 
-    for page, problem in nav_problems():
+    for page, problem in shell_problems():
         problems.append("%s %s." % (page, problem))
 
     for code, problem in promoted_country_problems():

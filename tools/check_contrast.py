@@ -180,6 +180,21 @@ PAIRINGS = [
     ("--color-accent-strong", "--color-bg", "mark"),
     ("--color-on-accent", "--color-accent-strong", "text"),
 
+    # The gold role: the runner's section label, and the accent on a
+    # figure somebody reads a number off. Both are text rather than
+    # decoration, which is why both are held to the text rule despite
+    # the runner being set small and in caps - WCAG would allow 3:1 for
+    # large text and there is no large text in this role.
+    #
+    # Two pairings rather than one because the runner appears in both
+    # places a section can start: directly on the page, and inside a
+    # card. The card is the tighter of the two on every dark palette,
+    # since --color-surface is lighter than --color-bg there, so a
+    # single pairing against the page would pass while the label that
+    # actually ships sat below the line.
+    ("--color-gold", "--color-bg", "text"),
+    ("--color-gold", "--color-surface", "text"),
+
     # A focus ring nobody can see is not a focus indicator.
     ("--color-focus", "--color-bg", "mark"),
 
