@@ -217,6 +217,26 @@ const draw = (snapshot, basis, units) => {
   return container;
 };
 
+/*
+ * A scenario is built at file scope so the checks that read it stay one
+ * line each, and a throw at file scope would take the whole process down
+ * before a single result printed - turning "render throws on a published
+ * snapshot" into a suite that says nothing at all. So a throw is caught,
+ * recorded, and answered with an empty container: the checks that were
+ * going to read it fail on their own terms, and the last check in the
+ * file names the exception. Found by mutation - three edits to
+ * dashboard.js killed this file rather than reddening a named check.
+ */
+let sceneError = null;
+const scene = (make) => {
+  try {
+    return make();
+  } catch (error) {
+    if (sceneError === null) sceneError = error;
+    return makeNode("div", HTML_NS);
+  }
+};
+
 /* ------------------------------------------------------------------ */
 /* 0. The harness, attacked before anything leans on it.               */
 
@@ -362,7 +382,7 @@ const PUBLISHED = D.snapshotOf(ENTRIES, { identify: false });
 /* ------------------------------------------------------------------ */
 /* 2. The shape of a drawn dashboard.                                  */
 
-const KEY_PEOPLE = draw(KEYHOLDER, "people", "imperial");
+const KEY_PEOPLE = scene(() => draw(KEYHOLDER, "people", "imperial"));
 
 await check("the panels are drawn in a fixed order, captions and all", () =>
   JSON.stringify(captions(KEY_PEOPLE)) === JSON.stringify([
@@ -404,6 +424,15 @@ await check("the counts on the strip are the snapshot's, not the basis's",
 await check("a figure with a note carries it as a hint under the caption",
   () => hintOf(figureNamed(KEY_PEOPLE, "Weight over time")) ===
     "5 of 12 people have submitted more than once.");
+
+/* theme.css lays a panel out through `.chart` and captions it through
+   `.chart figcaption`, so a figure without the class is a caption and a
+   chart stacked however the browser feels. */
+await check("every panel is a figure carrying the chart class", () =>
+  figures(KEY_PEOPLE).length === 9 &&
+  figures(KEY_PEOPLE).every((panel) =>
+    classesOf(panel).includes("chart") &&
+    panel.children[0].tagName === "figcaption"));
 
 await check("the wide panels are the time series and the two lists", () =>
   figures(KEY_PEOPLE).filter((f) => classesOf(f).includes("chart-wide"))
@@ -525,10 +554,43 @@ await check("the BMI panel refuses to label the number it draws", () =>
   "Weight over height squared, and nothing more — the clinical " +
   "category labels are deliberately not shown.");
 
+/*
+ * Ten people spread over 200 lb with a gap in the middle: eleven bins,
+ * more edges than a 620-wide axis can label without them colliding, and
+ * one bin nobody is in. Both arms are decisions histogramChart makes
+ * silently - a label every `Math.ceil(bins.length / 8)` bins, and no
+ * number over an empty one - and a chart that got either wrong would
+ * still look like a chart.
+ */
+const SPREAD = D.snapshotOf(
+  [110, 130, 150, 170, 210, 230, 250, 270, 290, 310].map((lb, index) =>
+    entry({
+      id: 50 + index, telegram: "wide" + index, accountId: "acct-wide" + index,
+      lb: lb,
+      kg: [49.9, 59.0, 68.0, 77.1, 95.3, 104.3, 113.4, 122.5, 131.5,
+        140.6][index],
+      cm: 175, totalInches: 68.9,
+    })), { identify: true });
+const WIDE = scene(() => draw(SPREAD, "people", "imperial"));
+
+await check("more bin edges than fit are labelled every other bin", () =>
+  JSON.stringify(textsOf(withClass(figureNamed(WIDE, "Weight"),
+    "chart-label"))) ===
+  JSON.stringify(["100", "140", "180", "220", "260", "300", "lb"]));
+
+await check("a bin nobody is in is drawn, and carries no number", () => {
+  const weight = figureNamed(WIDE, "Weight");
+  const bars = withClass(weight, "chart-bar");
+  return bars.length === 11 &&
+    withClass(weight, "chart-value").length === 10 &&
+    bars[4].getAttribute("height") === "1" &&
+    bars[0].getAttribute("height") === "156";
+});
+
 /* ------------------------------------------------------------------ */
 /* 7. The empty corpus. Every "nothing to draw" arm at once.           */
 
-const EMPTY = draw(D.snapshotOf([], { identify: true }), "people", "imperial");
+const EMPTY = scene(() => draw(D.snapshotOf([], { identify: true }), "people", "imperial"));
 
 await check("an empty corpus draws every panel rather than throwing", () =>
   captions(EMPTY).length === 7);
@@ -606,7 +668,7 @@ const FLAT_SNAPSHOT = D.snapshotOf([
   entry({ id: 32, telegram: "flat", accountId: "acct-flat",
     submittedAt: "2026-05-01T00:00:00.000Z" }),
 ], { identify: true });
-const FLAT = draw(FLAT_SNAPSHOT, "people", "imperial");
+const FLAT = scene(() => draw(FLAT_SNAPSHOT, "people", "imperial"));
 
 await check("a series that never moves still plots real coordinates", () => {
   const line = withTag(figureNamed(FLAT, "Weight over time"), "polyline")[0];
@@ -618,6 +680,34 @@ await check("a flat series is given a range to sit in", () => {
     withClass(figureNamed(FLAT, "Weight over time"), "chart-label"));
   return labels[0] !== labels[1];
 });
+
+/*
+ * Two people, one finishing at the right edge of the plot and one
+ * finishing early. dashboard.js:1170-1172 says a line with no room to
+ * its right takes its label the other way and lifted clear of the line,
+ * and both arms decide only an anchor and an offset - so getting one
+ * wrong writes a caption off the edge of the chart, where it renders
+ * perfectly and is not there.
+ */
+const EDGES = scene(() => draw(D.snapshotOf([
+  entry({ id: 61, telegram: "edgea", accountId: "acct-edgea",
+    submittedAt: "2026-01-01T00:00:00.000Z", kg: 80, lb: 176.4 }),
+  entry({ id: 62, telegram: "edgea", accountId: "acct-edgea",
+    submittedAt: "2026-07-01T00:00:00.000Z", kg: 84, lb: 185.2 }),
+  entry({ id: 63, telegram: "edgeb", accountId: "acct-edgeb",
+    submittedAt: "2026-01-01T00:00:00.000Z", kg: 90, lb: 198.4 }),
+  entry({ id: 64, telegram: "edgeb", accountId: "acct-edgeb",
+    submittedAt: "2026-03-01T00:00:00.000Z", kg: 94, lb: 207.2 }),
+], { identify: true }), "people", "imperial"));
+
+await check("a caption at the right edge is anchored back into the chart",
+  () => {
+    const labels = withClass(
+      figureNamed(EDGES, "Weight over time"), "chart-series-label");
+    return textsOf(labels).join("|") === "@edgea|@edgeb" &&
+      labels[0].getAttribute("text-anchor") === "end" &&
+      labels[1].getAttribute("text-anchor") === "start";
+  });
 
 /* Thirteen repeat submitters, so the twelve-line cap and the six-color
    cycle are both crossed. */
@@ -631,8 +721,8 @@ for (let n = 1; n <= 13; n++) {
     kg: 84, lb: 185.2, cm: 170, totalInches: 66.9,
     submittedAt: "2026-06-01T00:00:00.000Z" }));
 }
-const CROWDED = draw(
-  D.snapshotOf(MANY, { identify: true }), "people", "imperial");
+const CROWDED = scene(() => draw(
+  D.snapshotOf(MANY, { identify: true }), "people", "imperial"));
 
 await check("more lines than fit are cut to twelve and the cut is stated",
   () => {
@@ -699,7 +789,7 @@ await check("a snapshot with no quality object at all draws the rest too",
 /* ------------------------------------------------------------------ */
 /* 10. What the published document may not contain.                    */
 
-const PUBLIC_PEOPLE = draw(PUBLISHED, "people", "imperial");
+const PUBLIC_PEOPLE = scene(() => draw(PUBLISHED, "people", "imperial"));
 
 await check("a published snapshot carries no data-quality panel", () =>
   figureNamed(PUBLIC_PEOPLE, "Accounts using more than one handle") === null &&
@@ -718,9 +808,9 @@ await check("the published lines are captioned with pseudonyms instead", () =>
 /* Fewer repeat submitters than MIN_CELL, from otherwise identical rows.
    dashboard.js:910 drops the whole panel rather than publishing four
    identifiable trajectories. */
-const FEW = draw(
+const FEW = scene(() => draw(
   D.snapshotOf(BASE.concat(REPEATS.slice(0, 3)), { identify: false }),
-  "people", "imperial");
+  "people", "imperial"));
 
 await check("too few lines to hide in publishes no time chart at all", () =>
   figureNamed(FEW, "Weight over time") === null &&
@@ -739,7 +829,7 @@ const SCATTERED = D.snapshotOf(BODIES.slice(0, 6).map((body, index) =>
     id: 40 + index, telegram: "far" + index, accountId: "acct-far" + index,
     country: ["US", "GB", "CA", "DE", "JP", "AU"][index],
   }, body))), { identify: false });
-const SUPPRESSED = draw(SCATTERED, "people", "imperial");
+const SUPPRESSED = scene(() => draw(SCATTERED, "people", "imperial"));
 
 await check("a breakdown suppressed to nothing draws a chart with no bars",
   () => {
@@ -751,8 +841,8 @@ await check("a breakdown suppressed to nothing draws a chart with no bars",
 
 /* Below the floor there is no breakdown at all, and saying so is the
    ordinary state of a new group rather than an error. */
-const TOO_FEW = draw(
-  D.snapshotOf(BASE.slice(0, 3), { identify: false }), "people", "imperial");
+const TOO_FEW = scene(() => draw(
+  D.snapshotOf(BASE.slice(0, 3), { identify: false }), "people", "imperial"));
 
 await check("a group too small to describe gets a sentence, not a blank page",
   () => TOO_FEW.children.length === 1 &&
@@ -770,7 +860,7 @@ await check("nothing else is drawn beside it", () =>
 /* ------------------------------------------------------------------ */
 /* 11. The two toggles, which decide what is read and never convert.   */
 
-const KEY_ENTRIES = draw(KEYHOLDER, "entries", "imperial");
+const KEY_ENTRIES = scene(() => draw(KEYHOLDER, "entries", "imperial"));
 
 await check("the basis decides which rows the breakdowns count", () =>
   textsOf(withClass(figureNamed(KEY_ENTRIES, "Gender"), "chart-value"))
@@ -785,7 +875,7 @@ await check("an unrecognized basis falls back to one row per person", () =>
     figureNamed(draw(KEYHOLDER, "everything", "imperial"), "Gender"),
     "chart-value")).join("|") === "7 (58%)|5 (42%)");
 
-const KEY_METRIC = draw(KEYHOLDER, "people", "metric");
+const KEY_METRIC = scene(() => draw(KEYHOLDER, "people", "metric"));
 
 await check("the units decide which stored field is written down", () => {
   const imperial = textsOf(withClass(KEY_PEOPLE, "stat-value"));
@@ -833,6 +923,19 @@ await check("a redraw into a smaller state leaves nothing of the larger", () => 
   return container.children.length === 1 &&
     withTag(container, "svg").length === 0;
 });
+
+/* ------------------------------------------------------------------ */
+/* 13. And nothing above threw on the way to being drawn.              */
+
+/*
+ * Last, because it is about the file rather than about the module: every
+ * scenario built at file scope went through scene(), so this is the one
+ * place an exception raised while drawing is reported instead of ending
+ * the process. The checks that were going to read that scenario have
+ * already failed on their own terms; this says what went wrong.
+ */
+await check("no scenario threw while drawing", () => sceneError === null ||
+  (console.log("       " + (sceneError.stack || sceneError)), false));
 
 /* ------------------------------------------------------------------ */
 
