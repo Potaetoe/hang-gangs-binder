@@ -517,6 +517,54 @@ each other and the work had to be merged by hand. Two parallel branches both
 appending to one day's entry is that same collision with a git conflict
 attached, so the publisher wrote them once, after the merges.
 
+### The documentation slice that was spun out — #46
+
+Claude. Three findings from today became durable rules in `AGENTS.md`; the
+two above and the branch-creation one recorded further up under "Running
+Codex and Claude at the same time". Nothing new was discovered here, and the
+entry exists so the loop the section above left open is visibly closed rather
+than left as an intention.
+
+**Where each one went is the part worth recording, because the placement was
+the decision.** The two CI hazards went into "When CI is backed up", directly
+under the bullet that *causes* them — the file already said to branch from an
+unmerged branch when nothing disjoint is left, and that instruction is what
+walks an agent into a PR with no checks. A hazard filed away from the advice
+that produces it is a hazard nobody reads in time. The branch-creation
+finding went into "When Codex runs as an MCP tool" as a numbered step
+**between the re-sync and the claim**, because its whole content is *when* it
+has to happen: discovered at commit time it is a rebase, done before the
+delegation it is one command.
+
+**The `workflow_dispatch` rule is now stated in both directions and
+cross-linked**, which was not merely tidiness. Verification already said a
+dispatch on `main` *is* a release and to never reach for it as a routine
+re-trigger; the stacked-PR remedy is that same dispatch, and it is safe for
+exactly the reason the warning is true — the deploy job tests the ref. One
+sentence in each place, each pointing at the other, so neither reads as
+contradicting the one an agent happens to find first.
+
+**Also cross-linked into Verification's "a run that is absent may appear
+minutes later".** That rule tells you to wait, and waiting is precisely wrong
+here. Two absences that look identical and want opposite responses is the
+shape this repository keeps finding — `wrangler whoami`'s misdiagnosis, the
+abbreviated `head_sha` returning `total_count: 0` — and the fix is the same
+each time: name the second case where the first one is written down.
+
+The machine-local half of the branch finding — that this is a property of the
+Codex sandbox on this machine, alongside its inability to run
+`tools/check.py` — went to the workspace's `SETUP_NOTES.md`, which is not in
+this repository.
+
+**Verification note, and it is not this change.** The gate reads 14/14 green
+from this branch, but it was run from a worktree under `.claude/worktrees/`.
+That directory is *inside* the repository, and it is the same worktree whose
+stale `main` checkout made another session's eslint run report 168 errors
+against a change that touched two Markdown files — fixed in `05b92b6` while
+this slice was in progress, by ignoring `.claude/**`. The base moved twice
+underneath this branch in the course of a documentation-only change, which is
+the workspace note about more than two live agents being right in practice.
+
 ---
 
 ## 2026-08-06
