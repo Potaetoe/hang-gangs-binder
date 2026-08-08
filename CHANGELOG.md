@@ -99,6 +99,31 @@ On `accounts`, not released. `main` stays at the last complete release.
   5–32 character `HANDLE` rule. The Worker already refuses a Telegram
   account with no username, and past that the identity provider's rule
   governs rather than ours.
+- **`admin.html` runs on an admin session instead of a typed export token,
+  and can delete a row.** Build step 7, #8. The token field is gone; all
+  four requests — export, publish, unpublish, and the published-state read
+  — now send `BinderSession.authorization()`, and the page refuses before
+  any wiring or fetch when the session is absent or not an admin.
+  `EXPORT_TOKEN` is **not** removed: `callerFor` still resolves it ahead of
+  any session as break-glass. What changed is that a human no longer types
+  one into a page. Deletion rebuilds every derived consumer from `entries`
+  through one function, because deleting a row from the visible table
+  without that would leave it in the downloads **and in the next published
+  snapshot**; the suite publishes after deleting and asserts the posted
+  body carries only the survivor, rather than checking the row left the
+  DOM. An undecryptable submission still appears by id rather than being
+  skipped — the ordinary cause is a rotated key, not damage.
+- **The members' dashboard requires and sends a member session.** Build
+  step 6, #7. `public.js` calls `BinderSession.require()` before reading
+  config or the network. Three states stay distinct, which is the point: no
+  session redirects to sign-in; a session the Worker refuses is cleared and
+  reported as needing a fresh sign-in; and an authorized empty snapshot
+  keeps its existing "no figures published yet" message. A member told
+  "nothing published yet" because their session expired learns something
+  false and has no way to find out. A member session suffices — this is not
+  admin-gated, and an admin holds one too. `dashboard.html`'s eyebrow
+  changes from "Everyone" to "Members" and its CSP is byte-for-byte
+  unchanged.
 
 ### Notes
 - `server/worker.js` was not touched. `POST /submit` was already gated on

@@ -485,6 +485,38 @@ bottleneck and the throughput gain is smaller than two agents suggests.
 was that #41 and the two Codex slices had genuinely disjoint file lists, and
 the moment they stopped being disjoint the base had to change.
 
+### Merged: steps 7 and 6, and #41 — and what the stack cost on the way out
+
+All three landed on `accounts` by rebase, in that order: `49dae8c` (step 7),
+`3e2bead` (#41), `7000a28` (step 6). Rebase rather than squash so the two
+Codex commits keep `Codex Sol 5.6` as author with Claude as committer;
+`accounts` still has no merge commits. The gate was then run on the **merged
+result** rather than only on each branch — all 14, both new suites — because a
+new file has never been linted before it lands and three disjoint branches
+combining is exactly where that bites.
+
+**The stacked PR cost two things, neither of which was the conflict it
+avoided.** First, it got no CI at all: `deploy.yml` filters
+`pull_request` on the **base** branch, so a PR based on another slice's branch
+never triggers a run — not a queued one, none. `workflow_dispatch` on the
+branch was the fix, and it is safe rather than a workaround, since the deploy
+job is gated on `github.ref == 'refs/heads/main'`.
+
+Second, and this was avoidable: merging the parent with `--delete-branch`
+**auto-closed the child PR**, and a closed PR whose base branch no longer
+exists can be neither reopened nor retargeted. #44 had to be replaced by #45
+off a rebased branch. The right order is retarget the child to `accounts`
+first, then merge the parent — or merge the parent without deleting its branch
+until the child is retargeted. Both findings are worth a rule; spun out as a
+separate documentation slice rather than bolted on here.
+
+Product entries for both Codex slices are in `CHANGELOG.md` under 2026-08-07.
+They were deliberately kept off both branches: `CHANNEL.md` records 2026-08-05,
+when both agents wrote a changelog and a daily log for the same day unaware of
+each other and the work had to be merged by hand. Two parallel branches both
+appending to one day's entry is that same collision with a git conflict
+attached, so the publisher wrote them once, after the merges.
+
 ---
 
 ## 2026-08-06
