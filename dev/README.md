@@ -273,6 +273,12 @@ listing them with the `.mjs` suites.
   node dev/make-sample.mjs
   ```
 
+  > **Broken on `accounts` as of 2026-08-08 — #66.** `buildRecord` gained
+  > a third argument when the handle moved to the session, and this
+  > caller still passes two, so the script throws before writing
+  > anything. The committed `sample-submissions.json` predates the change
+  > and still loads. Fix the caller before regenerating.
+
   A readable table of people sits at the top of the file. Each row is
   put through the real `validate()` and built by the real
   `buildRecord()`, then sealed by the real `crypto.js` to
