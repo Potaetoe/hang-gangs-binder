@@ -20,8 +20,20 @@
  * media query - so adding a fourth palette is a block of variables and
  * nothing else.
  *
- * The <meta name="theme-color"> tag in each page repeats --bg. CSS
- * cannot reach it, so that is the one duplication left; change a
+ * Color tokens are named --color-<role>: what the color is for, never
+ * what it looks like, so a value can move without turning its own name
+ * into a lie. Two roles the accent served alone are now separate names
+ * carrying identical values - --color-accent-text is accent-colored
+ * text on a surface, --color-on-accent is a label sitting on an accent
+ * fill. They are measured against different backgrounds, so one of them
+ * has to be able to move for contrast without dragging the other with
+ * it, and one token could never do that. The six --color-series-N are
+ * the chart lines, per palette for the same reason: a color legible on
+ * a near-black chart need not be legible on a pale one. Spacing, type,
+ * radius and measure tokens are not colors and keep their plain names.
+ *
+ * The <meta name="theme-color"> tag in each page repeats --color-bg.
+ * CSS cannot reach it, so that is the one duplication left; change a
  * background here and check theme.js's BG map.
  */
 
@@ -35,34 +47,50 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121212;
-  --card: #1e1e1e;
-  --primary: #3b82f6;
-  --primary-dark: #60a5fa;
-  --text: #e4e4e7;
-  --muted: #a1a1aa;
-  --line: #33333a;
-  --warn-bg: #3a2222;
-  --warn-text: #f2b8b5;
-  --field-bg: #121212;
-  --focus: #93c5fd;
+  --color-bg: #121212;
+  --color-surface: #1e1e1e;
+  --color-accent: #3b82f6;
+  --color-accent-strong: #60a5fa;
+  --color-text: #e4e4e7;
+  --color-text-muted: #a1a1aa;
+  --color-border: #33333a;
+  --color-warn-bg: #3a2222;
+  --color-warn-text: #f2b8b5;
+  --color-field: #121212;
+  --color-focus: #93c5fd;
+  --color-accent-text: #3b82f6;
+  --color-on-accent: #121212;
+  --color-series-0: var(--color-accent);
+  --color-series-1: #e8a33d;
+  --color-series-2: #4bb3a6;
+  --color-series-3: #b07de0;
+  --color-series-4: #e0685f;
+  --color-series-5: #6aa9e0;
 }
 
 /* "Pink": deep plum with pink accents. The project's own palette, now
    chosen rather than assumed. */
 :root[data-theme="pink"] {
   color-scheme: dark;
-  --bg: #241b21;
-  --card: #322730;
-  --primary: #e87fa8;
-  --primary-dark: #f4a6c6;
-  --text: #f5e6ee;
-  --muted: #bfa8b6;
-  --line: #473942;
-  --warn-bg: #4a2626;
-  --warn-text: #f3b0b0;
-  --field-bg: #241b21;
-  --focus: #ffa8c8;
+  --color-bg: #241b21;
+  --color-surface: #322730;
+  --color-accent: #e87fa8;
+  --color-accent-strong: #f4a6c6;
+  --color-text: #f5e6ee;
+  --color-text-muted: #bfa8b6;
+  --color-border: #473942;
+  --color-warn-bg: #4a2626;
+  --color-warn-text: #f3b0b0;
+  --color-field: #241b21;
+  --color-focus: #ffa8c8;
+  --color-accent-text: #e87fa8;
+  --color-on-accent: #241b21;
+  --color-series-0: var(--color-accent);
+  --color-series-1: #e8a33d;
+  --color-series-2: #4bb3a6;
+  --color-series-3: #b07de0;
+  --color-series-4: #e0685f;
+  --color-series-5: #6aa9e0;
 }
 
 /* With no saved choice, a light-preferring system gets Light. Once a
@@ -71,17 +99,25 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --bg: #f2efe9;
-    --card: #faf8f4;
-    --primary: #5f7d59;
-    --primary-dark: #47613f;
-    --text: #3a3d35;
-    --muted: #77796d;
-    --line: #ddd8cb;
-    --warn-bg: #ece0d3;
-    --warn-text: #7a4a33;
-    --field-bg: #ffffff;
-    --focus: #3e5a38;
+    --color-bg: #f2efe9;
+    --color-surface: #faf8f4;
+    --color-accent: #5f7d59;
+    --color-accent-strong: #47613f;
+    --color-text: #3a3d35;
+    --color-text-muted: #77796d;
+    --color-border: #ddd8cb;
+    --color-warn-bg: #ece0d3;
+    --color-warn-text: #7a4a33;
+    --color-field: #ffffff;
+    --color-focus: #3e5a38;
+    --color-accent-text: #5f7d59;
+    --color-on-accent: #f2efe9;
+    --color-series-0: var(--color-accent);
+    --color-series-1: #e8a33d;
+    --color-series-2: #4bb3a6;
+    --color-series-3: #b07de0;
+    --color-series-4: #e0685f;
+    --color-series-5: #6aa9e0;
   }
 }
 
@@ -89,24 +125,33 @@
    neutrals with a muted sage accent. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f2efe9;
-  --card: #faf8f4;
-  --primary: #5f7d59;
-  --primary-dark: #47613f;
-  --text: #3a3d35;
-  --muted: #77796d;
-  --line: #ddd8cb;
-  --warn-bg: #ece0d3;
-  --warn-text: #7a4a33;
-  --field-bg: #ffffff;
-  --focus: #3e5a38;
+  --color-bg: #f2efe9;
+  --color-surface: #faf8f4;
+  --color-accent: #5f7d59;
+  --color-accent-strong: #47613f;
+  --color-text: #3a3d35;
+  --color-text-muted: #77796d;
+  --color-border: #ddd8cb;
+  --color-warn-bg: #ece0d3;
+  --color-warn-text: #7a4a33;
+  --color-field: #ffffff;
+  --color-focus: #3e5a38;
+  --color-accent-text: #5f7d59;
+  --color-on-accent: #f2efe9;
+  --color-series-0: var(--color-accent);
+  --color-series-1: #e8a33d;
+  --color-series-2: #4bb3a6;
+  --color-series-3: #b07de0;
+  --color-series-4: #e0685f;
+  --color-series-5: #6aa9e0;
 }
 
 /* Derived from the palette rather than declared per theme, so a new
    palette gets these for free. color-mix keeps the tint in the accent's
    own hue instead of grey-washing it. */
 :root {
-  --accent-quiet: color-mix(in oklab, var(--primary) 12%, transparent);
+  --color-accent-quiet: color-mix(in oklab, var(--color-accent) 12%,
+                                  transparent);
 
   /* One type scale. Only the display step is fluid - body text that
      resizes with the viewport is harder to read, not easier. */
@@ -185,8 +230,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  background: var(--bg);
-  color: var(--text);
+  background: var(--color-bg);
+  color: var(--color-text);
   font: var(--text-base)/1.55 system-ui, -apple-system, "Segoe UI", Roboto,
         sans-serif;
 }
@@ -255,8 +300,8 @@ p {
 }
 
 .card {
-  background: var(--card);
-  border: 1px solid var(--line);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-4) var(--space-4) calc(var(--space-4) + var(--space-1));
   display: flex;
@@ -264,7 +309,7 @@ p {
   gap: var(--space-3);
 }
 
-.muted { color: var(--muted); }
+.muted { color: var(--color-text-muted); }
 
 .small { font-size: var(--text-sm); }
 
@@ -274,7 +319,7 @@ p {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
 /* Numbers that will sit in columns once there is data to line up. */
@@ -307,9 +352,9 @@ p {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  background: var(--card);
-  color: var(--muted);
-  border: 1px solid var(--line);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-3);
   font: inherit;
@@ -321,8 +366,8 @@ p {
 
 .nav-toggle:hover,
 .nav-toggle[aria-expanded="true"] {
-  background: var(--accent-quiet);
-  color: var(--text);
+  background: var(--color-accent-quiet);
+  color: var(--color-text);
 }
 
 /* Three bars, drawn rather than fetched. An icon font or an SVG file
@@ -382,8 +427,8 @@ p {
   margin: 0;
   padding: var(--space-2);
   list-style: none;
-  background: var(--card);
-  border: 1px solid var(--line);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
 }
@@ -392,20 +437,20 @@ p {
   display: block;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--color-text);
   text-decoration: none;
 }
 
 .nav-menu a:hover,
 .nav-menu a:focus-visible {
-  background: var(--accent-quiet);
+  background: var(--color-accent-quiet);
 }
 
 /* The page you are on is marked, not removed. A menu that drops the
    current entry changes shape as you move through the site, and nothing
    is ever where it was last time. */
 .nav-menu a[aria-current="page"] {
-  color: var(--primary);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 
@@ -414,7 +459,7 @@ p {
 .nav-menu .nav-note {
   display: block;
   padding-top: var(--space-1);
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-weight: 400;
 }
@@ -427,9 +472,9 @@ p {
 }
 
 .themes button {
-  background: var(--card);
-  color: var(--muted);
-  border: 1px solid var(--line);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-3);
   font: inherit;
@@ -440,14 +485,14 @@ p {
 }
 
 .themes button:hover {
-  background: var(--accent-quiet);
-  color: var(--text);
+  background: var(--color-accent-quiet);
+  color: var(--color-text);
 }
 
 .themes button[aria-pressed="true"] {
-  color: var(--bg);
-  background: var(--primary);
-  border-color: var(--primary);
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 /* ------------------------------------------------------------------ */
@@ -470,20 +515,21 @@ p {
 .field > legend {
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text);
+  color: var(--color-text);
   padding: 0;
 }
 
-/* Inputs and selects share one surface. --field-bg rather than --card so
-   a control reads as a hole in the card it sits on, in every palette. */
+/* Inputs and selects share one surface. --color-field rather than
+   --color-surface so a control reads as a hole in the card it sits on,
+   in every palette. */
 input[type="text"],
 input[type="password"],
 textarea,
 select {
   font: inherit;
-  color: var(--text);
-  background: var(--field-bg);
-  border: 1px solid var(--line);
+  color: var(--color-text);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
   width: 100%;
@@ -502,18 +548,18 @@ textarea {
 input[type="text"]:hover,
 input[type="password"]:hover,
 textarea:hover,
-select:hover { border-color: var(--primary); }
+select:hover { border-color: var(--color-accent); }
 
 input[type="file"] {
   font: inherit;
   font-size: var(--text-sm);
-  color: var(--muted);
+  color: var(--color-text-muted);
   max-width: 100%;
 }
 
 /* The one place color alone is not the signal - the message under the
    field is. This just points at it. */
-input[aria-invalid="true"] { border-color: var(--warn-text); }
+input[aria-invalid="true"] { border-color: var(--color-warn-text); }
 
 /* A control with a unit beside it. The input takes the slack so "ft"
    and "in" stay pinned to their own boxes at any width. */
@@ -534,7 +580,7 @@ input[aria-invalid="true"] { border-color: var(--warn-text); }
 
 .suffix {
   font-size: var(--text-sm);
-  color: var(--muted);
+  color: var(--color-text-muted);
   flex: none;
 }
 
@@ -555,7 +601,7 @@ input[aria-invalid="true"] { border-color: var(--warn-text); }
 }
 
 .choice input {
-  accent-color: var(--primary);
+  accent-color: var(--color-accent);
   width: 1.1rem;
   height: 1.1rem;
   flex: none;
@@ -564,13 +610,13 @@ input[aria-invalid="true"] { border-color: var(--warn-text); }
 
 .hint {
   font-size: var(--text-xs);
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
 .field-error {
   font-size: var(--text-sm);
-  color: var(--warn-text);
-  background: var(--warn-bg);
+  color: var(--color-warn-text);
+  background: var(--color-warn-bg);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
 }
@@ -582,9 +628,9 @@ button.primary,
 a.primary {
   font: inherit;
   font-weight: 600;
-  color: var(--bg);
-  background: var(--primary);
-  border: 1px solid var(--primary);
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
@@ -597,7 +643,7 @@ a.primary {
 }
 
 button.primary:hover:not(:disabled),
-a.primary:hover { background: var(--primary-dark); }
+a.primary:hover { background: var(--color-accent-strong); }
 
 button.primary:disabled {
   opacity: 0.55;
@@ -610,9 +656,9 @@ button.primary:disabled {
 button.secondary,
 a.secondary {
   font: inherit;
-  color: var(--muted);
+  color: var(--color-text-muted);
   background: transparent;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
@@ -624,13 +670,13 @@ a.secondary {
 }
 
 a.secondary:hover {
-  border-color: var(--primary);
-  color: var(--text);
+  border-color: var(--color-accent);
+  color: var(--color-text);
 }
 
 button.secondary:hover {
-  color: var(--text);
-  border-color: var(--primary);
+  color: var(--color-text);
+  border-color: var(--color-accent);
 }
 
 /* ------------------------------------------------------------------ */
@@ -640,7 +686,7 @@ button.secondary:hover {
    scrolls inside its card rather than widening the page. */
 .table-scroll {
   overflow-x: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
 }
 
@@ -653,16 +699,16 @@ table {
 th,
 td {
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
 th {
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-weight: 600;
   position: sticky;
   top: 0;
-  background: var(--card);
+  background: var(--color-surface);
 }
 
 tbody tr:last-child td { border-bottom: 0; }
@@ -670,8 +716,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .failure-list {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--text-xs);
-  color: var(--warn-text);
-  background: var(--warn-bg);
+  color: var(--color-warn-text);
+  background: var(--color-warn-bg);
   border-radius: var(--radius);
   padding: var(--space-3);
   margin: 0;
@@ -705,7 +751,7 @@ code {
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
 }
 
@@ -713,7 +759,7 @@ code {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
 .stat-value { font-size: var(--text-lg); }
@@ -737,21 +783,21 @@ code {
 }
 
 .chart-label {
-  fill: var(--muted);
+  fill: var(--color-text-muted);
   font-size: 11px;
 }
 
 .chart-value {
-  fill: var(--text);
+  fill: var(--color-text);
   font-size: 11px;
 }
 
-.chart-track { fill: var(--accent-quiet); }
+.chart-track { fill: var(--color-accent-quiet); }
 
-.chart-bar { fill: var(--primary); }
+.chart-bar { fill: var(--color-accent); }
 
 .chart-axis {
-  stroke: var(--line);
+  stroke: var(--color-border);
   stroke-width: 1;
 }
 
@@ -779,21 +825,28 @@ polyline.chart-series { fill: none; }
    the end of each line anyway, so color is a hint and not the only
    way to read the chart.
 
+   The values live in the palette blocks at the top of this file, one
+   set per theme, so these rules say which series a shape belongs to and
+   never what color that is. Every other component here already worked
+   that way; the series were the exception, six literals shared by three
+   palettes, which is why a chart tuned for a near-black surface came
+   out unreadable on the pale one.
+
    Stroke on everything, fill only on the shapes that are meant to be
    solid - the dots and the label. */
-.series-0 { stroke: var(--primary); }
-.series-1 { stroke: #e8a33d; }
-.series-2 { stroke: #4bb3a6; }
-.series-3 { stroke: #b07de0; }
-.series-4 { stroke: #e0685f; }
-.series-5 { stroke: #6aa9e0; }
+.series-0 { stroke: var(--color-series-0); }
+.series-1 { stroke: var(--color-series-1); }
+.series-2 { stroke: var(--color-series-2); }
+.series-3 { stroke: var(--color-series-3); }
+.series-4 { stroke: var(--color-series-4); }
+.series-5 { stroke: var(--color-series-5); }
 
-circle.series-0, text.series-0 { fill: var(--primary); }
-circle.series-1, text.series-1 { fill: #e8a33d; }
-circle.series-2, text.series-2 { fill: #4bb3a6; }
-circle.series-3, text.series-3 { fill: #b07de0; }
-circle.series-4, text.series-4 { fill: #e0685f; }
-circle.series-5, text.series-5 { fill: #6aa9e0; }
+circle.series-0, text.series-0 { fill: var(--color-series-0); }
+circle.series-1, text.series-1 { fill: var(--color-series-1); }
+circle.series-2, text.series-2 { fill: var(--color-series-2); }
+circle.series-3, text.series-3 { fill: var(--color-series-3); }
+circle.series-4, text.series-4 { fill: var(--color-series-4); }
+circle.series-5, text.series-5 { fill: var(--color-series-5); }
 
 /* Two charts abreast on a wide window. A histogram 84rem across is not
    more informative, just longer to look at. */
@@ -811,17 +864,17 @@ circle.series-5, text.series-5 { fill: #6aa9e0; }
 
 .secondary-link {
   font-size: var(--text-sm);
-  color: var(--muted);
+  color: var(--color-text-muted);
   align-self: center;
 }
 
 /* Live region under the button. Neutral by default because most of what
    it says is "Encrypting…" - progress, not a verdict. */
-.status { font-size: var(--text-sm); color: var(--muted); }
+.status { font-size: var(--text-sm); color: var(--color-text-muted); }
 
 .status.bad {
-  color: var(--warn-text);
-  background: var(--warn-bg);
+  color: var(--color-warn-text);
+  background: var(--color-warn-bg);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
 }
@@ -830,17 +883,17 @@ circle.series-5, text.series-5 { fill: #6aa9e0; }
 
 footer {
   font-size: var(--text-sm);
-  color: var(--muted);
-  border-top: 1px solid var(--line);
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
   padding-top: var(--space-4);
 }
 
-a { color: var(--primary-dark); }
+a { color: var(--color-accent-strong); }
 
 /* One focus ring for every interactive element, including the ones the
    form will add later. */
 :where(a, button, input, select, textarea, summary):focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
   border-radius: var(--space-1);
 }
