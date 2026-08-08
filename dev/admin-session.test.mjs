@@ -11,10 +11,87 @@ const adminSource = await readFile(
   new URL("../apps/web/admin.js", import.meta.url), "utf8");
 
 let failures = 0;
+let checks = 0;
 function check(label, condition) {
+  checks++;
   if (!condition) failures++;
   console.log(condition ? "pass " : "FAIL ", label);
 }
+
+/*
+ * IndexedDB, small enough to drive and real enough to fail the way the
+ * browser's does.
+ *
+ * Every operation answers on a later turn through `onsuccess` or
+ * `onerror`, which is the part worth simulating: the page's read of the
+ * stored key is a race against a keyholder pressing a button, and a
+ * synchronous stub would make that race disappear from the suite while
+ * leaving it in the product.
+ *
+ * `rows` is handed back to each scenario, because "Clear destroyed the
+ * stored key" is a claim about the store rather than about the page,
+ * and reading it off the status line would prove only that the page
+ * says so.
+ */
+function makeIndexedDb(initial) {
+  const rows = new Map(initial ? [["current", initial]] : []);
+  let created = false;
+
+  function request(compute) {
+    const req = { result: undefined, error: null };
+    queueMicrotask(() => {
+      try {
+        req.result = compute();
+        if (req.onsuccess) req.onsuccess();
+      } catch (error) {
+        req.error = error;
+        if (req.onerror) req.onerror();
+      }
+    });
+    return req;
+  }
+
+  const store = {
+    get(key) { return request(() => rows.get(key)); },
+    put(value, key) { return request(() => { rows.set(key, value); }); },
+    delete(key) { return request(() => { rows.delete(key); }); },
+  };
+  const db = {
+    close() {},
+    createObjectStore() { return store; },
+    transaction() { return { objectStore() { return store; } }; },
+  };
+
+  return {
+    rows,
+    open() {
+      const req = { result: undefined, error: null };
+      queueMicrotask(() => {
+        req.result = db;
+        if (!created) {
+          created = true;
+          if (req.onupgradeneeded) req.onupgradeneeded();
+        }
+        if (req.onsuccess) req.onsuccess();
+      });
+      return req;
+    },
+  };
+}
+
+/*
+ * Node defines `navigator` as a getter, so the storage API this page
+ * asks about has to be installed rather than assigned.
+ */
+let persistGrant = true;
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: {
+    storage: {
+      async persist() { return persistGrant; },
+    },
+  },
+});
 
 const values = new Map();
 globalThis.sessionStorage = {
@@ -243,18 +320,54 @@ function response(status, body = {}) {
   };
 }
 
+/*
+ * The public key `config.js` carries for this arm. A marker rather than
+ * a point: the page compares it for exact equality against what a
+ * stored record says it is, so what matters is that two of these are
+ * distinguishable.
+ */
+const PUBLIC_KEY = "the-public-key-config-js-carries";
+
+// What importPrivateKey hands back, and what a device holding a key
+// already has. Two objects, because "the rows were opened with the
+// stored key" is only checkable if the stored one is not the imported
+// one.
+const IMPORTED_KEY = { type: "private", extractable: false, from: "file" };
+const DEVICE_KEY = { type: "private", extractable: false, from: "device" };
+
+const storedRecord = (over) => Object.assign({
+  publicKey: PUBLIC_KEY,
+  privateKey: DEVICE_KEY,
+  storedAt: "2026-08-08T09:00:00.000Z",
+}, over || {});
+
 let scenario = 0;
-async function loadAdmin(session) {
+async function loadAdmin(session, options = {}) {
   const page = makePage();
   const requests = [];
   const snapshots = [];
+  const imported = [];
+  const keysUsed = [];
   Session.clear();
   if (session) Session.write(session);
   redirects.length = 0;
   location.pathname = "/admin.html";
 
+  // `storage: null` is a browser that offers no IndexedDB at all. The
+  // file path has to keep working there, which is the check that stops
+  // this feature becoming a dependency rather than a convenience.
+  const storage = options.storage === null
+    ? null
+    : makeIndexedDb(options.stored);
+  if (storage) globalThis.indexedDB = storage;
+  else delete globalThis.indexedDB;
+  persistGrant = options.persist !== false;
+
   globalThis.document = page.document;
-  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  globalThis.BINDER_CONFIG = {
+    endpoint: "https://worker.example",
+    publicKey: PUBLIC_KEY,
+  };
   globalThis.BinderUI = {
     byId(id) { return page.elements[id] || null; },
     show(element, visible) { if (element) element.hidden = !visible; },
@@ -269,8 +382,12 @@ async function loadAdmin(session) {
   };
   globalThis.BinderCrypto = {
     unavailableReason() { return null; },
-    async importPrivateKey() { return {}; },
-    async decrypt(ciphertext) {
+    async importPrivateKey(text) {
+      imported.push(text);
+      return IMPORTED_KEY;
+    },
+    async decrypt(ciphertext, key) {
+      keysUsed.push(key);
       if (!RECORDS[ciphertext]) {
         throw new Error("could not be opened with this key");
       }
@@ -318,10 +435,19 @@ async function loadAdmin(session) {
   scenario++;
   await import("data:text/javascript," + encodeURIComponent(adminSource) +
     "#admin-session-" + scenario);
-  await new Promise((resolve) => setImmediate(resolve));
+  await settle();
   URL.createObjectURL = createObjectURL;
   URL.revokeObjectURL = revokeObjectURL;
-  return { ...page, requests, snapshots };
+  return {
+    ...page, requests, snapshots, imported, keysUsed,
+    rows: storage ? storage.rows : null,
+  };
+}
+
+// The page reads its stored key without blocking setup, so every check
+// below is about state that arrives a turn or two later.
+function settle() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function requestsFor(run, suffix, method) {
@@ -439,8 +565,133 @@ check("deletion removes only that row from live state without refetching",
   requestsFor(admin, "/export", "GET").length === exportsBeforeDelete &&
   lastSnapshot && JSON.stringify(lastSnapshot.ids) === JSON.stringify([99]));
 
+/*
+ * The key this device keeps - #70.
+ *
+ * The owner's decision is that the keyholder imports the key once and
+ * the browser profile becomes the thing to protect. What that buys is
+ * one thing - no file on the second export - and everything below is
+ * the price of it being honest: the stored key has to be the site's
+ * own, a damaged record has to be destroyed rather than puzzled over,
+ * and Clear has to end both copies, because the departure and
+ * compromise procedures name it as the lever that does.
+ */
+const returning = await loadAdmin(ADMIN, { stored: storedRecord() });
+check("a key stored on this device makes the tool ready without a paste",
+  /holds your key/.test(returning.elements.status.textContent) &&
+  returning.elements.run.disabled === false);
+
+returning.elements.keyfile.value = "";
+await returning.elements.run.click();
+await settle();
+check("an export runs from the stored key with nothing pasted",
+  requestsFor(returning, "/export", "GET").length === 1 &&
+  JSON.stringify(rowIds(returning)) === JSON.stringify([41, 99]) &&
+  returning.imported.length === 0);
+
+/* Not "a key was used" but "that key was used". A page that quietly
+ * fell back to importing something would pass every check above. */
+check("the rows are opened with the key the store handed back",
+  returning.keysUsed.length === 3 &&
+  returning.keysUsed.every((key) => key === DEVICE_KEY));
+
+/*
+ * Each scenario is driven to the end before the next one loads. The
+ * page reads `indexedDB` off the global at the moment it is called, so
+ * a click on an earlier scenario's button after a later load would
+ * write into the later scenario's store - and every check here would
+ * still pass while proving nothing.
+ */
+const first = await loadAdmin(ADMIN, { persist: true });
+check("a device holding nothing says nothing about a key",
+  first.elements.status.textContent === "" && first.rows.size === 0);
+
+await first.elements.run.click();
+await settle();
+check("importing a key keeps the key object on this device",
+  first.rows.size === 1 &&
+  first.rows.get("current").privateKey === IMPORTED_KEY &&
+  first.rows.get("current").publicKey === PUBLIC_KEY);
+
+/*
+ * The property the whole option turns on: what is stored is the
+ * non-extractable key object, so the text that produced it exists
+ * nowhere afterwards. A record carrying the file's contents would look
+ * identical from the page and be the thing #70 refused.
+ */
+check("nothing that could be written down is stored beside it",
+  !JSON.stringify(first.rows.get("current")).includes("PRIVATE_KEY"));
+
+check("a granted persistence request is reported without promising more",
+  /on this device/.test(first.elements.status.textContent) &&
+  !/evict/i.test(first.elements.status.textContent));
+
+/* The key is not session material and does not follow the session's
+ * rules; the reasoning is in admin.js. What is checkable here is that
+ * it never lands in the store the session owns. */
+check("the key does not enter sessionStorage",
+  [...values.keys()].join(",") === "hgb-session");
+
+await first.elements.clear.click();
+await settle();
+check("Clear destroys the stored key as well as this page's copy",
+  first.rows.size === 0 &&
+  /no key is stored on this device/.test(
+    first.elements.status.textContent));
+
+first.elements.keyfile.value = "";
+const exportsBeforeCleared = requestsFor(first, "/export", "GET").length;
+await first.elements.run.click();
+await settle();
+check("after Clear the page asks for the key file rather than fetching",
+  requestsFor(first, "/export", "GET").length === exportsBeforeCleared &&
+  /key file/i.test(first.elements.status.textContent));
+
+const refused = await loadAdmin(ADMIN, { persist: false });
+await refused.elements.run.click();
+await settle();
+check("a refused persistence request says the key can go, and how to return",
+  /evict/i.test(refused.elements.status.textContent) &&
+  /key file/i.test(refused.elements.status.textContent));
+
+/*
+ * Rotation seen from the device: config.js names a key this stored one
+ * is not. Using it would produce an export missing every row written
+ * since the rotation, which reads exactly like a working export.
+ */
+const rotated = await loadAdmin(ADMIN, {
+  stored: storedRecord({ publicKey: "a-key-this-site-does-not-use" }),
+});
+check("a stored key that is not the site's is surfaced and erased",
+  /not the one this site encrypts to/.test(
+    rotated.elements.status.textContent) && rotated.rows.size === 0);
+
+rotated.elements.keyfile.value = "";
+await rotated.elements.run.click();
+await settle();
+check("and the export does not run on it",
+  requestsFor(rotated, "/export", "GET").length === 0);
+
+/* The prefill's rule - #65 - on data with more at stake: a record this
+ * page will not read is erased rather than left for the next reader to
+ * puzzle over. */
+const damaged = await loadAdmin(ADMIN, {
+  stored: storedRecord({ privateKey: undefined }),
+});
+check("a stored record with no usable key is erased, not kept",
+  damaged.rows.size === 0 &&
+  /not a usable key/.test(damaged.elements.status.textContent));
+
+const noStorage = await loadAdmin(ADMIN, { storage: null });
+await noStorage.elements.run.click();
+await settle();
+check("with no storage at all the key file still opens the rows",
+  requestsFor(noStorage, "/export", "GET").length === 1 &&
+  JSON.stringify(rowIds(noStorage)) === JSON.stringify([41, 99]) &&
+  noStorage.imported.length === 1);
+
 if (failures) {
-  console.error(`\nadmin session/delete FAILED ${failures} check(s)`);
+  console.error(`\nadmin session/delete FAILED ${failures} of ${checks}`);
   process.exit(1);
 }
-console.log("\nadmin session/delete OK - 12 checks");
+console.log(`\nadmin session/delete OK - ${checks} checks`);

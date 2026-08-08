@@ -27,8 +27,8 @@ await load("../apps/web/admin.js");
 await load("../apps/web/form.js");
 await load("../apps/web/crypto.js");
 
-const { COLUMNS, entryFor, rowFor, csvCell, toCsv, toJson, fileName } =
-  globalThis.BinderAdmin;
+const { COLUMNS, entryFor, rowFor, csvCell, toCsv, toJson, fileName,
+  storedKeyVerdict, storedKeyNotice } = globalThis.BinderAdmin;
 const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
 
 /* A stored row straight to a CSV row. entryFor is the normalization
@@ -286,6 +286,140 @@ await check("JSON needs no formula guard", () => {
     Object.assign({}, RECORD, { telegram: "=cmd|calc" }));
   return JSON.parse(toJson([entry])).submissions[0].telegram === "=cmd|calc";
 });
+
+/* ------------------------------------------------------------------ */
+/* The key this device keeps - #70.                                    */
+
+/*
+ * What IndexedDB hands back is a `CryptoKey` object, never a JWK and
+ * never bytes, so a stored record is either a key this page can derive
+ * with and cannot export or it is not a stored key at all. These stand
+ * in for one at each end of that: `type` and `extractable` are the two
+ * properties the whole design rests on, and they are the two this
+ * verdict is allowed to trust.
+ *
+ * The public key is a marker rather than a real point. The comparison
+ * is exact string equality against whatever `config.js` carries, so a
+ * recognizable string makes a failing check readable and keeps a
+ * key-shaped literal out of a file that does not need one.
+ */
+const EXPECTED_PUBLIC_KEY = "the-public-key-config-js-carries";
+const DEVICE_KEY = { type: "private", extractable: false };
+const storedRecord = (over) => Object.assign({
+  publicKey: EXPECTED_PUBLIC_KEY,
+  privateKey: DEVICE_KEY,
+  storedAt: "2026-08-08T09:00:00.000Z",
+}, over || {});
+
+await check("a stored key for the configured public key is the one to use",
+  () => {
+    const verdict = storedKeyVerdict(storedRecord(), EXPECTED_PUBLIC_KEY);
+    return verdict.key === DEVICE_KEY && verdict.erase === false &&
+      verdict.why === null;
+  });
+
+/* An empty store is the ordinary state of a device that has never been
+ * used for an export. It is not a rejection, so it erases nothing and
+ * says nothing - a page that announced "no key found" on every first
+ * visit would be noise, and the erase would create the database it
+ * claims to be cleaning. */
+await check("nothing stored is nothing to erase and nothing to say", () =>
+  [undefined, null].every((nothing) => {
+    const verdict = storedKeyVerdict(nothing, EXPECTED_PUBLIC_KEY);
+    return verdict.key === null && verdict.erase === false &&
+      verdict.why === null;
+  }));
+
+/*
+ * Rotation, seen from the device. `config.js` naming a different public
+ * key means the stored private half is the previous one: it opens the
+ * rows written before the rotation and nothing since. Using it quietly
+ * would report a working export that is missing every recent row, so
+ * the mismatch is said out loud and the file - which is the recovery
+ * root - is what the keyholder reaches for.
+ */
+await check("a stored key that is not the site's is surfaced, not used",
+  () => {
+    const verdict = storedKeyVerdict(
+      storedRecord({ publicKey: "some-other-public-key" }),
+      EXPECTED_PUBLIC_KEY);
+    return verdict.key === null && verdict.erase === true &&
+      /not the one this site encrypts to/.test(verdict.why);
+  });
+
+/*
+ * The property that makes storing the key better than holding it in a
+ * textarea, asserted rather than assumed. A record whose key can be
+ * exported is not one importPrivateKey wrote, so something else put it
+ * there; refusing it is the only reading that does not hand this page's
+ * plaintext-adjacent scope an exportable key.
+ */
+await check("a stored key that could be exported is refused", () =>
+  storedKeyVerdict(
+    storedRecord({ privateKey: { type: "private", extractable: true } }),
+    EXPECTED_PUBLIC_KEY).erase === true);
+
+/*
+ * The prefill's rule, on data with more at stake - #65. Every rejection
+ * erases, in one place, so the guard somebody adds next cannot silently
+ * keep what it refused. A single accept and one exit is what makes that
+ * true by construction rather than by review.
+ */
+await check("every refusal of a stored record erases it and says why", () =>
+  [
+    storedRecord({ privateKey: undefined }),
+    storedRecord({ privateKey: { type: "public", extractable: false } }),
+    storedRecord({ privateKey: { type: "private", extractable: true } }),
+    storedRecord({ publicKey: undefined }),
+    storedRecord({ publicKey: "" }),
+    storedRecord({ publicKey: "some-other-public-key" }),
+    "not a record at all",
+    42,
+  ].every((record) => {
+    const verdict = storedKeyVerdict(record, EXPECTED_PUBLIC_KEY);
+    return verdict.key === null && verdict.erase === true &&
+      typeof verdict.why === "string" && verdict.why.length > 0;
+  }));
+
+/* An unknown host gets no public key from config.js, so there is
+ * nothing to check a stored key against. Accepting one on the strength
+ * of "well, something is stored" is the failure this whole verdict
+ * exists to prevent. */
+await check("with no configured public key nothing stored is usable", () =>
+  ["", null, undefined].every((expected) => {
+    const verdict = storedKeyVerdict(storedRecord(), expected);
+    return verdict.key === null && verdict.erase === true;
+  }));
+
+/*
+ * What the keyholder is told about durability, which is the half of
+ * this feature that can only be got wrong in words. navigator.storage
+ * .persist() is a request: granted, the origin is exempt from eviction
+ * under pressure and from the seven-day rule WebKit applies to origins
+ * without it; refused, the key is best-effort. Copy that reads
+ * "stored" as "safe" is what leaves somebody with no file in reach on
+ * the day it turns out otherwise - see the spike on #85.
+ */
+await check("both notices say where the key is", () =>
+  [true, false].every((granted) =>
+    /on this device/.test(storedKeyNotice(granted))));
+
+await check("a refused persistence request warns, and names the way back",
+  () => {
+    const notice = storedKeyNotice(false);
+    return /evict/i.test(notice) && /key file/i.test(notice);
+  });
+
+/* A grant is not a guarantee, and the copy must not read as one: the
+ * keyholder can still clear this site's data, and Clear still destroys
+ * it on purpose. */
+await check("a granted request still says what removes the key", () =>
+  /clear/i.test(storedKeyNotice(true)));
+
+await check("neither notice promises the key cannot be lost", () =>
+  [true, false].every((granted) =>
+    !/\b(forever|permanent(ly)?|guaranteed|always be here)\b/i.test(
+      storedKeyNotice(granted))));
 
 /* ------------------------------------------------------------------ */
 /* The whole pipeline.                                                 */
