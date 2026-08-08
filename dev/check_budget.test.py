@@ -45,7 +45,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 52
+EXPECTED = 53
 
 
 def check(label, condition):
@@ -291,9 +291,17 @@ check("the extractor finds real references in a real page",
 
 check("and the stylesheet is among them", "theme.css" in INDEX_REFS)
 
+# nav.js is deliberately absent from this set. Its whole job is the
+# rail, and the sign-in page is pinned plain in tools/check_web.py's
+# SHELLS - so a page loading it here would be the drift, not its
+# absence. The rest are what the cover genuinely pulls in: the pre-paint
+# theme script from the head, and the body scripts that sign somebody
+# in.
 check("and the scripts are among them",
       {"theme-init.js", "config.js", "ui.js", "session.js", "auth.js",
-       "nav.js", "theme.js"} <= set(INDEX_REFS))
+       "theme.js"} <= set(INDEX_REFS))
+check("and a script the page does not load is not counted against it",
+      "nav.js" not in INDEX_REFS)
 
 check("and the third-party widget is not",
       not any("telegram" in ref for ref in INDEX_REFS))

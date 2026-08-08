@@ -13,7 +13,15 @@ const formSource = await readFile(
   new URL("../apps/web/form.js", import.meta.url), "utf8");
 
 let failures = 0;
+let performed = 0;
+
+// Counted AND asserted - see the note in dev/check_budget.test.py.
+// Printing the number keeps it out of prose; comparing it catches a
+// check that quietly stops running, which otherwise still prints "OK".
+const EXPECTED = 35;
+
 function check(label, condition) {
+  performed++;
   if (!condition) failures++;
   console.log(condition ? "pass " : "FAIL ", label);
 }
@@ -258,8 +266,68 @@ for (const [label, pattern] of [
   check(label, !pattern.test(sessionSource));
 }
 
+/*
+ * The fourth arm, and the one that says where the act went - #73.
+ *
+ * The three above are satisfied by a file that does nothing at all, so
+ * on their own they would keep passing if the revoke simply vanished
+ * from the site. They say where the act may not live; this one says
+ * where it does. signout.js holds the network session.js refuses, and
+ * every page whose rail offers the button loads it.
+ */
+const signOutSource = await readFile(
+  new URL("../apps/web/signout.js", import.meta.url), "utf8");
+
+check("the sign-out act keeps the network session.js refuses to hold",
+  /\bfetch\s*\(/.test(signOutSource) && /"DELETE"/.test(signOutSource) &&
+  /keepalive/.test(signOutSource));
+
+const railPages = ["submit.html", "dashboard.html", "admin.html"];
+const railSources = await Promise.all(railPages.map((page) =>
+  readFile(new URL("../apps/web/" + page, import.meta.url), "utf8")));
+check("every page whose rail offers Sign out loads the file that does it",
+  railSources.every((source) => source.includes('src="signout.js"')));
+
+/*
+ * The page that must NOT load it, and the reason is the same one that
+ * keeps the rail off this page: there is no session to end on the page
+ * that mints one. A cover offering Sign out is the copy-paste accident
+ * tools/check_web.py refuses in markup; this refuses it in scripts.
+ */
+const coverSource = await readFile(
+  new URL("../apps/web/index.html", import.meta.url), "utf8");
+check("the sign-in page does not load the sign-out act",
+  !coverSource.includes('src="signout.js"'));
+
+/*
+ * The prefill key exists in two files' orbit now: signout.js declares
+ * it and erases it, submit.js borrows it to read and write. Two
+ * literals would be a rename away from a sign-out that erases a key
+ * nobody writes any more - silent, and only visible as somebody else's
+ * measurements on a shared browser, which is exactly what #56 was
+ * filed for.
+ *
+ * So the constant is asserted to have ONE home. The negative half is
+ * the load-bearing one: a second copy in submit.js is what this
+ * forbids, and it would pass every behavioral check in the suite next
+ * door for as long as the two strings happened to agree.
+ */
+const submitSource = await readFile(
+  new URL("../apps/web/submit.js", import.meta.url), "utf8");
+check("the prefill key is declared in signout.js",
+  /const PREFILL_KEY = "hgb-submit-prefill";/.test(signOutSource));
+check("submit.js borrows that key rather than declaring a second copy",
+  !/"hgb-submit-prefill"/.test(submitSource) &&
+  /BinderSignOut|SignOut\.prefillKey/.test(submitSource));
+
 if (failures) {
   console.error(`\nsession/auth FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsession/auth OK - 30 checks");
+if (performed !== EXPECTED) {
+  console.error(`\nsession/auth ran ${performed} checks, expected ` +
+    `${EXPECTED} - a check stopped running, or one was added without ` +
+    "updating EXPECTED");
+  process.exit(1);
+}
+console.log(`\nsession/auth OK - ${performed} checks`);

@@ -29,46 +29,63 @@
 </head>
 <!-- The one page that reads as data rather than prose: an eighteen-column
      table and a grid of charts. `wide` widens the measure for those; the
-     cards that are still prose or inputs opt back out with `narrow`. -->
-<body class="wide">
+     cards that are still prose or inputs opt back out with `narrow`,
+     which now centers them like everything else on the site rather than
+     flushing them left - #71. -->
+<body class="wide railed">
 
-<header class="stack">
-  <!-- Identical on every page; tools/check_web.py holds the four
-       copies to agreeing. See the longer note in index.html. -->
-  <nav class="nav" aria-label="Site">
-    <button type="button" class="nav-toggle" id="nav-toggle"
-            aria-expanded="false" aria-controls="nav-menu">
-      <span class="nav-bars" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </span>
-      <span>Menu</span>
-    </button>
+<!--
+  The rail, identical on every signed-in page. See the longer note in
+  submit.html for why it is written out rather than built, and what
+  tools/check_web.py holds it to.
+-->
+<aside class="rail">
+  <a class="wordmark" href="index.html">
+    <span class="wordmark-owner">Muse's</span>
+    <span class="wordmark-name">Binder</span>
+  </a>
 
-    <ul class="nav-menu" id="nav-menu" hidden>
+  <nav aria-label="Site">
+    <ul class="rail-links">
       <li><a href="index.html">Sign in</a></li>
       <li><a href="submit.html">Submit your stats</a></li>
       <li><a href="dashboard.html">Dashboard</a></li>
       <li>
         <a href="admin.html">Export</a>
-        <span class="nav-note">Keyholder only — needs the key</span>
+        <span class="rail-note">Keyholder only — needs the key</span>
       </li>
     </ul>
+  </nav>
 
-    <div class="themes" role="group" aria-label="Color theme">
+  <div class="rail-themes">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
       <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
       <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
-  </nav>
-
-  <div class="stack-tight">
-    <p class="eyebrow">Keyholder only</p>
-    <h1>Export</h1>
-    <p class="muted">
-      Decrypts the submissions in this browser. Nothing is uploaded.
-    </p>
   </div>
+
+  <div class="rail-session">
+    <p class="runner"><span>Session</span></p>
+    <p class="rail-who" id="session-who">Not signed in</p>
+    <button type="button" class="secondary rail-signout" id="sign-out" hidden>
+      Sign out
+    </button>
+  </div>
+</aside>
+
+<div class="page">
+
+<header class="stack-tight">
+  <p class="eyebrow">Keyholder only</p>
+  <h1>Export</h1>
+  <p class="muted">
+    Decrypts the submissions in this browser. Nothing is uploaded.
+  </p>
 </header>
 
 <main class="stack">
@@ -318,12 +335,18 @@
   </p>
 </footer>
 
+</div>
+
 <script src="config.js"></script>
 <script src="crypto.js"></script>
 <script src="dashboard.js"></script>
 <script src="xlsx.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
+<!-- After config.js: the revoke reads BINDER_CONFIG.endpoint. See the
+     note in submit.html. Signing out does not touch the stored key -
+     Clear is the lever for that, and this page says so. -->
+<script src="signout.js"></script>
 <script src="admin.js"></script>
 <script src="nav.js"></script>
 <script src="theme.js"></script>

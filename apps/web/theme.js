@@ -20,14 +20,23 @@
     contrast: "#000000",
   };
   const buttons = document.querySelectorAll("[data-set-theme]");
-  if (!buttons.length) return;
+
+  // A palette this file does not know is not written into the browser
+  // chrome. The stored value comes from localStorage, which anything on
+  // this origin can write, and setAttribute would happily paint the
+  // string "undefined" into a color slot.
+  function paintChrome(name) {
+    const background = BG[name];
+    if (!background) return;
+    Array.prototype.forEach.call(
+      document.querySelectorAll('meta[name="theme-color"]'),
+      function (m) { m.setAttribute("content", background); }
+    );
+  }
 
   function apply(name) {
     document.documentElement.setAttribute("data-theme", name);
-    Array.prototype.forEach.call(
-      document.querySelectorAll('meta[name="theme-color"]'),
-      function (m) { m.setAttribute("content", BG[name]); }
-    );
+    paintChrome(name);
     Array.prototype.forEach.call(buttons, function (b) {
       b.setAttribute("aria-pressed",
         String(b.getAttribute("data-set-theme") === name));
@@ -54,6 +63,26 @@
 
   let stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
+
+  /*
+   * The chips live in the rail now, so the two pages without one - the
+   * cover and the error page - reach this file with nothing to wire.
+   * They still have browser chrome to keep honest: theme-init.js paints
+   * the saved palette before first paint, and without this the address
+   * bar on a phone would stay Midnight's near-black above a parchment
+   * page.
+   *
+   * data-theme is deliberately NOT written on those pages. The
+   * attribute outranks both :root:not([data-theme]) blocks in
+   * theme.css, so writing it for a visitor who has expressed no choice
+   * would freeze this moment's system setting onto a page that would
+   * otherwise keep following it.
+   */
+  if (!buttons.length) {
+    paintChrome(stored || preferred());
+    return;
+  }
+
   // Reflected without persisting: a visitor who has never touched a
   // chip has not made a choice, and writing one would freeze today's
   // system setting into storage.

@@ -33,52 +33,68 @@
 <link rel="stylesheet" href="theme.css">
 <script src="theme-init.js"></script>
 </head>
-<body>
+<body class="railed">
 
-<header class="stack">
-  <!--
-    The same nav on every page, written out rather than built by
-    nav.js - a page whose navigation disappears when a script fails is
-    a page somebody can get stranded on. The cost is five copies, and
-    tools/check_web.py fails the build if they disagree.
+<!--
+  The rail, identical on every signed-in page and written out rather
+  than built by nav.js - a page whose navigation disappears when a
+  script fails is a page somebody can get stranded on. The cost is three
+  copies, and tools/check_web.py fails the build if they disagree, and
+  fails too if this markup appears on a page pinned plain.
 
-    `hidden` on the menu is what keeps it shut before nav.js runs. It
-    only works because theme.css forces [hidden] to display:none
-    !important - .nav-menu sets display:flex, which beats the browser's
-    own rule. See archive/DESIGN.md, "The page shell".
-  -->
-  <nav class="nav" aria-label="Site">
-    <button type="button" class="nav-toggle" id="nav-toggle"
-            aria-expanded="false" aria-controls="nav-menu">
-      <span class="nav-bars" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </span>
-      <span>Menu</span>
-    </button>
+  Nothing in here is hidden by the `hidden` attribute except the Sign
+  out control, and that is deliberate. [hidden] is display:none
+  !important in theme.css, so anything hidden that way at one width
+  cannot be revealed at another; the four destinations stay in flow at
+  every width and the theme chips fold behind a data attribute instead.
+  Sign out is the one thing that genuinely has no state to be in until a
+  script confirms a session, so the attribute is right for it.
+-->
+<aside class="rail">
+  <a class="wordmark" href="index.html">
+    <span class="wordmark-owner">Muse's</span>
+    <span class="wordmark-name">Binder</span>
+  </a>
 
-    <ul class="nav-menu" id="nav-menu" hidden>
+  <nav aria-label="Site">
+    <ul class="rail-links">
       <li><a href="index.html">Sign in</a></li>
       <li><a href="submit.html">Submit your stats</a></li>
       <li><a href="dashboard.html">Dashboard</a></li>
       <li>
         <a href="admin.html">Export</a>
-        <span class="nav-note">Keyholder only — needs the key</span>
+        <span class="rail-note">Keyholder only — needs the key</span>
       </li>
     </ul>
+  </nav>
 
-    <div class="themes" role="group" aria-label="Color theme">
+  <div class="rail-themes">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
       <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
       <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
-  </nav>
-
-  <div class="stack-tight">
-    <p class="eyebrow">Submission portal</p>
-    <h1>Submit your stats</h1>
-    <p class="muted">Your session lasts for this tab. Fill the form, done.</p>
   </div>
+
+  <div class="rail-session">
+    <p class="runner"><span>Session</span></p>
+    <p class="rail-who" id="session-who">Not signed in</p>
+    <button type="button" class="secondary rail-signout" id="sign-out" hidden>
+      Sign out
+    </button>
+  </div>
+</aside>
+
+<div class="page">
+
+<header class="stack-tight">
+  <p class="eyebrow">Submission portal</p>
+  <h1>Submit your stats</h1>
+  <p class="muted">Your session lasts for this tab. Fill the form, done.</p>
 </header>
 
 <main class="stack">
@@ -91,20 +107,21 @@
     </p>
   </div>
 
+  <!-- A tablist that contains only tabs. Sign out belongs in the rail,
+       where the session has one home on every page rather than only on
+       this one, and a control that is not a tab sitting inside
+       role="tablist" is announced as one. -->
   <div class="card" id="member-tabs" hidden>
-    <div class="row">
-      <div class="row" role="tablist" aria-label="Submission page">
-        <button type="button" id="your-entries-tab" role="tab"
-                aria-controls="your-entries-pane" aria-selected="true">
-          Your entries
-        </button>
-        <button type="button" id="add-entry-tab" role="tab"
-                aria-controls="add-entry-pane" aria-selected="false"
-                tabindex="-1">
-          Add entry
-        </button>
-      </div>
-      <button type="button" id="sign-out">Sign out</button>
+    <div class="row" role="tablist" aria-label="Submission page">
+      <button type="button" id="your-entries-tab" role="tab"
+              aria-controls="your-entries-pane" aria-selected="true">
+        Your entries
+      </button>
+      <button type="button" id="add-entry-tab" role="tab"
+              aria-controls="add-entry-pane" aria-selected="false"
+              tabindex="-1">
+        Add entry
+      </button>
     </div>
     <p class="status" id="member-panel-status" role="status"
        aria-live="polite" hidden></p>
@@ -376,15 +393,15 @@
   </section>
 </main>
 
-<!-- The dashboard is linked here as well as in the nav: this link is at
+<!-- The dashboard is linked here as well as in the rail: this link is at
      the end of the form, which is where somebody who has just submitted
      actually is.
 
-     admin.html is in the nav now, on instruction, and it costs nothing:
+     admin.html is in the rail, on instruction, and it costs nothing:
      the page is public and useless without both secrets - DESIGN.md has
      said so since the beginning under "Key custody". What it gains is
      the keyholder not having to remember a URL nothing links to. The
-     menu entry says what it needs, so nobody follows it expecting a
+     rail entry says what it needs, so nobody follows it expecting a
      page they can use. -->
 <footer>
   <p>
@@ -394,11 +411,18 @@
   </p>
 </footer>
 
+</div>
+
 <script src="config.js"></script>
 <script src="countries.js"></script>
 <script src="crypto.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
+<!-- After config.js, and that order is load-bearing: signing out asks
+     the endpoint to end the session row, and the endpoint is
+     BINDER_CONFIG.endpoint. Before session.js it would also have no
+     credential store to clear. -->
+<script src="signout.js"></script>
 <script src="submit.js"></script>
 <script src="form.js"></script>
 <script src="nav.js"></script>

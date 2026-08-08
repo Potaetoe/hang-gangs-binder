@@ -149,6 +149,13 @@
      is the token that role split exists for, and Midnight is the
      palette where the two are furthest apart. */
   --color-accent-text: #e4737c;
+  /* The third voice, and the one the crimson cannot be. A binder's
+     section names want a color that is neither the page's text nor its
+     accent - gold reads as a printed rule rather than as a link, which
+     is exactly what a runner is. Held to the text rule on both
+     surfaces by tools/check_contrast.py; this is the mockup's value,
+     which clears with room on both. */
+  --color-gold: #d2a24c;
   --color-on-accent: #fff7f1;
   --color-series-0: var(--color-accent);
   --color-series-1: #c98500;
@@ -188,6 +195,12 @@
   --color-field: #1e141a;
   --color-focus: #ffa8c8;
   --color-accent-text: #e87fa8;
+  /* Midnight's gold exactly, and shared rather than re-derived. These
+     two palettes are the same book in two moods - theme.css says so
+     above - and the section rule is the part of the book that does not
+     change with the mood. It clears the text rule on plum as well as on
+     Midnight's near-black, so there is nothing to buy by differing. */
+  --color-gold: #d2a24c;
   --color-on-accent: #1e141a;
   --color-series-0: var(--color-accent);
   --color-series-1: #d95926;
@@ -220,6 +233,7 @@
     --color-field: #fffdf6;
     --color-focus: #5e1b23;
     --color-accent-text: #8e2530;
+    --color-gold: #7e5a14;
     --color-on-accent: #fbf1e4;
     --color-series-0: var(--color-accent);
     --color-series-1: #9c6100;
@@ -257,6 +271,12 @@
   --color-field: #fffdf6;
   --color-focus: #5e1b23;
   --color-accent-text: #8e2530;
+  /* Gold on parchment has to go the other way: an ink rather than a
+     glint, because a metallic value legible on near-black vanishes on
+     cream. This is the mockup's value, and it is the darkest of the
+     four - the same role, inverted, which is what keeps daylight the
+     same book in the morning rather than a second design. */
+  --color-gold: #7e5a14;
   --color-on-accent: #fbf1e4;
   --color-series-0: var(--color-accent);
   --color-series-1: #9c6100;
@@ -292,6 +312,13 @@
   --color-field: #000000;
   --color-focus: #ffffff;
   --color-accent-text: #f08090;
+  /* Deliberately not #ffd08a, which is this palette's warn text. The
+     two would be the same color doing two jobs, and at AAA the reader
+     this palette exists for is the one least able to spend attention
+     working out whether a gold line is a section name or a caution.
+     Lighter and less saturated than the warn amber, and clearing 7:1
+     with room on both surfaces. */
+  --color-gold: #f5c674;
   --color-on-accent: #000000;
   --color-series-0: var(--color-accent);
   --color-series-1: #d95926;
@@ -327,6 +354,7 @@
     --color-field: #000000;
     --color-focus: #ffffff;
     --color-accent-text: #f08090;
+    --color-gold: #f5c674;
     --color-on-accent: #000000;
     --color-series-0: var(--color-accent);
     --color-series-1: #d95926;
@@ -399,6 +427,12 @@
    */
   --measure: 46rem;
   --measure-wide: 84rem;
+
+  /* The rail's column. Wide enough for "Submit your stats" and the
+     keyholder note under Export without either wrapping, narrow enough
+     that the rail plus the reading measure still fits the width the
+     strip breakpoint below hands over at. */
+  --rail-width: 15rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -445,25 +479,47 @@ body {
   font: var(--text-base)/1.55 var(--font-body);
 }
 
-/* Every direct child of the page centers on the same measure, so the
-   header, the content and the footer share one edge. */
-body > * {
+/*
+ * One measure logic - #71, where the owner delegated the width choice
+ * with "whatever makes it consistent".
+ *
+ * What was inconsistent was not the two widths; it was that a page
+ * could be wide AND hold blocks that were neither wide nor centered.
+ * dashboard.html and admin.html were both `wide`, and inside them
+ * `.narrow` pulled prose back to the reading column and then flushed it
+ * LEFT, so two pages centered their content on 46rem while two ran it
+ * up the left edge of 84rem. Nothing about that was visible from any
+ * one page.
+ *
+ * So: everything centers, always, and the only question a page answers
+ * is how wide its column is. admin.html is the single wide page - an
+ * eighteen-column table and a wall of charts is looking at data rather
+ * than reading. dashboard.html joined the reading column in this
+ * change: its charts are read one at a time, and at 84rem its prose
+ * cards were the widest lines on the site.
+ *
+ * `.narrow` survives with its width and loses its alignment. On the one
+ * wide page a password field stretched to 84rem still looks broken, so
+ * pulling prose and inputs back to the reading column is right; doing
+ * it left-flush is what made the page look like two designs.
+ */
+/* A plain page's own children are the column. A rail page's are the
+   rail and the column beside it, so there the measure applies inside
+   `.page` - see the shell below. */
+body:not(.railed) > *,
+.page > * {
   width: 100%;
   max-width: var(--measure);
   margin-inline: auto;
 }
 
-/* admin.html only. Its table and charts are the reason --measure-wide
-   exists; a form does not get wider just because the window is. */
-body.wide > * { max-width: var(--measure-wide); }
+/* admin.html only. */
+body.wide:not(.railed) > *,
+body.wide .page > * { max-width: var(--measure-wide); }
 
-/* Pulls one block back to the reading column on a wide page - the
-   credentials card and the closing note, which are prose and inputs
-   rather than data. A password field stretched to 84rem looks broken
-   because it is. */
 body.wide .narrow {
   max-width: var(--measure);
-  margin-inline: 0;
+  margin-inline: auto;
 }
 
 /*
@@ -559,29 +615,220 @@ p {
 }
 
 /* The header carries no rule of its own, and that is deliberate rather
-   than an omission: it is a nav bar above a title inside a `.stack`,
-   and `.stack` already spaces them. The theme chips sit in the nav bar
-   with the menu button because they are controls; given a row beside
-   the title they read as part of the heading. */
+   than an omission: it is a title inside a `.stack-tight`, which
+   already spaces it. Navigation is not in here - the rail is a sibling
+   of the header, so nothing about the title's spacing has to know that
+   the page has a rail at all. */
 
-/* ------------------------------------------------------------------ */
-/* Navigation.                                                         */
+/* A section name with a rule running off it - the binder's running
+   head, which is where the name comes from. This is the component the
+   gold role was drawn for: neither the page's text nor its accent, so
+   a section name cannot be mistaken for a link or for a status.
 
-/* The bar: the menu button at one end, the theme chips at the other.
-   `relative` is load-bearing - the menu is positioned against it. */
-.nav {
+   Shipped here and used only by the shell. Replacing the eyebrows
+   through the page content is #68's role split and belongs to the
+   per-page pass; painting all of them gold today would hand statuses
+   and warnings the section-name color, which is the drift that issue
+   exists to undo. */
+.runner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
-  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--color-gold);
 }
 
-/* Styled as a theme chip, so the two controls sharing this bar read as
-   the same kind of thing - including the boundary token, since it is a
-   control and its edge is what says so. */
-.nav-toggle {
+/* The hairline takes the quiet border token on purpose: it carries no
+   information and identifies no control, which is exactly the split
+   --color-border-strong exists on the other side of. */
+.runner::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* ------------------------------------------------------------------ */
+/* The shell: the rail, and the column beside it.                      */
+
+/*
+ * A binder has pages, and the owner's decision on #73 is that it should
+ * navigate like one: a rail down the side rather than a menu behind a
+ * button. The rail is a sibling of the content column rather than its
+ * parent, so `position: sticky` has something to stick inside without
+ * the content being nested in a scroll container.
+ *
+ * Only the signed-in pages carry it. tools/check_web.py's SHELLS pins
+ * which those are, and refuses a rail on a page that must not have one.
+ */
+body.railed {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  align-items: start;
+  padding: 0;
+  gap: 0;
+}
+
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100svh;
+  overflow-y: auto;
   display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-4) var(--space-4);
+  border-right: 1px solid var(--color-border);
+}
+
+/* The column the rail sits beside. It carries the page padding the body
+   carries everywhere else, because on a rail page the body is the grid
+   and padding there would inset the rail's own edge. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+  padding: var(--space-8) var(--space-6);
+}
+
+/* Two lines, two faces, one link home. The gold line is the possessive
+   and the italic display face is the noun, which is how the wordmark is
+   drawn in the approved mockup. */
+.wordmark {
+  display: block;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.wordmark-owner {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-gold);
+}
+
+.wordmark-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1.15;
+  color: var(--color-accent-text);
+}
+
+/*
+ * The destinations. Written into every rail page's HTML rather than
+ * built by nav.js - a page whose navigation vanishes when a script
+ * fails is a page somebody can get stranded on. The copies are held to
+ * agreeing by tools/check_web.py.
+ *
+ * No `hidden` anywhere in here, and that is load-bearing rather than an
+ * omission: [hidden] is display:none !important at the top of this
+ * file, so an attribute-hidden list could not be revealed again by any
+ * media query. The four links are always in flow, at every width.
+ */
+.rail-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-links a {
+  display: block;
+  padding: var(--space-1) var(--space-3);
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+}
+
+.rail-links a:hover,
+.rail-links a:focus-visible {
+  background: var(--color-accent-quiet);
+  color: var(--color-text);
+}
+
+/* The page you are on is marked, not removed. A rail that drops the
+   current entry changes shape as you move through the site, and
+   nothing is ever where it was last time. */
+.rail-links a[aria-current="page"] {
+  background: var(--color-accent-quiet);
+  border-left-color: var(--color-accent-text);
+  color: var(--color-text);
+}
+
+/* One line under a link, for the page whose name does not say what it
+   wants from you. */
+.rail-note {
+  display: block;
+  padding: 0 var(--space-3) var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/*
+ * The session's one home, at the foot of the rail on every page that
+ * has one - the owner's decision on #73. `margin-top: auto` is what
+ * puts it at the bottom of a tall rail rather than under the links.
+ *
+ * The Sign out control ships `hidden` and signout.js reveals it only
+ * once a session is confirmed. That is the honest resting state: with
+ * scripts dead there is no session to end and no way to end it, so a
+ * button offering to would be a control that does nothing.
+ */
+.rail-session {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.rail-who {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.rail-who strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* Theme chips, wired by theme.js via [data-set-theme]. */
+.rail-themes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/*
+ * The disclosure that folds the chips away on a narrow screen. It is
+ * display:none at desktop width and the chips are simply shown, so on a
+ * wide screen this control does not exist to be found by a pointer or a
+ * tab.
+ *
+ * Folding is done with a data attribute rather than the `hidden`
+ * attribute, and that is forced rather than preferred: [hidden] is
+ * display:none !important, so chips hidden that way on a phone could
+ * not be shown again on a desktop by any rule here.
+ */
+.theme-disclosure {
+  display: none;
   align-items: center;
   gap: var(--space-2);
   background: var(--color-surface);
@@ -596,112 +843,91 @@ p {
               border-color 120ms ease;
 }
 
-.nav-toggle:hover,
-.nav-toggle[aria-expanded="true"] {
+.theme-disclosure:hover,
+.theme-disclosure[aria-expanded="true"] {
   background: var(--color-accent-quiet);
   color: var(--color-text);
 }
 
-/* Three bars, drawn rather than fetched. An icon font or an SVG file
-   would be another request on a page whose policy is to load nothing it
-   does not have to - and the CSP forbids the CDN it would come from. */
-.nav-bars {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  width: 1rem;
-  height: 0.75rem;
-}
-
-.nav-bars span {
-  display: block;
-  height: 2px;
-  border-radius: 1px;
-  background: currentColor;
-  transition: transform 120ms ease, opacity 120ms ease;
-}
-
-/* Open: the outer bars cross, the middle one goes. The
-   prefers-reduced-motion block at the bottom of this file already
-   flattens the transition to nothing. */
-.nav-toggle[aria-expanded="true"] .nav-bars span:nth-child(1) {
-  transform: translateY(5px) rotate(45deg);
-}
-
-.nav-toggle[aria-expanded="true"] .nav-bars span:nth-child(2) {
-  opacity: 0;
-}
-
-.nav-toggle[aria-expanded="true"] .nav-bars span:nth-child(3) {
-  transform: translateY(-5px) rotate(-45deg);
-}
-
-/*
- * The menu. Absolute rather than in flow: opening it should not shove
- * the page down and then pull it back up again, which on a form is a
- * jump underneath whatever somebody was about to click.
- *
- * Hidden by the `hidden` attribute like everything else on this site,
- * which works only because of the [hidden] rule at the top of this file
- * - `display: flex` here would otherwise beat the browser's own rule
- * and the menu would render open on every page. That is check 7 in
- * tools/check_web.py, and it shipped broken once already.
- */
-.nav-menu {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  left: 0;
-  z-index: 10;
-  min-width: 15rem;
-  margin: 0;
-  padding: var(--space-2);
-  list-style: none;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
-}
-
-.nav-menu a {
-  display: block;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius);
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.nav-menu a:hover,
-.nav-menu a:focus-visible {
-  background: var(--color-accent-quiet);
-}
-
-/* The page you are on is marked, not removed. A menu that drops the
-   current entry changes shape as you move through the site, and nothing
-   is ever where it was last time. */
-.nav-menu a[aria-current="page"] {
-  color: var(--color-accent-text);
-  font-weight: 600;
-}
-
-/* One line under a link, for the page whose name does not say what it
-   wants from you. */
-.nav-menu .nav-note {
-  display: block;
-  padding-top: var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  font-weight: 400;
-}
-
-/* Theme chips, wired by theme.js via [data-set-theme]. */
 .themes {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  justify-content: flex-end;
 }
+
+/* ------------------------------------------------------------------ */
+/* The cover, and the way it opens.                                    */
+
+/*
+ * index.html arrives as the binder's closed cover and opens once - the
+ * owner's signature entrance on #73. CSS only: no library, and no
+ * script either, which matters more than the byte count. This is the
+ * sign-in page, and an entrance animation that a script has to start is
+ * an entrance that never finishes on a page whose script failed, over
+ * content nobody can then reach.
+ *
+ * THE RESTING STATE IS OPEN. The leaf is transparent, hidden from hit
+ * testing and out of the accessibility tree by default, and the
+ * animation plays it from closed to that resting state. Written the
+ * other way round - resting closed, an animation that opens it - every
+ * failure mode ends with a full-screen panel sitting over the sign-in
+ * button: no animation support, an interrupted style sheet, a browser
+ * that refuses the keyframes. This way each of those fails open, which
+ * on this page is the only acceptable direction.
+ *
+ * `perspective()` is inside the transform rather than on an ancestor
+ * because the leaf is `fixed`: a perspective on a parent would make
+ * that parent the containing block and the leaf would stop covering the
+ * viewport.
+ */
+.cover-leaf {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background:
+    linear-gradient(150deg,
+                    var(--color-surface) 0%,
+                    var(--color-bg) 62%);
+  border-right: 2px solid var(--color-gold);
+  transform-origin: left center;
+  backface-visibility: hidden;
+
+  /* The open state, and therefore the fallback for every browser that
+     never runs the animation below. */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  animation: cover-open 600ms cubic-bezier(0.22, 0.68, 0.3, 1) 1;
+}
+
+@keyframes cover-open {
+  from {
+    transform: perspective(1600px) rotateY(0deg);
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Opacity is held almost to the end so the leaf reads as a cover
+     swinging away rather than as a panel dissolving. */
+  70% { opacity: 1; }
+
+  to {
+    transform: perspective(1600px) rotateY(-105deg);
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.cover-leaf .wordmark-owner,
+.cover-leaf .wordmark-name { text-align: center; }
+
+.cover-leaf .wordmark-name { font-size: clamp(2.2rem, 1.6rem + 3vw, 3.4rem); }
 
 /* A segmented control: four chips, and the border is what makes each
    one a separate target. Same 1.4.11 reasoning as the form fields. */
@@ -1183,24 +1409,138 @@ a { color: var(--color-accent-text); }
  * fit side by side and still leave room to type in them, and that is a
  * fact about the layout, not about anybody's handset.
  */
+/*
+ * The rail becomes the strip, and it happens first - before the content
+ * stacking below - because the two answer different questions. This one
+ * is "do a 15rem rail and a 46rem column still fit side by side", which
+ * stops being true around 64rem once the page's own padding is counted.
+ *
+ * The owner's decision on #73: the four links stay visible and the
+ * theme chips fold behind a disclosure. Not a hamburger - the links are
+ * the thing somebody needs and they are the thing that stays.
+ */
+@media (max-width: 64rem) {
+  body.railed {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-4) var(--space-4);
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .rail-links {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  /* The current-page mark moves from the left edge to an underline,
+     because on a row a left border marks the item before it rather
+     than the item itself. */
+  .rail-links a {
+    border-left: 0;
+    border-radius: var(--radius);
+  }
+
+  .rail-links a[aria-current="page"] {
+    border-left: 0;
+    box-shadow: inset 0 -2px var(--color-accent-text);
+  }
+
+  /* The keyholder note is the first thing to go: on a strip it doubles
+     the height of one link to say something the page it leads to says
+     again immediately. */
+  .rail-note { display: none; }
+
+  .wordmark-name { font-size: 1.25rem; }
+
+  /* The session stops being the foot of a column and becomes the end of
+     a row. */
+  .rail-session {
+    margin-top: 0;
+    margin-left: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  /* The runner naming the section goes with the column it ran across.
+     In a row it is a second label for a line that already reads
+     "Signed in as ...", and its hairline has nothing left to rule off. */
+  .rail-session .runner { display: none; }
+
+  /* Two words that must not become two lines. The strip is the width
+     that makes a button shrink until "Sign out" wraps, and a wrapped
+     verb reads as two controls. */
+  .rail-signout {
+    white-space: nowrap;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .rail-themes { position: relative; }
+
+  .theme-disclosure { display: inline-flex; }
+
+  /* Folded by default at this width, and opened by nav.js setting the
+     data attribute. A phone that cannot run nav.js keeps them folded,
+     which costs nothing real: the chips are wired by theme.js, so with
+     scripts dead they would not change the palette anyway. The stored
+     palette and the system preference are both still honored - that is
+     theme-init.js and the media blocks at the top of this file, neither
+     of which needs a chip. */
+  .themes {
+    display: none;
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    right: 0;
+    z-index: 10;
+    flex-wrap: nowrap;
+    padding: var(--space-2);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  }
+
+  .rail-themes[data-open="true"] .themes { display: flex; }
+
+  .page { padding: var(--space-6) var(--space-4) var(--space-8); }
+}
+
 @media (max-width: 52rem) {
   body {
     padding: var(--space-6) var(--space-4) var(--space-8);
     gap: var(--space-4);
   }
 
+  body.railed { padding: 0; }
+
   /* One column, full width. --measure-wide stops applying on a screen
      that has no width to give it. */
-  body > *,
-  body.wide > * { max-width: 100%; }
+  body:not(.railed) > *,
+  .page > *,
+  body.wide:not(.railed) > *,
+  body.wide .page > * { max-width: 100%; }
 
   body.wide .narrow { max-width: 100%; }
 
-  /* The header is a plain stack and needs nothing here. The nav bar
-     does need one thing: on a narrow screen the menu button and four
-     theme chips will not share a line, so they wrap and the menu hangs
-     from whatever height that leaves. */
-  .nav { flex-wrap: wrap; }
+  /* The chips no longer share a line with anything on this screen, so
+     they may wrap inside their own panel rather than overflow it. */
+  .themes { flex-wrap: wrap; }
 
   .pair { flex-direction: column; }
 
@@ -1234,4 +1574,19 @@ a { color: var(--color-accent-text); }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /*
+   * The cover is removed rather than merely shortened, and the blanket
+   * rule above is not enough for it on its own.
+   *
+   * At 0.01ms the keyframes still run: the browser can paint the first
+   * frame, and the first frame of this one is an opaque panel across
+   * the entire viewport. A full-screen flash is the specific thing a
+   * reader who has asked for reduced motion is asking not to be given,
+   * and "too fast to notice" is a claim about a machine nobody here is
+   * testing on. Cancelling the animation leaves the leaf in its resting
+   * state, which is already open - so this snaps straight to the opened
+   * binder with no frame of the closed one.
+   */
+  .cover-leaf { animation: none !important; }
 }

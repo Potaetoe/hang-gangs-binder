@@ -27,10 +27,20 @@ import check_web  # noqa: I001
 
 
 failures = 0
+performed = 0
+
+# Counted AND asserted, which are two different jobs. Printing the count
+# keeps a machine-knowable number out of prose - AGENTS.md's rule 4 - and
+# comparing it catches the other direction: a check that stops running,
+# behind an early return or a renamed helper, still prints a confident
+# "OK" for every check that remains. dev/check_budget.test.py argues this
+# at length and is where the pattern comes from.
+EXPECTED = 48
 
 
 def check(label, condition):
-    global failures
+    global failures, performed
+    performed += 1
     if not condition:
         failures += 1
     print("pass " if condition else "FAIL ", label)
@@ -154,6 +164,106 @@ check("no page's shipped policy differs from its pin",
 
 
 # ------------------------------------------------------------------ #
+# Check 10 - the shell each page carries.                             #
+
+# The same property the CSP pin has, for the same reason. A shell table
+# covering only the pages that already exist stops being a check the
+# moment the site grows, and a page arriving is exactly when somebody
+# copies a shell from whichever page they had open.
+shells = check_web.SHELLS
+check("every published page is pinned to a shell",
+      pages and pages <= set(shells))
+check("the shell pin names no page that does not exist",
+      set(shells) <= pages)
+check("the only shells are rail and plain",
+      set(shells.values()) == {"rail", "plain"})
+
+# Both kinds have to exist, or one of the two rule sets below is
+# describing nothing. A table that had quietly become all-rail would
+# leave the plain arms inert while every check here passed.
+check("the pin covers both kinds of page",
+      len([p for p, s in shells.items() if s == "rail"]) >= 2 and
+      len([p for p, s in shells.items() if s == "plain"]) >= 1)
+
+# The owner's decision on #73, pinned as a fact rather than left to the
+# markup: no rail before sign-in.
+check("the sign-in page is pinned plain", shells["index.html"] == "plain")
+check("the error page is pinned plain", shells["404.html"] == "plain")
+check("the signed-in pages are pinned to the rail",
+      all(shells[page] == "rail"
+          for page in ("submit.html", "dashboard.html", "admin.html")))
+
+# And the pin has to match what actually ships.
+check("no page's shipped shell differs from its pin",
+      check_web.shell_problems() == [])
+
+# The rules, exercised on strings rather than on the five files, so they
+# are tested for the shape of the failure and not for today's markup.
+RAIL = (
+    '<aside class="rail"><ul class="rail-links">'
+    '<li><a href="index.html">Sign in</a></li>'
+    '<li><a href="submit.html">Submit</a></li>'
+    '</ul></aside>'
+    '<button id="theme-toggle"></button><div id="theme-chips"></div>'
+)
+
+check("a rail is read out of a page as its destinations, in order",
+      [href for href, _ in check_web.rail_links(RAIL)] ==
+      ["index.html", "submit.html"])
+check("a page with no rail reads as absence rather than as empty",
+      check_web.rail_links("<p>nothing here</p>") is None)
+
+# The rail rules, both directions on each.
+check("a complete rail raises nothing",
+      check_web.rail_page_problems(RAIL) == [])
+check("a rail page with no rail at all is reported",
+      check_web.rail_page_problems("<p>nothing</p>") == ["has no rail"])
+
+# The anti-stranding arm, which survives into both shells rather than
+# into neither. A rail without the route to sign-in is the one a member
+# whose session expired cannot use.
+check("a rail naming no index.html is refused",
+      any("stranded" in p for p in check_web.rail_page_problems(
+          RAIL.replace('href="index.html"', 'href="dashboard.html"'))))
+
+# The disclosure ids, one at a time, so a message names the missing one.
+check("a rail missing the disclosure button is refused",
+      any("theme-toggle" in p for p in check_web.rail_page_problems(
+          RAIL.replace('id="theme-toggle"', 'id="something-else"'))))
+check("a rail missing the chips it controls is refused",
+      any("theme-chips" in p for p in check_web.rail_page_problems(
+          RAIL.replace('id="theme-chips"', 'id="something-else"'))))
+
+# The hamburger is gone, and a page that kept it is a page that did not
+# get the rail - which the parity arm alone would not catch, because two
+# pages can carry the same stale markup.
+check("a page still carrying the retired hamburger ids is refused",
+      any("nav-toggle" in p for p in check_web.rail_page_problems(
+          RAIL + '<button id="nav-toggle"></button>')))
+
+# The plain rules, both directions.
+PLAIN = '<main><a href="index.html">Sign in</a></main>'
+check("a plain page with a way off it raises nothing",
+      check_web.plain_page_problems(PLAIN) == [])
+check("a plain page carrying a rail is refused",
+      any("session home" in p
+          for p in check_web.plain_page_problems(PLAIN + RAIL)))
+
+# The arm that stops "plain" from becoming "a dead end with nice
+# typography". A fragment and an off-site link both leave a visitor
+# where they started, so neither counts.
+check("a plain page with no way off it is refused",
+      any("no way off it" in p
+          for p in check_web.plain_page_problems("<main>Sorry.</main>")))
+check("a fragment is not a way off a page",
+      any("no way off it" in p for p in check_web.plain_page_problems(
+          '<a href="#top">back to top</a>')))
+check("an off-site link is not a way through the site",
+      any("no way off it" in p for p in check_web.plain_page_problems(
+          '<a href="https://example.com">away</a>')))
+
+
+# ------------------------------------------------------------------ #
 # Check 14 - a key literal outside config.js.                         #
 
 # The rule is exercised on strings, and the corpus mutation below is
@@ -206,6 +316,11 @@ check("the report names a prefix and a length, not the literal",
 
 
 if failures:
-    print("\ncheck_web.py FAILED %d of 27 checks" % failures)
+    print("\ncheck_web.py FAILED %d of %d checks" % (failures, performed))
     sys.exit(1)
-print("\ncheck_web.py OK - 27 checks")
+if performed != EXPECTED:
+    print("\ncheck_web.py ran %d checks, expected %d - a check stopped "
+          "running, or one was added without updating EXPECTED"
+          % (performed, EXPECTED))
+    sys.exit(1)
+print("\ncheck_web.py OK - %d checks" % performed)
