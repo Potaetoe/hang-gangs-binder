@@ -213,10 +213,26 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- adminAccountIds(), and `always_allow` rows with
 -- ALWAYS_ALLOW_TELEGRAM_IDS in isGroupMember(). Both arms are live, and
 -- handleReadMembership carries the whole argument for why dual-read is
--- what ships rather than a step passed through. Anybody reading this
--- file to build an admin surface needs it before anything else: a write
--- here is a change to who has authority, taking effect on that
--- session's next request.
+-- what ships rather than a step passed through.
+--
+-- Anybody reading this file to build an admin surface needs that before
+-- anything else, and needs it PER DIRECTION, because the three do not
+-- take effect together:
+--
+--   * REMOVING an `admin` row bites on that session's very next
+--     request. sessionFor() re-reads this table on every request and
+--     the re-read can only take adminness away, so nothing has to
+--     expire first. That lever is what #69 asked for.
+--   * ADDING an `admin` row changes nothing for a session that already
+--     exists. The `is_admin` flag written at sign-in is a necessary
+--     condition the re-read cannot switch on, so a new admin signs out
+--     and back in. A surface reporting success while the person sees
+--     no new powers is looking at this, not at a failed write.
+--   * An `always_allow` row is consulted inside sign-in and nowhere
+--     else, so neither adding nor removing one touches a session that
+--     is already open; both land at the next sign-in.
+--
+-- OPERATIONS.md states the same three where an operator meets them.
 --
 -- Whatever else moves, the founding admin stays in the secret. A table
 -- that could rewrite the whole list would leave no root of trust outside

@@ -1346,6 +1346,22 @@ async function handleDeleteContent(env, origin, name) {
  * The rows go out with the table's own column names. The admin surface
  * that renders them maps them once; a second spelling of the same field
  * would be a second thing to keep true.
+ *
+ * TWO LISTS, BECAUSE A ROW CAN BE IN THIS TABLE AND GRANT NOTHING.
+ * `membership` holds exactly the rows the authority read honors, by the
+ * same test membershipAccountIds() applies; `malformed` holds the rest.
+ * A row whose account id is not sixty-four lowercase hex characters -
+ * which `wrangler d1 execute` writes without complaint, since it
+ * validates nothing - is dropped by every read that decides anything,
+ * so listing it beside the rows that grant is the undetectable-wrong-
+ * value failure #69 opens with, wearing the interface's own clothes.
+ *
+ * The split rather than a flag on each row, because the fail-safe
+ * direction matters more than the tidier shape: a surface that has
+ * never heard of `malformed` renders only rows that grant, and one that
+ * has can show the duds and offer to remove them. A flag has to be read
+ * to be obeyed, and the reader who most needs it is the one who does
+ * not know it is there.
  */
 async function handleReadMembership(env, origin) {
   const rows = await env.DB.prepare(
@@ -1353,7 +1369,18 @@ async function handleReadMembership(env, origin) {
     "ORDER BY role, added_at"
   ).all();
 
-  const inTable = new Set(rows.results
+  const granting = [];
+  const malformed = [];
+  for (const row of rows.results) {
+    const honored = row && typeof row.account_id === "string" &&
+      ACCOUNT_ID.test(row.account_id);
+    (honored ? granting : malformed).push(row);
+  }
+
+  // From the granting rows only. A dud cannot stand in for the secret's
+  // grant, so counting it here would report a backfill complete while
+  // the flip it authorizes would take that admin's authority away.
+  const inTable = new Set(granting
     .filter((row) => row.role === "admin")
     .map((row) => row.account_id));
   const secretOnly = [];
@@ -1366,7 +1393,8 @@ async function handleReadMembership(env, origin) {
   // to a caller who may read every one of those rows anyway.
   return json({
     ok: true,
-    membership: rows.results,
+    membership: granting,
+    malformed: malformed,
     secretOnly: secretOnly.sort(),
   }, 200, origin);
 }
@@ -1441,6 +1469,34 @@ async function handleAddMembership(request, env, origin, caller) {
     return json({ error: "Body must be JSON." }, 400, origin);
   }
 
+  const role = payload && payload.role;
+
+  /*
+   * A development session may not write an admin row.
+   *
+   * POST /auth/dev mints an admin whose authority comes from
+   * DEV_LOGIN_SECRET and nothing else, which is harmless only while the
+   * table grants nothing. A row written from a local login is a real
+   * admin row, and after a flip to table-only it is the whole
+   * authority. So a dev session keeps every power it had over the data
+   * and loses this one; it may still manage the always-allow list,
+   * which is what makes a local admin page workable at all.
+   *
+   * There is deliberately no escape hatch. A second secret to gate the
+   * exception is a second secret to forget, and on production
+   * DEV_LOGIN_SECRET is unset and no dev session can exist - so this
+   * refusal costs that deployment nothing and is a real boundary on
+   * every other one.
+   *
+   * It stands ahead of every shape check below, and in the router's own
+   * words - the same bytes every other refusal here gives - so a caller
+   * who may not write this row cannot use a malformed body to learn
+   * what the route would have said next. The body parse above is the
+   * one thing that cannot follow it: `role` lives inside the body, so
+   * there is nothing to refuse until the body is an object.
+   */
+  if (caller && caller.isDev && role === "admin") return unauthorized(origin);
+
   // String(anything) would accept an array of one id, which is a caller
   // with a bug rather than a value worth coercing.
   const given = payload && payload.telegramId;
@@ -1451,32 +1507,6 @@ async function handleAddMembership(request, env, origin, caller) {
       error: "A numeric Telegram id is needed.",
     }, 400, origin);
   }
-
-  const role = payload.role;
-
-  /*
-   * A development session may not write an admin row.
-   *
-   * POST /auth/dev mints an admin whose authority comes from
-   * DEV_LOGIN_SECRET and nothing else, which was harmless while the
-   * table granted nothing. It is not harmless now: a row written from a
-   * local login is a real admin row, and after a flip to table-only it
-   * is the whole authority. So a dev session keeps every power it had
-   * over the data and loses this one; it may still manage the
-   * always-allow list, which is what makes a local admin page workable
-   * at all.
-   *
-   * There is deliberately no escape hatch. A second secret to gate the
-   * exception is a second secret to forget, and on production
-   * DEV_LOGIN_SECRET is unset and no dev session can exist - so this
-   * refusal costs that deployment nothing and is a real boundary on
-   * every other one.
-   *
-   * Before the shape checks and in the router's own words - the same
-   * bytes every other refusal here gives - so this never becomes a way
-   * to learn what the route would have said next.
-   */
-  if (caller && caller.isDev && role === "admin") return unauthorized(origin);
 
   if (!MEMBERSHIP_ROLES.includes(role)) {
     return json({
@@ -1540,22 +1570,35 @@ async function handleAddMembership(request, env, origin, caller) {
  * the whole list can provoke this, so it says nothing they could not
  * read directly; the rule exists to stop a caller who may NOT read the
  * list learning anything from being refused.
+ *
+ * CASE IS FOLDED ON BOTH SIDES, which is what makes a row this Worker
+ * cannot honor removable at all. POST is not the only door into the
+ * table - `wrangler d1 execute` is the other, it validates nothing, and
+ * an account id pasted there in upper-case hex is sixty-four correct
+ * characters that ACCOUNT_ID refuses and the authority read drops. That
+ * row grants nothing and has to be removable by the admin who is
+ * looking at it in GET's `malformed` list; matching it byte for byte
+ * would answer 404 to the very id that list just handed back. SQLite
+ * takes the explicit collation of either operand, so the parameter
+ * carries it and the stored column needs no rewriting.
  */
 async function handleDeleteMembership(env, origin, role, accountId, caller) {
-  if (!MEMBERSHIP_ROLES.includes(role) || !ACCOUNT_ID.test(accountId)) {
+  const wanted = String(accountId).toLowerCase();
+  if (!MEMBERSHIP_ROLES.includes(role) || !ACCOUNT_ID.test(wanted)) {
     return json({ error: "Not found." }, 404, origin);
   }
 
   const [, survivors] = await env.DB.batch([
     env.DB.prepare(
-      "DELETE FROM membership WHERE account_id = ? AND role = ?" +
+      "DELETE FROM membership WHERE account_id = ? COLLATE NOCASE AND role = ?" +
       (role === "admin"
         ? " AND (SELECT COUNT(*) FROM membership WHERE role = 'admin') > 1"
         : "")
-    ).bind(accountId, role),
+    ).bind(wanted, role),
     env.DB.prepare(
-      "SELECT account_id FROM membership WHERE account_id = ? AND role = ?"
-    ).bind(accountId, role),
+      "SELECT account_id FROM membership " +
+      "WHERE account_id = ? COLLATE NOCASE AND role = ?"
+    ).bind(wanted, role),
   ]);
 
   if (survivors.results.length > 0) {
@@ -1565,134 +1608,177 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
     }, 409, origin);
   }
 
-  noteSelfWrite("remove", caller, accountId, role);
+  // The folded id rather than the path's spelling, so an admin removing
+  // their own row is recorded as themselves however they typed it.
+  noteSelfWrite("remove", caller, wanted, role);
   return json({ ok: true }, 200, origin);
 }
 
+/*
+ * Every route, once the origin is settled.
+ *
+ * Split from fetch() so that one try/catch can stand around all of it -
+ * see fetch() for why an escaped throw is a refusal shape this Worker
+ * does not otherwise have.
+ */
+async function route(request, env, url, allowed) {
+  if (request.method === "OPTIONS") {
+    if (!allowed) return new Response(null, { status: 403 });
+    return new Response(null, { status: 204, headers: corsHeaders(allowed) });
+  }
+
+  if (!allowed) {
+    return json({ error: "Origin not allowed." }, 403, null);
+  }
+
+  const path = url.pathname;
+  const method = request.method;
+
+  // The two sign-in routes are the only ones that answer without a
+  // credential, because issuing one is what they are for.
+  if (method === "POST" && path === "/auth/telegram") {
+    return handleTelegramAuth(request, env, allowed);
+  }
+  if (method === "POST" && path === "/auth/dev") {
+    return handleDevAuth(request, env, allowed);
+  }
+
+  // Everything below needs to know who is asking, so it is resolved
+  // once here rather than in each handler - a route that forgot to ask
+  // would be a route with no gate, and that is not a mistake worth
+  // leaving available.
+  const caller = await callerFor(request, env);
+  const admin = Boolean(caller && caller.isAdmin);
+
+  // Only a live session may be ended, and only its own. A token that
+  // resolves to no row is refused rather than thanked: answering 200
+  // would make this an unauthenticated DELETE keyed on a string the
+  // caller chose, and would tell somebody they were signed out when
+  // they were not - which is the failure this route exists to fix.
+  // The break-glass EXPORT_TOKEN is refused for the same honesty: it
+  // is a secret rather than a session, there is no row to remove, and
+  // ending it means rotating it. Nothing is trapped by any of this,
+  // because the page clears its local copy whatever the answer is.
+  if (method === "DELETE" && path === "/session") {
+    if (!caller || caller.breakGlass) return unauthorized(allowed);
+    return handleRevokeSession(request, env, allowed);
+  }
+  if (method === "GET" && path === "/me") {
+    if (!caller) return unauthorized(allowed);
+    return handleMe(request, env, allowed, caller);
+  }
+  if (method === "POST" && path === "/submit") {
+    // A break-glass EXPORT_TOKEN caller has no account to write to.
+    // Submitting is a member action and it needs a member.
+    if (!caller || !caller.accountId) return unauthorized(allowed);
+    return handleSubmit(request, env, allowed, caller);
+  }
+  if (method === "GET" && path === "/export") {
+    return handleExport(request, env, allowed, caller);
+  }
+  if (method === "POST" && path === "/snapshot") {
+    if (!admin) return unauthorized(allowed);
+    return handlePublishSnapshot(request, env, allowed);
+  }
+  if (method === "GET" && path === "/snapshot") {
+    // Members only since 2026-08-05. The document still carries no
+    // handles and no rows - gating it is not a reason to relax what
+    // goes in it. See DESIGN.md, "The dashboard and the snapshot".
+    if (!caller) return unauthorized(allowed);
+    return handleReadSnapshot(env, allowed);
+  }
+  if (method === "DELETE" && path === "/snapshot") {
+    if (!admin) return unauthorized(allowed);
+    return handleDeleteSnapshot(env, allowed);
+  }
+
+  const submission = /^\/submission\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && submission) {
+    if (!admin) return unauthorized(allowed);
+    return handleDeleteSubmission(env, allowed, submission[1]);
+  }
+
+  // The site copy. The read takes no credential, which is the one
+  // exception in this router and is argued in handleReadContent; the
+  // two writes are an admin session like every other write here.
+  if (method === "GET" && path === "/content") {
+    return handleReadContent(env, allowed);
+  }
+  if (method === "POST" && path === "/content") {
+    if (!admin) return unauthorized(allowed);
+    return handleWriteContent(request, env, allowed, caller);
+  }
+  const contentName = /^\/content\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && contentName) {
+    if (!admin) return unauthorized(allowed);
+    return handleDeleteContent(env, allowed, contentName[1]);
+  }
+
+  // Membership, admin in every direction, and these two lists are the
+  // authority itself rather than data behind it. The gate is here
+  // rather than inside the handlers so that a malformed role and a
+  // real one are the same refusal to anybody who may not read the list
+  // at all.
+  //
+  // A development session is an admin that may not touch the admin
+  // list - handleAddMembership argues that in full. The role is in the
+  // path here, so the refusal is in the router where the rest of the
+  // gate is; on POST it is the first thing past the body parse, which
+  // is the earliest the role is knowable at all.
+  if (method === "GET" && path === "/membership") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadMembership(env, allowed);
+  }
+  if (method === "POST" && path === "/membership") {
+    if (!admin) return unauthorized(allowed);
+    return handleAddMembership(request, env, allowed, caller);
+  }
+  const listed = /^\/membership\/([^/]+)\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && listed) {
+    if (!admin) return unauthorized(allowed);
+    if (caller.isDev && listed[1] === "admin") return unauthorized(allowed);
+    return handleDeleteMembership(env, allowed, listed[1], listed[2], caller);
+  }
+
+  return json({ error: "Not found." }, 404, allowed);
+}
+
 export default {
+  /*
+   * A THROW THAT ESCAPES IS A REFUSAL NOTHING ELSE HERE GIVES, and that
+   * is what this catch exists to prevent. The runtime answers an
+   * uncaught exception with a bare 500: no CORS headers, so a browser
+   * reports a network failure rather than the refusal it is, and no
+   * `{error}` body, so a page that reads one has nothing to show. Every
+   * other refusal on this Worker is the same two things, and the day an
+   * admin meets this one is the day D1 is unwell - the worst possible
+   * day to be told nothing.
+   *
+   * The origin is settled before the try, so a refusal keeps its CORS
+   * headers even when the route that would have set them never ran; a
+   * caller from an origin this Worker does not allow gets no headers
+   * here either, exactly as the 403 above it gives none.
+   *
+   * The message says nothing about what failed. A D1 error text can
+   * carry a fragment of the statement or the value that broke it, and a
+   * caller who provoked the failure is the last party who should be
+   * handed either. The method and path go to the log instead, where
+   * they are already visible to whoever is running the Worker.
+   */
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
     const allowed = allowedOrigins(env).includes(origin) ? origin : null;
 
-    if (request.method === "OPTIONS") {
-      if (!allowed) return new Response(null, { status: 403 });
-      return new Response(null, { status: 204, headers: corsHeaders(allowed) });
+    try {
+      return await route(request, env, url, allowed);
+    } catch (e) {
+      console.log(JSON.stringify({
+        event: "unhandled",
+        method: request.method,
+        path: url.pathname,
+      }));
+      return json({ error: "Something went wrong." }, 500, allowed);
     }
-
-    if (!allowed) {
-      return json({ error: "Origin not allowed." }, 403, null);
-    }
-
-    const path = url.pathname;
-    const method = request.method;
-
-    // The two sign-in routes are the only ones that answer without a
-    // credential, because issuing one is what they are for.
-    if (method === "POST" && path === "/auth/telegram") {
-      return handleTelegramAuth(request, env, allowed);
-    }
-    if (method === "POST" && path === "/auth/dev") {
-      return handleDevAuth(request, env, allowed);
-    }
-
-    // Everything below needs to know who is asking, so it is resolved
-    // once here rather than in each handler - a route that forgot to ask
-    // would be a route with no gate, and that is not a mistake worth
-    // leaving available.
-    const caller = await callerFor(request, env);
-    const admin = Boolean(caller && caller.isAdmin);
-
-    // Only a live session may be ended, and only its own. A token that
-    // resolves to no row is refused rather than thanked: answering 200
-    // would make this an unauthenticated DELETE keyed on a string the
-    // caller chose, and would tell somebody they were signed out when
-    // they were not - which is the failure this route exists to fix.
-    // The break-glass EXPORT_TOKEN is refused for the same honesty: it
-    // is a secret rather than a session, there is no row to remove, and
-    // ending it means rotating it. Nothing is trapped by any of this,
-    // because the page clears its local copy whatever the answer is.
-    if (method === "DELETE" && path === "/session") {
-      if (!caller || caller.breakGlass) return unauthorized(allowed);
-      return handleRevokeSession(request, env, allowed);
-    }
-    if (method === "GET" && path === "/me") {
-      if (!caller) return unauthorized(allowed);
-      return handleMe(request, env, allowed, caller);
-    }
-    if (method === "POST" && path === "/submit") {
-      // A break-glass EXPORT_TOKEN caller has no account to write to.
-      // Submitting is a member action and it needs a member.
-      if (!caller || !caller.accountId) return unauthorized(allowed);
-      return handleSubmit(request, env, allowed, caller);
-    }
-    if (method === "GET" && path === "/export") {
-      return handleExport(request, env, allowed, caller);
-    }
-    if (method === "POST" && path === "/snapshot") {
-      if (!admin) return unauthorized(allowed);
-      return handlePublishSnapshot(request, env, allowed);
-    }
-    if (method === "GET" && path === "/snapshot") {
-      // Members only since 2026-08-05. The document still carries no
-      // handles and no rows - gating it is not a reason to relax what
-      // goes in it. See DESIGN.md, "The dashboard and the snapshot".
-      if (!caller) return unauthorized(allowed);
-      return handleReadSnapshot(env, allowed);
-    }
-    if (method === "DELETE" && path === "/snapshot") {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteSnapshot(env, allowed);
-    }
-
-    const submission = /^\/submission\/([^/]+)$/.exec(path);
-    if (method === "DELETE" && submission) {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteSubmission(env, allowed, submission[1]);
-    }
-
-    // The site copy. The read takes no credential, which is the one
-    // exception in this router and is argued in handleReadContent; the
-    // two writes are an admin session like every other write here.
-    if (method === "GET" && path === "/content") {
-      return handleReadContent(env, allowed);
-    }
-    if (method === "POST" && path === "/content") {
-      if (!admin) return unauthorized(allowed);
-      return handleWriteContent(request, env, allowed, caller);
-    }
-    const contentName = /^\/content\/([^/]+)$/.exec(path);
-    if (method === "DELETE" && contentName) {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteContent(env, allowed, contentName[1]);
-    }
-
-    // Membership, admin in every direction, and these two lists are the
-    // authority itself rather than data behind it. The gate is here
-    // rather than inside the handlers so that a malformed role and a
-    // real one are the same refusal to anybody who may not read the list
-    // at all.
-    //
-    // A development session is an admin that may not touch the admin
-    // list - handleAddMembership argues that in full. The role is in the
-    // path here, so the refusal is in the router where the rest of the
-    // gate is; on POST it is the first thing past the body parse, which
-    // is the earliest the role is knowable at all.
-    if (method === "GET" && path === "/membership") {
-      if (!admin) return unauthorized(allowed);
-      return handleReadMembership(env, allowed);
-    }
-    if (method === "POST" && path === "/membership") {
-      if (!admin) return unauthorized(allowed);
-      return handleAddMembership(request, env, allowed, caller);
-    }
-    const listed = /^\/membership\/([^/]+)\/([^/]+)$/.exec(path);
-    if (method === "DELETE" && listed) {
-      if (!admin) return unauthorized(allowed);
-      if (caller.isDev && listed[1] === "admin") return unauthorized(allowed);
-      return handleDeleteMembership(env, allowed, listed[1], listed[2], caller);
-    }
-
-    return json({ error: "Not found." }, 404, allowed);
   },
 };

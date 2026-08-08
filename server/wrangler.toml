@@ -142,7 +142,13 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 # DEV_LOGIN_SECRET rather than an id list for a dev session - so a dev
 # admin exists without any of the four. Unset, they read as empty lists
 # everywhere they are consulted, which leaves the `membership` table as
-# the only arm that grants anything on this Worker. With no bot token,
+# the only ID LIST that grants anything here - which is not the same as
+# the only arm. The two secrets above still grant admin by their own
+# routes: DEV_LOGIN_SECRET through POST /auth/dev, EXPORT_TOKEN as
+# break-glass, and either one reaches every membership route. Reading
+# this block as "the table is the whole authority on this Worker" is
+# what makes an admin row written from a local login look harmless;
+# server/worker.js's router refuses one, and says why. With no bot token,
 # verifyTelegramPayload returns null at its first guard and
 # POST /auth/telegram answers a clean 401 rather than throwing - probed
 # live, not inferred.

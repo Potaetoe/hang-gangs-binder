@@ -377,6 +377,15 @@ no row for. Nothing outside the Worker can compute it, because the
 secret holds numeric ids and the table holds their HMACs. An empty list
 means every admin has a row.
 
+**A row written by hand that grants nothing** comes back under
+`malformed` on the same response, separately from the rows that do
+grant. `wrangler d1 execute` validates nothing, so an account id pasted
+there in the wrong case or short a character is a row that looks
+present and is invisible to every check the Worker makes — the failure
+this table exists to remove, arriving by the one door `POST` cannot
+guard. `DELETE /membership/:role/:accountId` takes the id exactly as
+that list gives it and removes it.
+
 Both of those are endpoint behavior, so both arrive with the next
 `server/` deploy and not with a merge — see the `[pre-cutover]` note
 under "Routes and who may call them" for what the deployed Worker is
