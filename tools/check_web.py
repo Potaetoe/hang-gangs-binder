@@ -617,6 +617,14 @@ CSP_BASELINE = {
     "script-src": ["'self'"],
     "style-src": ["'self'"],
     "img-src": ["'self'", "data:"],
+    # The vendored faces in apps/web/fonts, reached from @font-face in
+    # theme.css. default-src 'none' governs font loading like everything
+    # else, so a page without this directive loads no font at all and
+    # renders the fallback stack - which looks like a design choice
+    # rather than a blocked request, and is the one CSP failure nobody
+    # reports as a bug. 'self' and only 'self': the fonts are vendored
+    # precisely so no third-party origin is ever reached for them.
+    "font-src": ["'self'"],
     "connect-src": ["'self'", PRODUCTION_ENDPOINT, DEVELOPMENT_ENDPOINT],
     "base-uri": ["'none'"],
     "form-action": ["'none'"],

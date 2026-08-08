@@ -134,6 +134,19 @@ check("every page's default-src is 'none'",
       all(policy["default-src"] == ["'none'"]
           for policy in expected.values()))
 
+# Fonts are the newest thing default-src 'none' silently forbids. A page
+# that omits font-src still renders - in the fallback stack - so this is
+# the directive whose absence no visitor and no other check reports.
+check("every page pins font-src",
+      all("font-src" in policy for policy in expected.values()))
+# The other half, and the one that matters more. The whole reason the
+# faces are vendored is that no request for them leaves this origin;
+# a font-src that named a CDN would give that away while every other
+# check here stayed green.
+check("no page's font-src reaches past this origin",
+      all(policy["font-src"] == ["'self'"]
+          for policy in expected.values()))
+
 # And the pin has to match what actually ships, or it is a table
 # describing a site that does not exist.
 check("no page's shipped policy differs from its pin",
@@ -193,6 +206,6 @@ check("the report names a prefix and a length, not the literal",
 
 
 if failures:
-    print("\ncheck_web.py FAILED %d of 25 checks" % failures)
+    print("\ncheck_web.py FAILED %d of 27 checks" % failures)
     sys.exit(1)
-print("\ncheck_web.py OK - 25 checks")
+print("\ncheck_web.py OK - 27 checks")

@@ -51,7 +51,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 67
+EXPECTED = 70
 
 
 def check(label, condition):
@@ -269,8 +269,8 @@ check("and each of them carries a full set of tokens",
       bool(PALETTES)
       and all(len(tokens) >= 19 for _level, tokens in PALETTES.values()))
 
-check("Dark is among them and is an AA palette",
-      any(name.startswith("Dark") and level == "AA"
+check("Midnight is among them and is an AA palette",
+      any(name.startswith("Midnight") and level == "AA"
           for name, (level, _t) in PALETTES.items()))
 
 check("High contrast is among them and is held to AAA",
@@ -470,6 +470,26 @@ check("the label on an accent fill is measured against the fill",
       ("--color-on-accent", "--color-accent", "text")
       in check_contrast.PAIRINGS)
 
+# A hovered button is still a button. --color-accent-strong stopped
+# being link text when Midnight showed that one token cannot be both a
+# hover fill under a cream label and legible text on the page; these two
+# are what replaced that single text pairing, and the second of them is
+# coverage no palette had before.
+check("the hover fill is measured as a shape against the page",
+      ("--color-accent-strong", "--color-bg", "mark")
+      in check_contrast.PAIRINGS)
+
+check("and the label on the hover fill is measured against it",
+      ("--color-on-accent", "--color-accent-strong", "text")
+      in check_contrast.PAIRINGS)
+
+# The direction that would undo the argument. Holding a fill to the text
+# threshold is what forced the old conflict, and putting it back would
+# quietly re-forbid a crimson button with a cream label.
+check("and the hover fill is not held to the text rule it left behind",
+      ("--color-accent-strong", "--color-bg", "text")
+      not in check_contrast.PAIRINGS)
+
 check("the component boundary is measured against both surfaces it "
       "sits on",
       {("--color-border-strong", "--color-surface"),
@@ -498,24 +518,25 @@ check("AA text is four and a half and AA non-text is three",
 # ------------------------------------------------------------------ #
 # The real tree.                                                      #
 
-LIGHT = tokens_of("Light") or {}
-DARK = tokens_of("Dark") or {}
+DAYLIGHT = tokens_of("Parchment Daylight") or {}
+MIDNIGHT = tokens_of("Midnight") or {}
 
-check("Light's muted text clears AA on the page it sits on",
-      check_contrast.ratio(LIGHT.get("--color-text-muted", "#ffffff"),
-                           LIGHT.get("--color-bg", "#ffffff")) >= 4.6)
+check("Parchment Daylight's muted text clears AA on the page it sits on",
+      check_contrast.ratio(DAYLIGHT.get("--color-text-muted", "#ffffff"),
+                           DAYLIGHT.get("--color-bg", "#ffffff")) >= 4.6)
 
-check("Dark's accent text clears AA on a card with margin, not by 0.03",
-      check_contrast.ratio(DARK.get("--color-accent-text", "#ffffff"),
-                           DARK.get("--color-surface", "#ffffff")) >= 4.6)
+check("Midnight's accent text clears AA on a card with margin, not by 0.03",
+      check_contrast.ratio(MIDNIGHT.get("--color-accent-text", "#ffffff"),
+                           MIDNIGHT.get("--color-surface", "#ffffff")) >= 4.6)
 
 # The two system-preference scopes exist so a visitor who has expressed
 # a preference and never touched the chips gets the same palette the
 # chip would give them. Values that drifted apart would be a palette
 # nobody tested.
-check("the light media block and the light chip declare the same colors",
-      tokens_of("Light") is not None
-      and tokens_of("Light") == tokens_of("Light (prefers-color-scheme)"))
+check("the light media block and the Daylight chip declare the same colors",
+      tokens_of("Parchment Daylight") is not None
+      and tokens_of("Parchment Daylight")
+      == tokens_of("Parchment Daylight (prefers-color-scheme)"))
 
 check("the contrast media block and the contrast chip declare the same "
       "colors",
