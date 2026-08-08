@@ -1282,6 +1282,20 @@ TAG = re.compile(r"<[^>]+>")
 COLOR_TOKEN = re.compile(r"^var\(\s*--color-[\w-]+\s*\)$")
 
 
+# CONTRACT ONLY - the three helpers below, and css_surface_problems()
+# further down, are the interfaces the failing tests beside them name.
+# They are declared here so the suite reports which behavior is missing
+# instead of dying on the first attribute that does not exist yet.
+def selector_role(part):
+    """(context, role) for one selector that paints a role, else None."""
+    return None
+
+
+def normalized_color(value):
+    """One color declaration with its spacing removed."""
+    return value
+
+
 def label_text(markup):
     """The words a label shows, with its markup and spacing removed.
 
@@ -1379,18 +1393,38 @@ def label_problems():
     return problems
 
 
+def stylesheet_text():
+    """The stylesheet with its comments removed, or None if it is missing.
+
+    Comments go first for the reason page_text() gives one file up: this
+    stylesheet quotes the very selectors the rules below refuse, at
+    length, in the block comments that explain why they are refused.
+    """
+    path = os.path.join(WEB, STYLESHEET)
+    if not os.path.exists(path):
+        return None  # check 1's to report
+    return re.sub(r"/\*.*?\*/", "", open(path, encoding="utf-8").read(),
+                  flags=re.S)
+
+
 # The stylesheet half of the same rule. The components have to exist,
 # and they have to be told apart: three roles painted the same color are
 # one component with three names, which is the state this split was made
 # to leave rather than a state to arrive back at.
 def label_style_problems():
     """[problem] for a stylesheet that cannot tell the three roles apart."""
-    path = os.path.join(WEB, STYLESHEET)
-    if not os.path.exists(path):
-        return []  # check 1's to report
-    css = re.sub(r"/\*.*?\*/", "", open(path, encoding="utf-8").read(),
-                 flags=re.S)
+    css = stylesheet_text()
+    return [] if css is None else css_role_problems(css)
 
+
+def css_role_problems(css):
+    """[problem] for stylesheet text that cannot tell the roles apart.
+
+    Takes the text rather than reading the file for the reason this
+    suite's own docstring gives: a rule that can only be exercised
+    through the directory it guards is a rule tested against today's
+    content, and #34's mutations all passed that way.
+    """
     problems = []
     if re.search(r"(^|[\s,}])\.%s\b" % RETIRED_LABEL, css):
         problems.append(
@@ -1477,6 +1511,11 @@ DESTINATIONS = {
 
 HEADING = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
 TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
+
+
+def rail_target(href):
+    """The page one rail href names, or None if it names no page here."""
+    return href  # CONTRACT ONLY - see selector_role() above
 
 
 def page_name_problems(text, expected):
@@ -1619,6 +1658,23 @@ def page_surface_problems(text, surface):
                         "mark")
 
     return problems
+
+
+def surface_style_problems():
+    """[problem] for a stylesheet with no admin instrument in it."""
+    css = stylesheet_text()
+    return [] if css is None else css_surface_problems(css)
+
+
+def css_surface_problems(css):
+    """[problem] for stylesheet text that dresses no admin instrument."""
+    # CONTRACT ONLY - the arm this names is not written yet, and the
+    # tests beside it fail until it is. Check 18 shipped with a markup
+    # half and no stylesheet half: the pages were made to declare which
+    # surface they belong to, and nothing said a surface had to look
+    # like anything, so deleting every body.instrument rule left
+    # admin.html rendering as a member page with the gate green.
+    return []
 
 
 COUNTRIES_FILE = "countries.js"
