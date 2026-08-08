@@ -5,7 +5,9 @@ copies `apps/web` and nothing else. Run everything at once with
 `./run check`; run one suite with `node dev/<name>.test.mjs`. Every
 suite loads the shipped file's real bytes (the pure/DOM split in
 `AGENTS.md` is what makes that possible), and every suite is registered
-in both `tools/check.py` and CI — two lists, edited together.
+in `tools/check.py` — the single registry, whose printed stage table is
+the roster; CI runs that same gate as one step. The table below maps
+what each suite defends, not where it is registered.
 
 | Suite | What it proves |
 | --- | --- |

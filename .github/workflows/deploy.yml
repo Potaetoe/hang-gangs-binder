@@ -72,185 +72,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Check apps/web is publishable
-        run: python tools/check_web.py
-
-      # The gate checking itself, and the only suite here that needs no
-      # node. check_web.py had no tests until #34, which is how its CSP
-      # parser could stop finding a policy while every mutation written
-      # against its rules still passed. A checker that cannot read is
-      # indistinguishable from a site with nothing wrong.
-      - name: Check the CSP parser and the policy pin
-        run: python dev/check_web.test.py
-
-      # server/ is checked separately from apps/web: check_web.py is
-      # bounded to apps/web by construction, which is how a [vars]
-      # block publishing the group's numeric Telegram ids once passed
-      # every check the gate had (#39). Registered here 2026-08-08 -
-      # both steps had been in tools/check.py only, which is exactly
-      # the armed-looking-but-not failure the linter note below calls
-      # worse than having no check at all.
-      - name: Check server/ commits no ids or secrets
-        run: python tools/check_server.py
-
-      - name: Check the vars parser and rules
-        run: python dev/check_server.test.py
-
-      # The documentation system holding to its own rules - the
-      # top-level registry, falsified-claim tripwires, and spelling.
-      # See tools/check_docs.py and issue #77.
-      - name: Check the documents stay registered and tripwire-free
-        run: python tools/check_docs.py
-
-      # The reader behind it, tested on strings. Registered here AND in
-      # tools/check.py, like every other stage - a check that runs only
-      # on a developer's machine looks armed and is not.
-      - name: Check the document registries and the rules
-        run: python dev/check_docs.test.py
-
-      # The same rule for code that the step above holds for documents:
-      # a comment says why, and what changed - together with whatever
-      # triggered it - says so in the commit message, the pull request
-      # and the issue. Owner decision, 2026-08-08; see issue #83.
-      #
-      # A ratchet rather than a sweep. Every offending comment already
-      # in the tree is pinned in an allowlist, a new one fails, and a
-      # pin that stops matching fails too, so the list can only shrink
-      # and cannot go stale. Cleanup rides the pull requests that touch
-      # those files.
-      - name: Check the comments explain why
-        run: python tools/check_comments.py
-
-      # The extractor behind it, tested on strings. Registered here AND
-      # in tools/check.py, like every other stage - a check that runs
-      # only on a developer's machine looks armed and is not.
-      - name: Check the comment extractor and the ratchet
-        run: python dev/check_comments.test.py
-
-      # Each page against a pinned number of gzipped bytes - the page
-      # plus everything it references, fonts inside the stylesheet
-      # included. #72 measured the load and acquitted the product, so
-      # this keeps that ground rather than winning it: the redesign is
-      # about to touch every page and nothing else in this job would
-      # notice the payload doubling. See issue #80.
-      #
-      # It fails in both directions. Over the ceiling fails, and a
-      # ceiling far above what its page measures fails as stale
-      # headroom - so a change that adds weight raises the number in
-      # its own diff, where a reviewer sees it move.
-      - name: Check the per-page transfer budget
-        run: python tools/check_budget.py
-
-      # The extractor and the arithmetic behind it, tested on strings.
-      # Registered here AND in tools/check.py, like every other stage -
-      # a check that runs only on a developer's machine looks armed and
-      # is not.
-      - name: Check the budget extractor and the ceilings
-        run: python dev/check_budget.test.py
-
-      # Every palette in theme.css against WCAG, computed from the
-      # declared hexes rather than trusted. #81 measured nineteen
-      # failing pairings by hand - Light's muted text, its filled
-      # button label, nine of its ten chart-series pairings - and
-      # nothing here would have found the twentieth. See issue #81.
-      #
-      # Two ratchets, not one. Every ratio must clear its threshold by
-      # 0.1 rather than merely reach it, because #81 found a pairing
-      # passing at 4.53 against 4.5 and named that luck. And a palette
-      # block whose selector is not in the pinned scope table fails, so
-      # a fifth palette cannot ship unmeasured - which is the arm that
-      # still matters once today's values are correct.
-      - name: Check every palette meets WCAG
-        run: python tools/check_contrast.py
-
-      # The parser and the arms behind it, tested on strings.
-      # Registered here AND in tools/check.py, like every other stage -
-      # a check that runs only on a developer's machine looks armed and
-      # is not.
-      - name: Check the contrast parser and the pairing list
-        run: python dev/check_contrast.test.py
-
-      # The one check whose failure is about the data rather than the
-      # site. A crypto.js that no longer reads what is already stored
-      # publishes a site that looks perfect and cannot be exported from,
-      # so this blocks the release rather than being noticed later.
-      - name: Check the encryption round-trips
-        run: node dev/crypto.test.mjs
-
-      # The other half of the same failure. crypto.js proves the bytes
-      # survive; this proves the numbers going into them are the ones
-      # the submitter typed. A wrong conversion factor produces a
-      # plausible record, seals it perfectly, and is undiscoverable
-      # after the fact - there is no original to compare against.
-      - name: Check the form's conversions and validation
-        run: node dev/form.test.mjs
-
-      # The panel's numbers must be the route's, not a local tally, or the
-      # page can disagree with the table it is reporting on. The check that
-      # earns its place here is the failed-send one: a refused submit must
-      # dispatch nothing, and two source-position assertions covering the
-      # same claim both pass a mutation that lets a 4xx through.
-      - name: Check the member panel and the failed-send guard
-        run: node dev/submit.test.mjs
-
-      # form.js's wiring half had no DOM coverage at all until #64, because
-      # dev/form.test.mjs deliberately loads the module with no document so
-      # it can test the arithmetic under Node. The submit handler's one-way
-      # swap of form for confirmation lived in that gap and shipped a tab
-      # that led back to a card with no form. This suite runs the shipped
-      # module against a small DOM and drives both events.
-      - name: Check the form's wiring and that Add entry reopens the form
-        run: node dev/form-wiring.test.mjs
-
-      # The CSV is what the whole project is for. A quoting bug does not
-      # throw - it shifts one column into the next and produces a file
-      # that opens cleanly and is wrong.
-      - name: Check the export's CSV
-        run: node dev/admin.test.mjs
-
-      - name: Check the admin session and row deletion
-        run: node dev/admin-session.test.mjs
-
-      # An .xlsx is a ZIP of XML written by hand here, because the page
-      # that builds it may not load a library. Its failure is not a
-      # wrong number - it is a file that will not open at all, and the
-      # message the keyholder gets says only that it is corrupt.
-      - name: Check the spreadsheet
-        run: node dev/xlsx.test.mjs
-
-      # A median over the wrong rows, or a person counted once per
-      # submission, produces a chart that is wrong and looks right.
-      - name: Check the dashboard's arithmetic
-        run: node dev/dashboard.test.mjs
-
-      # The other half of the same file, and it had no suite of any kind
-      # until #118: ~390 lines across two pages, createElementNS nowhere
-      # in dev/, and both consumers stubbing render out rather than
-      # drawing with it. The step above cannot reach it - it loads the
-      # module with no document, which is exactly what makes the
-      # arithmetic testable and the drawing invisible.
-      #
-      # Registered here AND in tools/check.py, like every other stage -
-      # a check that runs only on a developer's machine looks armed and
-      # is not.
-      - name: Check what the dashboard draws
-        run: node dev/dashboard-render.test.mjs
-
-      # The dashboard publishes no handles or rows, but its audience is the
-      # group rather than the world. This drives the shipped page wiring and
-      # keeps signed-out, expired-session and unpublished states distinct.
-      - name: Check the member dashboard session
-        run: node dev/public.test.mjs
-
-      # The linters. Registered here AND in tools/check.py - there are two
-      # suite lists in this repository and they have to be edited
-      # together. A check that passes on a developer's machine and never
-      # runs in the pipeline looks armed and is not, which is the same
-      # failure as having no check at all.
-      #
-      # Neither is a build step: apps/web is copied verbatim by the deploy
-      # job below and nothing here rewrites a file. They refuse a release
-      # rather than producing one.
       # --ignore-scripts is not decoration. Linting brought 87 transitive
       # packages into a repository whose design rejected libsodium.js -
       # a better crypto primitive than the one written here - because it
@@ -268,54 +89,23 @@ jobs:
       # Verified rather than assumed: `npm ci --ignore-scripts` installs
       # all 87 packages and ESLint runs clean. Nothing here needs a
       # native build.
-      - name: Install the lint tooling
+      - name: Install the gate's tooling
         run: |
           npm ci --ignore-scripts
           python -m pip install --quiet ruff
 
-      - name: Lint the JavaScript
-        run: npx eslint .
-
-      - name: Lint the Python
-        run: python -m ruff check .
-
-      # Every interactive page boots through ui.js now, and broken shared
-      # wiring does not throw - it renders a page that looks finished and
-      # does nothing. This suite loads the shipped file's real bytes under
-      # a document stub, so it also holds the no-network boundary that
-      # check 6 depends on.
-      - name: Check the shared UI wiring
-        run: node dev/ui.test.mjs
-
-      # A session is the credential every member page shares. This keeps it
-      # tab-scoped, expires malformed or stale values closed, and proves both
-      # development auth and the future widget callback pass through the same
-      # POST/store/redirect handoff.
-      - name: Check session storage and auth handoff
-        run: node dev/session.test.mjs
-
-      # dev/make-sample.mjs loads the shipped form.js and crypto.js and
-      # was exercised by nothing, which is how #66 survived: buildRecord
-      # grew a third argument, the generator kept passing two, and it
-      # threw for weeks with every stage on this list green. The suite
-      # runs the real script to a scratch path outside the checkout and
-      # holds it to the summary it prints - it never rewrites the
-      # committed sample, and asserts that too.
-      #
-      # Registered here AND in tools/check.py, like every other stage -
-      # a check that runs only on a developer's machine looks armed and
-      # is not.
-      - name: Check the sample generator still runs
-        run: node dev/make-sample.test.mjs
-
-      - name: Check the Worker
-        # server/ is not published by this job, but a release that leaves
-        # the endpoint broken is still a broken release. Since the
-        # accounts work this also gates sign-in, the session rules and
-        # the route-by-caller matrix - including that the development
-        # login route stays shut, which is the one failure here that
-        # would be a real compromise rather than an outage.
-        run: node dev/worker.test.mjs
+      # One step, one registry. tools/check.py is the only suite list
+      # (owner decision, 2026-08-08): registering a check there is
+      # registering it in the pipeline too, because this step runs the
+      # whole gate and fails if any stage does. The stage-by-stage
+      # account - names, order, and each check's reason - is the table
+      # this step prints and the docstring of every suite it runs;
+      # enumerating the stages here as well was the two-lists tax, and
+      # drift between the lists was a standing hazard this shape cannot
+      # have. What the Actions page loses in per-stage step names, this
+      # step's log carries in full.
+      - name: Run the whole gate
+        run: python tools/check.py
 
   deploy:
     needs: verify

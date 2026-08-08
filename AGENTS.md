@@ -113,8 +113,9 @@ issue by hand with a comment saying what landed.
 - Run the gate before any handoff: `./run check` (or
   `py -3 tools/check.py`). Report the exact totals it prints — never a
   remembered count, and never "tests pass".
-- **A new check is registered in both suite lists** — `tools/check.py`
-  and `.github/workflows/deploy.yml` — and **confirmed armed by
+- **A new check is registered in `tools/check.py`** — the single
+  suite registry; CI runs that whole gate as one step, so the one
+  registration is the pipeline's too — and **confirmed armed by
   mutation, in both directions**: break it, watch it fail, restore it,
   watch it pass, and state the mutations in the handoff.
 - Mutation is necessary and not sufficient. A mutation only asks "does
