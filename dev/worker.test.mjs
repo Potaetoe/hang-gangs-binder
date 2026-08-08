@@ -1628,11 +1628,26 @@ check("and nothing asks whether that row is the caller's outside one",
 await submit(RACER, { ciphertext: "c2Vjb25k" });
 const second = stored.find((r) => r.ciphertext === "c2Vjb25k");
 
+/*
+ * Blinding the guards is not enough on its own: two batches driven with
+ * Promise.all still start one after the other here, so the second one
+ * snapshots a table that already holds the first one's row and its guard
+ * refuses in the ordinary way. Dropping UNIQUE left that arm green, which
+ * is how this was found. The gap has to be held open as well - one batch
+ * parked at its write, the other run all the way through - so that both
+ * guards pass against a table neither of them can see the other in, and
+ * the index is the only thing left standing between them.
+ */
 overlappingBatches = true;
-const [blindA, blindB] = await Promise.all([
-  submit(RACER, { ciphertext: "YmxpbmRB", supersedes: second.id }),
-  submit(RACER, { ciphertext: "YmxpbmRC", supersedes: second.id }),
-]);
+let releaseBlind;
+holdInsert = new Promise((resolve) => { releaseBlind = resolve; });
+const blindHeld =
+  submit(RACER, { ciphertext: "YmxpbmRB", supersedes: second.id });
+await new Promise((resolve) => setTimeout(resolve, 0));
+const blindB =
+  await submit(RACER, { ciphertext: "YmxpbmRC", supersedes: second.id });
+releaseBlind();
+const blindA = await blindHeld;
 overlappingBatches = false;
 
 const namingSecond = stored.filter((r) => r.supersedes === second.id);
