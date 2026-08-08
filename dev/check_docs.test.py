@@ -4,8 +4,8 @@
 documents, and the `security/` folder - plus the falsified-claim
 tripwires and the American-spelling rule. It is what makes AGENTS.md's
 claim true that adding either kind of document "cannot happen by
-accident", and until this suite existed it was the one checker in the
-gate with nothing behind it.
+accident", so it is the stage standing between this repository and an
+unapproved document or an unregistered security record.
 
 That is #34's shape verbatim, and #34 is why this file is written the
 way it is. A mutation is written against a *rule* - plant a British
@@ -20,10 +20,10 @@ decisive arm: a real document's real bytes go through the rules and a
 planted claim comes back with the right line number. A pass on the
 five documents means they are clean, not that they went unread.
 
-Three arms below pin behavior that is narrower than the checker's
-prose suggests, each marked where it sits. They are pinned rather than
-corrected because widening a pattern changes what the gate enforces,
-which is an owner-sized question; #121 carries them.
+The arms marked PINNED, NOT ENDORSED record behavior narrower than the
+checker's prose suggests. They are pinned rather than corrected
+because widening a pattern changes what the gate enforces, which is a
+different act from proving it can read; #121 carries them.
 
 No framework and no new dependency, matching the suites beside it.
 """
