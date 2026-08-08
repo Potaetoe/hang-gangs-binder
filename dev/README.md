@@ -155,6 +155,95 @@ messy as it needs to be.
   successful live `/auth/dev` round trip remains an operational check because
   the real secret must not enter the repository or a test log.
 
+- `submit.test.mjs` — `apps/web/submit.js`, the member panel on
+  `submit.html`, plus one property of `form.js`. The counts come from
+  `GET /me` and nowhere else, which is what the whole step is measured on,
+  so the suite proves it with a 5 → 11 jump rather than 5 → 6: a page
+  keeping its own tally would pass the second and fail the first.
+
+  ```bash
+  node dev/submit.test.mjs
+  ```
+
+  **The checks worth reading are the failed-send ones.** A refused submit
+  must never make the panel claim something was stored. That was originally
+  asserted by source position — the dispatch appears after
+  `if (!response.ok)` — and those assertions pass a mutation narrowing the
+  refusal check to `status >= 500`, which lets a 4xx through. So the real
+  `form.js` is driven here through a failing send and the dispatches are
+  counted, on both arms: a response the Worker refuses, and a `fetch` that
+  rejects outright. A positive control on the same harness proves it
+  reaches the network at all.
+
+  It also covers the account scoping from #56 — another account's prefill
+  is not shown *and* is erased, asserted as a pair because "the fields are
+  empty" is equally true of a feature that has simply stopped working.
+
+- `admin-session.test.mjs` — `apps/web/admin.js` on an admin session, and
+  row deletion. Separate from `admin.test.mjs`, which covers the pure half
+  and says so in its own docstring; this one runs the shipped module under
+  DOM stubs.
+
+  ```bash
+  node dev/admin-session.test.mjs
+  ```
+
+  The negative control is the interesting part: the stub keeps a populated
+  `#token` input even though the page no longer has that element, so the
+  "no DOM input value becomes an `Authorization` header" check can actually
+  fail on a regression, and it requires three authorized requests so it
+  cannot pass by finding none. Deletion is proved against a **published
+  snapshot** rather than the DOM — a row that vanishes visually but
+  survives in derived state would be resurrected by the next Publish.
+
+- `public.test.mjs` — `apps/web/public.js`, the members' dashboard wiring.
+  Separate from `dashboard.test.mjs` for the same reason: that file covers
+  the pure aggregation half of `dashboard.js`, and `public.js`'s own header
+  says "All wiring, no pure half".
+
+  ```bash
+  node dev/public.test.mjs
+  ```
+
+  It keeps three states distinct, which is the point of the slice: no
+  session redirects; a session the Worker refuses is cleared and reported
+  as needing a fresh sign-in; an authorized empty snapshot keeps its
+  "nothing published yet" message. A member told the last of those because
+  their session expired learns something false.
+
+### The two Python suites
+
+These run on the same interpreter as the checkers they test and need no
+node, which is why `tools/check.py` invokes them directly rather than
+listing them with the `.mjs` suites.
+
+- `check_web.test.py` — `tools/check_web.py`'s own CSP parser and policy
+  pin.
+
+  ```bash
+  python dev/check_web.test.py
+  ```
+
+  It exists because of #34, and the reason is the reusable part: that file
+  had never had a test, its only verification was manual mutation, and a
+  mutation is written against a *rule* — add `telegram.org` to a page,
+  watch it fail. So every mutation exercised the rules and never the
+  parser that has to find the policy first. Every one of them passed while
+  the policy was simply never being read. This suite tests the parser on
+  strings rather than on the five files it happens to guard.
+
+- `check_server.test.py` — `tools/check_server.py`'s vars parser and rules.
+
+  ```bash
+  python dev/check_server.test.py
+  ```
+
+  The check that would notice this arm going dead is the pair asserting
+  `config.js`'s real content *does* match the key pattern and that the
+  **name-based exemption** is what spares it. Without those, a pattern
+  matching nothing would leave every other check passing — a null result
+  wearing a positive result's clothes.
+
 - `crypto-browser-check.html` — the platform-dependent half of the same
   checks, in a real browser under the published pages' content security
   policy. Node is the same specification, which is why the Node test is

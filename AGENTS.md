@@ -329,8 +329,20 @@ check whether one of these already covers it.
 | `CHANGELOG.md` | product and repository changes, newest first, dated by commit date |
 | `DAILY_LOG.md` | the working day — decisions, coordination, what is blocked on whom |
 | `DESIGN.md` | architecture, decisions, and rejected alternatives |
-| `REDESIGN.md` | the accounts scaffolding plan and build order |
+| `REDESIGN.md` | the accounts scaffolding plan and build order — the *reasoning*, including why the cutover order is what it is |
+| `CUTOVER.md` | the ordered procedure for the cutover sitting itself, followed while doing it |
+| `UAT.md` | the owner's acceptance pass over the site, split by what is testable before and after the cutover |
+| `HANDOFF.md` | operating and transferring the project once it is running |
 | GitHub issue comments | current locks, blockers, live configuration, anything mutable |
+
+**`REDESIGN.md` Part 8 and `CUTOVER.md` are not a duplication**, and the line
+between them is worth holding. Part 8 is why the order is the order and what
+each irreversible act costs; `CUTOVER.md` is the sequence you follow with the
+dashboard open. A design document is the wrong thing to navigate during a
+single-pass operation with a table drop in it. When they disagree, Part 8 is
+the authority on *reasoning* and `CUTOVER.md` on *sequence* — and a
+disagreement about a fact is a bug in whichever was not checked against the
+code.
 
 Both agents write `CHANGELOG.md` and `DAILY_LOG.md`. Append to the
 existing entry for the day rather than starting a parallel one; if both
@@ -372,8 +384,10 @@ says it, the commit message should say it.
 
 Most of this is machine-checked, which is the point — a standard that
 only exists in this file is one three agents can each read differently.
-Run `python tools/check.py`; it is eleven checks now and two of them are
-the linters.
+Run `python tools/check.py`; it is **seventeen** checks now and two of
+them are the linters. Two more read `server/` rather than `apps/web` —
+that scope did not exist until #39, and its absence let a commit publish
+the group's numeric Telegram ids past every check the gate had.
 
 | Concern | Where it is decided | Enforced by |
 | --- | --- | --- |
@@ -533,9 +547,26 @@ implemented it. Say which it is.
   `style-src` carries no `'unsafe-inline'`, so a `style` attribute is
   dropped. A `polyline` needs `fill: none` from an element+class rule —
   the `fill="none"` attribute loses to any CSS rule.
-- Keep sign-in code free of Telegram widget URLs and crypto calls until
-  the real widget's CSP behavior has been observed and its slice is
-  unblocked.
+- **The sign-in page's CSP is settled and is not a matter of taste.** This
+  used to say to keep Telegram widget URLs and crypto calls out of the
+  sign-in page *until the real widget's CSP behavior has been observed*.
+  It was observed, in #26, and the precondition has expired — a rule
+  waiting on something that already happened reads as live and gets
+  obeyed anyway. What was found is the rule now:
+
+  `index.html` needs `script-src 'self' 'unsafe-eval' https://telegram.org`
+  and `frame-src https://oauth.telegram.org`. The `'unsafe-eval'` is not
+  negotiable and not laziness: `telegram-widget.js` puts `data-onauth`
+  through a function that uses `eval`, and callback mode cannot work
+  without it. Redirect mode needs no eval and was **rejected** — it
+  returns the signed payload in a URL query string, putting the numeric id
+  and handle into browser history, `Referer` headers and host access logs
+  on every sign-in.
+
+  `crypto.js` still must not load on that page, and the whole policy is
+  pinned by `tools/check_web.py` — a change there fails the gate rather
+  than being a judgement call. See `DESIGN.md`, "The policy needed a third
+  exception".
 - **Never regenerate a committed fixture to make a failing test pass.**
   `dev/fixture.json` and the account-id fixture stop matching only when
   the stored format changed, and every stored row went with it. The fix is

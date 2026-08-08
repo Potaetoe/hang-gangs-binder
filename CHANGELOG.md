@@ -260,6 +260,51 @@ On `accounts`, not released. `main` stays at the last complete release.
   first-time admin can read their numeric id off the page, which no page
   does; `HANDOFF.md` documents the devtools route today and the gap is
   filed as #58.
+- **`CUTOVER.md` and `UAT.md` are new, and registered in `AGENTS.md`'s record
+  table.** #60. `CUTOVER.md` is the ordered procedure for the cutover
+  sitting — what is irreversible and where, what to capture first, what to
+  see before continuing, and where the outage starts. `REDESIGN.md` Part 8
+  keeps the reasoning and gains a pointer rather than being duplicated: a
+  1000-line design document is the wrong thing to navigate during a
+  single-pass operation with a table drop in it. `UAT.md` is the owner's
+  acceptance pass, split by what is testable when — everything but the
+  Telegram widget runs before the cutover against the development Worker,
+  because BotFather binds the widget to the live domain and it cannot render
+  on localhost at all.
+- **A full true-up of every markdown, and it caught an error one day old.**
+  #60. `REDESIGN.md`'s state table said steps 5–7 and 9–10 were "not
+  started" — all four were closed; it now records every step, the three
+  hardening slices the plan did not anticipate, and that the build is over.
+  `dev/README.md` documented eight suites when there are eleven `.mjs` and
+  two Python ones. `AGENTS.md` said the gate "is eleven checks" (seventeen)
+  and carried a rule waiting on the widget's CSP behaviour *"to be
+  observed"*, which happened in #26 — a rule whose precondition has expired
+  reads as live and gets obeyed. `HANDOFF.md` said the series-quantisation
+  fix was "not yet built" when step 8 built it, and its paragraph above was
+  stale the other way round; both now describe what quantising actually buys,
+  which is **ambiguity rather than absence**. `DESIGN.md`'s goals argument is
+  marked as the original reasoning rather than rewritten, since the dashboard
+  it calls "public" has been members-only since 2026-08-05.
+- **Corrected: the cutover order, which the previous day's slice got
+  backwards in three files.** Step 10 wrote *"the Worker goes after the site,
+  never before"* into `server/README.md`, `README.md` and `HANDOFF.md`.
+  `REDESIGN.md` Part 8 says the opposite and is right: the migration is step
+  4 and **is** the outage, because after `DROP TABLE submissions` the *old*
+  Worker cannot insert either — `account_id` is `NOT NULL`. Production
+  submissions are down before either deploy, so the Worker goes in first and
+  the site follows; site-first would leave the new pages talking to a Worker
+  with no `/auth/telegram` route. What the warning actually protects is
+  narrower and still true: do not deploy the Worker on its own, ahead of the
+  cutover.
+- **`server/wrangler.toml` no longer asserts that production's six secrets
+  are set.** Nobody had checked, it contradicted Part 8's own instruction to
+  set two of them at cutover, and the only recorded setting of
+  `ACCOUNT_SECRET` was on the **development** Worker (#33). No agent can
+  settle it — `wrangler` will not authenticate from a non-interactive shell —
+  so the comment now says where the secrets belong, and `CUTOVER.md` opens by
+  confirming what exists. This matters more than a stale sentence usually
+  does: `ACCOUNT_SECRET` is permanent once a row carries an id derived from
+  it.
 - **Worker setup now records all three numeric id bindings as secrets, not
   vars.** Their being ids rather than credentials never made a public
   `[vars]` block safe: the allowlist is the membership oracle the

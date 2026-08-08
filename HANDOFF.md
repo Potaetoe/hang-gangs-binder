@@ -11,8 +11,9 @@ the checklist.
 >
 > The accounts redesign, decided 2026-08-05, is **fully built as of
 > 2026-08-07 and not deployed.** Every build step is done and the live
-> endpoint and site are unchanged — see `server/README.md` for why the
-> Worker goes after the site and never before.
+> endpoint and site are unchanged. `CUTOVER.md` is what changes that, and
+> it is a sitting rather than a push — the schema migration in it takes
+> production submissions down before either deploy, and does not go back.
 >
 > **What changed here on 2026-08-07, and why the earlier plan was wrong.**
 > This file used to say it would be rewritten *after* the cutover, on the
@@ -223,19 +224,37 @@ At the bottom of the export page, after decrypting:
    published page gets one line per repeat submitter, labelled
    "Person 1", "Person 2" — never handles, and renumbered every time.
 
-   **Renumbering does not stop two snapshots being lined up, and an
-   earlier version of this file said it did.** Each point currently
-   carries an exact timestamp and an exact weight, so the same person's
-   line reappears in the next snapshot as the same set of points with
-   one added — matching them is trivial. The pseudonyms only stop the
-   *labels* being followed.
+   **Renumbering alone never stopped two snapshots being lined up**, and
+   an earlier version of this file wrongly said it did. Pseudonyms only
+   stop the *labels* being followed.
 
-   So the honest version of the trade-off is: publishing this chart
-   twice discloses cumulatively, and anyone who knows roughly what a
-   person weighs may recognize their line. Off is the safe answer, and
-   it is off unless you tick it. A fix — publishing the date and a
-   rounded weight instead of the exact ones — is specified in
-   `DESIGN.md` under "The members' dashboard" and not yet built.
+   **The quantisation that fixes it is built** — that was step 8, and
+   this paragraph said "not yet built" until 2026-08-07. A published
+   point now carries the **date** rather than the instant, and each
+   weight on the **histogram bin edge**, on both unit systems. Your own
+   view keeps every decimal, because it never leaves the tab.
+
+   **What that buys is ambiguity, not absence, and the difference
+   matters when you decide.** Quantising is deterministic, so an entry
+   that has not changed lands on the same date and the same bin in both
+   documents — two snapshots still share points. What changed is that a
+   shared point no longer *identifies a line*, because several people's
+   measurements land on the same date and bin.
+   `dev/dashboard.test.mjs` asserts that directly, and records why the
+   criterion originally specified — "share no exact series point" — is
+   not achievable by any amount of rounding.
+
+   So the honest trade-off today: publishing this chart twice still
+   discloses cumulatively, and someone who knows roughly what a person
+   weighs may still guess at their line — but following a specific
+   person across snapshots is now an inference rather than a join. Off
+   is still the conservative answer, and it is off unless you tick it.
+
+   There is also a floor, and it is why ticking the box sometimes
+   publishes no chart at all: if **fewer than five people** would have a
+   line, the series is dropped entirely rather than published. A chart of
+   one line is a chart of one person, and of two is nearly as bad (#19).
+   Your own view has no floor — it is your data and it stays in the tab.
 2. Press **Show what would be sent** if you want to read it first. It
    sends nothing; it prints the document.
 3. Press **Publish snapshot**. It replaces whatever was there before.

@@ -32,12 +32,13 @@ project's private key can, and that key is not stored online anywhere.
 > arrangement rather than a delay in it: the live site is the last
 > complete release, and the redesign lands in one cutover instead of
 > arriving in ten half-states, several of which refuse everybody by
-> design. The Worker goes **after** the site, never before —
-> [server/README.md](server/README.md) has the ordering and what breaks if
-> it is reversed.
+> design.
 >
-> The reasoning is in [DESIGN.md](DESIGN.md) under "Accounts", and the
-> cutover order in [REDESIGN.md](REDESIGN.md) Part 8.
+> The step-by-step is [CUTOVER.md](CUTOVER.md), the reasoning behind its
+> order is [REDESIGN.md](REDESIGN.md) Part 8, and the design is
+> [DESIGN.md](DESIGN.md) under "Accounts". The cutover has a real outage
+> in it — the schema migration takes production submissions down before
+> either deploy — so it is a sitting, not a push.
 
 ---
 
