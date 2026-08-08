@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The demo console. Never published - dev/ is not copied by the deploy,
+  which is what lets this page exist at all.
+
+  It carries no styling from apps/web on purpose. The pages in the frame
+  are the product and their palette is one of the things being judged; a
+  console painted in the same colors would put the two in one visual
+  field and make it harder, not easier, to see what the product looks
+  like.
+-->
+<title>Muse's Binder — demo console</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>Demo console</h1>
+  <p class="lede">
+    Every enhancement, drivable. The pages in the frame are the shipped
+    files, read off disk on every request — so this walks whatever has
+    landed, not a recording of it.
+  </p>
+  <p class="warn" id="offline-note">
+    Nothing here reaches a real endpoint. The Worker's answers are
+    stubbed, and the only keys involved are the throwaway pairs committed
+    under <code>dev/</code>.
+  </p>
+</header>
+
+<main>
+  <section class="driver">
+    <h2>1 — Pick a scenario</h2>
+    <ul class="scenarios" id="scenarios"></ul>
+
+    <h2>2 — Walk it</h2>
+    <p class="muted" id="scenario-label">No scenario chosen yet.</p>
+    <ol class="steps" id="steps"></ol>
+
+    <h2>3 — Any destination, any time</h2>
+    <p class="muted small">
+      The rail is part of what is being demonstrated, so every
+      destination stays reachable in every scenario.
+    </p>
+    <div class="destinations" id="destinations"></div>
+    <p class="small">
+      <button type="button" id="open-tab">Open this page in its own tab</button>
+      <button type="button" id="reset">Reset the demo state</button>
+    </p>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="stage">
+    <p class="frame-path" id="frame-path"></p>
+    <iframe id="stage" title="The product, running"></iframe>
+  </section>
+</main>
+
+<section class="record">
+  <h2>What has landed</h2>
+  <p class="muted small">
+    Read out of the shipped bytes each time this page loads, never
+    written down here. A box whose slice has not landed blocks
+    <a href="https://github.com/Potaetoe/hang-gangs-binder/issues/122">#122</a>
+    exactly as long as it blocks the cutover, so this reports that state
+    rather than asserting one.
+  </p>
+  <table class="boxes"><tbody id="boxes"></tbody></table>
+</section>
+
+<section class="record">
+  <h2>What the mirror changes</h2>
+  <p class="muted small">
+    <code>apps/web</code> is copied verbatim to the published site and
+    takes no test hook. The pages in the frame are served from a mirror
+    that applies exactly these edits on the way out, and
+    <code>dev/demo.test.mjs</code> fails if a mirrored page differs from
+    the shipped one in any other way.
+  </p>
+  <table class="boxes"><tbody id="edits"></tbody></table>
+</section>
+
+<footer>
+  <p>
+    <strong>The other arm.</strong> This one is offline, so the states a
+    live database cannot be asked to produce on demand — a revoked
+    session, a correction that supersedes, a cell under the floor — are
+    drivable here. For the live end-to-end feel, run
+    <code>./run serve</code> and drive
+    <a href="http://127.0.0.1:8124/">127.0.0.1:8124</a> against the dev
+    Worker instead.
+  </p>
+</footer>
+
+<script src="demo-stub.js"></script>
+<script src="demo-console.js"></script>
+</body>
+</html>
