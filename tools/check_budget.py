@@ -145,18 +145,42 @@ WEB = os.path.join(REPO, "apps", "web")
 # which is a second encoder, a second derivation and a decoder that
 # reads both - about 3.7 KB gzipped, on both pages equally. #85 is
 # where the format and the reasons for it are.
+#
+# And then all five moved by about 94 KB, which is the payload this
+# check was written to make somebody look at. #73's identity layer
+# vendors five latin-subset woff2 faces into apps/web/fonts and reaches
+# them from @font-face in theme.css, and the stylesheet is in all five
+# totals: Playfair Display 600 and its italic at ~22.6 KB each, DM Sans
+# 400 and 600 at ~13.8 KB each, JetBrains Mono 400 at ~20.7 KB. The
+# owner approved that download by name and at about this size, on #73.
+#
+# Two things about that number belong here rather than in anybody's
+# head. It is one payment for the whole site rather than five - the
+# faces are one set of URLs, so the second page a visitor opens fetches
+# none of them again, and this check deliberately cannot see a cache,
+# which makes these five totals an overstatement of what a session
+# costs. And woff2 is already compressed, so gzipping it here changes
+# it by a few bytes either way: the machine-to-machine slack the
+# docstring describes now applies to a much smaller share of each total
+# than it did, because only the text part of each page moves between
+# zlib-ng and stock zlib.
 CEILINGS = {
-    "404.html": 17900,
-    "admin.html": 68500,
-    "dashboard.html": 43400,
-    "index.html": 24200,
-    "submit.html": 54500,
+    "404.html": 125500,
+    "admin.html": 177100,
+    "dashboard.html": 152200,
+    "index.html": 131500,
+    "submit.html": 163900,
 }
 
-# What a fresh pin gets: about ten percent of room to grow into. Small
-# enough that the redesign's vendored fonts cannot slip under it -
-# ten percent of the lightest page is under 1.5 KB - and large enough
-# that reformatting a page does not fail a build.
+# What a fresh pin gets: about ten percent of room to grow into. Large
+# enough that reformatting a page does not fail a build, and small
+# enough that a page cannot double behind it.
+#
+# It is a proportion rather than a byte count, and now that the fonts
+# are in the totals that cuts the other way too: ten percent of the
+# lightest page is over 12 KB, which is a whole sixth face. A budget
+# cannot notice growth smaller than its own headroom - what it can do
+# is refuse growth nobody wrote a reason for, which is the arm below.
 HEADROOM = 1.10
 
 # How far a ceiling may stand above its page before the pin itself is

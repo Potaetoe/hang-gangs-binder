@@ -27,10 +27,14 @@
 *.sql   text eol=lf
 *.svg   text eol=lf
 
-# Binary, never touched.
+# Binary, never touched. woff2 is here for the same reason the rest
+# are: text=auto guesses, and a guess that goes the wrong way on a font
+# rewrites bytes inside a compressed container and ships a file no
+# browser will parse.
 *.png   binary
 *.jpg   binary
 *.ico   binary
+*.woff2 binary
 
 # The run launcher: the sh half stays LF everywhere; the cmd half is
 # CRLF, because cmd.exe misparses multi-line blocks under LF.

@@ -20,15 +20,15 @@
   so they are not written here - a header would be needed, and GitHub
   Pages does not serve one.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Submit your stats — Hang Gang's Binder</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<title>Submit your stats — HangGang</title>
 <meta name="description" content="Submission portal for the Hang Gang. Entries are encrypted in your browser before they are sent.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <!-- Dark's --bg, the default palette. theme.js rewrites this to match
      whichever palette is actually applied; this is what the browser
      chrome uses before that runs. -->
-<meta name="theme-color" content="#121212">
+<meta name="theme-color" content="#120d10">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="theme.css">
 <script src="theme-init.js"></script>
@@ -67,9 +67,9 @@
     </ul>
 
     <div class="themes" role="group" aria-label="Color theme">
+      <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
-      <button type="button" data-set-theme="light">Light</button>
-      <button type="button" data-set-theme="dark">Dark</button>
+      <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
   </nav>
