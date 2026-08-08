@@ -7,7 +7,7 @@
  * guard, visibility behavior, or the no-network boundary.
  */
 import { readFile } from "node:fs/promises";
-import { suite } from "./harness.mjs";
+import { nodeTestSuite } from "./harness.mjs";
 
 const sourcePath = new URL("../apps/web/ui.js", import.meta.url);
 const source = await readFile(sourcePath, "utf8");
@@ -43,7 +43,7 @@ const UI = globalThis.BinderUI;
  * a confident summary over the checks that still reached. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("ui.js", 28);
+const { check, report } = nodeTestSuite("ui.js", 28);
 
 check("the shipped file exposes one frozen helper object",
   UI && Object.isFrozen(UI));
