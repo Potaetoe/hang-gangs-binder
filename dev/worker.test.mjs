@@ -30,8 +30,9 @@ const { default: worker } = await import(
  * It reads just enough of the SQL to tell the three tables apart,
  * because they behave differently in the ways that matter: snapshots
  * replaces rather than appends and is read with first(); sessions is
- * looked up by one key and swept by expiry; submissions appends, counts
- * per account, and can now lose a row.
+ * looked up by one key, swept by expiry, and has one row's deadline
+ * moved forward when it is used; submissions appends, counts per
+ * account, and can now lose a row.
  *
  * A stub that ignored the statement entirely would let a publish that
  * appended a second row pass, and would let a delete that removed
@@ -72,6 +73,13 @@ const DB = {
             const cutoff = Date.parse(a[0]);
             sessions = sessions.filter((s) => Date.parse(s.expires_at) > cutoff);
           }
+        } else if (verb === "UPDATE") {
+          // Sliding an idle window finds one row by token hash and moves
+          // its deadline and nothing else. A stub that dropped the
+          // UPDATE would let an implementation that never writes one
+          // pass "using it is what slides the window back out".
+          const row = sessions.find((s) => s.token_hash === a[1]);
+          if (row) row.expires_at = a[0];
         } else {
           sessions.push({
             token_hash: a[0], account_id: a[1], is_admin: a[2],
@@ -711,6 +719,161 @@ await statusOf("and ADMIN_TELEGRAM_IDS has no say over it",
 await statusOf("but unsetting DEV_LOGIN_SECRET drops it to a member",
   call("GET", "/export", { headers: bearer(devAdmin.session) },
     { ...devEnv, DEV_LOGIN_SECRET: "" }), 401);
+
+/* ------------------------------------------------------------------ */
+/* An admin session also ends when nothing uses it.                    */
+
+/*
+ * The two-hour cap bounds an admin session that is being used. This is
+ * what bounds one that is not: apps/web/admin.html is the only place the
+ * whole corpus exists in the clear, and the cap runs whether the tab is
+ * in use or not (ASD STIG V-222390).
+ *
+ * The window is the row's own expires_at moving forward on use and never
+ * past the cap - no column, and no second sweep beside the one that
+ * already clears expired rows. Three things have to hold at once and
+ * each fails on its own: a fresh admin row carries the window rather
+ * than the cap, using it moves the window, and no amount of use moves
+ * the cap. Together they say a row's deadline is never more than one
+ * window past the last request that presented it, which is the whole
+ * property.
+ *
+ * The numbers are restated here rather than read out of the Worker. A
+ * suite importing the constant would agree with whatever the Worker
+ * said, which is the assertion that cannot fail.
+ */
+reset();
+
+const IDLE_MS = 15 * 60 * 1000;
+const ADMIN_CAP_MS = 2 * 3600 * 1000;
+const MEMBER_CAP_MS = 7 * 24 * 3600 * 1000;
+
+/*
+ * Deadlines are asserted as windows rather than equalities: real time
+ * passes between minting a session and reading its row, and an exact
+ * match would fail on a slow machine for a reason that has nothing to do
+ * with the rule under test. A minute is far tighter than any of the
+ * intervals being told apart here.
+ */
+const SLACK_MS = 60 * 1000;
+const near = (actual, want) => Math.abs(actual - want) < SLACK_MS;
+const rowWhere = (isAdmin) =>
+  sessions.find((s) => s.is_admin === (isAdmin ? 1 : 0));
+const leftOn = (row) => Date.parse(row.expires_at) - Date.now();
+const inMinutes = (ms) => Math.round(ms / 60000) + " min";
+
+const idleAdmin = await (await signIn({ id: 99 })).clone().json();
+const IDLE_ADMIN = idleAdmin.session;
+const IDLE_MEMBER = (await (await signIn({})).clone().json()).session;
+
+check("a fresh admin row expires on the idle window, not on the cap",
+  near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
+/*
+ * The caller is still told the cap, and the two values differ on
+ * purpose. apps/web/session.js keeps expiresAt and never rewrites it, so
+ * handing it the window would drop an admin's own tab a quarter of an
+ * hour after sign-in however busy they had been - a client-side timeout
+ * nobody specified, arriving through the wrong value. The row is where
+ * the window is enforced.
+ */
+check("but the caller is told the absolute expiry, not the window",
+  near(Date.parse(idleAdmin.expiresAt) - Date.now(), ADMIN_CAP_MS),
+  inMinutes(Date.parse(idleAdmin.expiresAt) - Date.now()));
+check("so the row dies sooner than the expiry the caller was handed",
+  Date.parse(rowWhere(true).expires_at) < Date.parse(idleAdmin.expiresAt));
+
+check("a member row still expires seven days out",
+  near(leftOn(rowWhere(false)), MEMBER_CAP_MS),
+  inMinutes(leftOn(rowWhere(false))));
+
+await statusOf("an admin session used inside the window is allowed",
+  call("GET", "/export", { headers: bearer(IDLE_ADMIN) }), 200);
+
+rowWhere(true).expires_at = new Date(Date.now() + 60 * 1000).toISOString();
+await statusOf("and with a minute of the window left it still works",
+  call("GET", "/export", { headers: bearer(IDLE_ADMIN) }), 200);
+check("using it is what slides the window back out to full",
+  near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
+/* The cap is still nearly two hours away here, which is what makes the
+ * refusal below an idle refusal rather than the ordinary expiry this
+ * file already covers further up. */
+rowWhere(true).expires_at = new Date(Date.now() - 1000).toISOString();
+check("the cap is still hours off when the window runs out",
+  Date.parse(rowWhere(true).created_at) + ADMIN_CAP_MS - Date.now() >
+    ADMIN_CAP_MS - SLACK_MS);
+await statusOf("an admin session idle past the window is refused",
+  call("GET", "/export", { headers: bearer(IDLE_ADMIN) }), 401);
+check("and the idle row is cleared rather than left to sit",
+  !sessions.some((s) => s.is_admin === 1), `${sessions.length} row(s) left`);
+
+const memberDeadline = rowWhere(false).expires_at;
+await statusOf("the member session beside it is untouched",
+  call("GET", "/me", { headers: bearer(IDLE_MEMBER) }), 200);
+check("and using that one moves nothing - members have no window",
+  rowWhere(false).expires_at === memberDeadline, memberDeadline);
+
+/*
+ * A row in continuous use for just under two hours: every request slid
+ * the window, and the last of them ran into the cap. This is what a real
+ * row looks like at that moment, and the cap is what stops an admin
+ * session renewing itself a quarter of an hour at a time forever.
+ */
+reset();
+const CAP_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
+const capped = rowWhere(true);
+capped.created_at =
+  new Date(Date.now() - ADMIN_CAP_MS + 60 * 1000).toISOString();
+capped.expires_at = new Date(Date.now() + 60 * 1000).toISOString();
+
+await statusOf("a session a minute short of the cap still works",
+  call("GET", "/export", { headers: bearer(CAP_ADMIN) }), 200);
+check("but no amount of use slides the deadline past the cap",
+  near(leftOn(rowWhere(true)), 60 * 1000), inMinutes(leftOn(rowWhere(true))));
+
+rowWhere(true).expires_at = new Date(Date.now() - 1000).toISOString();
+await statusOf("so the cap still ends a session that never went idle",
+  call("GET", "/export", { headers: bearer(CAP_ADMIN) }), 401);
+
+/*
+ * The window follows the flag on the row rather than the re-read above
+ * it. This row was handed the whole corpus's ciphertext once, and taking
+ * its owner off ADMIN_TELEGRAM_IDS does not un-hand it - so a demoted
+ * session keeps the shorter window along with the member rights it also
+ * keeps. Reading the re-read instead would hand a demoted session the
+ * longer deadline, which is the wrong direction for a demotion.
+ */
+reset();
+const DEMOTED_IDLE = (await (await signIn({ id: 99 })).clone().json()).session;
+rowWhere(true).expires_at = new Date(Date.now() + 60 * 1000).toISOString();
+await statusOf("a demoted admin session still works as a member session",
+  call("GET", "/me", { headers: bearer(DEMOTED_IDLE) }, demoted), 200);
+check("and keeps the admin window, because the row still opened the corpus",
+  near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
+/* A development admin session is an admin session, with no carve-out of
+ * the kind the ADMIN_TELEGRAM_IDS re-read needs: the window bounds what
+ * the row can reach, not where its adminness came from. */
+const devIdle = await (await call("POST", "/auth/dev",
+  { headers: { Origin: LOCAL, ...TYPE },
+    body: JSON.stringify(
+      { secret: "dev-secret", subject: "root", admin: true }) },
+  devEnv)).clone().json();
+const devRow = () => sessions.find((s) => s.is_dev === 1);
+check("a development admin session gets the window too",
+  devIdle.isAdmin === true && near(leftOn(devRow()), IDLE_MS),
+  inMinutes(leftOn(devRow())));
+
+/* The break-glass token is a secret rather than a row, so there is
+ * nothing to slide and no row to find. Asserted because a slide written
+ * one level too high would either move somebody else's deadline or fall
+ * over on the row that is not there. */
+const deadlinesBefore = sessions.map((s) => s.expires_at).join("|");
+await statusOf("the break-glass token still exports",
+  call("GET", "/export", { headers: bearer("sekrit-token-value") }), 200);
+check("and it moved no session's deadline",
+  sessions.map((s) => s.expires_at).join("|") === deadlinesBefore);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
