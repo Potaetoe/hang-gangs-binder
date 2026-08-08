@@ -328,9 +328,8 @@ Admin rights are a **numeric Telegram id** in `ADMIN_TELEGRAM_IDS` —
 not a handle; handles change and get reused.
 
 1. They sign in on the live site — any member can. Their numeric id
-   arrives in the session; until a page displays it (#58), read it from
-   devtools → Application → Session storage → `hgb-session` →
-   `telegramId`.
+   arrives in the session, and `submit.html` shows it back to them
+   under "Your entries".
 2. The owner adds that number to `ADMIN_TELEGRAM_IDS` in the dashboard.
 3. They **sign out and back in.** The admin flag is minted at sign-in
    and stored on the session row — an existing session keeps being
