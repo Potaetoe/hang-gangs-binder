@@ -123,6 +123,23 @@
       <p class="muted small">
         Last submitted: <time id="member-last-at">Checking&hellip;</time>
       </p>
+      <!--
+        Their own number, on a screen their own session opened, and it
+        is here because there is nowhere else it can be read. DESIGN.md's
+        membership-oracle argument is about ids sitting beside rows,
+        where anyone holding the database tests one against a guessed
+        handle; this is shown to one person, about themselves, and
+        stored nowhere new - session.js already keeps it for the tab.
+
+        `hidden` is the resting state and submit.js reveals it, because
+        a development session has no such id and a line reading "Your
+        Telegram id:" followed by nothing would send somebody off to
+        configure a blank.
+      -->
+      <p class="muted small" id="member-telegram-id-line" hidden>
+        Your Telegram id: <strong id="member-telegram-id"></strong> &mdash;
+        needed only if you are being made an admin.
+      </p>
       <p class="muted small">
         These are counts and receipt times from the service. Your encrypted
         entries cannot be read back here because this page does not hold the

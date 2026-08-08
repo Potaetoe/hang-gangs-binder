@@ -214,6 +214,35 @@
     last.textContent = new Date(at).toLocaleString();
   }
 
+  /*
+   * The member's own numeric Telegram id, from the session and from
+   * nowhere else - #58.
+   *
+   * The Worker returns it at sign-in for one purpose: somebody being
+   * made an admin has to put that number in ADMIN_TELEGRAM_IDS, and a
+   * page showing it is what keeps them from asking a third-party bot
+   * for it - which is how a real numeric id reaches somebody nobody
+   * here controls. Leaving it unrendered is what sends people there.
+   *
+   * The session is the source because the sign-in response is the only
+   * thing that ever saw the id. Nothing on this page can derive it, and
+   * /me deliberately does not carry it: a page drawing a number from
+   * the account summary would be telling somebody what to configure on
+   * the word of a route that never knew it.
+   *
+   * A development session has none - POST /auth/dev mints an account
+   * for a subject string rather than for a Telegram user, so it answers
+   * with null - and the line stays hidden for it. "Your Telegram id:"
+   * followed by nothing reads as a broken page, and the person reading
+   * it is on their way to configure something.
+   */
+  function showTelegramId(session) {
+    const numeric = session && session.telegramId;
+    const field = $("member-telegram-id");
+    if (field) field.textContent = numeric || "";
+    show($("member-telegram-id-line"), Boolean(numeric));
+  }
+
   async function refreshPanel() {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
@@ -312,7 +341,8 @@
 
   async function setUp() {
     if (!Session) throw new Error("This page did not load session handling.");
-    if (!Session.require()) return;
+    const session = Session.require();
+    if (!session) return;
 
     FIELD_IDS.forEach(function (id) {
       const field = $(id);
@@ -336,6 +366,7 @@
 
     show($("member-tabs"), true);
     chooseTab("entries");
+    showTelegramId(session);
 
     // The prefill is restored AFTER /me, not before, and the order is the
     // whole point of #56: the account id that says whose data this is only
