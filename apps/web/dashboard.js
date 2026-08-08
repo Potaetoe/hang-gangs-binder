@@ -1377,5 +1377,4 @@
     countryWrap.appendChild(barChart(view.country.slice(0, 12), view.count));
     container.appendChild(countryWrap);
   }
-
 })(globalThis);
