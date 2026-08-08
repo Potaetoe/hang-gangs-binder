@@ -11,7 +11,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { suite } from "./harness.mjs";
+import { nodeTestSuite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -38,7 +38,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  * silent wrong number with it - the same failure the arithmetic below is
  * about, one level up. See dev/harness.mjs.
  */
-const { check, report } = suite("dashboard.js", 117);
+const { check, report } = nodeTestSuite("dashboard.js", 117);
 
 await check("the exported object is frozen", () =>
   // `suppressCounts` and MIN_CELL are the suppression floor standing
