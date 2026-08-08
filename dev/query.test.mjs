@@ -61,7 +61,7 @@ const threw = (fn, fragment) => {
  * inside loops, and a loop that silently stops iterating still reports
  * every check it managed to reach as a pass.
  */
-const { check, report } = suite("query.js", 44);
+const { check, report } = suite("query.js", 50);
 
 /* ------------------------------------------------------------------ */
 /* The module shape, and the contract the UI slice builds against.     */
@@ -112,12 +112,19 @@ const entry = (over) => {
   }, over);
 };
 
-/* A group large enough that a published snapshot has something to say. */
+/*
+ * A group large enough that a published snapshot has something to say.
+ *
+ * Every country here clears MIN_CELL on purpose. A published document
+ * has already suppressed its own cells, so a country that did not clear
+ * the floor would not be a label in the document at all - and the merge
+ * checks below need labels that are really there to merge.
+ */
 const corpus = [];
 for (let i = 0; i < 30; i++) {
   corpus.push(entry({
     gender: i < 20 ? "female" : "male",
-    country: i < 24 ? "US" : (i < 28 ? "GB" : "JP"),
+    country: i < 12 ? "US" : (i < 22 ? "GB" : "CA"),
     kg: 60 + i,
     lb: Math.round((60 + i) * 2.2046226218),
     cm: 160 + (i % 20),
@@ -343,10 +350,20 @@ const leaky = {
     people: {
       count: 24,
       bmi: { median: 27, mean: 27, bins: [{ from: 20, to: 25, count: 24 }] },
+      /*
+       * Sized so that suppressing it leaves something to look at. Fold
+       * the two small cells together and the bucket holds 4, short of
+       * the floor, so suppressCounts absorbs the smallest named cell -
+       * male 8 - and the document reports female 12 beside Other 12.
+       * Had the small cells been smaller still, absorbing would have
+       * eaten every named cell and the honest answer would be an empty
+       * breakdown, which is a different check.
+       */
       gender: [
-        { label: "female", count: 20 },
-        { label: "male", count: 3 },
-        { label: "nonbinary", count: 1 },
+        { label: "female", count: 12 },
+        { label: "male", count: 8 },
+        { label: "nonbinary", count: 3 },
+        { label: "agender", count: 1 },
       ],
       roles: [{ label: "gainer", count: 24 }],
       country: [{ label: "US", count: 23 }, { label: "JP", count: 1 }],
@@ -391,6 +408,26 @@ await check("a sub-floor bin in the source document is not returned", () => {
   return result.cells.every((bin) => bin.count >= MIN_CELL) &&
     sum(result.cells) === 24;
 });
+
+await check("a merge naming a cell the floor removed is refused", () =>
+  /*
+   * What arms the suppress-before-merge order, and the only check here
+   * that can tell the two orders apart.
+   *
+   * Merge first and "nonbinary" is a cell, so the merge succeeds and
+   * the answer differs from the unmerged one by exactly the count that
+   * was never published - the composition leak, reachable with two
+   * clicks. Suppress first and the label is simply not in the document
+   * the member was given, which is the honest answer and the safe one.
+   *
+   * Against a real published snapshot both orders agree, because every
+   * cell in one already clears the floor. That is precisely why this
+   * check needs the adversarial fixture.
+   */
+  threw(() => Q.run(Q.publishedSource(leaky), {
+    basis: "people", split: "gender",
+    merge: [{ as: "smaller groups", labels: ["nonbinary", "agender"] }],
+  }), "nonbinary"));
 
 await check("the personal arm returns a cell of one", () => {
   // The floor is not a global truth about counting - it is a property
@@ -614,6 +651,96 @@ await check("PROPERTY overlaying two widenings cannot isolate anybody",
               const smallest = Math.min(one.count, other.count);
               if (smallest < MIN_CELL) return false;
             }
+          }
+        }
+      }
+    }
+    return true;
+  });
+
+/*
+ * A published document carrying whatever bins a check wants to hand it.
+ *
+ * The properties above run over documents snapshotOf() built, and every
+ * bin in one of those already clears the floor - which makes the two
+ * possible orderings inside run() indistinguishable. Distinguishing
+ * them needs a document whose bins do not, and that document has to be
+ * written by hand.
+ */
+const binsSnapshot = (counts) => ({
+  snapshot: published.snapshot,
+  generated: published.generated,
+  identified: false,
+  counts: { entries: 0, people: 0 },
+  series: null,
+  quality: null,
+  bases: {
+    people: {
+      count: 0,
+      bmi: { median: null, mean: null, bins: [] },
+      gender: [], roles: [], country: [],
+      imperial: {
+        weight: {
+          median: null, mean: null,
+          bins: counts.map((count, i) => ({
+            from: i * 20, to: (i + 1) * 20, count: count,
+          })),
+        },
+        height: { median: null, mean: null, bins: [] },
+      },
+      metric: {
+        weight: { median: null, mean: null, bins: [] },
+        height: { median: null, mean: null, bins: [] },
+      },
+    },
+    entries: null,
+  },
+});
+
+await check("PROPERTY every widening is a coarsening of one partition",
+  () => {
+    /*
+     * The safety theorem stated exactly, and the check that arms the
+     * suppress-before-widen order.
+     *
+     * Every answer must be a coarsening of ONE partition, so every band
+     * edge any widening produces has to be an edge of the unwidened
+     * answer. Widen first and suppress after, and each factor clears
+     * the floor by merging a different set of neighbours - widen 3 over
+     * six bins of three yields a boundary in the middle of a band that
+     * widen 2 reported whole, and two partitions that cut each other is
+     * the overlay DESIGN.md's "one partition, not two" was written
+     * about.
+     *
+     * Asserted on edges rather than on counts because counts hide it:
+     * both orderings return bands that individually clear the floor,
+     * and it is where the boundaries fall that says whether they can be
+     * laid over each other.
+     */
+    const vectors = [
+      [3, 3, 3, 3, 3, 3],
+      [1, 1, 9, 1, 1, 1, 9],
+      [2, 2, 2, 2, 2, 2, 2, 2, 2],
+      [7, 1, 1, 7, 1, 1, 7],
+      [4, 4, 4, 4],
+      [1, 2, 3, 4, 5, 6, 7],
+    ];
+    for (const counts of vectors) {
+      const source = Q.publishedSource(binsSnapshot(counts));
+      const ask = (widen) => Q.run(source, {
+        basis: "people", split: "weight", units: "imperial", widen: widen,
+      });
+      const edges = new Set();
+      for (const bin of ask(1).cells) {
+        edges.add(bin.from);
+        edges.add(bin.to);
+      }
+      for (const widen of [2, 3, 4, 5]) {
+        for (const bin of ask(widen).cells) {
+          if (!edges.has(bin.from) || !edges.has(bin.to)) {
+            console.error("counts " + JSON.stringify(counts) + " widen " +
+              widen + " band " + JSON.stringify(bin));
+            return false;
           }
         }
       }
