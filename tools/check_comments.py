@@ -189,13 +189,10 @@ NEEDS_SUBJECT = frozenset({"used to"})
 # list in the pull request that next touches its file - never by
 # raising a count.
 ALLOWLIST = {
-    ("apps/web/admin.html", "used to"): 1,
     ("apps/web/dashboard.js", "originally"): 1,
     ("apps/web/dashboard.js", "used to"): 1,
     ("dev/dashboard.test.mjs", "used to"): 2,
     ("dev/ui.test.mjs", "used to"): 1,
-    ("tools/check_web.py", "this replaces"): 1,
-    ("tools/check_web.py", "used to"): 2,
 }
 
 

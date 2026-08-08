@@ -35,7 +35,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 73
+EXPECTED = 106
 
 
 def check(label, condition):
@@ -261,6 +261,157 @@ check("a fragment is not a way off a page",
 check("an off-site link is not a way through the site",
       any("no way off it" in p for p in check_web.plain_page_problems(
           '<a href="https://example.com">away</a>')))
+
+
+# ------------------------------------------------------------------ #
+# Check 15 - the label roles.                                         #
+
+# The table itself, before any markup is read. A role with no sentence
+# behind it produces a failure message that cannot say what the reader
+# should have written instead.
+check("every label role says what job it does",
+      all(isinstance(why, str) and why
+          for why in check_web.LABEL_ROLES.values()))
+check("every label in the inventory names a role that exists",
+      set(check_web.LABELS.values()) <= set(check_web.LABEL_ROLES))
+
+# The reader, on strings. The section-name component wraps its words in
+# a span so its rule can run off it, so a reader that took the raw match
+# would compare "<span>Members</span>" against the inventory forever.
+check("a label is read as its role and its words",
+      check_web.page_labels('<p class="runner"><span>Members</span></p>') ==
+      [("runner", "Members")])
+check("a label's words survive the markup inside it",
+      check_web.label_text("<span>Rows that\n  would not open</span>") ==
+      "Rows that would not open")
+check("an ordinary paragraph is not a label",
+      check_web.page_labels("<p class='muted'>a sentence</p>") == [])
+
+# Both directions on the inventory, which is the arm that makes adding a
+# label an act that has to declare its job.
+check("a label carrying a declared role raises nothing",
+      check_web.page_label_problems('<p class="flag">Received</p>') == [])
+check("a label nobody has given a job is refused",
+      any("names no job" in p for p in check_web.page_label_problems(
+          '<p class="runner">Very nearly done</p>')))
+check("a label doing a different job from the one declared is refused",
+      any("says it is" in p for p in check_web.page_label_problems(
+          '<p class="runner">Received</p>')))
+
+# The overload itself, in the form #68 found it: an outcome wearing the
+# section-name component, which is what made `Received` look like
+# `Optional`.
+check("an outcome dressed as a section name names both roles",
+      any('"Received" as "runner"' in p and '"flag"' in p
+          for p in check_web.page_label_problems(
+              '<p class="runner">Received</p>')))
+
+# The retired component, refused in the markup and in the stylesheet.
+check("a page still wearing the retired label component is refused",
+      any("means none of them" in p for p in check_web.page_label_problems(
+          '<p class="eyebrow">Received</p>')))
+
+# The evasion: the same class on something that is not a paragraph
+# renders identically and would otherwise be invisible here.
+check("a role worn by something that is not a paragraph is refused",
+      any("not a paragraph" in p for p in check_web.page_label_problems(
+          '<div class="flag">Received</div>')))
+check("a role on a paragraph is not caught by that arm",
+      not any("not a paragraph" in p for p in check_web.page_label_problems(
+          '<p class="flag">Received</p>')))
+
+# A role class alongside another class still has to answer for itself.
+check("a role wearing a second class is still read as that role",
+      check_web.page_labels('<p class="flag small">Result</p>') ==
+      [("flag", "Result")])
+
+# And the pins have to match what actually ships.
+check("no shipped label's role differs from the inventory",
+      check_web.label_problems() == [])
+check("the stylesheet tells the three roles apart",
+      check_web.label_style_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 16 - one name per destination.                                #
+
+check("every published page is named once",
+      set(check_web.DESTINATIONS) == set(check_web.html_pages()))
+check("no two destinations answer to the same name",
+      len(set(check_web.DESTINATIONS.values())) ==
+      len(check_web.DESTINATIONS))
+
+NAMED = ('<title>Progress — HangGang</title><h1>Progress</h1>'
+         '<ul class="rail-links">'
+         '<li><a href="index.html">Sign in</a></li>'
+         '<li><a href="dashboard.html">Progress</a></li></ul>')
+
+check("a page whose surfaces agree raises nothing",
+      check_web.page_name_problems(NAMED, "Progress") == [])
+check("a heading disagreeing with the page's name is refused",
+      any("its heading says" in p for p in check_web.page_name_problems(
+          NAMED.replace("<h1>Progress</h1>", "<h1>Dashboard</h1>"),
+          "Progress")))
+check("a title disagreeing with the page's name is refused",
+      any("bookmark" in p for p in check_web.page_name_problems(
+          NAMED.replace("<title>Progress", "<title>Dashboard"), "Progress")))
+check("a page with no heading at all is refused",
+      any("what page it is" in p for p in check_web.page_name_problems(
+          NAMED.replace("<h1>Progress</h1>", ""), "Progress")))
+
+# The half rail parity cannot reach. Three rails can agree with each
+# other and disagree with the page they open, which is exactly the drift
+# #127 inventoried - the admin page called Export by every rail on the
+# site at once.
+check("a rail calling another page by a name it does not answer to "
+      "is refused",
+      any('calling index.html "Home"' in p
+          for p in check_web.page_name_problems(
+              NAMED.replace(">Sign in<", ">Home<"), "Progress")))
+check("no shipped page disagrees with its own name",
+      check_web.name_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 17 - the member pages and the admin instrument.               #
+
+check("every published page names a surface",
+      set(check_web.SURFACES) == set(check_web.html_pages()))
+check("exactly one page is the admin instrument",
+      [page for page, surface in check_web.SURFACES.items()
+       if surface == "instrument"] == ["admin.html"])
+
+INSTRUMENT = ('<body class="wide railed instrument">'
+              '<p class="surface-mark">Admin surface</p>')
+MEMBER = '<body class="railed"><h1>Progress</h1>'
+
+check("the instrument page wearing its own clothes raises nothing",
+      check_web.page_surface_problems(INSTRUMENT, "instrument") == [])
+check("a member page wearing none of them raises nothing",
+      check_web.page_surface_problems(MEMBER, "member") == [])
+
+check("the instrument page without its body class is refused",
+      any("does not say so" in p for p in check_web.page_surface_problems(
+          INSTRUMENT.replace(' instrument"', '"'), "instrument")))
+check("the instrument page without a visible surface mark is refused",
+      any("surface mark" in p for p in check_web.page_surface_problems(
+          '<body class="wide railed instrument">', "instrument")))
+check("a surface mark with no words in it does not count as one",
+      any("surface mark" in p for p in check_web.page_surface_problems(
+          INSTRUMENT.replace(">Admin surface<", "><"), "instrument")))
+
+# The copy-paste direction, which is the arm worth having.
+check("a member page claiming the instrument surface is refused",
+      any("claims the admin instrument" in p
+          for p in check_web.page_surface_problems(
+              MEMBER.replace('"railed"', '"railed instrument"'), "member")))
+check("a member page carrying the admin surface mark is refused",
+      any("carries the admin surface mark" in p
+          for p in check_web.page_surface_problems(
+              MEMBER + '<p class="surface-mark">Admin surface</p>',
+              "member")))
+check("no shipped page wears the wrong surface",
+      check_web.surface_problems() == [])
 
 
 # ------------------------------------------------------------------ #
