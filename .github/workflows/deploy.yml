@@ -83,6 +83,25 @@ jobs:
       - name: Check the CSP parser and the policy pin
         run: python dev/check_web.test.py
 
+      # server/ is checked separately from apps/web: check_web.py is
+      # bounded to apps/web by construction, which is how a [vars]
+      # block publishing the group's numeric Telegram ids once passed
+      # every check the gate had (#39). Registered here 2026-08-08 -
+      # both steps had been in tools/check.py only, which is exactly
+      # the armed-looking-but-not failure the linter note below calls
+      # worse than having no check at all.
+      - name: Check server/ commits no ids or secrets
+        run: python tools/check_server.py
+
+      - name: Check the vars parser and rules
+        run: python dev/check_server.test.py
+
+      # The documentation system holding to its own rules - the
+      # top-level registry, falsified-claim tripwires, and spelling.
+      # See tools/check_docs.py and issue #77.
+      - name: Check the documents stay registered and tripwire-free
+        run: python tools/check_docs.py
+
       # The one check whose failure is about the data rather than the
       # site. A crypto.js that no longer reads what is already stored
       # publishes a site that looks perfect and cannot be exported from,

@@ -5,29 +5,24 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of seventeen remembered ones. It runs the two
-linters, the eleven Node suites in dev/, the publishability check, the
-deployment-config check, and the suite behind each of those two, and
-exits non-zero if any of them fails:
+it?" one command instead of a list of remembered ones. It runs the two
+linters, every Node suite in dev/, the publishability check, the
+deployment-config check, the documentation check, and the suite behind
+each of the two checkers, and exits non-zero if any of them fails.
+(The previous version of this docstring enumerated the stages with a
+count, listed one suite short, and was stale within a week - the
+printout at the end of a run is the list, and the only one that cannot
+drift.) In outline:
 
-     1. apps/web is publishable (references resolve, no key-shaped
-        content)
-     2. check_web.py's own CSP parser and policy pin
-     3. server/ commits no member ids, dev sign-in secret or key
-     4. check_server.py's own vars parser and rules
-     5. eslint passes over the JavaScript
-     6. ruff passes over the Python
-     7. crypto.js round trips, and the v1 fixture still decrypts
-     8. form.js builds the record the way it always did
-     9. submit.js shows counts from /me, and a failed send stores nothing
-    10. admin.js quotes CSV correctly and guards spreadsheet formulas
-    11. admin.js requires an admin session and keeps deletion state current
-    12. xlsx.js writes a ZIP that a reader can actually open
-    13. dashboard.js aggregates the rows correctly
-    14. public.js requires and sends a member session for the dashboard
-    15. ui.js keeps the shared DOM wiring and boot guard intact
-    16. session.js stores a valid tab session and auth.js hands it off
-    17. worker.js routes, validates and enforces CORS
+    - apps/web is publishable (references resolve, no key-shaped
+      content), and check_web.py's own CSP parser holds
+    - server/ commits no member ids, dev sign-in secret or key, and
+      check_server.py's own vars parser holds
+    - the documents stay registered, tripwire-free and American-spelled
+      (tools/check_docs.py carries the registry)
+    - eslint and ruff pass
+    - every dev/ suite passes, from the crypto fixture to the Worker's
+      gating matrix - NODE_SUITES below is the roster
 
 Checks 1 and 3 are siblings and not one check with two scopes, because
 the two directories are dangerous for opposite reasons: apps/web is
@@ -181,6 +176,15 @@ def main():
     results.append(("check_server vars parser + rules", run(
         "check_server vars parser + rules",
         [sys.executable, "dev/check_server.test.py"]
+    )))
+
+    # The documentation system holding to its own rules: the top-level
+    # registry, falsified-claim tripwires, and spelling. Born from
+    # issue #77 - three corrections in one week each missed a hand-made
+    # copy of the fact they corrected.
+    results.append(("docs registry + tripwires", run(
+        "docs registry + tripwires",
+        [sys.executable, "tools/check_docs.py"]
     )))
 
     node = find_node()

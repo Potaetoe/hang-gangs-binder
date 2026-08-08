@@ -31,3 +31,8 @@
 *.png   binary
 *.jpg   binary
 *.ico   binary
+
+# The run launcher: the sh half stays LF everywhere; the cmd half is
+# CRLF, because cmd.exe misparses multi-line blocks under LF.
+run     text eol=lf
+*.cmd   text eol=crlf

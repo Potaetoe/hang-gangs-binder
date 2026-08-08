@@ -1,0 +1,51 @@
+#!/bin/sh
+# One entry point for the Python-based tooling, because `python` on the
+# owner's machine is a Microsoft Store stub and the real interpreter
+# answers to `py -3`. Finds a working Python once, then dispatches.
+# Windows shells get the same commands from run.cmd (`.\run <command>`).
+set -eu
+cd "$(dirname "$0")"
+
+find_python() {
+  for cand in "py -3" python3 python; do
+    if $cand --version >/dev/null 2>&1; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PY=$(find_python) || {
+  echo "No working Python found (the Microsoft Store stub does not" >&2
+  echo "count). Install one from python.org or enable the py launcher." >&2
+  exit 1
+}
+
+case "${1:-}" in
+  check)
+    exec $PY tools/check.py ;;
+  docs)
+    exec $PY tools/check_docs.py ;;
+  serve)
+    echo "Open http://127.0.0.1:8124  (127.0.0.1, not localhost - #72)"
+    exec $PY -m http.server 8124 --directory apps/web ;;
+  serve-root)
+    echo "Site at http://127.0.0.1:8124/apps/web/, harness under /dev/,"
+    echo "key tools under /tools/"
+    exec $PY -m http.server 8124 --directory . ;;
+  keygen)
+    echo "Open http://127.0.0.1:8125/keygen.html"
+    exec $PY -m http.server 8125 --directory tools ;;
+  *)
+    cat <<'EOF'
+usage: ./run <command>          (PowerShell: .\run <command>)
+
+  check       run every check the project has - the same set CI runs
+  docs        run only the documentation checks
+  serve       serve the site at http://127.0.0.1:8124
+  serve-root  serve the repository root on 8124 (keycheck, browser checks)
+  keygen      serve the key generator at http://127.0.0.1:8125
+EOF
+    exit 2 ;;
+esac
