@@ -6,12 +6,14 @@ The owner created this folder on 2026-08-08, deciding the placement
 question issue #79 closed on.
 
 Everything in here is a **snapshot** — what one reviewer found, on one
-date, against one named catalog. That is the opposite of how the five
-top-level documents work, and the distinction is the whole point of
-giving these their own folder: `README.md`, `AGENTS.md`, `DESIGN.md`,
-`OPERATIONS.md` and `CUTOVER.md` carry current truth and are corrected
-in place, while a record in here is never corrected. It is superseded by
-a later record, and the older one stays as it was written.
+date, against one named catalog. That is the opposite of how the
+operative top-level documents work, and the distinction is the whole
+point of giving these their own folder: those carry current truth and
+are corrected in place, while a record in here is never corrected. It is
+superseded by a later record, and the older one stays as it was written.
+Which documents are operative is named in AGENTS.md, "The documentation
+system", and not repeated here — a second copy of that list is exactly
+the failure this folder's own rules are about.
 
 ## What belongs here
 
@@ -31,7 +33,7 @@ a later record, and the older one stays as it was written.
   stated", and records in here cite it by section name. One home per
   fact: an assessment that restated the threat model would become a
   second copy nobody corrects, which is exactly the failure the
-  five-document system was built to end. If a finding changes the threat
+  document system was built to end. If a finding changes the threat
   model, `DESIGN.md` is what gets edited.
 - **Mutable state.** Which findings are still open, who holds the fix,
   whether an accepted deviation is still accepted — GitHub issues and

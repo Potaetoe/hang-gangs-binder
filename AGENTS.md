@@ -11,13 +11,15 @@ goal, approves material trade-offs, and is the final decision-maker.
 
 ## The documentation system
 
-Five operative documents, and only five: `README.md`, `AGENTS.md`,
-`DESIGN.md`, `OPERATIONS.md`, `CUTOVER.md` (which is deleted after the
-cutover it describes). Beside them the registered `security/` folder
-holds dated security records — an assessment against a named baseline,
-the STIG checklist, a later audit. Those are snapshots of what was found
-on a date, never corrected in place, which is why they are not operative
-documents and do not enlarge the five; `security/README.md` is that
+The operative documents, and only these: `README.md`, `AGENTS.md`,
+`DESIGN.md`, `OPERATIONS.md`, `UAT.md`, `CUTOVER.md` (which is deleted
+after the cutover it describes). The set is written out rather than
+counted because `CUTOVER.md` leaves and a count would go stale the day
+it does. Beside them the registered `security/` folder holds dated
+security records — an assessment against a named baseline, the STIG
+checklist, a later audit. Those are snapshots of what was found on a
+date, never corrected in place, which is why they are not operative
+documents and do not enlarge that set; `security/README.md` is that
 folder's charter and says what belongs there and how a record is
 stamped. `tools/check_docs.py` holds both registries and **fails the
 gate on any unregistered top-level document, and on any file in

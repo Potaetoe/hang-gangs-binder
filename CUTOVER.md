@@ -50,8 +50,9 @@ completes. That is why the Worker deploys before the site.
       sitting** — `OPERATIONS.md`, "Backing up the submissions" — and
       open the file to confirm it holds `INSERT` rows. Step 4 is only
       as reversible as this file (#92).
-- [ ] UAT Part A green on the current `accounts` head (record:
-      `archive/UAT.md`; re-run only what changed since).
+- [ ] UAT Part A green on the current `accounts` head — the script is
+      `UAT.md`, both arms, and the filled record is a comment on the UAT
+      issue rather than a file. Re-run only what changed since.
 
 ## The sequence
 
@@ -125,8 +126,8 @@ Acceptance, on the live site:
       bounce to sign-in with **zero** Worker requests.
 - [ ] A member session reaches the dashboard; an admin-only page
       refuses a member with a message, not a blank page.
-- [ ] Publish a snapshot (so members see figures) and re-run the three
-      privacy checks from `archive/UAT.md` A6.1–A6.3 against the real
+- [ ] Publish a snapshot (so members see figures) and re-run the
+      privacy checks from `UAT.md` A11.1–A11.3 against the real
       corpus: no handles or rows in the published document, no
       height panel, no series under five lines. **A failure here stops
       everything else until resolved.**
