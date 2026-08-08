@@ -42,6 +42,9 @@ completes. That is why the Worker deploys before the site.
       what you put in it. (Your id: sign in, then devtools → Session
       storage → `hgb-session` → `telegramId` — no page shows it yet,
       #58.)
+- [ ] **No open `enhancement` issues remain** — owner decision
+      2026-08-08: every enhancement lands before the cutover. Check:
+      `gh issue list --label enhancement --state open`.
 - [ ] **Back up production `submissions` immediately before the
       sitting** — `OPERATIONS.md`, "Backing up the submissions" — and
       open the file to confirm it holds `INSERT` rows. Step 4 is only
