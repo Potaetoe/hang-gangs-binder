@@ -698,6 +698,56 @@ branch deletion is always dangerous and leaving the clutter. A rule that says
 "be careful" produces both. One that says "compare the bodies" produces
 neither.
 
+### The gate reads `server/` now — #39
+
+Claude, in parallel with Codex on step 5. Contract first, and its honest first
+state was `ModuleNotFoundError: No module named 'check_server'` — left as a
+crash rather than wrapped, the same way #34's contract was left raising
+`AttributeError` on a `parse_csp` that did not exist yet. The contract is that
+the module becomes testable, and "it is not there" is the truthful beginning of
+that.
+
+**A sibling, not a second scope, and the reason is the whole shape of the
+slice.** The issue left the choice open. `check_web.py` is about
+publishability — `apps/web` is copied verbatim to a public site — and `server/`
+is not published at all. It is dangerous for the opposite reason: it is the
+directory that gets *run*. Bolting a deployment-config check onto a checker
+whose premise is "this becomes a public site" would have made the premise
+false, and the premise is what a reader uses to decide where a new check
+belongs.
+
+Three details that decided the implementation rather than decorating it:
+
+- **Both `[vars]` blocks.** `wrangler.toml` has `[vars]` and
+  `[env.dev.vars]`. A check reading only the first passes a paste into the
+  second, and the dev Worker is not a lesser place to leak a member list
+  from — the file is in the same public repository either way. The header
+  is matched as `env.<anything>.vars` so a second environment is covered
+  the day it is added, without this file learning its name.
+- **Assignment, not mention, for `DEV_LOGIN_SECRET`.** `wrangler.toml`
+  names it several times in prose, in order to say it must never be set. A
+  check matching the name would fail on the *correct* file, and the obvious
+  fix for that is to weaken the check. So comments are stripped first —
+  character by character, respecting quotes, because a `#` inside a value
+  is legitimate and truncating a value fails silently rather than raising.
+- **`KEY_PATTERNS` imported, not copied.** Two lists of key shapes drifting
+  apart is worse than one import, and a copy would not gain the next shape
+  somebody adds over there. A check asserts they are the same object, so
+  the import cannot quietly become a copy.
+
+Mutation on the real gate, not on the rule: #39's four id bindings put back
+verbatim produce three errors and `Not safe to push`, where the same block
+passed every check the gate had. `DEV_LOGIN_SECRET` is caught twice over, by
+the allowlist and by its own rule — deliberate, since its absence is the only
+thing turning `POST /auth/dev` off.
+
+**One small thing worth keeping.** The contract was written with an isort
+suppression copied from `dev/check_web.test.py`, and ruff's RUF100 refused it
+as suppressing nothing. Then explaining that in a comment made ruff parse the
+comment as a real directive and warn. Both were fixed rather than lived with:
+the file that argues a gate must not cry wolf is a poor place to leave a
+warning.
+
 ---
 
 ## 2026-08-06
