@@ -274,6 +274,13 @@ check("past the staleness line it counts whole days and says it is stale",
   await ageLine(5 * 24 * HOUR) ===
     "Figures worked out 5 days ago (2026-08-04 12:00 UTC)." + STALE_WARNING);
 
+/* Every other days fixture here is a whole number of days, and floor and
+ * round agree on those. Sixty-eight hours is the one that separates them,
+ * which is the difference between a page saying two days and three. */
+check("the days arm truncates rather than rounds, so 68 hours reads as two days",
+  await ageLine(68 * HOUR) ===
+    "Figures worked out 2 days ago (2026-08-06 16:00 UTC)." + STALE_WARNING);
+
 check("the two-minute line holds one second under and one second over",
   await ageLine(2 * MINUTE - SECOND) ===
     "Figures worked out just now (2026-08-09 11:58 UTC)." &&
@@ -334,4 +341,4 @@ if (failures) {
   console.error(`\npublic dashboard FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\npublic dashboard OK - 21 checks");
+console.log("\npublic dashboard OK - 22 checks");
