@@ -257,7 +257,7 @@ listing them with the `.mjs` suites.
   python -m http.server 8124 --directory .
   ```
 
-  Then <http://localhost:8124/dev/crypto-browser-check.html>. Port 8124
+  Then <http://127.0.0.1:8124/dev/crypto-browser-check.html>. Port 8124
   is the localhost origin `server/worker.js` already allows. Note that
   while this is running the site itself is at `/apps/web/`.
 
@@ -319,7 +319,7 @@ already needs, so the sample is reachable over HTTP alongside the site:
 python -m http.server 8124 --directory .
 ```
 
-The site is then at <http://localhost:8124/apps/web/admin.html>. Open
+The site is then at <http://127.0.0.1:8124/apps/web/admin.html>. Open
 the browser console there and paste this **before** pressing Fetch and
 decrypt:
 

@@ -82,7 +82,10 @@ No build step and no dependencies. Serve `apps/web` and open it:
 python -m http.server 8124 --directory apps/web
 ```
 
-Then visit <http://localhost:8124>.
+Then visit <http://127.0.0.1:8124> — that address rather than
+`localhost`, because `http.server` binds IPv4 only and a browser tries
+`localhost` as IPv6 first, paying a failed-connect delay on every request
+that makes the site read as slow (#72).
 
 Serving it matters — opening `index.html` as a `file://` URL breaks the
 crypto APIs the form depends on, because they require a secure context.
@@ -120,7 +123,7 @@ not part of the site and is never published.
 python -m http.server 8125 --directory tools
 ```
 
-Then visit <http://localhost:8125/keygen.html>. It hands back two
+Then visit <http://127.0.0.1:8125/keygen.html>. It hands back two
 things: a `publicKey` line to paste into
 [apps/web/config.js](apps/web/config.js) and commit, and a key file to
 save somewhere safe and **never** commit. It verifies the two halves
@@ -146,7 +149,7 @@ Two different questions, and the second is the one that matters:
 python -m http.server 8124 --directory .
 ```
 
-Then <http://localhost:8124/tools/keycheck.html>. Drop the key file in
+Then <http://127.0.0.1:8124/tools/keycheck.html>. Drop the key file in
 and it names the key; paste a `ciphertext` value from the database and
 it tells you whether that key opens it.
 
@@ -276,7 +279,7 @@ the data is what breaks.
 If you touched `apps/web/crypto.js`, run it in a browser too — Node is
 the same specification but not what a submitter uses. Serve the
 repository root and open
-<http://localhost:8124/dev/crypto-browser-check.html>; see
+<http://127.0.0.1:8124/dev/crypto-browser-check.html>; see
 [dev/README.md](dev/README.md).
 
 If you changed the endpoint or the Worker:

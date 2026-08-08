@@ -31,7 +31,14 @@ From the repository root, on `accounts`:
 python -m http.server 8124 --directory apps/web
 ```
 
-Then <http://localhost:8124>.
+Then <http://127.0.0.1:8124>.
+
+**`127.0.0.1`, not `localhost` — #72.** The bare `http.server` binds IPv4
+only, and a browser tries `localhost` as IPv6 first, so every request pays a
+~200 ms failed-connect fallback: the site reads as slow and the site is not.
+Measured 2026-08-08 — 1568 ms to DOMContentLoaded via `localhost` against
+88 ms via `127.0.0.1`, same server, same page. `config.js` maps both
+hostnames to the development arm, so nothing else changes.
 
 **Port 8124 is not optional.** `config.js` selects by hostname and the dev
 Worker's allowed origins name that port; another port fails CORS quietly,
