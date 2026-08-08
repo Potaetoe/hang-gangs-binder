@@ -138,6 +138,18 @@ SIMPLE = """
 }
 """
 
+def first(found):
+    """The first rule parsed, or an empty stand-in.
+
+    Blinding the parser is the mutation that proves this whole file is
+    worth running, and a blinded parser returns nothing. Indexing
+    straight into that would end the suite with a traceback instead of
+    reporting which arm noticed - and a traceback names the line that
+    tripped rather than the rule that broke.
+    """
+    return found[0] if found else (None, "", {})
+
+
 RULES = check_contrast.rules(SIMPLE)
 
 check("a palette block is found",
@@ -158,9 +170,9 @@ check("a declaration that is not a custom property is ignored",
 # the shape it is heading for in one, and a parser that reads it would
 # measure a palette nobody ships.
 check("a commented-out declaration is not read",
-      check_contrast.rules(':root { /* --color-bg: #ffffff; */ '
-                           '--color-bg: #000000; }')[0][2]["--color-bg"]
-      == "#000000")
+      first(check_contrast.rules(
+          ':root { /* --color-bg: #ffffff; */ '
+          '--color-bg: #000000; }'))[2].get("--color-bg") == "#000000")
 
 MEDIA = """
 @media (prefers-color-scheme: light) {
@@ -171,6 +183,7 @@ MEDIA = """
 """
 
 MEDIA_RULES = check_contrast.rules(MEDIA)
+MEDIA_RULE = first(MEDIA_RULES)
 
 check("a media-scoped block is found",
       len(MEDIA_RULES) == 1)
@@ -181,13 +194,13 @@ check("a media-scoped block is found",
 # high-contrast one, and a checker that dropped the condition would
 # measure one palette twice and the other never.
 check("and it is attributed to its media condition",
-      MEDIA_RULES[0][0] == "(prefers-color-scheme: light)")
+      MEDIA_RULE[0] == "(prefers-color-scheme: light)")
 
 check("and the selector inside the media block is kept",
-      MEDIA_RULES[0][1] == ":root:not([data-theme])")
+      MEDIA_RULE[1] == ":root:not([data-theme])")
 
 check("and the declaration inside it is read",
-      MEDIA_RULES[0][2]["--color-bg"] == "#f2efe9")
+      MEDIA_RULE[2].get("--color-bg") == "#f2efe9")
 
 check("a nested media block does not swallow the rule after it",
       len(check_contrast.rules(MEDIA + ':root { --color-bg: #000; }')) == 2)
@@ -231,6 +244,18 @@ check("a self-referential token does not hang the resolver",
 REAL = open(check_contrast.CSS, encoding="utf-8").read()
 PALETTES, UNKNOWN = check_contrast.scopes(REAL)
 
+
+def tokens_of(palette):
+    """One parsed palette's colors, or None when it was not found.
+
+    None rather than a default map, and every caller has to say so:
+    two palettes that are both absent would otherwise compare equal and
+    the "these two blocks agree" checks would pass on a parse that read
+    neither of them.
+    """
+    entry = PALETTES.get(palette)
+    return entry[1] if entry else None
+
 check("every palette scope in the real stylesheet is a pinned one",
       UNKNOWN == [])
 
@@ -241,7 +266,8 @@ check("the real stylesheet yields the four palettes and the two "
       "system-preference scopes", len(PALETTES) == 6)
 
 check("and each of them carries a full set of tokens",
-      all(len(tokens) >= 19 for _level, tokens in PALETTES.values()))
+      bool(PALETTES)
+      and all(len(tokens) >= 19 for _level, tokens in PALETTES.values()))
 
 check("Dark is among them and is an AA palette",
       any(name.startswith("Dark") and level == "AA"
@@ -255,7 +281,9 @@ check("High contrast is among them and is held to AAA",
 # and spacing tokens, not a palette. Reading it as one would compute
 # every pairing against a background it does not define.
 check("the shared token block is not mistaken for a palette",
-      all("--color-bg" in tokens for _level, tokens in PALETTES.values()))
+      bool(PALETTES)
+      and all("--color-bg" in tokens
+              for _level, tokens in PALETTES.values()))
 
 # A palette the pinned table does not know must fail rather than be
 # measured against a guessed level. This is what stops a fifth palette
@@ -350,10 +378,18 @@ check("and AAA holds a mark to four rather than three",
 
 # A missing token cannot be measured, and skipping it silently is how a
 # palette ships one token short of the set every other palette holds.
+#
+# Whichever token the first pairing names, rather than a token spelled
+# out here. Naming one couples this check to the contents of the pinned
+# list: deleting that pairing - which is a mutation somebody will run -
+# would take the token out of the synthetic palette too, and this line
+# would die with a KeyError instead of reporting the coverage arm that
+# actually caught it.
+DROPPED = check_contrast.PAIRINGS[0][0]
 short = one("AA")
-del short["Test"][1]["--color-border-strong"]
+del short["Test"][1][DROPPED]
 check("a palette missing a token a pairing names fails",
-      any("--color-border-strong" in problem
+      any(DROPPED in problem
           for problem in check_contrast.pairing_problems(short)))
 
 bad = one("AA", **{"--color-text": "not-a-color"})
@@ -462,28 +498,30 @@ check("AA text is four and a half and AA non-text is three",
 # ------------------------------------------------------------------ #
 # The real tree.                                                      #
 
+LIGHT = tokens_of("Light") or {}
+DARK = tokens_of("Dark") or {}
+
 check("Light's muted text clears AA on the page it sits on",
-      check_contrast.ratio(
-          PALETTES["Light"][1]["--color-text-muted"],
-          PALETTES["Light"][1]["--color-bg"]) >= 4.6)
+      check_contrast.ratio(LIGHT.get("--color-text-muted", "#ffffff"),
+                           LIGHT.get("--color-bg", "#ffffff")) >= 4.6)
 
 check("Dark's accent text clears AA on a card with margin, not by 0.03",
-      check_contrast.ratio(
-          PALETTES["Dark"][1]["--color-accent-text"],
-          PALETTES["Dark"][1]["--color-surface"]) >= 4.6)
+      check_contrast.ratio(DARK.get("--color-accent-text", "#ffffff"),
+                           DARK.get("--color-surface", "#ffffff")) >= 4.6)
 
 # The two system-preference scopes exist so a visitor who has expressed
 # a preference and never touched the chips gets the same palette the
 # chip would give them. Values that drifted apart would be a palette
 # nobody tested.
 check("the light media block and the light chip declare the same colors",
-      PALETTES["Light"][1]
-      == PALETTES["Light (prefers-color-scheme)"][1])
+      tokens_of("Light") is not None
+      and tokens_of("Light") == tokens_of("Light (prefers-color-scheme)"))
 
 check("the contrast media block and the contrast chip declare the same "
       "colors",
-      PALETTES["High contrast"][1]
-      == PALETTES["High contrast (prefers-contrast)"][1])
+      tokens_of("High contrast") is not None
+      and tokens_of("High contrast")
+      == tokens_of("High contrast (prefers-contrast)"))
 
 check("so the gate passes on the tree as it stands",
       check_contrast.problems() == [])
