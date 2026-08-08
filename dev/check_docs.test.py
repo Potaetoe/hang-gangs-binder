@@ -50,7 +50,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 50
+EXPECTED = 51
 
 
 def check(label, condition):
@@ -95,6 +95,24 @@ check("a falsified claim is matched regardless of case",
 check("every registered tripwire fires on its own phrase",
       all(len(scanned(phrase)) == 1
           for phrase, _ in check_docs.TRIPWIRES))
+
+# Membership, not equality, so appending a newly falsified claim stays
+# a one-file act while deleting one cannot be silent. TRIPWIRES says
+# "never remove one without the owner" and nothing outside the file
+# said so: a list read from the same file it guards cannot notice its
+# own entry going missing (AGENTS.md, "The review bar"). Each phrase
+# below is a claim this project published and had to correct.
+RECORDED = {
+    "will not authenticate from a non-interactive shell",
+    "mechanically impossible from an agent shell",
+    "no agent can read a live secret list",
+    "all eleven",
+    "cannot be lined up",
+    "share no exact series point",
+}
+
+check("no falsified claim has dropped off the tripwire list",
+      RECORDED <= {phrase for phrase, _ in check_docs.TRIPWIRES})
 
 check("ordinary prose trips nothing",
       clean("The gate prints its own list, and that printout is the "
