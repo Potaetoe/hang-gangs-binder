@@ -343,6 +343,79 @@ await check("an imported public key works as a recipient", async () => {
   return same(await decrypt(blob, memberKeyFile), { ok: true });
 });
 
+await check("each recipient block carries its own ephemeral point",
+  async () => {
+    // One ephemeral pair shared across the row would work and would be
+    // invisible to every other check here - both blocks would still
+    // open, because two recipients give two shared secrets either way.
+    // It is pinned because the format's promises rest on it: a block is
+    // derivable from its own bytes, which is what lets a later re-seal
+    // mint one block for a new device without touching the others.
+    const bytes = bytesOf(await encryptTo(FIXTURE.record,
+      [keyFile.publicKey, memberKeyFile.publicKey]));
+    const point = (index) => base64Of(bytes.slice(
+      blockByteAt(index, V2.point),
+      blockByteAt(index, V2.point) + 65));
+    return point(0) !== point(1);
+  });
+
+await check("writing a row draws a fresh content key and a nonce per block",
+  async () => {
+    // The one property of this format that leaves no trace in the blob.
+    // A content key that stopped being random - a fixed buffer, a reused
+    // one - passes every round trip, passes the frozen fixture (which
+    // carries its own key inside it), and hands anyone who recovers one
+    // row's key every other row. Counting what the writer asks the
+    // CSPRNG for is the only way to see it from outside, so the spy is
+    // here rather than a hook in a file that ships verbatim.
+    const real = globalThis.crypto;
+    const asked = [];
+    const spy = {
+      subtle: real.subtle,
+      getRandomValues: (array) => {
+        asked.push(array.length);
+        return real.getRandomValues(array);
+      },
+    };
+    const swap = (value) => Object.defineProperty(globalThis, "crypto",
+      { value: value, configurable: true, writable: true });
+
+    swap(spy);
+    try {
+      await encryptTo(FIXTURE.record,
+        [keyFile.publicKey, memberKeyFile.publicKey]);
+    } finally {
+      swap(real);
+    }
+
+    const drawn = (size) => asked.filter((n) => n === size).length;
+    // One 32-byte content key, and one 12-byte nonce for each of the two
+    // wraps plus one for the body.
+    return drawn(32) === 1 && drawn(12) === 3 && asked.length === 4;
+  });
+
+await check("a one-recipient row draws one wrap nonce fewer", async () => {
+  const real = globalThis.crypto;
+  const asked = [];
+  const swap = (value) => Object.defineProperty(globalThis, "crypto",
+    { value: value, configurable: true, writable: true });
+
+  swap({
+    subtle: real.subtle,
+    getRandomValues: (array) => {
+      asked.push(array.length);
+      return real.getRandomValues(array);
+    },
+  });
+  try {
+    await encryptTo(FIXTURE.record, [keyFile.publicKey]);
+  } finally {
+    swap(real);
+  }
+  return asked.filter((n) => n === 32).length === 1 &&
+    asked.filter((n) => n === 12).length === 2;
+});
+
 await check("a version 2 row grows by one block per recipient", async () => {
   // The layout is fixed-size on purpose: no length fields means no
   // length field to get wrong, and a reader can check the blob's length
@@ -386,7 +459,7 @@ await check("an imported public key encrypts", async () => {
 // Everything that must fail
 // ---------------------------------------------------------------------
 
-const other = await (async () => {
+async function freshKeypair() {
   const pair = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
   return {
@@ -394,7 +467,9 @@ const other = await (async () => {
       await crypto.subtle.exportKey("raw", pair.publicKey))),
     privateKey: await crypto.subtle.exportKey("jwk", pair.privateKey),
   };
-})();
+}
+
+const other = await freshKeypair();
 
 await mustReject("another key cannot open a row",
   () => decrypt(FIXTURE.blob, other.privateKey), "different key");
@@ -474,12 +549,19 @@ await mustReject("a flipped bit in the recipient count is caught",
   () => decrypt(tamper(FIXTURE2.blob, V2.count), keyFile),
   "recipient blocks");
 
+// Both of these name the bounds themselves rather than the word
+// "recipient". Deleting the bounds check leaves a row claiming zero
+// recipients falling through to "no block opened" and a row claiming
+// nine falling through to "too short" - both refusals, both containing
+// the word, and neither one this check. The mutation is what found it.
 await mustReject("a version 2 row claiming no recipients is refused",
-  () => decrypt(setByte(FIXTURE2.blob, V2.count, 0), keyFile), "recipient");
+  () => decrypt(setByte(FIXTURE2.blob, V2.count, 0), keyFile),
+  "between 1 and");
 
 await mustReject("a version 2 row claiming more recipients than the format "
   + "carries is refused",
-  () => decrypt(setByte(FIXTURE2.blob, V2.count, 9), keyFile), "recipient");
+  () => decrypt(setByte(FIXTURE2.blob, V2.count, 9), keyFile),
+  "between 1 and");
 
 await mustReject("a flipped bit in the keyholder's ephemeral point is caught",
   // Lands off the curve, so that block cannot be tried at all. The
@@ -514,12 +596,28 @@ await mustReject("a version this file does not know is refused by name",
 await mustReject("a truncated version 2 row is refused",
   () => decrypt(FIXTURE2.blob.slice(0, 120), keyFile), "truncated");
 
+await mustReject("a version 2 row too short to hold its own count is refused",
+  // "Ag==" is the version byte and nothing else, so byte 1 does not
+  // exist. Every bound in the reader compares false against undefined,
+  // which sent this row all the way through to "no block opened" - a
+  // damaged row reported to whoever is exporting as the wrong key.
+  () => decrypt("Ag==", keyFile), "truncated");
+
+await mustReject("a version 2 row one byte short of a block is refused",
+  () => decrypt(base64Of(bytesOf(FIXTURE2.blob).slice(0, 154)), keyFile),
+  "truncated");
+
 await mustReject("a version 2 row with no recipients cannot be written",
   () => encryptTo(FIXTURE.record, []), "at least one");
 
 await mustReject("more recipients than the format carries cannot be written",
-  () => encryptTo(FIXTURE.record, [keyFile.publicKey, memberKeyFile.publicKey,
-    keyFile.publicKey, memberKeyFile.publicKey, other.publicKey]),
+  // Five DISTINCT keys. A list padded with repeats would be refused by
+  // the duplicate guard instead, and this check would report itself as
+  // armed while testing the other rule - which is what it did until a
+  // mutation removed the ceiling and it kept passing.
+  async () => encryptTo(FIXTURE.record, [
+    keyFile.publicKey, memberKeyFile.publicKey, other.publicKey,
+    (await freshKeypair()).publicKey, (await freshKeypair()).publicKey]),
   "at most");
 
 await mustReject("the same recipient twice cannot be written",

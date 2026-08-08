@@ -47,6 +47,8 @@
   try {
     const fixture = await (await fetch("fixture.json")).json();
     const keyFile = await (await fetch("test-key.json")).json();
+    const fixture2 = await (await fetch("fixture-v2.json")).json();
+    const memberKeyFile = await (await fetch("test-member-key.json")).json();
 
     // The platform, first - everything below is meaningless without it.
     await check("crypto.subtle available under the published CSP",
@@ -64,6 +66,38 @@
       const out = await BinderCrypto.decrypt(fixture.blob, keyFile);
       return out.note === fixture.record.note;
     });
+
+    // The two-recipient format, in the same runtime. A member reads
+    // their own history in a browser and the keyholder exports from
+    // one, so both halves of the dual seal have to hold here, not only
+    // in Node.
+    await check("the version 2 fixture opens for the keyholder here",
+      async () => same(await BinderCrypto.decrypt(fixture2.blob, keyFile),
+        fixture2.record));
+
+    await check("the same version 2 fixture opens for the member here",
+      async () => same(await BinderCrypto.decrypt(fixture2.blob,
+        memberKeyFile), fixture2.record));
+
+    await check("this browser writes a row both recipients can open",
+      async () => {
+        const blob = await BinderCrypto.encryptTo(fixture.record,
+          [keyFile.publicKey, memberKeyFile.publicKey]);
+        return /^[A-Za-z0-9+/]+={0,2}$/.test(blob) &&
+          blob.length < 16 * 1024 &&
+          same(await BinderCrypto.decrypt(blob, keyFile), fixture.record) &&
+          same(await BinderCrypto.decrypt(blob, memberKeyFile),
+            fixture.record);
+      });
+
+    await mustReject("a third key opens no block of a version 2 row here",
+      async () => {
+        const pair = await crypto.subtle.generateKey(
+          { name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+        return BinderCrypto.decrypt(fixture2.blob,
+          await crypto.subtle.exportKey("jwk", pair.privateKey));
+      },
+      "recipient blocks");
 
     // A fresh submission, encrypted the way the form will encrypt it -
     // to the key this deployment actually publishes.

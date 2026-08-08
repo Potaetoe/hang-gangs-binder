@@ -137,12 +137,20 @@ WEB = os.path.join(REPO, "apps", "web")
 # a fourth theme chip, and the stylesheet is in all five totals. That is
 # +1.7 KB gzipped on each page, and it is the growth this arm exists to
 # make somebody look at rather than the growth it exists to refuse.
+#
+# admin.html and submit.html then moved again, and only those two,
+# because they are the two pages that load apps/web/crypto.js and
+# crypto.js carries a second stored format. Version 2 seals a
+# submission to the keyholder and to the submitting member at once,
+# which is a second encoder, a second derivation and a decoder that
+# reads both - about 3.7 KB gzipped, on both pages equally. #85 is
+# where the format and the reasons for it are.
 CEILINGS = {
     "404.html": 17900,
-    "admin.html": 64100,
+    "admin.html": 68500,
     "dashboard.html": 43400,
     "index.html": 24200,
-    "submit.html": 51000,
+    "submit.html": 54500,
 }
 
 # What a fresh pin gets: about ten percent of room to grow into. Small

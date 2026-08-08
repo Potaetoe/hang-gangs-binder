@@ -9,7 +9,7 @@ in both `tools/check.py` and CI — two lists, edited together.
 
 | Suite | What it proves |
 | --- | --- |
-| `crypto.test.mjs` | round trips, and the **committed v1 fixture still decrypts** — the one check standing between a format change and an unreadable database |
+| `crypto.test.mjs` | round trips for both stored formats, and the **committed fixtures still decrypt** — the one check standing between a format change and an unreadable database. The v2 fixture is asserted twice, once per recipient, because a change that locks one of the two out passes every round trip |
 | `form.test.mjs` | conversions, validation, the record — a wrong factor writes a plausible number into a blob with no original to compare against |
 | `form-wiring.test.mjs` | the DOM half of `form.js`, including Add entry restoring the form after a submission (#64 lived in this gap) |
 | `submit.test.mjs` | panel counts come from `GET /me` and nowhere else; a refused send stores and claims nothing; prefill scoping (#56) |
@@ -24,12 +24,12 @@ in both `tools/check.py` and CI — two lists, edited together.
 | `check_web.test.py` | `check_web.py`'s own CSP parser — a checker that cannot read is indistinguishable from a site with nothing wrong (#34) |
 | `check_server.test.py` | `check_server.py`'s vars parser and rules, including that its key pattern still matches real key material |
 
-## Two fixtures, opposite rules
+## Two kinds of fixture, opposite rules
 
-| | `fixture.json` + the account-id fixture | `sample-submissions.json` |
+| | `fixture.json`, `fixture-v2.json` + the account-id fixture | `sample-submissions.json` |
 | --- | --- | --- |
 | Purpose | prove the stored formats still read | disposable test data for `admin.html` |
-| Regenerate? | **never** — a failure means stored rows are at stake; add a version byte and a decoder for both | yes, freely, via `make-sample.mjs` |
+| Regenerate? | **never** — a failure means stored rows are at stake; add a version byte and a decoder for all of them | yes, freely, via `make-sample.mjs` |
 
 > Regenerating rewrites every ciphertext even when nothing changed —
 > each row gets a fresh ephemeral key, by design — so the diff says
@@ -40,16 +40,20 @@ in both `tools/check.py` and CI — two lists, edited together.
 without a stage going red. Run it by hand after any change to
 `form.js`'s pure half or `crypto.js`.
 
-`test-key.json` is a throwaway keypair, committed on purpose; it opens
-nothing real. The real keypairs and their custody: `OPERATIONS.md`,
-"The keys".
+`test-key.json` and `test-member-key.json` are throwaway keypairs,
+committed on purpose; they open nothing real. The first stands in for
+the keyholder and the second for a member's own device key, which is
+what a version 2 row's two recipients are. The real keypairs and their
+custody: `OPERATIONS.md`, "The keys".
 
 ## Browser-side checks
 
 `crypto-browser-check.html` repeats the platform-dependent crypto
 checks in a real browser under the published CSP — Node is the same
-specification but not what a submitter uses. Serve the **repository
-root** so the page reaches the real shipped files:
+specification but not what a submitter uses. Both stored formats are
+checked there, because a member reads their own history in a browser
+and the keyholder exports from one. Serve the **repository root** so
+the page reaches the real shipped files:
 
 ```bash
 ./run serve-root
