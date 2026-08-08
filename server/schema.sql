@@ -61,6 +61,12 @@
 -- fallback would make a forgotten migration invisible in exactly the way
 -- the block above describes. Re-running this file afterwards adds the
 -- index, which is IF NOT EXISTS.
+--
+-- A whole new table is the easy case of the same rule: re-running this
+-- file creates `site_content` and `membership` where they are absent and
+-- skips them where they exist, which is the one thing CREATE TABLE IF
+-- NOT EXISTS is safe for. The trap is only ever a table that exists
+-- already in a different shape - which is the block above.
 
 -- `supersedes` is the id of the row this one replaces, or NULL. It sits
 -- last because that is where ALTER TABLE puts it, so a database migrated
@@ -125,13 +131,13 @@ CREATE INDEX IF NOT EXISTS sessions_expiry
 -- no handles, no rows - computed in the keyholder's browser and sent here
 -- as JSON.
 --
--- This used to say it was "the only table anything can read without a
--- token", and that stopped being true on 2026-08-05: GET /snapshot needs
--- a member session, so every table now requires a credential to read.
--- Gating it was not a reason to relax what goes in it, and nothing did -
--- the document still carries no handles and no rows, which is why losing
--- the session check would be a smaller failure here than anywhere else
--- and is still a failure. See DESIGN.md, "The members' dashboard".
+-- GET /snapshot needs a member session. That gate decides who reads
+-- this document and not what may go in it: it carries no handles and no
+-- rows, which is why losing the session check here would be a smaller
+-- failure than losing one anywhere else and is still a failure. The one
+-- table served without a credential is `site_content`, and the
+-- difference is what each one holds - counts about people here, site
+-- copy there. See DESIGN.md, "The dashboard and the snapshot".
 --
 -- Exactly one row, forced by the CHECK. A history of snapshots would be
 -- more published data about the same people kept for nobody's benefit;
@@ -145,4 +151,85 @@ CREATE TABLE IF NOT EXISTS snapshots (
   id         INTEGER PRIMARY KEY CHECK (id = 1),
   body       TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+-- The site copy an admin can change without a release, and the one
+-- table here that GET serves to a caller with no credential.
+--
+-- That is not a relaxation of the rule above it. Each page ships the
+-- copy it needs in its own HTML and reads this table to override it,
+-- and apps/web is copied verbatim to a public site - so these values
+-- stand in for bytes anybody can already fetch. A gate here would
+-- promise a confidentiality the fallback does not have, and the cost of
+-- promising it is that somebody eventually puts something private in a
+-- table meant for site copy. Nothing about a person goes here; the
+-- lists of people are `membership` below, behind the admin gate.
+--
+-- `name` rather than `key`, because in this repository a key is a
+-- cryptographic key and this table holds neither one nor anything
+-- derived from one. One row per name, replaced in place: a pane that
+-- re-posted a whole document would delete the names it never rendered,
+-- so a write carries one name and the rest are untouched.
+--
+-- `updated_by` is an account id and is deliberately not served - a
+-- document anybody may fetch is the wrong place to publish which
+-- account did anything. It carries the literal "break-glass" for an
+-- EXPORT_TOKEN write, which cannot collide with an account id because
+-- an account id is sixty-four hex characters.
+--
+-- The form definition is NOT this table and is not coming to it. A
+-- wrong bound there gets sealed into a record and is discovered on
+-- export day, so it stays a repo file the gate reads before it ships.
+-- DESIGN.md, "Where configuration lives", holds the rule and the reason
+-- the line falls where it does.
+CREATE TABLE IF NOT EXISTS site_content (
+  name       TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+-- Who administers, and who bypasses the group check (#69). Readable and
+-- writable by an admin session and by nothing else.
+--
+-- The key is the account id - HMAC(ACCOUNT_SECRET, numeric id), the same
+-- value the rows in `submissions` carry - and never the numeric id
+-- itself. DESIGN.md, "The identifier is the whole problem", states that
+-- as a prohibition rather than a preference: a numeric id resolves to a
+-- person for anyone who can point a bot at it, so a table of them would
+-- turn a database breach from "some account submitted twelve times",
+-- the grouping that document accepts knowingly, into "here are the
+-- group's admins, by name". The HMAC is exactly as un-invertible as the
+-- ids stored beside it.
+--
+-- `label` is the price of that: a list of HMACs answers nobody, so an
+-- admin types a nickname when they add a row. It is a label somebody
+-- wrote and not a verified handle, so it proves nothing about a Telegram
+-- account - the id-is-identity, handle-is-display split a submission row
+-- already carries.
+--
+-- THIS TABLE ENFORCES NOTHING. server/worker.js reads
+-- ADMIN_TELEGRAM_IDS in adminAccountIds() and ALWAYS_ALLOW_TELEGRAM_IDS
+-- in isGroupMember(), and those secrets stay the enforcing copy until a
+-- slice that changes what a sign-in means migrates them on purpose -
+-- handleReadMembership carries that whole argument, and
+-- dev/worker.test.mjs asserts the inert half so the day it changes a
+-- check says so. Anybody reading this file to build an admin surface
+-- needs it before anything else: rows here grant no authority.
+--
+-- Whatever else moves, the founding admin stays in the secret. A table
+-- that could rewrite the whole list would leave no root of trust outside
+-- itself, and an empty table would lock everybody out permanently.
+--
+-- TELEGRAM_GROUP_CHAT_ID does not belong here and is not coming. It has
+-- to be recoverable in the clear because isGroupMember() interpolates it
+-- into a URL, it is one value rather than a list, and it names a chat
+-- rather than people.
+CREATE TABLE IF NOT EXISTS membership (
+  account_id TEXT NOT NULL,
+  role       TEXT NOT NULL,
+  label      TEXT NOT NULL,
+  added_at   TEXT NOT NULL,
+  added_by   TEXT NOT NULL,
+  PRIMARY KEY (account_id, role)
 );
