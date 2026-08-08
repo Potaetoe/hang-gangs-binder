@@ -129,10 +129,12 @@ place enforcement is possible.
 
 **The prefill is scoped to the account.** `submit.html` keeps last
 weight/height in `localStorage`; the stored value carries the account
-id and is *erased* on mismatch, because on a shared browser the next
-member would otherwise see the previous member's measurements (#56).
-The id is safe to store precisely because it is the HMAC — it cannot be
-tested against a guessed handle and authorizes nothing.
+id, and any stored value the page will not read — wrong account, wrong
+shape, unreadable units — is *erased* rather than skipped, because on a
+shared browser the next member would otherwise see the previous
+member's measurements (#56, #65). The id is safe to store precisely
+because it is the HMAC — it cannot be tested against a guessed handle
+and authorizes nothing.
 
 ### Admin accounts and deletion
 
