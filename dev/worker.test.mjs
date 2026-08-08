@@ -417,7 +417,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 276);
+const { check, report } = suite("worker.js", 277);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -2069,6 +2069,25 @@ check("which is one row normalized, not two rows that happen to agree",
   roster.filter((r) => r.role === "admin").length === 1,
   JSON.stringify(roster.map((r) => r.account_id)));
 
+/*
+ * The list and the authority read have to agree about every row, so the
+ * row that separates a pattern test from a typeof one is asked of the
+ * list as well. RegExp.test() stringifies whatever it is handed: a value
+ * that is not a string but spells a valid account id passes the pattern
+ * alone, and a list that showed it as a grant would be describing
+ * authority that no request will honor.
+ */
+roster.push({ account_id: { toString: () => shoutedFor }, role: "admin",
+  label: "Spelled", added_at: "2026-08-08T00:00:00.000Z", added_by: "by hand" });
+const spelledList = await (await call("GET", "/membership",
+  { headers: bearer(WARDEN) })).json();
+check("a row that only spells an account id is a dud to the list too",
+  spelledList.membership.every((r) => r.label !== "Spelled") &&
+  spelledList.malformed.length === 1 &&
+  spelledList.malformed[0].label === "Spelled",
+  JSON.stringify(spelledList.malformed.map((r) => r.label)));
+roster.pop();
+
 /* An ordinary list still answers with the field, so a reader that looks
  * for duds is not left guessing whether the Worker computes them. */
 const cleanList = await (await call("GET", "/membership",
@@ -2151,12 +2170,23 @@ check("and a sign-in that cannot read the table mints a member",
  * asserted item by item, because "the same shape" is the claim and a
  * hand-written list would drift away from corsHeaders() silently.
  */
-const shapeOf = async (res) => JSON.stringify({
-  cors: ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
-    "Access-Control-Allow-Headers", "Access-Control-Max-Age", "Vary",
-    "Content-Type"].map((h) => res.headers.get(h)),
-  keys: Object.keys(await res.clone().json()),
-});
+const shapeOf = async (res) => {
+  // A body that is not JSON is reported rather than thrown, so a refusal
+  // that answers a bare status fails this check instead of ending the
+  // run - a crashed suite says less about which claim broke.
+  let keys;
+  try {
+    keys = Object.keys(await res.clone().json());
+  } catch (e) {
+    keys = "no JSON body";
+  }
+  return JSON.stringify({
+    cors: ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
+      "Access-Control-Allow-Headers", "Access-Control-Max-Age", "Vary",
+      "Content-Type"].map((h) => res.headers.get(h)),
+    keys: keys,
+  });
+};
 
 const ordinaryRefusal = await shapeOf(
   await call("GET", "/membership", { headers: bearer("nobody") }));

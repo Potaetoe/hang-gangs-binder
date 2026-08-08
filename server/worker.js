@@ -278,6 +278,26 @@ async function secretAdminAccountIds(env) {
 }
 
 /*
+ * Whether this Worker honors a `membership` row at all.
+ *
+ * ONE HOME FOR THE TEST, because two places ask it and they must never
+ * disagree: the authority read below decides who a row grants anything
+ * to, and handleReadMembership decides which list to show it in. A row
+ * counted as a grant by one and a dud by the other would put an admin
+ * in front of a list that does not describe the authority they have.
+ *
+ * The typeof half is load-bearing beside the pattern, not belt and
+ * braces. RegExp.test() stringifies whatever it is handed, so a value
+ * that is not a string but spells one passes a check written with the
+ * pattern alone - and String(undefined) is "undefined", a perfectly
+ * good Set member that matches nobody.
+ */
+function grantsAnything(row) {
+  return Boolean(row) && typeof row.account_id === "string" &&
+    ACCOUNT_ID.test(row.account_id);
+}
+
+/*
  * The account ids the `membership` table grants one role.
  *
  * FAILS CLOSED IN EVERY DIRECTION A READ CAN GO WRONG, which is the
@@ -288,11 +308,10 @@ async function secretAdminAccountIds(env) {
  * are an admin" is the failure nothing else here would catch, because it
  * looks exactly like a working list on a working database.
  *
- * An unreadable row is dropped rather than coerced. String(undefined) is
- * "undefined", a perfectly good Set member that matches nobody, and that
- * near-miss reads as a working list right up until somebody cannot get
- * in - the undetectable-wrong-value failure #69 opens with, arriving
- * through the back door.
+ * An unreadable row is dropped rather than coerced, by grantsAnything()
+ * above. The near-miss it refuses reads as a working list right up until
+ * somebody cannot get in - the undetectable-wrong-value failure #69
+ * opens with, arriving through the back door.
  */
 async function membershipAccountIds(env, role) {
   const ids = new Set();
@@ -306,10 +325,7 @@ async function membershipAccountIds(env, role) {
   }
   if (!rows || !Array.isArray(rows.results)) return ids;
   for (const row of rows.results) {
-    if (row && typeof row.account_id === "string" &&
-        ACCOUNT_ID.test(row.account_id)) {
-      ids.add(row.account_id);
-    }
+    if (grantsAnything(row)) ids.add(row.account_id);
   }
   return ids;
 }
@@ -1348,8 +1364,9 @@ async function handleDeleteContent(env, origin, name) {
  * would be a second thing to keep true.
  *
  * TWO LISTS, BECAUSE A ROW CAN BE IN THIS TABLE AND GRANT NOTHING.
- * `membership` holds exactly the rows the authority read honors, by the
- * same test membershipAccountIds() applies; `malformed` holds the rest.
+ * `membership` holds exactly the rows the authority read honors - the
+ * same grantsAnything() it asks, so the two can never disagree about a
+ * row - and `malformed` holds the rest.
  * A row whose account id is not sixty-four lowercase hex characters -
  * which `wrangler d1 execute` writes without complaint, since it
  * validates nothing - is dropped by every read that decides anything,
@@ -1372,9 +1389,7 @@ async function handleReadMembership(env, origin) {
   const granting = [];
   const malformed = [];
   for (const row of rows.results) {
-    const honored = row && typeof row.account_id === "string" &&
-      ACCOUNT_ID.test(row.account_id);
-    (honored ? granting : malformed).push(row);
+    (grantsAnything(row) ? granting : malformed).push(row);
   }
 
   // From the granting rows only. A dud cannot stand in for the secret's
