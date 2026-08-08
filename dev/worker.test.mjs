@@ -48,6 +48,18 @@ let content = [];
 let roster = [];
 let nextId = 1;
 
+/*
+ * What was asked, as well as what was stored.
+ *
+ * `executed` is one entry per statement run, carrying the batch it
+ * arrived in (0 for none); `batches` is one entry per batch() call,
+ * holding those same entries. Together they are the only way to assert
+ * the last-admin guard's MECHANISM rather than its outcome - see the
+ * comment on batch() below for why the outcome is not enough.
+ */
+let executed = [];
+let batches = [];
+
 function reset() {
   stored = [];
   sessions = [];
@@ -55,6 +67,8 @@ function reset() {
   content = [];
   roster = [];
   nextId = 1;
+  executed = [];
+  batches = [];
 }
 
 const DB = {
@@ -88,10 +102,24 @@ const DB = {
     const conflictColumns = conflict
       ? conflict[1].split(",").map((c) => c.trim().split(/\s*=\s*/)[0]) : [];
     const where = /WHERE\s+([\s\S]+?)(?:\s+ORDER BY[\s\S]*)?$/i.exec(sql);
+
+    /*
+     * `COLLATE NOCASE` is read off the statement beside the column it
+     * applies to, because a stub that compared every bound column with
+     * === would pass a DELETE that dropped the collation - and dropping
+     * it is exactly the bug: an account id stored in upper-case hex by
+     * `wrangler d1 execute` becomes a row that no request can remove.
+     * SQLite applies the explicit collation of either operand, and here
+     * only the parameter carries one.
+     */
     const bound = where
-      ? Array.from(where[1].matchAll(/(\w+)\s*=\s*\?/g)).map((m) => m[1]) : [];
+      ? Array.from(where[1].matchAll(/(\w+)\s*=\s*\?(\s+COLLATE\s+NOCASE)?/gi))
+        .map((m) => ({ column: m[1], fold: Boolean(m[2]) })) : [];
+    const folded = (value, fold) =>
+      (fold && typeof value === "string" ? value.toLowerCase() : value);
     const matches = (row, a) => bound.length > 0 &&
-      bound.every((column, index) => row[column] === a[index]);
+      bound.every((b, index) =>
+        folded(row[b.column], b.fold) === folded(a[index], b.fold));
 
     /*
      * The last-admin guard, which is a subquery inside the DELETE
@@ -245,10 +273,23 @@ const DB = {
     const rowsOf = () => (table === "site_content" ? content
       : table === "membership" ? roster : stored);
 
+    /*
+     * Every execution is recorded before it runs, so a check can ask
+     * which statements a request sent and how they travelled. That
+     * record is the whole of the last-admin guard's mechanism test: two
+     * implementations with identical effects on `roster` differ only in
+     * whether the count and the delete arrive together.
+     */
+    const note = (batch) => {
+      const record = { sql: sql, table: table, batch: batch || 0 };
+      executed.push(record);
+      if (batch) batches[batch - 1].push(record);
+    };
+
     return {
       bind: (...a) => ({
-        run: () => exec(a),
-        first: async () => read(a),
+        run: () => { note(0); return exec(a); },
+        first: async () => { note(0); return read(a); },
         /*
          * D1 answers .all() on a write by running it and handing back
          * an empty result set, which is what lets one shape carry every
@@ -258,8 +299,14 @@ const DB = {
          * and one that ran the write but answered the read from the
          * whole table would pass an implementation whose guard never
          * fires.
+         *
+         * The `batch` parameter belongs to this stub and not to D1,
+         * which hands .all() nothing and is called with nothing. So a
+         * statement run outside a batch records 0 without a
+         * module-level flag that two overlapping requests would share.
          */
-        all: async () => {
+        all: async (batch) => {
+          note(batch);
           if (verb !== "SELECT") {
             await exec(a);
             return { results: [] };
@@ -268,9 +315,12 @@ const DB = {
         },
       }),
       // Statements with no parameters run straight off prepare().
-      run: () => exec([]),
-      first: async () => read([]),
-      all: async () => ({ results: rowsOf().map(project) }),
+      run: () => { note(0); return exec([]); },
+      first: async () => { note(0); return read([]); },
+      all: async () => {
+        note(0);
+        return { results: rowsOf().map(project) };
+      },
     };
   },
 
@@ -278,16 +328,26 @@ const DB = {
    * D1 runs a batch as one transaction, statement by statement, and
    * answers with one result per statement in the shape .all() gives.
    *
-   * Modelled rather than stubbed away, because for the last-admin guard
-   * the batch IS the mechanism: counting and deleting in one trip is
-   * what makes "never read-then-write" true, and the second statement
-   * is the only way the Worker finds out whether the first one bit. A
-   * stub that ran the statements in isolation would agree with any
-   * implementation at all.
+   * THE TRANSACTION IS NOT MODELLED, and reading this loop as though it
+   * were is how the mechanism went unasserted. Statements run here in
+   * isolation, exactly as they would if the Worker had sent them one at
+   * a time - so an implementation that counts the admins in one round
+   * trip, decides in JavaScript, and then sends an unguarded DELETE
+   * leaves `roster` in the same state as the batched one, and every
+   * outcome assertion in this file agrees with both. That is the race
+   * the guard exists to close, so it cannot be the thing no check can
+   * see.
+   *
+   * What IS modelled is the invocation: which statements arrived in
+   * which batch() call. The checks read `batches` and `executed` and
+   * assert the mechanism directly - one batch call, both statements
+   * inside it, and nothing counting admins outside it.
    */
   batch: async (statements) => {
+    batches.push([]);
+    const id = batches.length;
     const out = [];
-    for (const statement of statements) out.push(await statement.all());
+    for (const statement of statements) out.push(await statement.all(id));
     return out;
   },
 };
@@ -357,7 +417,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 257);
+const { check, report } = suite("worker.js", 276);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -448,7 +508,7 @@ await call("POST", "/submit",
   { headers: bearer(MEMBER), body: JSON.stringify({ ciphertext: "QUJDRA==" }) });
 check("the account id derivation is unchanged",
   stored.length === 1 && stored[0].account_id === FIXTURE_4242,
-  stored.length ? stored[0].account_id.slice(0, 20) + "…" : "no row");
+  stored.length ? stored[0].account_id.slice(0, 20) + "â€¦" : "no row");
 
 /* ------------------------------------------------------------------ */
 /* POST /auth/dev - the deliberate hole, and which way it fails.       */
@@ -500,7 +560,7 @@ await call("POST", "/submit",
     body: JSON.stringify({ ciphertext: "QUJDRA==" }) }, devEnv);
 check("a dev subject is namespaced away from every real account id",
   stored.length === 2 && stored[1].account_id === FIXTURE_DEV_ALICE,
-  stored.length > 1 ? stored[1].account_id.slice(0, 20) + "…" : "no row");
+  stored.length > 1 ? stored[1].account_id.slice(0, 20) + "â€¦" : "no row");
 
 /* ------------------------------------------------------------------ */
 /* The gating matrix.                                                  */
@@ -617,7 +677,7 @@ check("/me counts this account's rows and nobody else's",
  * which is the shape of check that #34 paid for. */
 check("/me returns the account's own id, matching the committed fixture",
   me.accountId === FIXTURE_4242,
-  me.accountId ? me.accountId.slice(0, 20) + "…" : "absent");
+  me.accountId ? me.accountId.slice(0, 20) + "â€¦" : "absent");
 check("and it is the id the rows were actually written under",
   me.accountId === stored[0].account_id);
 
@@ -1369,11 +1429,11 @@ check("a second name sits beside the first",
 const publicText = await (await readContent()).text();
 check("the public document names no writer and no time",
   !publicText.includes(editorId) && !publicText.includes("updated_by") &&
-  !publicText.includes("updated_at"), publicText.slice(0, 50) + "…");
+  !publicText.includes("updated_at"), publicText.slice(0, 50) + "â€¦");
 
 check("but the row records the admin who wrote it",
   content[0].updated_by === editorId,
-  content[0].updated_by ? content[0].updated_by.slice(0, 20) + "…" : "absent");
+  content[0].updated_by ? content[0].updated_by.slice(0, 20) + "â€¦" : "absent");
 
 /* The break-glass caller is an admin and is nobody, so an audit column
  * has to say that rather than invent an account or store a null that
@@ -1486,7 +1546,7 @@ await statusOf("an admin adds somebody by their numeric Telegram id",
  * way would pass even if both were wrong together. */
 check("the row is keyed by the account id, not by the numeric id",
   roster.length === 1 && roster[0].account_id === FIXTURE_4242,
-  roster.length ? roster[0].account_id.slice(0, 20) + "…" : "no row");
+  roster.length ? roster[0].account_id.slice(0, 20) + "â€¦" : "no row");
 check("and the numeric id is nowhere in the row",
   !JSON.stringify(roster[0]).includes("4242"), JSON.stringify(roster[0]));
 
@@ -1648,7 +1708,7 @@ const publicAfter = await (await call("GET", "/content",
 check("the public content document carries copy and knows no membership",
   publicAfter.includes("Weigh in.") &&
   !publicAfter.includes(FIXTURE_4242) && !publicAfter.includes("Alexandra"),
-  publicAfter.slice(0, 60) + "…");
+  publicAfter.slice(0, 60) + "â€¦");
 
 /* ------------------------------------------------------------------ */
 /* The table is the enforcing truth now, beside the secret.            */
@@ -1820,6 +1880,56 @@ check("and the last admin is still the last admin",
   roster.filter((r) => r.role === "admin").length === 1,
   `${roster.length} row(s)`);
 
+/*
+ * The MECHANISM, and not only the outcome.
+ *
+ * Every assertion above survives an implementation that counts the
+ * admins in one round trip, decides in JavaScript, and then sends an
+ * unguarded DELETE - the exact read-then-write race the guard exists to
+ * close. It survives because a table's state afterwards is the same
+ * either way, and no stub short of a real database can make the race
+ * happen on demand. So the statements themselves are the assertion:
+ * both halves arrive through ONE batch() call, and no admin is counted
+ * outside it.
+ *
+ * The one membership statement that legitimately runs alone is the
+ * per-request authority read behind every admin route, which counts
+ * nothing and decides nothing about this delete. Naming it rather than
+ * excluding a pattern is what keeps a smuggled-in count visible.
+ */
+reset();
+
+const PAIR = (await (await signIn({ id: 99 })).clone().json()).session;
+await addMember(PAIR, { telegramId: "4242", role: "admin", label: "Alex" });
+await addMember(PAIR, { telegramId: "31337", role: "admin", label: "Sam" });
+
+executed = [];
+batches = [];
+await call("DELETE", "/membership/admin/" + FIXTURE_4242,
+  { headers: bearer(PAIR) });
+
+const together = batches.length === 1 ? batches[0] : [];
+const alone = executed.filter((s) => s.table === "membership" && !s.batch);
+
+check("removing a row makes exactly one batch() call",
+  batches.length === 1, `${batches.length} batch call(s)`);
+check("carrying exactly the two statements the guard is made of",
+  together.length === 2, `${together.length} statement(s) in the batch`);
+check("the first deletes with the count as a subquery, not as a round trip",
+  together.length === 2 && /^\s*DELETE FROM membership/i.test(together[0].sql) &&
+  /AND \(SELECT COUNT\(\*\) FROM membership WHERE role = 'admin'\) > 1/i
+    .test(together[0].sql),
+  together.length ? together[0].sql : "no statement");
+check("the second asks for the row, which is what a count cannot answer",
+  together.length === 2 &&
+  /^\s*SELECT account_id FROM membership WHERE/i.test(together[1].sql) &&
+  !/COUNT\(\*\)/i.test(together[1].sql),
+  together.length > 1 ? together[1].sql : "no statement");
+check("and the only membership statement outside it is the authority read",
+  alone.length === 1 &&
+  alone[0].sql === "SELECT account_id FROM membership WHERE role = ?",
+  JSON.stringify(alone.map((s) => s.sql)));
+
 /* ------------------------------------------------------------------ */
 /* A development session may not write an admin row.                   */
 
@@ -1866,6 +1976,24 @@ check("with the refusal every other one gives, byte for byte",
 check("and nothing reached the table",
   !roster.some((r) => r.role === "admin"), `${roster.length} row(s)`);
 
+/*
+ * The refusal stands ahead of every shape check, which is what its
+ * comment claims and what this asserts. A malformed body that would
+ * otherwise earn a 400 gets the same 401: a caller who may not write
+ * this row cannot use the route to find out what it would have said
+ * next. The gain is small - the same rule is reachable with a
+ * well-formed body - and the comment is load-bearing for whoever
+ * reorders these checks later.
+ */
+const devEarly = await call("POST", "/membership",
+  { headers: bearer(DEV_ADMIN),
+    body: JSON.stringify({ telegramId: "not-a-number", role: "admin" }) },
+  devEnv);
+check("and a malformed body earns that refusal rather than a shape complaint",
+  devEarly.status === 401 &&
+  (await devEarly.text()) === JSON.stringify({ error: "Not authorized." }),
+  `${devEarly.status}`);
+
 await addMember(
   (await (await signIn({ id: 99 })).clone().json()).session,
   { telegramId: "4242", role: "admin", label: "Alex" });
@@ -1874,6 +2002,80 @@ await statusOf("nor may a dev session remove one",
     { headers: bearer(DEV_ADMIN) }, devEnv), 401);
 check("that row is still there",
   roster.some((r) => r.role === "admin"), `${roster.length} row(s)`);
+
+/* ------------------------------------------------------------------ */
+/* A row this side cannot honor is shown as a dud, and comes off.      */
+
+/*
+ * POST is not the only way into this table. `wrangler d1 execute` is the
+ * other, OPERATIONS.md reaches for it by name, and it validates nothing
+ * - so an account id pasted there in upper-case hex is sixty-four
+ * correct characters that are not the string the Worker compares
+ * against. The authority read drops it, so the row grants exactly
+ * nothing, while the list would show it beside the rows that do. That is
+ * the undetectable-wrong-value failure #69 opens with, arriving by the
+ * one door POST cannot guard.
+ *
+ * Two directions, because either alone leaves the trap open. The list
+ * has to tell a granting row from a dud, or nobody learns the row is
+ * broken; and DELETE has to fold case rather than refuse the id, or the
+ * only thing an admin can do about the dud is open a database console.
+ */
+reset();
+
+const WARDEN = (await (await signIn({ id: 99 })).clone().json()).session;
+await addMember(WARDEN, { telegramId: "4242", role: "admin", label: "Alex" });
+
+const SHOUTER = { id: 31337, username: "shouted" };
+const shoutedFor = (await (await call("GET", "/me", {
+  headers: bearer((await (await signIn(SHOUTER)).clone().json()).session),
+})).json()).accountId;
+const SHOUTED = shoutedFor.toUpperCase();
+
+const handWritten = () => roster.push({
+  account_id: SHOUTED, role: "admin", label: "Shouted",
+  added_at: "2026-08-08T00:00:00.000Z", added_by: "by hand",
+});
+handWritten();
+
+const shoutedIn = await (await signIn(SHOUTER)).clone().json();
+check("an upper-case row grants nothing, the way every unreadable row does",
+  shoutedIn.isAdmin === false, `isAdmin=${shoutedIn.isAdmin}`);
+
+const dudList = await (await call("GET", "/membership",
+  { headers: bearer(WARDEN) })).json();
+check("so it is kept out of the list of rows that do grant",
+  dudList.membership.length === 1 &&
+  dudList.membership[0].account_id === FIXTURE_4242,
+  JSON.stringify(dudList.membership.map((r) => r.account_id)));
+check("and named as malformed instead, with the label that says which row",
+  Array.isArray(dudList.malformed) && dudList.malformed.length === 1 &&
+  dudList.malformed[0].account_id === SHOUTED &&
+  dudList.malformed[0].label === "Shouted",
+  JSON.stringify(dudList.malformed));
+
+await statusOf("the id the list handed back is an id that removes it",
+  call("DELETE", "/membership/admin/" + SHOUTED,
+    { headers: bearer(WARDEN) }), 200);
+check("and the row is gone",
+  !roster.some((r) => r.account_id === SHOUTED), JSON.stringify(roster));
+
+handWritten();
+await statusOf("so is the canonical spelling of the same sixty-four characters",
+  call("DELETE", "/membership/admin/" + shoutedFor,
+    { headers: bearer(WARDEN) }), 200);
+check("which is one row normalized, not two rows that happen to agree",
+  !roster.some((r) => r.account_id === SHOUTED) &&
+  roster.filter((r) => r.role === "admin").length === 1,
+  JSON.stringify(roster.map((r) => r.account_id)));
+
+/* An ordinary list still answers with the field, so a reader that looks
+ * for duds is not left guessing whether the Worker computes them. */
+const cleanList = await (await call("GET", "/membership",
+  { headers: bearer(WARDEN) })).json();
+check("a list with no duds in it says so rather than leaving the field off",
+  Array.isArray(cleanList.malformed) && cleanList.malformed.length === 0,
+  JSON.stringify(cleanList.malformed));
 
 /* ------------------------------------------------------------------ */
 /* A D1 failure closes.                                                */
@@ -1932,6 +2134,75 @@ await statusOf("the secret-side admin is unaffected, which is the dual-read",
 const brokenSignIn = await (await signIn({}, brokenRoster)).clone().json();
 check("and a sign-in that cannot read the table mints a member",
   brokenSignIn.isAdmin === false, `isAdmin=${brokenSignIn.isAdmin}`);
+
+/*
+ * The routes fail closed too, and not only the authority read.
+ *
+ * A caller whose adminness comes from the secret gets past the gate on a
+ * database whose membership table throws, and then the handler's own
+ * query is the thing that fails. Unhandled, that leaves the Worker with
+ * a status and nothing else: no CORS headers, so a browser reports a
+ * network error rather than a refusal, and no `{error}` body, so the
+ * page has nothing to show. Every other refusal on this Worker is the
+ * same shape, and a 500 is the one an admin is most likely to meet on a
+ * bad day.
+ *
+ * The header list is compared against a real refusal rather than
+ * asserted item by item, because "the same shape" is the claim and a
+ * hand-written list would drift away from corsHeaders() silently.
+ */
+const shapeOf = async (res) => JSON.stringify({
+  cors: ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
+    "Access-Control-Allow-Headers", "Access-Control-Max-Age", "Vary",
+    "Content-Type"].map((h) => res.headers.get(h)),
+  keys: Object.keys(await res.clone().json()),
+});
+
+const ordinaryRefusal = await shapeOf(
+  await call("GET", "/membership", { headers: bearer("nobody") }));
+
+const escaped = await call("GET", "/membership",
+  { headers: bearer(CHAIR2) }, brokenRoster).catch((e) => e);
+check("a D1 throw inside GET is answered rather than escaping the Worker",
+  escaped instanceof Response && escaped.status === 500,
+  escaped instanceof Response ? `${escaped.status}` : `threw ${escaped}`);
+check("in the same shape every other refusal here has",
+  escaped instanceof Response && (await shapeOf(escaped)) === ordinaryRefusal,
+  escaped instanceof Response
+    ? `${await shapeOf(escaped)} want ${ordinaryRefusal}` : "no response");
+
+const escapedDelete = await call("DELETE", "/membership/admin/" + FIXTURE_4242,
+  { headers: bearer(CHAIR2) }, brokenRoster).catch((e) => e);
+check("and a D1 throw inside DELETE is answered the same way",
+  escapedDelete instanceof Response && escapedDelete.status === 500 &&
+  (await shapeOf(escapedDelete)) === ordinaryRefusal,
+  escapedDelete instanceof Response
+    ? `${escapedDelete.status} ${await shapeOf(escapedDelete)}` : "no response");
+
+/*
+ * The other two ways a read comes back wrong, armed separately from the
+ * throw above. An absent `rows` and a `results` that is not a list both
+ * reach the loop that walks the rows, and iterating either one throws -
+ * so without the guards a database answering oddly turns every sign-in
+ * into a 500 rather than into a session with no authority. The shapes
+ * are asserted through sign-in because that is where the loop runs
+ * before anything else can refuse.
+ */
+const answeredWith = (results) => ({
+  ...env,
+  DB: {
+    ...DB,
+    prepare: (sql) => (/FROM membership WHERE role = \?/i.test(sql)
+      ? { bind: () => ({ all: async () => results }) }
+      : DB.prepare(sql)),
+  },
+});
+
+await statusOf("a membership read answering nothing still signs somebody in",
+  signIn({}, answeredWith(undefined)), 200);
+await statusOf("and so does one whose `results` is not a list at all",
+  signIn({}, answeredWith({ results: { length: 1, 0: { account_id: "x" } } })),
+  200);
 
 /*
  * An unreadable row grants nothing either, and is dropped rather than
