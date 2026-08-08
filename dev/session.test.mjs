@@ -4,7 +4,7 @@
  * pattern used for ui.js without teaching the product about a test runner.
  */
 import { readFile } from "node:fs/promises";
-import { suite } from "./harness.mjs";
+import { nodeTestSuite } from "./harness.mjs";
 
 const sessionSource = await readFile(
   new URL("../apps/web/session.js", import.meta.url), "utf8");
@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = suite("session/auth", 35);
+const { check, report } = nodeTestSuite("session/auth", 35);
 
 const values = new Map();
 globalThis.sessionStorage = {
