@@ -294,6 +294,45 @@ Worth keeping separately from the correction: **a constraint absorbed from a
 document reads exactly like one the owner set.** I could not have told the
 difference without being asked.
 
+### #72 — the site was fast all along, and the proof took one hostname
+
+The performance pass ran and the product is exonerated. Every page under
+100 ms DOMContentLoaded, zero long tasks, and every named suspect cleared:
+sequential decrypt 0.13 ms/row in the browser, the 250-option country list
+0.7 ms, the per-keystroke prefill write 0.021 ms, aggregation ≤ 10 ms and
+the XLSX build 18 ms at a thousand rows. The full table is on the issue.
+
+What the owner felt was real and was the serving path: `serve.py` binds
+`127.0.0.1` only, the browser resolves `localhost` to `::1` first, and every
+request pays ~210 ms of IPv6-fallback connect — measured directly with curl,
+`0.210 s` connect via `localhost` against `0.0005 s` via `127.0.0.1` — on a
+server that closes the connection after every response, so ~12 uncached
+resources pay it every navigation. Same page, same server: DCL 1568 ms via
+`localhost`, 88 ms via `127.0.0.1`. Production is unaffected; GitHub Pages
+listens on both stacks and keeps connections alive.
+
+**The workaround costs nothing and works today**: browse
+`http://127.0.0.1:8124`. Both `config.js` and the dev Worker's allowed
+origins already accept it.
+
+Worth carrying: **"it feels slow" implicated the newest code, and the
+newest code was innocent.** The instinct was to suspect the decrypt loop,
+the country list, the charts — the things recently built. The cause was
+three layers down in tooling that predates all of it, and it took one
+comparative measurement to find. The suspects list was still worth writing:
+clearing each one by number is what made "it is the server" a conclusion
+rather than a guess.
+
+Method notes for whoever repeats this: Node benchmarks loaded the shipped
+modules the same way the tests do, against `dev/test-key.json`; the
+in-browser crypto benchmark generated a throwaway keypair in-page. No real
+key was handled. The one minted measurement session was deleted after, and
+dev ends the day at 0 submissions, 0 sessions, 0 snapshots. Chart redraw at
+a large corpus was the one thing not separately timed — it needs the real
+key to get rows into the page — and it is bounded from both sides:
+`snapshotOf` is ≤ 10 ms at 1000 entries and the DOM half drew seven charts
+instantly during UAT.
+
 ### Where the cutover stands
 
 Steps 0 and 1 **done**. Step 2's secrets confirmed twice from two directions.
@@ -304,10 +343,9 @@ it holding the right id.
 of the two sections whose failure stops the cutover — passes on every check,
 with A6.2 re-run against data that could actually fail it.
 
-**One item is now queued before the cutover rather than after**: #72, the
-performance pass, at the owner's request. It is a measurement issue and
-changes nothing by itself, but it is the first thing since step 0 that sits
-between here and step 4.
+**#72, the one item queued before the cutover, is done** — measured, the
+product cleared, the cause found in local tooling, and the workaround free.
+Nothing now sits between here and step 4.
 
 `hg_binder_db_dev` was cleared to empty at the end of the day at the owner's
 request — no submissions, no sessions, no snapshot, id counters reset.

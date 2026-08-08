@@ -110,6 +110,25 @@ rather than by reasoning about it.
 - **A5.7** unpublished with the key field empty, confirming the page's claim
   that it needs the admin session and not the key.
 
+### Measured
+- **#72's performance pass ran, and the product is exonerated.** The
+  slowness the owner felt locally was real and none of it was the site:
+  `serve.py` binds `127.0.0.1` only, the browser tries `localhost` as IPv6
+  `::1` first, and every request pays ~210 ms of connect fallback — times
+  ~12 uncached resources per navigation, on a server that closes the
+  connection after each response. Same page, same server:
+  `localhost` DCL **1568 ms**, `127.0.0.1` DCL **88 ms**. Production
+  (GitHub Pages) is unaffected.
+- Every suspect the issue named was measured and cleared, in-browser on the
+  clean host and in Node against the shipped modules with a throwaway key:
+  sequential decrypt **0.13 ms/row** (300 rows = 40 ms), country list
+  0.7 ms, per-keystroke prefill 0.021 ms, `snapshotOf` ≤ 10 ms and XLSX
+  18 ms at 1000 rows, all four pages under 100 ms DCL with zero long
+  tasks. Full table on #72. Workaround available immediately: browse
+  `http://127.0.0.1:8124` — `config.js` and the dev Worker's origins
+  already accept it. The `serve.py` fix is workspace tooling and was
+  deliberately not applied under a measurement-only claim.
+
 ### Fixed
 - **The Add entry tab is no longer one-shot (#64).** After a submission the
   form is replaced by the confirmation card, as before — but returning to
