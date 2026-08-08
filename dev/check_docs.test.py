@@ -20,10 +20,11 @@ decisive arm: a real document's real bytes go through the rules and a
 planted claim comes back with the right line number. A pass on the
 five documents means they are clean, not that they went unread.
 
-The arms marked PINNED, NOT ENDORSED record behavior narrower than the
-checker's prose suggests. They are pinned rather than corrected
-because widening a pattern changes what the gate enforces, which is a
-different act from proving it can read; #121 carries them.
+Each rule is watched from both sides: an arm that sees it fire, and an
+arm that sees it stay silent. A widened pattern is only as good as the
+prose it still leaves alone, so every hardening here arrives with the
+false-positive case that bounds it - a heading between two words, an
+American compound, a number that punctuation separates from its noun.
 
 No framework and no new dependency, matching the suites beside it.
 """
@@ -50,7 +51,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 51
+EXPECTED = 67
 
 
 def check(label, condition):
@@ -131,16 +132,76 @@ check("ordinary prose trips nothing",
       clean("The gate prints its own list, and that printout is the "
             "number.\n"))
 
-# PINNED, NOT ENDORSED (#121). The scan is line-based, so a phrase is
-# only ever compared against one line at a time. These documents are
+# A wrap must not launder a falsified claim (#121). These documents are
 # hard-wrapped near 72 columns and the registered phrases run to 49
-# characters, so a falsified sentence coming back in ordinary prose can
-# straddle a break and pass. The docstring calls the falsified sentence
-# "the only way that scales"; a line break defeats it. Pinned so the
-# limit is visible and so widening it is a deliberate, reviewed act.
+# characters, so a phrase straddling a break is the likely shape rather
+# than the exotic one - and a correction reaching a hand-made copy
+# reflows it instead of pasting it intact, which is the exact situation
+# these entries were registered for.
 HEAD, TAIL = PHRASE.split(" ", 1)
-check("a tripwire wrapped across a line break is not detected",
-      clean("The tool %s\n%s, we wrote.\n" % (HEAD, TAIL)))
+check("a tripwire wrapped across a line break is reported",
+      len(scanned("The tool %s\n%s, we wrote.\n" % (HEAD, TAIL))) == 1)
+
+# A hard wrap lands wherever the column falls, so no single split point
+# is the one that matters; every one of them has to be seen.
+WORDS = PHRASE.split(" ")
+
+check("a tripwire wrapped at any of its spaces is reported",
+      all(len(scanned("The tool %s\n%s, we wrote.\n"
+                      % (" ".join(WORDS[:index]),
+                         " ".join(WORDS[index:])))) == 1
+          for index in range(1, len(WORDS))))
+
+# The line a reader is sent to is where the phrase starts, not where it
+# finishes - the second half is the fragment that means nothing on its
+# own.
+check("a wrapped tripwire is reported at the line it starts on",
+      only(scanned("first\nsecond\nThe tool %s\n%s, we wrote.\n"
+                   % (HEAD, TAIL))).startswith("README.md:3:"))
+
+# Blockquotes carry a ">" into the head of every continuation line, and
+# security/ quotes requirements that way.
+check("a tripwire wrapped inside a blockquote is reported",
+      len(scanned("> The tool %s\n> %s, we wrote.\n"
+                  % (HEAD, TAIL))) == 1)
+
+# The bound on the gap, written so the marker is the only thing under
+# test. A heading with words in it is stopped by its words, whatever
+# GAP says - so this one puts the heading marker alone between the two
+# halves, and fails the moment "#" is admitted as a continuation
+# character. Body text does not bleed into a heading: they are separate
+# blocks, and a phrase spanning them is not one sentence.
+check("a heading marker does not continue a phrase",
+      clean("The tool %s\n\n## %s, we wrote.\n" % (HEAD, TAIL)))
+
+# The same bound from the other side: a word between the halves is a
+# different sentence, not a reflowed one, so no word character may act
+# as a gap.
+check("a phrase interrupted by another word is not a tripwire",
+      clean("The tool %s really %s, we wrote.\n" % (HEAD, TAIL)))
+
+# PINNED, NOT ENDORSED - a fourth finding, parked on #121 the way #121
+# itself was parked rather than widened here. Emphasis inside a phrase
+# defeats it: these documents bold heavily, so "**will not
+# authenticate** from a non-interactive shell" is the shape a falsified
+# claim plausibly comes back in, and "*" is not a gap character.
+#
+# It is parked rather than fixed because the fix is a genuine fork,
+# not an oversight. tools/check_comments.py admits "*" to GAP, where it
+# can only be a continuation marker; in markdown "*" is emphasis AND a
+# list bullet, so admitting it here buys the emphasis case at the cost
+# of gluing two star-bulleted list items into one phrase nobody wrote.
+# The second arm states that cost in the bullet style that pays it, so
+# the two flip together under the same mutation and whoever takes the
+# fork meets both halves of it at once.
+EMPHASIZED = "The tool **%s** %s, we wrote.\n" % (
+    " ".join(WORDS[:3]), " ".join(WORDS[3:]))
+
+check("a tripwire broken by emphasis is not detected",
+      clean(EMPHASIZED))
+
+check("two star-bulleted list items are not one phrase",
+      clean("* The tool %s\n* %s, we wrote.\n" % (HEAD, TAIL)))
 
 
 # ------------------------------------------------------------------ #
@@ -190,13 +251,10 @@ check("a British spelling is matched regardless of case",
 check("the report names the word it found",
       "'colour'" in only(scanned("the colour of it")).replace('"', "'"))
 
-# PINNED, NOT ENDORSED (#121). Every pattern is anchored with \b at the
-# front only, so a British spelling reached through a URL path or a
-# quoted requirement is reported, and one buried inside a compound word
-# is not. The first two are what the module docstring asks for - it
-# says a colliding requirement quotation "gets paraphrased or taken to
-# the owner" rather than exempted - so they are endorsed. The compound
-# is the gap.
+# A British spelling reached through a URL path or a quoted requirement
+# is reported, which is what the module docstring asks for: it says a
+# colliding requirement quotation "gets paraphrased or taken to the
+# owner" rather than exempted.
 check("a British spelling inside a URL is reported",
       len(scanned("See https://example.test/colour-guide for it.")) == 1)
 
@@ -204,8 +262,33 @@ check("a British spelling inside a quoted requirement is reported",
       len(scanned('The baseline says the reviewer must "recognise" '
                   'the finding.')) == 1)
 
-check("a British spelling inside a compound word is not reported",
-      clean("A watercolour illustration sits in the record."))
+# The compound is where a British spelling is least likely to be caught
+# by eye, so it is the one the rule can least afford to miss (#121).
+BRITISH_COMPOUNDS = [
+    "watercolour", "discoloured", "misbehaviour",
+    "reorganisation", "deserialised", "psychoanalysed",
+]
+AMERICAN_COMPOUNDS = [
+    "watercolor", "discolored", "misbehavior",
+    "reorganization", "deserialized", "psychoanalyzed",
+]
+
+check("a British spelling inside a compound word is reported",
+      len(scanned("A watercolour illustration sits in the record.")) == 1)
+
+check("every British compound in the corpus is reported",
+      all(len(scanned(word)) == 1 for word in BRITISH_COMPOUNDS))
+
+check("no American compound in the corpus is reported",
+      all(clean(word) for word in AMERICAN_COMPOUNDS))
+
+# What carries the narrowing once the front anchor is gone. "organism"
+# survives on its own because the suffix has to be there too, and the
+# compound is the case that proves the suffix is doing that work rather
+# than the anchor.
+check("microorganism is not mistaken for a British spelling",
+      clean("Every microorganism in the sample is listed.")
+      and clean("microorganisms"))
 
 
 # ------------------------------------------------------------------ #
@@ -233,12 +316,42 @@ check("the report says where to look instead of what the number was",
       "prints its own list"
       in only(scanned("The gate runs eleven checks.")))
 
-# PINNED, NOT ENDORSED (#121). The pattern requires the number and the
-# noun to be adjacent, so any word between them evades it. The "all
-# eleven" tripwire covers one instance of this by hand, which is what a
-# rule needing hand-maintained instances looks like.
-check("a gate count with a word between number and noun is not reported",
-      clean("The gate runs eleven gate checks."))
+# The number and the noun need not be adjacent to be the same claim
+# (#121). Requiring adjacency is what made the "all eleven" tripwire
+# necessary by hand, and a rule needing hand-maintained instances to
+# cover its own gaps is a rule that is too tight.
+check("a gate count with a word between number and noun is reported",
+      len(scanned("The gate runs eleven gate checks.")) == 1)
+
+check("a gate count with two words between number and noun is reported",
+      len(scanned("The gate covers eleven of the checks.")) == 1)
+
+# COUNTS is written with `\s+`, which matches a newline. Scanning one
+# line at a time is what kept that half of the pattern from ever
+# firing.
+check("a gate count wrapped across a line break is reported",
+      len(scanned("The gate runs eleven\nchecks today.")) == 1)
+
+# The gap stops at the noun, so the first count cannot swallow the
+# second into one span and report a pair as a single problem.
+check("two gate counts in one sentence are reported as two",
+      len(scanned("It runs eleven checks and twelve stages.")) == 2)
+
+# The report flattens the wrap it matched across, so a problem stays one
+# line however the prose was broken.
+check("a wrapped gate count is quoted on one line",
+      "'eleven checks'"
+      in only(scanned("The gate runs eleven\nchecks today."))
+      .replace('"', "'"))
+
+# Both bounds on the window. Punctuation ends it, so the pattern cannot
+# reach across a clause into an unrelated noun; and distance ends it,
+# so a number and a noun that merely share a sentence are left alone.
+check("a number punctuation separates from the noun is not a count",
+      clean("There are eleven. The checks are listed below."))
+
+check("a number far from the noun is not a gate count",
+      clean("The eleven documents each carry one of the gate's checks."))
 
 
 # ------------------------------------------------------------------ #

@@ -16,6 +16,9 @@ Three checks, all born from the same week of failures (issue #77):
     missed at least one hand-made copy of the fact they corrected, so
     this checks that a correction reached every copy, written the only
     way that scales: the falsified sentence itself is the pattern.
+    Matched across the line breaks these documents wrap at, because
+    the copy a correction misses is a copy somebody reflowed rather
+    than pasted intact - see GAP.
  3. STYLE - American spelling (settled 2026-08-06, violated twice
     since), and no gate-size counts in prose (wrong three times in one
     week; the gate prints its own list, and that printout is the
@@ -108,25 +111,65 @@ TRIPWIRES = [
 
 # British spellings the 2026-08-06 decision settled against, as
 # patterns narrow enough not to bite legitimate words ("organism",
-# "analysis"). Platform identifiers keep their own spelling, but none
-# of these appears in one.
+# "analysis", "microorganism"). Platform identifiers keep their own
+# spelling, but none of these appears in one.
+#
+# Deliberately unanchored at the front. A word boundary there makes the
+# rule silent on compounds - "watercolour", "misbehaviour",
+# "reorganisation" - and a compound is where a British spelling is
+# least likely to be caught by eye, so it is the case this rule can
+# least afford to miss. The suffix side carries the narrowing instead:
+# "organis" reports only when "e", "es", "ed", "ing" or "ation"
+# follows, which is the whole reason "microorganism" passes clean.
 SPELLING = [
-    r"\bcentimetre", r"\bkilometre", r"\bmillimetre",
-    r"\bcolour", r"\bbehaviour", r"\bfavourite",
-    r"\banalyse\b", r"\banalysed\b", r"\banalysing\b",
-    r"\b(?:quantis|normalis|summaris|organis|initialis|recognis"
+    r"centimetre", r"kilometre", r"millimetre",
+    r"colour", r"behaviour", r"favourite",
+    r"analyse\b", r"analysed\b", r"analysing\b",
+    r"(?:quantis|normalis|summaris|organis|initialis|recognis"
     r"|minimis|maximis|serialis|standardis)(?:e[sd]?|ing|ation)\b",
 ]
 
 # A stage count written into prose goes stale the day a suite is
 # added. Say where to look, never what the number was on the day of
-# writing. Number words below ten are left alone - "three privacy
-# checks" is a reference, not a gate size.
+# writing.
+#
+# The number and the noun do not have to be adjacent: "eleven gate
+# checks" and "eleven of the checks" are the same claim as "eleven
+# checks". Adjacency is what forces a gap like this to be patched by
+# hand, and the "all eleven" tripwire is that patch - a rule needing
+# hand-maintained instances to cover itself is a rule that is too
+# tight. So up to three words may stand between, none of them the noun
+# itself, which is what keeps two counts in one sentence reporting as
+# two rather than being swallowed into a single span. The separators
+# are whitespace only, so punctuation ends the window and the pattern
+# cannot reach across a clause into an unrelated noun.
+#
+# Number words below ten are left alone - "three privacy checks" is a
+# reference to a group, not a claim about the gate's size. Digits get
+# no such exemption, so "9 checks" reports where "nine checks" does
+# not. That asymmetry is deliberate rather than an oversight of the
+# alternation: a figure in prose reads as a measured count, and a
+# figure is what a stale number is written as.
 COUNTS = re.compile(
     r"\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen"
-    r"|eighteen|nineteen|twenty|\d+)\s+(?:checks|stages)\b",
+    r"|eighteen|nineteen|twenty|\d+)"
+    r"(?:\s+(?!checks\b|stages\b)[\w'-]+){0,3}"
+    r"\s+(?:checks|stages)\b",
     re.IGNORECASE,
 )
+
+# What may separate the words of a phrase that prose has wrapped:
+# ordinary whitespace, and the ">" a blockquote puts at the head of
+# every continuation line. A phrase reflowed across a line break is the
+# same phrase - tools/check_comments.py reaches that conclusion for
+# code comments, and hard-wrapped documents need it more, because these
+# wrap near 72 columns while the phrases above run to 49 characters.
+#
+# "#" is absent on purpose, and that is the bound on this widening. It
+# opens a heading here rather than continuing a comment, and a heading
+# between two words is a structural break: the words either side of it
+# are not one sentence however they happen to line up.
+GAP = r"[\s>]+"
 
 
 def document_text(relpath):
@@ -143,34 +186,80 @@ def document_text(relpath):
         return handle.read()
 
 
-def scan_text(relpath, text):
-    """The three content rules, over one document's text.
+def tripwire(phrase):
+    """One registered phrase as a pattern a line break cannot defeat.
 
-    Line by line, which bounds what a tripwire can match: a phrase
-    broken across a wrap is not seen. #121 carries that limit.
+    Substring semantics, not word-anchored, and the difference is the
+    point: tools/check_comments.py wraps its markers in \\b and this
+    deliberately does not. A front anchor would stop "all eleven"
+    matching inside "small eleven", which NARROWS what a registered
+    falsified claim catches - the opposite of what this file is for,
+    and a separate decision from letting a phrase survive a wrap.
     """
-    problems = []
-    for lineno, line in enumerate(text.splitlines(), 1):
-        low = line.lower()
-        for phrase, why in TRIPWIRES:
-            if phrase in low:
-                problems.append(
-                    "%s:%d: tripwire %r (%s)"
-                    % (relpath, lineno, phrase, why))
-        for pattern in SPELLING:
-            match = re.search(pattern, line, re.IGNORECASE)
-            if match:
-                problems.append(
-                    "%s:%d: British spelling %r - American spelling "
-                    "is the settled rule" % (relpath, lineno,
-                                             match.group(0)))
-        match = COUNTS.search(line)
-        if match:
-            problems.append(
-                "%s:%d: %r states a gate size in prose - say where to "
-                "look (the gate prints its own list), not what the "
-                "number was" % (relpath, lineno, match.group(0)))
-    return problems
+    return re.compile(GAP.join(re.escape(word) for word in phrase.split()),
+                      re.IGNORECASE)
+
+
+TRIPWIRE_RULES = [(phrase, why, tripwire(phrase))
+                  for phrase, why in TRIPWIRES]
+
+
+def line_of(text, offset):
+    """The 1-based line a match at `offset` starts on.
+
+    Where it STARTS, because the tail of a wrapped phrase is a fragment
+    that means nothing on its own - a reader sent to the second line
+    would not see the claim being reported.
+    """
+    return text.count("\n", 0, offset) + 1
+
+
+def one_line(matched):
+    """A match with its wrap flattened, so one problem prints as one line."""
+    return re.sub(r"\s+", " ", matched).strip()
+
+
+def scan_text(relpath, text):
+    """The three content rules, over one document's whole text.
+
+    Whole text rather than line by line, because these documents are
+    hard-wrapped near 72 columns and a reader that sees one line at a
+    time cannot see a phrase the wrap split in half. The patterns carry
+    their own whitespace tolerance; offsets become line numbers here,
+    so a report still names the line a match starts on.
+
+    Problems come back in document order, so a reader walks the file
+    downward whichever rule caught what.
+    """
+    found = []
+
+    def report(offset, message):
+        found.append((offset, message))
+
+    for phrase, why, pattern in TRIPWIRE_RULES:
+        for match in pattern.finditer(text):
+            report(match.start(),
+                   "%s:%d: tripwire %r (%s)"
+                   % (relpath, line_of(text, match.start()), phrase, why))
+
+    for pattern in SPELLING:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            report(match.start(),
+                   "%s:%d: British spelling %r - American spelling "
+                   "is the settled rule"
+                   % (relpath, line_of(text, match.start()),
+                      match.group(0)))
+
+    for match in COUNTS.finditer(text):
+        report(match.start(),
+               "%s:%d: %r states a gate size in prose - say where to "
+               "look (the gate prints its own list), not what the "
+               "number was"
+               % (relpath, line_of(text, match.start()),
+                  one_line(match.group(0))))
+
+    return [message for _offset, message in sorted(found,
+                                                   key=lambda hit: hit[0])]
 
 
 def top_level_documents():
