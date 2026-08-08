@@ -184,6 +184,20 @@ linters cannot express:
   export a pure half and wire the DOM behind a
   `typeof document === "undefined"` guard, so Node loads the shipped
   file's real bytes. `ui.js` is DOM-only — no `fetch`, no POST.
+- **Comments say why; git says what changed.** A comment states the
+  present-tense reason the code is this shape — what breaks if it is
+  changed back, what trap the next reader is walking into. What
+  changed, and whatever triggered it, goes in the commit message, the
+  pull request and the issue. A comment that narrates a change is a
+  claim about the past that no test covers, so nothing ever falsifies
+  it: the code moves on and the sentence stays. **A change that
+  falsifies a comment updates or deletes that comment in the same
+  change.** `tools/check_comments.py` carries the phrase list and
+  enforces it as a **ratchet** — every offender already here is pinned
+  in its allowlist, a new one fails the gate, and a pin that stops
+  matching fails too, so the list can only shrink and cannot go stale.
+  Take an entry off in the change that next touches its file; never
+  raise a count.
 - **Commit messages carry the reasoning** — the why, what was rejected,
   what was verified. This project recovers facts from `git log`; a PR
   body is not in the repository. A single subject line is for changes

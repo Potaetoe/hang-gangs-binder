@@ -7,8 +7,9 @@ Run every check this project has, locally.
 A push to main publishes the site, so this exists to make "did I break
 it?" one command instead of a list of remembered ones. It runs the two
 linters, every Node suite in dev/, the publishability check, the
-deployment-config check, the documentation check, and the suite behind
-each of the two checkers, and exits non-zero if any of them fails.
+deployment-config check, the documentation check, the comment check,
+and the suite behind each checker, and exits non-zero if any of them
+fails.
 (The previous version of this docstring enumerated the stages with a
 count, listed one suite short, and was stale within a week - the
 printout at the end of a run is the list, and the only one that cannot
@@ -20,6 +21,9 @@ drift.) In outline:
       check_server.py's own vars parser holds
     - the documents stay registered, tripwire-free and American-spelled
       (tools/check_docs.py carries the registry)
+    - code comments explain why, and no new one narrates a change
+      (tools/check_comments.py carries the allowlist that pins the
+      offenders still here)
     - eslint and ruff pass
     - every dev/ suite passes, from the crypto fixture to the Worker's
       gating matrix - NODE_SUITES below is the roster
@@ -185,6 +189,20 @@ def main():
     results.append(("docs registry + tripwires", run(
         "docs registry + tripwires",
         [sys.executable, "tools/check_docs.py"]
+    )))
+
+    # The same rule for code that check_docs.py holds for documents: a
+    # comment says why, and what changed says it in the commit message.
+    # A ratchet rather than a sweep - every offender already here is
+    # pinned, a new one fails, and a pin that stops matching fails too.
+    results.append(("comments say why", run(
+        "comments say why",
+        [sys.executable, "tools/check_comments.py"]
+    )))
+
+    results.append(("check_comments extractor + ratchet", run(
+        "check_comments extractor + ratchet",
+        [sys.executable, "dev/check_comments.test.py"]
     )))
 
     node = find_node()
