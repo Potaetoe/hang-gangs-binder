@@ -102,6 +102,12 @@ jobs:
       - name: Check the documents stay registered and tripwire-free
         run: python tools/check_docs.py
 
+      # The reader behind it, tested on strings. Registered here AND in
+      # tools/check.py, like every other stage - a check that runs only
+      # on a developer's machine looks armed and is not.
+      - name: Check the document registries and the rules
+        run: python dev/check_docs.test.py
+
       # The same rule for code that the step above holds for documents:
       # a comment says why, and what changed - together with whatever
       # triggered it - says so in the commit message, the pull request

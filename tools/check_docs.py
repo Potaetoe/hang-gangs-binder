@@ -21,6 +21,9 @@ Three checks, all born from the same week of failures (issue #77):
     week; the gate prints its own list, and that printout is the
     number).
 
+Under all three sits a floor: a run that read no document at all fails
+rather than reporting a clean tree. See null_scan_problems().
+
 archive/ is deliberately not scanned. It is frozen history, and the
 falsified claims inside it are allowed to survive there as history -
 the same reason a correction is recorded in a commit message rather
@@ -126,12 +129,28 @@ COUNTS = re.compile(
 )
 
 
-def scan(relpath, problems):
+def document_text(relpath):
+    """One scan target's bytes, as text.
+
+    Kept apart from the rules below so the rules can be exercised on
+    strings. Finding a document is the half of this file that a
+    mutation never reaches - a mutation is written against a rule, and
+    every rule reports a clean tree when the reader hands it nothing.
+    That is #34, and dev/check_docs.test.py is what closes it.
+    """
     path = os.path.join(REPO, relpath)
     with open(path, encoding="utf-8") as handle:
-        lines = handle.read().splitlines()
+        return handle.read()
 
-    for lineno, line in enumerate(lines, 1):
+
+def scan_text(relpath, text):
+    """The three content rules, over one document's text.
+
+    Line by line, which bounds what a tripwire can match: a phrase
+    broken across a wrap is not seen. #121 carries that limit.
+    """
+    problems = []
+    for lineno, line in enumerate(text.splitlines(), 1):
         low = line.lower()
         for phrase, why in TRIPWIRES:
             if phrase in low:
@@ -151,6 +170,25 @@ def scan(relpath, problems):
                 "%s:%d: %r states a gate size in prose - say where to "
                 "look (the gate prints its own list), not what the "
                 "number was" % (relpath, lineno, match.group(0)))
+    return problems
+
+
+def top_level_documents():
+    """The markdown files sitting at the repository root."""
+    return {name for name in os.listdir(REPO)
+            if name.lower().endswith(".md")
+            and os.path.isfile(os.path.join(REPO, name))}
+
+
+def registry_problems(present):
+    """Unregistered top-level documents, over a given set of names."""
+    return [
+        "%s: not in the document registry. A new top-level "
+        "document needs owner approval; recording the approval "
+        "IS editing REGISTRY in tools/check_docs.py (see "
+        "AGENTS.md, 'The documentation system')." % name
+        for name in sorted(present) if name not in REGISTRY
+    ]
 
 
 def security_problems():
@@ -171,6 +209,11 @@ def security_problems():
 
     present = {name for name in os.listdir(folder)
                if os.path.isfile(os.path.join(folder, name))}
+    return security_registry_problems(present)
+
+
+def security_registry_problems(present):
+    """The two directions, over a given set of file names."""
     problems = [
         "%s/%s: not in the security registry. A record here needs owner "
         "approval on the same terms as a top-level document; recording "
@@ -188,46 +231,67 @@ def security_problems():
     return problems
 
 
-def main():
-    problems = []
-
-    for name in sorted(os.listdir(REPO)):
-        if not name.lower().endswith(".md"):
-            continue
-        if not os.path.isfile(os.path.join(REPO, name)):
-            continue
-        if name not in REGISTRY:
-            problems.append(
-                "%s: not in the document registry. A new top-level "
-                "document needs owner approval; recording the approval "
-                "IS editing REGISTRY in tools/check_docs.py (see "
-                "AGENTS.md, 'The documentation system')." % name)
-
-    problems.extend(security_problems())
-
-    targets = [n for n in sorted(REGISTRY)
-               if os.path.isfile(os.path.join(REPO, n))]
-    targets += [p for p in ALSO_SCANNED
-                if os.path.isfile(os.path.join(REPO, p))]
+def targets():
+    """Every document the content rules are applied to."""
+    found = [n for n in sorted(REGISTRY)
+             if os.path.isfile(os.path.join(REPO, n))]
+    found += [p for p in ALSO_SCANNED
+              if os.path.isfile(os.path.join(REPO, p))]
     # Registered records that are prose. A non-markdown artifact is held
     # to the registry but not read for tripwires or spelling: its words
     # are the catalog's rather than this project's, so a rule this
     # project settled has no jurisdiction over them - and a .ckl or a
     # zip is not text this scanner can open.
-    targets += [os.path.join(SECURITY_DIR, n) for n in sorted(SECURITY)
-                if n.lower().endswith(".md")
-                and os.path.isfile(os.path.join(REPO, SECURITY_DIR, n))]
-    for relpath in targets:
-        scan(relpath, problems)
+    found += [os.path.join(SECURITY_DIR, n) for n in sorted(SECURITY)
+              if n.lower().endswith(".md")
+              and os.path.isfile(os.path.join(REPO, SECURITY_DIR, n))]
+    return found
 
-    if problems:
-        print("check_docs: %d problem(s)\n" % len(problems))
-        for problem in problems:
+
+def null_scan_problems(scanned):
+    """The floor: a run that read nothing is not a clean tree.
+
+    security_problems() states this principle for the folder - "a
+    scanner that cannot find what it was pointed at has to say so,
+    because 'nothing unregistered here' and 'nothing read here' print
+    identically" - and it holds for the documents on the same terms.
+
+    Absence of any one registered document is deliberately not an
+    error, because CUTOVER.md deletes itself in its own aftercare. That
+    is precisely why their absence in total has to be: no other arm in
+    this file remarks on a document that is simply gone, so an empty
+    target list is the one state that would otherwise print success on
+    a scan that read nothing at all.
+    """
+    if scanned:
+        return []
+    return ["no document was read at all. Absence of any one "
+            "registered document is not an error (CUTOVER.md deletes "
+            "itself), so nothing else here reports an empty scan - and "
+            "a scan of nothing prints exactly like a clean tree."]
+
+
+def problems():
+    found = registry_problems(top_level_documents())
+    found += security_problems()
+
+    scanned = targets()
+    found += null_scan_problems(scanned)
+    for relpath in scanned:
+        found += scan_text(relpath, document_text(relpath))
+    return found
+
+
+def main():
+    found = problems()
+    if found:
+        print("check_docs: %d problem(s)\n" % len(found))
+        for problem in found:
             print("  " + problem)
         return 1
 
     print("check_docs: both registries, tripwires and style all hold "
-          "(%d files scanned)." % len(targets))
+          "(%d files scanned)." % len(targets()))
     return 0
 
 
