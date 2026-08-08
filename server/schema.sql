@@ -5,9 +5,11 @@
 -- inside it, including the timestamp their browser recorded.
 --
 -- `received_at` is the server's own receipt time, kept outside the blob
--- because it is the one fact the endpoint can honestly attest to. It and
--- `account_id` are the only metadata stored - see DESIGN.md, "Data
--- collected", on why the Telegram handle is not a column, and
+-- because it is the one fact the endpoint can honestly attest to. It,
+-- `account_id` and `supersedes` are the only metadata stored, and each
+-- of the three is in the clear because a pointer or an id the Worker
+-- cannot read is one it can neither check nor count - see DESIGN.md,
+-- "Data collected", on why the Telegram handle is not a column, and
 -- "Accounts" on why an account id can sit in the clear where a handle
 -- cannot.
 --
@@ -32,24 +34,62 @@
 -- is a label rather than a fact. See DESIGN.md, "Accounts", including
 -- why a plain hash of the handle would have been a disaster.
 --
--- No UPDATE: an update writes a new row, which is what the
--- weight-over-time history is made of. There IS a DELETE, added
--- 2026-08-05 - an admin can remove one submission, which is what
--- answers "please take mine down" and what makes junk recoverable.
+-- No UPDATE: a correction is a new row that names the row it supersedes
+-- in `supersedes`, and the superseded row stays as a tombstone. Which of
+-- two rows is the current claim is therefore a fact this side can see,
+-- while what either of them says stays unreadable here - so resolving a
+-- correction, which means dropping tombstones from a series, happens in
+-- the keyholder's browser where the plaintext is. DESIGN.md, "Admin
+-- accounts and deletion", is the home of that rule. There IS a DELETE -
+-- an admin can remove one submission, which is what answers "please take
+-- mine down", what makes junk recoverable, and the only thing that
+-- erases a tombstone.
 --
 -- Adding account_id to a table that already has rows is not possible in
 -- SQLite for a NOT NULL column, so the accounts migration DROPs and
 -- recreates. That is deliberate and destructive; archive/REDESIGN.md, Part 2.
+--
+-- That warning is about a NOT NULL column and reads as a general
+-- prohibition, which it is not. A nullable column adds cleanly and
+-- without losing a row:
+--
+--     ALTER TABLE submissions ADD COLUMN supersedes INTEGER;
+--
+-- A database that already holds rows needs that statement before a
+-- Worker which reads `supersedes` is deployed against it; there is no
+-- graceful degradation on the other side, deliberately, because a
+-- fallback would make a forgotten migration invisible in exactly the way
+-- the block above describes. Re-running this file afterwards adds the
+-- index, which is IF NOT EXISTS.
 
+-- `supersedes` is the id of the row this one replaces, or NULL. It sits
+-- last because that is where ALTER TABLE puts it, so a database migrated
+-- with the statement above and one created from this file are the same
+-- table rather than two that agree only by name.
+--
+-- Deliberately not a FOREIGN KEY. The pointer is advisory: an admin
+-- removing a correction has to put the row it corrected back among the
+-- current ones, so a pointer at a row that is gone must resolve as no
+-- pointer. A constraint here would instead refuse that deletion or
+-- cascade into a second one, and nothing may turn "please take mine
+-- down" into two rows disappearing.
 CREATE TABLE IF NOT EXISTS submissions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id  TEXT NOT NULL,
   ciphertext  TEXT NOT NULL,
-  received_at TEXT NOT NULL
+  received_at TEXT NOT NULL,
+  supersedes  INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS submissions_account
   ON submissions(account_id);
+
+-- Both of the questions asked about a submission id are "does any row
+-- name it": GET /me counts the rows nobody names, and POST /submit
+-- refuses a second correction of a row already corrected. The first runs
+-- on an ordinary page load.
+CREATE INDEX IF NOT EXISTS submissions_supersedes
+  ON submissions(supersedes);
 
 -- Sessions. Only the SHA-256 of a token is kept, so reading this table
 -- yields nothing that can be used as a session - the same reasoning that
