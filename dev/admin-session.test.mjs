@@ -35,19 +35,31 @@ globalThis.document = {
 await import("data:text/javascript," + encodeURIComponent(sessionSource));
 const Session = globalThis.BinderSession;
 
+/*
+ * The `GET /export` reply, column for column - `handleExport` in
+ * server/worker.js selects `id, account_id, ciphertext, received_at`.
+ *
+ * Rows 41 and 99 carry one account id between them and two different
+ * handles, which is the shape this file is here to follow end to end:
+ * the identity is a column beside the blob, the handle is inside it,
+ * and only the column survives being sealed by somebody else's browser.
+ */
 const SUBMISSIONS = [
   {
     id: 73,
+    account_id: "account-rotated",
     ciphertext: "ciphertext-from-rotated-key",
     received_at: "2026-08-04T11:59:05.000Z",
   },
   {
     id: 41,
+    account_id: "account-one",
     ciphertext: "ciphertext-41",
     received_at: "2026-08-04T12:00:05.000Z",
   },
   {
     id: 99,
+    account_id: "account-one",
     ciphertext: "ciphertext-99",
     received_at: "2026-08-04T12:01:05.000Z",
   },
@@ -273,6 +285,10 @@ async function loadAdmin(session) {
     snapshotOf(entries, options) {
       const snapshot = {
         ids: entries.map((entry) => entry.id),
+        // What the real dashboard groups on. Recording it here is what
+        // makes "the identity reached the charts" checkable without
+        // this file having to know how the charts count anybody.
+        accountIds: entries.map((entry) => entry.accountId),
         counts: { entries: entries.length, people: entries.length },
         bases: {},
         options,
@@ -377,6 +393,19 @@ check("an undecryptable submission is listed by id without shifting rows",
     "row 73: could not be opened with this key") &&
   JSON.stringify(rowIds(admin)) === JSON.stringify([41, 99]));
 
+/*
+ * The identity has to make the whole journey - fetched as a column,
+ * carried past a decryption that only touches the blob, and handed to
+ * whatever counts people. Every step of it exists already; the one that
+ * dropped it is entryFor, and it drops it silently, because a chart
+ * grouped by the wrong key looks exactly like a chart grouped by the
+ * right one.
+ */
+check("the account id reaches the charts with the row it came on",
+  admin.snapshots.length >= 1 &&
+  JSON.stringify(admin.snapshots.at(-1).accountIds) ===
+    JSON.stringify(["account-one", "account-one"]));
+
 const inputValues = Object.values(admin.elements)
   .filter((element) => element.tagName === "INPUT" ||
     element.tagName === "TEXTAREA")
@@ -414,4 +443,4 @@ if (failures) {
   console.error(`\nadmin session/delete FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nadmin session/delete OK - 11 checks");
+console.log("\nadmin session/delete OK - 12 checks");
