@@ -347,6 +347,11 @@ const matrix = [
   ["DELETE", "/snapshot", ADMIN, 200],
   ["DELETE", "/submission/1", null, 401],
   ["DELETE", "/submission/1", MEMBER, 401],
+  // Only the non-destructive halves of DELETE /session belong in the
+  // table; a revoke that succeeded here would kill MEMBER or ADMIN for
+  // every row below it. The rest of that route is its own section.
+  ["DELETE", "/session", null, 401],
+  ["DELETE", "/session", "sekrit-token-value", 401],
   ["GET", "/whatever", ADMIN, 404],
 ];
 
@@ -545,6 +550,145 @@ await statusOf("an override shuts out the old origin",
 await statusOf("a Worker with no export token refuses the break-glass path",
   call("GET", "/export", { headers: bearer("") }, { ...env, EXPORT_TOKEN: "" }),
   401);
+
+/* ------------------------------------------------------------------ */
+/* Ending a session on purpose - DELETE /session.                      */
+
+/*
+ * Signing out has to end the session rather than forget it. Without this
+ * route the row survives to its natural expiry - seven days for a member
+ * - so a token captured before sign-out stays a working credential for
+ * all of it, which is the one thing sign-out is pressed to stop.
+ *
+ * The route is authenticated by the token it destroys, so it needs no
+ * new authority, and it refuses anything that is not a live session row:
+ * an unknown token gets 401 rather than a courtesy 200. That refusal is
+ * load-bearing in two directions. It keeps the route from being an
+ * unauthenticated DELETE against `sessions` keyed on a string the caller
+ * chose, and it stops the route ever answering "you are signed out" to
+ * somebody who is not - the same failure this route exists to fix, moved
+ * one level up. Nothing is trapped by the strictness: the page clears
+ * its local copy whatever this answers.
+ */
+reset();
+
+const REVOKE_ME = (await (await signIn({})).clone().json()).session;
+const BYSTANDER = (await (await signIn({ id: 7777 })).clone().json()).session;
+check("two sessions exist before either is revoked",
+  sessions.length === 2, `${sessions.length} row(s)`);
+
+await statusOf("a member can end their own session",
+  call("DELETE", "/session", { headers: bearer(REVOKE_ME) }), 200);
+check("the row is deleted rather than left to expire",
+  sessions.length === 1 &&
+  !sessions.some((s) => s.account_id === FIXTURE_4242),
+  `${sessions.length} row(s) left`);
+
+await statusOf("the revoked token is refused on the very next request",
+  call("GET", "/me", { headers: bearer(REVOKE_ME) }), 401);
+await statusOf("and on a route that writes, not only on one that reads",
+  call("POST", "/submit", { headers: bearer(REVOKE_ME),
+    body: JSON.stringify({ ciphertext: "QUJDRA==" }) }), 401);
+
+/* Revoking must not be a way to sign anybody else out, and must not be a
+ * way to find out that anybody else is signed in. */
+await statusOf("somebody else's session is untouched",
+  call("GET", "/me", { headers: bearer(BYSTANDER) }), 200);
+
+await statusOf("revoking an already-revoked token is refused, not blessed",
+  call("DELETE", "/session", { headers: bearer(REVOKE_ME) }), 401);
+await statusOf("a token that was never a session revokes nothing",
+  call("DELETE", "/session", { headers: bearer("not-a-session-token") }), 401);
+check("and neither refusal removed a row",
+  sessions.length === 1, `${sessions.length} row(s) left`);
+
+const ADMIN_REVOKE = (await (await signIn({ id: 99 })).clone().json()).session;
+await statusOf("an admin can end their own session too",
+  call("DELETE", "/session", { headers: bearer(ADMIN_REVOKE) }), 200);
+await statusOf("and the admin token is dead on the next request",
+  call("GET", "/export", { headers: bearer(ADMIN_REVOKE) }), 401);
+
+/* An expired session is not a credential, so it cannot revoke either -
+ * and the opportunistic sweep is what actually removes its row. */
+const STALE_TOKEN = (await (await signIn({ id: 8888 })).clone().json()).session;
+sessions[sessions.length - 1].expires_at =
+  new Date(Date.now() - 1000).toISOString();
+await statusOf("an expired session cannot revoke",
+  call("DELETE", "/session", { headers: bearer(STALE_TOKEN) }), 401);
+
+/* ------------------------------------------------------------------ */
+/* An admin session is admin only while the id is still an admin.      */
+
+/*
+ * The admin flag is minted at sign-in. On its own that means taking an
+ * id out of ADMIN_TELEGRAM_IDS does nothing until the session expires -
+ * up to two hours of holding the whole corpus's ciphertext, with nothing
+ * able to force it sooner. The flag on the row is now a necessary
+ * condition rather than the whole answer, and the list is re-read on
+ * every request that asks whether the caller is an admin.
+ *
+ * The re-read compares account ids, never Telegram ids: the Worker HMACs
+ * each configured id under ACCOUNT_SECRET and looks for the value the
+ * row already carries. Nothing new is stored, nothing is written down,
+ * and the comparison is made in memory out of two things the Worker
+ * already held.
+ */
+reset();
+
+const staleAdmin = await (await signIn({ id: 99 })).clone().json();
+check("the session was minted as an admin", staleAdmin.isAdmin === true);
+const STALE_ADMIN = staleAdmin.session;
+
+await statusOf("it exports while 99 is still in ADMIN_TELEGRAM_IDS",
+  call("GET", "/export", { headers: bearer(STALE_ADMIN) }), 200);
+
+const demoted = { ...env, ADMIN_TELEGRAM_IDS: "12345" };
+await statusOf("the same session cannot export once 99 is off the list",
+  call("GET", "/export", { headers: bearer(STALE_ADMIN) }, demoted), 401);
+await statusOf("nor publish a snapshot",
+  call("POST", "/snapshot", { headers: bearer(STALE_ADMIN),
+    body: JSON.stringify({ snapshot: 1 }) }, demoted), 401);
+await statusOf("nor take one down",
+  call("DELETE", "/snapshot", { headers: bearer(STALE_ADMIN) }, demoted), 401);
+await statusOf("nor delete somebody's row",
+  call("DELETE", "/submission/1", { headers: bearer(STALE_ADMIN) }, demoted),
+  401);
+await statusOf("an empty admin list leaves nobody an admin",
+  call("GET", "/export", { headers: bearer(STALE_ADMIN) },
+    { ...env, ADMIN_TELEGRAM_IDS: "" }), 401);
+
+/* Demotion is not revocation. The person is still a member of the group,
+ * and the session that stops being an admin session keeps working as the
+ * member session it also is - so /me must say so rather than refuse. */
+const demotedMe = await call("GET", "/me",
+  { headers: bearer(STALE_ADMIN) }, demoted);
+const demotedMeBody = await demotedMe.clone().json();
+check("the demoted session still works as an ordinary member session",
+  demotedMe.status === 200 && demotedMeBody.isAdmin === false,
+  `${demotedMe.status}, isAdmin=${demotedMeBody.isAdmin}`);
+
+/*
+ * The development session is exempt, on purpose rather than by
+ * oversight. A dev admin's authority never came from ADMIN_TELEGRAM_IDS
+ * - its account id is namespaced under "dev:" and could not be in that
+ * list - it came from DEV_LOGIN_SECRET, so that is what gets re-read for
+ * it. Unsetting the secret drops the session exactly the way delisting
+ * an id does, which is the same "must be SET" shape the route itself
+ * uses. Untested, this exemption would be indistinguishable from having
+ * forgotten dev sessions existed.
+ */
+const devAdmin = await (await call("POST", "/auth/dev",
+  { headers: { Origin: LOCAL, ...TYPE },
+    body: JSON.stringify(
+      { secret: "dev-secret", subject: "root", admin: true }) },
+  devEnv)).clone().json();
+check("a dev session can be minted as an admin", devAdmin.isAdmin === true);
+await statusOf("and ADMIN_TELEGRAM_IDS has no say over it",
+  call("GET", "/export", { headers: bearer(devAdmin.session) },
+    { ...devEnv, ADMIN_TELEGRAM_IDS: "" }), 200);
+await statusOf("but unsetting DEV_LOGIN_SECRET drops it to a member",
+  call("GET", "/export", { headers: bearer(devAdmin.session) },
+    { ...devEnv, DEV_LOGIN_SECRET: "" }), 401);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
