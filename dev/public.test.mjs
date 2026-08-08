@@ -39,17 +39,27 @@ globalThis.location = {
  * not: a live Date.now() against a fixed fixture lets exactly one of
  * ageText's six arms run per day, and the calendar chooses which one.
  *
+ * Pinning Date.now is the same move this file already makes for fetch,
+ * document, sessionStorage and location, and it is the one the shipped
+ * module can be held to: ageText takes the clock as an argument, and
+ * setUp reads it once and hands it in, so nothing here needs a test-only
+ * path in a file that is copied verbatim to the published site.
+ *
  * NOW is the instant the SNAPSHOT fixture below turns exactly 48 hours
  * old. That instant is also the one second in which the module's two
  * thresholds disagree - ageText switches to days at 2880 whole minutes,
  * while the banner wants strictly more than 48 fractional hours - so it
  * is the clock that puts the sharpest edge under the rows. Both lines are
  * asserted from both sides below; reconciling them cannot pass unnoticed.
+ *
+ * Every session fixture here expires in 2099, so a pinned clock in 2026
+ * leaves session.js's expiry arm reading exactly as it does live.
  */
 const NOW = Date.parse("2026-08-09T12:00:00.000Z");
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
+Date.now = function () { return NOW; };
 
 globalThis.document = {
   querySelector() { return null; },
