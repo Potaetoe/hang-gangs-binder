@@ -275,6 +275,20 @@ jobs:
       - name: Check session storage and auth handoff
         run: node dev/session.test.mjs
 
+      # dev/make-sample.mjs loads the shipped form.js and crypto.js and
+      # was exercised by nothing, which is how #66 survived: buildRecord
+      # grew a third argument, the generator kept passing two, and it
+      # threw for weeks with every stage on this list green. The suite
+      # runs the real script to a scratch path outside the checkout and
+      # holds it to the summary it prints - it never rewrites the
+      # committed sample, and asserts that too.
+      #
+      # Registered here AND in tools/check.py, like every other stage -
+      # a check that runs only on a developer's machine looks armed and
+      # is not.
+      - name: Check the sample generator still runs
+        run: node dev/make-sample.test.mjs
+
       - name: Check the Worker
         # server/ is not published by this job, but a release that leaves
         # the endpoint broken is still a broken release. Since the

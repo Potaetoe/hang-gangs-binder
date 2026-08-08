@@ -79,6 +79,11 @@ NODE_SUITES = [
     ("shared UI wiring", "dev/ui.test.mjs"),
     ("session storage + auth handoff", "dev/session.test.mjs"),
     ("worker routing + CORS", "dev/worker.test.mjs"),
+    # Last, because it spawns a second node and does eighteen ECDH
+    # seals - the slowest entry here, and the one whose failure is
+    # least urgent. It is the only stage that exercises
+    # dev/make-sample.mjs at all; #66 lived in that gap for weeks.
+    ("sample generator still runs", "dev/make-sample.test.mjs"),
 ]
 
 
