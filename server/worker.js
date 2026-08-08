@@ -92,8 +92,37 @@ const MAX_AUTH_BODY = 4 * 1024;
  * admin's runs two hours, because an admin session fetches the entire
  * corpus's ciphertext and the difference in what is at stake is the
  * whole reason these are two numbers instead of one.
+ *
+ * Both are caps on a session that is being used. What bounds one that is
+ * not is ADMIN_IDLE_MINUTES below, and only for an admin.
  */
 const SESSION_HOURS = { member: 24 * 7, admin: 2 };
+
+/*
+ * How long an admin session may go unused before it stops working.
+ *
+ * apps/web/admin.html is the only place in this system where the whole
+ * corpus exists in the clear, and the two-hour cap above runs whether
+ * anybody is at the machine or not - so the tab left open on a decrypted
+ * corpus is what this cuts, from two hours to a quarter of one
+ * (ASD STIG V-222390, #91).
+ *
+ * Fifteen minutes rather than the STIG's ten for a privileged session,
+ * because what this side can measure is requests and not attention: the
+ * admin page decrypts once and is then read with nothing crossing the
+ * wire, so a window tight enough to be an attention timer would end the
+ * session in the middle of a read. The timer that can see real
+ * interaction belongs on the page; this is the backstop for the case
+ * where the page never gets to run it - the tab killed, the browser
+ * gone, the token captured. Any authenticated request slides this
+ * window, so that timer needs no route added here to hold it open.
+ *
+ * Member sessions have no window, deliberately. A member session appends
+ * rows for one account and reads a document carrying no handles and no
+ * rows, so there is no plaintext corpus behind it to leave on a screen.
+ * DESIGN.md, "Sessions", records that as a decision (V-222389).
+ */
+const ADMIN_IDLE_MINUTES = 15;
 
 // Telegram signs the moment you pressed the button. A payload older
 // than this is refused, which is what stops a captured one being a
@@ -305,10 +334,40 @@ async function isGroupMember(env, userId) {
 }
 
 /*
+ * When a session dies, in two answers that are not the same answer.
+ *
+ * absoluteExpiry() is the cap measured from sign-in and never moves.
+ * deadlineAt() is what the row carries: the cap for a member, and for an
+ * admin whichever comes first, the cap or the idle window measured from
+ * `now`. Every write of `expires_at` goes through deadlineAt(), which is
+ * what makes the cap un-slideable - a slide that forgot the Math.min
+ * would renew an admin session a quarter of an hour at a time, forever,
+ * and nothing else in this file would notice.
+ */
+function absoluteExpiry(createdAt, isAdmin) {
+  const hours = isAdmin ? SESSION_HOURS.admin : SESSION_HOURS.member;
+  return createdAt + hours * 3600 * 1000;
+}
+
+function deadlineAt(createdAt, isAdmin, now) {
+  const absolute = absoluteExpiry(createdAt, isAdmin);
+  if (!isAdmin) return absolute;
+  return Math.min(absolute, now + ADMIN_IDLE_MINUTES * 60 * 1000);
+}
+
+/*
  * A session is 32 random bytes. The database stores only its SHA-256, so
  * reading the sessions table yields nothing that can be used as one -
  * the same reasoning that keeps plaintext out of `submissions`, applied
  * to a much smaller secret.
+ *
+ * The row gets the deadline and the caller is told the cap, and the two
+ * differ for an admin on purpose. apps/web/session.js keeps `expiresAt`
+ * for the life of the tab and never rewrites it, so handing it the idle
+ * window would drop an admin's own tab a quarter of an hour after
+ * sign-in however busy they had been - a client-side timeout nobody
+ * specified, arriving through the wrong value. The row is where the
+ * window is enforced, and sessionFor() is what enforces it.
  */
 async function issueSession(env, accountId, isAdmin, isDev) {
   const raw = new Uint8Array(32);
@@ -316,9 +375,8 @@ async function issueSession(env, accountId, isAdmin, isDev) {
   const token = btoa(String.fromCharCode(...raw))
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-  const hours = isAdmin ? SESSION_HOURS.admin : SESSION_HOURS.member;
-  const now = new Date();
-  const expires = new Date(now.getTime() + hours * 3600 * 1000);
+  const now = Date.now();
+  const expires = new Date(absoluteExpiry(now, isAdmin));
 
   await env.DB.prepare(
     "INSERT INTO sessions " +
@@ -326,7 +384,8 @@ async function issueSession(env, accountId, isAdmin, isDev) {
     "VALUES (?, ?, ?, ?, ?, ?)"
   )
     .bind(await sha256Hex(token), accountId, isAdmin ? 1 : 0, isDev ? 1 : 0,
-      now.toISOString(), expires.toISOString())
+      new Date(now).toISOString(),
+      new Date(deadlineAt(now, isAdmin, now)).toISOString())
     .run();
 
   return { token: token, expiresAt: expires.toISOString() };
@@ -336,6 +395,19 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  * Expired rows are cleared when one is looked up rather than by a
  * scheduled job. The ordinary failure of a scheduled job is silence, and
  * there is nothing here worth a moving part.
+ *
+ * Using an admin session is also what resets its idle window, and the
+ * row this already read is where that is recorded. A write per request
+ * on a row that was going to be read anyway is the small version; a
+ * `last_used_at` column would need a second sweep predicate beside the
+ * one above, which is a moving part rather than fewer of them. Only
+ * admin rows are written, so the cost is bounded by admin traffic.
+ *
+ * The stored flag decides whether the window applies, not the re-read
+ * below it: this row was handed the whole corpus's ciphertext once, and
+ * taking its owner off ADMIN_TELEGRAM_IDS does not un-hand it. Reading
+ * the re-read instead would give a demoted session the longer deadline,
+ * which is the wrong direction for a demotion.
  *
  * The admin flag is re-checked here rather than trusted from the row.
  * The row says what was true at sign-in, and the question every caller
@@ -359,16 +431,38 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  */
 async function sessionFor(env, token) {
   if (!token) return null;
+  const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
-    "SELECT account_id, is_admin, is_dev, expires_at FROM sessions " +
-    "WHERE token_hash = ?"
-  ).bind(await sha256Hex(token)).first();
+    "SELECT account_id, is_admin, is_dev, created_at, expires_at " +
+    "FROM sessions WHERE token_hash = ?"
+  ).bind(tokenHash).first();
 
   if (!row) return null;
-  if (Date.parse(row.expires_at) <= Date.now()) {
+  const now = Date.now();
+  // One reading of the clock for the refusal, the sweep and the slide.
+  // Three would let a row be live for the check and expired for the
+  // write, which is a whole class of answer that cannot be reproduced.
+  if (Date.parse(row.expires_at) <= now) {
     await env.DB.prepare("DELETE FROM sessions WHERE expires_at <= ?")
-      .bind(new Date().toISOString()).run();
+      .bind(new Date(now).toISOString()).run();
     return null;
+  }
+
+  if (row.is_admin === 1) {
+    // An unparseable created_at falls back to `now`, which yields the
+    // idle window and never more than it. Unguarded this is
+    // new Date(NaN).toISOString(), which throws - so one unreadable row
+    // would turn every admin request into a 500 rather than into a
+    // shorter session. The same failing-closed shape tokenMatches()
+    // carries for an unset secret.
+    const created = Date.parse(row.created_at);
+    await env.DB.prepare(
+      "UPDATE sessions SET expires_at = ? WHERE token_hash = ?"
+    ).bind(
+      new Date(deadlineAt(
+        Number.isFinite(created) ? created : now, true, now)).toISOString(),
+      tokenHash
+    ).run();
   }
 
   const isDev = row.is_dev === 1;

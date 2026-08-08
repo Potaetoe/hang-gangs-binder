@@ -115,12 +115,30 @@ detectable — treat the id as identity and the handle as display.
 A session is a random token issued when a Telegram payload verifies,
 held in `sessionStorage` for the life of the tab; the Worker stores
 only `SHA-256(token)`. Member sessions live seven days, admin sessions
-two hours (they open the whole corpus's ciphertext) — the constants are
-in `server/worker.js`. Expired rows are cleared opportunistically on
-lookup; a scheduled job's failure mode is silence, and nothing here is
-worth a moving part. Payload verification is Telegram's HMAC scheme
-plus a **300-second freshness window** — without it a captured payload
-is a permanent credential.
+two hours (they open the whole corpus's ciphertext), and an admin
+session also ends after a much shorter run of minutes in which no
+request reaches the Worker — all three constants are in
+`server/worker.js`. The first two bound a session that is in use; the
+third bounds one that is not, because `admin.html` is the only place
+the corpus exists in the clear and a two-hour clock runs whether
+anybody is at the machine or not. The window is the row's `expires_at`
+moving forward on use and never past the two-hour cap, so it needs no
+column and no second sweep: expired rows are still cleared
+opportunistically on lookup, a scheduled job's failure mode is silence,
+and nothing here is worth a moving part. Payload verification is
+Telegram's HMAC scheme plus a **300-second freshness window** — without
+it a captured payload is a permanent credential.
+
+**Member sessions are deliberately not idled**, recorded here as a
+decision rather than left as a gap. A member session appends rows for
+one account and reads a document carrying no handles and no rows, so
+there is no plaintext behind it to leave on a screen, and seven days of
+tolerance on a form people are meant to come back to costs less than
+signing somebody out mid-entry. What the Worker can measure is requests
+and not attention, which is also why the admin window is wider than a
+DoD baseline would set it: the timer that sees real interaction belongs
+on the page, and since any authenticated request slides the server-side
+window, that timer needs no route of its own to hold one open.
 
 **The page is not the gate.** A static site cannot gate a static page;
 the form page bouncing signed-out visitors is a courtesy. The gate is
