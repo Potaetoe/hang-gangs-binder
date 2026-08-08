@@ -145,6 +145,31 @@ On `accounts`, not released. `main` stays at the last complete release.
   admin-gated, and an admin holds one too. `dashboard.html`'s eyebrow
   changes from "Everyone" to "Members" and its CSP is byte-for-byte
   unchanged.
+- **`submit.html` has a member panel: Your entries / Add entry, a visible
+  Sign out, and device-local prefill for weight and height.** Build step 5,
+  #6. The entry count and last-submitted time come from `GET /me` and
+  nowhere else — `submit.js` keeps no tally, not even an optimistic one, so
+  the page cannot disagree with the table it reports on. `form.js` gains one
+  event, `binder:submitted`, dispatched only after the Worker has accepted a
+  row; the panel responds by reading `/me` again. The suite pins that with a
+  5 → 11 jump rather than 5 → 6, so a local increment fails even though the
+  number moved. Nothing decrypts here and the page says so: members hold no
+  key, so `/me` returns counts and a receipt time, never rows. The prefill
+  is cleartext body data rather than a credential, which is the only reason
+  it may live in `localStorage` at all — `DESIGN.md`'s storage rule was about
+  key material — and **Sign out removes it together with the session**,
+  because a sign-out that left weight and height on the device would be a
+  lie. A blocked, absent, malformed or older-shaped prefill degrades to an
+  empty form rather than a dead page. `refreshPanel` validates the response
+  before rendering it, so a malformed summary reports a refresh failure
+  instead of painting a number nobody vouched for; a 401 clears the session
+  and returns to sign-in rather than showing a stale count. No CSP change.
+- **The session stays tab-scoped**, against the issue's wording. #6 asked for
+  a "7-day persisted" session; `DESIGN.md` says a session is held in
+  `sessionStorage` for the life of the tab and argues it. The seven days is
+  the *server's* lifetime, which already exists — `SESSION_HOURS.member`.
+  Moving the token to `localStorage` would widen a credential's exposure and
+  is not a line change; `apps/web/session.js` was not touched.
 
 ### Notes
 - `server/worker.js` was not touched. `POST /submit` was already gated on

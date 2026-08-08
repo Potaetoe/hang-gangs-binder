@@ -331,8 +331,162 @@ check("sign out clears body-measurement prefill, session, and returns home",
   !localValues.has(PREFILL_KEY) && Session.read() === null &&
   redirects.at(-1) === "index.html");
 
+/*
+ * The property this whole step is measured on, exercised rather than read.
+ *
+ * The two checks above that cover it - here and in dev/form.test.mjs - are
+ * source-position assertions: the dispatch appears after `if (!response.ok)`,
+ * and there is exactly one of it. Both are worth keeping and neither proves
+ * the dispatch is UNREACHABLE on a failure. Convert a `catch { … return; }`
+ * into a non-returning branch, or lift the send into a helper, and every
+ * index assertion still passes while a refused submit refreshes the panel and
+ * shows a count that disagrees with the table.
+ *
+ * That is the shape #34 paid for: a mutation written against the rule that
+ * never reaches the path the rule is about. So the real form.js is driven
+ * here, through a failing send, and the dispatches are counted.
+ *
+ * Added by Claude rather than Codex - the seam is in the commit above this
+ * one, and in the handoff comment on #6.
+ */
+function makeInput(value, extra) {
+  const input = {
+    value: value,
+    checked: false,
+    attributes: {},
+    setAttribute(name, v) { this.attributes[name] = v; },
+    removeAttribute(name) { delete this.attributes[name]; },
+    addEventListener() {},
+    scrollIntoView() {},
+    hidden: false,
+    textContent: "",
+  };
+  return Object.assign(input, extra || {});
+}
+
+/* form.js reaches the network only for input `validate` accepts, so this is
+ * a form filled in correctly - imperial, over 18, one role. A stub that
+ * failed validation would never get near the dispatch and the check would
+ * pass for the wrong reason. */
+async function loadFormSubmit({ failWith }) {
+  const ids = [
+    "submission", "submit", "status", "closed", "done", "over18", "gender",
+    "country", "weight-lb", "weight-kg", "height-ft", "height-in",
+    "height-cm", "imperial-fields", "metric-fields", "key-fingerprint",
+    "error-telegram", "error-weight", "error-height", "error-gender",
+    "error-roles", "error-country", "error-over18",
+  ];
+  const elements = {};
+  for (const id of ids) elements[id] = makeInput("");
+  elements["weight-lb"].value = "200";
+  elements["height-ft"].value = "5";
+  elements["height-in"].value = "10";
+  elements.gender.value = "male";
+  elements.country.value = "US";
+  elements.over18.checked = true;
+
+  const units = [
+    makeInput("imperial", { checked: true, name: "units" }),
+    makeInput("metric", { checked: false, name: "units" }),
+  ];
+  const roles = [makeInput("gainer", { checked: true, name: "roles" })];
+
+  let submitListener = null;
+  elements.submission.addEventListener = function (type, listener) {
+    if (type === "submit") submitListener = listener;
+  };
+
+  const dispatched = [];
+  globalThis.document = {
+    readyState: "complete",
+    getElementById(id) { return elements[id] || null; },
+    querySelector() { return null; },
+    querySelectorAll(selector) {
+      if (selector === 'input[name="units"]') return units;
+      if (selector === 'input[name="roles"]:checked') return roles;
+      return [];
+    },
+    addEventListener() {},
+    dispatchEvent(event) { dispatched.push(event && event.type); return true; },
+  };
+  globalThis.CustomEvent = class {
+    constructor(type) { this.type = type; }
+  };
+  globalThis.BINDER_CONFIG = {
+    endpoint: "https://worker.example",
+    publicKey: "a-public-key",
+  };
+  globalThis.BinderUI = {
+    byId(id) { return elements[id] || null; },
+    show(element, visible) { if (element) element.hidden = !visible; },
+    setStatus() {},
+    showFingerprint() {},
+    checkedValue(name, fallback) {
+      if (name !== "units") return fallback;
+      const chosen = units.find((input) => input.checked);
+      return chosen ? chosen.value : fallback;
+    },
+    boot(setUp) { setUp(); },
+  };
+  globalThis.BinderCrypto = {
+    unavailableReason() { return null; },
+    async encrypt() { return "QUFBQQ=="; },
+  };
+  Session.clear();
+  Session.write(MEMBER);
+
+  const sent = [];
+  globalThis.fetch = async function (url) {
+    sent.push(url);
+    if (failWith === "reject") throw new Error("the connection failed");
+    return response(failWith, { error: "refused" });
+  };
+
+  scenario++;
+  await import("data:text/javascript," + encodeURIComponent(formSource) +
+    "#form-failure-" + scenario);
+  if (submitListener) {
+    await submitListener({ preventDefault() {} });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  return { dispatched, sent, listener: Boolean(submitListener) };
+}
+
+/*
+ * 403 rather than 500, and the difference is not cosmetic. Every refusal
+ * handleSubmit actually produces is a 4xx - 400 for a malformed or non-base64
+ * body, 413 for an oversize one, 401 with no member session. A 5xx is the
+ * case the Worker does not deliberately return.
+ *
+ * Found by mutation while writing this: `if (!response.ok)` narrowed to
+ * `if (response.status >= 500)` is caught by neither source-position check
+ * AND was not caught by this one either while it sent a 500 - the mutation
+ * still treats a 500 as failure. Testing the status the code is least likely
+ * to receive is its own version of the null result this section is about.
+ */
+const refused = await loadFormSubmit({ failWith: 403 });
+check("a submit the Worker refuses dispatches no stored event",
+  refused.listener && refused.sent.length === 1 &&
+  !refused.dispatched.includes(SUBMITTED_EVENT));
+
+const serverError = await loadFormSubmit({ failWith: 500 });
+check("a server error dispatches no stored event either",
+  serverError.listener && !serverError.dispatched.includes(SUBMITTED_EVENT));
+
+const unreachable = await loadFormSubmit({ failWith: "reject" });
+check("a send that never completes dispatches no stored event",
+  unreachable.listener && unreachable.sent.length === 1 &&
+  !unreachable.dispatched.includes(SUBMITTED_EVENT));
+
+/* And the control, without which the two above pass on a form that never
+ * reached the network at all - a null result wearing a positive one's
+ * clothes. */
+const accepted = await loadFormSubmit({ failWith: 200 });
+check("the same harness on a successful send does dispatch it",
+  accepted.dispatched.filter((type) => type === SUBMITTED_EVENT).length === 1);
+
 if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsubmit panel OK - 15 checks");
+console.log("\nsubmit panel OK - 19 checks");
