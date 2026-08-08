@@ -1,0 +1,230 @@
+/*
+ * The member panel around the submission form.
+ *
+ * Counts come only from GET /me. The form announces when the Worker has
+ * accepted a submission, and this file responds by reading /me again; it
+ * never guesses that the count rose by one. It also owns the device-local
+ * measurement prefill. That prefill is not a credential, but it is cleartext
+ * body data, so the visible sign-out action removes it with the session.
+ */
+(function (root) {
+  "use strict";
+
+  if (typeof document === "undefined") return;
+
+  const PREFILL_KEY = "hgb-submit-prefill";
+  const SUBMITTED_EVENT = "binder:submitted";
+  const FIELD_IDS = [
+    "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
+  ];
+  const UI = root.BinderUI;
+  const Session = root.BinderSession;
+  const $ = UI.byId;
+  const show = UI.show;
+
+  UI.boot(setUp, function (error) {
+    show($("member-tabs"), false);
+    show($("your-entries-pane"), false);
+    show($("add-entry-pane"), false);
+    setStatus("This member panel did not start correctly. " +
+      (error && error.message ? "(" + error.message + ")" : ""), true);
+  });
+
+  function localStore() {
+    try {
+      return root.localStorage || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function readPrefill() {
+    const store = localStore();
+    if (!store) return null;
+    try {
+      const value = JSON.parse(store.getItem(PREFILL_KEY));
+      if (!value || typeof value !== "object") return null;
+      if (value.units !== "imperial" && value.units !== "metric") return null;
+      return value;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function clearPrefill() {
+    const store = localStore();
+    if (!store) return;
+    try { store.removeItem(PREFILL_KEY); } catch (error) {}
+  }
+
+  function fieldValue(id) {
+    const field = $(id);
+    return field && typeof field.value === "string" ? field.value : "";
+  }
+
+  function currentUnits() {
+    const chosen = Array.prototype.find.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { return input.checked; });
+    return chosen ? chosen.value : "imperial";
+  }
+
+  function savePrefill() {
+    const store = localStore();
+    if (!store) return;
+    const value = {
+      units: currentUnits(),
+      weightLb: fieldValue("weight-lb"),
+      heightFeet: fieldValue("height-ft"),
+      heightInches: fieldValue("height-in"),
+      weightKg: fieldValue("weight-kg"),
+      heightCm: fieldValue("height-cm"),
+    };
+    try { store.setItem(PREFILL_KEY, JSON.stringify(value)); }
+    catch (error) { /* A blocked store leaves an ordinary empty prefill. */ }
+  }
+
+  function restorePrefill() {
+    const value = readPrefill();
+    if (!value) return;
+
+    const fields = {
+      "weight-lb": value.weightLb,
+      "height-ft": value.heightFeet,
+      "height-in": value.heightInches,
+      "weight-kg": value.weightKg,
+      "height-cm": value.heightCm,
+    };
+    Object.keys(fields).forEach(function (id) {
+      const field = $(id);
+      if (field && typeof fields[id] === "string") field.value = fields[id];
+    });
+
+    const unitInputs = Array.prototype.slice.call(
+      document.querySelectorAll('input[name="units"]'));
+    unitInputs.forEach(function (input) {
+      input.checked = input.value === value.units;
+    });
+    const selected = unitInputs.find(function (input) { return input.checked; });
+    if (selected) selected.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function setStatus(message, bad) {
+    const status = $("member-panel-status");
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = "status" + (bad ? " bad" : "");
+    status.hidden = !message;
+  }
+
+  function chooseTab(name) {
+    const entries = name === "entries";
+    show($("your-entries-pane"), entries);
+    show($("add-entry-pane"), !entries);
+
+    const entriesTab = $("your-entries-tab");
+    const addTab = $("add-entry-tab");
+    if (entriesTab) {
+      entriesTab.setAttribute("aria-selected", String(entries));
+      entriesTab.setAttribute("tabindex", entries ? "0" : "-1");
+    }
+    if (addTab) {
+      addTab.setAttribute("aria-selected", String(!entries));
+      addTab.setAttribute("tabindex", entries ? "-1" : "0");
+    }
+  }
+
+  function renderAccount(payload) {
+    $("member-entry-count").textContent = String(payload.entries);
+    const last = $("member-last-at");
+    if (payload.lastAt == null) {
+      last.dateTime = "";
+      last.textContent = "No entries yet";
+      return;
+    }
+
+    const at = Date.parse(payload.lastAt);
+    if (!Number.isFinite(at)) {
+      last.dateTime = "";
+      last.textContent = "Submission time unavailable";
+      return;
+    }
+    last.dateTime = payload.lastAt;
+    last.textContent = new Date(at).toLocaleString();
+  }
+
+  async function refreshPanel() {
+    const config = root.BINDER_CONFIG || {};
+    if (!config.endpoint) {
+      setStatus("This site has no endpoint configured for your account.", true);
+      return;
+    }
+
+    try {
+      const response = await fetch(config.endpoint + "/me", {
+        headers: Session.authorization(),
+      });
+      if (response.status === 401) {
+        Session.clear();
+        if (root.location && typeof root.location.replace === "function") {
+          root.location.replace("index.html");
+        }
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("The server answered " + response.status + ".");
+      }
+      const payload = await response.json();
+      if (!payload || payload.ok !== true ||
+          !Number.isInteger(payload.entries) || payload.entries < 0) {
+        throw new Error("The server returned an invalid account summary.");
+      }
+      renderAccount(payload);
+      setStatus("", false);
+    } catch (error) {
+      setStatus("Your account summary could not be refreshed. " +
+        (error && error.message ? error.message : "The connection failed."),
+      true);
+    }
+  }
+
+  function signOut() {
+    // The session is authority; the prefill is cleartext body data. Both
+    // leave together so "Sign out" means this device retains neither.
+    clearPrefill();
+    Session.clear();
+    if (root.location && typeof root.location.replace === "function") {
+      root.location.replace("index.html");
+    }
+  }
+
+  async function setUp() {
+    if (!Session) throw new Error("This page did not load session handling.");
+    if (!Session.require()) return;
+
+    restorePrefill();
+    FIELD_IDS.forEach(function (id) {
+      const field = $(id);
+      if (field) field.addEventListener("input", savePrefill);
+    });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { input.addEventListener("change", savePrefill); });
+
+    const entriesTab = $("your-entries-tab");
+    const addTab = $("add-entry-tab");
+    const signOutButton = $("sign-out");
+    if (entriesTab) {
+      entriesTab.addEventListener("click", function () { chooseTab("entries"); });
+    }
+    if (addTab) {
+      addTab.addEventListener("click", function () { chooseTab("add"); });
+    }
+    if (signOutButton) signOutButton.addEventListener("click", signOut);
+    document.addEventListener(SUBMITTED_EVENT, refreshPanel);
+
+    show($("member-tabs"), true);
+    chooseTab("entries");
+    await refreshPanel();
+  }
+})(globalThis);

@@ -90,6 +90,49 @@
     </p>
   </div>
 
+  <div class="card" id="member-tabs" hidden>
+    <div class="row">
+      <div class="row" role="tablist" aria-label="Submission page">
+        <button type="button" id="your-entries-tab" role="tab"
+                aria-controls="your-entries-pane" aria-selected="true">
+          Your entries
+        </button>
+        <button type="button" id="add-entry-tab" role="tab"
+                aria-controls="add-entry-pane" aria-selected="false"
+                tabindex="-1">
+          Add entry
+        </button>
+      </div>
+      <button type="button" id="sign-out">Sign out</button>
+    </div>
+    <p class="status" id="member-panel-status" role="status"
+       aria-live="polite" hidden></p>
+  </div>
+
+  <!-- Both panes start hidden. submit.js reveals exactly one only after
+       BinderSession.require() confirms that this tab holds a member session. -->
+  <section class="stack" id="your-entries-pane" role="tabpanel"
+           aria-labelledby="your-entries-tab" hidden>
+    <div class="card">
+      <p class="eyebrow">Your account</p>
+      <h2>Your entries</h2>
+      <p>
+        Entries stored: <strong id="member-entry-count">&mdash;</strong>
+      </p>
+      <p class="muted small">
+        Last submitted: <time id="member-last-at">Checking&hellip;</time>
+      </p>
+      <p class="muted small">
+        These are counts and receipt times from the service. Your encrypted
+        entries cannot be read back here because this page does not hold the
+        private key.
+      </p>
+    </div>
+  </section>
+
+  <section class="stack" id="add-entry-pane" role="tabpanel"
+           aria-labelledby="add-entry-tab" hidden>
+
   <!--
     Shown instead of the form when the browser cannot encrypt, or when
     no key is published. Both are states a submitter can do nothing
@@ -301,6 +344,7 @@
       group. If they differ, do not submit and tell an administrator.
     </p>
   </div>
+  </section>
 </main>
 
 <!-- The dashboard is linked here as well as in the nav: this link is at
@@ -326,6 +370,7 @@
 <script src="crypto.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
+<script src="submit.js"></script>
 <script src="form.js"></script>
 <script src="nav.js"></script>
 <script src="theme.js"></script>
