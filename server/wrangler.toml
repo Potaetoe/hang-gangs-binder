@@ -45,9 +45,23 @@ preview_urls = false
 ALLOWED_ORIGINS = "https://potaetoe.github.io"
 
 # Every secret is deliberately absent and must never appear in a file
-# that lives in a public repository. Production's six secrets are set in
-# the dashboard. DEV_LOGIN_SECRET is a separate, development-only secret
-# and must never be set on production.
+# that lives in a public repository. The six below belong in the
+# dashboard, or in `wrangler secret put` once this config is what
+# deploys. DEV_LOGIN_SECRET is a separate, development-only secret and
+# must never be set on production.
+#
+# This comment used to say "Production's six secrets are set in the
+# dashboard", and that was a claim nobody had checked. It contradicted
+# REDESIGN.md Part 8, which lists setting ACCOUNT_SECRET and
+# TELEGRAM_BOT_TOKEN on production as a cutover step, and the only
+# recorded setting of ACCOUNT_SECRET was on hgbinderworker-DEV (#33).
+#
+# No agent can settle which is true: wrangler will not authenticate from
+# a non-interactive shell, so the live secret list is owner knowledge.
+# CUTOVER.md therefore opens by confirming what exists rather than
+# assuming - and ACCOUNT_SECRET is the one where a wrong assumption does
+# not come back, because it is permanent once a row carries an id
+# derived from it.
 #
 # Production's hand-pasted script leaves the Worker in version-upload
 # state, so `wrangler secret put` tries to create and deploy a version and

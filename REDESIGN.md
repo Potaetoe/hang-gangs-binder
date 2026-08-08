@@ -46,20 +46,39 @@ do-not-deploy warning in full.
 
 ## What is done
 
-Updated 2026-08-06. Everything below is on `accounts`; `main` is still
-the last complete release and nothing here is deployed.
+**Updated 2026-08-07. Every build step is closed.** Everything below is on
+`accounts`; `main` is still the last complete release and **nothing here is
+deployed.** What remains is not build work — it is the cutover, and it has
+its own document: [CUTOVER.md](CUTOVER.md).
 
 | Step | State |
 | --- | --- |
-| 0 — `ui.js` | **done** (#14) |
-| 0.5 — dev Worker and D1 | **done** (#16), isolation verified both directions |
-| 1 — Worker: auth, sessions, account id | **built, tested, not deployed** |
+| 0 — `ui.js` | **done** (#14, #1) |
+| 0.5 — dev Worker and D1 | **done** (#16, #2), isolation verified both directions |
+| 1 — Worker: auth, sessions, account id | **built and tested, not deployed** — the deploy is a cutover step |
 | 2 — clear and unpublish | **both done** — unpublish 2026-08-06, clear 2026-08-07 (1 row → 0). **Re-run the clear at cutover**, see below |
-| 3 — sign-in page, form to `submit.html` | **done** — session half (#17), widget half (#26) |
+| 3 — sign-in page, form to `submit.html` | **done** — session half (#17, #4), widget half (#26) |
 | 4 — `POST /submit` requires a session | **done 2026-08-07** (#5); the live half waits on cutover |
-| 5–7 | not started |
-| 8 — quantize the series | **done** (#12), plus the suppression floor (#19) |
-| 9–10 | not started; #10 needs re-scoping, since #26 already added checks 11 and 12 |
+| 5 — the panel, `GET /me` | **done 2026-08-07** (#6) |
+| 6 — `GET /snapshot` requires a session | **done 2026-08-07** (#7) |
+| 7 — `admin.html` on an admin session, row deletion | **done 2026-08-07** (#8) |
+| 8 — quantize the series | **done** (#12, #9), plus the suppression floor (#19) |
+| 9 — `check_web.py` checks | **done 2026-08-07** (#10) — landed distributed across #26, #34 and #41 rather than as one slice, and the gate ended up **two checks ahead** of what this step specified |
+| 10 — rewrite the runbooks | **done 2026-08-07** (#11). The do-not-deploy warning was deliberately **kept**, since the cutover has not happened |
+
+Beyond the build order, three hardening slices the plan did not anticipate
+landed the same day and are worth knowing about before the cutover, because
+two of them changed what the gate refuses:
+
+| | |
+| --- | --- |
+| #34 | every page's **whole** CSP is pinned, through a parser that reports rather than skips |
+| #41 | check 14 — no file but `config.js` may carry a base64 key-shaped literal |
+| #39 | checks 3 and 4 — the gate reads `server/` at all, so a `[vars]` block cannot publish the member ids |
+| #56 | the device-local prefill is scoped to an account, so a shared browser does not leak measurements |
+
+**This section is the plan's own record and stops here.** The build is done;
+`CUTOVER.md` is what happens next, and `HANDOFF.md` is what is true afterwards.
 
 **The clear is not durable until cutover, and this is new.** It was done
 ahead of Part 8 rather than at it. `main` still ships the pre-accounts
@@ -723,6 +742,14 @@ is what makes them unchangeable.
 
 ## Part 8 — The cutover
 
+> **The runbook you actually follow on the day is [CUTOVER.md](CUTOVER.md).**
+> This part is the reasoning behind it and stays here; it is not duplicated
+> there. The split is deliberate: this document is 1000 lines of plan, and
+> the cutover is a single pass with a table drop in it and a permanent
+> secret — not something to navigate a design document for. Read this part
+> once, beforehand, to understand *why* the order is the order. Follow
+> `CUTOVER.md` while doing it.
+
 This part was "the two irreversible things" and understated the job. The
 redesign does not arrive gradually: it arrives in one sitting that
 contains three irreversible acts, one verification that cannot be done
@@ -938,8 +965,24 @@ without recording any value.
 
 ## Part 9 — The runbooks, afterwards
 
-These are correct today and wrong the moment step 4 lands. Rewrite in
-this order, last:
+> **Done 2026-08-07, #11 — and one instruction below was not followed, on
+> purpose.** This part told the rewrite to remove `server/README.md`'s
+> do-not-deploy warning. It was **kept**: the accounts *work* had landed but
+> the *cutover* had not, and deploying the Worker against the live old form
+> still returns 401 to every submitter. What was stale was the warning's
+> reasoning, which claimed the site was unbuilt — false since step 3 — so it
+> now names the ordering constraint instead.
+>
+> `HANDOFF.md` was also not deferred to after the cutover as this part
+> intended. Each affected procedure states both forms, marked, because
+> deferring it makes the rewrite a step *inside* a busy irreversible
+> operation, and that is the step that gets dropped.
+>
+> The list below is kept as the specification it was, so the two deviations
+> are readable against it rather than invisible.
+
+These were correct at the time and wrong the moment step 4 landed. Rewritten
+in this order, last:
 
 - **`server/README.md`** — the route table, the setup steps for three
   new secrets, and the response table under "Checking a deployment":

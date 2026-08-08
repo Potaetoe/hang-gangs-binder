@@ -1536,6 +1536,15 @@ that would get someone the ciphertext and nothing else. It could
 never grant the ability to read plaintext, and it could never take it
 back.
 
+> **This passage is the original argument and is kept as it was written.**
+> Since 2026-08-05 the dashboard needs a **member session** — build step 6
+> — so "public" and "no token" below describe the design as reasoned, not
+> the design as it now ships. The argument survives the change: what made
+> the page safe to hand to anyone was that it never contained anything
+> worth protecting, and that is still true. Gating it narrowed *who is
+> handed it*, and did not relax *what it holds*. See "The members'
+> dashboard" for the current shape.
+
 **One build serves 1, 5 and 6.** A **public dashboard page reading a
 published aggregate snapshot** — no token, no key, no personal data
 in the file it loads:

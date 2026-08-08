@@ -29,9 +29,24 @@ one that exists.
 > The same is true of the schema: the new `submissions` table has a
 > `NOT NULL account_id` that nothing on the live site knows how to send.
 >
-> **So the Worker goes after the site, never before.** The cutover order
-> is `REDESIGN.md` Part 8; the short form is that `accounts` reaches
-> `main` first, and the Worker and the schema follow.
+> **So do not deploy this Worker on its own, ahead of the cutover.** That
+> is what this warning is for, and it is the only thing it says.
+>
+> **It is not a claim about the order inside the cutover, and an earlier
+> version of this warning got that backwards.** Written on 2026-08-07, it
+> said "the Worker goes after the site, never before". That is wrong. The
+> real order is `REDESIGN.md` Part 8 and [CUTOVER.md](../CUTOVER.md):
+> the schema migration comes first and **is** the outage — after
+> `DROP TABLE submissions` the *old* Worker cannot insert either, because
+> the new table has `account_id NOT NULL`. So production submissions are
+> already down before either deploy, and the fastest way out is the new
+> Worker, then the site. Deploying the site first would leave the new
+> pages talking to a Worker with no `/auth/telegram` route, so nobody
+> could sign in at all.
+>
+> The distinction that matters: **before** the cutover, deploying this
+> alone breaks a working site. **Inside** the cutover, it goes before the
+> site because the site is useless without it.
 >
 > Until then the live endpoint still behaves as the "Deployed today"
 > table below describes: an open `POST /submit`, an `EXPORT_TOKEN` on the

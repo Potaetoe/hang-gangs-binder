@@ -925,6 +925,74 @@ added `[env.dev]`, so Part 9's request for it had already been satisfied by
 work that came after Part 9 was written — the fifth time today an issue's
 stated scope predated the repository.
 
+### The true-up, and it caught an error one day old — #60
+
+Owner asked for a pass over every markdown plus two new documents. The pass
+justified itself on the first finding.
+
+**I got the cutover order backwards in step 10, in three files.** #11 has me
+writing *"the Worker goes after the site, never before"* into
+`server/README.md`, `README.md` and `HANDOFF.md`. `REDESIGN.md` Part 8's table
+says the opposite — Worker at 5, `accounts` → `main` at 6 — and Part 8 is
+right.
+
+The reasoning I missed is that **step 4 is the outage, not the deploy order.**
+`DROP TABLE submissions` then `schema.sql` gives a table with
+`account_id NOT NULL`, so from that moment the *old* Worker cannot insert
+either. Production submissions are already down before either deploy, and the
+fastest way out is the new Worker then the site; site-first leaves the new
+pages talking to a Worker with no `/auth/telegram` route, so nobody can sign in
+at all.
+
+What the do-not-deploy warning actually protects is narrower and still true:
+do not deploy the Worker on its own, ahead of the cutover. All three files now
+say that and stop, and `server/README.md` records that the earlier sentence was
+wrong rather than quietly replacing it.
+
+**Worth sitting with, because the shape recurs.** The error was written
+confidently, into the document a keyholder reaches for during an incident, one
+day before this pass. It was not a typo — it was a plausible inference ("the
+site must be ready before the Worker") that happened to be about a different
+question ("in what order, once the migration has already broken things"). The
+plan had the right answer the whole time, four hundred lines away, and I did
+not read it before writing the summary of it.
+
+**Second finding: `server/wrangler.toml` asserted something nobody checked.**
+*"Production's six secrets are set in the dashboard"* — contradicted by Part 8
+step 2, which lists setting two of them as a cutover act, and by the record,
+where the only `ACCOUNT_SECRET` ever set was on `hgbinderworker-dev` (#33).
+**No agent can settle it**: `wrangler` will not authenticate from a
+non-interactive shell, which applies to every agent shell here and not only the
+sandboxed one. So the comment now says where the secrets belong rather than
+that they exist, and `CUTOVER.md` opens by confirming. That one is not a
+tidiness matter — `ACCOUNT_SECRET` is permanent the moment a row carries an id
+derived from it, and finding it already set, to a value nobody recorded, is not
+a recoverable surprise.
+
+**The rest of the pass**, each a statement that had become false: `REDESIGN.md`
+claiming steps 5–7 and 9–10 "not started"; `dev/README.md` documenting eight
+suites out of thirteen; `AGENTS.md` saying eleven checks, and carrying a rule
+gated on the widget's CSP *"to be observed"* when #26 observed it — a rule
+whose precondition has expired reads as live and gets obeyed anyway;
+`HANDOFF.md` calling the quantisation fix unbuilt when step 8 built it, with
+the paragraph above it stale in the opposite direction. That last pair needed
+care rather than a find-and-replace: quantising buys **ambiguity, not
+absence**, so neither "trivial to match" nor "solved" is the honest sentence.
+
+`DESIGN.md`'s goals argument was **marked, not rewritten.** It calls the
+dashboard public and reasons from that, which is what was decided; the
+conclusion survives members-only gating, because what made the page safe to
+hand to anyone was that it never held anything worth protecting. Rewriting the
+argument would have erased a decision to make a sentence agree with today.
+
+**On adding two documents at all.** `AGENTS.md` says to check whether an
+existing file already covers it. Part 8 does cover the cutover — its
+*reasoning*. What was missing is a thing you follow with the dashboard open,
+and a 1000-line design document is the wrong artifact for a single pass with an
+irreversible step in it. Both new files are registered in the record table
+with the split stated, so the next agent inherits the boundary rather than
+guessing at it.
+
 ---
 
 ## 2026-08-06
