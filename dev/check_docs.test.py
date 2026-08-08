@@ -165,19 +165,20 @@ check("a tripwire wrapped inside a blockquote is reported",
       len(scanned("> The tool %s\n> %s, we wrote.\n"
                   % (HEAD, TAIL))) == 1)
 
-# The other side of the same widening. Tolerating a break between the
-# words must not tolerate a word between them: that is a different
-# sentence, and reporting it would teach the next reader that the list
-# fires on things nobody falsified.
+# The bound on the gap, written so the marker is the only thing under
+# test. A heading with words in it is stopped by its words, whatever
+# GAP says - so this one puts the heading marker alone between the two
+# halves, and fails the moment "#" is admitted as a continuation
+# character. Body text does not bleed into a heading: they are separate
+# blocks, and a phrase spanning them is not one sentence.
+check("a heading marker does not continue a phrase",
+      clean("The tool %s\n\n## %s, we wrote.\n" % (HEAD, TAIL)))
+
+# The same bound from the other side: a word between the halves is a
+# different sentence, not a reflowed one, so no word character may act
+# as a gap.
 check("a phrase interrupted by another word is not a tripwire",
       clean("The tool %s really %s, we wrote.\n" % (HEAD, TAIL)))
-
-# The bound on the gap. Whitespace and ">" continue a sentence; a
-# heading starts a new one, so the words either side of it are not one
-# phrase however they line up.
-check("a phrase split by a heading is not one phrase",
-      clean("The tool %s\n\n## Aftercare\n\n%s, we wrote.\n"
-            % (HEAD, TAIL)))
 
 
 # ------------------------------------------------------------------ #
