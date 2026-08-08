@@ -111,7 +111,37 @@ rather than by reasoning about it.
   that it needs the admin session and not the key.
 
 ### Fixed
-- Nothing yet — but **#64 filed**: the Add entry tab is one-shot. After a
+- **The Add entry tab is no longer one-shot (#64).** After a submission the
+  form is replaced by the confirmation card, as before — but returning to
+  **Add entry** now brings the form back, with a note saying the earlier
+  entry is kept rather than replaced. Previously only a reload recovered it,
+  while the confirmation's own text promised "just fill the form again".
+  **The copy was right and the code was not**, and this makes the code match
+  a promise the page was already making.
+  - The reset lives in `form.js`, which owns the one-way swap; `submit.js`
+    announces that the form is on screen and never learns that `#done` and
+    `#submission` are a pair. Two events rather than one shared object — the
+    mirror of the `binder:submitted` channel that already ran the other way.
+  - The note is a reassurance, not a caution, and that was deliberate.
+    Repeat entries **are** the weight history the published series is built
+    from, so wording it as a warning would suppress the data.
+  - **UAT A2.7 now runs as written** — a second entry with a different
+    weight stored and the count moved 2 → 3, with no reload. Part A is
+    complete.
+
+### Added
+- **`dev/form-wiring.test.mjs`** — 24 checks, registered in the gate (now 18
+  stages) and in CI. **`form.js`'s wiring half had no DOM coverage at all**,
+  because `dev/form.test.mjs` deliberately loads the module with no document
+  so it can test the arithmetic under Node. #64 lived in exactly that gap.
+  The suite runs the shipped module against a small DOM and drives both
+  events, with a control asserting the note does *not* appear for a member
+  who submitted nothing. Both mutation directions fire: disabling the
+  listener fails the three defect checks, removing its guard fails the two
+  control checks.
+
+### Fixed — previously
+- **#64 filed**: the Add entry tab is one-shot. After a
   submission the Received card replaces the form and switching tabs never
   brings it back, while that card's own copy says "just fill the form again".
   Reported from use during the rehearsal; every automated check passes,

@@ -106,6 +106,15 @@ jobs:
       - name: Check the member panel and the failed-send guard
         run: node dev/submit.test.mjs
 
+      # form.js's wiring half had no DOM coverage at all until #64, because
+      # dev/form.test.mjs deliberately loads the module with no document so
+      # it can test the arithmetic under Node. The submit handler's one-way
+      # swap of form for confirmation lived in that gap and shipped a tab
+      # that led back to a card with no form. This suite runs the shipped
+      # module against a small DOM and drives both events.
+      - name: Check the form's wiring and that Add entry reopens the form
+        run: node dev/form-wiring.test.mjs
+
       # The CSV is what the whole project is for. A quoting bug does not
       # throw - it shifts one column into the next and produces a file
       # that opens cleanly and is wrong.

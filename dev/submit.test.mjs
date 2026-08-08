@@ -23,6 +23,7 @@ const submitSource = await readFile(
 
 const PREFILL_KEY = "hgb-submit-prefill";
 const SUBMITTED_EVENT = "binder:submitted";
+const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
 
 let failures = 0;
 function check(label, condition) {
@@ -101,8 +102,19 @@ function makePage() {
     "height-cm": makeElement("height-cm"),
   };
   const documentListeners = new Map();
+  // Every type this page dispatched, so a check can assert the panel told
+  // form.js the form is on screen again - #64. The panel must announce
+  // rather than reach into #done and #submission, which belong to form.js.
+  const dispatchedHere = [];
   const document = {
     readyState: "complete",
+    dispatchedHere,
+    dispatchEvent(event) {
+      dispatchedHere.push(event && event.type);
+      const handlers = documentListeners.get(event && event.type) || [];
+      for (const listener of handlers) listener.call(document, event);
+      return true;
+    },
     getElementById(id) { return elements[id] || null; },
     querySelector(selector) {
       if (selector === "[data-dev-session]") return null;
@@ -266,10 +278,26 @@ await tabs.elements["add-entry-tab"].dispatch("click");
 check("the add-entry tab paints exactly one pane",
   !isPainted(tabs.elements["your-entries-pane"]) &&
   isPainted(tabs.elements["add-entry-pane"]));
+check("choosing Add entry announces that the form is on screen",
+  tabs.document.dispatchedHere.includes(ADD_ENTRY_SHOWN_EVENT));
 await tabs.elements["your-entries-tab"].dispatch("click");
 check("switching back never leaves both panes painted",
   isPainted(tabs.elements["your-entries-pane"]) &&
   !isPainted(tabs.elements["add-entry-pane"]));
+check("choosing Your entries announces nothing about the form",
+  tabs.document.dispatchedHere.filter(
+    (type) => type === ADD_ENTRY_SHOWN_EVENT).length === 1);
+
+/*
+ * The panel must not know that #done and #submission are a pair - #64.
+ * Whoever owns the swap owns the un-swap, and that is form.js. If this file
+ * ever starts touching those ids directly, the two files can disagree about
+ * which one is showing, which is the defect in a different shape.
+ */
+check("the panel never reaches into the form's own elements",
+  !submitSource.includes('"done"') && !submitSource.includes('"submission"'));
+check("form.js is the file that reopens the form",
+  formSource.includes(`"${ADD_ENTRY_SHOWN_EVENT}"`));
 
 const signedOut = await loadSubmit({ member: null });
 check("a signed-out visitor never reaches the panel or requests /me",

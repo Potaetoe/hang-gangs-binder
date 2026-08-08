@@ -91,12 +91,12 @@ Sign in with `admin: false`, subject `alice`.
 > properly. **When a privacy check reads "absent", confirm the thing would
 > otherwise have been present.**
 
-> **A2.7 cannot be run through the UI today — #64.** After a submission the
-> Received card replaces the form and never gives it back; switching tabs does
-> not restore it, and only a reload does. Record A2.7 as **blocked**, not as a
-> pass obtained by reloading. When #64 lands, this check should be runnable
-> exactly as written above — the fix is what makes the check honest, rather
-> than the check being reworded to describe the workaround.
+> **A2.7 was blocked by #64 and is not any more.** Until 2026-08-08 the
+> Received card replaced the form and never gave it back, so a second entry
+> needed an undocumented reload. #64 makes switching to **Add entry** restore
+> the form with a note saying the earlier entry is kept. The check now runs
+> exactly as written above, which was the point — the fix made the check
+> honest rather than the check being reworded to describe the workaround.
 
 ### A3 · The device-local prefill, including the part that leaked
 
@@ -242,14 +242,16 @@ Part A, run on:            2026-08-08  against hgbinderworker-dev
                            A1.2 dashboard.html -> sign-in, nothing painted
                            A1.3 admin.html -> sign-in, zero input fields
                            A1.4 ZERO requests to the Worker on any of them
-  A2 member panel          PARTIAL
+  A2 member panel          PASS - all seven
                            A2.1 pass - two tabs, visible Sign out
                            A2.2 pass - count 0 on a first run, from /me
                            A2.3 pass - "No entries yet", not "Invalid Date"
                            A2.4 pass - exactly one pane, never both or neither
                            A2.5 pass - count moved 0 -> 1 without a reload
                            A2.6 pass - no handle field on the form
-                           A2.7 BLOCKED - see #64
+                           A2.7 pass, 2026-08-08, after #64 - a second entry
+                                with a different weight stored and the count
+                                moved 2 -> 3. Ran as written, no reload
   A3 prefill and #56       PASS - all five
                            A3.1 pass - 275/5/8 and units restored on reload
                            A3.2 pass - sign out emptied localStorage entirely
@@ -317,7 +319,7 @@ Part A, run on:            2026-08-08  against hgbinderworker-dev
                                 localStorage
   Console clean of CSP violations throughout:  yes - no console output at all
 
-  PART A IS COMPLETE EXCEPT A2.7, which #64 blocks.
+  PART A IS COMPLETE. A2.7 was the last gap and #64 closed it on 2026-08-08.
 
   How the sessions were obtained, because it matters for what this proves:
   POST /auth/dev needs DEV_LOGIN_SECRET, which no agent handles, so sessions
