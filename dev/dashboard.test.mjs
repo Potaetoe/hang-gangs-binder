@@ -25,7 +25,7 @@ const {
   NOT_STATED, DEFAULT_UNITS, unitsFor, formatInches, statText,
   median, mean, bmi, latestPerPerson, peopleCount,
   histogram, countBy, countRoles, weightSeries, heightDisagreements,
-  summarise,
+  handleDisagreements, summarise,
   suppressCounts, suppressBins, MIN_CELL, OTHER_LABEL,
 } = globalThis.BinderDashboard;
 
@@ -47,15 +47,37 @@ async function check(label, fn) {
   results.push([ok, label, note]);
 }
 
-const entry = (over) => Object.assign({
-  id: 1, receivedAt: "2026-08-05T00:00:00.000Z",
-  submittedAt: "2026-08-05T00:00:00.000Z",
-  telegram: "somehandle", kg: 90, lb: 198.4, cm: 180,
-  totalInches: 70.9, feet: 5, inches: 10.9,
-  enteredUnits: "metric", enteredWeight: "90 kg", enteredHeight: "180 cm",
-  gender: "male", roles: ["feedee"], country: "US",
-  over18: true, recordVersion: 1,
-}, over);
+/*
+ * A row as entryFor() hands it to this file, carrying both identities.
+ *
+ * DESIGN.md, "The identifier is the whole problem": the account id is
+ * the identity and the handle is a label the member's own browser
+ * wrote. Unless a check says otherwise each handle gets an account of
+ * its own, which is the ordinary case - nobody renamed, and nobody
+ * typed somebody else's handle. The checks that are about this
+ * distinction set `accountId` themselves, because the whole question is
+ * what happens on the rows where the two disagree.
+ *
+ * Defaulting it from the handle rather than leaving it out is
+ * deliberate: a fixture with no account ids anywhere would drive the
+ * fallback on every check in the file and never the identity path that
+ * ships.
+ */
+const entry = (over) => {
+  const row = Object.assign({
+    id: 1, receivedAt: "2026-08-05T00:00:00.000Z",
+    submittedAt: "2026-08-05T00:00:00.000Z",
+    telegram: "somehandle", kg: 90, lb: 198.4, cm: 180,
+    totalInches: 70.9, feet: 5, inches: 10.9,
+    enteredUnits: "metric", enteredWeight: "90 kg", enteredHeight: "180 cm",
+    gender: "male", roles: ["feedee"], country: "US",
+    over18: true, recordVersion: 1,
+  }, over);
+  if (!over || !("accountId" in over)) {
+    row.accountId = row.telegram ? "acct-" + row.telegram : null;
+  }
+  return row;
+};
 
 /* Someone who submitted three times, gaining. Both unit systems move
  * together, the way a real row does - a fixture that changed only the
@@ -118,18 +140,99 @@ await check("the latest is by time, not by position in the list", () => {
   return latestPerPerson(shuffled)[0].kg === 104;
 });
 
-await check("different handles are different people", () =>
-  peopleCount([entry({ telegram: "a" }), entry({ telegram: "b" })]) === 2);
+/*
+ * Who is one person, and who is two.
+ *
+ * These four are the contract this file exists to state, and they say
+ * something different from what "one per person" said while the
+ * grouping keyed on the handle. DESIGN.md, "The identifier is the whole
+ * problem": the account id is set server-side from a verified sign-in
+ * and cannot be forged by the page; the handle inside the encrypted
+ * blob is a label written by the client. So the id decides, the handle
+ * describes, and each of the two ways they can disagree is a person
+ * miscounted.
+ */
+await check("different account ids are different people", () =>
+  peopleCount([
+    entry({ accountId: "acct-a", telegram: "a" }),
+    entry({ accountId: "acct-b", telegram: "b" }),
+  ]) === 2);
+
+/* The rename. One member, one account, two spellings - and grouping on
+ * the handle reports them as two people, halves both their histories
+ * and double-counts them in every distribution. */
+await check("a rename is one person, not two", () =>
+  peopleCount([
+    entry({ id: 1, accountId: "acct-one", telegram: "oldname",
+            submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: "newname",
+            submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ]) === 1);
+
+/* The other direction, and the worse one. Two members, two verified
+ * accounts, one spelling between them - either a typo or somebody
+ * writing a handle that is not theirs. Grouping on the handle merges
+ * two strangers' measurements into one person's history. */
+await check("two accounts that typed the same handle are two people", () =>
+  peopleCount([
+    entry({ id: 1, accountId: "acct-one", telegram: "same" }),
+    entry({ id: 2, accountId: "acct-two", telegram: "same" }),
+  ]) === 2);
+
+/* The handle is display, so the row kept for a renamed person is still
+ * the newest one - the rename does not reset their history. */
+await check("the latest entry wins across a rename", () =>
+  latestPerPerson([
+    entry({ id: 1, accountId: "acct-one", telegram: "oldname", kg: 90,
+            submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: "newname", kg: 104,
+            submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ])[0].kg === 104);
 
 /*
- * Blank handles must not collapse into one enormous submitter. A row
- * with no handle is unusual - the form requires one - but a record
- * from a fork or an older version might lack it.
+ * The fallback, decided and pinned rather than left to emerge.
+ *
+ * Every row the Worker stores carries an account id - server/schema.sql
+ * declares the column NOT NULL and handleExport selects it - so a row
+ * without one reached this page from somewhere else: an export file
+ * saved from an earlier database, or a payload assembled by hand. The
+ * rule is that an absent id must never act as a shared one, because
+ * DESIGN.md makes the id the identity and nothing is not an identity.
+ * So such a row falls back to its handle, and a row with neither stands
+ * alone.
  */
-await check("rows without a handle are not merged together", () =>
+await check("a row with no account id falls back to its handle", () =>
   peopleCount([
-    entry({ id: 1, telegram: null }),
-    entry({ id: 2, telegram: null }),
+    entry({ id: 1, accountId: null, telegram: "x" }),
+    entry({ id: 2, accountId: null, telegram: "x" }),
+  ]) === 1 &&
+  peopleCount([
+    entry({ id: 1, accountId: null, telegram: "x" }),
+    entry({ id: 2, accountId: null, telegram: "y" }),
+  ]) === 2);
+
+/* The merge that must not happen: everything the page cannot identify
+ * gathered into one enormous submitter. */
+await check("rows with neither an id nor a handle are not merged together",
+  () => peopleCount([
+    entry({ id: 1, accountId: null, telegram: null }),
+    entry({ id: 2, accountId: null, telegram: null }),
+  ]) === 2);
+
+/* An identified row and an unidentified one are not the same person on
+ * the strength of a handle the second one cannot vouch for. */
+await check("a row with no id does not join an account by handle alone", () =>
+  peopleCount([
+    entry({ id: 1, accountId: "acct-one", telegram: "x" }),
+    entry({ id: 2, accountId: null, telegram: "x" }),
+  ]) === 2);
+
+/* The two key spaces must not run into each other: an account id that
+ * reads like a handle is still not that handle. */
+await check("an account id cannot collide with a handle that spells it", () =>
+  peopleCount([
+    entry({ id: 1, accountId: "x", telegram: "somebody" }),
+    entry({ id: 2, accountId: null, telegram: "x" }),
   ]) === 2);
 
 await check("a person with no timestamps at all is still counted once", () =>
@@ -257,6 +360,71 @@ await check("one series carries both unit systems per point", () => {
     same(points.map((p) => p.imperial), [198.4, 211.6, 229.3]);
 });
 
+/*
+ * The series groups on the identity too, and this is where keying on
+ * the handle did the most damage. A rename cut one rising line into two
+ * short ones and the chart read as two members who each submitted
+ * twice; a shared handle drew two strangers' weights as one person
+ * gaining and losing.
+ */
+const RENAMED = [
+  entry({ id: 1, accountId: "acct-one", telegram: "oldname",
+          kg: 90, lb: 198.4, submittedAt: "2026-01-01T00:00:00.000Z" }),
+  entry({ id: 2, accountId: "acct-one", telegram: "oldname",
+          kg: 96, lb: 211.6, submittedAt: "2026-04-01T00:00:00.000Z" }),
+  entry({ id: 3, accountId: "acct-one", telegram: "newname",
+          kg: 104, lb: 229.3, submittedAt: "2026-07-01T00:00:00.000Z" }),
+];
+
+await check("a rename is one line, not two", () => {
+  const series = weightSeries(RENAMED);
+  return series.length === 1 &&
+    same(series[0].points.map((p) => p.metric), [90, 96, 104]);
+});
+
+/* The handle is the label, and the label is the one they answer to now.
+ * A line captioned with a spelling its owner has abandoned is the
+ * keyholder looking for somebody who is not in their contacts. */
+await check("a renamed line is labelled with the most recent handle", () =>
+  weightSeries(RENAMED)[0].telegram === "newname");
+
+await check("two accounts sharing a handle are two lines", () =>
+  weightSeries([
+    entry({ id: 1, accountId: "acct-one", telegram: "same", kg: 90,
+            lb: 198.4, submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: "same", kg: 96,
+            lb: 211.6, submittedAt: "2026-02-01T00:00:00.000Z" }),
+    entry({ id: 3, accountId: "acct-two", telegram: "same", kg: 70,
+            lb: 154.3, submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 4, accountId: "acct-two", telegram: "same", kg: 68,
+            lb: 149.9, submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ]).length === 2);
+
+/* A row belongs to its account whether or not it carries a handle, so
+ * its weight is that person's weight. Dropping the point would put a
+ * gap in a line for a field that is only ever a caption. */
+await check("a row with no handle still contributes a point to its account",
+  () => {
+    const series = weightSeries([
+      entry({ id: 1, accountId: "acct-one", telegram: "named", kg: 90,
+              lb: 198.4, submittedAt: "2026-01-01T00:00:00.000Z" }),
+      entry({ id: 2, accountId: "acct-one", telegram: null, kg: 96,
+              lb: 211.6, submittedAt: "2026-02-01T00:00:00.000Z" }),
+    ]);
+    return series.length === 1 && series[0].points.length === 2 &&
+      series[0].telegram === "named";
+  });
+
+/* There is nothing to caption a line with, and "@undefined" on a chart
+ * is worse than an absent line. */
+await check("a person with no handle at all gets no line", () =>
+  weightSeries([
+    entry({ id: 1, accountId: "acct-one", telegram: null, kg: 90,
+            lb: 198.4, submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: null, kg: 96,
+            lb: 211.6, submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ]).length === 0);
+
 /* ------------------------------------------------------------------ */
 /* Data quality.                                                       */
 
@@ -283,6 +451,76 @@ await check("rounding between unit systems is not reported as a change", () =>
 
 await check("a single entry cannot disagree with itself", () =>
   heightDisagreements([entry({ telegram: "x", cm: 180 })]).length === 0);
+
+/* The panel reports on a person, and a person is an account. A rename
+ * that hid a height change from this list would hide it in the one
+ * place somebody was going to act on it. */
+await check("a height that moved across a rename is still reported", () => {
+  const found = heightDisagreements([
+    entry({ id: 1, accountId: "acct-one", telegram: "oldname", cm: 180,
+            submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: "newname", cm: 165,
+            submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ]);
+  return found.length === 1 && found[0].telegram === "newname" &&
+    found[0].low === 165 && found[0].high === 180;
+});
+
+/* Two people are not a discrepancy. Reporting them as one person whose
+ * height moved sends the keyholder to correct a typo that does not
+ * exist, and leaves the actual finding - two accounts, one handle -
+ * unsaid. */
+await check("two accounts sharing a handle are not a height discrepancy", () =>
+  heightDisagreements([
+    entry({ id: 1, accountId: "acct-one", telegram: "same", cm: 180 }),
+    entry({ id: 2, accountId: "acct-two", telegram: "same", cm: 165 }),
+  ]).length === 0);
+
+/*
+ * The finding DESIGN.md says is there to be made.
+ *
+ * "Two handles under one account id is a rename or a lie, and is
+ * detectable." Detectable is not the same as detected, and the charts
+ * draw the account as one person either way - so the keyholder, who is
+ * the only person able to tell a rename from a lie, is told.
+ */
+await check("two handles under one account are reported", () => {
+  const found = handleDisagreements([
+    entry({ id: 1, accountId: "acct-one", telegram: "oldname",
+            submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: "newname",
+            submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ]);
+  return found.length === 1 && same(found[0].handles, ["newname", "oldname"]);
+});
+
+await check("one handle under one account is not reported", () =>
+  handleDisagreements([
+    entry({ id: 1, accountId: "acct-one", telegram: "steady",
+            submittedAt: "2026-01-01T00:00:00.000Z" }),
+    entry({ id: 2, accountId: "acct-one", telegram: "steady",
+            submittedAt: "2026-02-01T00:00:00.000Z" }),
+  ]).length === 0);
+
+/* Two accounts with two handles is two ordinary people, and saying so
+ * would bury the real finding under every member of the group. */
+await check("two accounts with a handle each are not reported", () =>
+  handleDisagreements([
+    entry({ id: 1, accountId: "acct-one", telegram: "a" }),
+    entry({ id: 2, accountId: "acct-two", telegram: "b" }),
+  ]).length === 0);
+
+/*
+ * A group assembled by the handle fallback has exactly one handle by
+ * construction, so it can never disagree with itself. Reporting it
+ * would be the panel describing its own grouping rule rather than the
+ * data.
+ */
+await check("rows with no account id are outside this panel entirely", () =>
+  handleDisagreements([
+    entry({ id: 1, accountId: null, telegram: "a" }),
+    entry({ id: 2, accountId: null, telegram: "b" }),
+  ]).length === 0);
 
 /* ------------------------------------------------------------------ */
 /* The summary strip.                                                  */
@@ -456,6 +694,69 @@ await check("a published snapshot contains no handle anywhere", () => {
     !text.includes("shifty");
 });
 
+/*
+ * A corpus with a rename in it.
+ *
+ * The two checks below are about what a document may carry, and both of
+ * them read the quality panel. Run against a corpus where no account
+ * holds two handles, that panel is empty and the checks pass whatever
+ * the panel would have put in it - which is what a first version of
+ * them did, and two mutations that leaked an account id survived both.
+ * So the fixture has to reach the branch, and each check says out loud
+ * that it did.
+ */
+const CORPUS_RENAMED = CORPUS.concat([
+  entry({ id: 40, accountId: "acct-gainer1", telegram: "gainer1_after",
+          kg: 106, lb: 233.7, submittedAt: "2026-08-01T00:00:00.000Z" }),
+]);
+
+/*
+ * And no account id either, which is a second thing to guard now that
+ * the entries carry one.
+ *
+ * The handle check above would not catch it: an account id is not a
+ * handle and does not spell like one. DESIGN.md accepts the id sitting
+ * in the clear *in the database*, where it makes rows groupable and
+ * reveals that some account submitted twelve times, never who. A
+ * published document is a different place with a different reader, and
+ * a stable per-person identifier in one is a join key across every
+ * snapshot ever published - the exact linkage quantize() exists to
+ * break, handed back whole.
+ *
+ * Written against the identifier itself rather than against a field
+ * name, so a basis or a panel added later carries one at its own peril.
+ */
+await check("a published snapshot contains no account id anywhere", () => {
+  const snap = snapshotOf(CORPUS_RENAMED, { identify: false });
+  const text = JSON.stringify(snap);
+  return snap.series.length > 0 &&
+    CORPUS_RENAMED.every((row) => !text.includes(row.accountId));
+});
+
+/*
+ * The keyholder's own document does not carry one either. Nothing on
+ * the page needs it - the panel names handles, which is what they can
+ * look up - and the preview they read before publishing should differ
+ * from what goes out in its labels and its panel, not in which
+ * identifiers happen to be lying in it.
+ */
+await check("the keyholder's snapshot carries no account id either", () => {
+  const snap = snapshotOf(CORPUS_RENAMED, { identify: true });
+  const text = JSON.stringify(snap);
+  return snap.quality.handleChanges.length === 1 &&
+    CORPUS_RENAMED.every((row) => !text.includes(row.accountId));
+});
+
+/* The rename does not add a person, and the panel says which account it
+ * is - by the handles, the only names the keyholder has for it. */
+await check("a rename inside the corpus is one person and one finding", () => {
+  const snap = snapshotOf(CORPUS_RENAMED, { identify: true });
+  return snap.counts.people === CORPUS_PEOPLE &&
+    snap.counts.entries === CORPUS_ENTRIES + 1 &&
+    same(snap.quality.handleChanges[0].handles,
+      ["gainer1_after", "gainer1"]);
+});
+
 await check("a published snapshot labels people by number", () => {
   const snap = snapshotOf(CORPUS, { identify: false });
   return snap.series.every((line) => /^Person \d+$/.test(line.label));
@@ -478,6 +779,51 @@ await check("the height panel is dropped when publishing", () => {
   return published.quality === null &&
     private_.quality.heightChanges.length === 1 &&
     private_.quality.heightChanges[0].telegram === "shifty";
+});
+
+/* The second half of the data-quality panel, and the reason it is in
+ * the panel rather than in a chart: only the keyholder can tell a
+ * rename from somebody writing a handle that is not theirs. */
+await check("the identified snapshot names an account with two handles", () => {
+  const snap = snapshotOf(RENAMED, { identify: true });
+  return snap.quality.handleChanges.length === 1 &&
+    same(snap.quality.handleChanges[0].handles, ["newname", "oldname"]);
+});
+
+await check("the handle panel is dropped when publishing too", () =>
+  snapshotOf(RENAMED, { identify: false }).quality === null);
+
+/*
+ * Two accounts, one handle, and the published document has to describe
+ * them as two people.
+ *
+ * The pseudonym is assigned per line rather than per handle for exactly
+ * this case: numbering by handle gives both lines the label "Person 1",
+ * which is a published document claiming that one person submitted two
+ * contradictory histories. Grouping on the identity is what creates the
+ * two lines in the first place, so the labelling has to keep up with it.
+ */
+const TWINS = CORPUS.map((row) =>
+  row.telegram === "gainer4" || row.telegram === "gainer5"
+    ? { ...row, telegram: "twin" }
+    : row);
+
+await check("two accounts sharing a handle are still two people", () =>
+  snapshotOf(TWINS, { identify: false }).counts.people === CORPUS_PEOPLE);
+
+await check("two accounts sharing a handle get a pseudonym each", () => {
+  const labels = snapshotOf(TWINS, { identify: false }).series
+    .map((line) => line.label);
+  return labels.length >= MIN_CELL &&
+    new Set(labels).size === labels.length;
+});
+
+/* The keyholder's own view shows the handle as written, twice, because
+ * that is the finding: two people are answering to one name. */
+await check("the keyholder sees both lines under the handle they share", () => {
+  const snap = snapshotOf(TWINS, { identify: true });
+  return snap.series.filter((line) => line.label === "@twin").length === 2 &&
+    snap.quality.handleChanges.length === 0;
 });
 
 /* Off unless asked for. A weight history is the one part of a snapshot
@@ -686,6 +1032,11 @@ const GROUP = [
   "US", "US", "US", "US", "US", "US", "US", "US", "GB", "GB", "GB", "GB",
   "GB", "CA", "CA", "CA", "DE", "DE", "MX", "MX", "AU", "BR", "JP", "NO",
 ].map((country, i) => ({
+  // An account each, which is what twenty-four members who have never
+  // renamed look like. The suppression floor is what these checks are
+  // about, and it has to be measured on rows grouped the way shipped
+  // rows are grouped.
+  accountId: "acct-user" + i,
   telegram: "user" + i,
   country,
   gender: i === 21 ? "nonbinary" : (i >= 18 && i <= 20 ? "female" : "male"),

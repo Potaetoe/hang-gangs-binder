@@ -28,9 +28,20 @@
    * "Why every row carries both unit systems". `entered_*` is what the
    * submitter actually typed, which is the column to trust when a
    * rounded value looks odd.
+   *
+   * `account_id` sits beside `telegram` because they are two different
+   * kinds of thing and the file has to let a reader tell them apart:
+   * the id is the identity the Worker set from a verified sign-in, the
+   * handle is a label the member's browser wrote. Whoever deduplicates
+   * this file in a spreadsheet needs the one the charts group on, or
+   * they will group on the handle and get a different answer from the
+   * dashboard about the same rows. The JSON download serializes the
+   * whole entry anyway, so leaving the column out would only make the
+   * two files disagree.
    */
   const COLUMNS = [
     "id",
+    "account_id",
     "received_at",
     "submitted_at",
     "telegram",
@@ -72,10 +83,21 @@
    * matters - the table saying one thing and the chart another - is
    * exactly the kind nobody notices, because each looks right on its
    * own.
+   *
+   * Which half a field is read from is the load-bearing part. `id`,
+   * `account_id` and `received_at` come off the submission - they are
+   * the Worker's own facts about the row. Everything else comes out of
+   * the decrypted record, which is whatever the submitter's browser
+   * sealed. So an `accountId` written inside a record is ignored here,
+   * and it has to be: DESIGN.md, "The identifier is the whole problem"
+   * makes the id the one identity on a row a client cannot influence,
+   * and reading it from the blob would hand that back to the client and
+   * let one member file rows into another member's history.
    */
   function entryFor(submission, record) {
     return {
       id: at(submission, ["id"]),
+      accountId: at(submission, ["account_id"]),
       receivedAt: at(submission, ["received_at"]),
       submittedAt: at(record, ["submittedAt"]),
       telegram: at(record, ["telegram"]),
@@ -105,6 +127,7 @@
   function rowFor(entry) {
     return [
       blank(entry.id),
+      blank(entry.accountId),
       blank(entry.receivedAt),
       blank(entry.submittedAt),
       blank(entry.telegram),

@@ -54,8 +54,21 @@ async function check(label, fn) {
   results.push([ok, label, note]);
 }
 
-/* A stored row and the record inside it, as admin.js sees them. */
-const SUBMISSION = { id: 7, ciphertext: "…", received_at: "2026-08-04T12:00:05.000Z" };
+/*
+ * A stored row and the record inside it, as admin.js sees them.
+ *
+ * The two identities arrive by different routes and that is the whole
+ * point of them: `account_id` is a column the Worker set from a
+ * verified sign-in, and `telegram` comes out of the blob the member's
+ * own browser sealed. See DESIGN.md, "The identifier is the whole
+ * problem".
+ */
+const SUBMISSION = {
+  id: 7,
+  account_id: "5f2c9d1e4a7b3c8d6e0f1a2b3c4d5e6f",
+  ciphertext: "…",
+  received_at: "2026-08-04T12:00:05.000Z",
+};
 const RECORD = {
   record: 1,
   submittedAt: "2026-08-04T12:00:00.000Z",
@@ -197,6 +210,47 @@ await check("an entry flattens the record's nesting", () => {
   return entry.kg === 90.7 && entry.lb === 200 && entry.cm === 177.8 &&
     entry.feet === 5 && entry.telegram === "somehandle" &&
     entry.enteredUnits === "imperial" && entry.over18 === true;
+});
+
+/*
+ * The identity has to survive this function or nothing downstream can
+ * group on it, and dashboard.js will silently key on the handle
+ * instead - a rename splitting one member into two, a mistyped handle
+ * merging two members into one. entryFor is the only reading of a row
+ * both the CSV and the charts get, so a field dropped here is dropped
+ * everywhere at once and looks like nothing at all.
+ */
+await check("the account id survives the flattening", () =>
+  entryFor(SUBMISSION, RECORD).accountId ===
+    "5f2c9d1e4a7b3c8d6e0f1a2b3c4d5e6f");
+
+/* It comes off the submission, never out of the blob. A record is
+ * whatever the client sealed, so an `accountId` inside one is a claim
+ * the member's own browser wrote and must not be able to move a row
+ * into somebody else's history. */
+await check("an account id inside the record cannot override the column",
+  () => entryFor(SUBMISSION,
+    Object.assign({}, RECORD, { accountId: "somebody-elses-account" }))
+    .accountId === "5f2c9d1e4a7b3c8d6e0f1a2b3c4d5e6f");
+
+/* Absent rather than invented, and the same null every other missing
+ * field uses - dashboard.js keys its fallback on exactly this. */
+await check("a row with no account id reports null, not undefined", () =>
+  entryFor({ id: 1 }, { telegram: "x" }).accountId === null);
+
+/*
+ * The keyholder gets the identity in the file too, and not for
+ * completeness. The CSV is what somebody deduplicates in a spreadsheet,
+ * and a file that carries only the handle is a file where they
+ * reproduce this exact bug by hand. The JSON export serialises the
+ * entry object wholesale, so leaving the column out of the CSV would
+ * also make the two downloads disagree about what a row is.
+ */
+await check("the account id is a column of its own", () => {
+  const cells = row(SUBMISSION, RECORD);
+  return COLUMNS.includes("account_id") &&
+    cells[COLUMNS.indexOf("account_id")] ===
+      "5f2c9d1e4a7b3c8d6e0f1a2b3c4d5e6f";
 });
 
 /* null, not "", so a chart can tell "no weight recorded" from a

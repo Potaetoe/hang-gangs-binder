@@ -61,6 +61,12 @@ const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
  * put in that object: `at`, the moment it was sent, and `telegram`, the
  * person it came from.
  *
+ * `account` is optional and names the person a row belongs to when the
+ * handle cannot: the export page groups on the account id and treats
+ * the handle as a caption, so two rows with one `account` and two
+ * handles are one member who renamed. Left out, a row's account is its
+ * own normalized handle, which is what the ordinary case looks like.
+ *
  * `telegram` sits inside the row rather than beside it because three
  * separate things read it, and they want it in the same place:
  * validate() below checks it as unverified input, buildRecord is handed
@@ -316,6 +322,32 @@ async function unopenablePublicKey() {
 const lostKey = await unopenablePublicKey();
 
 /*
+ * An account id per person, shaped like the real thing.
+ *
+ * The Worker computes `HMAC-SHA256(ACCOUNT_SECRET, telegram_numeric_id)`
+ * and stores the hex beside the ciphertext - DESIGN.md, "The identifier
+ * is the whole problem". There is no secret in this repository and
+ * there must not be one, so this is a plain SHA-256: the same length
+ * and alphabet, stable across regenerations, and derived from nothing
+ * anybody would want back. What it models is the only property the
+ * export page reads - one id per person, identical on every row that
+ * person submitted, and set by the server rather than by the browser
+ * that sealed the blob.
+ *
+ * A row's account comes from its own `account` field if it has one and
+ * from its normalized handle otherwise, because the table above has no
+ * other name for a person. The two are independent in the live system,
+ * which is the whole of #100: giving two rows one `account` and
+ * different handles is how this sample would model a rename.
+ */
+async function accountIdFor(name) {
+  const bytes = new TextEncoder().encode("sample-account:" + name);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, (byte) =>
+    byte.toString(16).padStart(2, "0")).join("");
+}
+
+/*
  * Ordered by `at` and numbered from 1, because that is what an
  * append-only table looks like: the Worker returns `ORDER BY id`, and
  * ids follow the order things arrived.
@@ -346,6 +378,8 @@ for (const row of ordered) {
     record, row.wrongKey ? lostKey : keyFile.publicKey);
   submissions.push({
     id: ++id,
+    account_id: await accountIdFor(
+      row.account || globalThis.BinderForm.normalizeTelegram(row.telegram)),
     ciphertext: ciphertext,
     received_at: new Date(submittedAt + 4200).toISOString(),
   });
