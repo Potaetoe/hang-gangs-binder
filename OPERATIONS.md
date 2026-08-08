@@ -179,6 +179,84 @@ compare against, and a stale anchor teaches everyone to ignore the one
 alarm the mechanism can raise. Nothing enforces this — no agent can see
 a Telegram group.
 
+## Backing up the submissions
+
+**The rows are the second irreplaceable thing here, and until now only
+the first had a procedure.** `server/schema.sql` says why the other two
+tables need none: a session is reissued by signing in, and a snapshot
+is rebuilt by pressing Publish again. `submissions` has no way back. A
+dropped table, a mistaken `DROP`/recreate during a schema change, or an
+account-level problem at the provider all end the weight-over-time
+history this project exists to accumulate — the same loss as a lost
+private key, by a different route.
+
+**A backup is ciphertext in and ciphertext out.** It never touches the
+private key, so taking one is not a decryption event and puts plaintext
+nowhere new. That is what makes this routine rather than ceremonial.
+What it does carry in the clear is the `account_id` column: an HMAC
+that groups a person's rows without naming them (`DESIGN.md`, "The
+identifier"), which is why a backup is still a thing to keep somewhere
+rather than a thing to leave lying about.
+
+**Taking one.** Wrangler's export command, run from `server/`. Here the
+**database name** is what chooses the arm — not `--env dev`, which is
+how the deploy and schema commands above choose it:
+
+```bash
+npx wrangler d1 export hg_binder_db --remote --output=binder-YYYY-MM-DD.sql
+npx wrangler d1 export hg_binder_db_dev --remote --output=binder-dev-YYYY-MM-DD.sql
+```
+
+The bare command writes schema *and* rows; `--table submissions`
+narrows it to the irreplaceable one, and `--no-schema` gives rows only.
+Open the file afterwards — it is text. A backup with no `INSERT` in it
+is the exact failure this procedure exists to prevent, and it arrives
+looking like a success.
+
+**Where it lives: offline, two copies, and never in the same place as
+the private key.** The custody pattern is the key file's, in "The keys"
+above; the separation is the point. A backup beside the key is the
+whole corpus in the clear in one drawer, and the two guard against
+different losses — the key against a lost backup, the backup against a
+lost provider. Storing them together halves what either is worth.
+
+**How often is a question about rows, not about the calendar.** Nothing
+here changes on a schedule, so a weekly ritual would mostly copy the
+same file. Take one when the database holds submissions nobody could
+reproduce: after a sitting that added entries, and **always immediately
+before a schema change**, because the accounts migration DROPs and
+recreates on purpose and `server/schema.sql` says so at length.
+
+**Restoring** plays the file back through the same command that applies
+the schema:
+
+```bash
+npx wrangler d1 execute hg_binder_db_dev --remote --file=binder-YYYY-MM-DD.sql --env dev
+```
+
+An export carrying the schema restores into a database that does not
+already have those tables, and the rows carry their own `id` values, so
+replaying one over a populated table is a collision rather than a
+merge. Whether the answer is to empty the target first or to keep a
+`--no-schema` export beside the full one is a decision to make in the
+rehearsal, once — not on the day it is needed.
+
+**Rehearse the restore against the development arm before it is ever
+needed.** An untested restore is a file, not a backup: this document
+already carries one never-exercised recovery line in "Getting back",
+and a second one would be the same mistake written twice. The rehearsal
+proves three things no exit code does — that the export has rows in it,
+that they arrive, and that `admin.html` opens one of them with the
+private key. Only the third proves the backup is worth keeping.
+
+**What a backup does not contain is anything readable.** Every field a
+submitter typed is inside the sealed blob (`DESIGN.md`, "Encryption"),
+so a leaked backup is the breach that design already prices in. That is
+the sentence that makes this safe to do often — and it is also the
+sentence that stops a backup being mistaken for a spare copy of the
+data. It is a spare copy of the *ciphertext*. Lose the key and the
+backup is lost with it.
+
 ## Reading the submissions
 
 `apps/web/admin.html` on the live site — a public page, useless without
