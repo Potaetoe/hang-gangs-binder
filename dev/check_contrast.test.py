@@ -51,7 +51,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 70
+EXPECTED = 72
 
 
 def check(label, condition):
@@ -504,6 +504,27 @@ check("all six chart series are measured against both backgrounds",
 check("the focus ring is measured, since a ring nobody can see is not "
       "a focus indicator",
       ("--color-focus", "--color-bg", "mark") in check_contrast.PAIRINGS)
+
+# The gold role, on BOTH surfaces, and the second one is why this is
+# pinned here rather than left to the coverage arm next door.
+#
+# Coverage fails a token that appears in no pairing at all - so with the
+# page pairing present, deleting the card pairing measures one fewer
+# thing and passes. That was found by mutation, not by reading. The card
+# is the tighter of the two on every dark palette, since --color-surface
+# is lighter than --color-bg there, and .runner is used inside cards, so
+# the pairing that would go quiet is the one the shipped component
+# actually depends on.
+check("the gold role is measured on the page and inside a card",
+      all(("--color-gold", background, "text") in check_contrast.PAIRINGS
+          for background in ("--color-bg", "--color-surface")))
+
+# Held as text rather than as a mark. WCAG allows 3:1 for large text and
+# a runner is set small, so the looser rule would be the wrong one to
+# have reached for.
+check("and held to the text rule, which is the stricter one here",
+      all(kind == "text" for fg, _bg, kind in check_contrast.PAIRINGS
+          if fg == "--color-gold"))
 
 check("the margin is a tenth of a point, not zero",
       check_contrast.MARGIN == 0.1)

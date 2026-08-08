@@ -1066,18 +1066,28 @@ def shell_problems():
 
     # Compared against whichever page sorts first, so the message names a
     # specific page to go and look at rather than "they differ".
+    #
+    # The message reports the destinations that DIFFER rather than both
+    # lists in full, and it reports them as (href, label) pairs. Printing
+    # the hrefs alone is what a first cut did, and it produced a failure
+    # reading "admin.html has [a, b, c], this has [a, b, c]" whenever the
+    # drift was in a link's text - which is most of the ways a hand-copied
+    # list drifts, and the case a reviewer is least likely to spot by eye.
     if len(rails) > 1:
         reference = sorted(rails)[0]
         for name in sorted(rails):
-            if name != reference and rails[name] != rails[reference]:
-                problems.append((
-                    name,
-                    "has a different rail from %s. Every page carries "
-                    "its own copy, so they have to be kept identical by "
-                    "hand - %s has %s, this has %s"
-                    % (reference, reference,
-                       [h for h, _ in rails[reference]],
-                       [h for h, _ in rails[name]])))
+            if name == reference or rails[name] == rails[reference]:
+                continue
+            here = set(rails[name])
+            there = set(rails[reference])
+            problems.append((
+                name,
+                "has a different rail from %s. Every page carries its own "
+                "copy, so they have to be kept identical by hand - %s has "
+                "%s where this has %s"
+                % (reference, reference,
+                   sorted(there - here) or "nothing extra",
+                   sorted(here - there) or "nothing extra")))
 
     # A rail link to a page that does not exist is caught by check 1 as a
     # broken reference, so it is not repeated here.
