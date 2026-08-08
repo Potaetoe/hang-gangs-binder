@@ -45,13 +45,20 @@
  *   ACCOUNT_SECRET            secret, the HMAC key behind every account
  *                             id. PERMANENT - changing it detaches every
  *                             member from their own history.
- *   ADMIN_TELEGRAM_IDS        secret, comma-separated numeric ids
+ *   ADMIN_TELEGRAM_IDS        secret, comma-separated numeric ids. One
+ *                             of the two admin lists - the `membership`
+ *                             table is the other, and adminAccountIds()
+ *                             reads both. See handleReadMembership for
+ *                             which way that migration runs.
  *   EXPORT_TOKEN              secret, break-glass admin access
  *   TELEGRAM_GROUP_CHAT_ID    secret, optional; when set, only members
  *                             of that group may sign in
  *   ALWAYS_ALLOW_TELEGRAM_IDS secret, optional; ids that bypass the group
  *                             check, and the way back in if the bot is
- *                             ever removed from the group
+ *                             ever removed from the group. Beside the
+ *                             table's `always_allow` rows, never
+ *                             replaced by them - isGroupMember() says
+ *                             why this one keeps a secret arm for good.
  *   ALLOWED_ORIGINS           optional, comma-separated
  *   DEV_LOGIN_SECRET          DEVELOPMENT ONLY. Its absence is what
  *                             turns POST /auth/dev off. Never set this
@@ -250,28 +257,106 @@ function idList(value) {
 }
 
 /*
- * The configured admins, as account ids rather than Telegram ids.
+ * The admins named by the secret, as account ids rather than Telegram
+ * ids.
  *
- * This is what lets sessionFor() re-check the admin list on every
- * request without the sessions table ever having to record who a session
- * belongs to. The row already carries the account id, which is the HMAC
- * of a Telegram id under ACCOUNT_SECRET; HMAC the configured ids the
- * same way and the two are comparable. Nothing new is stored and no
- * identity is written down anywhere - both sides of the comparison are
- * things this Worker already had, and the answer lives for one request.
+ * HMACing the configured ids is what makes them comparable to anything
+ * else here: a session row carries an account id, and so does a
+ * `membership` row, and both are the HMAC of a numeric id under
+ * ACCOUNT_SECRET. Nothing new is stored and no identity is written down
+ * - both sides of every comparison are values this Worker already had,
+ * and the answer lives for one request.
  *
- * Recomputed per request on purpose. A cache would be a copy of the
- * admin list living somewhere other than the secret, which is precisely
- * the stale-admin bug this function exists to remove; the list is a
- * handful of ids and an HMAC each.
- *
- * The secret is the enforcing list and the `membership` table is not -
- * see handleReadMembership below for the whole of that seam. Reading
- * both here would make two places the answer could be true.
+ * Separate from adminAccountIds() below because the migration needs to
+ * ask this half on its own: handleReadMembership answers "which admins
+ * does the secret grant that the table has not been told about", and
+ * that question has no answer if the two arms are only ever unioned.
  */
-async function adminAccountIds(env) {
+async function secretAdminAccountIds(env) {
   const ids = idList(env.ADMIN_TELEGRAM_IDS);
   return new Set(await Promise.all(ids.map((id) => accountIdFor(env, id))));
+}
+
+/*
+ * Whether this Worker honors a `membership` row at all.
+ *
+ * ONE HOME FOR THE TEST, because two places ask it and they must never
+ * disagree: the authority read below decides who a row grants anything
+ * to, and handleReadMembership decides which list to show it in. A row
+ * counted as a grant by one and a dud by the other would put an admin
+ * in front of a list that does not describe the authority they have.
+ *
+ * The typeof half is load-bearing beside the pattern, not belt and
+ * braces. RegExp.test() stringifies whatever it is handed, so a value
+ * that is not a string but spells one passes a check written with the
+ * pattern alone - and String(undefined) is "undefined", a perfectly
+ * good Set member that matches nobody.
+ */
+function grantsAnything(row) {
+  return Boolean(row) && typeof row.account_id === "string" &&
+    ACCOUNT_ID.test(row.account_id);
+}
+
+/*
+ * The account ids the `membership` table grants one role.
+ *
+ * FAILS CLOSED IN EVERY DIRECTION A READ CAN GO WRONG, which is the
+ * whole of this function's design now that a row is a grant: a thrown
+ * query, a missing `results`, a shape that is not an array, a row whose
+ * account id is not one - each gives the empty set rather than a partial
+ * answer or a permissive default. An error swallowed into "assume they
+ * are an admin" is the failure nothing else here would catch, because it
+ * looks exactly like a working list on a working database.
+ *
+ * An unreadable row is dropped rather than coerced, by grantsAnything()
+ * above. The near-miss it refuses reads as a working list right up until
+ * somebody cannot get in - the undetectable-wrong-value failure #69
+ * opens with, arriving through the back door.
+ */
+async function membershipAccountIds(env, role) {
+  const ids = new Set();
+  let rows;
+  try {
+    rows = await env.DB.prepare(
+      "SELECT account_id FROM membership WHERE role = ?"
+    ).bind(role).all();
+  } catch (e) {
+    return ids;
+  }
+  if (!rows || !Array.isArray(rows.results)) return ids;
+  for (const row of rows.results) {
+    if (grantsAnything(row)) ids.add(row.account_id);
+  }
+  return ids;
+}
+
+/*
+ * Who administers: the secret OR the table, both live.
+ *
+ * This is the dual-read posture #69 asked for, and it is deliberately
+ * the shipped state rather than a step passed through. Flipping to
+ * table-only before a backfill would take authority away from every
+ * admin the secret names and the table does not, so the order is
+ * dual-read, verify, flip - and what makes the middle step possible is
+ * handleReadMembership's `secretOnly`, which is the only place the two
+ * arms can be compared at all: the secret holds numeric ids and the
+ * table holds HMACs of them, so nothing outside this Worker can line
+ * them up.
+ *
+ * Whatever the flip does, the founding admin stays in the secret
+ * (DESIGN.md, "Admin accounts and deletion"). A table that could rewrite
+ * the whole list leaves no root of trust outside itself.
+ *
+ * Recomputed per request on purpose. A cache would be a copy of the
+ * admin list living somewhere other than the two places that own it,
+ * which is precisely the stale-admin bug this function exists to remove
+ * - and it is what makes removing a row take effect on the next request
+ * rather than whenever a session happens to expire.
+ */
+async function adminAccountIds(env) {
+  const ids = await secretAdminAccountIds(env);
+  for (const id of await membershipAccountIds(env, "admin")) ids.add(id);
+  return ids;
 }
 
 function corsHeaders(origin) {
@@ -358,11 +443,21 @@ async function verifyTelegramPayload(payload, botToken) {
  * about whether they are one of yours. This is what makes the binder
  * private to the group rather than private to whoever finds the URL.
  *
- * ALWAYS_ALLOW_TELEGRAM_IDS passes regardless, and is not merely a
+ * The always-allow list passes regardless, and is not merely a
  * convenience: if the bot is ever removed from the group this call
- * starts refusing everybody, and that list is the way back in. It is
- * read from the secret and not from the `membership` table, for the
- * reason handleReadMembership gives.
+ * starts refusing everybody, and that list is the way back in.
+ *
+ * Both arms, and the asymmetry with the admin list is the point.
+ * ALWAYS_ALLOW_TELEGRAM_IDS is NOT being migrated to the table and no
+ * flip is coming for it: it is the break-glass for the case where the
+ * group check itself has failed, so it has to keep working when the
+ * database is the thing that is wrong. The table arm is an addition
+ * beside it - what makes the list manageable from an admin page - and
+ * never a replacement for it.
+ *
+ * The secret arm is checked first and by numeric id, so it needs no
+ * HMAC and no read: that is the arm that must survive a Worker that
+ * cannot reach D1 at all.
  *
  * Unconfigured - no chat id - means the check is off and everybody with
  * a Telegram account passes. That is a deployment decision rather than a
@@ -370,6 +465,10 @@ async function verifyTelegramPayload(payload, botToken) {
  */
 async function isGroupMember(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
+    return true;
+  }
+  if ((await membershipAccountIds(env, "always_allow"))
+    .has(await accountIdFor(env, userId))) {
     return true;
   }
   if (!env.TELEGRAM_GROUP_CHAT_ID) return true;
@@ -464,29 +563,37 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  *
  * The stored flag decides whether the window applies, not the re-read
  * below it: this row was handed the whole corpus's ciphertext once, and
- * taking its owner off ADMIN_TELEGRAM_IDS does not un-hand it. Reading
- * the re-read instead would give a demoted session the longer deadline,
+ * taking its owner off the admin list does not un-hand it. Reading the
+ * re-read instead would give a demoted session the longer deadline,
  * which is the wrong direction for a demotion.
  *
- * The admin flag is re-checked here rather than trusted from the row.
+ * The admin flag is re-checked here rather than trusted from the row,
+ * and the re-check reads BOTH the secret and the `membership` table.
  * The row says what was true at sign-in, and the question every caller
  * below is actually asking is whether it is true now: without this,
- * taking an id out of ADMIN_TELEGRAM_IDS does nothing for up to two
- * hours and nothing can force it sooner. The stored flag stays a
- * necessary condition - a member session cannot be promoted by editing a
- * secret, which would be a promotion nobody signed in for - and the list
- * is what turns it off.
+ * removing somebody's admin row does nothing for up to two hours and
+ * nothing can force it sooner. That is the whole reason the table is
+ * read per request rather than cached - an admin taken off the list
+ * keeps whatever ciphertext they already hold, so the lever that stops
+ * the NEXT request is the only lever there is.
+ *
+ * The stored flag stays a necessary condition - a member session cannot
+ * be promoted by an edit to either list, which would be a promotion
+ * nobody signed in for, arriving on a session bounded for a member's
+ * seven days rather than an admin's two hours - and the lists are what
+ * turn it off.
  *
  * Demotion is not revocation. A session that stops being an admin
  * session keeps working as the member session it also is; the person is
  * still in the group. Ending a session is DELETE /session.
  *
  * A development session is exempt, because its adminness never came from
- * ADMIN_TELEGRAM_IDS: a "dev:"-namespaced account id cannot be in that
- * list, so checking it there would drop every dev admin instantly. What
+ * either list: a "dev:"-namespaced account id cannot be a numeric id's
+ * HMAC, so checking it there would drop every dev admin instantly. What
  * minted it was DEV_LOGIN_SECRET, so that is what is re-read for it -
  * the same "must be SET" shape handleDevAuth uses, so turning the dev
- * login off also drops the sessions it issued.
+ * login off also drops the sessions it issued. What that exemption does
+ * NOT buy is the authority to write an admin row; see the router.
  */
 async function sessionFor(env, token) {
   if (!token) return null;
@@ -619,7 +726,12 @@ async function handleTelegramAuth(request, env, origin) {
   }
 
   const accountId = await accountIdFor(env, user.id);
-  const isAdmin = idList(env.ADMIN_TELEGRAM_IDS).includes(String(user.id));
+  // Both arms, through the one function that unions them. Minting from
+  // the secret alone here while sessionFor() re-checks both would hand a
+  // table-only admin a member session that could never become an admin
+  // one: the stored flag is a necessary condition and nothing would ever
+  // set it.
+  const isAdmin = (await adminAccountIds(env)).has(accountId);
   const session = await issueSession(env, accountId, isAdmin, false);
 
   return json({
@@ -1210,18 +1322,33 @@ async function handleDeleteContent(env, origin, name) {
  * The membership lists - who administers, and who bypasses the group
  * check (#69).
  *
- * THE SEAM, because it is the first thing to know about all three of
- * these routes: this table enforces nothing. adminAccountIds() reads
- * ADMIN_TELEGRAM_IDS and isGroupMember() reads
- * ALWAYS_ALLOW_TELEGRAM_IDS, and those secrets stay the enforcing copy
- * until a slice that changes what a sign-in means migrates them
- * deliberately. Two lists that both granted access would be two places
- * the answer could be true, and the migration is where the lockout
- * guards belong - refusing the removal of the last admin means nothing
- * while a secret nobody here can read is what actually grants the
- * authority, and a guard that refuses a safe act while explaining a
- * danger that does not exist is worse than no guard. dev/worker.test.mjs
- * asserts the inert half, so the day the seam closes a check says so.
+ * THIS TABLE IS ENFORCING, and it is the first thing to know about all
+ * three of these routes. A row here grants what it says it grants:
+ * adminAccountIds() unions `admin` rows with ADMIN_TELEGRAM_IDS, and
+ * isGroupMember() unions `always_allow` rows with
+ * ALWAYS_ALLOW_TELEGRAM_IDS. Both arms are live, and that is the
+ * shipped posture rather than a moment in a migration.
+ *
+ * Why dual-read is what ships. Table-only before a backfill takes
+ * authority away from every admin the secret names and the table does
+ * not, and the deployment where that hurts is the one where somebody
+ * forgot - so the order is dual-read, verify, flip, and the verify step
+ * needs a fact rather than a belief. `secretOnly` below is that fact,
+ * and this route is the only place it can be computed: the secret holds
+ * numeric ids and the table holds their HMACs, so lining the two up
+ * needs ACCOUNT_SECRET and therefore has to happen here. Empty means the
+ * backfill is complete and a flip would take nobody's authority away.
+ *
+ * The always-allow list is NOT on that path and no flip is coming for
+ * it - isGroupMember() says why. Only the admin arm is migrating, so
+ * only the admin arm is measured here.
+ *
+ * The lockout guards live with this change rather than with the routes
+ * that landed first, and the reason is that a guard is only worth having
+ * where it can bite: refusing to remove the last admin ROW protects
+ * nothing while the row grants nothing, and a guard that refuses a safe
+ * act while explaining a danger that does not exist is worse than no
+ * guard. handleDeleteMembership carries the one that now can.
  *
  * Read gated admin, and every refusal identical to every other refusal
  * this Worker gives. The list of who administers is the list DESIGN.md's
@@ -1235,6 +1362,23 @@ async function handleDeleteContent(env, origin, name) {
  * The rows go out with the table's own column names. The admin surface
  * that renders them maps them once; a second spelling of the same field
  * would be a second thing to keep true.
+ *
+ * TWO LISTS, BECAUSE A ROW CAN BE IN THIS TABLE AND GRANT NOTHING.
+ * `membership` holds exactly the rows the authority read honors - the
+ * same grantsAnything() it asks, so the two can never disagree about a
+ * row - and `malformed` holds the rest.
+ * A row whose account id is not sixty-four lowercase hex characters -
+ * which `wrangler d1 execute` writes without complaint, since it
+ * validates nothing - is dropped by every read that decides anything,
+ * so listing it beside the rows that grant is the undetectable-wrong-
+ * value failure #69 opens with, wearing the interface's own clothes.
+ *
+ * The split rather than a flag on each row, because the fail-safe
+ * direction matters more than the tidier shape: a surface that has
+ * never heard of `malformed` renders only rows that grant, and one that
+ * has can show the duds and offer to remove them. A flag has to be read
+ * to be obeyed, and the reader who most needs it is the one who does
+ * not know it is there.
  */
 async function handleReadMembership(env, origin) {
   const rows = await env.DB.prepare(
@@ -1242,7 +1386,61 @@ async function handleReadMembership(env, origin) {
     "ORDER BY role, added_at"
   ).all();
 
-  return json({ ok: true, membership: rows.results }, 200, origin);
+  const granting = [];
+  const malformed = [];
+  for (const row of rows.results) {
+    (grantsAnything(row) ? granting : malformed).push(row);
+  }
+
+  // From the granting rows only. A dud cannot stand in for the secret's
+  // grant, so counting it here would report a backfill complete while
+  // the flip it authorizes would take that admin's authority away.
+  const inTable = new Set(granting
+    .filter((row) => row.role === "admin")
+    .map((row) => row.account_id));
+  const secretOnly = [];
+  for (const id of await secretAdminAccountIds(env)) {
+    if (!inTable.has(id)) secretOnly.push(id);
+  }
+
+  // Account ids, never the numeric ids they came from. These are the
+  // same un-invertible values the rows beside them already carry, going
+  // to a caller who may read every one of those rows anyway.
+  return json({
+    ok: true,
+    membership: granting,
+    malformed: malformed,
+    secretOnly: secretOnly.sort(),
+  }, 200, origin);
+}
+
+/*
+ * An admin changing their own row, recorded.
+ *
+ * `added_by` answers who wrote a row that still exists. A removal leaves
+ * no row to carry it, and the removal worth recording most is an admin
+ * taking their own authority away, or handing themselves a role nobody
+ * else granted them - so the record is a log line rather than a column.
+ *
+ * Account ids only. That is the same HMAC already sitting in the clear
+ * in the table beside it, so this puts nothing anywhere it was not
+ * already; a numeric id would be the membership oracle relocated into a
+ * log file, which is the trade DESIGN.md rejects redirect-mode sign-in
+ * over. Nothing here is echoed in a response - the caller already knows
+ * what they did, and a response field would put it where anything
+ * holding the session could read it.
+ *
+ * A break-glass caller is nobody and so can never be the subject: its
+ * accountId is null, which matches no row.
+ */
+function noteSelfWrite(action, caller, accountId, role) {
+  if (!caller || caller.accountId !== accountId) return;
+  console.log(JSON.stringify({
+    event: "membership.self",
+    action: action,
+    role: role,
+    account_id: accountId,
+  }));
 }
 
 /*
@@ -1286,6 +1484,34 @@ async function handleAddMembership(request, env, origin, caller) {
     return json({ error: "Body must be JSON." }, 400, origin);
   }
 
+  const role = payload && payload.role;
+
+  /*
+   * A development session may not write an admin row.
+   *
+   * POST /auth/dev mints an admin whose authority comes from
+   * DEV_LOGIN_SECRET and nothing else, which is harmless only while the
+   * table grants nothing. A row written from a local login is a real
+   * admin row, and after a flip to table-only it is the whole
+   * authority. So a dev session keeps every power it had over the data
+   * and loses this one; it may still manage the always-allow list,
+   * which is what makes a local admin page workable at all.
+   *
+   * There is deliberately no escape hatch. A second secret to gate the
+   * exception is a second secret to forget, and on production
+   * DEV_LOGIN_SECRET is unset and no dev session can exist - so this
+   * refusal costs that deployment nothing and is a real boundary on
+   * every other one.
+   *
+   * It stands ahead of every shape check below, and in the router's own
+   * words - the same bytes every other refusal here gives - so a caller
+   * who may not write this row cannot use a malformed body to learn
+   * what the route would have said next. The body parse above is the
+   * one thing that cannot follow it: `role` lives inside the body, so
+   * there is nothing to refuse until the body is an object.
+   */
+  if (caller && caller.isDev && role === "admin") return unauthorized(origin);
+
   // String(anything) would accept an array of one id, which is a caller
   // with a bug rather than a value worth coercing.
   const given = payload && payload.telegramId;
@@ -1297,7 +1523,6 @@ async function handleAddMembership(request, env, origin, caller) {
     }, 400, origin);
   }
 
-  const role = payload.role;
   if (!MEMBERSHIP_ROLES.includes(role)) {
     return json({
       error: "A role is one of: " + MEMBERSHIP_ROLES.join(", ") + ".",
@@ -1312,15 +1537,16 @@ async function handleAddMembership(request, env, origin, caller) {
     }, 400, origin);
   }
 
+  const accountId = await accountIdFor(env, telegramId);
   await env.DB.prepare(
     "INSERT INTO membership (account_id, role, label, added_at, added_by) " +
     "VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id, role) " +
     "DO UPDATE SET label = excluded.label"
   )
-    .bind(await accountIdFor(env, telegramId), role, label,
-      new Date().toISOString(), writerOf(caller))
+    .bind(accountId, role, label, new Date().toISOString(), writerOf(caller))
     .run();
 
+  noteSelfWrite("add", caller, accountId, role);
   return json({ ok: true }, 200, origin);
 }
 
@@ -1329,134 +1555,245 @@ async function handleAddMembership(request, env, origin, caller) {
  * list is not removing them from the other, and a route that took only
  * an account id would have to guess which was meant.
  *
- * Deleting nothing succeeds, the way every other deletion here does.
+ * THE LAST ADMIN ROW DOES NOT COME OFF. Now that a row grants what it
+ * says, an empty admin list is a lockout with no lever inside the
+ * product to undo it - and the way it happens is not recklessness, it is
+ * two admins tidying the same list.
+ *
+ * Counted and deleted in ONE statement, inside one D1 batch, and that is
+ * the whole design rather than an implementation taste. A count read
+ * first and acted on second is a race with the other admin pressing
+ * Remove at the same moment: both reads see two, both writes succeed,
+ * and the table is empty with neither request having done anything
+ * wrong. The guard is a subquery inside the DELETE, so SQLite evaluates
+ * it against the same snapshot the delete applies to and no window
+ * exists between them.
+ *
+ * The second statement asks for the ROW rather than for a count, because
+ * a count cannot tell the two success cases apart: with one admin left,
+ * "delete a row that was never there" and "delete the last admin's row"
+ * leave the same number behind. Whether that row is still there is
+ * exactly the question.
+ *
+ * Deleting nothing still succeeds, the way every other deletion here
+ * does. The guard must not turn a no-op into a refusal - an admin who
+ * cannot tell "nothing to remove" from "not allowed" starts looking for
+ * a bug that is not there.
+ *
+ * The refusal explains itself, and that is not an exception to the
+ * identical-refusal rule above it. Only somebody who may already read
+ * the whole list can provoke this, so it says nothing they could not
+ * read directly; the rule exists to stop a caller who may NOT read the
+ * list learning anything from being refused.
+ *
+ * CASE IS FOLDED ON BOTH SIDES, which is what makes a row this Worker
+ * cannot honor removable at all. POST is not the only door into the
+ * table - `wrangler d1 execute` is the other, it validates nothing, and
+ * an account id pasted there in upper-case hex is sixty-four correct
+ * characters that ACCOUNT_ID refuses and the authority read drops. That
+ * row grants nothing and has to be removable by the admin who is
+ * looking at it in GET's `malformed` list; matching it byte for byte
+ * would answer 404 to the very id that list just handed back. SQLite
+ * takes the explicit collation of either operand, so the parameter
+ * carries it and the stored column needs no rewriting.
  */
-async function handleDeleteMembership(env, origin, role, accountId) {
-  if (!MEMBERSHIP_ROLES.includes(role) || !ACCOUNT_ID.test(accountId)) {
+async function handleDeleteMembership(env, origin, role, accountId, caller) {
+  const wanted = String(accountId).toLowerCase();
+  if (!MEMBERSHIP_ROLES.includes(role) || !ACCOUNT_ID.test(wanted)) {
     return json({ error: "Not found." }, 404, origin);
   }
-  await env.DB.prepare(
-    "DELETE FROM membership WHERE account_id = ? AND role = ?"
-  ).bind(accountId, role).run();
 
+  const [, survivors] = await env.DB.batch([
+    env.DB.prepare(
+      "DELETE FROM membership WHERE account_id = ? COLLATE NOCASE AND role = ?" +
+      (role === "admin"
+        ? " AND (SELECT COUNT(*) FROM membership WHERE role = 'admin') > 1"
+        : "")
+    ).bind(wanted, role),
+    env.DB.prepare(
+      "SELECT account_id FROM membership " +
+      "WHERE account_id = ? COLLATE NOCASE AND role = ?"
+    ).bind(wanted, role),
+  ]);
+
+  if (survivors.results.length > 0) {
+    return json({
+      error: "That is the last admin row. Add another admin before " +
+        "removing this one.",
+    }, 409, origin);
+  }
+
+  // The folded id rather than the path's spelling, so an admin removing
+  // their own row is recorded as themselves however they typed it.
+  noteSelfWrite("remove", caller, wanted, role);
   return json({ ok: true }, 200, origin);
 }
 
+/*
+ * Every route, once the origin is settled.
+ *
+ * Split from fetch() so that one try/catch can stand around all of it -
+ * see fetch() for why an escaped throw is a refusal shape this Worker
+ * does not otherwise have.
+ */
+async function route(request, env, url, allowed) {
+  if (request.method === "OPTIONS") {
+    if (!allowed) return new Response(null, { status: 403 });
+    return new Response(null, { status: 204, headers: corsHeaders(allowed) });
+  }
+
+  if (!allowed) {
+    return json({ error: "Origin not allowed." }, 403, null);
+  }
+
+  const path = url.pathname;
+  const method = request.method;
+
+  // The two sign-in routes are the only ones that answer without a
+  // credential, because issuing one is what they are for.
+  if (method === "POST" && path === "/auth/telegram") {
+    return handleTelegramAuth(request, env, allowed);
+  }
+  if (method === "POST" && path === "/auth/dev") {
+    return handleDevAuth(request, env, allowed);
+  }
+
+  // Everything below needs to know who is asking, so it is resolved
+  // once here rather than in each handler - a route that forgot to ask
+  // would be a route with no gate, and that is not a mistake worth
+  // leaving available.
+  const caller = await callerFor(request, env);
+  const admin = Boolean(caller && caller.isAdmin);
+
+  // Only a live session may be ended, and only its own. A token that
+  // resolves to no row is refused rather than thanked: answering 200
+  // would make this an unauthenticated DELETE keyed on a string the
+  // caller chose, and would tell somebody they were signed out when
+  // they were not - which is the failure this route exists to fix.
+  // The break-glass EXPORT_TOKEN is refused for the same honesty: it
+  // is a secret rather than a session, there is no row to remove, and
+  // ending it means rotating it. Nothing is trapped by any of this,
+  // because the page clears its local copy whatever the answer is.
+  if (method === "DELETE" && path === "/session") {
+    if (!caller || caller.breakGlass) return unauthorized(allowed);
+    return handleRevokeSession(request, env, allowed);
+  }
+  if (method === "GET" && path === "/me") {
+    if (!caller) return unauthorized(allowed);
+    return handleMe(request, env, allowed, caller);
+  }
+  if (method === "POST" && path === "/submit") {
+    // A break-glass EXPORT_TOKEN caller has no account to write to.
+    // Submitting is a member action and it needs a member.
+    if (!caller || !caller.accountId) return unauthorized(allowed);
+    return handleSubmit(request, env, allowed, caller);
+  }
+  if (method === "GET" && path === "/export") {
+    return handleExport(request, env, allowed, caller);
+  }
+  if (method === "POST" && path === "/snapshot") {
+    if (!admin) return unauthorized(allowed);
+    return handlePublishSnapshot(request, env, allowed);
+  }
+  if (method === "GET" && path === "/snapshot") {
+    // Members only since 2026-08-05. The document still carries no
+    // handles and no rows - gating it is not a reason to relax what
+    // goes in it. See DESIGN.md, "The dashboard and the snapshot".
+    if (!caller) return unauthorized(allowed);
+    return handleReadSnapshot(env, allowed);
+  }
+  if (method === "DELETE" && path === "/snapshot") {
+    if (!admin) return unauthorized(allowed);
+    return handleDeleteSnapshot(env, allowed);
+  }
+
+  const submission = /^\/submission\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && submission) {
+    if (!admin) return unauthorized(allowed);
+    return handleDeleteSubmission(env, allowed, submission[1]);
+  }
+
+  // The site copy. The read takes no credential, which is the one
+  // exception in this router and is argued in handleReadContent; the
+  // two writes are an admin session like every other write here.
+  if (method === "GET" && path === "/content") {
+    return handleReadContent(env, allowed);
+  }
+  if (method === "POST" && path === "/content") {
+    if (!admin) return unauthorized(allowed);
+    return handleWriteContent(request, env, allowed, caller);
+  }
+  const contentName = /^\/content\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && contentName) {
+    if (!admin) return unauthorized(allowed);
+    return handleDeleteContent(env, allowed, contentName[1]);
+  }
+
+  // Membership, admin in every direction, and these two lists are the
+  // authority itself rather than data behind it. The gate is here
+  // rather than inside the handlers so that a malformed role and a
+  // real one are the same refusal to anybody who may not read the list
+  // at all.
+  //
+  // A development session is an admin that may not touch the admin
+  // list - handleAddMembership argues that in full. The role is in the
+  // path here, so the refusal is in the router where the rest of the
+  // gate is; on POST it is the first thing past the body parse, which
+  // is the earliest the role is knowable at all.
+  if (method === "GET" && path === "/membership") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadMembership(env, allowed);
+  }
+  if (method === "POST" && path === "/membership") {
+    if (!admin) return unauthorized(allowed);
+    return handleAddMembership(request, env, allowed, caller);
+  }
+  const listed = /^\/membership\/([^/]+)\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && listed) {
+    if (!admin) return unauthorized(allowed);
+    if (caller.isDev && listed[1] === "admin") return unauthorized(allowed);
+    return handleDeleteMembership(env, allowed, listed[1], listed[2], caller);
+  }
+
+  return json({ error: "Not found." }, 404, allowed);
+}
+
 export default {
+  /*
+   * A THROW THAT ESCAPES IS A REFUSAL NOTHING ELSE HERE GIVES, and that
+   * is what this catch exists to prevent. The runtime answers an
+   * uncaught exception with a bare 500: no CORS headers, so a browser
+   * reports a network failure rather than the refusal it is, and no
+   * `{error}` body, so a page that reads one has nothing to show. Every
+   * other refusal on this Worker is the same two things, and the day an
+   * admin meets this one is the day D1 is unwell - the worst possible
+   * day to be told nothing.
+   *
+   * The origin is settled before the try, so a refusal keeps its CORS
+   * headers even when the route that would have set them never ran; a
+   * caller from an origin this Worker does not allow gets no headers
+   * here either, exactly as the 403 above it gives none.
+   *
+   * The message says nothing about what failed. A D1 error text can
+   * carry a fragment of the statement or the value that broke it, and a
+   * caller who provoked the failure is the last party who should be
+   * handed either. The method and path go to the log instead, where
+   * they are already visible to whoever is running the Worker.
+   */
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
     const allowed = allowedOrigins(env).includes(origin) ? origin : null;
 
-    if (request.method === "OPTIONS") {
-      if (!allowed) return new Response(null, { status: 403 });
-      return new Response(null, { status: 204, headers: corsHeaders(allowed) });
+    try {
+      return await route(request, env, url, allowed);
+    } catch (e) {
+      console.log(JSON.stringify({
+        event: "unhandled",
+        method: request.method,
+        path: url.pathname,
+      }));
+      return json({ error: "Something went wrong." }, 500, allowed);
     }
-
-    if (!allowed) {
-      return json({ error: "Origin not allowed." }, 403, null);
-    }
-
-    const path = url.pathname;
-    const method = request.method;
-
-    // The two sign-in routes are the only ones that answer without a
-    // credential, because issuing one is what they are for.
-    if (method === "POST" && path === "/auth/telegram") {
-      return handleTelegramAuth(request, env, allowed);
-    }
-    if (method === "POST" && path === "/auth/dev") {
-      return handleDevAuth(request, env, allowed);
-    }
-
-    // Everything below needs to know who is asking, so it is resolved
-    // once here rather than in each handler - a route that forgot to ask
-    // would be a route with no gate, and that is not a mistake worth
-    // leaving available.
-    const caller = await callerFor(request, env);
-    const admin = Boolean(caller && caller.isAdmin);
-
-    // Only a live session may be ended, and only its own. A token that
-    // resolves to no row is refused rather than thanked: answering 200
-    // would make this an unauthenticated DELETE keyed on a string the
-    // caller chose, and would tell somebody they were signed out when
-    // they were not - which is the failure this route exists to fix.
-    // The break-glass EXPORT_TOKEN is refused for the same honesty: it
-    // is a secret rather than a session, there is no row to remove, and
-    // ending it means rotating it. Nothing is trapped by any of this,
-    // because the page clears its local copy whatever the answer is.
-    if (method === "DELETE" && path === "/session") {
-      if (!caller || caller.breakGlass) return unauthorized(allowed);
-      return handleRevokeSession(request, env, allowed);
-    }
-    if (method === "GET" && path === "/me") {
-      if (!caller) return unauthorized(allowed);
-      return handleMe(request, env, allowed, caller);
-    }
-    if (method === "POST" && path === "/submit") {
-      // A break-glass EXPORT_TOKEN caller has no account to write to.
-      // Submitting is a member action and it needs a member.
-      if (!caller || !caller.accountId) return unauthorized(allowed);
-      return handleSubmit(request, env, allowed, caller);
-    }
-    if (method === "GET" && path === "/export") {
-      return handleExport(request, env, allowed, caller);
-    }
-    if (method === "POST" && path === "/snapshot") {
-      if (!admin) return unauthorized(allowed);
-      return handlePublishSnapshot(request, env, allowed);
-    }
-    if (method === "GET" && path === "/snapshot") {
-      // Members only since 2026-08-05. The document still carries no
-      // handles and no rows - gating it is not a reason to relax what
-      // goes in it. See DESIGN.md, "The dashboard and the snapshot".
-      if (!caller) return unauthorized(allowed);
-      return handleReadSnapshot(env, allowed);
-    }
-    if (method === "DELETE" && path === "/snapshot") {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteSnapshot(env, allowed);
-    }
-
-    const submission = /^\/submission\/([^/]+)$/.exec(path);
-    if (method === "DELETE" && submission) {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteSubmission(env, allowed, submission[1]);
-    }
-
-    // The site copy. The read takes no credential, which is the one
-    // exception in this router and is argued in handleReadContent; the
-    // two writes are an admin session like every other write here.
-    if (method === "GET" && path === "/content") {
-      return handleReadContent(env, allowed);
-    }
-    if (method === "POST" && path === "/content") {
-      if (!admin) return unauthorized(allowed);
-      return handleWriteContent(request, env, allowed, caller);
-    }
-    const contentName = /^\/content\/([^/]+)$/.exec(path);
-    if (method === "DELETE" && contentName) {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteContent(env, allowed, contentName[1]);
-    }
-
-    // Membership, admin in every direction. The gate is here rather
-    // than inside the handlers so that a malformed role and a real one
-    // are the same refusal to anybody who may not read the list at all.
-    if (method === "GET" && path === "/membership") {
-      if (!admin) return unauthorized(allowed);
-      return handleReadMembership(env, allowed);
-    }
-    if (method === "POST" && path === "/membership") {
-      if (!admin) return unauthorized(allowed);
-      return handleAddMembership(request, env, allowed, caller);
-    }
-    const listed = /^\/membership\/([^/]+)\/([^/]+)$/.exec(path);
-    if (method === "DELETE" && listed) {
-      if (!admin) return unauthorized(allowed);
-      return handleDeleteMembership(env, allowed, listed[1], listed[2]);
-    }
-
-    return json({ error: "Not found." }, 404, allowed);
   },
 };

@@ -137,13 +137,27 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 # ALWAYS_ALLOW_TELEGRAM_IDS are DELIBERATELY ABSENT HERE. Do not "fix"
 # the asymmetry by setting them.
 #
-# Nothing on the development path reads them. handleDevAuth takes
-# admin-ness from its own request payload rather than from
-# ADMIN_TELEGRAM_IDS, so a dev session never consults an id list; the
-# four are reached only from handleTelegramAuth and isGroupMember. With
-# no bot token, verifyTelegramPayload returns null at its first guard and
+# Nothing on the development path needs them. handleDevAuth takes
+# admin-ness from its own request payload, and sessionFor re-reads
+# DEV_LOGIN_SECRET rather than an id list for a dev session - so a dev
+# admin exists without any of the four. Unset, they read as empty lists
+# everywhere they are consulted, which leaves the `membership` table as
+# the only ID LIST that grants anything here - which is not the same as
+# the only arm. The two secrets above still grant admin by their own
+# routes: DEV_LOGIN_SECRET through POST /auth/dev, EXPORT_TOKEN as
+# break-glass, and either one reaches every membership route. Reading
+# this block as "the table is the whole authority on this Worker" is
+# what makes an admin row written from a local login look harmless;
+# server/worker.js's router refuses one, and says why. With no bot token,
+# verifyTelegramPayload returns null at its first guard and
 # POST /auth/telegram answers a clean 401 rather than throwing - probed
 # live, not inferred.
+#
+# The dev database's `membership` rows DO grant authority here, the same
+# way production's do. That is the point of having a dev Worker at all,
+# and it is why a dev session may not write an `admin` row - a row
+# minted from a local login is a real one. server/worker.js's router
+# carries that refusal.
 #
 # And the widget cannot be exercised here anyway: BotFather binds it to
 # potaetoe.github.io, so it will not render on localhost. See archive/UAT.md A7.

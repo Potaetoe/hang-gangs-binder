@@ -208,18 +208,37 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- account - the id-is-identity, handle-is-display split a submission row
 -- already carries.
 --
--- THIS TABLE ENFORCES NOTHING. server/worker.js reads
--- ADMIN_TELEGRAM_IDS in adminAccountIds() and ALWAYS_ALLOW_TELEGRAM_IDS
--- in isGroupMember(), and those secrets stay the enforcing copy until a
--- slice that changes what a sign-in means migrates them on purpose -
--- handleReadMembership carries that whole argument, and
--- dev/worker.test.mjs asserts the inert half so the day it changes a
--- check says so. Anybody reading this file to build an admin surface
--- needs it before anything else: rows here grant no authority.
+-- THIS TABLE IS ENFORCING. A row here grants what it says it grants:
+-- server/worker.js unions `admin` rows with ADMIN_TELEGRAM_IDS in
+-- adminAccountIds(), and `always_allow` rows with
+-- ALWAYS_ALLOW_TELEGRAM_IDS in isGroupMember(). Both arms are live, and
+-- handleReadMembership carries the whole argument for why dual-read is
+-- what ships rather than a step passed through.
+--
+-- Anybody reading this file to build an admin surface needs that before
+-- anything else, and needs it PER DIRECTION, because the three do not
+-- take effect together:
+--
+--   * REMOVING an `admin` row bites on that session's very next
+--     request. sessionFor() re-reads this table on every request and
+--     the re-read can only take adminness away, so nothing has to
+--     expire first. That lever is what #69 asked for.
+--   * ADDING an `admin` row changes nothing for a session that already
+--     exists. The `is_admin` flag written at sign-in is a necessary
+--     condition the re-read cannot switch on, so a new admin signs out
+--     and back in. A surface reporting success while the person sees
+--     no new powers is looking at this, not at a failed write.
+--   * An `always_allow` row is consulted inside sign-in and nowhere
+--     else, so neither adding nor removing one touches a session that
+--     is already open; both land at the next sign-in.
+--
+-- OPERATIONS.md states the same three where an operator meets them.
 --
 -- Whatever else moves, the founding admin stays in the secret. A table
 -- that could rewrite the whole list would leave no root of trust outside
--- itself, and an empty table would lock everybody out permanently.
+-- itself, and an empty table would lock everybody out permanently -
+-- which is why the last `admin` row cannot be deleted, guarded inside
+-- the DELETE statement rather than by a count read beforehand.
 --
 -- TELEGRAM_GROUP_CHAT_ID does not belong here and is not coming. It has
 -- to be recoverable in the clear because isGroupMember() interpolates it

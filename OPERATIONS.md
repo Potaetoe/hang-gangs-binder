@@ -89,7 +89,7 @@ Secrets), never in this repository, never handled by an agent.
 | `EXPORT_TOKEN` | break-glass admin credential; keep it reachable *without* the site — it exists for when sign-in is broken |
 | `TELEGRAM_BOT_TOKEN` | from BotFather; verifies every login payload; never logged. Leak costs a `/revoke` and a re-paste |
 | `ACCOUNT_SECRET` | the HMAC key behind every account id — **see below** |
-| `ADMIN_TELEGRAM_IDS` | comma-separated **numeric** ids, not handles |
+| `ADMIN_TELEGRAM_IDS` | comma-separated **numeric** ids, not handles. One of the two admin lists — see "Making someone an admin" |
 | `TELEGRAM_GROUP_CHAT_ID` | optional; set, only members of that group may sign in — unset means anyone with a Telegram account can |
 | `ALWAYS_ALLOW_TELEGRAM_IDS` | ids that skip the group check; the way back in if the bot is removed from the group |
 | `ALLOWED_ORIGINS` (plaintext var) | origins allowed to call the Worker; setting it *replaces* the defaults |
@@ -287,8 +287,8 @@ backup is lost with it.
 `apps/web/admin.html` on the live site — a public page, useless without
 its two factors.
 
-1. Sign in on the live site with a Telegram account whose numeric id is
-   in `ADMIN_TELEGRAM_IDS`, and open the export page in the same tab. A
+1. Sign in on the live site with a Telegram account on either admin
+   list, and open the export page in the same tab. A
    member session is refused with a message saying so. The session is
    tab-scoped: closing the tab takes the credential with it,
    deliberately. It does not delete the session row — only
@@ -346,27 +346,60 @@ reason to keep that token stored somewhere reachable without the site.
 
 ## Making someone an admin
 
-Admin rights are a **numeric Telegram id** in `ADMIN_TELEGRAM_IDS` —
-not a handle; handles change and get reused.
+**There are two admin lists and either one grants it** — the
+`ADMIN_TELEGRAM_IDS` secret, and `admin` rows in the `membership` table
+that any admin can write through `POST /membership`. The Worker asks
+both on every request. Either way it is a **numeric Telegram id** that
+identifies the person, not a handle; handles change and get reused, and
+the table stores the id's HMAC rather than the id.
+
+Which one to use: **the table, unless this is the founding admin.** The
+secret needs a dashboard login and a person who has one; a row needs an
+admin who is already here. The founding admin stays in the secret on
+purpose — a list that could rewrite itself completely leaves no root of
+trust outside itself (`DESIGN.md`, "Admin accounts and deletion").
 
 1. They sign in on the live site — any member can. Their numeric id
    arrives in the session, and `submit.html` shows it back to them
    under "Your entries".
-2. The owner adds that number to `ADMIN_TELEGRAM_IDS` in the dashboard.
+2. An existing admin adds that number as an `admin` row, or the owner
+   adds it to `ADMIN_TELEGRAM_IDS` in the dashboard.
 3. They **sign out and back in.** The admin flag is minted at sign-in
    and stored on the session row — an existing session keeps being
    refused, which looks exactly like the id being wrong.
 
 **Taking it away is not the mirror of granting it, and nobody has to
-wait.** Removing the number from `ADMIN_TELEGRAM_IDS` takes effect on
-that session's *next request*: the Worker re-reads the list on every
-call rather than trusting the flag minted at sign-in, so there is
-nothing to press and nothing to expire. What it does not do is end the
-session — demotion is not revocation, the person is still in the group,
-and the session goes on working as the ordinary member session it also
-is. Ending one outright is `DELETE /session`, which a page sends when
+wait.** Removing them from *both* lists takes effect on that session's
+*next request*: the Worker re-reads both on every call rather than
+trusting the flag minted at sign-in, so there is nothing to press and
+nothing to expire. Removing them from only one leaves them an admin,
+which is the failure mode that comes with having two — check the row and
+the secret in the same sitting. What it does not do is end the session —
+demotion is not revocation, the person is still in the group, and the
+session goes on working as the ordinary member session it also is.
+Ending one outright is `DELETE /session`, which a page sends when
 somebody presses **Sign out**; `submit.html` has that control, and
 `admin.html` and `dashboard.html` do not yet (#81).
+
+**The last `admin` row will not come off, and that is not a bug to work
+around.** The endpoint refuses it rather than emptying the table, so add
+the next admin before removing the last one. The secret is not counted
+in that guard: it is the root of trust the guard exists to fall back on.
+
+**Which admins are still only in the secret** is `secretOnly` on
+`GET /membership` — the account ids the secret grants that the table has
+no row for. Nothing outside the Worker can compute it, because the
+secret holds numeric ids and the table holds their HMACs. An empty list
+means every admin has a row.
+
+**A row written by hand that grants nothing** comes back under
+`malformed` on the same response, separately from the rows that do
+grant. `wrangler d1 execute` validates nothing, so an account id pasted
+there in the wrong case or short a character is a row that looks
+present and is invisible to every check the Worker makes — the failure
+this table exists to remove, arriving by the one door `POST` cannot
+guard. `DELETE /membership/:role/:accountId` takes the id exactly as
+that list gives it and removes it.
 
 Both of those are endpoint behavior, so both arrive with the next
 `server/` deploy and not with a merge — see the `[pre-cutover]` note
@@ -375,13 +408,15 @@ still running. Production takes them at `CUTOVER.md` step 5.
 
 If everyone is locked out — no admin id works, the bot is gone from the
 group — `ALWAYS_ALLOW_TELEGRAM_IDS` and `EXPORT_TOKEN` are the two ways
-back, both set in the dashboard.
+back, both set in the dashboard. Both are deliberately secrets rather
+than table rows: a way back in that lives in the database is no way back
+in when the database is what went wrong.
 
 ## When somebody leaves
 
 **Belonging here is four separate things, and they come apart
 separately.** Being in the Telegram group is what lets somebody sign
-in; a number in `ADMIN_TELEGRAM_IDS` is what makes them an admin; a
+in; an entry on either admin list is what makes them an admin; a
 live session is a credential already issued and already in their
 browser; and the rows they submitted are in the database. Removing one
 of these does nothing to the other three, and the ordering below exists
@@ -395,20 +430,24 @@ session behind.
    gone, is "When a token or a session may be compromised" below — the
    whole difference is whether the person holding the credential can be
    relied on to end it. **Anyone.**
-2. **Take the admin id away first**, because it is the fastest lever
-   and it ends the larger authority: remove their number from
-   `ADMIN_TELEGRAM_IDS` in the dashboard. "Making someone an admin"
-   above says what that does and how soon, and the part worth
-   re-reading before you assume this finished the job is that demotion
-   is not revocation. **Owner only.**
-3. **Then remove them from the Telegram group — and check
-   `ALWAYS_ALLOW_TELEGRAM_IDS` in the same sitting.** Group membership
-   is checked when a session is *issued* and never again, so this stops
-   the next sign-in and does nothing whatever to the session they are
-   already holding. If their id is on the always-allow list, removing
-   them from the group has no effect at all: that list exists to bypass
-   exactly this check ("Secrets" above). It is the easiest step to
-   forget, because it is usually empty. **Owner only.**
+2. **Take the admin rights away first**, because it is the fastest lever
+   and it ends the larger authority — and take them off **both** lists:
+   remove their `admin` row, and remove their number from
+   `ADMIN_TELEGRAM_IDS` in the dashboard. Either one left behind leaves
+   them an admin. "Making someone an admin" above says what that does
+   and how soon, and the part worth re-reading before you assume this
+   finished the job is that demotion is not revocation. The row is
+   **any admin**; the secret is **owner only.**
+3. **Then remove them from the Telegram group — and check both
+   always-allow lists in the same sitting**, the
+   `ALWAYS_ALLOW_TELEGRAM_IDS` secret and their `always_allow` row.
+   Group membership is checked when a session is *issued* and never
+   again, so this stops the next sign-in and does nothing whatever to
+   the session they are already holding. If their id is on either
+   always-allow list, removing them from the group has no effect at all:
+   those lists exist to bypass exactly this check ("Secrets" above). It
+   is the easiest step to forget, because it is usually empty. The row
+   is **any admin**; the secret is **owner only.**
 4. **End the session they still hold.** Three ways, and step 1 chooses
    which:
 
@@ -490,7 +529,7 @@ automatically get the others:
 | Thing | What it gets them | How to hand it over |
 | --- | --- | --- |
 | The private key | reads the submissions | the key file, out of band — never email, never the repo |
-| An admin id | fetches ciphertext, publishes, deletes rows | add their numeric id to `ADMIN_TELEGRAM_IDS` |
+| An admin id | fetches ciphertext, publishes, deletes rows | an `admin` row, or their numeric id in `ADMIN_TELEGRAM_IDS` — "Making someone an admin" says which |
 | The export token | break-glass when sign-in is broken | read it from the Worker's secrets, or set a new one |
 | The Cloudflare account | holds the ciphertext | transfer it, or they deploy their own — below |
 | The GitHub repo | the site itself | transfer in settings, or they fork |
