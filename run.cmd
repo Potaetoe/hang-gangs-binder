@@ -34,8 +34,9 @@ if "%~1"=="keygen" (
   exit /b
 )
 if "%~1"=="bootstrap" (
-  rem Mirrors ./run bootstrap - see the reasoning there.
-  if not exist node_modules ( call npm ci --ignore-scripts ) else ( echo node_modules present - nothing to install )
+  rem Mirrors ./run bootstrap - see the reasoning there, including why
+  rem the probe is the eslint binary rather than the directory.
+  if not exist node_modules\.bin\eslint ( call npm ci --ignore-scripts ) else ( echo node_modules present - nothing to install )
   %PY% --version
   node --version
   echo gate-ready: .\run check

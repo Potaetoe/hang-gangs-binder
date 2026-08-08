@@ -44,7 +44,16 @@ case "${1:-}" in
     # "get gate-ready" one command. --ignore-scripts for the reason
     # deploy.yml states at length: install scripts are the supply
     # chain's favorite door.
-    if [ ! -d node_modules ]; then
+    #
+    # The probe is the binary the gate runs, not the directory: a
+    # worktree warmed by junctioning the primary checkout's
+    # node_modules has every package yet fails Git Bash's `-d` (MSYS
+    # stats the junction itself, not what it resolves to), and that
+    # false negative sends `npm ci` through the junction to tear down
+    # the primary checkout's install. Probing through the junction
+    # resolves it, and also catches a directory that exists but lost
+    # the tool.
+    if [ ! -e node_modules/.bin/eslint ]; then
       npm ci --ignore-scripts
     else
       echo "node_modules present - nothing to install"

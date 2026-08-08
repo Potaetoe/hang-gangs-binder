@@ -292,3 +292,13 @@ Hard-won platform facts, one line each, dated. The full stories are in
   machines — Python 3.14 here links zlib-ng, the runner links stock
   zlib, and level 9 differs by up to 4%. Any size gate needs slack;
   `tools/check_budget.py` has the measurements.
+- 2026-08-08: `__pycache__` outlives `git checkout` — Python keeps
+  serving the previous tree's bytecode, so a reverted mutation stays
+  "applied" and the gate lies in both directions. Two slices hit it
+  the same day. Delete `__pycache__` before trusting any Python check
+  after switching trees.
+- 2026-08-08: `git worktree remove --force` follows a Windows junction
+  inside the worktree and deletes the **target's** contents — it
+  emptied the primary checkout's node_modules through a junctioned
+  one. Sever junctions (non-recursive delete of the link) before any
+  recursive removal touches a tree that might hold one.
