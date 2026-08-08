@@ -28,11 +28,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { suite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
-
-let failures = 0;
-let performed = 0;
 
 // Asserted at the end rather than only printed, the same shape
 // dev/check_budget.test.py uses. A suite that stops part way - an early
@@ -40,26 +38,7 @@ let performed = 0;
 // confident "all checks passed" over the checks it did reach, which is
 // the armed-looking-but-not failure this repository holds to be worse
 // than having no check at all.
-const EXPECTED = 27;
-
-function check(label, condition) {
-  performed++;
-  if (!condition) failures++;
-  console.log(condition ? "pass " : "FAIL ", label);
-}
-
-function report() {
-  if (failures) {
-    console.log(`\n${failures} FAILURE(S) of ${performed}`);
-    process.exit(1);
-  }
-  if (performed !== EXPECTED) {
-    console.log(`\nran ${performed} checks, expected ${EXPECTED} - a check ` +
-      "stopped running, or one was added without updating EXPECTED");
-    process.exit(1);
-  }
-  console.log(`\nall checks passed - ${performed} checks`);
-}
+const { check, report } = suite("make-sample.mjs", 27);
 
 const GENERATOR = HERE("make-sample.mjs");
 const COMMITTED = HERE("sample-submissions.json");

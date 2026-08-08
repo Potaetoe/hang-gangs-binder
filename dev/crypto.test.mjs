@@ -28,6 +28,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { suite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -142,9 +143,6 @@ const contentNonceAt = (count) => V2.blocks + V2.block * count;
 const blockByteAt = (index, offset) =>
   V2.blocks + V2.block * index + offset;
 
-let failures = 0;
-const results = [];
-
 /*
  * Asserted at the end, the way dev/check_budget.test.py and its
  * siblings do it. Everything below is a top-level `await` in a file
@@ -154,38 +152,7 @@ const results = [];
  * repository holds to be worse than no check at all. Adding a row here
  * raises this number in the same diff.
  */
-const EXPECTED = 63;
-
-async function check(label, fn) {
-  let ok = false;
-  let note = "";
-  try {
-    ok = (await fn()) === true;
-    if (!ok) note = "returned false";
-  } catch (error) {
-    note = "threw: " + (error && error.message ? error.message : error);
-  }
-  if (!ok) failures++;
-  results.push([ok, label, note]);
-}
-
-/* The failure paths matter as much as the happy one: a decrypt that
- * quietly returns garbage instead of throwing is a corrupt export nobody
- * notices. Each of these must throw, and say something a person can act
- * on. */
-async function mustReject(label, fn, fragment) {
-  let note = "did not throw";
-  let ok = false;
-  try {
-    await fn();
-  } catch (error) {
-    const message = String(error && error.message);
-    ok = message.toLowerCase().includes(fragment.toLowerCase());
-    note = ok ? "" : 'threw, but not about "' + fragment + '": ' + message;
-  }
-  if (!ok) failures++;
-  results.push([ok, label, note]);
-}
+const { check, mustReject, report } = suite("crypto.js", 63);
 
 // ---------------------------------------------------------------------
 // The shape of the export itself
@@ -659,18 +626,4 @@ await mustReject("a mangled recipient is refused before encrypting",
 
 // ---------------------------------------------------------------------
 
-for (const [ok, label, note] of results) {
-  console.log(`${ok ? "pass" : "FAIL"}  ${label.padEnd(50)} ${note}`);
-}
-
-if (failures) {
-  console.log(`\n${failures} FAILURE(S)`);
-  process.exit(1);
-}
-if (results.length !== EXPECTED) {
-  console.log(`\nran ${results.length} checks, expected ${EXPECTED} - a ` +
-    "check stopped running, or one was added without updating EXPECTED");
-  process.exit(1);
-}
-console.log(`\nall checks passed - ${results.length} checks`);
-process.exit(0);
+report();

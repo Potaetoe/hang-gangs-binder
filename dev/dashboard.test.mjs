@@ -11,6 +11,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { suite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -31,21 +32,13 @@ const {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-let failures = 0;
-const results = [];
-
-async function check(label, fn) {
-  let ok = false;
-  let note = "";
-  try {
-    ok = (await fn()) === true;
-    if (!ok) note = "returned false";
-  } catch (error) {
-    note = "threw: " + (error && error.message ? error.message : error);
-  }
-  if (!ok) failures++;
-  results.push([ok, label, note]);
-}
+/*
+ * The count is asserted rather than only printed. Aggregation is where a
+ * dashboard lies quietly, and a check that stops running here takes a
+ * silent wrong number with it - the same failure the arithmetic below is
+ * about, one level up. See dev/harness.mjs.
+ */
+const { check, report } = suite("dashboard.js", 115);
 
 /*
  * A row as entryFor() hands it to this file, carrying both identities.
@@ -1237,12 +1230,4 @@ await check("the floor is off for the keyholder, on for everyone else", () =>
 
 /* ------------------------------------------------------------------ */
 
-for (const [ok, label, note] of results) {
-  console.log((ok ? "  ok   " : "  FAIL ") + label + (note ? " - " + note : ""));
-}
-console.log(
-  failures === 0
-    ? "\ndashboard.js OK - " + results.length + " checks"
-    : "\ndashboard.js FAILED " + failures + " of " + results.length + " checks");
-
-process.exit(failures === 0 ? 0 : 1);
+report();

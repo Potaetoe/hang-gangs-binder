@@ -4,6 +4,7 @@
  * pattern used for ui.js without teaching the product about a test runner.
  */
 import { readFile } from "node:fs/promises";
+import { suite } from "./harness.mjs";
 
 const sessionSource = await readFile(
   new URL("../apps/web/session.js", import.meta.url), "utf8");
@@ -12,19 +13,10 @@ const authSource = await readFile(
 const formSource = await readFile(
   new URL("../apps/web/form.js", import.meta.url), "utf8");
 
-let failures = 0;
-let performed = 0;
-
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const EXPECTED = 35;
-
-function check(label, condition) {
-  performed++;
-  if (!condition) failures++;
-  console.log(condition ? "pass " : "FAIL ", label);
-}
+const { check, report } = suite("session/auth", 35);
 
 const values = new Map();
 globalThis.sessionStorage = {
@@ -320,14 +312,4 @@ check("submit.js borrows that key rather than declaring a second copy",
   !/"hgb-submit-prefill"/.test(submitSource) &&
   /BinderSignOut|SignOut\.prefillKey/.test(submitSource));
 
-if (failures) {
-  console.error(`\nsession/auth FAILED ${failures} check(s)`);
-  process.exit(1);
-}
-if (performed !== EXPECTED) {
-  console.error(`\nsession/auth ran ${performed} checks, expected ` +
-    `${EXPECTED} - a check stopped running, or one was added without ` +
-    "updating EXPECTED");
-  process.exit(1);
-}
-console.log(`\nsession/auth OK - ${performed} checks`);
+report();

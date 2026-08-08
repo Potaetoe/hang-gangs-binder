@@ -17,6 +17,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { suite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -33,21 +34,13 @@ const { build, crc32, columnName, escapeXml, cellXml, sheetXml } =
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-let failures = 0;
-const results = [];
-
-async function check(label, fn) {
-  let ok = false;
-  let note = "";
-  try {
-    ok = (await fn()) === true;
-    if (!ok) note = "returned false";
-  } catch (error) {
-    note = "threw: " + (error && error.message ? error.message : error);
-  }
-  if (!ok) failures++;
-  results.push([ok, label, note]);
-}
+/*
+ * The count is asserted rather than only printed. A workbook that opens
+ * is the whole claim this file makes, and the checks that prove it are
+ * one reader loop away from being unreachable - so the number of them
+ * that ran is part of the claim. See dev/harness.mjs.
+ */
+const { check, report } = suite("xlsx.js", 30);
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -322,12 +315,4 @@ await check("an empty export is still a valid workbook", () => {
 
 /* ------------------------------------------------------------------ */
 
-for (const [ok, label, note] of results) {
-  console.log((ok ? "  ok   " : "  FAIL ") + label + (note ? " - " + note : ""));
-}
-console.log(
-  failures === 0
-    ? "\nxlsx.js OK - " + results.length + " checks"
-    : "\nxlsx.js FAILED " + failures + " of " + results.length + " checks");
-
-process.exit(failures === 0 ? 0 : 1);
+report();

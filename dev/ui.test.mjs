@@ -7,6 +7,7 @@
  * guard, visibility behavior, or the no-network boundary.
  */
 import { readFile } from "node:fs/promises";
+import { suite } from "./harness.mjs";
 
 const sourcePath = new URL("../apps/web/ui.js", import.meta.url);
 const source = await readFile(sourcePath, "utf8");
@@ -34,11 +35,15 @@ globalThis.document = {
 await import("data:text/javascript," + encodeURIComponent(source));
 const UI = globalThis.BinderUI;
 
-let failures = 0;
-function check(label, condition) {
-  if (!condition) failures++;
-  console.log(condition ? "pass " : "FAIL ", label);
-}
+/*
+ * The count is asserted, not merely printed. A printed number is a claim
+ * nobody reads twice, and it drifts from the run it describes without
+ * anything going red; a number the run compares against is what keeps a
+ * check from disappearing behind a rename or an early return and leaving
+ * a confident summary over the checks that still reached. See
+ * dev/harness.mjs.
+ */
+const { check, report } = suite("ui.js", 28);
 
 check("the shipped file exposes one frozen helper object",
   UI && Object.isFrozen(UI));
@@ -185,8 +190,4 @@ check("the page is filled from the configured key at runtime",
 check("the sign-in page does not gain the fingerprint",
   !/key-fingerprint/.test(signInSource));
 
-if (failures) {
-  console.error(`\nui.js FAILED ${failures} check(s)`);
-  process.exit(1);
-}
-console.log("\nui.js OK - 27 checks");
+report();
