@@ -1,0 +1,18 @@
+{
+  "project": "Hang Gang's Binder",
+  "purpose": "THROWAWAY TEST KEY. Generated for dev/crypto.test.mjs and committed on purpose - it protects nothing and opens nothing real. This one stands in for the SECOND recipient of a version 2 row, the submitting member's own device key; dev/test-key.json stands in for the keyholder. A real member key is generated in the member's browser, is non-extractable, and could not be written into a file like this one even deliberately.",
+  "curve": "P-256",
+  "created": "2026-08-08T00:00:00.000Z",
+  "publicKey": "BJkSADOxVP2NxSzyV/StVhmLc2i752jDCLfdEhbp3zkNWmuZFgh+ai9REtSVy6DTChAn257opdq3oUhkJUGpLTI=",
+  "privateKey": {
+    "key_ops": [
+      "deriveBits"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "mRIAM7FU_Y3FLPJX9K1WGYtzaLvnaMMIt90SFunfOQ0",
+    "y": "WmuZFgh-ai9REtSVy6DTChAn257opdq3oUhkJUGpLTI",
+    "crv": "P-256",
+    "d": "hSNaJWhN6kHlpvEogtUOfvi5ToH9ttYZycOww7cyEdU"
+  }
+}

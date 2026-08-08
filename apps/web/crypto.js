@@ -10,7 +10,15 @@
  * one until export day.
  *
  *   const blob = await BinderCrypto.encrypt(record, BINDER_CONFIG.publicKey);
+ *   const blob = await BinderCrypto.encryptTo(record, [keyholder, member]);
  *   const record = await BinderCrypto.decrypt(blob, keyFileText);
+ *
+ * Two writers and one reader, deliberately. `encrypt` seals to one
+ * recipient in format version 1; `encryptTo` seals to up to four in
+ * version 2; `decrypt` reads both, because rows outlive the code that
+ * wrote them and the database holds version 1 rows that nobody can
+ * regenerate. Two entry points rather than one overloaded one, so a
+ * caller cannot produce the wrong format by passing the wrong shape.
  *
  * The scheme is ECIES, composed from primitives the browser already
  * ships - no library, no CDN, nothing vendored. See DESIGN.md,
@@ -33,12 +41,47 @@
  *   [66..77]   the AES-GCM nonce
  *   [78..]     ciphertext, with its 16-byte tag
  *
- * The version byte is here so a later format can be introduced without
- * orphaning what is already stored: rows outlive the code that wrote
- * them, and by the time a change is wanted the database will hold blobs
- * nobody can regenerate. The first three fields are authenticated as
+ * The version byte is what lets a second format exist without orphaning
+ * what is already stored. The first three fields are authenticated as
  * additional data, so none of them can be altered in the database
  * without the tag failing.
+ *
+ * Version 2 seals one record to several recipients at once - the
+ * keyholder and the submitting member's own device key - so a member
+ * can read their own history. One record cannot be sealed twice to two
+ * keys and stay one row, so the record is encrypted once under a random
+ * content key and that key is wrapped separately to each recipient:
+ *
+ *   [0]                      format version, 2
+ *   [1]                      recipient count N, 1 to 4
+ *   [2 .. 2+125N)            N recipient blocks, 125 bytes each:
+ *      [+0  .. +65)            ephemeral public key, raw P-256 point
+ *      [+65 .. +77)            the nonce that wraps the content key
+ *      [+77 .. +125)           the wrapped content key: 32 bytes + tag
+ *   [2+125N .. 14+125N)      the content nonce
+ *   [14+125N ..]             ciphertext of the record, with its tag
+ *
+ * Every block is a fixed 125 bytes and there are no length fields, so
+ * there is no length field to get wrong: `2 + 125N + 12 + 16` is
+ * checkable against the blob's own length before a byte is parsed.
+ *
+ * Each block carries its OWN ephemeral key rather than sharing one
+ * across the row. That is what makes a block self-contained - a reader
+ * derives from block bytes alone, and a later re-seal can mint a block
+ * for a new device without touching the others - and it is what
+ * separates the two wrapping keys, since two ephemeral points against
+ * two recipients give two unrelated shared secrets. Nothing in a block
+ * names its recipient: a key id beside the ciphertext would answer "how
+ * many devices has this account used, and when did they change" against
+ * a breached database, so a reader tries each block and keeps the one
+ * whose tag verifies. Four unwraps is microseconds; the identifier
+ * would be permanent.
+ *
+ * Everything from byte 0 through the content nonce is the body's
+ * additional data, so no block can be added, removed, reordered or
+ * edited in the database without the body's tag failing - version 1's
+ * property, held. The consequence for whoever adds a recipient later:
+ * a row is re-sealed, not appended to. Bytes cannot be bolted on.
  *
  * Standard base64, no line breaks: server/worker.js rejects anything
  * else, and a URL-safe alphabet here would fail at the endpoint rather
@@ -57,10 +100,30 @@
   // this number. See the header comment.
   const VERSION = 1;
 
+  // What encryptTo writes. `decrypt` reads both, and neither number
+  // changes: the database holds rows in each.
+  const ENVELOPE_VERSION = 2;
+
   const POINT_BYTES = 65;   // uncompressed P-256 point: 0x04 ‖ x ‖ y
   const IV_BYTES = 12;      // what AES-GCM is specified for
   const TAG_BYTES = 16;
   const HEADER_BYTES = 1 + POINT_BYTES + IV_BYTES;
+
+  const KEY_BYTES = 32;     // AES-256
+
+  // Version byte and recipient count, then fixed-size blocks. These are
+  // the format, not a tuning knob - see the header comment for the
+  // layout they describe.
+  const ENVELOPE_PREFIX = 2;
+  const BLOCK_BYTES = POINT_BYTES + IV_BYTES + KEY_BYTES + TAG_BYTES;
+
+  // A ceiling rather than a limitation. One byte holds the count, so
+  // the format could carry 255; four is what a row is *allowed* to
+  // carry, which caps how long a reader spends trying blocks that are
+  // not theirs and makes a corrupt count fail loudly instead of turning
+  // into a long walk through garbage. Raising it is a format decision,
+  // so it lives here beside the version bytes.
+  const MAX_RECIPIENTS = 4;
 
   // Mixed into the key derivation so the key is bound to this scheme and
   // to this submission's throwaway public key. Two ciphertexts can no
@@ -69,6 +132,23 @@
   // silently makes every stored row undecryptable; it is part of the
   // format, not a comment.
   const LABEL = "hang-gangs-binder/1 ecies p-256 hkdf-sha256 aes-256-gcm";
+
+  // The same thing for version 2, and a different string is what stops
+  // a version 2 derivation colliding with a version 1 one against the
+  // same keys. It is part of the stored format on exactly the same
+  // terms: change a character and every version 2 row goes silently
+  // unreadable, which is what dev/fixture-v2.json exists to catch.
+  const ENVELOPE_LABEL =
+    "hang-gangs-binder/2 ecies p-256 hkdf-sha256 aes-256-gcm envelope";
+
+  // One sentence for both ways a version 2 row can refuse a reader: no
+  // block opened, and a block opened but the body did not. Which of the
+  // two happened is a fact about who else the row was sealed to, so the
+  // reader is told the same thing either way - and one constant is what
+  // stops the two copies drifting into telling them apart by accident.
+  const ENVELOPE_CLOSED = "none of this row's recipient blocks opened with " +
+    "this key. Either it was sealed to different keys, or it was altered " +
+    "after it was stored";
 
   // server/worker.js refuses anything larger. Failing here says which
   // field is too long while the submitter is still on the page, instead
@@ -181,6 +261,48 @@
         hash: "SHA-256",
         salt: new Uint8Array(0),
         info: concat([encoder.encode(LABEL), ephemeralRaw]),
+      },
+      material,
+      { name: "AES-GCM", length: 256 },
+      false,
+      usages
+    );
+  }
+
+  /*
+   * The same three steps for one version 2 recipient block, producing
+   * the key that wraps the content key rather than the key that
+   * encrypts the record.
+   *
+   * A near-copy of deriveAesKey on purpose, and it must stay one. These
+   * two functions serve two formats that are both live in the database,
+   * and a single parameterized helper would mean any edit to it changed
+   * the derivation of every stored row of both versions at once. The
+   * version 1 path's job from now on is to be boring; the way to keep
+   * it boring is to leave it alone. See DESIGN.md, "Encryption".
+   *
+   * The recipient's own public point is deliberately absent from the
+   * info. It would add nothing here - the ephemeral point is already
+   * unique per block, so the shared secrets are already unrelated - and
+   * a reader cannot produce it: importPrivateKey imports the private
+   * half non-extractable, which is what lets admin.html hold a key over
+   * a thousand rows without that key being exportable from the page
+   * that also holds plaintext. A derivation needing it would force that
+   * property away.
+   */
+  async function deriveWrapKey(privateKey, publicKey, ephemeralRaw, usages) {
+    const shared = await subtle().deriveBits(
+      { name: "ECDH", public: publicKey }, privateKey, 256);
+
+    const material = await subtle().importKey(
+      "raw", shared, "HKDF", false, ["deriveKey"]);
+
+    return subtle().deriveKey(
+      {
+        name: "HKDF",
+        hash: "SHA-256",
+        salt: new Uint8Array(0),
+        info: concat([encoder.encode(ENVELOPE_LABEL), ephemeralRaw]),
       },
       material,
       { name: "AES-GCM", length: 256 },
@@ -308,20 +430,241 @@
   }
 
   /*
+   * The recipients of one version 2 row, as raw points, in the order
+   * given. The raw form is what makes a duplicate detectable, and a
+   * duplicate is worth refusing: a page that seals to the keyholder
+   * twice - because the member key it asked for came back as the
+   * configured one - writes a row that looks dual-sealed, opens for
+   * nobody new, and cannot be told apart from a correct row by anything
+   * downstream. Loud here is the only place it can be loud.
+   */
+  async function envelopeRecipients(publicKeys) {
+    const given = Array.isArray(publicKeys) ? publicKeys : [publicKeys];
+    if (given.length < 1) {
+      throw new Error("a submission needs at least one recipient - with " +
+        "none, nothing that comes back could ever be opened");
+    }
+    if (given.length > MAX_RECIPIENTS) {
+      throw new Error("this format carries at most " + MAX_RECIPIENTS +
+        " recipients and " + given.length + " were given");
+    }
+
+    const recipients = [];
+    const seen = [];
+    for (const value of given) {
+      const key = await asPublicKey(value);
+      let raw;
+      try {
+        raw = new Uint8Array(await subtle().exportKey("raw", key));
+      } catch (e) {
+        throw new Error("one of these recipient keys cannot be read back as " +
+          "a point, so it cannot be sealed to - pass the base64 public key " +
+          "or a key imported from one");
+      }
+      const seal = toBase64(raw);
+      if (seen.indexOf(seal) !== -1) {
+        throw new Error("the same recipient was given twice. A row sealed " +
+          "twice to one key opens for nobody it did not already open for, " +
+          "and reads as though it had two recipients");
+      }
+      seen.push(seal);
+      recipients.push(key);
+    }
+    return recipients;
+  }
+
+  /*
+   * A record in, one base64 string out, readable by every recipient and
+   * by nobody else. The record is encrypted once under a content key
+   * this function invents and drops; each recipient gets that content
+   * key wrapped to them in a block of their own.
+   *
+   * No page calls this yet - the form still writes version 1 rows
+   * through `encrypt` above, and the slice that switches it over is its
+   * own change. See #85.
+   */
+  async function encryptTo(record, publicKeys) {
+    const recipients = await envelopeRecipients(publicKeys);
+    const count = recipients.length;
+
+    // Raw bytes rather than a generated CryptoKey, because the bytes
+    // are what gets wrapped. Imported non-extractable below, so the key
+    // that encrypts the record is never exportable from the page.
+    const contentKeyBytes = root.crypto.getRandomValues(
+      new Uint8Array(KEY_BYTES));
+
+    const blocks = [];
+    for (const recipient of recipients) {
+      const ephemeral = await subtle().generateKey(
+        { name: "ECDH", namedCurve: CURVE }, true, ["deriveBits"]);
+      const ephemeralRaw = new Uint8Array(
+        await subtle().exportKey("raw", ephemeral.publicKey));
+
+      const wrapKey = await deriveWrapKey(
+        ephemeral.privateKey, recipient, ephemeralRaw, ["encrypt"]);
+
+      const wrapIv = root.crypto.getRandomValues(new Uint8Array(IV_BYTES));
+
+      // The version, the count and this block's own point: everything
+      // about the block a reader can check before it has opened
+      // anything. The rest of the header cannot go here, because the
+      // rest of the header is what this line is producing.
+      const wrapAad = concat([
+        Uint8Array.of(ENVELOPE_VERSION, count), ephemeralRaw]);
+
+      const wrapped = new Uint8Array(await subtle().encrypt(
+        { name: "AES-GCM", iv: wrapIv, additionalData: wrapAad,
+          tagLength: 128 },
+        wrapKey,
+        contentKeyBytes
+      ));
+
+      blocks.push(concat([ephemeralRaw, wrapIv, wrapped]));
+    }
+
+    const iv = root.crypto.getRandomValues(new Uint8Array(IV_BYTES));
+    const header = concat(
+      [Uint8Array.of(ENVELOPE_VERSION, count)].concat(blocks, [iv]));
+
+    const contentKey = await subtle().importKey(
+      "raw", contentKeyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+
+    const sealed = new Uint8Array(await subtle().encrypt(
+      { name: "AES-GCM", iv: iv, additionalData: header, tagLength: 128 },
+      contentKey,
+      encoder.encode(JSON.stringify(record))
+    ));
+
+    const blob = toBase64(concat([header, sealed]));
+    if (blob.length > MAX_BASE64) {
+      throw new Error("this submission is too long to store - something in " +
+        "the form holds far more text than it should");
+    }
+    return blob;
+  }
+
+  /*
+   * One version 2 row back to its record, for whichever recipient's key
+   * is presented.
+   *
+   * Blocks are tried in order and the first one that opens wins, which
+   * is what "no key id in the format" costs: a reader cannot know which
+   * block is theirs until they have tried it. A block that cannot even
+   * be parsed - a point knocked off the curve by a flipped bit - is
+   * skipped rather than fatal, because it may belong to somebody else
+   * and the reader's own block may be one block further on.
+   */
+  async function decryptEnvelope(bytes, privateKey) {
+    // Before the count byte is read, not after. A row shorter than the
+    // smallest possible one leaves `bytes[1]` undefined, and undefined
+    // compares false against every bound below - so without this the
+    // shortest rows fall all the way through to "no block opened",
+    // which tells whoever is reading it on export day that they hold
+    // the wrong key for a row that is simply damaged.
+    if (bytes.length < ENVELOPE_PREFIX + BLOCK_BYTES + IV_BYTES + TAG_BYTES) {
+      throw new Error("this row is too short to be a submission with even " +
+        "one recipient - it was truncated somewhere between the form and " +
+        "here");
+    }
+
+    const count = bytes[1];
+    if (count < 1 || count > MAX_RECIPIENTS) {
+      throw new Error("this row says it holds " + count + " recipient " +
+        "blocks, and this format holds between 1 and " + MAX_RECIPIENTS +
+        ". It is corrupt");
+    }
+
+    const headerBytes = ENVELOPE_PREFIX + (BLOCK_BYTES * count) + IV_BYTES;
+    if (bytes.length < headerBytes + TAG_BYTES) {
+      throw new Error("this row is too short to be a submission with " +
+        count + " recipients - it was truncated somewhere between the form " +
+        "and here");
+    }
+
+    const header = bytes.slice(0, headerBytes);
+    const iv = bytes.slice(headerBytes - IV_BYTES, headerBytes);
+    const sealed = bytes.slice(headerBytes);
+
+    // Outside the loop, so that a key file which is damaged, of the
+    // wrong curve, or the public half by mistake still says exactly
+    // what is wrong with it instead of being swallowed as one more
+    // block that did not open.
+    const reader = await asPrivateKey(privateKey);
+
+    let contentKeyBytes = null;
+    for (let index = 0; index < count && !contentKeyBytes; index++) {
+      const at = ENVELOPE_PREFIX + (BLOCK_BYTES * index);
+      const ephemeralRaw = bytes.slice(at, at + POINT_BYTES);
+      const wrapIv = bytes.slice(at + POINT_BYTES, at + POINT_BYTES + IV_BYTES);
+      const wrapped = bytes.slice(at + POINT_BYTES + IV_BYTES, at + BLOCK_BYTES);
+
+      try {
+        const ephemeralPublic = await subtle().importKey(
+          "raw", ephemeralRaw, { name: "ECDH", namedCurve: CURVE }, true, []);
+        const wrapKey = await deriveWrapKey(
+          reader, ephemeralPublic, ephemeralRaw, ["decrypt"]);
+        const wrapAad = concat([
+          bytes.slice(0, ENVELOPE_PREFIX), ephemeralRaw]);
+
+        contentKeyBytes = new Uint8Array(await subtle().decrypt(
+          { name: "AES-GCM", iv: wrapIv, additionalData: wrapAad,
+            tagLength: 128 },
+          wrapKey,
+          wrapped
+        ));
+      } catch (e) {
+        contentKeyBytes = null;
+      }
+    }
+
+    if (!contentKeyBytes) {
+      throw new Error(ENVELOPE_CLOSED);
+    }
+
+    let plaintext;
+    try {
+      const contentKey = await subtle().importKey(
+        "raw", contentKeyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+      plaintext = await subtle().decrypt(
+        { name: "AES-GCM", iv: iv, additionalData: header, tagLength: 128 },
+        contentKey,
+        sealed
+      );
+    } catch (e) {
+      throw new Error(ENVELOPE_CLOSED);
+    }
+
+    try {
+      return JSON.parse(decoder.decode(plaintext));
+    } catch (e) {
+      throw new Error("this row decrypted, but what came out is not a " +
+        "submission record");
+    }
+  }
+
+  /*
    * One stored row back to the record that produced it. Throws rather
    * than returning null on failure: at export time a row that cannot be
    * read is worth stopping on, not skipping quietly.
    */
   async function decrypt(blob, privateKey) {
     const bytes = fromBase64(blob);
+    // The version byte decides which decoder reads the rest, and
+    // everything below this line is the version 1 one. It gets no
+    // tidying and no sharing with the branch above: the database holds
+    // rows it is the only way to read.
+    if (bytes[0] === ENVELOPE_VERSION) {
+      return decryptEnvelope(bytes, privateKey);
+    }
     if (bytes.length < HEADER_BYTES + TAG_BYTES) {
       throw new Error("this row is too short to be a submission - it was " +
         "truncated somewhere between the form and here");
     }
     if (bytes[0] !== VERSION) {
       throw new Error("this row is in format version " + bytes[0] + ", and " +
-        "this page only understands version " + VERSION + ". It was written " +
-        "by a different version of the portal");
+        "this page understands versions " + VERSION + " and " +
+        ENVELOPE_VERSION + ". It was written by a different version of the " +
+        "portal");
     }
 
     const ephemeralRaw = bytes.slice(1, 1 + POINT_BYTES);
@@ -368,12 +711,15 @@
 
   root.BinderCrypto = {
     VERSION: VERSION,
+    ENVELOPE_VERSION: ENVELOPE_VERSION,
+    MAX_RECIPIENTS: MAX_RECIPIENTS,
     // The form calls this before showing itself, so an unusable browser
     // is a message rather than a dead button.
     unavailableReason: unavailableReason,
     importPublicKey: importPublicKey,
     importPrivateKey: importPrivateKey,
     encrypt: encrypt,
+    encryptTo: encryptTo,
     decrypt: decrypt,
   };
 })(globalThis);

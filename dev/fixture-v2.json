@@ -1,0 +1,29 @@
+{
+  "wroteWith": "apps/web/crypto.js, format version 2, 2026-08-08",
+  "doNotRegenerate": "If this stops decrypting, that is the test working: the format changed, and every version 2 row already in the database changed with it. Give the change a new version byte and teach decrypt to read all of them - do not rewrite this file to make a test pass. See dev/README.md.",
+  "generatedBy": "BinderCrypto.encryptTo(record, [test-key.json publicKey, test-member-key.json publicKey]), read back and verified with both private halves before it was written. Recipient block 0 is the keyholder, block 1 is the member; the suite's offset checks depend on that order.",
+  "keys": [
+    "test-key.json (keyholder)",
+    "test-member-key.json (member)"
+  ],
+  "blob": "AgIENFzZUSxfqPxfl16PCdwqQ42T7tpFglbOIZFt9UI4c1Hox8LZYGLKls/LcyD8HU4qXEFxSL1KvMWjC1DKeNrOPwUaic6+Vg5Zbo4fdmaNAbPrpyG4uNWt7DYmGR1kjt8XwoJGBwGfj2rfev7DI7+A/6A3O+CGb9P2+3o7XQRqwUM4YHgkouf+GhQ4iE2mjk8yovmD9nvj4CxZ4aMdCdWJcsqPSUfnqSwPY/DUXzhAev4L55emLR1sJKO4qgBMhGJGswTxS/gR8HyyZHuJVZ8bnLT7sPycK6AsiN6MgMx9Cjk4xbJUQYNt3OcjvbxtBaxqM4BRqDd3vtP5FCtJRGEl9iGsFkHk31p+aaHWPtKJEEeaWbZKChAGv+mJINlnEqTOEI7T6OX5VSlp+bExnAYP3+WKT8WlYKvmc/vqAXYZc3zoI11DQ91z7nDumNIrFdrpQEFN6ztgtMnLKYUXaGv15w7sKXxlSvN4Zwu+vJpYRTe1R+OYTC/GitLu6FHpGHhVuAUJoz8H7CjLcEBD26aDSLgx2rA5/xLeed9Ovq6P4WyXPQuxZrme0HUWgIUrChpR35Hn38USwxgIqSfKsSw0/lIQctZdwKTKgPk55uxv1cJxJwJw37srPb+RziDk5V5vdE5pYpIWdME1H8VwrEh1pZSgSfg0zHSPHseyW5719IPCJFjJH+y9l/CH1aAt9r1QEF+K3MUhF7+CxYYIytFMejvFDMChGuIxuB28fmACzaEtO7GiWwpd",
+  "record": {
+    "telegram": "testuser",
+    "weight_kg": 118.4,
+    "height_cm": 175,
+    "entered": {
+      "weight": "261",
+      "height": "5'9\"",
+      "units": "imperial"
+    },
+    "gender": "nonbinary",
+    "roles": [
+      "gainer",
+      "feedee"
+    ],
+    "country": "NZ",
+    "over18": true,
+    "submitted_at": "2026-08-04T21:00:00.000Z",
+    "note": "unicode check: café — 東京 — 🐷"
+  }
+}
