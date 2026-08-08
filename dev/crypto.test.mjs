@@ -33,7 +33,7 @@ const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 
 const src = await readFile(HERE("../apps/web/crypto.js"), "utf8");
 await import("data:text/javascript," + encodeURIComponent(src));
-const { encrypt, decrypt, importPrivateKey, importPublicKey } =
+const { encrypt, encryptTo, decrypt, importPrivateKey, importPublicKey } =
   globalThis.BinderCrypto;
 
 /*
@@ -43,6 +43,17 @@ const { encrypt, decrypt, importPrivateKey, importPublicKey } =
  * this repository - see DESIGN.md, "Key custody".
  */
 const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
+
+/*
+ * The second recipient of a version 2 row: throwaway in exactly the same
+ * way, standing in for a member's own device key while `keyFile` stands
+ * in for the keyholder. A real member key is generated inside the
+ * member's browser and is non-extractable, so no file can hold one -
+ * which is the property this stand-in cannot reproduce and the reason it
+ * is named a stand-in rather than an example.
+ */
+const memberKeyFile =
+  JSON.parse(await readFile(HERE("test-member-key.json"), "utf8"));
 
 /*
  * A ciphertext written by version 1 of the format, against the key
@@ -55,6 +66,22 @@ const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
  * Do not regenerate it to make a failing test pass. See dev/README.md.
  */
 const FIXTURE = JSON.parse(await readFile(HERE("fixture.json"), "utf8"));
+
+/*
+ * The same thing for version 2, and it carries its own copy of the
+ * record rather than borrowing FIXTURE's. Two frozen blobs need two
+ * frozen records: the day somebody changes what a submission looks
+ * like, a shared record would quietly redefine what these bytes are
+ * being asserted to contain, and both fixtures would agree with each
+ * other about the wrong answer.
+ *
+ * Generated once, against dev/test-key.json as the keyholder and
+ * dev/test-member-key.json as the member, by the encryptTo in
+ * apps/web/crypto.js. Its provenance line is inside the file. Do not
+ * regenerate it to make a failing test pass - the same rule and the
+ * same reason as version 1. See dev/README.md.
+ */
+const FIXTURE2 = JSON.parse(await readFile(HERE("fixture-v2.json"), "utf8"));
 
 /* What server/worker.js will accept: standard base64, nothing else. */
 const WORKER_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -81,6 +108,39 @@ function tamper(base64, at) {
   bytes[index] ^= 0x01;
   return base64Of(bytes);
 }
+
+/* Write one exact byte, where flipping a bit cannot reach the value the
+ * check needs - a version byte set to a *different valid* version, or a
+ * recipient count set to zero. */
+function setByte(base64, at, value) {
+  const bytes = bytesOf(base64);
+  bytes[at] = value;
+  return base64Of(bytes);
+}
+
+/*
+ * Offsets into a version 2 blob, spelled out here rather than imported
+ * from the module under test. A test that asks the implementation where
+ * its own fields are cannot notice the implementation moving them,
+ * which is the whole failure the committed fixtures exist to catch.
+ * apps/web/crypto.js states the layout these come from.
+ */
+const V2 = {
+  version: 0,
+  count: 1,
+  blocks: 2,
+  block: 125,
+  point: 0,
+  wrapNonce: 65,
+  wrappedKey: 77,
+};
+
+/* Where the content nonce starts in a blob carrying `count` blocks. */
+const contentNonceAt = (count) => V2.blocks + V2.block * count;
+
+/* A byte inside recipient block `index`, `offset` into that block. */
+const blockByteAt = (index, offset) =>
+  V2.blocks + V2.block * index + offset;
 
 let failures = 0;
 const results = [];
@@ -129,6 +189,32 @@ await check("the fixture's unicode survives byte for byte", async () => {
 });
 
 // ---------------------------------------------------------------------
+// The two-recipient format, as already stored
+//
+// Version 2 seals one record to two keys at once. Both of the next two
+// checks read the *same* frozen bytes, and that is the point: a change
+// that opens the row for the keyholder while quietly locking the member
+// out passes every round trip below, because a round trip re-encrypts
+// with the same broken code. Only a blob nobody can regenerate notices.
+// ---------------------------------------------------------------------
+
+await check("a fixture from version 2 decrypts for the keyholder", async () =>
+  same(await decrypt(FIXTURE2.blob, keyFile), FIXTURE2.record));
+
+await check("the same version 2 fixture decrypts for the member", async () =>
+  same(await decrypt(FIXTURE2.blob, memberKeyFile), FIXTURE2.record));
+
+await check("the version 2 fixture's unicode survives byte for byte",
+  async () => {
+    const out = await decrypt(FIXTURE2.blob, memberKeyFile);
+    return out.note === FIXTURE2.record.note;
+  });
+
+await check("the version 2 fixture says it is version 2", async () =>
+  bytesOf(FIXTURE2.blob)[V2.version] === 2 &&
+  bytesOf(FIXTURE2.blob)[V2.count] === 2);
+
+// ---------------------------------------------------------------------
 // A fresh submission
 // ---------------------------------------------------------------------
 
@@ -160,6 +246,111 @@ await check("a long record round-trips", async () => {
   const record = { ...FIXTURE.record, note: "x".repeat(4000) };
   return same(await decrypt(await encrypt(record, keyFile.publicKey), keyFile),
     record);
+});
+
+// ---------------------------------------------------------------------
+// A fresh two-recipient submission
+// ---------------------------------------------------------------------
+
+await check("encryptTo emits format version 2", async () => {
+  const blob = await encryptTo(FIXTURE.record,
+    [keyFile.publicKey, memberKeyFile.publicKey]);
+  return bytesOf(blob)[V2.version] === 2;
+});
+
+await check("encrypt still emits format version 1", async () => {
+  // The submit path calls `encrypt` and will keep calling it until the
+  // slice that switches pages over. A change here is a change to what
+  // every live row looks like, so it is asserted rather than assumed.
+  const blob = await encrypt(FIXTURE.record, keyFile.publicKey);
+  return bytesOf(blob)[V2.version] === 1;
+});
+
+await check("a two-recipient record round-trips for both keys", async () => {
+  const blob = await encryptTo(FIXTURE.record,
+    [keyFile.publicKey, memberKeyFile.publicKey]);
+  return same(await decrypt(blob, keyFile), FIXTURE.record) &&
+    same(await decrypt(blob, memberKeyFile), FIXTURE.record);
+});
+
+await check("recipient order does not decide who can read", async () => {
+  // A reader tries every block, so neither position is privileged.
+  // Were the first block the only one consulted, the member would read
+  // one ordering and the keyholder the other - and the export tool and
+  // the member's own page pass different orderings.
+  const blob = await encryptTo(FIXTURE.record,
+    [memberKeyFile.publicKey, keyFile.publicKey]);
+  return same(await decrypt(blob, keyFile), FIXTURE.record) &&
+    same(await decrypt(blob, memberKeyFile), FIXTURE.record);
+});
+
+await check("a one-recipient version 2 record round-trips", async () =>
+  same(await decrypt(await encryptTo(FIXTURE.record, [keyFile.publicKey]),
+    keyFile), FIXTURE.record));
+
+await check("a bare public key is accepted as one recipient", async () =>
+  // The fallback slice 4 needs: no member key, so the page seals to the
+  // keyholder alone rather than refusing to submit.
+  same(await decrypt(await encryptTo(FIXTURE.record, keyFile.publicKey),
+    keyFile), FIXTURE.record));
+
+await check("the version 2 blob is base64 the Worker accepts", async () => {
+  const blob = await encryptTo(FIXTURE.record,
+    [keyFile.publicKey, memberKeyFile.publicKey]);
+  return WORKER_BASE64.test(blob) && blob.length < 16 * 1024;
+});
+
+await check("the same record twice gives two different version 2 blobs",
+  async () => {
+    // Fresh ephemeral keys, a fresh content key and fresh nonces per
+    // submission. Were these equal the database would show which rows
+    // repeat which values, which is what encrypting is meant to hide.
+    const a = await encryptTo(FIXTURE.record,
+      [keyFile.publicKey, memberKeyFile.publicKey]);
+    const b = await encryptTo(FIXTURE.record,
+      [keyFile.publicKey, memberKeyFile.publicKey]);
+    return a !== b;
+  });
+
+await check("an empty record round-trips through version 2", async () =>
+  same(await decrypt(await encryptTo({},
+    [keyFile.publicKey, memberKeyFile.publicKey]), memberKeyFile), {}));
+
+await check("a long record round-trips through version 2", async () => {
+  const record = { ...FIXTURE.record, note: "x".repeat(4000) };
+  const blob = await encryptTo(record,
+    [keyFile.publicKey, memberKeyFile.publicKey]);
+  return same(await decrypt(blob, keyFile), record) &&
+    same(await decrypt(blob, memberKeyFile), record);
+});
+
+await check("an imported private key decrypts many version 2 rows",
+  async () => {
+    // admin.html imports once and loops. The import is non-extractable,
+    // so this is also the check that the version 2 reader never needs
+    // its own public half - if it did, this path could not exist and
+    // the whole page would have to hold an exportable private key.
+    const key = await importPrivateKey(keyFile);
+    const blobs = await Promise.all([1, 2, 3].map((n) =>
+      encryptTo({ n: n }, [keyFile.publicKey, memberKeyFile.publicKey])));
+    const out = await Promise.all(blobs.map((b) => decrypt(b, key)));
+    return same(out, [{ n: 1 }, { n: 2 }, { n: 3 }]);
+  });
+
+await check("an imported public key works as a recipient", async () => {
+  const key = await importPublicKey(memberKeyFile.publicKey);
+  const blob = await encryptTo({ ok: true }, [keyFile.publicKey, key]);
+  return same(await decrypt(blob, memberKeyFile), { ok: true });
+});
+
+await check("a version 2 row grows by one block per recipient", async () => {
+  // The layout is fixed-size on purpose: no length fields means no
+  // length field to get wrong, and a reader can check the blob's length
+  // against its recipient count before parsing anything.
+  const one = bytesOf(await encryptTo({}, [keyFile.publicKey])).length;
+  const two = bytesOf(await encryptTo({},
+    [keyFile.publicKey, memberKeyFile.publicKey])).length;
+  return two - one === V2.block;
 });
 
 // ---------------------------------------------------------------------
@@ -251,6 +442,98 @@ await mustReject("a mangled public key is refused before encrypting",
 
 await mustReject("something that is not a key file is refused",
   () => decrypt(FIXTURE.blob, "hunter2"), "not the key file");
+
+// ---------------------------------------------------------------------
+// Everything that must fail, version 2
+//
+// Every byte region of the frozen two-recipient blob gets a flipped
+// bit. A version 2 row has three regions version 1 does not - the
+// recipient count, the wrap nonces and the wrapped content keys - and
+// each is a place a change could be quietly wrong for one recipient
+// while the other still reads fine.
+// ---------------------------------------------------------------------
+
+await mustReject("a third key opens no block of a version 2 row",
+  // The refusal a non-recipient must get: clean, named, and saying
+  // nothing about which block was tried or how far it got.
+  () => decrypt(FIXTURE2.blob, other.privateKey), "recipient blocks");
+
+await mustReject("a flipped bit in the version 2 ciphertext is caught",
+  () => decrypt(tamper(FIXTURE2.blob, -1), keyFile), "altered");
+
+await mustReject("a flipped bit in the content nonce is caught",
+  // Authenticated as part of the header, so editing it in the database
+  // fails the tag rather than producing different plaintext.
+  () => decrypt(tamper(FIXTURE2.blob, contentNonceAt(2)), keyFile),
+  "altered");
+
+await mustReject("a flipped bit in the recipient count is caught",
+  // The count is sealed into every block's own additional data, so a
+  // row edited to claim a different number of recipients unwraps
+  // nothing - it fails before the body's tag ever gets a say.
+  () => decrypt(tamper(FIXTURE2.blob, V2.count), keyFile),
+  "recipient blocks");
+
+await mustReject("a version 2 row claiming no recipients is refused",
+  () => decrypt(setByte(FIXTURE2.blob, V2.count, 0), keyFile), "recipient");
+
+await mustReject("a version 2 row claiming more recipients than the format "
+  + "carries is refused",
+  () => decrypt(setByte(FIXTURE2.blob, V2.count, 9), keyFile), "recipient");
+
+await mustReject("a flipped bit in the keyholder's ephemeral point is caught",
+  // Lands off the curve, so that block cannot be tried at all. The
+  // keyholder's own block is the one damaged, so nothing opens for them.
+  () => decrypt(tamper(FIXTURE2.blob, blockByteAt(0, V2.point + 20)), keyFile),
+  "recipient blocks");
+
+await mustReject("a flipped bit in the keyholder's wrap nonce is caught",
+  () => decrypt(tamper(FIXTURE2.blob, blockByteAt(0, V2.wrapNonce)), keyFile),
+  "recipient blocks");
+
+await mustReject("a flipped bit in the keyholder's wrapped key is caught",
+  () => decrypt(tamper(FIXTURE2.blob, blockByteAt(0, V2.wrappedKey)), keyFile),
+  "recipient blocks");
+
+await mustReject("damage to the member's block also stops the keyholder",
+  // The whole header is the body's additional data, so a block a reader
+  // never needed is still a block they cannot have altered. Without
+  // this, a row could be edited to strip a recipient and still open.
+  () => decrypt(tamper(FIXTURE2.blob, blockByteAt(1, V2.wrappedKey)), keyFile),
+  "altered");
+
+await mustReject("a version 2 row read as version 1 is refused",
+  // What a decoder that switched on nothing would do. Byte 1 of a
+  // version 2 row is the recipient count, so version 1's reader takes a
+  // point that starts one byte early and rejects it as off-curve.
+  () => decrypt(setByte(FIXTURE2.blob, V2.version, 1), keyFile), "corrupt");
+
+await mustReject("a version this file does not know is refused by name",
+  () => decrypt(setByte(FIXTURE2.blob, V2.version, 3), keyFile), "version 3");
+
+await mustReject("a truncated version 2 row is refused",
+  () => decrypt(FIXTURE2.blob.slice(0, 120), keyFile), "truncated");
+
+await mustReject("a version 2 row with no recipients cannot be written",
+  () => encryptTo(FIXTURE.record, []), "at least one");
+
+await mustReject("more recipients than the format carries cannot be written",
+  () => encryptTo(FIXTURE.record, [keyFile.publicKey, memberKeyFile.publicKey,
+    keyFile.publicKey, memberKeyFile.publicKey, other.publicKey]),
+  "at most");
+
+await mustReject("the same recipient twice cannot be written",
+  // The shape of the bug this catches: the page seals to the keyholder
+  // twice because the member key it fetched came back as the config
+  // key. The row would look dual-sealed and open for nobody new, and
+  // nothing downstream could tell.
+  () => encryptTo(FIXTURE.record, [keyFile.publicKey, keyFile.publicKey]),
+  "same recipient");
+
+await mustReject("a mangled recipient is refused before encrypting",
+  () => encryptTo(FIXTURE.record,
+    [keyFile.publicKey, memberKeyFile.publicKey.slice(0, 40)]),
+  "uncompressed P-256 point");
 
 // ---------------------------------------------------------------------
 
