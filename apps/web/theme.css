@@ -1477,6 +1477,20 @@ a { color: var(--color-accent-text); }
     border-top: 0;
   }
 
+  /* The runner naming the section goes with the column it ran across.
+     In a row it is a second label for a line that already reads
+     "Signed in as ...", and its hairline has nothing left to rule off. */
+  .rail-session .runner { display: none; }
+
+  /* Two words that must not become two lines. The strip is the width
+     that makes a button shrink until "Sign out" wraps, and a wrapped
+     verb reads as two controls. */
+  .rail-signout {
+    white-space: nowrap;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
   .rail-themes { position: relative; }
 
   .theme-disclosure { display: inline-flex; }
