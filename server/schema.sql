@@ -63,6 +63,12 @@ CREATE INDEX IF NOT EXISTS submissions_account
 --
 -- Expired rows are cleared when one is looked up rather than on a
 -- schedule. The ordinary failure of a scheduled job is silence.
+--
+-- `expires_at` is not fixed at sign-in for every session: an admin row's
+-- deadline moves forward each time the session is used, and never past a
+-- cap derived from `created_at`. Anything reading this table that
+-- assumes expires_at = created_at + a constant will be wrong about admin
+-- rows - see DESIGN.md, "Sessions".
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,

@@ -875,5 +875,22 @@ await statusOf("the break-glass token still exports",
 check("and it moved no session's deadline",
   sessions.map((s) => s.expires_at).join("|") === deadlinesBefore);
 
+/*
+ * A row whose created_at will not parse still gets an answer. Sliding a
+ * deadline off it unguarded is `new Date(NaN).toISOString()`, which
+ * throws - so a single unreadable row would turn every admin request
+ * into a 500 rather than a refusal, and a crash is a worse way to find
+ * out than a short session. It falls back to the window and never to
+ * anything longer, the same failing-closed shape tokenMatches() carries
+ * for an unset secret.
+ */
+reset();
+const ODD_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
+rowWhere(true).created_at = "not a date";
+await statusOf("an admin row with an unreadable created_at still answers",
+  call("GET", "/export", { headers: bearer(ODD_ADMIN) }), 200);
+check("and falls back to the window rather than to anything longer",
+  near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
