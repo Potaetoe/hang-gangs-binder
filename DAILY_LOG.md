@@ -610,6 +610,55 @@ and closing a build-order step changes the build order, so it went on the
 issue as a recommendation. The label was fixed because a wrong label is wrong
 whoever fixes it; the close is a decision.
 
+### Closing the pass — step 9 closed, and a squashed contract commit rescued
+
+The owner took both decisions the audit had left open. Recorded here because
+one of them destroys evidence and the other ends a build step.
+
+**Step 9 (#10) is closed.** It landed distributed across #26, #34 and #41; the
+row-by-row evidence and the "what landed / what is left" note are on the issue.
+Nothing from its plan is outstanding, and the gate is two checks *ahead* of
+what it specified. **#6 (step 5) is now the only unclaimed, unblocked build
+step**, with #11 (step 10) correctly still blocked behind it.
+
+**`codex/issue-25-nav-and-ui` is deleted**, and the interesting part is what
+had to happen first. PR #31 was **squash**-merged on 2026-08-06 as `dd8c0826`,
+so the branch's two commits were never ancestors of `accounts` — deleting the
+branch makes them unreachable rather than merely tidying a pointer.
+
+`72c421c` lost nothing; `dd8c0826` carries its message essentially whole.
+**`622aeb3` was the one worth stopping for.** It is the contract commit, and
+its last paragraph is the red-first evidence, which the squash message does
+not contain anywhere:
+
+> Both contracts were run against the accounts snapshot before implementation:
+> ui.test failed the arity assertion and check_web reported all five missing
+> routes.
+
+Its two contracts, for the same reason: `checkedValue`'s scope argument was
+dropped rather than kept as protection every caller bypassed, and navigation
+equality alone was found to accept five identically incomplete menus, so an
+explicit `index.html` route is required on every page — a signed-out visitor
+must not be strandable away from the only page that mints a session.
+
+**This is `AGENTS.md`'s squash rule collecting its own debt.** Later slices are
+rebase-merged deliberately, because *"squashing collapses the one place a
+future reader can see that the test went in red first."* #31 predates that
+decision, which is exactly why its evidence was the fragile kind — the rule
+was written after the commit it would have protected.
+
+**Copied here rather than preserved with a tag.** The repository uses no tags,
+and a ref existing only to keep a message alive is a worse record than the
+message written where readers already look. The ordering was the real
+precaution: this entry merged *before* the branch was deleted, so the record
+was durable before its source went away.
+
+The general form, and it is the third instance today of the same shape: **a
+cleanup that is safe for the current tree can still be destructive to the
+record.** `git branch --merged` would not have listed this branch, and the
+content diff makes it look thoroughly superseded — both true, and neither says
+anything about whether the commit messages are recoverable.
+
 ---
 
 ## 2026-08-06
