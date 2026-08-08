@@ -164,6 +164,15 @@ WEB = os.path.join(REPO, "apps", "web")
 # docstring describes now applies to a much smaller share of each total
 # than it did, because only the text part of each page moves between
 # zlib-ng and stock zlib.
+#
+# admin.html alone then carries a further +3 KB gzipped for #70: the
+# export page keeps its imported key as a non-extractable CryptoKey in
+# IndexedDB, which is an open-read-write-delete layer, a verdict on what
+# it finds there, and the copy that tells the keyholder what storing it
+# does and does not buy. Its pin absorbs that without moving, and that is
+# a fact worth stating rather than a coincidence to lean on: the fonts
+# above are the reason there is room, so the next few kilobytes of script
+# on this page are the ones that will need the number raised.
 CEILINGS = {
     "404.html": 125500,
     "admin.html": 177100,
