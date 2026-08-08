@@ -366,6 +366,85 @@ deleted anything you no longer hold a right to; and the people
 submitting know who the keyholder is now — they handed their data to a
 person, not a website.
 
+## When the fingerprint alarm fires
+
+**`DESIGN.md`'s threat model builds one alarm, and this is what to do
+when it rings.** Anyone who can write to the repository or the Pages
+deployment swaps `publicKey` and every later submission encrypts to
+them, silently; the detection is a member comparing what `submit.html`
+displays against the fingerprint pinned in the Telegram group. Its
+entire output is a person saying "these do not match," and the order
+below is the part that is not obvious — several plausible first moves
+are wrong. Rotating first destroys the evidence of *which* key was
+substituted. Unpublishing the snapshot answers a leak that is not
+happening. And answering "ignore it, that was a rotation" is the
+failure "The keys" warns about from the other side.
+
+1. **Stop the writes first.** Every submission from here on is sealed
+   to whoever's key is on the page. The lever that does not run through
+   the repository — which is one of the two things possibly compromised
+   — is the Worker: in the Cloudflare dashboard, set `ALLOWED_ORIGINS`
+   to a value that does not include the site's origin, and every route
+   answers `Origin not allowed.` **Clearing it does not do this**; an
+   empty value falls back to the defaults compiled into `worker.js`,
+   and the live origin is one of them. This stops sign-in and the
+   members' dashboard too, which is the intended shape: a visible stop
+   beats a silent one. **Owner only** — an admin id does not reach the
+   dashboard. Two consequences to expect: your own break-glass `curl`
+   in "Publishing and retracting the dashboard" must now send the new
+   origin, and the next `wrangler deploy` puts the old value back,
+   because `deploy` applies `[vars]` over the dashboard's.
+2. **Capture what you are looking at, before touching anything.** The
+   value `submit.html` is showing, the text of the pinned message, and
+   the time. A screenshot is enough. Step 6 overwrites the only record
+   of which key was substituted. **Anyone.**
+3. **Verify against the served file, not the source.** The site and the
+   repository deploy independently and can disagree — that is why this
+   step exists at all — so read what a browser actually gets:
+
+   ```bash
+   curl -s https://potaetoe.github.io/hang-gangs-binder/config.js | grep publicKey
+   ```
+
+   The fingerprint on the page is the leading characters of that value;
+   `KEY_FINGERPRINT_LENGTH` in `apps/web/ui.js` is how many. Now
+   compare three things: the served value, the literal pinned as
+   `PRODUCTION_KEY` in `tools/check_web.py`, and the pinned Telegram
+   message. **Anyone** — none of this needs a credential.
+4. **Read the disagreement; it names the incident.** The gate refuses a
+   `config.js` whose production arm does not carry `PRODUCTION_KEY`, so
+   a mismatch that reached the live site already says something about
+   how it got there:
+
+   | What disagrees | What it means |
+   | --- | --- |
+   | served ≠ repository, repository = `check_web.py` | the deployment does not match `main` — something was published the gate never saw |
+   | served = repository ≠ `check_web.py` | both literals moved together: the gate was edited or bypassed |
+   | all three agree, only the pinned message differs | **the likely false alarm** — a rotation that did not update the pin in the same sitting |
+
+5. **If it is the false alarm, fix the anchor rather than the alarm.**
+   Update the pinned message to the current fingerprint now and say the
+   key was rotated and when. Never answer with "ignore that": a member
+   taught once to ignore this has switched off the only detection the
+   design has. **Any group admin.**
+6. **If the swap is confirmed, rotate — and only now.** The procedure,
+   including the archive-not-destroy rule and the pinned message that
+   updates in the same sitting, is "The keys" above. **Keyholder.**
+   Before restoring writes, establish how the file changed:
+   `git log apps/web/config.js` and the Pages deployment history are
+   the two places to look, and if the repository shows nothing then the
+   repository was never the route and the deployment credentials are
+   what needs attention.
+7. **Tell the group in plain language.** Submissions made between the
+   swap and step 1 are sealed to somebody else's key: they cannot be
+   read, cannot be recovered, and cannot be re-sealed. Name the window
+   and say so. The people in it handed their data to a person rather
+   than to a website, and this is the moment that is true. **Anyone in
+   the group** can send it; the keyholder is who knows the window.
+8. **Restore writes last.** Put `ALLOWED_ORIGINS` back, then use the
+   probes in "Checking a deployment" and one real submission to confirm
+   the site works before saying it does. **Owner.**
+
 ## Getting back
 
 The site is a `git revert` — `apps/web` is the build, so reverting
