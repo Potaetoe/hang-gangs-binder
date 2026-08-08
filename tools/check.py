@@ -91,6 +91,13 @@ NODE_SUITES = [
     # least urgent. It is the only stage that exercises
     # dev/make-sample.mjs at all; #66 lived in that gap for weeks.
     ("sample generator still runs", "dev/make-sample.test.mjs"),
+    # The demo the owner drives before the cutover (#122). It is here
+    # rather than left to be run by hand because the way a demo fails is
+    # by drifting: the pages move and the harness keeps showing what it
+    # showed last month, which looks exactly like a demo that works.
+    # This stage is what notices - it binds a socket and drives the real
+    # mirror, so it is late in the list beside the other slow one.
+    ("drivable demo + its mirror", "dev/demo.test.mjs"),
 ]
 
 
