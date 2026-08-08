@@ -5,26 +5,33 @@ Run every check this project has, locally.
     python tools/check.py
 
 A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of fourteen remembered ones. It runs the two
-linters, the ten Node suites in dev/, the publishability check, and
-the suite that checks the publishability check, and exits non-zero if
-any of them fails:
+it?" one command instead of sixteen remembered ones. It runs the two
+linters, the ten Node suites in dev/, the publishability check, the
+deployment-config check, and the suite behind each of those two, and
+exits non-zero if any of them fails:
 
      1. apps/web is publishable (references resolve, no key-shaped
         content)
      2. check_web.py's own CSP parser and policy pin
-     3. eslint passes over the JavaScript
-     4. ruff passes over the Python
-     5. crypto.js round trips, and the v1 fixture still decrypts
-     6. form.js builds the record the way it always did
-     7. admin.js quotes CSV correctly and guards spreadsheet formulas
-     8. admin.js requires an admin session and keeps deletion state current
-     9. xlsx.js writes a ZIP that a reader can actually open
-    10. dashboard.js aggregates the rows correctly
-    11. public.js requires and sends a member session for the dashboard
-    12. ui.js keeps the shared DOM wiring and boot guard intact
-    13. session.js stores a valid tab session and auth.js hands it off
-    14. worker.js routes, validates and enforces CORS
+     3. server/ commits no member ids, dev sign-in secret or key
+     4. check_server.py's own vars parser and rules
+     5. eslint passes over the JavaScript
+     6. ruff passes over the Python
+     7. crypto.js round trips, and the v1 fixture still decrypts
+     8. form.js builds the record the way it always did
+     9. admin.js quotes CSV correctly and guards spreadsheet formulas
+    10. admin.js requires an admin session and keeps deletion state current
+    11. xlsx.js writes a ZIP that a reader can actually open
+    12. dashboard.js aggregates the rows correctly
+    13. public.js requires and sends a member session for the dashboard
+    14. ui.js keeps the shared DOM wiring and boot guard intact
+    15. session.js stores a valid tab session and auth.js hands it off
+    16. worker.js routes, validates and enforces CORS
+
+Checks 1 and 3 are siblings and not one check with two scopes, because
+the two directories are dangerous for opposite reasons: apps/web is
+copied verbatim to a public site, and server/ is the directory that gets
+run. See the docstring in tools/check_server.py.
 
 The linters are a gate, not a build. Nothing they run rewrites a file
 and apps/web is still copied verbatim to the published site; they refuse
@@ -157,6 +164,20 @@ def main():
     # rather than merely wrong.
     results.append(("check_web CSP parser + pin", run(
         "check_web CSP parser + pin", [sys.executable, "dev/check_web.test.py"]
+    )))
+
+    # server/ is checked separately from apps/web, not as a second scope
+    # inside it. #39 produced the reason: check_web.py is bounded to
+    # apps/web by construction, so a [vars] block publishing the group's
+    # numeric Telegram ids passed every check this gate had.
+    results.append(("server/ commits no ids or secrets", run(
+        "server/ commits no ids or secrets",
+        [sys.executable, "tools/check_server.py"]
+    )))
+
+    results.append(("check_server vars parser + rules", run(
+        "check_server vars parser + rules",
+        [sys.executable, "dev/check_server.test.py"]
     )))
 
     node = find_node()

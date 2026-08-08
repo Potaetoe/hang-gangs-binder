@@ -71,6 +71,27 @@ On `accounts`, not released. `main` stays at the last complete release.
   into `submit.html` fails it, reporting a length and a 12-character
   prefix rather than the literal, since the message goes into a CI log.
   #41.
+- **The gate now reads `server/` at all** — `tools/check_server.py`, wired
+  into `tools/check.py` as checks 3 and 4. It refuses a `[vars]` block
+  naming anything but `ALLOWED_ORIGINS`, an assigned `DEV_LOGIN_SECRET`
+  anywhere in the file, and key-shaped content anywhere under `server/`.
+  Until now `server/` was **not partially checked — it was entirely
+  unchecked**: `check_web.py` is bounded to `apps/web` by construction, so
+  #39 could put the four numeric id bindings back as plaintext `[vars]`
+  and watch all eleven checks pass. That commit would have published the
+  group's Telegram ids, and `ALWAYS_ALLOW_TELEGRAM_IDS` is the membership
+  oracle `DESIGN.md` argues the whole account-id design exists to prevent.
+  A **sibling** of `check_web.py` rather than a second scope inside it,
+  because the two directories are dangerous for opposite reasons — one is
+  copied verbatim to a public site, the other is the one that gets run.
+  An allowlist rather than a denylist of the three known names, which
+  would pass the day a fourth binding is added. **Both** `[vars]` and
+  `[env.dev.vars]` are read; a check seeing only the first passes a paste
+  into the second, and the file is in the same public repository either
+  way. `KEY_PATTERNS` is imported from `check_web` rather than copied, so
+  the two cannot drift. Verified by reproducing #39's exact four-binding
+  block against the real gate: three errors and `Not safe to push`, where
+  before it passed. #39.
 
 ### Data
 - **Production `submissions` was cleared** — build step 2, by the owner,
