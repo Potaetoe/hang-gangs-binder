@@ -90,12 +90,90 @@ in which a visitor can refill the table is open until step 5.
 Also: `wrangler d1 list` reports `num_tables: 0` for both databases while
 `sqlite_master` lists four. The list metric lags; do not read state off it.
 
+### Step 1, run for real — and the warning was wrong
+
+Rehearsed properly: dev reset to production's exact DDL, a row seeded so the
+destructive step had something to destroy, then the negative control first.
+
+**Running `schema.sql` against production's shape does not silently
+half-migrate.** It fails immediately — `no such column: account_id at offset
+66` — and leaves the database untouched. No `sessions` table appears. The
+half-migrated state this project has been afraid of for three days cannot
+occur.
+
+The cause is two lines below where everyone was looking. `CREATE TABLE IF NOT
+EXISTS submissions` does skip silently, and then
+`CREATE INDEX IF NOT EXISTS submissions_account ON submissions(account_id)`
+names a column that is not there and takes the run down before `sessions` is
+reached. **An index written for query performance is the thing that makes the
+migration fail loudly**, and nobody knew. It is now recorded as
+load-bearing, because the obvious tidy-up — dropping an index nobody queries
+— would manufacture the silent failure.
+
+Then the real sequence, which passed: new shape, both indexes, `sessions` and
+`snapshots`, seeded row gone. And the constraint proven rather than argued —
+an insert with no `account_id`, which is exactly what the **old** Worker
+sends, is refused with `NOT NULL constraint failed: submissions.account_id`.
+CUTOVER's central claim that the old Worker cannot insert after step 4 had
+been an inference until this line of output.
+
+### The dev Worker was stale, and would have failed the right test wrongly
+
+`hgbinderworker-dev` was behind `accounts` and missing #56's `accountId` on
+`GET /me`. UAT A3.3 and A3.4 test exactly that field, so Part A would have
+reported a prefill-scoping failure caused by the deployment rather than the
+code. Deployed with `--env dev`; production untouched at `2d3c73a5`, and
+dev's three secrets survived, which settles in practice that `deploy`
+preserves secrets.
+
+**The flag is the whole risk.** A bare `npx wrangler deploy` resolves to the
+top-level config, which is production — the one act this stage forbids. Dry
+run first and read the bindings back.
+
+### UAT A1 and A2, and the widget being less unknown than believed
+
+A1 passes in full, including the one that is easy to wave through: **zero
+requests to the Worker** from any signed-out page. Refusing before asking is
+the property; a request that merely earns a 401 has still announced you.
+
+A2 passes except A2.7. The count moved 0 → 1 on its own, which is the actual
+criterion — a count that only moves on reload would mean the panel was
+guessing rather than re-reading `/me`.
+
+**The widget is not as untestable as A7 claimed.** On localhost the CSP
+admits `telegram-widget.js`, the `oauth.telegram.org` iframe instantiates and
+paints, and nothing violates the policy. What renders inside is "Bot domain
+invalid" — Telegram refusing the origin, which is BotFather's binding and not
+our policy. So the two directives CUTOVER step 7 nominates as the first
+suspect are confirmed against the real third-party origin, and only the
+callback remains unproven. A7 narrowed accordingly.
+
+### #64, found by using the thing
+
+The owner submitted an entry, switched tabs, and found no form — the Received
+card replaces it one way and only a reload brings the form back. **Every
+automated check passes**, because `dev/submit.test.mjs` asserts the panes and
+this lives one level down inside a pane.
+
+Two things make it more than a papercut. The Received card's own text says
+"just fill the form again", promising the affordance the code removes — the
+same shape as #58, and worse here because a member reads it at the moment
+they might act on it. And it makes A2.7 unrunnable as written, so the check
+is recorded **blocked** rather than passed via an undocumented reload.
+
+Worth keeping: this was found by a person using the page, on the same
+afternoon that seventeen gate stages and every browser assertion went green.
+The rehearsal was justified by the migration and paid off in the UI.
+
 ### Where the cutover stands
 
-Step 0 done. Step 1 blocked on the dev reset above, and it is now a real
-rehearsal rather than a green no-op. Step 2's secrets confirmed twice, from
-two directions. **UAT Part A is still not performed** — that remains the
-largest gap between here and a deploy, and none of today's work touched it.
+Steps 0 and 1 **done**. Step 2's secrets confirmed twice from two directions.
+Step 3 still unprovable before step 8 — `ADMIN_TELEGRAM_IDS` existing is not
+it holding the right id.
+
+**UAT Part A is half-run.** A1 and A2 recorded; A3, A4, A5 and A6 not
+performed, and A6 is one of the two sections whose failure stops the cutover.
+That is now the largest gap between here and a deploy.
 
 ## 2026-08-07
 

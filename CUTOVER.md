@@ -157,11 +157,46 @@ deploy.
 are about to run for real, then submit a row through a local preview and read
 it back.
 
-**The trap this rehearsal exists to find:** `schema.sql` uses
-`CREATE TABLE IF NOT EXISTS`. Run it against a database that still has the old
-`submissions` and it **silently skips that table**, creates `sessions` beside
-an unmigrated one, and reports success. Nothing in `dev/` can see this. The
-failure surfaces on the first real submission, against `NOT NULL account_id`.
+**Done 2026-08-08, and it falsified the paragraph that used to be here.**
+
+The trap this rehearsal exists to find is `CREATE TABLE IF NOT EXISTS`: run
+`schema.sql` against a database that still has the old `submissions` and it
+skips that table. This file used to say it then "creates `sessions` beside an
+unmigrated one, and reports success", and that **the failure surfaces on the
+first real submission**. Rehearsed for real, all three are wrong:
+
+```
+no such column: account_id at offset 66: SQLITE_ERROR
+```
+
+It fails **immediately and loudly**, and leaves nothing behind — `submissions`
+unchanged with its row, and **no `sessions` table created**. There is no half
+migration to be stranded in.
+
+The reason is two lines below the one everybody was reading, and it is doing
+safety work nobody credited it with:
+
+```sql
+CREATE INDEX IF NOT EXISTS submissions_account ON submissions(account_id);
+```
+
+The table creation does skip silently. The index immediately after it names
+`account_id`, dies, and takes the run down before `sessions` is reached.
+**Do not remove that index as redundant** — deleting it would create the
+silent half-migration this document used to fear.
+
+**The real sequence then passed**, from production's exact starting state:
+`DROP TABLE submissions` and the whole of `schema.sql` produced the new shape
+with both indexes, `sessions` and `snapshots` present, and the seeded row
+destroyed. And the constraint bites as designed — an insert without an
+`account_id`, which is what the **old** Worker sends, is refused:
+
+```
+NOT NULL constraint failed: submissions.account_id
+```
+
+That is the first hard evidence for this document's central claim that from
+step 4 the old Worker cannot insert either. It was reasoning until now.
 
 > **Read this before running it — 2026-08-08.** As written, this rehearsal
 > passes without testing anything, because **the two databases are not in the
@@ -195,6 +230,19 @@ failure surfaces on the first real submission, against `NOT NULL account_id`.
 > 2026-08-08. Put a row in it, then run the real sequence — `DROP TABLE
 > submissions`, then the whole of `schema.sql` — and confirm the new shape
 > and the lost row. **Then** submit through a local preview and read it back.
+
+**The end-to-end half passed too**, 2026-08-08: the dev Worker was brought up
+to `accounts` with `npx wrangler deploy --env dev`, a member signed in through
+`POST /auth/dev`, and a real submission stored and read back. The row carried
+the session's own `account_id`, a server-set `received_at`, and 560 characters
+of ciphertext that matches none of the values typed into the form. The
+sessions table holds a 64-character SHA-256 and no usable token.
+
+> **`--env dev` is not optional.** A bare `npx wrangler deploy` resolves to
+> the top-level config, which is `hgbinderworker` — **production** — and doing
+> that before this sitting is the one thing `server/README.md`'s warning
+> exists to prevent. Dry-run first and read the bindings back: it should say
+> `hg_binder_db_dev` and the localhost origins.
 
 **Continue when:** a row submits and reads back under the new shape.
 **Back out:** free — it is the development database.

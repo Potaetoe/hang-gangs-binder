@@ -60,6 +60,46 @@ rather than by reasoning about it.
   both still hold. Noted as a reading rather than a guarantee — the window
   in which any visitor can refill the table stays open until step 5.
 
+### Deployed
+- **`hgbinderworker-dev` is up to date with `accounts`** (version
+  `006cf6a6`), by `npx wrangler deploy --env dev`. It had been behind since
+  2026-08-07 and was missing #56's `accountId` on `GET /me`, so UAT A3's
+  prefill-scoping checks would have failed for the wrong reason. Production
+  is untouched and still serves `2d3c73a5`; dev's three secrets survived the
+  deploy, which confirms in practice that `deploy` preserves secrets.
+
+### Verified
+- **`CUTOVER.md` step 1 is done, and it falsified its own warning.** Running
+  `schema.sql` against production's shape does **not** silently half-migrate.
+  It fails immediately with `no such column: account_id`, and leaves nothing
+  behind — no `sessions` table is created. The cause is
+  `CREATE INDEX ... ON submissions(account_id)` two lines below the
+  `CREATE TABLE IF NOT EXISTS` everyone was watching. **That index is
+  load-bearing safety**; removing it as redundant would create the silent
+  failure the document feared.
+- The real sequence passed from production's exact starting state, and
+  `NOT NULL constraint failed: submissions.account_id` now proves that the
+  old Worker cannot insert after step 4 — previously an inference.
+- End to end on dev: a dev sign-in minted a session, a submission stored, and
+  the row read back carrying the session's own `account_id`, a server-set
+  `received_at`, and ciphertext matching none of the submitted values.
+- **UAT Part A, sections A1 and A2, recorded in `UAT.md`.** A1 passes in full
+  — including A1.4, zero requests to the Worker from any signed-out page.
+  A2 passes except A2.7, which is blocked by #64.
+- **The widget's CSP is confirmed against the real origin.** On localhost the
+  policy admits `telegram-widget.js` and the `oauth.telegram.org` iframe, which
+  paints, with no `securitypolicyviolation`; the widget then shows "Bot domain
+  invalid" — the domain binding, not the policy. `UAT.md` A7 narrowed from
+  "the widget" to "the widget's callback".
+
+### Fixed
+- Nothing yet — but **#64 filed**: the Add entry tab is one-shot. After a
+  submission the Received card replaces the form and switching tabs never
+  brings it back, while that card's own copy says "just fill the form again".
+  Reported from use during the rehearsal; every automated check passes,
+  because the panes are asserted and the defect is one level down inside a
+  pane.
+
 ## Unreleased — 2026-08-07
 
 On `accounts`, not released. `main` stays at the last complete release.

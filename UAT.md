@@ -83,6 +83,13 @@ Sign in with `admin: false`, subject `alice`.
 | A2.6 | Look for a handle field | **There is none.** The handle comes from the session | While it was typed, a member could store somebody else's handle beside their own account id |
 | A2.7 | Submit again with a different weight | Second row; count 2 | Storage is append-only — repeats are the weight history, not an error |
 
+> **A2.7 cannot be run through the UI today — #64.** After a submission the
+> Received card replaces the form and never gives it back; switching tabs does
+> not restore it, and only a reload does. Record A2.7 as **blocked**, not as a
+> pass obtained by reloading. When #64 lands, this check should be runnable
+> exactly as written above — the fix is what makes the check honest, rather
+> than the check being reworded to describe the workaround.
+
 ### A3 · The device-local prefill, including the part that leaked
 
 | # | Do | Pass looks like | Why |
@@ -134,8 +141,19 @@ These are the checks whose failure is not visible from the page.
 
 State these as not performed rather than assuming them:
 
-- **The Telegram widget** — rendering, the callback, and the real CSP against
-  `telegram.org`. Impossible on localhost.
+- **The Telegram widget's callback.** Narrower than this section used to
+  claim, measured on localhost 2026-08-08. What *does* work here: the CSP
+  admits `telegram-widget.js` from `telegram.org` (`window.Telegram` is
+  defined), the `oauth.telegram.org` iframe instantiates and paints at
+  238×40, and **no `securitypolicyviolation` fires**. The widget then renders
+  **"Bot domain invalid"** — Telegram's own server refusing the localhost
+  origin, which is the domain binding and not the policy.
+
+  So the two directives `CUTOVER.md` step 7 names as the first suspect are
+  **confirmed against the real third-party origin**. What remains unproven is
+  only that the `potaetoe.github.io` binding yields a successful callback and
+  a minted session. If the widget fails to render live after this, the CSP is
+  a **less** likely cause than it was.
 - **A real numeric Telegram id.** A dev session has `telegramId: null`, so the
   admin-bootstrap path in `HANDOFF.md` cannot be rehearsed here.
 - **Anything about production data or secrets.**
@@ -203,16 +221,39 @@ members.
 Copy this and fill it in. **A check you did not run is recorded as not
 performed, never omitted** — that distinction is the whole value of the pass.
 
+**A partial run is recorded below. It is not a completed Part A** — A3, A4,
+A5 and A6 have not been performed, and A6 is one of the two sections whose
+failure stops the cutover.
+
 ```text
-Part A, run on:            <date>   against hgbinderworker-dev
-  A1 signed out            pass / fail / not performed
-  A2 member panel          …
-  A3 prefill and #56       …
-  A4 dashboard             …
-  A5 admin surface         …
-  A6 privacy               …
-  Console clean of CSP violations throughout:  yes / no
-  Not covered here: the widget, a real numeric id
+Part A, run on:            2026-08-08  against hgbinderworker-dev
+                           (Worker redeployed from `accounts` first - it was
+                           behind and missing #56's accountId on GET /me)
+  A1 signed out            PASS - all four
+                           A1.1 submit.html -> index.html, no form in the DOM
+                           A1.2 dashboard.html -> sign-in, nothing painted
+                           A1.3 admin.html -> sign-in, zero input fields
+                           A1.4 ZERO requests to the Worker on any of them
+  A2 member panel          PARTIAL
+                           A2.1 pass - two tabs, visible Sign out
+                           A2.2 pass - count 0 on a first run, from /me
+                           A2.3 pass - "No entries yet", not "Invalid Date"
+                           A2.4 pass - exactly one pane, never both or neither
+                           A2.5 pass - count moved 0 -> 1 without a reload
+                           A2.6 pass - no handle field on the form
+                           A2.7 BLOCKED - see #64
+  A3 prefill and #56       not performed
+  A4 dashboard             not performed
+  A5 admin surface         not performed
+  A6 privacy               not performed
+  Console clean of CSP violations throughout:  yes - no console output at all
+  Not covered here: a real numeric id, and the widget CALLBACK only - the
+  CSP and the widget's script and frame were confirmed, see A7
+
+Storage confirmed server-side the same day, which the checks above cannot see:
+  the stored row carried the session's own account_id, a server-set
+  received_at, and ciphertext matching none of the submitted values;
+  sessions holds a 64-char SHA-256 and no usable token.
 
 Part B, run on:            <date>   live
   B1 widget and sign-in    …
