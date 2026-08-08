@@ -42,7 +42,10 @@ Worker is actually answering, from fact rather than memory.
 member, so it cannot submit — there is no account for it to write to.
 Session lifetimes are constants in `server/worker.js` (member seven
 days, admin two hours — the admin session opens the whole corpus's
-ciphertext). The two admin `DELETE` routes are idempotent: deleting what
+ciphertext), and an admin session nobody is using stops working well
+before its cap: the idle window is a constant in the same file, and any
+authenticated request slides it. The two admin `DELETE` routes are
+idempotent: deleting what
 is not there succeeds, so a success does not prove a row existed.
 `DELETE /session` is not, and the difference is deliberate — a token
 resolving to no row is refused with 401 rather than thanked, because
@@ -275,8 +278,9 @@ its two factors.
    tab-scoped: closing the tab takes the credential with it,
    deliberately. It does not delete the session row — only
    `DELETE /session` does, and this page has no **Sign out** control to
-   send it yet (#81), so a tab closed on an admin session leaves that
-   row live at the endpoint for the rest of its two hours.
+   send it yet (#81), so a tab closed here leaves that row live at the
+   endpoint until it expires on its own — for a session nobody is using,
+   the idle window rather than the two-hour cap.
 2. Provide the **key file** — pasted or picked; read in the page, never
    uploaded.
 3. **Fetch and decrypt**, then download CSV, Excel or JSON. Below them:
