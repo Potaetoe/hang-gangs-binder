@@ -102,6 +102,11 @@ function makePage() {
     "add-entry-pane": makeElement("add-entry-pane", true),
     "member-entry-count": makeElement("member-entry-count"),
     "member-last-at": makeElement("member-last-at"),
+    // Starts hidden, as the markup does. A line that begins painted
+    // would let a page which never renders anything pass the check
+    // that it is on screen.
+    "member-telegram-id-line": makeElement("member-telegram-id-line", true),
+    "member-telegram-id": makeElement("member-telegram-id"),
     // Present so a check can read what the panel said, rather than
     // watching setStatus write into a null that swallows every message.
     "member-panel-status": makeElement("member-panel-status", true),
@@ -240,6 +245,7 @@ function authorization(request) {
 const panelIds = [
   "your-entries-tab", "add-entry-tab", "your-entries-pane",
   "add-entry-pane", "member-entry-count", "member-last-at", "sign-out",
+  "member-telegram-id-line", "member-telegram-id",
 ];
 check("submit.html declares the panel controls and loads its shipped module",
   panelIds.every((id) => submitHtml.includes(`id="${id}"`)) &&
@@ -266,6 +272,55 @@ check("the panel renders the route's exact count and last-submitted time",
   panel.elements["member-last-at"].dateTime === lastAt &&
   panel.elements["member-last-at"].textContent ===
     new Date(lastAt).toLocaleString());
+
+/*
+ * #58. The Worker returns the caller's own numeric id at sign-in for
+ * one stated purpose: somebody being made an admin has to put that id
+ * in ADMIN_TELEGRAM_IDS, and a page showing it is what keeps them from
+ * asking a third-party bot for it instead - which is how a real numeric
+ * id reaches somebody nobody here controls.
+ *
+ * The value arriving and no page drawing it is the entire defect, so
+ * what is asserted is that it PAINTS. `textContent` alone would pass on
+ * a line written into a permanently hidden element, which is the same
+ * amount of use to a first-time admin as not writing it at all.
+ */
+check("a signed-in member can read their own numeric id off the panel",
+  panel.elements["member-telegram-id"].textContent === "10" &&
+  isPainted(panel.elements["member-telegram-id-line"]));
+
+/*
+ * And where it comes from. The account summary has no business carrying
+ * a Telegram id and does not: the sign-in response is the only thing
+ * that ever saw it. A page that drew whatever /me happened to contain
+ * would be telling somebody which number to configure on the word of a
+ * route that never knew it, so the stub answers with a different id on
+ * purpose - "the right number appeared" is equally true of both sources
+ * until they disagree.
+ */
+const foreignId = await loadSubmit({
+  replies: [response(200, {
+    ok: true, entries: 1, lastAt: null, telegramId: "99999",
+  })],
+});
+check("the id on screen is the session's, not whatever /me answered with",
+  foreignId.elements["member-telegram-id"].textContent === "10");
+
+/*
+ * A development sign-in has none to show. POST /auth/dev mints an
+ * account for a subject string rather than for a Telegram user, so it
+ * answers with a null id, and both halves matter here: an empty field
+ * with the line still painted reads as "Your Telegram id:" followed by
+ * nothing, which looks like a broken page rather than like a session
+ * that has no such id.
+ */
+const devPanel = await loadSubmit({
+  member: { ...MEMBER, isDev: true, telegramId: null },
+  replies: [response(200, { ok: true, entries: 0, lastAt: null })],
+});
+check("a development session shows no numeric id rather than an empty one",
+  devPanel.elements["member-telegram-id"].textContent === "" &&
+  !isPainted(devPanel.elements["member-telegram-id-line"]));
 
 const refreshed = await loadSubmit({
   replies: [
@@ -324,6 +379,13 @@ check("a signed-out visitor never reaches the panel or requests /me",
   redirects.includes("index.html") && signedOut.requests.length === 0 &&
   !isPainted(signedOut.elements["your-entries-pane"]) &&
   !isPainted(signedOut.elements["add-entry-pane"]));
+/* The id is shown on the authenticated path and nowhere else, so it is
+ * asserted on the path that has no session rather than left to follow
+ * from the pane being hidden - a later change that draws the line
+ * outside the pane would keep that check green. */
+check("and is shown no numeric id on the way out",
+  !isPainted(signedOut.elements["member-telegram-id-line"]) &&
+  signedOut.elements["member-telegram-id"].textContent === "");
 
 /* #56. The prefill belongs to one account, and /me is what says which. The
  * ids here are opaque on purpose - that is the property being relied on. */
@@ -733,4 +795,4 @@ if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsubmit panel OK - 34 checks");
+console.log("\nsubmit panel OK - 38 checks");

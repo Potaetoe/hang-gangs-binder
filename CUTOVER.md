@@ -39,9 +39,10 @@ completes. That is why the Worker deploys before the site.
 - [x] **Step 3 — `ADMIN_TELEGRAM_IDS` should hold your numeric id.**
       Encrypted, so nothing can check it before step 8 — a wrong id
       looks exactly like a working deployment until the export. Know
-      what you put in it. (Your id: sign in, then devtools → Session
-      storage → `hgb-session` → `telegramId` — no page shows it yet,
-      #58.)
+      what you put in it. (Your id: sign in through Telegram and read
+      it on `submit.html`, under "Your entries". A development sign-in
+      carries none — `POST /auth/dev` mints an account for a subject
+      string rather than for a Telegram user.)
 - [ ] **No open `enhancement` issues remain** — owner decision
       2026-08-08: every enhancement lands before the cutover. Check:
       `gh issue list --label enhancement --state open`.

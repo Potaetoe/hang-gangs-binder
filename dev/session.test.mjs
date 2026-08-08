@@ -166,12 +166,48 @@ await globalThis.onTelegramAuth({ id: 42, hash: "signed" });
 check("the future widget callback uses the Telegram auth route",
   requests[0].url === "https://worker.example/auth/telegram");
 
+/*
+ * #58. The caller's own numeric id exists in exactly one place - the
+ * sign-in response - and the member panel that draws it reads it back
+ * out of the session, so this handoff is the only place it can be lost.
+ * A sign-in that carried everything else across and dropped this leaves
+ * the panel with nothing to draw and a first-time admin back in
+ * devtools, with the gate green the whole way.
+ *
+ * The stub answers with a number rather than a string on purpose: that
+ * is the shape the Worker sends, and an id that reached a page as 4242
+ * would compare unequal to every string beside it.
+ */
+Session.clear();
+nextResponse = {
+  ok: true,
+  status: 200,
+  async json() { return { ...GOOD, isDev: false, telegramId: 4242 }; },
+};
+const telegramSession = await Auth.authenticate("/auth/telegram", { id: 4242 });
+check("a Telegram sign-in carries the caller's own numeric id into the session",
+  telegramSession.telegramId === "4242" &&
+  Session.read().telegramId === "4242");
+
 Session.clear();
 redirects.length = 0;
+/*
+ * A refusal whose body is a complete, well-formed session, id and all.
+ * That is the shape the status has to be load-bearing against: a 403
+ * for somebody outside the group is still an answer about a real
+ * Telegram account, and a transport that read the body before it read
+ * the status would mint a session from a refusal and hand a stranger
+ * their own number beside "this binder is for members of the group
+ * only". A stub carrying only an error message cannot tell the two
+ * apart, because write() rejects it for being incomplete rather than
+ * for being refused.
+ */
 nextResponse = {
   ok: false,
   status: 403,
-  async json() { return { error: "No entry." }; },
+  async json() {
+    return { ...GOOD, isDev: false, telegramId: 4242, error: "No entry." };
+  },
 };
 let refused = null;
 try { await Auth.authenticate("/auth/dev", devPayload); }
@@ -179,6 +215,8 @@ catch (error) { refused = error; }
 check("a refused sign-in is neither stored nor redirected",
   refused && refused.message === "No entry." &&
   Session.read() === null && redirects.length === 0);
+check("a refused sign-in leaves no id behind for any page to draw",
+  Session.read() === null && !values.has("hgb-session"));
 const callbackRefusal = await globalThis.onTelegramAuth({ id: 42 });
 check("the widget callback reports refusal on-page without rejecting",
   callbackRefusal === null && Session.read() === null && redirects.length === 0);
@@ -224,4 +262,4 @@ if (failures) {
   console.error(`\nsession/auth FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\nsession/auth OK - 28 checks");
+console.log("\nsession/auth OK - 30 checks");
