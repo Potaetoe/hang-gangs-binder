@@ -104,7 +104,7 @@
    * Which stored field each unit system reads, and how it is written.
    *
    * The dashboard never converts. Every row carries both systems
-   * already - see DESIGN.md, "Why every row carries both unit systems"
+   * already - see archive/DESIGN.md, "Why every row carries both unit systems"
    * - so switching units picks a different field off the entry rather
    * than multiplying anything. A conversion here would be the second
    * copy of the arithmetic that the storage decision exists to avoid,
@@ -177,7 +177,7 @@
    * One entry per person, keeping the most recent.
    *
    * Storage is append-only and the form cannot detect a repeat, so a
-   * resubmission is a new row - see DESIGN.md, "Duplicates". Counting
+   * resubmission is a new row - see OPERATIONS.md, "Reading the submissions". Counting
    * those rows as separate people would report the group as larger than
    * it is and drag every distribution toward whoever submits most
    * often.
@@ -725,7 +725,7 @@
    * The difference is that a shared point no longer identifies a line,
    * because several people's measurements land on the same date and the
    * same bin. dev/dashboard.test.mjs asserts that directly, and records
-   * why the criterion REDESIGN.md originally specified - "share no
+   * why the criterion archive/REDESIGN.md originally specified - "share no
    * exact series point" - is not achievable by any amount of rounding.
    *
    * Each system is floored on its own stored field rather than one

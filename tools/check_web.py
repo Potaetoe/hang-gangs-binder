@@ -51,7 +51,7 @@ Fourteen checks:
 
    Distinctness alone was not enough, and the gap is worth recording
    because the specification that produced it read as though it were.
-   REDESIGN.md asked for "no two arms share an endpoint or a public
+   archive/REDESIGN.md asked for "no two arms share an endpoint or a public
    key", which catches an arm copied *over* another - and passes
    cleanly when the two are *swapped*, because swapped arms are still
    distinct. DESIGN.md names that exact failure one paragraph before
@@ -296,7 +296,7 @@ PRODUCTION_HOST = "potaetoe.github.io"
 # PRODUCTION_KEY is safe to pin because it is already permanent. Replacing
 # it is a rotation, not an edit - every submission encrypted to the old key
 # stops being readable by the new one - so a change here should be rare,
-# deliberate, and accompanied by the archive step in HANDOFF.md. If this
+# deliberate, and accompanied by the archive step in OPERATIONS.md, "The keys". If this
 # check ever fires during ordinary work, the answer is almost never to
 # update the constant.
 PRODUCTION_KEY = ("BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD"
@@ -329,7 +329,7 @@ def crossed_wire_problems(environments):
     the copy - some *other* arm holding production's key. Development then
     seals its test rows to production's key, so reading them back means
     loading the real private key on a page served over plain HTTP from a
-    local directory. REDESIGN.md gives that as the whole reason development
+    local directory. archive/REDESIGN.md gives that as the whole reason development
     has a keypair of its own.
     """
     problems = []

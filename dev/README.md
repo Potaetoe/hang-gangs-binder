@@ -1,333 +1,59 @@
 # dev/
 
 Test harness and scratch verification. **Never published** — the deploy
-copies `apps/web` and nothing else, so anything in here is safe to be as
-messy as it needs to be.
-
-## What is here
-
-- `worker.test.mjs` — exercises `server/worker.js` against a stub D1
-  binding: preflight, origin rejection, the validation cases, Telegram
-  sign-in, sessions, group membership, the account id, and a full
-  route-by-caller gating matrix. No account, no network, no wrangler.
-
-  ```bash
-  node dev/worker.test.mjs
-  ```
-
-  Three parts of it are worth knowing about before changing anything.
-
-  **The account-id fixture is a committed answer, and the same rule
-  applies to it as to `fixture.json`: if it fails, do not regenerate
-  it.** A changed account id means every stored row has detached from
-  the person who wrote it, with nothing anywhere reporting it. Find what
-  changed instead.
-
-  **The `POST /auth/dev` refusals are the most important assertions in
-  the file.** Everything else here protects the data; those protect the
-  boundary that protects the data, and a silent pass is itself the
-  compromise. Two independent conditions keep that route shut — the
-  secret being unset, and the origin not being loopback — so removing
-  either one alone still fails closed, and removing both fails two
-  tests. That is the property being armed rather than the implementation.
-
-  **Login payloads are signed here rather than committed.** A fixture
-  would carry a fixed `auth_date` and the freshness check would start
-  rejecting it five minutes after it was written.
-
-  What it cannot see is the dashboard. A Worker with no D1 binding, or
-  with a secret missing or wrong, passes every check here and fails on
-  the first real request — so a live round trip stays part of deploying,
-  not something this replaces. A wrong `TELEGRAM_BOT_TOKEN` is the new
-  example: it refuses every sign-in with the same 401 a tampered payload
-  gets.
-
-- `crypto.test.mjs` — exercises `apps/web/crypto.js`: round trips, the
-  ways a key may be handed in, and every way a row must refuse to open.
-
-  ```bash
-  node dev/crypto.test.mjs
-  ```
-
-  The check that earns its keep is the **committed fixture** — a
-  ciphertext written by version 1 of the format, which must still
-  decrypt. Everything else here passes just as happily after a change
-  that quietly alters the format, and such a change would leave the
-  live database unreadable with no error anywhere.
-
-  **If the fixture stops decrypting, do not regenerate it.** That is the
-  test working. Either revert the change, or give it a new version byte
-  and teach `decrypt` to read both formats — the rows already stored
-  cannot be rewritten.
-
-- `form.test.mjs` — exercises the pure half of `apps/web/form.js`:
-  normalizing a Telegram handle, reading a number strictly, the unit
-  conversions in both directions, validation, and the record that gets
-  encrypted.
-
-  ```bash
-  node dev/form.test.mjs
-  ```
-
-  It exists for the same reason `crypto.test.mjs` does. A wrong
-  conversion factor does not throw and does not look wrong — it writes a
-  plausible number into a blob nobody can read back, and by the time
-  anyone notices there is no original left to correct it from. `form.js`
-  returns before touching the DOM when there is no `document`, which is
-  what lets this load the shipped file rather than a copy.
-
-  The last two checks run a real record through `crypto.js` and back,
-  which is where the two halves meet.
-
-- `admin.test.mjs` — exercises the pure half of `apps/web/admin.js`:
-  CSV quoting, the spreadsheet-formula guard, and turning a decrypted
-  record into a row.
-
-  ```bash
-  node dev/admin.test.mjs
-  ```
-
-  The CSV is the product — everything else in this project exists to
-  get the data into that file intact. A quoting bug does not throw and
-  does not look wrong; it shifts one column into the next and produces
-  a file that opens cleanly in a spreadsheet and is quietly incorrect.
-
-  The last checks run the whole pipeline in one go: a record built by
-  the real `form.js`, encrypted by the real `crypto.js`, decrypted, and
-  turned into a CSV row.
-
-- `xlsx.test.mjs` — exercises `apps/web/xlsx.js`, which writes the
-  spreadsheet export: a ZIP of XML parts, built by hand because
-  `admin.html` may not load a library.
-
-  ```bash
-  node dev/xlsx.test.mjs
-  ```
-
-  Its failure mode is the opposite of the CSV's and needs a different
-  kind of check. A CSV with a quoting bug opens cleanly and is quietly
-  wrong; an .xlsx with a bad checksum, an overstated central directory
-  or an unescapable character does not open at all, and the message a
-  keyholder gets says only that the file is corrupt. So the last
-  section is a small ZIP **reader**: it walks the central directory,
-  extracts every part and re-checks every CRC. That found a real bug —
-  the end-of-central-directory record was measuring itself.
-
-- `dashboard.test.mjs` — exercises the pure half of
-  `apps/web/dashboard.js`: averages, binning, breakdowns, the
-  people-versus-entries split, and the weight-over-time series.
-
-  ```bash
-  node dev/dashboard.test.mjs
-  ```
-
-  Aggregation is where a dashboard lies quietly. A median taken over
-  the wrong rows, a person counted once per submission, a blank
-  silently dropped from a breakdown — none of them throw, and a chart
-  that is wrong is indistinguishable from a chart that is right. The
-  drawing is checked by looking at it; the arithmetic is checked here.
-
-- `ui.test.mjs` exercises the shared DOM wiring in `apps/web/ui.js`:
-  element lookup, visibility, checked-radio selection, status messages,
-  and the guarded startup path for both synchronous and asynchronous
-  failures.
-
-  ```bash
-  node dev/ui.test.mjs
-  ```
-
-  It also holds the architectural boundary that `ui.js` must contain no
-  `fetch` or `POST`. Network behavior stays in the page-specific scripts,
-  where the publishability check can require encryption for anything that
-  sends a body.
-
-- `session.test.mjs` exercises `apps/web/session.js` and the common half of
-  `apps/web/auth.js`: tab-scoped storage, expiry, bearer headers, signed-out
-  redirects, the visible development marker, and the POST/store/redirect
-  handoff shared by `/auth/dev` and the future Telegram widget callback.
-
-  ```bash
-  node dev/session.test.mjs
-  ```
-
-  Its development secret is a literal test value consumed by a stub fetch;
-  the suite makes no network request and does not need an owner secret. The
-  successful live `/auth/dev` round trip remains an operational check because
-  the real secret must not enter the repository or a test log.
-
-- `submit.test.mjs` — `apps/web/submit.js`, the member panel on
-  `submit.html`, plus one property of `form.js`. The counts come from
-  `GET /me` and nowhere else, which is what the whole step is measured on,
-  so the suite proves it with a 5 → 11 jump rather than 5 → 6: a page
-  keeping its own tally would pass the second and fail the first.
-
-  ```bash
-  node dev/submit.test.mjs
-  ```
-
-  **The checks worth reading are the failed-send ones.** A refused submit
-  must never make the panel claim something was stored. That was originally
-  asserted by source position — the dispatch appears after
-  `if (!response.ok)` — and those assertions pass a mutation narrowing the
-  refusal check to `status >= 500`, which lets a 4xx through. So the real
-  `form.js` is driven here through a failing send and the dispatches are
-  counted, on both arms: a response the Worker refuses, and a `fetch` that
-  rejects outright. A positive control on the same harness proves it
-  reaches the network at all.
-
-  It also covers the account scoping from #56 — another account's prefill
-  is not shown *and* is erased, asserted as a pair because "the fields are
-  empty" is equally true of a feature that has simply stopped working.
-
-- `admin-session.test.mjs` — `apps/web/admin.js` on an admin session, and
-  row deletion. Separate from `admin.test.mjs`, which covers the pure half
-  and says so in its own docstring; this one runs the shipped module under
-  DOM stubs.
-
-  ```bash
-  node dev/admin-session.test.mjs
-  ```
-
-  The negative control is the interesting part: the stub keeps a populated
-  `#token` input even though the page no longer has that element, so the
-  "no DOM input value becomes an `Authorization` header" check can actually
-  fail on a regression, and it requires three authorized requests so it
-  cannot pass by finding none. Deletion is proved against a **published
-  snapshot** rather than the DOM — a row that vanishes visually but
-  survives in derived state would be resurrected by the next Publish.
-
-- `public.test.mjs` — `apps/web/public.js`, the members' dashboard wiring.
-  Separate from `dashboard.test.mjs` for the same reason: that file covers
-  the pure aggregation half of `dashboard.js`, and `public.js`'s own header
-  says "All wiring, no pure half".
-
-  ```bash
-  node dev/public.test.mjs
-  ```
-
-  It keeps three states distinct, which is the point of the slice: no
-  session redirects; a session the Worker refuses is cleared and reported
-  as needing a fresh sign-in; an authorized empty snapshot keeps its
-  "nothing published yet" message. A member told the last of those because
-  their session expired learns something false.
-
-### The two Python suites
-
-These run on the same interpreter as the checkers they test and need no
-node, which is why `tools/check.py` invokes them directly rather than
-listing them with the `.mjs` suites.
-
-- `check_web.test.py` — `tools/check_web.py`'s own CSP parser and policy
-  pin.
-
-  ```bash
-  python dev/check_web.test.py
-  ```
-
-  It exists because of #34, and the reason is the reusable part: that file
-  had never had a test, its only verification was manual mutation, and a
-  mutation is written against a *rule* — add `telegram.org` to a page,
-  watch it fail. So every mutation exercised the rules and never the
-  parser that has to find the policy first. Every one of them passed while
-  the policy was simply never being read. This suite tests the parser on
-  strings rather than on the five files it happens to guard.
-
-- `check_server.test.py` — `tools/check_server.py`'s vars parser and rules.
-
-  ```bash
-  python dev/check_server.test.py
-  ```
-
-  The check that would notice this arm going dead is the pair asserting
-  `config.js`'s real content *does* match the key pattern and that the
-  **name-based exemption** is what spares it. Without those, a pattern
-  matching nothing would leave every other check passing — a null result
-  wearing a positive result's clothes.
-
-- `crypto-browser-check.html` — the platform-dependent half of the same
-  checks, in a real browser under the published pages' content security
-  policy. Node is the same specification, which is why the Node test is
-  the one CI runs, but Node is not what a submitter uses.
-
-  Serve the **repository root**, not `apps/web` — the page reaches into
-  `apps/web` for the real `crypto.js` and `config.js`, so nothing is
-  copied:
-
-  ```bash
-  python -m http.server 8124 --directory .
-  ```
-
-  Then <http://127.0.0.1:8124/dev/crypto-browser-check.html>. Port 8124
-  is the localhost origin `server/worker.js` already allows. Note that
-  while this is running the site itself is at `/apps/web/`.
-
-- `fixture.json` — the stored ciphertext and the record it must come
-  back as. Both checks read this one file; two copies would be two
-  things to keep in step, and the copy that drifted would be the one
-  still passing.
-
-- `make-sample.mjs` — builds `sample-submissions.json`, the disposable
-  test data for `admin.html` and its dashboard.
-
-  ```bash
-  node dev/make-sample.mjs
-  ```
-
-  > **Broken on `accounts` as of 2026-08-08 — #66.** `buildRecord` gained
-  > a third argument when the handle moved to the session, and this
-  > caller still passes two, so the script throws before writing
-  > anything. The committed `sample-submissions.json` predates the change
-  > and still loads. Fix the caller before regenerating.
-
-  A readable table of people sits at the top of the file. Each row is
-  put through the real `validate()` and built by the real
-  `buildRecord()`, then sealed by the real `crypto.js` to
-  `test-key.json`'s public half — so the sample cannot drift from what
-  the form actually produces, and the script refuses to write a file
-  containing anything the form would have rejected. The one row that is
-  *meant* to be impossible is marked `expect: "invalid"` in the table.
-
-  **This is the opposite of `fixture.json`, and confusing the two would
-  be bad:**
-
-  | | `fixture.json` | `sample-submissions.json` |
-  | --- | --- | --- |
-  | Purpose | proves the wire format still decrypts | disposable test data |
-  | Regenerate it? | **never** — see the warning above | yes, freely |
-
-  It is committed so a fresh clone can skip straight to the snippet
-  below, and every run produces different bytes — the ephemeral key and
-  the nonce are fresh per row by design. Regenerate it whenever the
-  record shape changes.
-
-- `sample-submissions.json` — 18 rows shaped exactly like the Worker's
-  `GET /export` reply, so it drops into `admin.html` with no
-  translation. Seventeen open with `test-key.json`; one is sealed to a
-  keypair the script generates and throws away.
-
-  Each row earns its place by reaching a branch that is otherwise only
-  reachable by luck: three people with **several entries each** (the
-  weight-over-time chart draws nobody with a single entry, and one of
-  them loses weight rather than gaining), a **height that changes
-  between entries** for the data-quality panel, a row with **every
-  optional field blank**, **both unit systems** including an imperial
-  entry with the inches box empty, a handle beginning `=` for the CSV
-  formula guard, the **top and bottom of every validation range**, and
-  the **row nothing can open** — the rotated-key case, which is the one
-  most likely to be wrong on the day it matters.
-
-### Loading the sample into `admin.html`
-
-Serve the **repository root**, the way `crypto-browser-check.html`
-already needs, so the sample is reachable over HTTP alongside the site:
+copies `apps/web` and nothing else. Run everything at once with
+`./run check`; run one suite with `node dev/<name>.test.mjs`. Every
+suite loads the shipped file's real bytes (the pure/DOM split in
+`AGENTS.md` is what makes that possible), and every suite is registered
+in both `tools/check.py` and CI — two lists, edited together.
+
+| Suite | What it proves |
+| --- | --- |
+| `crypto.test.mjs` | round trips, and the **committed v1 fixture still decrypts** — the one check standing between a format change and an unreadable database |
+| `form.test.mjs` | conversions, validation, the record — a wrong factor writes a plausible number into a blob with no original to compare against |
+| `form-wiring.test.mjs` | the DOM half of `form.js`, including Add entry restoring the form after a submission (#64 lived in this gap) |
+| `submit.test.mjs` | panel counts come from `GET /me` and nowhere else; a refused send stores and claims nothing; prefill scoping (#56) |
+| `admin.test.mjs` | CSV quoting and the spreadsheet-formula guard — a quoting bug opens cleanly and is quietly wrong |
+| `admin-session.test.mjs` | the admin page runs on a session, no token box; deletion proved against a published snapshot, not the DOM |
+| `xlsx.test.mjs` | the hand-built ZIP opens at all — it ends with a reader that re-checks every CRC |
+| `dashboard.test.mjs` | aggregation, suppression floor, quantization — including that a published point is ambiguous rather than a join key |
+| `public.test.mjs` | signed-out, refused-session and nothing-published states stay distinct on the member dashboard |
+| `ui.test.mjs` | shared DOM wiring, and that `ui.js` contains no `fetch` or POST |
+| `session.test.mjs` | tab-scoped sessions, expiry, the auth POST/store/redirect handoff |
+| `worker.test.mjs` | routing, validation, CORS, sign-in, the gating matrix — and that `POST /auth/dev` **fails closed**, the one place a silent pass is itself the compromise |
+| `check_web.test.py` | `check_web.py`'s own CSP parser — a checker that cannot read is indistinguishable from a site with nothing wrong (#34) |
+| `check_server.test.py` | `check_server.py`'s vars parser and rules, including that its key pattern still matches real key material |
+
+## Two fixtures, opposite rules
+
+| | `fixture.json` + the account-id fixture | `sample-submissions.json` |
+| --- | --- | --- |
+| Purpose | prove the stored formats still read | disposable test data for `admin.html` |
+| Regenerate? | **never** — a failure means stored rows are at stake; add a version byte and a decoder for both | yes, freely, via `make-sample.mjs` |
+
+> `make-sample.mjs` is **broken on `accounts`** (#66): `buildRecord`
+> gained a third argument and this caller still passes two. The
+> committed sample predates the change and still loads.
+
+`test-key.json` is a throwaway keypair, committed on purpose; it opens
+nothing real. The real keypairs and their custody: `OPERATIONS.md`,
+"The keys".
+
+## Browser-side checks
+
+`crypto-browser-check.html` repeats the platform-dependent crypto
+checks in a real browser under the published CSP — Node is the same
+specification but not what a submitter uses. Serve the **repository
+root** so the page reaches the real shipped files:
 
 ```bash
-python -m http.server 8124 --directory .
+./run serve-root
 ```
 
-The site is then at <http://127.0.0.1:8124/apps/web/admin.html>. Open
-the browser console there and paste this **before** pressing Fetch and
-decrypt:
+then <http://127.0.0.1:8124/dev/crypto-browser-check.html>.
+
+To load the sample into `admin.html` (served the same way, at
+`/apps/web/admin.html`), paste in the console **before** fetching:
 
 ```js
 const sample = await (await fetch("/dev/sample-submissions.json")).json();
@@ -335,86 +61,9 @@ window.fetch = async () => new Response(JSON.stringify(sample),
   { headers: { "Content-Type": "application/json" } });
 ```
 
-Serving `apps/web` on its own works too — that is the normal way to
-preview the site — but `dev/` is then outside the document root, so
-paste the file's contents instead of fetching it:
-
-```js
-const sample = { /* paste dev/sample-submissions.json here */ };
-window.fetch = async () => new Response(JSON.stringify(sample),
-  { headers: { "Content-Type": "application/json" } });
-```
-
-Either way, put anything at all in the token box — the stub never looks
-at it — and load `test-key.json` with the file picker. The page should
-report 17 of 18 rows decrypted, list row 16 under "Rows that would not
-open", and draw the dashboard with `roundrobin_ok` named in the height
-panel.
-
-### Exercising the publish path without publishing
-
-The stub above catches every `fetch`, including the one behind the
-Publish button, so pressing it locally sends nothing anywhere. To see
-what it *would* send, press **Show what would be sent** instead — that
-touches no network at all and prints the snapshot.
-
-To watch the request itself, keep a copy of what the stub was handed:
-
-```js
-window.__sent = [];
-window.fetch = async (url, opts) => {
-  if (String(url).endsWith("/snapshot")) {
-    window.__sent.push(JSON.parse(opts.body));
-    return new Response('{"ok":true}',
-      { headers: { "Content-Type": "application/json" } });
-  }
-  return new Response(JSON.stringify(sample),
-    { headers: { "Content-Type": "application/json" } });
-};
-```
-
-The check worth making on `window.__sent[0]` is the one the whole
-feature turns on — that no handle is anywhere in it:
-
-```js
-JSON.stringify(window.__sent[0]).includes("roundrobin_ok")   // false
-```
-
-`dev/dashboard.test.mjs` asserts the same thing without a browser, and
-that is the version CI runs. This one is for looking at.
-
-**There is deliberately no `?sample=` hook, and there must not be one.**
-`apps/web` is published verbatim, so a code path that loads fake data
-into the export page is a code path that ships to the live site. The
-stub lives in a console, where it cannot be deployed by accident.
-
-- `test-key.json` — the throwaway keypair all of these use, in the same
-  envelope `tools/keygen.html` writes.
-
-The test keypair here is a throwaway generated for testing and is
-committed on purpose. It protects nothing and opens nothing real. The
-real private key never enters this repository — see
-[../DESIGN.md](../DESIGN.md).
-
-## The three keypairs, and which is which
-
-Easy to conflate, and two of them are unrecoverable if lost, so they are
-written down here once.
-
-| Key | Public half | Private half |
-| --- | --- | --- |
-| **Production** | `config.js`, `potaetoe.github.io` arm | held offline by the owner |
-| **Development** | `config.js`, `localhost` arm | **held offline by the owner** — recorded 2026-08-06 |
-| **Throwaway** | `dev/test-key.json` | `dev/test-key.json`, committed on purpose |
-
-The development private half was unaccounted for until 2026-08-06. Its
-public half arrived in `b6a984f`, a commit with an empty message body,
-so nothing recorded what had become of the other one — which is the cost
-of that habit made concrete, and why `AGENTS.md` now asks for the
-reasoning in the commit.
-
-**A fourth secret is not a keypair at all and is regularly confused with
-one:** `TELEGRAM_BOT_TOKEN`, from BotFather. It is a single string with
-no halves, it verifies login payloads, and it lives only in Cloudflare.
-Losing it costs a `/revoke` and a re-paste. Losing either private key
-above costs the data encrypted to it, permanently.
+then load `test-key.json` in the key picker. Expect 17 of 18 rows to
+decrypt and row 16 listed as unopenable — the rotated-key case. The
+stub catches the Publish request too, so nothing can leave the page;
+**there is deliberately no `?sample=` hook and there must not be one**,
+because `apps/web` ships verbatim and a console cannot be deployed by
+accident.

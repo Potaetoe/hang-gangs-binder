@@ -64,7 +64,7 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io"
 # the token, and the next one succeeds. One failure had been read as a
 # capability boundary.
 #
-# So REDESIGN.md Part 8 step 2 is a confirmation now, not an act, and
+# So archive/REDESIGN.md Part 8 step 2 is a confirmation now, not an act, and
 # CUTOVER.md says so.
 #
 # Two notes on how this sentence got here, both worth keeping.
@@ -146,7 +146,7 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 # live, not inferred.
 #
 # And the widget cannot be exercised here anyway: BotFather binds it to
-# potaetoe.github.io, so it will not render on localhost. See UAT.md A7.
+# potaetoe.github.io, so it will not render on localhost. See archive/UAT.md A7.
 # Setting a real bot token on this Worker would therefore buy nothing and
 # would put a production credential on the one deployment whose entire
 # purpose is that it is not for users. The asymmetry is the design.
