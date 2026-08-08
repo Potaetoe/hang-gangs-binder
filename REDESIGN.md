@@ -803,12 +803,23 @@ is erased by the next deploy — see Part 8b, which is about exactly that.
 
 ### The order
 
+> **Steps 2 and 3 are already done** — the owner confirmed all six production
+> secrets from the dashboard on 2026-08-07, every id binding as a Secret
+> rather than a `[vars]` entry, with `DEV_LOGIN_SECRET` correctly absent. They
+> are struck through below rather than deleted, so the table still reads as
+> the plan it was.
+>
+> `ACCOUNT_SECRET` being set is **not** yet the irreversible moment — no
+> production row carries an id derived from it, since the table was cleared
+> and the live Worker writes no `account_id`. That closes at step 8.
+> [CUTOVER.md](CUTOVER.md) carries the distinction.
+
 | # | Act | Do not continue until | Back out? |
 | --- | --- | --- | --- |
 | 0 | Capture the live script and bindings | The file exists outside the repo and is not empty | n/a |
 | 1 | Rehearse the migration on `hg_binder_db_dev` | A row submits and reads back under the new shape | Free |
-| 2 | Set `ACCOUNT_SECRET` and `TELEGRAM_BOT_TOKEN` on production | `wrangler versions view` lists both | `ACCOUNT_SECRET` is now permanent |
-| 3 | Set the admin id — **as a secret, not a var**, Part 8b | Listed alongside them | Free |
+| 2 | ~~Set `ACCOUNT_SECRET` and `TELEGRAM_BOT_TOKEN` on production~~ — **done 2026-08-07**, confirm only | All six are listed as Secrets | Nothing to back out |
+| 3 | ~~Set the admin id — as a secret, not a var~~ — **done 2026-08-07**, Part 8b | Listed alongside them | Free |
 | 4 | `DROP TABLE submissions`, then run `schema.sql` | The new table exists with `account_id NOT NULL` | **POINT OF NO RETURN** |
 | 5 | `wrangler deploy` the accounts Worker | The probe matrix in `server/README.md` agrees | Only via step 0's capture |
 | 6 | Merge `accounts` → `main` | CI shows `deploy` **ran**, not skipped | `git revert` |

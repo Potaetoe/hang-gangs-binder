@@ -32,36 +32,51 @@ and it is the only thing it says.
 | Act | Reversible? |
 | --- | --- |
 | Clearing `submissions` (step 4) | **No.** There is no backup, and an export is not one — nothing turns plaintext back into ciphertext |
-| Setting `ACCOUNT_SECRET` | **No, once one row carries an id derived from it.** Change it and every member detaches from their own history |
+| Changing `ACCOUNT_SECRET` | **Not yet — it becomes irreversible at step 8.** It is already set, but no row carries an id derived from it, so today changing it costs nothing. The first real submission closes that |
 | Deploying the accounts Worker | **Only if step 0 captured the current script.** A deploy overwrites the only copy |
 | Merging `accounts` → `main` | Yes — `apps/web` *is* the build, so `git revert` restores the pages exactly |
 
 `ACCOUNT_SECRET` is configuration in appearance and part of the stored format
 in fact. Treat editing it as data loss.
 
-### Confirm this first, because no agent could
+### The secrets are already set — confirmed 2026-08-07
 
-**Which secrets already exist on production?** The repository has contradicted
-itself about this: `server/wrangler.toml` used to claim all six were set, and
-the only recorded setting of `ACCOUNT_SECRET` was on `hgbinderworker-dev`
-(#33). `wrangler` will not authenticate from a non-interactive shell, so this
-was never verifiable from a session — it is yours to check.
-
-Open the production Worker → Settings → Variables and Secrets, and write down
-which of these are present **before** step 2:
+**All six exist on production, as Secrets rather than `[vars]`**, verified by
+the owner from the dashboard on 2026-08-07:
 
 ```
-EXPORT_TOKEN              TELEGRAM_BOT_TOKEN        ACCOUNT_SECRET
-ADMIN_TELEGRAM_IDS        TELEGRAM_GROUP_CHAT_ID    ALWAYS_ALLOW_TELEGRAM_IDS
+ACCOUNT_SECRET            ADMIN_TELEGRAM_IDS        ALWAYS_ALLOW_TELEGRAM_IDS
+EXPORT_TOKEN              TELEGRAM_BOT_TOKEN        TELEGRAM_GROUP_CHAT_ID
 ```
 
-`DEV_LOGIN_SECRET` must **not** be there. Its absence is what turns
-`POST /auth/dev` off; present on production, it is a sign-in bypass.
+`ALLOWED_ORIGINS` is the one **plaintext** variable, reading
+`https://potaetoe.github.io`. `DEV_LOGIN_SECRET` is **absent**, which is what
+keeps `POST /auth/dev` off — that check has already passed.
 
-**If `ACCOUNT_SECRET` already exists, stop and find out what it is** before
-touching it. Setting it again to a new value is the irreversible act, and
-doing it by accident because you assumed it was unset is the worst available
-outcome in this document.
+This is the only way it could be confirmed: `wrangler` will not authenticate
+from a non-interactive shell, so no agent can read the live secret list.
+
+**So step 2 below is a confirmation, not an act.** Glance at the list before
+you start and move on.
+
+**Two things the list cannot tell you, and one of them is the likeliest
+failure in this whole document.**
+
+`ADMIN_TELEGRAM_IDS` exists — it does not follow that it holds *your* numeric
+id, and the value is encrypted so nothing here can check. A wrong id looks
+exactly like a working deployment until step 8. That is why step 8 is the
+acceptance test and not a formality.
+
+`ACCOUNT_SECRET` exists — but **it is not yet the irreversible thing.** It
+becomes permanent when a row carries an id derived from it, and no production
+row does: the table was cleared on 2026-08-07 and the live Worker still writes
+no `account_id`, so anything added since carries `NULL`. There is still a
+window in which changing it would cost nothing, and **it closes at step 8**,
+the first real submission after the deploy. After that, changing it detaches
+every member from their own history with no way back.
+
+Do not take that as licence to change it. Take it as the reason the order of
+this document matters.
 
 ---
 
@@ -115,25 +130,35 @@ failure surfaces on the first real submission, against `NOT NULL account_id`.
 **Continue when:** a row submits and reads back under the new shape.
 **Back out:** free — it is the development database.
 
-### 2 — Set the secrets on production
+### 2 — Confirm the secrets, do not set them
 
-From the list you confirmed above, set whatever is missing:
-`ACCOUNT_SECRET`, `TELEGRAM_BOT_TOKEN`, and per Part 8b the numeric id
-bindings **as secrets, not `[vars]`**.
+**Already done, 2026-08-07** — all six exist as Secrets. This step is a glance
+at the list, not an action. It is kept as a step because it is a precondition
+for everything after it, and because it was an *act* when this plan was
+written; `REDESIGN.md` Part 8 step 2 still reads that way.
 
-Ids are not credentials, and that never made a `[vars]` block safe: the
-allowlist is the membership oracle the whole account-id design exists to
-prevent, and it would be committed to a public repository. A dashboard-only
-*variable* is worse in a different way — the next deploy erases it. Secrets
-are private and survive a deploy.
+Two things to notice while you are looking:
 
-Use the **dashboard**, not `wrangler secret put`. Production's hand-pasted
-script leaves the Worker in version-upload state, so the CLI fails with error
-10220. After step 5 this config is what deploys, and the CLI is worth
-re-testing then rather than assuming it works or stays broken.
+**Every id binding is a Secret and none is a `[vars]` entry.** Ids are not
+credentials, and that never made a `[vars]` block safe: the allowlist is the
+membership oracle the whole account-id design exists to prevent, and `[vars]`
+commits it to a public repository. A dashboard-only *variable* is worse in a
+different way — the next deploy erases it. Secrets are private and survive a
+deploy. `tools/check_server.py` now refuses a `[vars]` block naming anything
+but `ALLOWED_ORIGINS`, so a regression here fails the gate rather than
+shipping.
 
-**Continue when:** all six are listed. `ACCOUNT_SECRET` is now permanent.
-**Back out:** the others freely; not this one.
+**`DEV_LOGIN_SECRET` is absent, and it must stay that way.** Its absence is the
+off switch for `POST /auth/dev`.
+
+If you ever do need to set one: use the **dashboard**, not
+`wrangler secret put`. Production's hand-pasted script leaves the Worker in
+version-upload state, so the CLI fails with error 10220. After step 5 this
+config is what deploys, and the CLI is worth re-testing then rather than
+assuming it works or stays broken.
+
+**Continue when:** the six are listed and `DEV_LOGIN_SECRET` is not.
+**Back out:** nothing was changed.
 
 ### 3 — Confirm the admin id is a secret and is yours
 
@@ -149,7 +174,13 @@ Application → Session storage → `hgb-session` → `telegramId`.
 A wrong id here **looks exactly like a working deployment** until somebody
 tries to export.
 
-**Continue when:** the id is listed as a secret.
+**The binding exists — that is not the same as it being right.** Its value is
+encrypted, so nothing outside the dashboard can check it, and step 8 is the
+only thing that does. If you are confident it is yours, note that confidence
+here and let step 8 be the proof rather than the surprise.
+
+**Continue when:** the id is listed as a secret, and you know what value you
+put in it.
 **Back out:** free.
 
 ### 4 — Drop and migrate. POINT OF NO RETURN
@@ -237,6 +268,15 @@ session and decrypt.
 This is the only check that proves the key, the admin id and the endpoint all
 reached production intact. A wrong `ADMIN_TELEGRAM_IDS` passes everything
 before it.
+
+**This is also where `ACCOUNT_SECRET` stops being changeable.** It has been
+set since 2026-08-07, but no row carried an id derived from it until this
+submission. From here, changing it detaches every member from their own
+history and there is no way back — the rows still decrypt, but nothing links
+one person's entries to each other.
+
+If anything about the secret is in doubt, resolve it **before** pressing
+submit. This is the last cheap moment.
 
 **Continue when:** the export decrypts and the row is yours.
 
