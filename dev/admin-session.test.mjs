@@ -1085,7 +1085,10 @@ const expired = await loadAdmin(ADMIN, {
 });
 await settle();
 check("a membership call the session cannot make ends the session and leaves",
-  Session.read() === null && redirects.includes("index.html"));
+  Session.read() === null && redirects.includes("index.html") &&
+  // And it says so rather than leaving a blank pane behind while the
+  // navigation is still in flight.
+  /discarded/.test(expired.elements["membership-status"].textContent));
 
 /* The go-signal, which is the one thing on this pane that a missing
  * field could turn into a lie. */
@@ -1108,7 +1111,8 @@ const future = await loadAdmin(ADMIN, {
 });
 check("a row with a role this page cannot name is reported rather than hidden",
   future.elements["membership-other"].hidden === false &&
-  textOf(future.elements["membership-other"]).includes("later"));
+  future.elements["membership-other-body"].textContent.includes("later") &&
+  future.elements["membership-other-body"].textContent.includes("auditor"));
 
 /* The pane is behind the same gate as everything else here. */
 check("a member session never reaches the membership routes",

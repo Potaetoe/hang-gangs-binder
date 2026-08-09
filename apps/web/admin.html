@@ -175,6 +175,137 @@
          aria-live="polite" hidden></p>
     </div>
 
+    <!--
+      The membership lists (#69). Beside Published rather than below the
+      export, for Published's reason: this needs the admin session and
+      not the key, and the moment somebody has to be given or taken off
+      the admin list is not the moment to make them find a key file and
+      decrypt two hundred rows first.
+
+      WHAT THIS PANE CAN AND CANNOT DO, said here because #69 asks for
+      more than the Worker offers and a surface implying parity would be
+      lying about which lever revokes what.
+
+      - `admin` is the list this pane manages outright. adminAccountIds()
+        unions these rows with ADMIN_TELEGRAM_IDS today, and the owner's
+        flip shrinks that secret to the founding admin and then drops the
+        arm; the secret-only line below is how far that backfill has got.
+      - `always_allow` can only be ADDED to from here. Its secret arm is
+        checked FIRST and by numeric id, because it is the break-glass
+        for the case where the database is the thing that is wrong -
+        server/worker.js argues that at length - so a row removed here is
+        not a revocation while the secret still names that id.
+      - TELEGRAM_GROUP_CHAT_ID has no route and never gets one. It names
+        a chat rather than people, and it has to be recoverable in the
+        clear because isGroupMember() interpolates it into a URL.
+
+      NO FORM ELEMENT, DELIBERATELY. A numeric Telegram id typed here is
+      the last place that id exists: the Worker hashes it on receipt and
+      stores only the hash. A <form> would default to a GET submit, which
+      puts that id in the address bar and in browser history - the
+      membership oracle DESIGN.md exists to prevent, arriving through the
+      URL. Buttons and fetch, and the field is cleared on success.
+    -->
+    <div class="card narrow" id="membership-card">
+      <p class="runner"><span>Membership</span></p>
+      <p class="muted">
+        Who administers this site, and who gets past the group check.
+        These are the lists that used to live in the Cloudflare
+        dashboard.
+      </p>
+
+      <div class="field">
+        <label for="member-telegram-id">Telegram id</label>
+        <input type="text" id="member-telegram-id" inputmode="numeric"
+               autocomplete="off" spellcheck="false"
+               aria-describedby="member-telegram-id-help">
+        <p class="hint" id="member-telegram-id-help">
+          The numeric id, not the @handle. It is sent once, hashed by the
+          Worker, and never stored or shown again — not in the list
+          below, and not here.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="member-label">Label</label>
+        <input type="text" id="member-label" autocomplete="off"
+               aria-describedby="member-label-help">
+        <p class="hint" id="member-label-help">
+          What you will recognize this row by afterwards. Nothing
+          verifies it — it is a name you typed, the way the handle on a
+          submission is. Adding an id that is already listed only
+          changes its label.
+        </p>
+      </div>
+
+      <fieldset class="field">
+        <legend>List</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="member-role" value="admin" checked>
+            <span>Admin</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="member-role" value="always_allow">
+            <span>Always allow</span>
+          </label>
+        </div>
+        <p class="hint">
+          Admin grants this whole page. Always allow only lets somebody
+          past the group check, and grants nothing else.
+        </p>
+      </fieldset>
+
+      <div class="row">
+        <button type="button" id="member-add" class="primary">Add</button>
+      </div>
+
+      <p class="status" id="membership-status" role="status"
+         aria-live="polite" hidden></p>
+
+      <!-- Both lists are written out rather than built from the answer,
+           because the state that most needs a screen is an EMPTY admin
+           list - the lockout this issue opens with - and a pane that
+           drew its sections from the rows it was sent would show nothing
+           at all on that day.
+
+           The id is the Worker's own role name, so the containers cannot
+           drift from MEMBERSHIP_ROLES in server/worker.js: admin.js
+           looks each one up as "membership-" + role, and a rename on
+           either side leaves a list with nowhere to draw rather than a
+           list quietly drawn in the wrong place. -->
+      <h2>Admin</h2>
+      <div id="membership-admin"></div>
+      <p class="hint" id="secret-only"></p>
+
+      <h2>Always allow</h2>
+      <div id="membership-always_allow"></div>
+
+      <div class="stack-tight" id="membership-malformed" hidden>
+        <p class="caution">Rows that grant nothing</p>
+        <p class="muted small">
+          These rows are in the table and grant nothing, because their
+          account id is not the sixty-four lowercase hex characters the
+          Worker honors. <code>wrangler d1 execute</code> writes such a
+          row without complaint, so this is how one arrives. They are
+          worth removing before the admin list becomes the only
+          authority: the guard that refuses to remove the last admin row
+          counts these too.
+        </p>
+        <div id="membership-malformed-list"></div>
+      </div>
+
+      <div class="stack-tight" id="membership-other" hidden>
+        <p class="muted small">
+          This answer also carried something this page cannot draw. It is
+          shown as it arrived rather than dropped: a row here still
+          grants whatever its role says, and a grant no screen shows is
+          the failure this pane exists to end.
+        </p>
+        <pre class="failure-list" id="membership-other-body"></pre>
+      </div>
+    </div>
+
     <div class="card" id="failures" hidden>
       <p class="caution">Rows that would not open</p>
       <p class="muted small">
