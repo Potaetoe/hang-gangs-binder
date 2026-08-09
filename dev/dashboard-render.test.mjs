@@ -935,7 +935,209 @@ await check("a redraw into a smaller state leaves nothing of the larger", () => 
 });
 
 /* ------------------------------------------------------------------ */
-/* 13. And nothing above threw on the way to being drawn.              */
+/* 13. The per-surface split, and the hero only one surface draws.     */
+
+/*
+ * ONE DRAWING BODY, TWO ENTRY POINTS. dashboard.js draws admin.html and
+ * dashboard.html from the same code, which is what stops the member
+ * numbers from ever disagreeing with the keyholder's. The hero belongs
+ * to Progress alone - it is a member-facing payoff, and the admin page
+ * is an instrument - so the split had to happen somewhere. It happens at
+ * the entry point: `render` is the instrument's, `renderProgress` is
+ * Progress's, and everything below the first child is one function
+ * called by both. Two copies of the panel sequence is the failure mode
+ * this shape exists to refuse, so section 2's order pins above are the
+ * admin arm and the pins here are the Progress arm - the same assertions
+ * per surface, never a relaxation to "something may come first".
+ *
+ * THE SEAM IS PINNED FOR BOTH NAMES. `renderProgress` is exported under
+ * the same document guard as `render`, so the two checks that make this
+ * file exist - no document, no drawing half; a document, a drawing half -
+ * have to be made about it too. A seam pinned for one name and not the
+ * other is a seam with a hole the shape of the newer name.
+ */
+
+await check("loaded with no document the module exports no Progress arm", () =>
+  HEADLESS.renderProgress === undefined);
+
+await check("loaded with a document the module exports the Progress arm", () =>
+  typeof D.renderProgress === "function");
+
+await check("both entry points are frozen onto one published object", () =>
+  // The whole reason the conditional sits above the freeze rather than
+  // below it. A second name bolted on after the publish would leave the
+  // object every page holds a reference to editable for as long as the
+  // module runs.
+  Object.isFrozen(D) && Object.isFrozen(HEADLESS) &&
+  Object.getOwnPropertyDescriptor(D, "renderProgress").writable === false);
+
+const drawProgress = (snapshot, basis, units) => {
+  const container = makeNode("div", HTML_NS);
+  D.renderProgress(container, snapshot, basis, units);
+  return container;
+};
+
+/* A prior document to move against: the same twelve people, five kg
+   lighter each, published a month earlier. Twelve movers clears
+   MIN_CELL, so the movement is a number rather than a refusal. */
+const EARLIER_ROWS = BODIES.map((body, index) => entry(Object.assign({
+  id: index + 1, telegram: "member" + (index + 1),
+  accountId: "acct-" + (index + 1),
+  submittedAt: "2026-01-01T00:00:00.000Z",
+  gender: index < 7 ? "male" : "female",
+  country: index < 7 ? "US" : "GB",
+  roles: index < 7 ? ["feedee"] : ["feeder"],
+}, body, { kg: body.kg - 5, lb: body.lb - 11 })));
+
+const EARLIER = D.snapshotOf(EARLIER_ROWS, { identify: false },
+  Date.parse("2026-02-01T00:00:00.000Z"));
+
+const MOVED = D.snapshotOf(ENTRIES, { identify: false, previous: EARLIER },
+  Date.parse("2026-08-01T00:00:00.000Z"));
+
+const PROGRESS = scene(() => drawProgress(MOVED, "people", "imperial"));
+
+const heroOf = (container) =>
+  container.children.find((child) => classesOf(child).includes("hero")) || null;
+
+const heroPart = (container, name) => {
+  const hero = heroOf(container);
+  if (!hero) return null;
+  const part = withClass(hero, name)[0];
+  return part ? part.textContent : null;
+};
+
+await check("Progress leads with the hero and the strip comes second", () => {
+  const first = PROGRESS.children[0];
+  const second = PROGRESS.children[1];
+  return classesOf(first).includes("hero") &&
+    second.tagName === "div" && second.className === "stats";
+});
+
+/* The same document drawn through the other entry point. Comparing the
+   two surfaces on ONE snapshot is the comparison worth making: anything
+   else is comparing two documents and calling the difference a
+   surface. */
+const AS_INSTRUMENT = scene(() => draw(MOVED, "people", "imperial"));
+
+await check("the panels below the hero are the instrument's, in order", () =>
+  // The split may move what comes FIRST and nothing else. A drifting
+  // second copy of this sequence is what a duplicated drawing body would
+  // eventually produce, and the copy that drifts is the one nobody
+  // drives.
+  JSON.stringify(captions(PROGRESS)) ===
+    JSON.stringify(captions(AS_INSTRUMENT)) &&
+  PROGRESS.children.length === AS_INSTRUMENT.children.length + 1 &&
+  heroOf(AS_INSTRUMENT) === null);
+
+await check("the instrument still leads with the strip and nothing else", () =>
+  // The other arm of the same pin, restated here so a future edit that
+  // gives the hero to both surfaces fails on this line rather than on a
+  // count somebody adjusts.
+  heroOf(KEY_PEOPLE) === null &&
+  KEY_PEOPLE.children[0].className === "stats");
+
+await check("the hero carries the group's combined weight in the unit shown",
+  () => heroPart(PROGRESS, "hero-value") ===
+    D.statText(MOVED.bases.people.imperial.weight.total,
+      D.unitsFor("imperial").weight));
+
+await check("the hero's number follows the units toggle without converting",
+  () => heroPart(drawProgress(MOVED, "people", "metric"), "hero-value") ===
+    D.statText(MOVED.bases.people.metric.weight.total,
+      D.unitsFor("metric").weight));
+
+await check("the hero's number follows the basis toggle", () =>
+  heroPart(drawProgress(MOVED, "entries", "imperial"), "hero-value") ===
+    D.statText(MOVED.bases.entries.imperial.weight.total,
+      D.unitsFor("imperial").weight));
+
+await check("the movement is drawn with its direction and its anchor date",
+  () => {
+    const text = heroPart(PROGRESS, "hero-delta");
+    return text.startsWith("+") && text.includes(" lb ") &&
+      text.includes(EARLIER.generated.slice(0, 10));
+  });
+
+await check("a movement downward is signed, not described", () => {
+  // Which direction is good is not this page's opinion to hold. It
+  // reports the sign and the date and stops there - a group whose
+  // combined weight fell is told so in the same words as one whose rose.
+  const down = D.snapshotOf(
+    ENTRIES.concat(EARLIER_ROWS.map((row, i) => Object.assign({}, row, {
+      id: 300 + i, submittedAt: "2026-08-15T00:00:00.000Z",
+    }))),
+    { identify: false, previous: MOVED },
+    Date.parse("2026-09-01T00:00:00.000Z"));
+  return heroPart(drawProgress(down, "people", "imperial"), "hero-delta")
+    .startsWith("−");
+});
+
+await check("a movement too few people drove is said, not silently dropped",
+  () => {
+    // The owner's ruling: a delta driven by fewer members than the floor
+    // renders as too-few-to-say, never as a number. A blank would read
+    // as "nothing changed", which is a different and false claim.
+    const oneMover = D.snapshotOf(
+      ENTRIES.concat([entry({ id: 99, telegram: "member1",
+        accountId: "acct-1", submittedAt: "2026-08-15T00:00:00.000Z",
+        kg: 120, lb: 264.6 })]),
+      { identify: false, previous: MOVED },
+      Date.parse("2026-09-01T00:00:00.000Z"));
+    const text = heroPart(drawProgress(oneMover, "people", "imperial"),
+      "hero-delta");
+    return oneMover.movement.bases === null &&
+      text.includes("Too few") && !/\d/.test(text.replace(/\d{4}-\d\d-\d\d/, ""));
+  });
+
+await check("a document with nothing before it draws the hero and no movement",
+  () => {
+    const container = drawProgress(PUBLISHED, "people", "imperial");
+    return heroOf(container) !== null &&
+      heroPart(container, "hero-delta") === null;
+  });
+
+await check("a document published before any of this still draws", () => {
+  // The live document for the whole interval between deploying this and
+  // the keyholder's next publish. It has no movement field and no
+  // combined weight, and it is already public.
+  const old = JSON.parse(JSON.stringify(PUBLISHED));
+  delete old.movement;
+  for (const basis of ["people", "entries"]) {
+    for (const system of ["imperial", "metric"]) {
+      delete old.bases[basis][system].weight.total;
+    }
+  }
+  const container = drawProgress(old, "people", "imperial");
+  return captions(container).length === captions(PROGRESS).length &&
+    heroOf(container) === null;
+});
+
+await check("a group too small to describe gets no hero either", () =>
+  // The hero is a group figure and the group is below the floor. A
+  // combined weight over four people beside a sentence explaining that
+  // four people cannot be described would be the page arguing with
+  // itself.
+  heroOf(drawProgress(
+    D.snapshotOf(BASE.slice(0, 3), { identify: false }), "people",
+    "imperial")) === null);
+
+await check("the hero paints through classes, like everything else here", () =>
+  // theme.css styles this; a style attribute would be dropped by
+  // dashboard.html's `style-src 'self'` and the hero would arrive naked.
+  collect(PROGRESS, (node) => node.hasAttribute("style")).length === 0 &&
+  classesOf(heroOf(PROGRESS)).includes("hero"));
+
+await check("a Progress redraw replaces the hero rather than stacking them",
+  () => {
+    const container = makeNode("div", HTML_NS);
+    D.renderProgress(container, MOVED, "people", "imperial");
+    D.renderProgress(container, MOVED, "people", "metric");
+    return withClass(container, "hero").length === 1;
+  });
+
+/* ------------------------------------------------------------------ */
+/* 14. And nothing above threw on the way to being drawn.              */
 
 /*
  * Last, because it is about the file rather than about the module: every

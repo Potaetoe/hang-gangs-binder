@@ -38,7 +38,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  * silent wrong number with it - the same failure the arithmetic below is
  * about, one level up. See dev/harness.mjs.
  */
-const { check, report } = nodeTestSuite("dashboard.js", 117);
+const { check, report } = nodeTestSuite("dashboard.js", 134);
 
 await check("the exported object is frozen", () =>
   // `suppressCounts` and MIN_CELL are the suppression floor standing
@@ -55,6 +55,15 @@ await check("the headless export carries no drawing half", () =>
   // ever have - so `render` being absent HERE is what says the
   // conditional above the freeze is doing its job.
   globalThis.BinderDashboard.render === undefined);
+
+await check("the headless export carries no per-surface drawing half either",
+  () =>
+    // The split gave the drawing half a second entry point, and a seam
+    // pinned for one name and not the other is a seam half-pinned: the
+    // new name is the one nothing had a habit of checking, so it is the
+    // one that would have been exported under Node without anybody
+    // noticing until it threw on its first `document`.
+    globalThis.BinderDashboard.renderProgress === undefined);
 
 /*
  * A row as entryFor() hands it to this file, carrying both identities.
@@ -661,7 +670,7 @@ await check("a row with no inches reports null rather than inventing them",
  * So the central check is not that the numbers are right - it is that
  * no handle is anywhere in the document.
  */
-const { snapshotOf, SNAPSHOT_VERSION } = globalThis.BinderDashboard;
+const { snapshotOf, SNAPSHOT_VERSION, movedSince } = globalThis.BinderDashboard;
 
 /*
  * Big enough to be publishable, which is a constraint the suppression
@@ -1242,6 +1251,183 @@ await check("bins below the floor in total publish nothing", () =>
 await check("the floor is off for the keyholder, on for everyone else", () =>
   same(suppressCounts([{ label: "a", count: 1 }], 0),
        [{ label: "a", count: 1 }]));
+
+
+/* ------------------------------------------------------------------ */
+/* The combined weight, and its movement between two documents.        */
+
+/*
+ * The hero on Progress is one number - what everybody weighs, added up -
+ * and under it how far that number has moved since the last publish.
+ * The number is the easy half. The movement is the half that needed a
+ * ruling, and these checks are written against the ruling rather than
+ * against the implementation:
+ *
+ *   A GROUP DELTA CAN BE ONE PERSON. If the only member who submitted
+ *   since the last document gained four pounds, "+4 lb" is that member's
+ *   four pounds, published to anybody who reads the page. So the delta
+ *   obeys a floor on HOW MANY PEOPLE MOVED IT, the same discipline
+ *   MIN_CELL applies to every other published cell, and the keyholder's
+ *   own view floors at zero exactly as it does everywhere else.
+ *
+ * THE PRIOR ANCHOR IS A PROPERTY OF THE DOCUMENT. A delta measured from
+ * the reader's clock would show two readers different movements from the
+ * same bytes. The document names the document it replaced, or it carries
+ * no movement at all.
+ *
+ * ABSENT-TOLERANT IN BOTH DIRECTIONS. A document published before any of
+ * this existed is already live and public.js will read it, so a snapshot
+ * with no movement field and no combined weight has to draw. That is the
+ * discipline already used for `series === null` and `bases.people ===
+ * null`, and it is why SNAPSHOT_VERSION does not move: nothing here is
+ * incompatible, so a version bump would only invalidate documents that
+ * still render perfectly.
+ */
+
+/* Eight people, so every published cell clears MIN_CELL. Both systems
+ * move together on every row, for the reason the fixture at the top of
+ * this file gives. */
+const WEIGHERS = [100, 101, 102, 103, 104, 105, 106, 107].map((kg, i) =>
+  entry({
+    id: i + 1, telegram: "w" + i, accountId: "acct-w" + i,
+    kg, lb: kg * 2, cm: 175, totalInches: 68.9,
+    submittedAt: "2026-06-01T00:00:00.000Z",
+    gender: i < 5 ? "male" : "female",
+    country: "US", roles: ["feedee"],
+  }));
+
+/* The same eight, `moved` of them heavier by 1 kg on a later row. The
+ * later rows are what makes them movers; the untouched rows are what
+ * keeps the group the same size. */
+const laterBy = (moved) => WEIGHERS.concat(
+  WEIGHERS.slice(0, moved).map((row, i) => Object.assign({}, row, {
+    id: 100 + i, kg: row.kg + 1, lb: row.lb + 2,
+    submittedAt: "2026-07-01T00:00:00.000Z",
+  })));
+
+const FIRST = snapshotOf(WEIGHERS, { identify: false },
+  Date.parse("2026-06-15T00:00:00.000Z"));
+
+const since = (entries, options) => snapshotOf(entries,
+  Object.assign({ previous: FIRST }, options),
+  Date.parse("2026-07-15T00:00:00.000Z"));
+
+await check("the combined weight is the basis's rows added up", () =>
+  // 100 through 107 is 828 kg, and the fixture's lb is exactly twice its
+  // kg - so an imperial total taken by converting rather than by reading
+  // the stored pounds would be 1825.5 rather than 1656.
+  FIRST.bases.people.metric.weight.total === 828 &&
+  FIRST.bases.people.imperial.weight.total === 1656);
+
+await check("each basis adds up its own rows", () => {
+  const both = since(laterBy(8), { identify: true });
+  return both.bases.people.metric.weight.total === 836 &&
+    both.bases.entries.metric.weight.total === 1664;
+});
+
+await check("a document with nothing before it carries no movement", () =>
+  FIRST.movement === null);
+
+await check("the movement names the document it was measured from", () =>
+  since(laterBy(8)).movement.since === FIRST.generated);
+
+await check("a movement above the floor is published as a number", () => {
+  const now = since(laterBy(8));
+  return now.movement.bases.people.metric.weight === 8 &&
+    now.movement.bases.people.imperial.weight === 16;
+});
+
+await check("the entries basis reports its own movement", () =>
+  // Eight new rows on top of eight, so the entries total moves by the
+  // whole of the new rows rather than by the difference of the latest.
+  since(laterBy(8)).movement.bases.entries.metric.weight === 836);
+
+await check("a movement fewer people than the floor drove is not a number",
+  () => {
+    // Four movers, one under MIN_CELL. The figure is absent from the
+    // document rather than present and undrawn: a number the page
+    // declines to paint is still a number anybody can read out of the
+    // JSON the Worker serves.
+    const now = since(laterBy(MIN_CELL - 1));
+    return now.movement !== null && now.movement.since === FIRST.generated &&
+      now.movement.bases === null;
+  });
+
+await check("exactly the floor's worth of movers publishes", () =>
+  since(laterBy(MIN_CELL)).movement.bases !== null);
+
+await check("the keyholder's own view floors the movement at zero", () =>
+  // The same asymmetry `identified` already has everywhere else: it is
+  // their data, in their tab, and reducing it only hides what they
+  // opened the page to see.
+  since(laterBy(1), { identify: true }).movement.bases.people.metric
+    .weight === 1);
+
+await check("a mover is a person, not a row", () => {
+  // Two rows from one account is one member moving, so a floor counting
+  // rows would publish a single member's gain the moment they submitted
+  // five times.
+  const twice = WEIGHERS.concat([0, 1].map((n) => Object.assign(
+    {}, WEIGHERS[0], { id: 200 + n, kg: 110 + n, lb: 220 + n * 2,
+      submittedAt: "2026-07-0" + (n + 1) + "T00:00:00.000Z" })));
+  return movedSince(twice, FIRST.generated) === 1;
+});
+
+await check("nobody counts as moved before the anchor", () =>
+  movedSince(WEIGHERS, FIRST.generated) === 0);
+
+await check("a movement measured against a document with no total is absent",
+  () => {
+    // Every document published before this change. The old one renders,
+    // and the new one says nothing rather than treating an absent total
+    // as a zero and reporting the whole group's weight as a gain.
+    const old = JSON.parse(JSON.stringify(FIRST));
+    delete old.bases.people.metric.weight.total;
+    delete old.bases.people.imperial.weight.total;
+    delete old.bases.entries.metric.weight.total;
+    delete old.bases.entries.imperial.weight.total;
+    return snapshotOf(laterBy(8), { identify: false, previous: old },
+      Date.parse("2026-07-15T00:00:00.000Z")).movement === null;
+  });
+
+await check("a basis suppressed in one document reports no movement", () => {
+  // Three people who each submitted twice: six rows clears the floor and
+  // three people does not, so the earlier document publishes an entries
+  // basis and no people basis. The half with nothing to subtract from
+  // says nothing, and the half that has both still reports - a
+  // per-basis answer rather than one verdict for the document.
+  const three = WEIGHERS.slice(0, 3);
+  const tiny = snapshotOf(three.concat(three.map((row, i) =>
+    Object.assign({}, row, { id: 400 + i,
+      submittedAt: "2026-06-05T00:00:00.000Z" }))),
+    { identify: false }, Date.parse("2026-06-15T00:00:00.000Z"));
+  const now = snapshotOf(laterBy(8), { identify: false, previous: tiny },
+    Date.parse("2026-07-15T00:00:00.000Z"));
+  return tiny.bases.people === null && tiny.bases.entries !== null &&
+    now.movement.bases.people === null &&
+    now.movement.bases.entries.metric.weight === 1058;
+});
+
+await check("the movement is measured in each system's own stored field",
+  () => {
+    // The fixture's pounds are exactly twice its kilograms, which no
+    // conversion factor is. A delta converted from the metric one would
+    // read 17.6 rather than 16.
+    const now = since(laterBy(8));
+    return now.movement.bases.people.imperial.weight ===
+      now.movement.bases.people.metric.weight * 2;
+  });
+
+await check("a document carrying a movement is still version one", () =>
+  // Additive, so every reader of a v1 document is still right about it.
+  // A bump would strand the live document for the whole interval between
+  // deploying this and the keyholder's next publish.
+  since(laterBy(8)).snapshot === 1 && FIRST.snapshot === 1);
+
+await check("a previous document that is not a snapshot is ignored, not thrown",
+  () => [null, undefined, {}, { bases: null }, "nonsense"].every((junk) =>
+    snapshotOf(WEIGHERS, { identify: false, previous: junk },
+      Date.parse("2026-07-15T00:00:00.000Z")).movement === null));
 
 
 /* ------------------------------------------------------------------ */
