@@ -442,11 +442,14 @@
         "The cover is closed and opens once. Reload to see it again; " +
           "turn on reduced motion in the operating system and reload to " +
           "see it snap open instead of animating.",
-        // The chips are named by the page, not here. #122's own text
-        // calls one of them Parchment and the shipped chip says
-        // Daylight, and a walk-through that names them would have to be
-        // corrected every time one is renamed - the same drift this
-        // whole demo is built to avoid.
+        // The chips are named by the page, not here, and the driver is
+        // sent to read the rail rather than a list. Two reasons, both
+        // still live now that the owner has ruled the light palette's
+        // label on #127: a walk-through that spells out a label needs
+        // correcting every time one moves, and nothing in the gate
+        // compares these four buttons across the three pages that carry
+        // them, so counting them against the rail is what makes this
+        // step notice one going missing.
         "Switch every palette chip in the rail in turn. The wordmark is " +
           "Playfair Display - if it renders as a plain serif the font " +
           "did not load, which is the thing to look for.",
