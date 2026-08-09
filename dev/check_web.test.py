@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 258
+EXPECTED = 309
 
 
 def check(label, condition):
@@ -1626,8 +1626,8 @@ def token_css(overrides=None, extra=""):
     """
     overrides = overrides or {}
     parts = []
-    for key in list(check_web.MOCKUP_PALETTE_BLOCKS) + [
-            check_web.MOCKUP_SCALE_BLOCK]:
+    for key in [*check_web.MOCKUP_PALETTE_BLOCKS,
+                check_web.MOCKUP_SCALE_BLOCK]:
         if key == check_web.MOCKUP_SCALE_BLOCK:
             table = check_web.MOCKUP_SCALE
         else:
@@ -1636,7 +1636,7 @@ def token_css(overrides=None, extra=""):
         table = overrides.get(key, table)
         if table is not None:
             parts.append(block_text(key, table))
-    return "\n".join(parts + [extra, FACES])
+    return "\n".join([*parts, extra, FACES])
 
 
 MIDNIGHT_BLOCK = ("", ':root, :root[data-theme="midnight"]')
