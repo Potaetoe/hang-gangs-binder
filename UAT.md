@@ -5,13 +5,31 @@ Every check names what to do, what passing looks like, and **why it
 matters**, so a partial failure is a decision you can make rather than
 a mystery.
 
-The product this accepts is the accounts redesign: rail navigation on
-signed-in pages, a plain sign-in page and a plain error page, the cover
-that opens once, a palette set switched from one **Theme** control at
-every width on every page but the error page — a dark default, a light
-one, a pink-leaning one and a high-contrast one — the wordmark
-**Hang Gang Binder** matching the site title it shares, and sign out
-reachable from every railed page.
+The product this accepts is the accounts redesign as the site mockup
+draws it: the wordmark set as **Hang Gang** in small gold capitals over
+**Binder** in the italic serif; rail navigation on signed-in pages — a
+column beside the page on a desktop, a strip across it when narrow —
+with the session block under the destinations offering **Sign in**
+whenever this tab holds no live session (#187, #166); a plain sign-in
+page and a plain error page; the cover that opens once; a palette set
+switched from one **Theme** control in the footer of every page but the
+error page; and page titles that end **— Hang Gang Binder**, agreeing
+with the rail (#191).
+
+**The mockup is the bar.** The "Binder — Site Mockup (post-cutover)"
+artifact, held by the owner, is what the shipped pages are accepted
+against: where the site and the mockup disagree, the site is wrong,
+**even where the site agrees with itself**. A shell that is internally
+consistent in the wrong typeface passes every self-comparison and still
+fails this pass. A1 is where that comparison is driven.
+
+**Sections are keyed to the demo console's feature cards.** Each
+section heading names the card it drives, exactly as the card titles
+itself — `dev/demo.test.mjs` holds the two documents to the same set,
+in both directions, so a renamed card and a stale section cannot
+coexist quietly. The staging that used to be named by scenario id in
+these headings is the console's plumbing now; press the card's button
+and it is done for you.
 
 **Palettes are described by character here and never by chip label.**
 The **Theme** control in front of you is the list, and counting the
@@ -68,12 +86,17 @@ recorded from the wrong arm proves less than it claims.
 ./run demo
 ```
 
-Then <http://127.0.0.1:8126/dev/demo.html> — the console. Pick a
-scenario there; it is carried in `sessionStorage`, and the surfaces
-open under `/demo/…`. Each section below names the scenario id it
-needs in its heading.
+Then <http://127.0.0.1:8126/dev/demo.html> — the console. Under **What
+the Binder does** is one card per feature; each section below names its
+card in the heading. Press the card's button and the console stages
+everything that feature needs — the session this tab should hold, the
+figures the charts draw — and opens the right page in the frame.
+**Go anywhere** keeps every page reachable regardless of what you
+pressed last, **Reset the demo state** puts the current card's world
+back how its button starts it, and the frame-size buttons show the
+narrow layout without pretending to be a phone.
 
-**The pages under `/demo/` are the shipped pages, mirrored off disk.**
+**The pages in the frame are the shipped pages, mirrored off disk.**
 `apps/web/` takes no demo hook — AGENTS.md makes that a boundary, since
 a hook that ships is a hook a visitor can reach. So what you accept
 here is the same bytes the cutover publishes, which is the entire
@@ -120,28 +143,34 @@ it carries beside it: `index.html` (**Sign in**), `submit.html` (**Your
 page**), `dashboard.html` (**Muse's charts**), `admin.html` (**Admin**).
 The file name is the anchor because it is the part that does not move.
 
-### A1 · The shell and the identity — scenarios `signed-out`, `member`
+### A1 · The shell, held to the mockup — every card
 
-The redesign's own surface. Everything here is visible without a
-request, so it is the cheapest section and the one that fails first.
+The redesign's own surface, driven with the mockup open beside it.
+Everything here is visible without a request, so it is the cheapest
+section and the one that fails first. Any card's button stages it;
+start from **Sign in with Telegram**'s for the signed-out rows and
+**Weigh in**'s for the railed ones.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A1.1 | On `signed-out`, open `index.html` | The cover leaf paints closed and swings open once, revealing **Hang Gang Binder** | The one animation in the product; it is the first thing anyone sees |
+| A1.1 | Arrive signed out on `index.html` | The cover leaf paints closed and swings open once, revealing the wordmark | The one animation in the product; it is the first thing anyone sees |
 | A1.2 | Reload with the browser window narrowed and widened | The cover opens once per load and never traps the page behind it | Its resting state is *open*, so every way the animation can fail leaves the sign-in reachable |
 | A1.3 | Turn on the operating system's reduced-motion setting and reload | The binder is **already open** — no frame of the closed cover at all | At a shortened duration the first frame still paints, and a full-screen flash is the exact thing that setting asks not to be given |
-| A1.4 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
-| A1.5 | On `member`, open `submit.html`, `dashboard.html` and `admin.html` | All three carry the same rail — three destinations in the same order, and the session block under them offering **Sign in** when this tab holds no session (#187) | Three hand-written copies; a rail that differs per page is how somebody gets stranded, and the door lives beside the words that say whether you need it |
-| A1.6 | On each, check which destination is marked current | The one you are on, and only it | The rail is also the answer to "where am I" |
-| A1.7 | Open **Theme** and press **every chip it offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the control rather than against a list written here is also what catches one going missing |
-| A1.8 | On the **high-contrast** palette — the one the site applies when the operating system asks for increased contrast — read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test. Identified by what it does, because that is the part of it that will not be renamed |
-| A1.9 | On `signed-out`, open **Theme** on `index.html` and press a chip. Then, with no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The sign-in page carries the same single control the rail pages do, its chips open **in place below the button** and repaint the page, and the choice survives a reload. With nothing ever chosen the site answers each system setting without a script running, and a chosen palette still beats all three afterwards | Signed out is where a visitor meets this site, so the palette is offered there too (#150). What answers a visitor who never opens the control is the pre-paint and the stylesheet's own media blocks, which is also all `404.html` has — it carries no chips at all |
-| A1.10 | **On `admin.html`** — narrow to a phone width, then widen back up through a tablet width until the rail returns | The rail becomes a strip **that reaches both edges** at every one of those widths, all three destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays. Driven on any other page this step passes without asking the question: `admin.html` is the only one carrying a control whose intrinsic width refuses to shrink — the key file picker — so a shell rule that sizes the column to its content instead of to the screen shows up there and nowhere else (#148). The widths between the phone and the rail belong to the same rule, and are where a strip narrower than the page under it is visible |
-| A1.11 | **At every width, on each of the four pages that offer one** — open the **Theme** disclosure, then press Escape | The chips appear in place and push what is below them down, nothing floats over the page, and Escape closes them and returns focus to the button | Focus left inside something no longer on screen restarts the next Tab from the top. It is one control with one behavior at every width (#150), so a pass at one width is not a pass |
-| A1.12 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
-| A1.13 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint |
+| A1.4 | Read the wordmark against the mockup | Two lines: **Hang Gang** small, uppercase, letter-spaced, in the gold accent and the monospace face; **Binder** under it in the italic serif and the rose accent. A plain default serif or a single-line wordmark is a failure | The wordmark is the identity, and it is the first place a font that did not load shows |
+| A1.5 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
+| A1.6 | Signed in, open `submit.html`, `dashboard.html` and `admin.html` | All three carry the same rail — three destinations in the same order, and the session block under them: your name and **Sign out** while the session lives, **Sign in** when this tab holds none (#187) | Three hand-written copies; a rail that differs per page is how somebody gets stranded, and the door lives beside the words that say whether you need it |
+| A1.7 | On each, check which destination is marked current | The one you are on, and only it | The rail is also the answer to "where am I" |
+| A1.8 | Find the **Theme** control | In the **page footer**, on every page but `404.html` — including signed-out on `index.html` | #187 moved the picker out of the rail: the palette belongs to the reader, not to the session, and the footer is the one place every page shares |
+| A1.9 | Open **Theme** and press **every chip it offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the control rather than against a list written here is also what catches one going missing |
+| A1.10 | On the **high-contrast** palette — the one the site applies when the operating system asks for increased contrast — read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test. Identified by what it does, because that is the part of it that will not be renamed |
+| A1.11 | With no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The site answers each system setting without a script running, and a chosen palette still beats all three afterwards | What answers a visitor who never opens the control is the pre-paint and the stylesheet's own media blocks, which is also all `404.html` has — it carries no chips at all |
+| A1.12 | **On `admin.html`** — narrow to a phone width, then widen back up through a tablet width until the rail returns | The rail becomes a strip **that reaches both edges** at every one of those widths, all three destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays. Driven on any other page this step passes without asking the question: `admin.html` is the only one carrying a control whose intrinsic width refuses to shrink — the key file picker — so a shell rule that sizes the column to its content instead of to the screen shows up there and nowhere else (#148) |
+| A1.13 | **At every width, on each page that offers one** — open the **Theme** disclosure, then press Escape | The chips appear in place and push what is below them down, nothing floats over the page, and Escape closes them and returns focus to the button | Focus left inside something no longer on screen restarts the next Tab from the top. It is one control with one behavior at every width (#150), so a pass at one width is not a pass |
+| A1.14 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
+| A1.15 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint, and #191 settled the set |
+| A1.16 | Put the mockup beside each of the five pages and read them together | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste |
 
-### A2 · Signed out, nothing is reachable — scenario `signed-out`
+### A2 · Signed out, nothing is reachable — card "Sign in with Telegram"
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -150,8 +179,9 @@ request, so it is the cheapest section and the one that fails first.
 | A2.3 | Open `admin.html` | Sent to sign-in; no key box, no rows | The admin page has no typed-token path any more |
 | A2.4 | Watch the network panel on all three | **No request** went out at all | Refusing before asking is the property; a request that earns a 401 has still announced you |
 | A2.5 | Open `404.html` | An error page that says so plainly and offers one way back | Reached by strangers and by mistyped links, so it must not look broken |
+| A2.6 | Press the Telegram button — in the demo it is a local stand-in; everything after the press is the shipped code | You land on **Your page**, signed in | The entrance is one press, and the press is where the demo's substitution ends |
 
-### A3 · Your page — the member panel — scenario `member`
+### A3 · Your page — card "Weigh in"
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -165,17 +195,18 @@ request, so it is the cheapest section and the one that fails first.
 | A3.8 | Read your numeric Telegram id under **On record** | It is shown | #58. Being made an admin needs that number, and a page that does not show it sends people to a third-party bot to ask for it |
 | A3.9 | Read the key fingerprint on the page | 32 characters, matching the **development** public key in `config.js` | On anything but production it will not match the pinned group message, and that is expected |
 
-### A4 · The device-local prefill — scenario `member-prefilled`
+### A4 · The device-local prefill — card "The form remembers you"
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A4.1 | Reload the page | Weight and height come back | The point of the feature — mostly so a height that never changes is not retyped |
-| A4.2 | Press **Sign out**, then sign back in | The fields are **empty** | A sign-out leaving body measurements on the device would be a lie |
-| A4.3 | Fill the fields as one member, close the tab without signing out, open a new tab as a **different** member | The second member's form is **empty** | This is #56. The session dies with the tab and `localStorage` does not, so before the fix the second member saw the first one's measurements |
-| A4.4 | With the second member signed in, look at `localStorage` in devtools | The first member's prefill entry is **gone**, not merely ignored | Data already on the device had to be erased, not just stopped from growing |
-| A4.5 | Hand-edit the prefill entry to something malformed and reload | The page starts normally with empty fields and no error | Someone hand-editing storage, or an older format, must not produce a dead page |
+| A4.1 | Reload the page | The form comes back filled — **every field it remembers**, not just weight | The point of the feature — mostly so a height that never changes is not retyped |
+| A4.2 | Read what the page says about the remembered values | It says they are kept **on this device only**, in words beside the form | #172. A member deserves to know where their measurements live before deciding to leave them there |
+| A4.3 | Press **Sign out**, then sign back in | The fields are **empty** | A sign-out leaving body measurements on the device would be a lie |
+| A4.4 | Fill the fields as one member, close the tab without signing out, open a new tab as a **different** member | The second member's form is **empty** | This is #56. The session dies with the tab and `localStorage` does not, so before the fix the second member saw the first one's measurements |
+| A4.5 | With the second member signed in, look at `localStorage` in devtools | The first member's prefill entry is **gone**, not merely ignored | Data already on the device had to be erased, not just stopped from growing |
+| A4.6 | Hand-edit the prefill entry to something malformed and reload | The page starts normally with empty fields and no error | Someone hand-editing storage, or an older format, must not produce a dead page |
 
-### A5 · A correction supersedes — scenario `supersede`
+### A5 · A correction supersedes — card "Fix a mistake"
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -185,14 +216,20 @@ request, so it is the cheapest section and the one that fails first.
 | A5.4 | Try to correct an entry that is not yours | Refused | Otherwise a correction is a write into somebody else's history |
 | A5.5 | Look at what the keyholder sees for that member | Both rows are present, and which supersedes which is legible | Storage is append-only on purpose; the correction is a pointer, not an erasure |
 
-### A6 · Sign out ends the session — scenario `revoked`
+### A6 · Sign out ends the session — card "Signed out means signed out"
+
+The card's button arrives one moment **after** a sign-out somewhere
+else: this tab still holds a session the server has already revoked.
+For the rows that begin from a live session, press **Open Your page**
+on the Weigh in card first.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A6.1 | Press **Sign out** from `submit.html` | Returned to `index.html`, and the session is gone from `sessionStorage` | The user-visible half, and it must always succeed |
+| A6.1 | From a live session, press **Sign out** on `submit.html` | Returned to `index.html`, and the session is gone from `sessionStorage` | The user-visible half, and it must always succeed |
 | A6.2 | Repeat from `dashboard.html`, then from `admin.html` | Identical behavior from each | Sign out is on every railed page, so every page has to mean the same thing by it |
-| A6.3 | With a revoked session, make the page request again | It is refused and you are sent to sign in | Dropping this tab's copy of the token is not the end of a session — the row is |
-| A6.4 | Read what the page says while the revoke is in flight | Nothing about the revoke | The act you performed is the local clear; a message about the other half would describe a sign-out that did not happen |
+| A6.3 | On the card's own arrival — a revoked session — make the page request anything: reload, or switch panel tabs | It is refused, this tab drops its copy, and you are sent to sign in **in words, not a spinner** | Dropping this tab's copy of the token is not the end of a session — the row is. A token captured before sign-out opens nothing (#90) |
+| A6.4 | Watch the rail as the session dies | The session block changes with it: your name goes, **Sign in** returns, without a reload | #166. A rail still offering Sign out for a session that no longer exists is a door painted on a wall |
+| A6.5 | Read what the page says while the revoke is in flight | Nothing about the revoke | The act you performed is the local clear; a message about the other half would describe a sign-out that did not happen |
 
 > **Sign out on `admin.html` ends the session and nothing else. The
 > stored private key stays on the device, and Clear is the one lever
@@ -202,7 +239,7 @@ request, so it is the cheapest section and the one that fails first.
 > which is tab-scoped anyway. The card on that page names Clear, and
 > A7.5 is where you exercise it.
 
-### A7 · The keyholder's key — scenario `keyholder`
+### A7 · The keyholder's key — card "The keyholder's desk"
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -214,7 +251,7 @@ request, so it is the cheapest section and the one that fails first.
 | A7.6 | Decrypt with the **wrong** key | Rows are **listed with their ids**, not silently skipped | The ordinary cause is a rotated key, not damage, and hiding them looks like data loss |
 | A7.7 | Put a `=`-leading value in a text field, then export the CSV | The cell arrives with a **leading apostrophe** | Otherwise a spreadsheet runs it as a formula |
 
-### A8 · Admin — scenario `admin`
+### A8 · Admin — card "The admin's panel"
 
 Written against what the surface must *be*, not against its chrome:
 the instrument-panel treatment is a slice of its own, and steps pinned
@@ -230,7 +267,7 @@ accept.
 | A8.5 | Read the member's own count afterwards | It agrees with the table | Counts and the table disagreeing is what the member panel is measured on |
 | A8.6 | Press **Unpublish** with the key field empty | It works | It needs the session, not the key — and submissions are left untouched |
 
-### A9 · Site content and its fallback — scenario `config-fallback`
+### A9 · Site content and its fallback — card "Before anything is written"
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -239,13 +276,13 @@ accept.
 | A9.3 | Drive the site with the configuration unreachable | Every page still reads correctly, on the shipped copy | The site must not depend on a route answering to be readable |
 | A9.4 | Check that no edited copy has become a second home for a fact | Content is wording, never a claim stated in full only here | One home per fact, and an admin-editable second copy is the one nobody corrects |
 
-### A10 · Muse's charts — the dashboard payoff — scenario `member`
+### A10 · The dashboard payoff — card "Muse's charts"
 
-> `member` is the scenario that stages a **rich** published snapshot:
-> several repeat submitters above the five-person floor, and series with
-> enough points to draw. `suppressed` is its sparse counterpart and is
-> what A11 uses. Driving A10 on the sparse one produces an empty
-> dashboard that looks like a failure and is not.
+> **See the charts** stages a full corpus: several repeat submitters
+> above the five-person floor, and series with enough points to draw.
+> **See a thin week**, on the "Too few to show" card, is its sparse
+> counterpart and is what A11 uses. Driving A10 on the thin week
+> produces an empty dashboard that looks like a failure and is not.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -257,7 +294,7 @@ accept.
 | A10.6 | Read how old the figures are | Stated on the page | Figures with no date are trusted longer than they deserve |
 | A10.7 | Look for any handle, any individual row, anywhere on the page | **None** | Members see totals; the corpus is the keyholder's |
 
-### A11 · Privacy — scenario `suppressed`
+### A11 · Privacy — card "Too few to show"
 
 The checks whose failure is not visible from the page. **A failure here
 stops the cutover** — these are the claims the project makes to the
@@ -357,9 +394,9 @@ presence would be a sign-in bypass.
 
 ### B5 · The shell and the privacy checks, on live
 
-A1 and A11.1 through A11.3 again, against the real corpus. The palettes
-and the cover are worth re-driving because live serves different bytes
-through a different cache, and A11.3's five-person floor behaves
+A1 and A11.1 through A11.3 again, against the real corpus — including
+A1.16's side-by-side with the mockup, because live serves different
+bytes through a different cache, and A11.3's five-person floor behaves
 differently with real data than with staged members.
 
 ---
@@ -379,17 +416,17 @@ different evidence.
 
 ```text
 Part A staged, run on:     <date>   commit <full 40-char SHA>
-  A1  shell and identity   …
-  A2  signed out           …
-  A3  your binder          …
-  A4  prefill and #56      …
-  A5  supersede            …
-  A6  sign out             …
-  A7  keyholder            …
-  A8  admin                …
-  A9  content and fallback …
-  A10 progress             …
-  A11 privacy              …
+  A1  shell against the mockup   …
+  A2  sign in with Telegram      …
+  A3  weigh in                   …
+  A4  the form remembers you     …
+  A5  fix a mistake              …
+  A6  signed out means it        …
+  A7  the keyholder's desk       …
+  A8  the admin's panel          …
+  A9  before anything is written …
+  A10 Muse's charts              …
+  A11 too few to show            …
   Console clean of policy violations throughout:  <yes / what fired>
 
 Part A live, run on:       <date>   against hgbinderworker-dev

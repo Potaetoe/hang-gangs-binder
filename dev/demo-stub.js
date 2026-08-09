@@ -682,26 +682,19 @@
   });
 
   /*
-   * The scenarios, one per acceptance box on #122. The ids are cited by
-   * UAT.md and by the console, so they are a contract: rename one and two
-   * documents stop agreeing. dev/demo.test.mjs reads UAT.md's section
-   * headings and fails on any disagreement in either direction - until
-   * it did, "contract" was a word in this comment and nothing else.
+   * The scenarios are the STAGING: which session the tab holds, which
+   * corpus the stubbed snapshot route serves, whether a prefill or a
+   * revocation is waiting. The person-facing half lives on the
+   * FEATURES cards below (#209); the ids are plumbing, cited by the
+   * cards' actions and by dev/demo.test.mjs and by nothing a reader
+   * sees. No walk-through belongs here: UAT.md is the one home for a
+   * scripted walk, because #192 already showed what a script kept in
+   * two homes costs.
    *
-   * `start` is where the walk-through begins. Every destination stays
-   * reachable in every scenario, because half of what this demo has to
-   * show is the rail carrying somebody between them.
-   *
-   * THE STEPS ARE WRITTEN TO THE PERSON DRIVING, and that register is an
-   * owner ruling (#192): each step is something to do and what doing it
-   * looks like, in the driver's own words. The system's reasons live in
-   * the acceptance boxes and the issues those cite, not here - a walk
-   * that asserts internal state the screen never shows reads as a
-   * broken demo to the person it was written for, which is what #192
-   * was filed about. A step must never claim a render the shipped page
-   * does not perform; when a scenario's payoff is not on screen yet,
-   * the step says so and points at the boxes, which are read from the
-   * shipped bytes and flip on their own the day the slice lands.
+   * `start` is where a card's action lands unless the action says
+   * otherwise. Every destination stays reachable in every scenario,
+   * because half of what this demo has to show is the rail carrying
+   * somebody between them.
    */
   const SCENARIOS = [
     {
@@ -710,21 +703,6 @@
       start: "index.html",
       session: null,
       boxes: ["shell", "signin-id"],
-      steps: [
-        "Watch the cover: it opens once and stays open. Reload to see " +
-          "it again - and with reduced motion set in your operating " +
-          "system, it snaps open instead of animating.",
-        "Look at the wordmark. It should be Playfair Display, the tall " +
-          "bookish serif; a plain default serif means the font did not " +
-          "load.",
-        "Open the Theme control and try a palette. It works before you " +
-          "sign in, which is why it lives outside the rail (#150).",
-        "Press the Telegram button - the demo's local stand-in for the " +
-          "real widget. Everything that happens after the press is the " +
-          "shipped code.",
-        "You land on Your page, and the panel prints your own " +
-          "Telegram number (#58).",
-      ],
     },
     {
       id: "member",
@@ -732,37 +710,6 @@
       start: "submit.html",
       session: MEMBER_SESSION,
       boxes: ["shell", "signin-id", "panel", "dashboard"],
-      steps: [
-        "Your page opens on On record: what this account claims so " +
-          "far, with your Telegram number printed under it.",
-        // The chips are named by the page, not here: a walk-through
-        // that spells out a label needs correcting every time one
-        // moves, so this step names none.
-        //
-        // What this step is FOR is the half no gate here reaches, and
-        // it is worth stating because the obvious reading is wrong.
-        // Comparing the labels is NOT this step's job: check_web.py's
-        // check 23 reads the four rosters side by side and refuses a
-        // rename that reaches some of the copies. Do not write that
-        // claim back into this walk - two places making one claim is
-        // how the weaker one survives.
-        //
-        // What check 23 cannot do is press a chip. It reads markup,
-        // and this gate has no layout engine (#75), so nothing in it
-        // establishes that a chip repaints the page, marks itself
-        // active, or holds after a reload. A person switching each one
-        // in turn is the only thing that sees that, which is why the
-        // step stays and why it is worded as a render rather than a
-        // reading.
-        "Switch every palette chip in turn and watch the page repaint " +
-          "under each one.",
-        "Open Weigh in, then take the rail to Muse's charts and come " +
-          "back. " +
-          "The tab you were on is still the tab you are on.",
-        "Muse's charts is this scenario's payoff: the combined-weight " +
-          "hero, " +
-          "the deltas, and the weight-over-time chart.",
-      ],
     },
     {
       id: "member-prefilled",
@@ -771,15 +718,6 @@
       session: MEMBER_SESSION,
       prefill: true,
       boxes: ["panel", "signout"],
-      steps: [
-        "Open Weigh in. The form is already filled with this " +
-          "member's last measurements - kept on this device, keyed to " +
-          "this account, sent nowhere (#56).",
-        "Press Sign out in the rail, then sign back in with the " +
-          "Telegram button and open Weigh in again. The form is " +
-          "empty: signing out erased the saved measurements along " +
-          "with the session.",
-      ],
     },
     {
       id: "supersede",
@@ -787,17 +725,6 @@
       start: "submit.html",
       session: MEMBER_SESSION,
       boxes: ["panel", "supersede"],
-      steps: [
-        "On record says 4. Six rows exist for this member - two were " +
-          "mistakes this member corrected, and a correction replaces " +
-          "its row rather than adding one, so the count claims only " +
-          "what stands.",
-        "That count is all this page shows of the story so far. " +
-          "Correcting an entry from here, and seeing the corrected " +
-          "rows named beside the count, belong to #84 and #193; the " +
-          "boxes under this frame are read from the shipped bytes and " +
-          "flip the day those land.",
-      ],
     },
     {
       id: "revoked",
@@ -806,15 +733,6 @@
       session: MEMBER_SESSION,
       revoked: true,
       boxes: ["signout", "revocation"],
-      steps: [
-        "This tab still holds a session the server has already " +
-          "revoked - you are one moment after pressing Sign out on " +
-          "another device.",
-        "Ask the server for anything: reload the page, or switch " +
-          "panel tabs. The request is refused, this tab drops its " +
-          "copy, and you are back at Sign in. A token captured before " +
-          "sign-out opens nothing (#90).",
-      ],
     },
     {
       id: "keyholder",
@@ -822,16 +740,6 @@
       start: "admin.html",
       session: ADMIN_SESSION,
       boxes: ["keyholder", "admin-panel"],
-      steps: [
-        "Press Fetch and decrypt. The rows are the demo's own sample " +
-          "submissions, sealed to a throwaway key and to nothing real.",
-        "Load dev/test-key.json in the key picker. 17 of 18 rows " +
-          "open, and row 16 is named as unopenable - that is the " +
-          "rotated-key case being reported, not a fault.",
-        "Press Store the key, reload the page, and Fetch and decrypt " +
-          "again: no paste the second time (#70).",
-        "Press Clear. Both copies of the key are gone.",
-      ],
     },
     {
       id: "admin",
@@ -839,16 +747,6 @@
       start: "admin.html",
       session: ADMIN_SESSION,
       boxes: ["admin-panel", "signout"],
-      steps: [
-        "Read the page as one surface (#68): the instrument panel, " +
-          "its measures, and the export controls.",
-        "Press Publish, then take the rail to Muse's charts: the " +
-          "chart is " +
-          "drawing the snapshot you just published.",
-        "Press Sign out and the session ends while the stored key " +
-          "stays. Clear is the lever that removes the key - " +
-          "deliberate, not a gap.",
-      ],
     },
     {
       id: "config-fallback",
@@ -856,16 +754,6 @@
       start: "admin.html",
       session: ADMIN_SESSION,
       boxes: ["config"],
-      steps: [
-        "The server is answering with an empty content document - the " +
-          "state every deployment starts in, before an admin has set " +
-          "anything.",
-        "Walk the pages: each shows the copy it ships with. The " +
-          "fallback is the normal first run, not an error.",
-        "The pane that edits this copy is a later slice. The boxes " +
-          "under this frame say whether it has landed - read from the " +
-          "shipped bytes, not from a promise.",
-      ],
     },
     {
       id: "suppressed",
@@ -873,16 +761,101 @@
       start: "dashboard.html",
       session: MEMBER_SESSION,
       boxes: ["dashboard", "privacy"],
-      steps: [
-        "This is Muse's charts drawn from three people, where the " +
-          "floor is " +
-          "five.",
-        "Look for what is missing: cells under the floor are held " +
-          "back, and the weight-over-time chart is withheld whole - a " +
-          "line is one person, so publishing four lines would publish " +
-          "four people.",
-        "Nothing on the page carries a handle or a row.",
+    },
+  ];
+
+  /*
+   * The feature cards, and the register they are written in (#209).
+   *
+   * A card addresses the person deciding whether the PRODUCT is good:
+   * what the thing does, in their words, and a button that shows it
+   * happening. The machinery's own vocabulary is refused on a card by
+   * dev/demo.test.mjs, word by word, because the day a card needs
+   * those words is the day the console has gone back to addressing
+   * the auditor.
+   *
+   * Every action names a staging id from SCENARIOS and optionally a
+   * page to open instead of that staging's `start`. The suite holds
+   * the coverage two-way - no action without its staging, no staging
+   * no card can reach - and holds UAT.md to one section per card,
+   * marked `card "Title"` in its heading, titles agreeing exactly in
+   * both directions.
+   */
+  const FEATURES = [
+    {
+      title: "Sign in with Telegram",
+      blurb: "Press the Telegram button and you are in - no password, " +
+        "no account form. The demo swaps the real widget for a local " +
+        "stand-in; everything after the press is the shipped code.",
+      actions: [{ label: "Arrive signed out", scenario: "signed-out" }],
+    },
+    {
+      title: "Weigh in",
+      blurb: "Your page keeps two tabs: what is on record, and the " +
+        "form for a new weigh-in. Your numbers are sealed inside your " +
+        "browser before anything is sent, so the server only ever " +
+        "holds them locked.",
+      actions: [{ label: "Open Your page", scenario: "member" }],
+    },
+    {
+      title: "The form remembers you",
+      blurb: "Come back and the form is already filled with your last " +
+        "measurements. They are kept on this device and keyed to your " +
+        "account - signing out wipes them.",
+      actions: [
+        { label: "Return to a filled form", scenario: "member-prefilled" },
       ],
+    },
+    {
+      title: "Fix a mistake",
+      blurb: "A correction replaces its row instead of adding another, " +
+        "so the count on record only claims what stands.",
+      actions: [{ label: "See a corrected record", scenario: "supersede" }],
+    },
+    {
+      title: "Signed out means signed out",
+      blurb: "Sign out on one device and every other tab finds out the " +
+        "moment it asks for anything. A token captured before sign-out " +
+        "opens nothing.",
+      actions: [
+        { label: "Arrive after signing out elsewhere", scenario: "revoked" },
+      ],
+    },
+    {
+      title: "The keyholder's desk",
+      blurb: "The export opens only for the key. Fetch the sealed " +
+        "rows, unlock them with the demo's throwaway key, store the " +
+        "key for next time, and clear both copies with one press.",
+      actions: [{ label: "Sit at the desk", scenario: "keyholder" }],
+    },
+    {
+      title: "The admin's panel",
+      blurb: "One surface for the club's controls: publish a fresh " +
+        "snapshot, manage who counts as an admin, export the rows.",
+      actions: [{ label: "Run the panel", scenario: "admin" }],
+    },
+    {
+      title: "Before anything is written",
+      blurb: "A brand-new deployment has no site copy yet, and every " +
+        "page shows the words it ships with. The first run is a " +
+        "normal day, not an error.",
+      actions: [{ label: "Start from empty", scenario: "config-fallback" }],
+    },
+    {
+      title: "Muse's charts",
+      blurb: "Everyone's progress drawn as one line - the combined " +
+        "weight, the deltas, the weight-over-time chart. Muse sees " +
+        "everyone and no one.",
+      actions: [
+        { label: "See the charts", scenario: "member", open: "dashboard.html" },
+      ],
+    },
+    {
+      title: "Too few to show",
+      blurb: "When fewer people have weighed in than the privacy floor " +
+        "allows, the charts hold back rather than point at somebody. " +
+        "A missing cell is the promise being kept.",
+      actions: [{ label: "See a thin week", scenario: "suppressed" }],
     },
   ];
 
@@ -1661,6 +1634,7 @@
     LOCAL_FILES: LOCAL_FILES,
     STORAGE_KEYS: STORAGE_KEYS,
     SCENARIOS: SCENARIOS,
+    FEATURES: FEATURES,
     BOXES: BOXES,
     ROUTES: ROUTES,
     PREFIX_ROUTES: PREFIX_ROUTES,
