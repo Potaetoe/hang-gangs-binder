@@ -427,11 +427,13 @@
   --measure: 46rem;
   --measure-wide: 84rem;
 
-  /* The rail's column. The destination names are short and the
-     constraint is the keyholder note under Admin, which is the longest
-     line the rail carries; wide enough that it does not wrap, narrow
-     enough that the rail plus the reading measure still fits the width
-     the strip breakpoint below hands over at. */
+  /* The rail's column. The destination names sit at under half this
+     width, so the line that governs is the session block's
+     "Signed in as <name>", whose tail is the member's own handle:
+     wide enough that a typical handle keeps that line whole, while an
+     outsized one wraps below rather than clipping or widening the
+     column; narrow enough that the rail plus the reading measure
+     still fits the width the strip breakpoint below hands over at. */
   --rail-width: 15rem;
 }
 
