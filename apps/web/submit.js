@@ -330,8 +330,44 @@
     }
   }
 
+  /*
+   * The rows a correction replaced - #193.
+   *
+   * GET /me reports them beside the effective count rather than
+   * subtracting them in silence, and the reason is in handleMe: a count
+   * that does not move looks the same whether a correction landed or
+   * was refused. That argument only reaches the member if a screen
+   * carries the second number. Drop this function and the count goes
+   * back to shrinking with nothing on the page accounting for the
+   * difference, which is the member reading it as the correction
+   * having eaten an entry.
+   *
+   * Not validated the way `entries` is. A missing or malformed field
+   * hides the line and leaves the rest of the panel alone, because
+   * refusing to draw a count over a second number the page does not
+   * control turns an older Worker into a dead panel - and the count is
+   * what the member came for. Zero is the same silence for the same
+   * reason it is on screen: there is nothing to say.
+   *
+   * The noun is written here rather than in the markup so that one row
+   * reads as one correction.
+   */
+  function renderCorrections(payload) {
+    const count = Number.isInteger(payload.superseded) && payload.superseded > 0
+      ? payload.superseded
+      : 0;
+    const field = $("member-corrections");
+    if (field) {
+      field.textContent = count === 0
+        ? ""
+        : String(count) + (count === 1 ? " correction" : " corrections");
+    }
+    show($("member-corrections-line"), count > 0);
+  }
+
   function renderAccount(payload) {
     $("member-entry-count").textContent = String(payload.entries);
+    renderCorrections(payload);
     const last = $("member-last-at");
     if (payload.lastAt == null) {
       last.dateTime = "";

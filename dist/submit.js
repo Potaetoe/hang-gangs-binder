@@ -236,8 +236,24 @@
     }
   }
 
+  
+
+  function renderCorrections(payload) {
+    const count = Number.isInteger(payload.superseded) && payload.superseded > 0
+      ? payload.superseded
+      : 0;
+    const field = $("member-corrections");
+    if (field) {
+      field.textContent = count === 0
+        ? ""
+        : String(count) + (count === 1 ? " correction" : " corrections");
+    }
+    show($("member-corrections-line"), count > 0);
+  }
+
   function renderAccount(payload) {
     $("member-entry-count").textContent = String(payload.entries);
+    renderCorrections(payload);
     const last = $("member-last-at");
     if (payload.lastAt == null) {
       last.dateTime = "";
