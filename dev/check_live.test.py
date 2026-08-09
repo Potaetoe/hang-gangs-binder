@@ -65,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 122
+EXPECTED = 123
 
 
 def check(label, condition):
@@ -586,9 +586,9 @@ check("the declared-run rule is wired into problems()",
 # cannot ride the loop above either.
 saved_runs = check_live.RUNS
 try:
-    check_live.RUNS = saved_runs + ({"date": "2026-08-09",
+    check_live.RUNS = (*saved_runs, {"date": "2026-08-09",
                                      "arm": "staging",
-                                     "sha": "1" * 40},)
+                                     "sha": "1" * 40})
     wired_arm = check_live.problems()
 finally:
     check_live.RUNS = saved_runs
@@ -649,9 +649,9 @@ check("the shipped runs all declare a registered arm",
 
 saved_runs = check_live.RUNS
 try:
-    check_live.RUNS = saved_runs + ({"date": "2026-08-09",
+    check_live.RUNS = (*saved_runs, {"date": "2026-08-09",
                                      "arm": "staging",
-                                     "sha": "1" * 40},)
+                                     "sha": "1" * 40})
     unregistered = check_live.run_problems(check_live.LEDGER)
 finally:
     check_live.RUNS = saved_runs
@@ -664,8 +664,8 @@ check("a run declaring an unregistered arm is reported",
 # and nothing else says so.
 saved_runs = check_live.RUNS
 try:
-    check_live.RUNS = saved_runs + (dict(check_live.SITTING,
-                                         arm="production"),)
+    check_live.RUNS = (*saved_runs, dict(check_live.SITTING,
+                                         arm="production"))
     doubled = check_live.run_problems(check_live.LEDGER)
 finally:
     check_live.RUNS = saved_runs
@@ -764,7 +764,13 @@ check("the same ledger with nothing stale is not due",
 # batch shown not-due, and printing the second for the first is this
 # ticket's own arithmetic one layer down.
 check("a count that cannot be completed is neither due nor not-due",
-      check_live.due(NEVER_ROWS, silent) is None)
+      check_live.due(NEVER_ROWS + FRESH_ROWS, silent) is None)
+
+# And the floor is only reached when there is something to be silent
+# about. A ledger with no performed rows has nothing that could age, so
+# the count is complete and False is the honest answer.
+check("a ledger with nothing to age answers not-due rather than None",
+      check_live.due(NEVER_ROWS, silent) is False)
 
 check("a count already at the threshold is due even when other rows "
       "cannot be aged",
@@ -796,10 +802,13 @@ check("a fresh ledger under the threshold does not say DUE",
 check("the report refuses to say not-due when rows cannot be aged",
       "CANNOT SAY" in SILENT_TEXT)
 
+# The marker line rather than the word. The closing paragraph names
+# STALE in prose to say how such a row is discharged, and a bare word
+# count would read that as a thirty-fourth stale row.
 check("every stale row is marked where the report lists it",
-      DUE_TEXT.count("STALE") == len(
+      DUE_TEXT.count("\n      STALE  ") == len(
           [e for e in check_live.LEDGER if e["status"] == "performed"])
-      and "STALE" not in CALM_TEXT)
+      and "\n      STALE  " not in CALM_TEXT)
 
 check("performed rows are grouped under the arm that earned them",
       all("  %s  (" % arm in DUE_TEXT for arm in check_live.ARMS))
