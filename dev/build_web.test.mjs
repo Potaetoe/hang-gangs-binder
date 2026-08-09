@@ -25,7 +25,7 @@ import { nodeTestSuite } from "./harness.mjs";
 import { stripJs, stripCss, jsTokens, cssShape, plan, build, differences,
          write, SOURCE } from "../tools/build_web.mjs";
 
-const { check, report } = nodeTestSuite("build_web.mjs", 35);
+const { check, report } = nodeTestSuite("build_web.mjs", 39);
 
 /* ---- the strippers ------------------------------------------------- */
 
@@ -113,14 +113,38 @@ check("every shipped script survives the strip with its meaning intact",
     return String(jsTokens(text)) === String(jsTokens(stripJs(text)));
   }));
 
-check("nothing but JavaScript and CSS is transformed",
-  plan().some((entry) => entry.rel.endsWith(".html") && entry.mode === "copy")
-  && plan().every((entry) =>
-    entry.mode === "copy" || /\.(js|css)$/.test(entry.rel)));
+check("no comment is taken out of anything but JavaScript and CSS",
+  plan().every((entry) =>
+    ["copy", "text"].includes(entry.mode) || /\.(js|css)$/.test(entry.rel)));
+
+check("an HTML page is text, so it keeps its comments and loses its CRLFs",
+  plan().some((entry) => entry.rel.endsWith(".html") && entry.mode === "text")
+  && build("<!-- kept -->\r\n<p>hi</p>\r\n", "text")
+     === "<!-- kept -->\n<p>hi</p>\n");
 
 check("the vendored faces are copied rather than read as text",
   plan().some((entry) =>
     entry.rel.endsWith(".woff2") && entry.mode === "copy"));
+
+/*
+ * The line-ending arm, and it is here because a rebase produced it
+ * rather than because somebody imagined it. .gitattributes stores this
+ * repository as LF and hands Windows CRLF, and git only rewrites a
+ * working file whose blob changed - so a source can sit in CRLF beside
+ * a freshly checked-out artifact in LF, on a machine where nothing is
+ * wrong. A build that copied those bytes would fail its own
+ * byte-compare and commit identically anyway.
+ */
+check("a CRLF source builds to the same bytes as an LF one",
+  build("const a = 1; // why\r\nconst b = 2;\r\n", "js")
+    === build("const a = 1; // why\nconst b = 2;\n", "js"));
+
+check("and so does a stylesheet",
+  build(".a {\r\n/* why */\r\ncolor: red;\r\n}\r\n", "css")
+    === build(".a {\n/* why */\ncolor: red;\n}\n", "css"));
+
+check("a lone carriage return is a line ending too",
+  build("const a = 1;\rconst b = 2;\r", "js") === "const a = 1;\nconst b = 2;\n");
 
 /* ---- staleness, in both directions ---------------------------------- */
 
