@@ -173,7 +173,33 @@ signing somebody out mid-entry. What the Worker can measure is requests
 and not attention, which is also why the admin window is wider than a
 DoD baseline would set it: the timer that sees real interaction belongs
 on the page, and since any authenticated request slides the server-side
-window, that timer needs no route of its own to hold one open.
+window, that timer needs no route of its own to hold one open. That
+timer is `IDLE_WINDOW` in `apps/web/admin.js`, described next.
+
+**`admin.html` also ends itself when nobody is there**, and that half is
+the page's rather than the Worker's — *the two numbers in this paragraph
+await owner ratification on #91.* Ten minutes of no interaction ends the
+tab; the last two of them are spent warning, visibly and counting down.
+Ten is the ASD STIG's own figure for a privileged session (V-222390),
+adopted verbatim rather than argued from this site, because a number
+nobody here invented is a number nobody here has to defend. The warning
+is not a courtesy: a page that simply stopped working mid-read would
+send the keyholder back to sign in and decrypt the whole corpus a second
+time, which discloses more than the timer saves. When it fires, the page
+discards the decrypted rows and the files built from them, then signs
+out through `signout.js` — so the credential is revoked at the Worker
+and not merely dropped in the tab.
+
+**The page's window is deliberately shorter than the Worker's**, and the
+ordering is what carries the design rather than either value. At ten
+against fifteen the page always acts first, on its own initiative;
+reversed, this timer is unreachable, because the credential would die
+first and the plaintext would sit on screen until some request happened
+to be refused. What counts as interaction is device events — pointer,
+key, wheel, touch — and never `scroll`, which this page produces itself
+when it moves focus to the warning. The keyholder's stored key is
+untouched by any of it: the key is not authority, and **Clear** stays
+its only lever.
 
 Those seven days therefore bound more than a lifetime. Somebody who has
 left the group is refused at their next sign-in and every session that

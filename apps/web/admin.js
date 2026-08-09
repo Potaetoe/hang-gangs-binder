@@ -549,6 +549,98 @@
     return named ? "Remove " + named : "Remove this row";
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Walking away from the machine (#91, ASD STIG V-222390).           */
+
+  /*
+   * How long this page stays open with nobody touching it.
+   *
+   * Ten minutes is the STIG's own number for a privileged session, taken
+   * verbatim rather than argued from this site: a number nobody here
+   * invented is a number nobody here has to defend, and the baseline is
+   * the cheapest thing to point at.
+   *
+   * IT IS SHORTER THAN THE WORKER'S WINDOW, AND THAT ORDERING IS THE
+   * LOAD-BEARING PART. `ADMIN_IDLE_MINUTES` in server/worker.js is
+   * fifteen and slides on every authenticated request, so at ten this
+   * page always acts first: it discards its plaintext and revokes on its
+   * own initiative, rather than discovering a dead session from a 401 it
+   * had to provoke. Reverse the two and this timer becomes unreachable -
+   * the credential dies first and the corpus stays on screen until
+   * something happens to ask. Lowering the Worker's number is the change
+   * that would do it, and nothing in this directory can see that happen,
+   * which is why dev/admin-session.test.mjs reads that constant out of
+   * server/worker.js and compares them.
+   *
+   * The two minutes of warning is the difference between a page that
+   * ends and a page that breaks. Without it the tab simply stops working
+   * mid-read, and the admin's next act is to sign in and decrypt the
+   * whole corpus a second time - which costs more disclosure than the
+   * timer saves.
+   */
+  const IDLE_WINDOW = Object.freeze({
+    idleMs: 10 * 60 * 1000,
+    warnMs: 2 * 60 * 1000,
+  });
+
+  /*
+   * Whether anybody is still here, decided from two instants and
+   * nothing else.
+   *
+   * It reads the CLOCK rather than counting how often it has been
+   * called, and that is the whole reason it is a function with a suite.
+   * A laptop that sleeps for an hour does not deliver an hour of
+   * intervals - it delivers one late one - so a page measuring idleness
+   * by how many times it ran would wake believing seconds had passed, on
+   * the one page in this site holding every submitter's plaintext.
+   *
+   * EVERY UNREADABLE ANSWER IS "EXPIRED". A last-interaction time that
+   * is missing, not a number, or somehow ahead of now is not evidence
+   * that somebody is here; it is the absence of evidence, and the two
+   * are only the same thing to a page that wants to stay open. There is
+   * no honest active answer to a clock nobody can trust, so there is no
+   * active answer at all - the cost of being wrong is the corpus left on
+   * a screen in one direction and one press of a button in the other.
+   */
+  function idleVerdict(lastInteraction, now, limits) {
+    const bounds = limits || IDLE_WINDOW;
+    const idle = now - lastInteraction;
+    if (!Number.isFinite(lastInteraction) || !Number.isFinite(now) ||
+        !(idle >= 0)) {
+      return { state: "expired", msLeft: 0 };
+    }
+    const msLeft = bounds.idleMs - idle;
+    if (msLeft <= 0) return { state: "expired", msLeft: 0 };
+    return {
+      state: msLeft <= bounds.warnMs ? "warning" : "active",
+      msLeft: msLeft,
+    };
+  }
+
+  /*
+   * What the warning says, which is the half of this that can only be
+   * got wrong in words.
+   *
+   * It names the remaining time to the second because a warning that
+   * says "soon" is one an admin cannot plan around, and it says WHY
+   * before it says what - the reason this page in particular does this
+   * is the reason the admin should not simply sign back in and leave the
+   * tab open again.
+   *
+   * Silent in every state but the warning. A sentence sitting on screen
+   * while nothing is wrong is how a real notice stops being read.
+   */
+  function idleNotice(verdict) {
+    if (!verdict || verdict.state !== "warning") return "";
+    const seconds = Math.ceil(verdict.msLeft / 1000);
+    const rest = seconds % 60;
+    return "Nobody has touched this page for a while. It is the only " +
+      "place the submissions exist in the clear, so it will clear itself " +
+      "and sign you out in " + Math.floor(seconds / 60) + ":" +
+      (rest < 10 ? "0" : "") + rest +
+      ". Any key, click or scroll keeps it open.";
+  }
+
   // Frozen because admin.html is where decrypt output becomes a CSV: an
   // export a later script can rewrite is a `toCsv` that can be swapped
   // for one that keeps a copy, on the one page in this site that holds
@@ -569,6 +661,9 @@
     refusalFor: refusalFor,
     addedNotice: addedNotice,
     removalStep: removalStep,
+    IDLE_WINDOW: IDLE_WINDOW,
+    idleVerdict: idleVerdict,
+    idleNotice: idleNotice,
   });
 
   /* ---------------------------------------------------------------- */
@@ -906,6 +1001,132 @@
           "you have.",
         removed ? null : "bad");
     });
+
+    /* -------------------------------------------------------------- */
+    /*
+     * The same teardown, performed by nobody (#91).
+     *
+     * Clear above is this page ending because somebody said so. This is
+     * it ending because nobody did - and it is the same act plus the one
+     * step Clear does not need, because the admin who walks away is not
+     * around to sign out afterwards.
+     *
+     * Wired here rather than in setUp's opening, and only past the admin
+     * gate above: a member session and a signed-out visitor never reach
+     * this surface, so a timer for them would be a teardown of nothing
+     * and a set of listeners on a page with no corpus behind it.
+     */
+
+    /*
+     * What counts as somebody being here, and the list is the design
+     * fact rather than an implementation detail.
+     *
+     * These are DEVICE events. `scroll` is deliberately not among them
+     * even though scrolling is exactly what an admin reading an
+     * eighteen-column table does, because a scroll is a CONSEQUENCE and
+     * this page produces scrolls of its own: focusing the warning's own
+     * button scrolls it into view, so a scroll-fed timer would let the
+     * warning cancel the timer that raised it and this page would never
+     * close. `wheel` and `touchstart` are the same reading arriving as
+     * the hand that caused it, and no repaint, animation or timer can
+     * forge one.
+     *
+     * Registered in the CAPTURE phase, which is not a detail either: a
+     * listener on the way back up can be hidden by anything that stops
+     * propagation, and an attention timer that a stray handler can blind
+     * is worse than no timer, because it reports attention it never saw.
+     * `passive` because none of these is ever cancelled here.
+     */
+    const INTERACTION = ["pointerdown", "keydown", "wheel", "touchstart"];
+
+    /*
+     * Once a second, because the countdown is shown to the second and a
+     * warning whose number lags is one an admin cannot plan around. It
+     * costs a clock read and no request: nothing here may ask the Worker
+     * anything, or this page would slide the server-side window forever
+     * and hold open the session it exists to end.
+     */
+    const TICK_MS = 1000;
+
+    let lastInteraction = Date.now();
+    let warned = false;
+    let ticker = null;
+
+    function hideWarning() {
+      if (!warned) return;
+      warned = false;
+      show($("idle-warning"), false);
+    }
+
+    // The warning goes the moment the person does something, rather than
+    // at the next tick. A card that lingered for a second after a
+    // keystroke would read as a control that did not work.
+    function markInteraction() {
+      lastInteraction = Date.now();
+      hideWarning();
+    }
+
+    for (const type of INTERACTION) {
+      document.addEventListener(type, markInteraction, {
+        capture: true,
+        passive: true,
+      });
+    }
+
+    /*
+     * Everything Clear does, and then the half Clear has no reason to
+     * do: the credential itself.
+     *
+     * The stored key is deliberately NOT touched. It is not authority -
+     * nothing issued it and nothing can revoke it, and the note on
+     * KEY_DB above is where that reasoning lives - so an idle timer that
+     * erased it would make stepping away from a machine cost the
+     * keyholder the thing that opens their own rows. Clear is that
+     * lever, and this page says so.
+     *
+     * The local half runs first and the revoke second, in that order,
+     * because signout.js's revoke needs the token that clearing the
+     * session destroys. Its four steps are its own and are not restated
+     * here: this page loads that file before this one precisely so that
+     * ending a session has one implementation.
+     */
+    function endForIdle() {
+      root.clearInterval(ticker);
+      $("keyfile").value = "";
+      $("keyfile-picker").value = "";
+      reset();
+      root.BinderSignOut.signOut();
+    }
+
+    function checkAttention() {
+      const verdict = idleVerdict(lastInteraction, Date.now());
+      if (verdict.state === "expired") {
+        endForIdle();
+        return;
+      }
+      if (verdict.state !== "warning") {
+        hideWarning();
+        return;
+      }
+      $("idle-countdown").textContent = idleNotice(verdict);
+      if (warned) return;
+      warned = true;
+      show($("idle-warning"), true);
+      // Focus rather than a live region. The countdown changes every
+      // second, and an assertive region announcing each one would be a
+      // barrage; moving focus to the control announces the card once,
+      // reads the countdown through aria-describedby, and puts the way
+      // out under the keyboard of whoever was not using a mouse.
+      $("idle-stay").focus();
+    }
+
+    ticker = root.setInterval(checkAttention, TICK_MS);
+
+    // Pressing it is already an interaction in a browser - the
+    // pointerdown arrives first. This is for the presses that are not a
+    // pointer: Enter and Space on a focused button raise a click, and
+    // the keydown that produced it may have gone to something else.
+    $("idle-stay").addEventListener("click", markInteraction);
 
     /*
      * Keeping the key, and reporting honestly what keeping it is worth.
