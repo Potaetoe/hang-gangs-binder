@@ -540,8 +540,8 @@ day a check is added:
       pinned to offer a palette and carrying no chip at all is left
       out of the comparison here, and check 19 fails on that same page
       from that same roster in the same run.
-    - WHAT A LABEL SAYS. #127 ruled the words, "Parchment Daylight"
-      over the id `daylight` included. The reference page below is
+    - WHAT A LABEL SAYS. #191 ruled the words, "Daylight" over the
+      longer label #127 chose included. The reference page below is
       only whichever name sorts first, and a rename that reaches all
       four copies passes here on purpose: agreement is the claim, not
       the wording. A check that pinned the words would have to be
@@ -2253,14 +2253,22 @@ def css_role_problems(css):
 # the half a rail-parity rule cannot reach: three rails agreeing with
 # each other and disagreeing with the page they open is exactly the
 # drift that issue inventoried.
-SITE_TITLE = "HangGang"
+#
+# The site's own name reaches a reader by two routes - the tab strip,
+# through this constant, and the wordmark over the door - and #191 rules
+# them to one string, because a site whose tab and whose masthead
+# disagree is #127's complaint one level up. This constant holds the
+# five titles to it; the wordmark arm on check 10 holds the four
+# hand-kept copies of the masthead to each other. Neither reads the
+# other, and the pair of them is what the words below are worth.
+SITE_TITLE = "Hang Gang Binder"
 
 DESTINATIONS = {
     "404.html": "Not found",
     "admin.html": "Admin",
-    "dashboard.html": "Progress",
+    "dashboard.html": "Muse's charts",
     "index.html": "Sign in",
-    "submit.html": "Your binder",
+    "submit.html": "Your page",
 }
 
 HEADING = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
@@ -3292,7 +3300,7 @@ def page_chips(text):
     whoever reads the failure to look at different things.
 
     Takes comment-stripped markup, for the reason page_text() gives:
-    submit.html's note on the "Parchment Daylight" ruling names this
+    submit.html's note on the "Daylight" ruling names this
     attribute repeatedly, and a rule reading a page's comments is
     describing markup the page does not have.
     """

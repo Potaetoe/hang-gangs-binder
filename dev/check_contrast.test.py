@@ -539,10 +539,10 @@ check("AA text is four and a half and AA non-text is three",
 # ------------------------------------------------------------------ #
 # The real tree.                                                      #
 
-DAYLIGHT = tokens_of("Parchment Daylight") or {}
+DAYLIGHT = tokens_of("Daylight") or {}
 MIDNIGHT = tokens_of("Midnight") or {}
 
-check("Parchment Daylight's muted text clears AA on the page it sits on",
+check("Daylight's muted text clears AA on the page it sits on",
       check_contrast.ratio(DAYLIGHT.get("--color-text-muted", "#ffffff"),
                            DAYLIGHT.get("--color-bg", "#ffffff")) >= 4.6)
 
@@ -555,9 +555,9 @@ check("Midnight's accent text clears AA on a card with margin, not by 0.03",
 # chip would give them. Values that drifted apart would be a palette
 # nobody tested.
 check("the light media block and the Daylight chip declare the same colors",
-      tokens_of("Parchment Daylight") is not None
-      and tokens_of("Parchment Daylight")
-      == tokens_of("Parchment Daylight (prefers-color-scheme)"))
+      tokens_of("Daylight") is not None
+      and tokens_of("Daylight")
+      == tokens_of("Daylight (prefers-color-scheme)"))
 
 check("the contrast media block and the contrast chip declare the same "
       "colors",

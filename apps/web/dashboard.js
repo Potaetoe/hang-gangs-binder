@@ -738,7 +738,7 @@
       };
       /*
        * What everybody weighs, added together - the one figure on
-       * Progress that is about the group rather than about a middle.
+       * Muse's charts that is about the group rather than a middle.
        *
        * Weight only, and that is not an oversight: a combined height is
        * arithmetic with no meaning behind it, and a figure nobody can

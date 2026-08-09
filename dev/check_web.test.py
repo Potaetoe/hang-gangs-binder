@@ -862,23 +862,33 @@ check("no two destinations answer to the same name",
       len(set(check_web.DESTINATIONS.values())) ==
       len(check_web.DESTINATIONS))
 
-NAMED = ('<title>Progress — HangGang</title><h1>Progress</h1>'
+# The fixture's own name is a shape - "the name this page answers to" -
+# but the rail entry inside it is not: page_name_problems() reads every
+# rail href against the real DESTINATIONS, so an entry written out by
+# hand is a second copy of the table that goes stale at the next rename
+# and takes this whole block red with it. So the label is read from the
+# table and the fixture is built around it. What is being exercised is
+# the disagreement, and a disagreement needs one real name to disagree
+# with.
+CHARTS = check_web.DESTINATIONS["dashboard.html"]
+NAMED = ("<title>%s — %s</title><h1>%s</h1>"
          '<ul class="rail-links">'
          '<li><a href="index.html">Sign in</a></li>'
-         '<li><a href="dashboard.html">Progress</a></li></ul>')
+         '<li><a href="dashboard.html">%s</a></li></ul>'
+         % (CHARTS, check_web.SITE_TITLE, CHARTS, CHARTS))
 
 check("a page whose surfaces agree raises nothing",
-      check_web.page_name_problems(NAMED, "Progress") == [])
+      check_web.page_name_problems(NAMED, CHARTS) == [])
 check("a heading disagreeing with the page's name is refused",
       any("its heading says" in p for p in check_web.page_name_problems(
-          NAMED.replace("<h1>Progress</h1>", "<h1>Dashboard</h1>"),
-          "Progress")))
+          NAMED.replace("<h1>%s</h1>" % CHARTS, "<h1>Dashboard</h1>"),
+          CHARTS)))
 check("a title disagreeing with the page's name is refused",
       any("bookmark" in p for p in check_web.page_name_problems(
-          NAMED.replace("<title>Progress", "<title>Dashboard"), "Progress")))
+          NAMED.replace("<title>%s" % CHARTS, "<title>Dashboard"), CHARTS)))
 check("a page with no heading at all is refused",
       any("what page it is" in p for p in check_web.page_name_problems(
-          NAMED.replace("<h1>Progress</h1>", ""), "Progress")))
+          NAMED.replace("<h1>%s</h1>" % CHARTS, ""), CHARTS)))
 
 # The half rail parity cannot reach. Three rails can agree with each
 # other and disagree with the page they open, which is exactly the drift
@@ -888,7 +898,7 @@ check("a rail calling another page by a name it does not answer to "
       "is refused",
       any('calling index.html "Home"' in p
           for p in check_web.page_name_problems(
-              NAMED.replace(">Sign in<", ">Home<"), "Progress")))
+              NAMED.replace(">Sign in<", ">Home<"), CHARTS)))
 
 # The spelling the browser resolves identically and a membership test
 # does not. `if href in DESTINATIONS` read "./admin.html" as something
@@ -911,11 +921,11 @@ check("a dot-slash rail calling a page by a name it does not answer to "
       any('calling ./index.html "Home"' in p
           for p in check_web.page_name_problems(
               NAMED.replace('href="index.html">Sign in',
-                            'href="./index.html">Home'), "Progress")))
+                            'href="./index.html">Home'), CHARTS)))
 check("a rail entry naming no destination at all is refused",
       any("names no destination" in p for p in check_web.page_name_problems(
           NAMED.replace('href="dashboard.html"', 'href="reports.html"'),
-          "Progress")))
+          CHARTS)))
 
 check("no shipped page disagrees with its own name",
       check_web.name_problems() == [])
@@ -932,7 +942,7 @@ check("exactly one page is the admin instrument",
 
 INSTRUMENT = ('<body class="wide railed instrument">'
               '<p class="surface-mark">Admin surface</p>')
-MEMBER = '<body class="railed"><h1>Progress</h1>'
+MEMBER = '<body class="railed"><h1>Members</h1>'
 
 check("the instrument page wearing its own clothes raises nothing",
       check_web.page_surface_problems(INSTRUMENT, "instrument") == [])
@@ -1389,12 +1399,12 @@ def chip_markup(name, label, tag="button"):
 # The shipped roster, written out here rather than read off the pages,
 # so an arm below cannot agree with a page that has drifted.
 FOUR_CHIPS = [("midnight", "Midnight"), ("pink", "Pink"),
-              ("daylight", "Parchment Daylight"), ("contrast", "Contrast")]
+              ("daylight", "Daylight"), ("contrast", "Contrast")]
 
 CHIP_GROUP = "".join(chip_markup(n, w) for n, w in FOUR_CHIPS)
 
 # The rename that reaches one page and not the others.
-DRIFTED_CHIPS = [(n, "Daylight" if n == "daylight" else w)
+DRIFTED_CHIPS = [(n, "Parchment Daylight" if n == "daylight" else w)
                  for n, w in FOUR_CHIPS]
 
 # The reader first. Every one of these is a shape the gate would

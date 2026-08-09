@@ -553,13 +553,13 @@ await tabs.elements["add-entry-tab"].dispatch("click");
 check("the add-entry tab paints exactly one pane",
   !isPainted(tabs.elements["your-entries-pane"]) &&
   isPainted(tabs.elements["add-entry-pane"]));
-check("choosing New entry announces that the form is on screen",
+check("choosing Weigh in announces that the form is on screen",
   tabs.document.dispatchedHere.includes(ADD_ENTRY_SHOWN_EVENT));
 await tabs.elements["your-entries-tab"].dispatch("click");
 check("switching back never leaves both panes painted",
   isPainted(tabs.elements["your-entries-pane"]) &&
   !isPainted(tabs.elements["add-entry-pane"]));
-check("choosing Entries announces nothing about the form",
+check("choosing On record announces nothing about the form",
   tabs.document.dispatchedHere.filter(
     (type) => type === ADD_ENTRY_SHOWN_EVENT).length === 1);
 

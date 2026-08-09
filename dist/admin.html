@@ -18,7 +18,7 @@
   through fetch(), which is how the mistake was nearly made.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Admin — HangGang</title>
+<title>Admin — Hang Gang Binder</title>
 <meta name="description" content="The admin surface: decrypt, export and publish the submissions. Requires an admin session and the private key.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
@@ -48,18 +48,15 @@
 -->
 <aside class="rail">
   <a class="wordmark" href="index.html">
-    <span class="wordmark-owner">Muse's</span>
+    <span class="wordmark-owner">Hang Gang</span>
     <span class="wordmark-name">Binder</span>
   </a>
 
   <nav aria-label="Site">
     <ul class="rail-links">
-      <li><a href="submit.html">Your binder</a></li>
-      <li><a href="dashboard.html">Progress</a></li>
-      <li>
-        <a href="admin.html">Admin</a>
-        <span class="rail-note">Keyholder only — needs the key</span>
-      </li>
+      <li><a href="submit.html">Your page</a></li>
+      <li><a href="dashboard.html">Muse's charts</a></li>
+      <li><a href="admin.html">Admin</a></li>
     </ul>
   </nav>
 
@@ -415,8 +412,8 @@
       <p class="runner"><span>Publish</span></p>
       <p>
         Sends the charts above — as counts and medians, with no handles
-        and no rows — to the public <a href="dashboard.html">Progress</a>
-        page. It replaces whatever is there now.
+        and no rows — to the public <a href="dashboard.html">Muse's
+        charts</a> page. It replaces whatever is there now.
       </p>
 
       <div class="field">
@@ -488,7 +485,7 @@
       <button type="button" data-set-theme="pink">Pink</button>
       <!-- The label is two words and the id is one. See the note in
            submit.html; nothing here may be renamed on its own. -->
-      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
   </div>

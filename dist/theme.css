@@ -548,15 +548,6 @@ body.railed {
 
 
 
-.rail-note {
-  display: block;
-  padding: 0 var(--space-3) var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-
-
-
 .rail-session {
   margin-top: auto;
   display: flex;
@@ -1216,10 +1207,6 @@ body.instrument main { gap: var(--space-3); }
     border-left: 0;
     box-shadow: inset 0 -2px var(--color-accent-text);
   }
-
-  
-
-  .rail-note { display: none; }
 
   .wordmark-name { font-size: 1.25rem; }
 
