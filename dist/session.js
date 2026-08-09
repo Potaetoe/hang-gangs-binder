@@ -60,6 +60,13 @@
 
      
      
+     
+     
+     
+     
+     
+     
+     
     if (!value) clear();
     return value;
   }
@@ -82,6 +89,13 @@
     } catch (error) {
       throw new Error("This browser cannot keep a session for this tab.");
     }
+     
+     
+     
+     
+     
+     
+    announce(value);
     return value;
   }
 
@@ -101,7 +115,7 @@
     return segment.indexOf(".") === -1 ? segment + ".html" : segment;
   }
 
-  function announce(value) {
+  function paintDevelopmentCard(value) {
     if (typeof document === "undefined") return;
     const banner = document.querySelector("[data-dev-session]");
     if (!banner) return;
@@ -110,6 +124,29 @@
     banner.hidden = !development;
     const identity = banner.querySelector("[data-dev-identity]");
     if (identity) identity.textContent = development ? value.username : "";
+  }
+
+  const listeners = [];
+
+  
+
+  function onChange(listener) {
+    if (typeof listener === "function") listeners.push(listener);
+  }
+
+  
+
+  function announce(value) {
+    paintDevelopmentCard(value);
+    for (let i = 0; i < listeners.length; i += 1) {
+      try {
+        listeners[i]();
+      } catch (error) {
+         
+         
+         
+      }
+    }
   }
 
   function redirectToSignIn() {
@@ -132,6 +169,7 @@
     authorization,
     pageName,
     require: requireSession,
+    onChange,
   });
 
    
