@@ -375,29 +375,32 @@
     const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
     show($("h-measure-field"), bins);
 
+    
+
+    const query = {
+       
+       
+       
+       
+      basis: "entries",
+      split: split,
+      measure: measure,
+       
+       
+       
+      units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+    };
+
     let answer;
     try {
-      answer = Query.run(source, {
-         
-         
-         
-         
-        basis: "entries",
-        split: split,
-        measure: measure,
-         
-         
-         
-        units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
-      });
+      answer = Query.run(source, query);
     } catch (error) {
       historyStatus("That question could not be asked. " +
         (error && error.message ? error.message : ""), true);
       return;
     }
     historyStatus("", false);
-    root.BinderDashboard.renderAnswer(answerAt, answer,
-      Query.describe({ basis: "entries", split: split, measure: measure }));
+    root.BinderDashboard.renderAnswer(answerAt, answer, Query.describe(query));
   }
 
   async function openHistory() {

@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 92;
+const EXPECTED = 93;
 
 function check(label, condition) {
   performed++;
@@ -312,6 +312,7 @@ const MEMBER = {
 function engineStubs(history) {
   const engine = {
     ensured: [], sources: [], queries: [], drawn: [], decrypted: [],
+    described: [],
   };
   /*
    * No argument means the modules are NOT on the page, which is the
@@ -379,7 +380,13 @@ function engineStubs(history) {
       engine.queries.push({ source, query });
       return { available: true, kind: "bins", cells: [], floor: 0 };
     },
-    describe(query) { return "described " + query.split; },
+    // Records the object it was handed, not just its words. What has to
+    // hold is that the caption and the answer describe ONE question -
+    // the identity, not a string this file could keep agreeing with.
+    describe(query) {
+      engine.described.push(query);
+      return "described " + query.split;
+    },
   });
   return engine;
 }
@@ -1562,6 +1569,23 @@ check("the answer follows the form's units rather than a second control",
   metric.engine.queries.length === 2 &&
   metric.engine.queries[0].query.units === "imperial" &&
   metric.engine.queries[1].query.units === "metric");
+
+/*
+ * The caption describes the question that was ASKED, and the identity is
+ * what is asserted rather than the words.
+ *
+ * Found in a browser: a caption built from a second literal read
+ * "(imperial)" over a chart drawn in metric, because `describe`
+ * normalizes an absent `units` exactly as `run` does and neither can
+ * know the other was handed something else. Comparing the strings would
+ * pin today's wording; comparing the object pins that there is only one
+ * question, which is the property that cannot drift.
+ */
+check("the caption describes the same query object the answer came from",
+  metric.engine.described.length === 2 &&
+  metric.engine.described.every((one, index) =>
+    one === metric.engine.queries[index].query) &&
+  metric.engine.described[1].units === "metric");
 
 /*
  * A row that will not open is COUNTED and named, never dropped. The

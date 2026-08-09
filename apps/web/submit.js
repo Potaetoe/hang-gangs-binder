@@ -554,29 +554,39 @@
     const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
     show($("h-measure-field"), bins);
 
+    /*
+     * ONE QUERY OBJECT, ASKED AND DESCRIBED. Two literals here would be
+     * two questions - and the one that draws the chart and the one that
+     * captions it would drift on whichever member was omitted from the
+     * second. That is not hypothetical: a caption built without `units`
+     * reads "(imperial)" over a metric chart, because `describe`
+     * normalizes an absent units the same way `run` does and neither
+     * has any way to know the other was asked something else.
+     */
+    const query = {
+      // Entries, always. "How many people" over one person's own rows is
+      // one person, and their history is the thing being asked about -
+      // so the basis follows from what the source is rather than from a
+      // control offering a question with one answer.
+      basis: "entries",
+      split: split,
+      measure: measure,
+      // The form's own units choice, which is this page's only one. A
+      // second control here would let one page hold two answers to the
+      // same question.
+      units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+    };
+
     let answer;
     try {
-      answer = Query.run(source, {
-        // Entries, always. "How many people" over one person's own rows
-        // is one person, and their history is the thing being asked
-        // about - so the basis follows from what the source is rather
-        // than from a control offering a question with one answer.
-        basis: "entries",
-        split: split,
-        measure: measure,
-        // The form's own units choice, which is this page's only one. A
-        // second control here would let one page hold two answers to
-        // the same question.
-        units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
-      });
+      answer = Query.run(source, query);
     } catch (error) {
       historyStatus("That question could not be asked. " +
         (error && error.message ? error.message : ""), true);
       return;
     }
     historyStatus("", false);
-    root.BinderDashboard.renderAnswer(answerAt, answer,
-      Query.describe({ basis: "entries", split: split, measure: measure }));
+    root.BinderDashboard.renderAnswer(answerAt, answer, Query.describe(query));
   }
 
   async function openHistory() {
