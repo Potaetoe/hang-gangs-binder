@@ -1561,13 +1561,54 @@ await check("every published answer carries the floor in its own words", () =>
 
 await check("the floor sentence is the source's, not a number in this file",
   () => {
-    // The one arm that would survive MIN_CELL moving and still be wrong.
     // renderAnswer reads answer.floor, which run() reads off the source,
-    // which publishedSource reads off dashboard.js - so a floor of five
-    // in the sentence is five because the module says so.
+    // which publishedSource reads off dashboard.js - so a five in the
+    // sentence is five because the module says so.
+    //
+    // ON ITS OWN THIS ARM IS WEAK, and saying so is the point: against a
+    // published source the constant and the read agree, so hardcoding
+    // five in floorNote leaves it green. It fires only when MIN_CELL
+    // actually moves. The check below is the one that discriminates
+    // without moving anything, because it reaches the only other floor
+    // this engine has.
     const hint = hintOf(figures(asked(ASKABLE, { basis: "people",
       split: "gender" }))[0]);
     return hint.includes("smaller than " + D.MIN_CELL);
+  });
+
+await check("a personal answer carries no floor promise, because it has no floor",
+  () => {
+    /*
+     * THE BOUNDARY FROM THE OTHER SIDE. personalSource is one member's
+     * own rows at floor 0 - their own data is theirs, and a floor there
+     * would hide somebody's own March from them because March held one
+     * entry. So the sentence a published answer carries would be false
+     * here, and printing it over somebody's own history would be a
+     * promise about groups of five made about a group of one.
+     *
+     * No page builds this source yet; dashboard.html holds a published
+     * document and #85's slices 2 and 3 are what will make a personal one
+     * readable. It is pinned now because the drawing half is what those
+     * slices will call, and a drawing half that only knows one floor is
+     * the thing they would discover the hard way.
+     */
+    const mine = [70, 74, 78].map((kg, index) => entry({
+      id: 90 + index, telegram: "mine", accountId: "acct-mine",
+      submittedAt: "2026-0" + (index + 1) + "-01T00:00:00.000Z",
+      kg, lb: Math.round(kg * 2.2046 * 10) / 10,
+    }));
+    const source = Q.personalSource(mine,
+      Date.parse("2026-08-01T00:00:00.000Z"));
+    const query = { basis: "entries", split: "weight", units: "metric" };
+    const answer = Q.run(source, query);
+    const container = makeNode("div", HTML_NS);
+    D.renderAnswer(container, answer, Q.describe(query));
+
+    return answer.source === "personal" && answer.floor === 0 &&
+      hintOf(figures(container)[0]) === null &&
+      // and it still drew: a missing promise is not a missing answer
+      withClass(container, "chart-bar").length === answer.cells.length &&
+      answer.cells.length > 0;
   });
 
 await check("an answer redraw replaces the figure rather than stacking them",
