@@ -31,7 +31,7 @@ Worker is actually answering, from fact rather than memory.
 | `POST /auth/dev` | `DEV_LOGIN_SECRET` **and** loopback origin | development sign-in; `404` everywhere else |
 | `DELETE /session` | any session, its own | deletes that session's row; the pages send it on sign out |
 | `GET /me` | any session | entry count, last submission, admin flag, own account id |
-| `GET /my-entries` | member session | this account's own rows as handles — id, receipt time, whether superseded. No contents |
+| `GET /my-entries` | member session | this account's own rows — id, receipt time, whether superseded, and the sealed bytes as stored. Bounded; the cap is a constant in `server/worker.js` |
 | `POST /submit` | member session | appends one ciphertext row, tagged with the account id |
 | `GET /export` | admin | returns every row |
 | `POST /snapshot` | admin | replaces the published aggregate |
