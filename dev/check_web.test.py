@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 171
+EXPECTED = 209
 
 
 def check(label, condition):
@@ -1057,6 +1057,212 @@ check("the wrapper reads the stylesheet rather than answering from "
       "nowhere", len(found) == 2)
 check("and it is the shipped directory it normally reads",
       check_web.WEB.endswith(os.path.join("apps", "web")))
+
+
+# ------------------------------------------------------------------ #
+# Check 21: the chart series slot count, in its three places.         #
+#                                                                     #
+# Every fixture below writes .series-N as a literal, and the shipped  #
+# tree never does - which is the whole reason this check exists. A    #
+# search for "series-0" across this repository finds these strings    #
+# and nothing in apps/web, while twelve live selectors and six        #
+# palettes' worth of values depend on that number.                    #
+
+PRODUCER = 'const cls = "chart-series series-" + (index % 6);'
+
+
+def slots(count, palettes=1):
+    """A stylesheet defining `count` slots across `palettes` palettes."""
+    css = ""
+    for palette in range(palettes):
+        values = "".join("--color-series-%d: #00%d000;" % (n, n)
+                         for n in range(count))
+        css += ':root[data-theme="p%d"] { %s }' % (palette, values)
+    for n in range(count):
+        css += ".series-%d { stroke: var(--color-series-%d); }" % (n, n)
+        css += ("circle.series-%d, text.series-%d "
+                "{ fill: var(--color-series-%d); }" % (n, n, n))
+    return css
+
+
+check("the cycle length is read out of the built class name",
+      check_web.series_cycle_length(PRODUCER) == 6)
+check("spacing in the modulo does not hide the cycle length",
+      check_web.series_cycle_length('"series-"+(i%4)') == 4)
+check("a script that composes no series class has no cycle length",
+      check_web.series_cycle_length("const cls = seriesClass(index);")
+      is None)
+
+check("a stylesheet and a script that agree raise nothing",
+      check_web.css_series_problems(slots(6), PRODUCER) == [])
+
+# The direction a dead-CSS pass produces: a slot deleted as unused.
+check("a slot the stylesheet does not define is refused",
+      any(".series-5" in p for p in check_web.css_series_problems(
+          slots(5), PRODUCER)))
+check("a slot past the cycle renders never and is refused",
+      any("render never" in p for p in check_web.css_series_problems(
+          slots(7), PRODUCER)))
+
+check("a slot with a stroke and no fill is refused",
+      any("fills" in p for p in check_web.css_series_problems(
+          slots(6).replace("circle.series-5, text.series-5 "
+                           "{ fill: var(--color-series-5); }", ""),
+          PRODUCER)))
+
+check("a palette short of a slot is refused",
+      any("copied from the one open" in p
+          for p in check_web.css_series_problems(
+              slots(6) + ':root[data-theme="q"] '
+              "{ --color-series-0: red; }", PRODUCER)))
+check("a stylesheet setting no series value at all is refused",
+      any("sets no --color-series-N" in p
+          for p in check_web.css_series_problems(
+              ".series-0 { stroke: red; }"
+              "circle.series-0, text.series-0 { fill: red; }",
+              '"series-" + (i % 1)')))
+
+# A rule that cannot find its subject must say so. This is the arm that
+# stops the whole check from going quiet the day the chart changes shape.
+check("a producer this check cannot read is reported, not skipped",
+      any("composes no series class" in p
+          for p in check_web.css_series_problems(slots(6), "// nothing")))
+check("a zero-length cycle is refused rather than divided by",
+      any("divide by zero" in p for p in check_web.css_series_problems(
+          slots(6), '"series-" + (i % 0)')))
+
+# Palettes live inside @media in this stylesheet, so a reader that only
+# saw top-level blocks would find four of the six and call two of them
+# absent - a failure that looks like a real finding.
+check("a palette nested inside @media is found",
+      check_web.stylesheet_series(
+          "@media (prefers-color-scheme: light) { :root "
+          "{ --color-series-0: red; --color-series-1: blue; } }")[2]
+      == [(":root", {0, 1})])
+
+check("the shipped stylesheet and chart script agree on the slot count",
+      check_web.series_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 22: the loading shape.                                        #
+
+PREPAINT = '<script src="theme-init.js"></script>'
+RUN = ('<script src="config.js"></script>'
+       '<script src="ui.js"></script>')
+
+
+def page(head=PREPAINT, body="<p>Hello</p>" + RUN):
+    return ("<!doctype html><html><head>%s</head><body>%s</body></html>"
+            % (head, body))
+
+
+check("a page in the shipped loading shape raises nothing",
+      check_web.page_loading_problems(page()) == [])
+
+# The headline arm. One word, in the direction #80 was pointing, and
+# every other check in this gate stays green through it.
+check("defer on the pre-paint script is refused",
+      any("silently undoes it" in p for p in check_web.page_loading_problems(
+          page(head='<script defer src="theme-init.js"></script>'))))
+check("async on the pre-paint script is refused",
+      any("silently undoes it" in p for p in check_web.page_loading_problems(
+          page(head='<script src="theme-init.js" async></script>'))))
+check("a valued defer attribute is refused too",
+      any("silently undoes it" in p for p in check_web.page_loading_problems(
+          page(head='<script src="theme-init.js" defer="defer"></script>'))))
+
+check("a second script in the head is refused",
+      any("only script that may block" in p
+          for p in check_web.page_loading_problems(
+              page(head=PREPAINT + '<script src="nav.js"></script>'))))
+check("an inline script in the head is refused",
+      any("an inline script" in p for p in check_web.page_loading_problems(
+          page(head=PREPAINT + "<script>go()</script>"))))
+check("a page with no pre-paint script in its head is refused",
+      any("carries no theme-init.js" in p
+          for p in check_web.page_loading_problems(page(head=""))))
+
+check("defer on one of the site's own body scripts is refused",
+      any("moving one means moving the run" in p
+          for p in check_web.page_loading_problems(
+              page(body='<script defer src="config.js"></script>'))))
+check("content after the run of body scripts is refused",
+      any("query the document at top level" in p
+          for p in check_web.page_loading_problems(
+              page(body=RUN + "<p>after</p>"))))
+
+# The one script here nothing in this repository sets the attributes of.
+check("a third-party async script mid-body raises nothing",
+      check_web.page_loading_problems(page(
+          body='<script async src="https://telegram.org/js/w.js?22">'
+               "</script><p>Hello</p>" + RUN)) == [])
+
+# Both quote styles, for the reason the label roles give one file up.
+check("a single-quoted pre-paint script is read",
+      check_web.page_loading_problems(
+          page(head="<script src='theme-init.js'></script>")) == [])
+check("a single-quoted defer is refused",
+      any("silently undoes it" in p for p in check_web.page_loading_problems(
+          page(head="<script src='theme-init.js' defer></script>"))))
+
+# A bare attribute name, so a file that happens to be called defer.js is
+# not read as a deferred script.
+check("a filename containing the word is not the attribute",
+      check_web.page_loading_problems(
+          page(body='<script src="defer.js"></script>')) == [])
+
+check("a page with no </body> is a reported problem, not a skip",
+      any("</body>" in p for p in check_web.page_loading_problems(
+          "<html><head>%s</head><body>%s" % (PREPAINT, RUN))))
+
+check("every shipped page holds the loading shape",
+      check_web.loading_problems() == [])
+
+
+# The order arm. `const UI = root.BinderUI;` runs when the file does, and
+# the modules holding it guard on the captured value - so getting this
+# wrong produces a page that goes quiet rather than one that throws,
+# which is why it is worth a gate at all.
+CAPTURES = {"auth.js": {"BinderUI"}, "signout.js": {"BinderSession"}}
+
+check("a namespace captured off the global object is found",
+      check_web.module_captures("const UI = root.BinderUI;")
+      == {"BinderUI"})
+check("every spelling of the global object is found",
+      check_web.module_captures("const S = window.BinderSession;")
+      == {"BinderSession"})
+# The reason the prefix is required rather than the bare name: these
+# names appear in prose and in messages, and ordering a page against a
+# sentence is a false failure that looks exactly like a real one.
+check("a bare mention with no global object is not a capture",
+      check_web.module_captures('say("BinderUI is missing");') == set())
+check("a module publishing its own namespace does not capture it",
+      check_web.run_order_problems(
+          ["ui.js"], {"ui.js": {"BinderUI"}}) == [])
+
+check("a run that publishes before it captures raises nothing",
+      check_web.run_order_problems(["ui.js", "auth.js"], CAPTURES) == [])
+check("a capturing script above its publisher is refused",
+      any("goes quiet" in p for p in check_web.run_order_problems(
+          ["auth.js", "ui.js"], CAPTURES)))
+check("the refusal names both files and the namespace",
+      all(word in check_web.run_order_problems(
+          ["auth.js", "ui.js"], CAPTURES)[0]
+          for word in ("auth.js", "ui.js", "BinderUI")))
+check("a publisher absent from the page entirely is refused",
+      any("never loads ui.js" in p for p in check_web.run_order_problems(
+          ["auth.js"], CAPTURES)))
+
+check("the shipped pages' script runs are read, not assumed",
+      check_web.page_script_run(
+          "<html><head></head><body><script src='a.js'></script>"
+          "</body></html>") == ["a.js"])
+check("a third-party script is not part of the run to order",
+      check_web.page_script_run(
+          "<html><head></head><body>"
+          "<script src='https://telegram.org/js/w.js'></script>"
+          "<script src='a.js'></script></body></html>") == ["a.js"])
 
 
 if failures:

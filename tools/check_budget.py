@@ -108,6 +108,52 @@ The page list is pinned rather than read off the directory, for the
 reason CSP_PAGES in tools/check_web.py gives: a table derived from what
 exists cannot fail when a page is added, and a page being added is
 exactly when a budget gets forgotten.
+
+WHERE THE HEADROOM IS NOT: UNUSED CSS
+-------------------------------------
+Written down because this is the first place somebody looks when a page
+reads 94% of its ceiling, and because the answer is counter-intuitive
+enough that it will otherwise be rediscovered at the cost of a day.
+
+#80's unused-CSS cross-check has been run, against the redesigned pages
+it was deferred for. Every top-level selector in apps/web/theme.css was
+taken against the static markup of all five pages, against every class
+and attribute the eleven scripts set at runtime, and against the SVG
+apps/web/dashboard.js generates. THE WHOLE YIELD IS FOUR SELECTORS -
+112 raw bytes, which is around twenty once gzipped, and gzipped is what
+travels:
+
+  input[type="password"] and its :hover pair - there is no password
+  field anywhere in the app, and no reference to one. Sign-in is the
+  Telegram widget plus a session token, and the admin key import is a
+  textarea.
+
+  body.wide:not(.railed) > *, twice - once at its rule and once in the
+  52rem override. admin.html is the only page carrying `wide`, and it
+  always carries `railed` beside it, so the combination this needs
+  exists nowhere. Weaker than the password case, which rests on a total
+  absence: a future page splitting the two would make this live again.
+
+That is under a fiftieth of one percent of any ceiling here, and a
+quarter of one percent of the tightest page's remaining headroom. It is
+worth removing for tidiness and it is not a budget fix - a run of this
+check prints the real figures either way, which is the point of printing
+them. The weight on these pages is
+the vendored woff2 faces and the scripts, both of which the comments
+above account for by name, and the per-surface stylesheet split (#160)
+is where the CSS bytes actually are - five pages paying for rules four
+of them never match is a different quantity entirely from four rules
+nobody matches.
+
+AND DO NOT AUTOMATE THIS. A general dead-CSS pass over this tree, of the
+kind that searches for each selector's name, deletes .series-0 through
+.series-5 and their circle/text pairs - twelve of the most heavily
+exercised rules in the stylesheet - and goes green on its own gate.
+dashboard.js builds those names by concatenation rather than writing
+them, so none of the six appears as a literal string in any file here.
+Check 21 in tools/check_web.py now pins that coupling in both
+directions, and it is the guard rail #160 needs before it moves any of
+those rules; the trap is stated there in full.
 """
 
 import gzip
