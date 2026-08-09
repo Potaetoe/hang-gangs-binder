@@ -167,6 +167,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
 -- Expired rows are cleared when one is looked up rather than on a
 -- schedule. The ordinary failure of a scheduled job is silence.
 --
+-- Rows also leave here for a reason that has nothing to do with the
+-- clock: a sign-in Telegram definitively refuses deletes every row for
+-- that account, which is how leaving the group ends a session that is
+-- already open. Anything sweeping or counting this table should know
+-- that a row can disappear while its deadline is still in the future -
+-- see revokeAccountSessions() in server/worker.js for the bound, and
+-- for why an unreachable Telegram deletes nothing.
+--
 -- `expires_at` is not fixed at sign-in for every session: an admin row's
 -- deadline moves forward each time the session is used, and never past a
 -- cap derived from `created_at`. Anything reading this table that
@@ -268,7 +276,7 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- THIS TABLE IS ENFORCING. A row here grants what it says it grants:
 -- server/worker.js unions `admin` rows with ADMIN_TELEGRAM_IDS in
 -- adminAccountIds(), and `always_allow` rows with
--- ALWAYS_ALLOW_TELEGRAM_IDS in isGroupMember(). Both arms are live, and
+-- ALWAYS_ALLOW_TELEGRAM_IDS in groupStanding(). Both arms are live, and
 -- handleReadMembership carries the whole argument for why dual-read is
 -- what ships rather than a step passed through.
 --
@@ -286,8 +294,12 @@ CREATE TABLE IF NOT EXISTS site_content (
 --     and back in. A surface reporting success while the person sees
 --     no new powers is looking at this, not at a failed write.
 --   * An `always_allow` row is consulted inside sign-in and nowhere
---     else, so neither adding nor removing one touches a session that
---     is already open; both land at the next sign-in.
+--     else, so neither adding nor removing one reaches a session that
+--     is already open; both land at the next sign-in. REMOVING one has
+--     a second effect at that sign-in, and it is not gentle: with the
+--     bypass gone the group check runs, and if Telegram says the person
+--     has left, every session that account holds is deleted. So the row
+--     is a bypass of the check and never a hold on a session.
 --
 -- OPERATIONS.md states the same three where an operator meets them.
 --
@@ -298,7 +310,7 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- the DELETE statement rather than by a count read beforehand.
 --
 -- TELEGRAM_GROUP_CHAT_ID does not belong here and is not coming. It has
--- to be recoverable in the clear because isGroupMember() interpolates it
+-- to be recoverable in the clear because groupStanding() interpolates it
 -- into a URL, it is one value rather than a list, and it names a chat
 -- rather than people.
 CREATE TABLE IF NOT EXISTS membership (

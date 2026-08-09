@@ -510,9 +510,15 @@ session behind.
    always-allow lists in the same sitting**, the
    `ALWAYS_ALLOW_TELEGRAM_IDS` secret and their `always_allow` row.
    Group membership is checked when a session is *issued* and never
-   again, so this stops the next sign-in and does nothing whatever to
-   the session they are already holding. If their id is on either
-   always-allow list, removing them from the group has no effect at all:
+   during one, so this stops the next sign-in. A sign-in Telegram
+   *definitively* refuses — it answered, and it said they are gone —
+   also ends every session that account is holding; an unreachable
+   Telegram refuses the sign-in and revokes nothing, because a failed
+   call is not evidence that anybody left. Do not plan around either:
+   both need them to try, so step 4 is still the lever that ends a
+   session on your schedule rather than on theirs. If their id is on
+   either always-allow list, removing them from the group has no effect
+   at all:
    those lists exist to bypass exactly this check ("Secrets" above). It
    is the easiest step to forget, because it is usually empty. The row
    is **any admin**; the secret is **owner only.**

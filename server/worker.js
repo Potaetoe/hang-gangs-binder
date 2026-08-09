@@ -57,7 +57,7 @@
  *                             check, and the way back in if the bot is
  *                             ever removed from the group. Beside the
  *                             table's `always_allow` rows, never
- *                             replaced by them - isGroupMember() says
+ *                             replaced by them - groupStanding() says
  *                             why this one keeps a secret arm for good.
  *   ALLOWED_ORIGINS           optional, comma-separated
  *   DEV_LOGIN_SECRET          DEVELOPMENT ONLY. Its absence is what
@@ -196,6 +196,20 @@ const AUTH_FRESHNESS_SECONDS = 300;
 // member unless it says otherwise, which is why it cannot simply be
 // tested for equality.
 const MEMBER_STATUSES = ["creator", "administrator", "member", "restricted"];
+
+/*
+ * Being gone from it, as Telegram spells that - and this list is NOT the
+ * complement of the one above.
+ *
+ * Telegram's ChatMember carries six statuses; these are the two that
+ * mean departed, and `restricted` with `is_member: false` is a third way
+ * of saying it that lives in groupStanding() because reading it takes
+ * two fields. Anything outside both lists is a status this Worker has
+ * never been taught: a reason to refuse, and deliberately not a reason
+ * to believe somebody left. Written as "not a member status" instead,
+ * every status Telegram ever invents would arrive here as a revocation.
+ */
+const LEFT_STATUSES = ["left", "kicked"];
 
 const encoder = new TextEncoder();
 
@@ -437,11 +451,27 @@ async function verifyTelegramPayload(payload, botToken) {
 }
 
 /*
- * Is this person actually in the group?
+ * Where this person stands with the group, in three answers rather than
+ * two.
  *
  * The widget proves somebody has a Telegram account; it says nothing
  * about whether they are one of yours. This is what makes the binder
  * private to the group rather than private to whoever finds the URL.
+ *
+ * THREE answers, because two of them are refusals that must not be acted
+ * on the same way. "left" is Telegram saying this person is gone.
+ * "unknown" is Telegram not saying anything this side can read - the call
+ * failed, the API answered `ok: false`, the status is one nobody here has
+ * taught it. Both refuse a sign-in and always have; only "left" is
+ * evidence of anything, and handleTelegramAuth is the one place the
+ * difference is spent. Collapsing the two back into one boolean is what
+ * turns a Telegram outage into a mass sign-out, which is why they are
+ * named rather than counted.
+ *
+ * The refusal posture is unchanged by that split and has to stay so:
+ * anything that is not "member" refuses, exactly as before.
+ * dev/worker.test.mjs asserts all four unknown shapes as refusals and
+ * asserted them before this split existed.
  *
  * The always-allow list passes regardless, and is not merely a
  * convenience: if the bot is ever removed from the group this call
@@ -457,21 +487,23 @@ async function verifyTelegramPayload(payload, botToken) {
  *
  * The secret arm is checked first and by numeric id, so it needs no
  * HMAC and no read: that is the arm that must survive a Worker that
- * cannot reach D1 at all.
+ * cannot reach D1 at all. Both allow arms and the unconfigured arm below
+ * answer before the URL is built, which is also what keeps a Worker
+ * holding no bot token from ever interpolating one.
  *
  * Unconfigured - no chat id - means the check is off and everybody with
  * a Telegram account passes. That is a deployment decision rather than a
  * silent default, and server/README.md says so.
  */
-async function isGroupMember(env, userId) {
+async function groupStanding(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
-    return true;
+    return "member";
   }
   if ((await membershipAccountIds(env, "always_allow"))
     .has(await accountIdFor(env, userId))) {
-    return true;
+    return "member";
   }
-  if (!env.TELEGRAM_GROUP_CHAT_ID) return true;
+  if (!env.TELEGRAM_GROUP_CHAT_ID) return "member";
 
   const url = "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN +
     "/getChatMember?chat_id=" +
@@ -482,13 +514,50 @@ async function isGroupMember(env, userId) {
   try {
     body = await (await fetch(url)).json();
   } catch (e) {
-    return false;   // unreachable Telegram is not a reason to let people in
+    // Unreachable Telegram is not a reason to let people in, and not
+    // evidence that anybody left either. `e` is discarded rather than
+    // reported: the bot token is interpolated into the URL above, and a
+    // fetch failure names the URL it failed on.
+    return "unknown";
   }
-  if (!body || body.ok !== true || !body.result) return false;
+  if (!body || body.ok !== true || !body.result) return "unknown";
   const status = body.result.status;
-  if (!MEMBER_STATUSES.includes(status)) return false;
-  // A restricted member who has actually left says so here.
-  return !(status === "restricted" && body.result.is_member === false);
+  if (MEMBER_STATUSES.includes(status)) {
+    // A restricted member who has actually left says so here.
+    return status === "restricted" && body.result.is_member === false
+      ? "left" : "member";
+  }
+  return LEFT_STATUSES.includes(status) ? "left" : "unknown";
+}
+
+/*
+ * End every session one account holds.
+ *
+ * The lever behind #136, and it fires from exactly one place -
+ * handleTelegramAuth, when Telegram has definitively said this person is
+ * no longer in the group. NOT from sessionFor(), which cannot ask the
+ * question at all: a session row carries `account_id`, the HMAC of a
+ * Telegram numeric id, and getChatMember needs the numeric id itself.
+ * Storing that beside the session is what a per-request re-check would
+ * cost, and server/schema.sql states the account-id-never-the-numeric-id
+ * rule as a prohibition rather than a preference. So the bound is:
+ *
+ *   a leaver's session ends at their NEXT SIGN-IN ATTEMPT, or at natural
+ *   expiry, whichever comes first.
+ *
+ * The residual is a leaver who never attempts again, bounded by the
+ * member cap in SESSION_HOURS and by nothing here. It is not an attack
+ * surface: the only way to reach this line for an account is to present
+ * a payload HMAC-signed under the bot token for that account's numeric
+ * id, which is that account's own sign-in. A stolen session token cannot
+ * forge one, so nobody can revoke anybody but themselves.
+ *
+ * By account id and never by token, because the point is every session
+ * that account holds - a leaver with three tabs open is three rows.
+ */
+async function revokeAccountSessions(env, accountId) {
+  await env.DB.prepare("DELETE FROM sessions WHERE account_id = ?")
+    .bind(accountId).run();
 }
 
 /*
@@ -719,7 +788,30 @@ async function handleTelegramAuth(request, env, origin) {
     }, 403, origin);
   }
 
-  if (!(await isGroupMember(env, user.id))) {
+  /*
+   * The group check, and the one place its three-way answer is spent.
+   *
+   * A definitive departure also ends whatever sessions this account is
+   * still holding. Sign-in is the only moment the numeric id is in hand,
+   * so it is the only moment the question can be asked - the bound that
+   * follows from that is written out on revokeAccountSessions().
+   *
+   * "unknown" refuses and revokes nothing, which is the difference the
+   * three-way answer exists to carry. An unreachable Telegram is not
+   * evidence that anybody left, and spending it as though it were would
+   * make one outage plus one sign-in attempt sign a member out of a
+   * session they still legitimately hold.
+   *
+   * The refusal is one message for all three answers on purpose. Telling
+   * "you left" apart from "we could not ask" would report the state of
+   * this deployment's Telegram integration to anybody with a signed
+   * payload, and neither answer changes what the caller should do.
+   */
+  const standing = await groupStanding(env, user.id);
+  if (standing !== "member") {
+    if (standing === "left") {
+      await revokeAccountSessions(env, await accountIdFor(env, user.id));
+    }
     return json({
       error: "This binder is for members of the group only.",
     }, 403, origin);
@@ -1442,7 +1534,7 @@ async function handleDeleteContent(env, origin, name) {
  * THIS TABLE IS ENFORCING, and it is the first thing to know about all
  * three of these routes. A row here grants what it says it grants:
  * adminAccountIds() unions `admin` rows with ADMIN_TELEGRAM_IDS, and
- * isGroupMember() unions `always_allow` rows with
+ * groupStanding() unions `always_allow` rows with
  * ALWAYS_ALLOW_TELEGRAM_IDS. Both arms are live, and that is the
  * shipped posture rather than a moment in a migration.
  *
@@ -1457,7 +1549,7 @@ async function handleDeleteContent(env, origin, name) {
  * backfill is complete and a flip would take nobody's authority away.
  *
  * The always-allow list is NOT on that path and no flip is coming for
- * it - isGroupMember() says why. Only the admin arm is migrating, so
+ * it - groupStanding() says why. Only the admin arm is migrating, so
  * only the admin arm is measured here.
  *
  * The lockout guards live with this change rather than with the routes
