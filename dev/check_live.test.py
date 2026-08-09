@@ -12,9 +12,20 @@ every label was correct and the sum was a systemic gap nobody owned.
 A ledger that only describes is the same failure one layer up, so the
 rules here are the ones that can go red: a route added without a row,
 a page added without a row, a row that names a file no longer in the
-tree, a first-contact classification whose stated reason the code has
-since falsified, and a performed row citing a head no declared run
-accounts for.
+tree, a row that does not stand on the file its own surface is, a
+first-contact classification whose stated reason the code has since
+falsified, a performed row citing a head no declared run accounts for,
+and a run that does not say which deployment it drove.
+
+Two further failures are #202's, and both are about a ledger that
+cannot see its own condition. A row is evidence about ONE deployment,
+so a run names its arm and the report groups on it - thirty-one rows
+earned against the development Worker are not coverage of the one the
+cutover is about. And evidence ages, so the cadence trigger counts a
+stale row as owed again rather than counting the `never` rows alone,
+which is how five sixths of this ledger aged out with nothing due.
+The three-valued `due()` is part of that: a batch that cannot be shown
+due is not a batch shown not-due.
 
 Rules are exercised on strings rather than on the tree they happen to
 guard, for #34's reason and check_docs.test.py's: a mutation written
@@ -54,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 86
+EXPECTED = 123
 
 
 def check(label, condition):
@@ -307,6 +318,79 @@ check("a guard on a cause that does not take one is reported",
 
 
 # ------------------------------------------------------------------ #
+# What a forced row's evidence has to stand on. `covers` is the list    #
+# staleness is measured against, so a row free to name any path in the  #
+# tree is a row that can be made permanently fresh by naming one that   #
+# never moves - and permanent freshness reads as the strongest kind of  #
+# evidence rather than as the absence of any. Derived from the id       #
+# rather than trusted from the row, which is the review bar's           #
+# corollary: a rule computed entirely from the field it guards cannot   #
+# detect that the field was chosen to pass it.                          #
+
+check("a route row that does not stand on the worker is reported",
+      len(check_live.entry_problems([entry(covers=["AGENTS.md"])])) == 1)
+
+check("the report names the file the row is required to stand on",
+      "server/worker.js" in only(check_live.entry_problems(
+          [entry(covers=["AGENTS.md"])])))
+
+check("a route row standing on the worker raises nothing",
+      check_live.entry_problems(
+          [entry(covers=["server/worker.js", "AGENTS.md"])]) == [])
+
+check("a page row that does not stand on its own page is reported",
+      len(check_live.entry_problems([entry(
+          id="admin.html", surface="page",
+          covers=["apps/web/index.html"])])) == 1)
+
+check("a page row standing on its own page raises nothing",
+      check_live.entry_problems([entry(
+          id="admin.html", surface="page",
+          covers=["apps/web/admin.html", "apps/web/admin.js"])]) == [])
+
+# A qualified id is resolved before the rule reads it, the same way the
+# spine resolves one. Comparing the whole id instead would make the
+# qualifier the way to write a page row that stands on no page.
+check("a qualified page row is held to its own page too",
+      len(check_live.entry_problems([entry(
+          id="admin.html, a live 401", surface="page",
+          covers=["apps/web/index.html"])])) == 1)
+
+# Nothing enumerates a flow, so nothing here can say which files one
+# ought to name. Saying that outright is better than a rule that
+# guesses, which is the same reason `flow` is outside the spine.
+check("a flow row is not held to a derived covers list",
+      check_live.entry_problems([entry(
+          id="the key flow", surface="flow",
+          covers=["AGENTS.md"])]) == [])
+
+
+# ------------------------------------------------------------------ #
+# Which deployment the evidence was earned against. #202's first fault  #
+# is that thirty-one rows earned against the development Worker read as #
+# coverage of the one the cutover is about. A run names its arm, and a  #
+# row may not contradict the run it cites.                              #
+
+check("a cited head resolves to the arm its run declares",
+      check_live.arm_of(check_live.SITTING["sha"]) == "development"
+      and check_live.arm_of(check_live.PRODUCTION["sha"]) == "production")
+
+check("a head no run declares resolves to no arm",
+      check_live.arm_of("0" * 40) is None)
+
+check("evidence naming the arm its run drove raises nothing",
+      check_live.entry_problems([entry(
+          status="performed",
+          performed=dict(GOOD,
+                         arm=check_live.arm_of(GOOD["sha"])))]) == [])
+
+check("evidence naming an arm its run did not drive is reported",
+      len(check_live.entry_problems([entry(
+          status="performed",
+          performed=dict(GOOD, arm="production"))])) == 1)
+
+
+# ------------------------------------------------------------------ #
 # Completeness. This is the forcing arm: the rule that costs a slice   #
 # something rather than the rule that describes.                       #
 
@@ -467,6 +551,12 @@ for label, planted in (
                                    status="first-contact",
                                    cause="guarded-branch",
                                    guard="if (!nothing_pins_this)")]),
+    # A qualified id, so the spine resolves it to a route that is
+    # dispatched and the only rule left to break is the derived-covers
+    # one. A fresh route id would redden the spine instead, and the arm
+    # would pass while proving nothing about what it names.
+    ("derived covers", [entry(id="GET /me, off its own file",
+                              covers=["AGENTS.md"])]),
 ):
     saved = check_live.LEDGER
     try:
@@ -491,6 +581,20 @@ finally:
 check("the declared-run rule is wired into problems()",
       any("no performed row stands on it" in problem
           for problem in without))
+
+# The arm rule breaks by editing RUNS rather than the ledger, so it
+# cannot ride the loop above either.
+saved_runs = check_live.RUNS
+try:
+    check_live.RUNS = (*saved_runs, {"date": "2026-08-09",
+                                     "arm": "staging",
+                                     "sha": "1" * 40})
+    wired_arm = check_live.problems()
+finally:
+    check_live.RUNS = saved_runs
+
+check("the run-arm rule is wired into problems()",
+      any("staging" in problem for problem in wired_arm))
 
 
 # ------------------------------------------------------------------ #
@@ -536,6 +640,39 @@ check("a declared run that no row stands on is reported",
 check("the shipped ledger stands on every run it declares",
       check_live.run_problems(check_live.LEDGER) == [])
 
+# A run states which deployment it drove. The report groups performed
+# rows on that field, and the grouping is the only thing that says how
+# thin one arm is - so a run outside the vocabulary takes its rows out
+# of the grouping without a word.
+check("the shipped runs all declare a registered arm",
+      all(run.get("arm") in check_live.ARMS for run in check_live.RUNS))
+
+saved_runs = check_live.RUNS
+try:
+    check_live.RUNS = (*saved_runs, {"date": "2026-08-09",
+                                     "arm": "staging",
+                                     "sha": "1" * 40})
+    unregistered = check_live.run_problems(check_live.LEDGER)
+finally:
+    check_live.RUNS = saved_runs
+
+check("a run declaring an unregistered arm is reported",
+      any("staging" in problem for problem in unregistered))
+
+# One head under two arms. `arm_of` answers with the first run naming
+# it, so a second declaration re-labels every row standing on that head
+# and nothing else says so.
+saved_runs = check_live.RUNS
+try:
+    check_live.RUNS = (*saved_runs, dict(check_live.SITTING,
+                                         arm="production"))
+    doubled = check_live.run_problems(check_live.LEDGER)
+finally:
+    check_live.RUNS = saved_runs
+
+check("one head declared twice under two arms is reported",
+      any("twice" in problem for problem in doubled))
+
 check("every ledger entry reaches the report",
       all(e["id"] in TEXT for e in check_live.LEDGER))
 
@@ -559,6 +696,143 @@ check("staleness is not asserted when git cannot answer",
 
 
 # ------------------------------------------------------------------ #
+# What the cadence trigger counts. #202's second fault: the threshold   #
+# read the `never` rows alone, so twenty-six of thirty-one performed    #
+# rows could age out with the report still answering that no batch was  #
+# due. A stale row is owed AGAIN - its evidence stands at a head this    #
+# tree has moved past, which is the same standing as a row nothing has  #
+# ever exercised, and it costs the same sitting minutes to discharge.   #
+
+
+def moved(sha, paths):
+    return ["server/worker.js"]
+
+
+def unmoved(sha, paths):
+    return []
+
+
+def silent(sha, paths):
+    return None
+
+
+FRESH_ROWS = [entry(id="a", status="performed", performed=GOOD),
+              entry(id="b", status="performed", performed=GOOD)]
+NEVER_ROWS = [entry(id="c"), entry(id="d")]
+
+check("a never row is owed",
+      check_live.owed(NEVER_ROWS, unmoved)[0] == 2)
+
+check("a performed row standing on unmoved bytes is not owed",
+      check_live.owed(FRESH_ROWS, unmoved)[0] == 0)
+
+check("a performed row whose covered bytes have moved is owed again",
+      check_live.owed(FRESH_ROWS, moved)[0] == 2)
+
+check("the owed count is the never rows and the stale ones together",
+      check_live.owed(NEVER_ROWS + FRESH_ROWS, moved)[0] == 4)
+
+# The reassuring direction, closed. `stale()` reads a row git cannot
+# answer for as unmoved, which was harmless while staleness only
+# printed; the moment it counts, that silence is an undercount of what
+# is owed - and an undercount here reads as "nothing to do".
+check("a row git cannot answer for is undetermined, not fresh",
+      check_live.owed(FRESH_ROWS, silent) == (0, ["a", "b"]))
+
+check("an unanswerable row is still not counted as stale",
+      check_live.freshness(FRESH_ROWS, silent)[0] == [])
+
+# The arithmetic the ticket is about, pinned from both sides. The debt
+# alone stays under the threshold in every arm below; what moves the
+# verdict is whether staleness is counted.
+ENOUGH = [entry(id="n%d" % n)
+          for n in range(check_live.CADENCE_THRESHOLD)]
+AGEABLE = NEVER_ROWS + [entry(id="p%d" % n, status="performed",
+                              performed=GOOD)
+                        for n in range(check_live.CADENCE_THRESHOLD)]
+
+check("a debt under the threshold with nothing stale is not due",
+      check_live.due(NEVER_ROWS, unmoved) is False)
+
+check("stale rows carry an under-threshold debt over the threshold",
+      check_live.due(AGEABLE, moved) is True)
+
+check("the same ledger with nothing stale is not due",
+      check_live.due(AGEABLE, unmoved) is False)
+
+# Three-valued on purpose. A batch that cannot be shown due is not a
+# batch shown not-due, and printing the second for the first is this
+# ticket's own arithmetic one layer down.
+check("a count that cannot be completed is neither due nor not-due",
+      check_live.due(NEVER_ROWS + FRESH_ROWS, silent) is None)
+
+# And the floor is only reached when there is something to be silent
+# about. A ledger with no performed rows has nothing that could age, so
+# the count is complete and False is the honest answer.
+check("a ledger with nothing to age answers not-due rather than None",
+      check_live.due(NEVER_ROWS, silent) is False)
+
+check("a count already at the threshold is due even when other rows "
+      "cannot be aged",
+      check_live.due(ENOUGH + FRESH_ROWS, silent) is True)
+
+
+# ------------------------------------------------------------------ #
+# The report is where that arithmetic is read, so each arm above is    #
+# pinned again through the printed text: a correct helper nothing      #
+# prints is #157's failure with a different subject.                   #
+
+DUE_TEXT = check_live.report(moved)
+CALM_TEXT = check_live.report(unmoved)
+SILENT_TEXT = check_live.report(silent)
+
+check("the cadence line counts stale rows toward what is owed",
+      "owed %d" % (len(check_live.debt(check_live.LEDGER))
+                   + len(check_live.stale(check_live.LEDGER, moved)))
+      in DUE_TEXT)
+
+check("the report says DUE when staleness carries the count over",
+      "DUE." in DUE_TEXT)
+
+check("a fresh ledger under the threshold does not say DUE",
+      ("DUE." in CALM_TEXT)
+      == (len(check_live.debt(check_live.LEDGER))
+          >= check_live.CADENCE_THRESHOLD))
+
+check("the report refuses to say not-due when rows cannot be aged",
+      "CANNOT SAY" in SILENT_TEXT)
+
+# The marker line rather than the word. The closing paragraph names
+# STALE in prose to say how such a row is discharged, and a bare word
+# count would read that as a thirty-fourth stale row.
+check("every stale row is marked where the report lists it",
+      DUE_TEXT.count("\n      STALE  ") == len(
+          [e for e in check_live.LEDGER if e["status"] == "performed"])
+      and "\n      STALE  " not in CALM_TEXT)
+
+check("performed rows are grouped under the arm that earned them",
+      all("  %s  (" % arm in DUE_TEXT for arm in check_live.ARMS))
+
+# An arm with no evidence at all is the state this ledger was in for
+# production until today, and it has to be printed rather than left out
+# - an omitted arm is indistinguishable from an arm nobody registered.
+saved = check_live.LEDGER
+try:
+    check_live.LEDGER = [
+        e for e in saved
+        if e["status"] != "performed"
+        or check_live.arm_of(e["performed"]["sha"]) != "production"]
+    without_production = check_live.report(unmoved)
+finally:
+    check_live.LEDGER = saved
+
+check("an arm no performed row stands on is named as empty, not "
+      "omitted",
+      "production  - NO ROW HAS EVER BEEN PERFORMED"
+      in without_production)
+
+
+# ------------------------------------------------------------------ #
 # The ledger itself, read as data. These are the properties #157 asks  #
 # for that no individual rule above states.                            #
 
@@ -579,6 +853,19 @@ check("a recorded rehearsal cannot be walked back to none, and every "
 
 check("discharging rows does not empty the debt",
       len([e for e in check_live.LEDGER if e["status"] == "never"]) > 0)
+
+# The aim ratchet, and the same shape as the arm above it. Taking the
+# production rows out is one status edit each, and the state that
+# restores is the one #202 opens by describing: every row of evidence
+# in this ledger earned against a Worker the cutover is not about.
+check("the production arm carries at least one performed row",
+      any(e["status"] == "performed"
+          and check_live.arm_of(e["performed"]["sha"]) == "production"
+          for e in check_live.LEDGER))
+
+check("every performed row's evidence resolves to a registered arm",
+      all(check_live.arm_of(e["performed"]["sha"]) in check_live.ARMS
+          for e in check_live.LEDGER if e["status"] == "performed"))
 
 check("every registered cause is carried by at least one entry",
       {e.get("cause") for e in check_live.LEDGER if e.get("cause")}

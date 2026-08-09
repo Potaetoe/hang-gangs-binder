@@ -49,13 +49,38 @@ repository can check - a secret is invisible here by design, and so is
 a Telegram group - are held instead by a ratchet ceiling, the shape
 check_comments.py already uses for its allowlist.
 
+**Evidence is about one deployment.** Two Workers answer here, and a
+run drove exactly one of them, so every run names its arm and the
+report groups on it. Without that field a reader counts rows and reads
+coverage: thirty-one rows earned against the development Worker say
+nothing whatever about the production one, which is the deployment the
+cutover is about. An arm carrying no evidence is printed as empty
+rather than left out, because an omitted arm and an arm nobody
+registered read identically.
+
+**A stale row is owed again.** A performed claim is against bytes, and
+bytes move; a row whose covered files have moved since its run stands
+at a head this tree has gone past, which is the same standing as a row
+nothing has ever exercised, and re-running the probe costs what running
+it the first time cost. So the cadence counts the `never` rows and the
+stale ones together. Counting the `never` rows alone is how five sixths
+of this ledger aged out with the report answering that no batch was
+due. `covers` is what that measurement reads, which is why a route row
+must stand on server/worker.js and a page row on its own page, derived
+from the id: a row free to name any path could name one that never
+moves, and permanent freshness reads as the strongest evidence here
+rather than as the absence of any.
+
 **The cadence is measured, not enforced.** A stage that reddens on a
 date, or on a merge count, would block work the failing slice cannot
 unblock: the batch needs port 8124 (server/wrangler.toml pins the
 development origins to it) and it needs secrets, so it is owner-only by
 capability rather than by preference. `--report` states how far behind
 the record is and what is due; the exit code stays with the structural
-rules and never with the calendar.
+rules and never with the calendar. What holds the arithmetic to
+something instead is dev/check_live.test.py, itself a registered gate
+stage: a cadence that goes back to counting `never` rows alone turns
+the gate red there.
 """
 
 import os
@@ -77,6 +102,15 @@ STATUSES = ("never", "performed", "first-contact")
 # sitting exercises; nothing can force one into existence, and calling
 # that out is more useful than a spine that pretends to cover it.
 SURFACES = ("route", "page", "flow")
+
+# The deployments a run can have driven. Two Workers answer for this
+# project - server/wrangler.toml's [env.dev] block and its bare one -
+# and a sitting reaches exactly one of them. The arm is declared on the
+# run rather than on the row so that it cannot be typed wrong per row,
+# and the report groups on it: without the grouping, a count of
+# performed rows is read as coverage of whichever deployment the reader
+# had in mind.
+ARMS = ("development", "production")
 
 REQUIRED = ("id", "surface", "claim", "covers", "status")
 OPTIONAL = ("performed", "cause", "guard")
@@ -123,12 +157,19 @@ CAUSES = {
 # off the moment a row can be pinned or performed instead.
 UNCORROBORATED_CEILING = 3
 
-# The batch is due when the debt reaches this, or before any cutover,
-# whichever comes first. Chosen against two measured numbers rather than
+# The batch is due when the OWED count reaches this, or before any
+# cutover, whichever comes first. Owed is the `never` rows plus the
+# stale ones - see owed() for why a stale row counts, and the module
+# docstring for what counting only the never rows cost.
+#
+# The number is chosen against two measured quantities rather than
 # taste: #157's gap was thirty pull requests, and the dev-arm rehearsal
 # measured a ninety-minute sitting that discharges about nineteen items.
 # A threshold above that turns the batch into a project; well below it
-# turns a cheap redeploy into ceremony.
+# turns a cheap redeploy into ceremony. It did not move when staleness
+# joined the count, and that is deliberate: the threshold is a number of
+# ITEMS A SITTING CAN DISCHARGE, and re-running a probe whose evidence
+# has aged costs the sitting what running it the first time cost.
 CADENCE_THRESHOLD = 15
 
 # The runs every performed row below stands on, oldest first. Each is a
@@ -169,13 +210,28 @@ CADENCE_THRESHOLD = 15
 # script, which is written to be thrown away once its steps become
 # UAT.md's live arm, and evidence that dies with its pointer is evidence
 # about nothing.
+# PRODUCTION is the third and it is a different KIND of run: three
+# read-only GETs from a delegated slice, no secret and no browser, which
+# is the whole of what can be driven against the live deployment without
+# a credential. It is small on purpose and it is the first evidence this
+# ledger has ever carried about the Worker the cutover is about. Its
+# head is the tree the probes were driven at, the same convention the
+# two above follow, and it is not a claim that this Worker is running
+# that build - see the paragraph above on why a version is unknowable
+# from here.
 REHEARSAL = {"date": "2026-08-09",
+             "arm": "development",
              "sha": "eca87b48142f916ac4c8469f608e6ad945515840"}
 
 SITTING = {"date": "2026-08-09",
+           "arm": "development",
            "sha": "9e78ea9d11c883f10da563ed4b99eb7c3ba1e024"}
 
-RUNS = (REHEARSAL, SITTING)
+PRODUCTION = {"date": "2026-08-09",
+              "arm": "production",
+              "sha": "8f32002abb19cea6c1a1a9b213b9218f28abb706"}
+
+RUNS = (REHEARSAL, SITTING, PRODUCTION)
 
 # The ledger. `covers` names the files a row's evidence stands on, so a
 # performed row goes stale when they move - see stale() for why that is
@@ -406,6 +462,53 @@ LEDGER = [
                 "origin with no credential, against the gate's 403 "
                 '{"error":"Origin not allowed."} - two different '
                 "refusals, so the 401 is the route's own"),
+    },
+    # The same claim against the other Worker, and a separate row rather
+    # than a re-dating of the one above: they are about two deployments,
+    # and one status cannot describe both. Read it beside its twin - the
+    # pair is what the arm grouping in the report exists to keep apart.
+    {
+        "id": "GET /snapshot, a signed-out reader on production",
+        "surface": "route",
+        "claim": "the route's own refusal on the deployment the cutover "
+                 "is about, and the far side of it is unobservable "
+                 "without a credential - so what a signed-out reader "
+                 "can establish about production stops at the 401",
+        "covers": ["server/worker.js"],
+        "status": "performed",
+        "performed": dict(
+            PRODUCTION,
+            how='401 {"error":"Not authorized."} from '
+                "https://potaetoe.github.io carrying no Authorization "
+                "header, against 403 for the same request with the "
+                "Origin header removed - two different refusals, so the "
+                "401 is the route's own and not the gate's. This is the "
+                "DESIGNED uncredentialed answer and not a fault: the "
+                "dispatch block refuses a caller-less request before "
+                "handleReadSnapshot runs, so the "
+                '"No snapshot published yet." 404 behind it cannot be '
+                "reached from here, and whether production carries a "
+                "published document is not observable without a "
+                "session"),
+    },
+    # The row the two above stop short of, written down here rather than
+    # left in a pull request body - AGENTS.md is explicit that a live
+    # claim nobody could perform belongs in the ledger, and #157 is what
+    # happens when it does not. It stays `never` and it stays debt: it
+    # is not first-contact, because production EXISTS and the claim is
+    # reachable there today. What it costs is a credential, which is
+    # what puts it outside a delegated slice rather than outside the
+    # project.
+    {
+        "id": "GET /snapshot, a credentialed read on production",
+        "surface": "route",
+        "claim": "a caller the production Worker accepts reads the "
+                 "route past its session gate and learns whether a "
+                 "document is published - the designed 404 when none "
+                 "is, which is the answer no uncredentialed probe can "
+                 "distinguish from a refusal",
+        "covers": ["server/worker.js"],
+        "status": "never",
     },
     {
         "id": "DELETE /snapshot",
@@ -722,6 +825,32 @@ LEDGER = [
                 "slice's own assigned port - also answered 403, which "
                 "is the mechanical reason live verification has been "
                 "unreachable from every slice but the one holding 8124"),
+    },
+    {
+        "id": "the origin gate on production, all three answers",
+        "surface": "flow",
+        "claim": "the gate in front of every route on the live "
+                 "deployment refuses a foreign origin and a request "
+                 "carrying no origin at all in identical bytes, and "
+                 "admits the published origin as far as the route's own "
+                 "refusal",
+        "covers": ["server/worker.js", "server/wrangler.toml"],
+        "status": "performed",
+        "performed": dict(
+            PRODUCTION,
+            how="GET /snapshot against the production Worker three "
+                "times, differing only in the Origin header. No header "
+                "at all and https://example.com both answered 403 "
+                '{"error":"Origin not allowed."} with no CORS header of '
+                "any kind; https://potaetoe.github.io answered 401 "
+                "carrying Access-Control-Allow-Origin for that origin, "
+                "Vary: Origin and Max-Age 86400. The three together are "
+                "the check: the 403 alone cannot tell a working gate "
+                "from a Worker refusing everything, and a probe that "
+                "forgets the header reads exactly like a foreign origin "
+                "being refused. Read-only GETs, which is the whole of "
+                "what a slice holding no credential may drive against "
+                "this deployment"),
     },
     {
         "id": "the signed-out bounce, with nothing announced",
@@ -1188,9 +1317,54 @@ def entry_problems(ledger):
                 "nothing" % (rid, ", ".join(absent)))
             continue
 
+        unstood = [path for path in surface_files(row)
+                   if path not in row["covers"]]
+        if unstood:
+            problems.append(
+                "ledger row %r does not stand on %s, which is the file "
+                "its own surface is. `covers` is what staleness is "
+                "measured against, so a row that names other files ages "
+                "on their movement and not on its own - and a row that "
+                "never ages reads as the strongest evidence here rather "
+                "than as none" % (rid, ", ".join(unstood)))
+            continue
+
         problems.extend(status_problems(rid, row))
 
     return problems
+
+
+def surface_files(row):
+    """The files a forced row's evidence must stand on, from its id.
+
+    Derived rather than trusted, which is AGENTS.md's review-bar
+    corollary: a rule computed entirely from the field it guards cannot
+    detect that the field was chosen to pass it. `covers` decides when a
+    row goes stale, so a row free to name any path in the tree can buy
+    permanent freshness by naming one that never moves.
+
+    Only the two forced surfaces. Nothing enumerates a flow, so nothing
+    here can say which files one ought to name, and a rule that guessed
+    would be a rule the next flow row argues with.
+    """
+    if row.get("surface") == "route":
+        return ["server/worker.js"]
+    if row.get("surface") == "page":
+        return ["apps/web/%s" % route_of(row.get("id", ""))]
+    return []
+
+
+def arm_of(sha):
+    """The deployment a cited head was driven against, or None.
+
+    The first run naming a head wins, which is why run_problems refuses
+    a head declared twice: a second declaration would re-label every row
+    standing on that head and nothing else would say so.
+    """
+    for run in RUNS:
+        if run["sha"] == sha:
+            return run["arm"]
+    return None
 
 
 def status_problems(rid, row):
@@ -1237,6 +1411,15 @@ def status_problems(rid, row):
                     "the cadence line without a word. Declare the run "
                     "beside the others, or cite the one that produced "
                     "this row" % rid]
+        named = evidence.get("arm")
+        if named and named != arm_of(evidence["sha"]):
+            return ["ledger row %r says it was performed against the %s "
+                    "arm and cites a run that drove the %s arm. "
+                    "Evidence earned against one deployment is not "
+                    "evidence about the other, and the report groups on "
+                    "this field, so the mismatch would move the row into "
+                    "a column it was never earned in"
+                    % (rid, named, arm_of(evidence["sha"]))]
         return []
 
     if status == "first-contact":
@@ -1329,12 +1512,38 @@ def run_problems(ledger):
     cadence line's date and the head that staleness is measured from,
     which is a confident answer about a sitting nothing remembers.
     """
-    return ["RUNS declares the run at %s and no performed row stands "
-            "on it. A run outliving its last row goes on dating the "
-            "cadence line and setting the head staleness is measured "
-            "against, for evidence the ledger no longer carries"
-            % run["sha"][:12]
-            for run in RUNS if run["sha"] not in cited_runs(ledger)]
+    problems = [
+        "RUNS declares the run at %s and no performed row stands "
+        "on it. A run outliving its last row goes on dating the "
+        "cadence line and setting the head staleness is measured "
+        "against, for evidence the ledger no longer carries"
+        % run["sha"][:12]
+        for run in RUNS if run["sha"] not in cited_runs(ledger)]
+
+    # The arm, and the head it is attached to. Both failures are
+    # silent ones: an unregistered arm drops its rows out of the
+    # report's grouping, and a head declared twice re-labels every row
+    # standing on it, because arm_of answers with the first run naming
+    # it. The grouping is the only thing that says how thin one arm is.
+    seen = {}
+    for run in RUNS:
+        if run.get("arm") not in ARMS:
+            problems.append(
+                "RUNS declares the run at %s with arm %r, which is not "
+                "one of %s. A run states which deployment it drove, and "
+                "a run outside the vocabulary takes its rows out of the "
+                "report's grouping without a word"
+                % (run["sha"][:12], run.get("arm"), ", ".join(ARMS)))
+        if run["sha"] in seen:
+            problems.append(
+                "RUNS declares the head at %s twice, as the %r arm and "
+                "the %r arm. A head resolves to one arm by the first run "
+                "naming it, so the second declaration silently re-labels "
+                "every row standing on that head"
+                % (run["sha"][:12], seen[run["sha"]], run.get("arm")))
+        seen[run["sha"]] = run.get("arm")
+
+    return problems
 
 
 def loopback(origin):
@@ -1438,19 +1647,22 @@ def debt(ledger):
     return [row for row in ledger if row["status"] == "never"]
 
 
-def last_rehearsal(ledger):
+def last_rehearsal(ledger, arm=None):
     """The newest run any performed row stands on, or None.
 
-    RUNS is walked backwards rather than the rows sorted by date. Two
-    runs here fall on one day, so a sort has nothing to break the tie
-    with and answers with whichever row the ledger lists first - the
-    older head, and the cadence line would then measure drift from a
-    run that is not the latest. That failure is silent and reads in the
-    reassuring direction, which is the shape this whole file is against.
+    Narrowed to one arm when `arm` is given, because "how far behind the
+    record is" has a different answer per deployment and one number
+    across both is the reassuring one. RUNS is walked backwards rather
+    than the rows sorted by date: three runs here fall on one day, so a
+    sort has nothing to break the tie with and answers with whichever
+    row the ledger lists first - the older head, and the cadence line
+    would then measure drift from a run that is not the latest. That
+    failure is silent and reads in the reassuring direction, which is
+    the shape this whole file is against.
     """
     cited = cited_runs(ledger)
     for run in reversed(RUNS):
-        if run["sha"] in cited:
+        if run["sha"] in cited and arm in (None, run["arm"]):
             return run
     return None
 
@@ -1475,21 +1687,73 @@ def changed_since(sha, paths):
                    if line.strip()})
 
 
-def stale(ledger, changed=changed_since):
-    """[(id, [path, ...])] for performed rows whose bytes have moved.
+def freshness(ledger, changed=changed_since):
+    """([(id, [path, ...])], [id, ...]) - what has aged, and what cannot
+    be aged at all.
 
     Derived at read time rather than stored. A stored staleness flag is
     a second copy of a fact that git already holds, and it would rot in
     exactly the way the labels in thirty pull request bodies did.
+
+    The second list is the point of this function existing beside
+    stale(). A shallow clone answers nothing for a head it does not
+    carry, and folding those rows in with the unmoved ones was harmless
+    while staleness only printed. It stops being harmless the moment
+    staleness counts toward the cadence: silence would become an
+    undercount of what is owed, and an undercount here reads as nothing
+    to do.
     """
-    out = []
+    aged = []
+    undetermined = []
     for row in ledger:
         if row["status"] != "performed":
             continue
         moved = changed(row["performed"]["sha"], row["covers"])
-        if moved:
-            out.append((row["id"], moved))
-    return out
+        if moved is None:
+            undetermined.append(row["id"])
+        elif moved:
+            aged.append((row["id"], moved))
+    return aged, undetermined
+
+
+def stale(ledger, changed=changed_since):
+    """[(id, [path, ...])] for performed rows whose bytes have moved."""
+    return freshness(ledger, changed)[0]
+
+
+def owed(ledger, changed=changed_since):
+    """(count, [id, ...]) - what the cadence trigger counts, and what it
+    could not read.
+
+    A `never` row is owed because nothing has ever exercised it. A stale
+    row is owed AGAIN: its evidence stands at a head this tree has moved
+    past, which is the same standing, and re-running the probe costs the
+    sitting what running it the first time cost. Counting the never rows
+    alone is how nine debts against a threshold of fifteen read as
+    nothing due while twenty-six of thirty-one performed rows had aged
+    out - the arithmetic #202 exists to make impossible.
+    """
+    aged, undetermined = freshness(ledger, changed)
+    return len(debt(ledger)) + len(aged), undetermined
+
+
+def due(ledger, changed=changed_since):
+    """True, False, or None when the count cannot be completed.
+
+    None is not False. A batch that cannot be SHOWN due is not a batch
+    shown not-due, and printing the second for the first is this file's
+    own failure one layer down.
+
+    A count already at the threshold answers True whatever could not be
+    read, because an unread row can only add to it - the undetermined
+    rows are a floor on what is owed, never a ceiling.
+    """
+    count, undetermined = owed(ledger, changed)
+    if count >= CADENCE_THRESHOLD:
+        return True
+    if undetermined:
+        return None
+    return False
 
 
 def commits_since(sha):
@@ -1504,12 +1768,14 @@ def commits_since(sha):
     return done.stdout.strip()
 
 
-def report():
+def report(changed=changed_since):
     lines = []
     outstanding = debt(LEDGER)
     performed = [row for row in LEDGER if row["status"] == "performed"]
     permanent = [row for row in LEDGER
                  if row["status"] == "first-contact"]
+    aged, unaged = freshness(LEDGER, changed)
+    moved_by = dict(aged)
 
     lines.append("Live-verification ledger - %d rows" % len(LEDGER))
     lines.append("")
@@ -1524,14 +1790,37 @@ def report():
     if not performed:
         lines.append("  none - no rehearsal against a running system "
                      "has ever been recorded here")
-    for row in performed:
-        lines.append("  %-8s %-46s %s, %s"
-                     % (row["surface"], row["id"],
-                        row["performed"]["date"], row["performed"]["how"]))
-    aged = stale(LEDGER)
-    for rid, moved in aged:
-        lines.append("    STALE  %s - %s moved since that head"
-                     % (rid, ", ".join(moved)))
+    else:
+        lines.append("  Grouped by the deployment each run drove. "
+                     "Evidence earned against one arm is not")
+        lines.append("  evidence about the other, and a single flat "
+                     "count reads as though it were.")
+        for arm in ARMS:
+            rows = [row for row in performed
+                    if arm_of(row["performed"]["sha"]) == arm]
+            lines.append("")
+            if not rows:
+                lines.append("  %s  - NO ROW HAS EVER BEEN PERFORMED "
+                             "AGAINST THIS ARM" % arm)
+                continue
+            lines.append("  %s  (%d rows, %d stale)"
+                         % (arm, len(rows),
+                            len([r for r in rows if r["id"] in moved_by])))
+            for row in rows:
+                lines.append("    %-8s %-46s %s, %s"
+                             % (row["surface"], row["id"],
+                                row["performed"]["date"],
+                                row["performed"]["how"]))
+                if row["id"] in moved_by:
+                    lines.append(
+                        "      STALE  %s moved since that head"
+                        % ", ".join(moved_by[row["id"]]))
+    if unaged:
+        lines.append("")
+        lines.append("  %d performed row(s) could not be aged at all - "
+                     "git did not answer for the head they" % len(unaged))
+        lines.append("  stand on. That is not the same as fresh, and "
+                     "the owed count below says so.")
 
     lines.append("")
     lines.append("FIRST CONTACT - cannot be met before production  (%d)"
@@ -1552,32 +1841,68 @@ def report():
 
     lines.append("")
     lines.append("CADENCE")
-    lines.append("  debt %d, threshold %d - the batch is due when the "
-                 "debt reaches the threshold" % (len(outstanding),
-                                                 CADENCE_THRESHOLD))
+    count, unread = owed(LEDGER, changed)
+    verdict = due(LEDGER, changed)
+    lines.append("  owed %d of %d - %d never exercised, %d performed "
+                 "row(s) gone stale."
+                 % (count, len(LEDGER), len(outstanding), len(aged)))
+    lines.append("  A stale row is owed AGAIN: its evidence stands at a "
+                 "head this tree has moved past,")
+    lines.append("  which is the standing of a row nothing has ever "
+                 "exercised, and it costs a sitting the")
+    lines.append("  same minutes. Counting the never rows alone is how "
+                 "five sixths of this ledger aged")
+    lines.append("  out with nothing due.")
+    lines.append("  threshold %d - the batch is due when the owed count "
+                 "reaches it," % CADENCE_THRESHOLD)
     lines.append("  or before any cutover, whichever comes first.")
-    latest = last_rehearsal(LEDGER)
-    if latest is None:
+    lines.append("")
+    for arm in ARMS:
+        latest = last_rehearsal(LEDGER, arm)
+        if latest is None:
+            lines.append("  %-12s no run has ever driven this arm"
+                         % arm)
+            continue
+        moved = commits_since(latest["sha"])
+        if moved is None:
+            since = "an undetermined number of commits"
+        else:
+            since = "%s commit%s" % (moved, "" if moved == "1" else "s")
+        lines.append("  %-12s last run %s at %s; %s since"
+                     % (arm, latest["date"], latest["sha"][:12], since))
+    lines.append("")
+    if last_rehearsal(LEDGER) is None:
         lines.append("  No rehearsal has ever been recorded. The debt "
                      "above is the whole ledger, which is what #157 "
                      "opens by saying.")
-    else:
-        moved = commits_since(latest["sha"])
-        lines.append("  last rehearsal %s at %s; %s commits since"
-                     % (latest["date"], latest["sha"][:12],
-                        moved if moved is not None else "an undetermined "
-                        "number of"))
-    if len(outstanding) >= CADENCE_THRESHOLD:
+    if verdict is True:
         lines.append("  DUE.")
+    elif verdict is None:
+        lines.append("  CANNOT SAY - %d performed row(s) could not be "
+                     "aged, so the owed count is a floor. A batch that "
+                     "cannot be shown due is not one shown not-due."
+                     % len(unread))
+    else:
+        lines.append("  Not due.")
     lines.append("")
-    lines.append("  The batch is owner-only by capability rather than "
-                 "by preference: server/wrangler.toml pins the")
-    lines.append("  development origins to port 8124, which the agent "
-                 "pack reserves, and the sitting needs secrets.")
+    lines.append("  Most of the batch is owner-only by capability "
+                 "rather than by preference: server/wrangler.toml")
+    lines.append("  pins the development origins to port 8124, which "
+                 "the agent pack reserves, and anything behind")
+    lines.append("  a session needs secrets. The exception is the "
+                 "production arm's uncredentialed edge - the")
+    lines.append("  origin gate and the refusals in front of every "
+                 "route answer read-only GETs from any")
+    lines.append("  shell, which is how that arm's first rows were "
+                 "earned.")
     lines.append("  Discharging a row means editing it here to "
                  "\"performed\" with an account of what ran, beside the")
     lines.append("  date and the full head of the sitting that ran it. "
-                 "The steps themselves belong in UAT.md's")
+                 "A row marked STALE is discharged the")
+    lines.append("  same way and never by re-dating it onto a run it "
+                 "did not stand on: re-performing it means")
+    lines.append("  declaring the new run in RUNS and citing that. The "
+                 "steps themselves belong in UAT.md's")
     lines.append("  live arm, not in this file.")
     return "\n".join(lines)
 
