@@ -322,6 +322,15 @@ def main():
         [sys.executable, "dev/check_live.test.py"]
     )))
 
+    # This gate's own roster rules. Every other checker in tools/ has a
+    # suite in dev/ holding its reader to strings; the gate itself had
+    # none, and NODE_SUITES is a hand list beside a directory - the one
+    # place here where a check can be added and never run. #204.
+    results.append(("check.py roster rules", run(
+        "check.py roster rules",
+        [sys.executable, "dev/check.test.py"]
+    )))
+
     results.extend(run_linters(node))
     if node:
         for label, script in NODE_SUITES:
