@@ -275,6 +275,23 @@ def main():
         [sys.executable, "dev/check_contrast.test.py"]
     )))
 
+    # Every surface only a running system can exercise, against the
+    # ledger that records whether one ever has. #157: thirty merged pull
+    # requests each honestly wrote "live: not performed", and thirty
+    # correct labels summed into a gap nobody owned - because the labels
+    # lived in pull request bodies, which no gate can read. This stage is
+    # what makes a route or a page added without a verification status
+    # cost something. `./run live` prints the same ledger as a report.
+    results.append(("live-verification ledger", run(
+        "live-verification ledger",
+        [sys.executable, "tools/check_live.py"]
+    )))
+
+    results.append(("check_live parser + ledger rules", run(
+        "check_live parser + ledger rules",
+        [sys.executable, "dev/check_live.test.py"]
+    )))
+
     node = find_node()
     results.extend(run_linters(node))
     if node:
