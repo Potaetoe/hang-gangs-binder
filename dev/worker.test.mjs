@@ -1562,12 +1562,19 @@ check("and writes nothing back to the sessions table",
   sessionWrites() - beforeMember === 0,
   `${sessionWrites() - beforeMember} write(s)`);
 
-/* The control. Without it a stub that had lost its UPDATE arm would
- * pass the check above with an implementation that slides everybody. */
+/*
+ * The control, and it reads the admin flag back rather than the status.
+ * GET /me answers 200 for any session at all, so a status here would
+ * hold for a member row and the count beside it would then be measuring
+ * an implementation that slides nobody - which is the reading that makes
+ * "writes nothing back" mean nothing.
+ */
 const BUSY_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
 const beforeAdmin = sessionWrites();
-await statusOf("the admin request beside it is answered too",
-  call("GET", "/me", { headers: bearer(BUSY_ADMIN) }), 200);
+const busyMe = await (await call("GET", "/me",
+  { headers: bearer(BUSY_ADMIN) })).clone().json();
+check("the request beside it is served, and served as an admin",
+  busyMe.isAdmin === true, `isAdmin=${busyMe.isAdmin}`);
 check("and writes exactly one row back",
   sessionWrites() - beforeAdmin === 1,
   `${sessionWrites() - beforeAdmin} write(s)`);
