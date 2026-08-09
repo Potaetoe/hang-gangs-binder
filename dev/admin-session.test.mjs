@@ -1307,19 +1307,29 @@ check("a refused row deletion ends the session and leaves",
   redirects.includes("index.html"));
 
 /*
- * And the structural half, which is what stops the sixth caller from
+ * And the structural half, which is what stops the seventh caller from
  * being written the old way tomorrow.
  *
- * One comparison against 401 in the whole file means one place decides
- * what a refused session means. The five behavioral arms above cannot say
- * this: they pass against a page with five correct copies, and five
- * copies is the defect - the sixth is the one that gets forgotten, and it
- * already was. Paired with those arms deliberately, because on its own a
- * count computed from the file it guards cannot tell a unified page from
- * a rearranged one.
+ * The six behavioral arms above cannot say this. They pass against a page
+ * carrying six correct copies of the same branch, and six copies IS the
+ * defect: the page had five, four of them disagreed about what to do, and
+ * the fifth forgot to compare at all. What went wrong was not that a
+ * caller got the answer wrong, it was that every caller was entitled to
+ * have one.
+ *
+ * So the property is that the number is not in the call sites' hands.
+ * Exactly two comparisons name the refusal - the one that decides what
+ * the status means, and the guard the call sites ask instead - and no
+ * call site compares a response status to it directly.
+ *
+ * Paired with the behavioral arms deliberately: a count computed from the
+ * file it guards cannot tell a unified page from a rearranged one, and on
+ * its own it would go green for a page where sessionRefused is never
+ * called by anybody.
  */
-check("the page decides what a 401 means in exactly one place",
-  (adminSource.match(/status === 401/g) || []).length === 1);
+check("no authenticated call site decides for itself what a refusal means",
+  !/\.status === 401/.test(adminSource) &&
+  (adminSource.match(/status [!=]== REFUSED/g) || []).length === 2);
 
 if (failures) {
   console.error(`\nadmin session/delete FAILED ${failures} of ${checks}`);

@@ -427,11 +427,19 @@
   }
 
   /*
+   * The status that means the session is over, named once so that no call
+   * site has to know the number. Five of them did, and having the number
+   * in hand is what let each of them answer it in its own way (#166).
+   */
+  const REFUSED = 401;
+
+  /*
    * What the page does about a refusal, and what it says.
    *
-   * One function because the three membership calls must not each invent
-   * their own answer to the same two questions - does the page stay, and
-   * what does it say.
+   * One function because no authenticated call on this page may invent
+   * its own answer to the same two questions - does the page stay, and
+   * what does it say. Every one of them reaches this: the membership
+   * calls through handleRefusal, the rest through sessionEnded.
    *
    *   401 - the session is gone. Discard it and leave. This page holds
    *         every submission in the clear, so a session the Worker no
@@ -457,7 +465,7 @@
       ? payload.error.trim()
       : "";
 
-    if (status === 401) {
+    if (status === REFUSED) {
       return {
         action: "signed-out",
         message: "The admin session was not accepted, so it has been " +
@@ -738,6 +746,55 @@
       kept = "";
     }
 
+    /*
+     * What every authenticated call on this page does about a refused
+     * session. One function, and the caller only chooses where the
+     * sentence goes.
+     *
+     * THE RULE IS ALREADY WRITTEN DOWN TWICE ABOVE - a 401 ends the tab,
+     * because this page holds every submission in the clear and keeps the
+     * private key on the device. It was obeyed by the membership calls and
+     * by nothing else: four other calls printed a sentence and stayed, and
+     * the published-status read had no answer for a 401 at all, so an
+     * admin whose session had died was met by "The server answered 401."
+     * before touching anything (#166, F8).
+     *
+     * Passing the status line in is what makes one function serve six
+     * calls that each report somewhere different - the export card, the
+     * publish card, the unpublish card, the membership pane. The
+     * alternative, a shared line, would move every refusal away from the
+     * control that provoked it.
+     *
+     * The wording is refusalFor's, not a second copy: that function is
+     * where this page says what a status means, and two sentences about
+     * one refusal is how they come to disagree.
+     */
+    function sessionEnded(where) {
+      where(refusalFor(REFUSED).message, "bad");
+      root.BinderSession.clear();
+      if (root.location && typeof root.location.replace === "function") {
+        root.location.replace("index.html");
+      }
+    }
+
+    /*
+     * The same act, asked as a question, for the calls that hold a
+     * response rather than a decoded refusal.
+     *
+     * It exists so that NO CALL SITE NAMES THE NUMBER. Comparing against
+     * 401 at the call site is what the five broken ones did, and four of
+     * them then answered it differently while the fifth forgot to compare
+     * at all - a page cannot be held to one answer while six places are
+     * still entitled to ask the question. Here the caller asks whether the
+     * session was refused and stops if it was; what "refused" means, and
+     * what happens next, are both somewhere else.
+     */
+    function sessionRefused(response, where) {
+      if (response.status !== REFUSED) return false;
+      sessionEnded(where);
+      return true;
+    }
+
     // Object URLs pin their blob in memory until revoked, and the blob
     // here is everyone's data in the clear. Re-running the export
     // should not leave the previous one alive.
@@ -965,9 +1022,7 @@
         const response = await fetch(config.endpoint + "/export", {
           headers: root.BinderSession.authorization(),
         });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, say)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
@@ -1102,6 +1157,21 @@
         const response = await fetch(config.endpoint + "/snapshot", {
           headers: root.BinderSession.authorization(),
         });
+        /*
+         * Before the 404 branch, and before the catch below can turn it
+         * into a sentence about the network. This read fires on load, so
+         * it is the first thing a dead session meets on this page - and
+         * the one that used to answer it with a bare status number.
+         *
+         * It reports into its own prose line rather than through a say()
+         * helper because this line is not a status control: it is the
+         * sentence describing what is published, and leaving the old text
+         * under a message posted somewhere else would keep a claim about
+         * the public page that this read just failed to confirm.
+         */
+        if (sessionRefused(response, function (message) {
+          state.textContent = message;
+        })) return;
         if (response.status === 404) {
           publishedNow = null;
           state.textContent = "Nothing is published. The public dashboard " +
@@ -1143,9 +1213,7 @@
           method: "DELETE",
           headers: root.BinderSession.authorization(),
         });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, sayUnpublish)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
@@ -1326,23 +1394,25 @@
     }
 
     /*
-     * One refusal handler for all three calls.
+     * One refusal handler for the three membership calls, which is a
+     * narrower job than it once was.
      *
-     * A 401 ends the tab: this page holds every submission in the clear,
-     * and a session the Worker no longer accepts is not one to keep a
-     * key and a corpus sitting behind. Returning true means the caller
-     * should stop, because the page is leaving; every other refusal
-     * returns false and the caller re-reads.
+     * The 401 arm used to be written out here, and that is how it became
+     * the only one of the page's six authenticated calls that honored the
+     * rule it states - a rule in the page's own comments cannot be reached
+     * by a caller. It now defers to sessionEnded, so this function is left
+     * with what is genuinely particular to the membership pane: everything
+     * that is NOT a dead session leaves the page standing, says what the
+     * Worker said, and returns false so the caller re-reads.
      */
     function handleRefusal(status, payload) {
       const refusal = refusalFor(status, payload);
-      sayMembership(refusal.message, "bad");
-      if (refusal.action !== "signed-out") return false;
-      root.BinderSession.clear();
-      if (root.location && typeof root.location.replace === "function") {
-        root.location.replace("index.html");
+      if (refusal.action === "signed-out") {
+        sessionEnded(sayMembership);
+        return true;
       }
-      return true;
+      sayMembership(refusal.message, "bad");
+      return false;
     }
 
     // The body of a refusal, or null. A Worker that answered something
@@ -1563,9 +1633,7 @@
             root.BinderSession.authorization()),
           body: JSON.stringify(sent),
         });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, sayPublish)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
@@ -1594,9 +1662,7 @@
             method: "DELETE",
             headers: root.BinderSession.authorization(),
           });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, say)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }

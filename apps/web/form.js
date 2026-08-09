@@ -764,6 +764,38 @@
             root.BinderSession.authorization()),
           body: JSON.stringify({ ciphertext: blob }),
         });
+        /*
+         * A dead session, which is not a refused entry - #166.
+         *
+         * Ahead of the branch below because that one is written for a
+         * Worker objecting to the submission, and it answered this with
+         * "The server refused it (401) ... try again": a status number,
+         * and advice that fails identically for as long as the tab is
+         * open. Nothing about the entry is wrong, so nothing about the
+         * entry is said.
+         *
+         * The credential goes, because the Worker has just refused it and
+         * session.js does not keep values that cannot work - and dropping
+         * it here is also what takes the development banner down, so the
+         * page stops claiming a session while telling the member it has
+         * ended.
+         *
+         * THE PAGE STAYS, and that is the opposite of admin.js's rule on
+         * the same status. Leaving is a security act there: that page
+         * holds every submission in the clear and keeps the private key on
+         * the device, so a session the Worker no longer accepts is not one
+         * to leave the corpus sitting behind. Here there is nothing to
+         * protect and something to lose - a member who has just typed an
+         * entry and pressed Send, whose measurements are on screen. They
+         * are told what happened and left holding it.
+         */
+        if (response.status === 401) {
+          root.BinderSession.clear();
+          submit.disabled = false;
+          say("Your sign-in is no longer valid, so nothing was stored. " +
+            "Sign in again.", "bad");
+          return;
+        }
         if (!response.ok) {
           let detail = "";
           try {
