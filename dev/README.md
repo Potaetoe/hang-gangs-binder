@@ -148,7 +148,7 @@ route a later slice adds fails the gate rather than the walk-through).
 The offline arm is not the only one. `./run serve` against the dev Worker
 is the live end-to-end feel, and the console names it; what the offline
 arm adds is the states a live database cannot be asked for on demand — a
-revoked session, a correction that supersedes, a cell under the floor.
+revoked session, a corrected entry, a cell under the floor.
 
 ## Hosting the demo off this machine
 
