@@ -611,8 +611,8 @@ await check("the phone size is written in CSS pixels, and desktop clears it", ()
  * touching dev/.
  *
  * 375 is a phone width only because apps/web says so. What UAT A1.10
- * asks the owner to see - the rail as a strip, the theme chips behind a
- * disclosure - is one media block in the shipped stylesheet, and the
+ * asks the owner to see - the rail as a strip, its four destinations
+ * still in flow - is one media block in the shipped stylesheet, and the
  * frame is only worth looking at if that block fires inside it. A later
  * slice moving that breakpoint below 375 leaves this console framing a
  * desktop rail at phone width: a screen the product does not have,
@@ -620,12 +620,19 @@ await check("the phone size is written in CSS pixels, and desktop clears it", ()
  *
  * The breakpoint is READ out of theme.css rather than written down
  * here, for the same reason the page list is read out of apps/web. It
- * is found by the rule that folds the chips rather than by being the
- * largest, because "the largest max-width in the file" is a fact about
- * ordering that any unrelated block can change - a first attempt at
- * this check compared the largest and the smallest breakpoints, and
- * moving the rail-folding block from 64rem to 20rem left it green, with
- * an unrelated 52rem block satisfying it.
+ * is found by the rules that turn the rail into a strip rather than by
+ * being the largest, because "the largest max-width in the file" is a
+ * fact about ordering that any unrelated block can change - a first
+ * attempt at this check compared the largest and the smallest
+ * breakpoints, and moving the rail-folding block from 64rem to 20rem
+ * left it green, with an unrelated 52rem block satisfying it.
+ *
+ * The chips are not one of those rules any more. #150 made the Theme
+ * disclosure one control at every width, so it sits outside every media
+ * query - and a marker that no width block contains would make this arm
+ * match nothing and fail for a reason that has nothing to do with the
+ * frame. What is left is the rail itself: the links becoming a row and
+ * the session becoming the end of it.
  */
 const themeCss = await readFile(HERE("../apps/web/theme.css"), "utf8");
 const ROOT_PX = 16;
@@ -652,10 +659,10 @@ function widthBlocks(css) {
 }
 
 const foldingBlocks = widthBlocks(themeCss)
-  .filter((one) => /\.theme-disclosure\s*\{/.test(one.body) &&
-    /\.rail-links\s*\{/.test(one.body));
+  .filter((one) => /\.rail-links\s*\{/.test(one.body) &&
+    /\.rail-session\s*\{/.test(one.body));
 
-await check("the block that folds the rail and the chips fires in the phone frame", () => {
+await check("the block that folds the rail into a strip fires in the phone frame", () => {
   const phone = Demo.viewportFor("phone");
   return foldingBlocks.length === 1 && foldingBlocks[0].px >= phone.width;
 });

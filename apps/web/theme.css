@@ -858,29 +858,31 @@ body.railed {
   font-weight: 600;
 }
 
-/* Theme chips, wired by theme.js via [data-set-theme]. */
-.rail-themes {
+/*
+ * The Theme control: one disclosure and the chips it opens, wired by
+ * theme.js via [data-set-theme]. The owner's ruling on #150 is that
+ * this is ONE control at every width, so none of it sits in a media
+ * query, and the group is not named for the rail - the sign-in page
+ * carries this control and has no rail at all.
+ */
+.theme-picker {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
 /*
- * The disclosure that folds the chips away on a narrow screen. It is
- * display:none at desktop width and the chips are simply shown, so on a
- * wide screen this control does not exist to be found by a pointer or a
- * tab.
+ * Chip family, above. Only what makes this one the disclosure rather
+ * than a palette is here.
  *
- * Folding is done with a data attribute rather than the `hidden`
- * attribute, and that is forced rather than preferred: [hidden] is
- * display:none !important, so chips hidden that way on a phone could
- * not be shown again on a desktop by any rule here.
+ * `align-self` is what keeps the pill the width of its word. The group
+ * above is a column, so a stretched child fills the rail - which is
+ * right for the chips, because it is the width they wrap inside, and
+ * wrong for a pill.
  */
-/* Chip family, above. Only what makes this one the disclosure rather
-   than a palette is here: it is absent until the strip needs it, and
-   the media query at the bottom is what reveals it. */
 .theme-disclosure {
-  display: none;
+  display: inline-flex;
+  align-self: flex-start;
   align-items: center;
   gap: var(--space-2);
 }
@@ -891,11 +893,36 @@ body.railed {
   color: var(--color-text);
 }
 
+/*
+ * Closed until the disclosure opens it, and opened IN FLOW: the chips
+ * push what follows them down the rail rather than floating over it. A
+ * floating layer is deferred to #82, where the custom-palette editor is
+ * what decides whether this list earns one. In flow, the sign-in page's
+ * rule needs no special case - a reveal that covers nothing cannot
+ * cover the sign-in form.
+ *
+ * Opened with a data attribute rather than the `hidden` one, and that
+ * is forced rather than preferred: [hidden] is display:none !important
+ * at the top of this file, so chips folded that way could not be
+ * revealed again by any rule here.
+ *
+ * A visitor whose scripts are dead keeps them folded, which costs
+ * nothing real: theme.js is what makes a chip change anything, so with
+ * scripts dead an open list would be four buttons that do nothing. The
+ * stored palette and the system preference are both still honored -
+ * that is theme-init.js and the media blocks at the top of this file,
+ * neither of which needs a chip.
+ *
+ * No transition and no animation, at any width. Nothing here is
+ * decorative, and a display toggle has nothing to interpolate.
+ */
 .themes {
-  display: flex;
+  display: none;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+
+.theme-picker[data-open="true"] .themes { display: flex; }
 
 /* ------------------------------------------------------------------ */
 /* The cover, and the way it opens.                                    */
@@ -1653,9 +1680,11 @@ body.instrument main { gap: var(--space-3); }
  * is "do a 15rem rail and a 46rem column still fit side by side", which
  * stops being true around 64rem once the page's own padding is counted.
  *
- * The owner's decision on #73: the four links stay visible and the
- * theme chips fold behind a disclosure. Not a hamburger - the links are
- * the thing somebody needs and they are the thing that stays.
+ * The owner's decision on #73: the four links stay visible on the strip.
+ * Not a hamburger - the links are the thing somebody needs and they are
+ * the thing that stays. What folds is the theme chips, and they fold at
+ * every width rather than only here (#150), so their rules are up with
+ * the chips instead of down here.
  */
 @media (max-width: 64rem) {
   body.railed {
@@ -1729,32 +1758,9 @@ body.instrument main { gap: var(--space-3); }
     font-size: var(--text-sm);
   }
 
-  .rail-themes { position: relative; }
-
-  .theme-disclosure { display: inline-flex; }
-
-  /* Folded by default at this width, and opened by nav.js setting the
-     data attribute. A phone that cannot run nav.js keeps them folded,
-     which costs nothing real: the chips are wired by theme.js, so with
-     scripts dead they would not change the palette anyway. The stored
-     palette and the system preference are both still honored - that is
-     theme-init.js and the media blocks at the top of this file, neither
-     of which needs a chip. */
-  .themes {
-    display: none;
-    position: absolute;
-    top: calc(100% + var(--space-2));
-    right: 0;
-    z-index: 10;
-    flex-wrap: nowrap;
-    padding: var(--space-2);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
-  }
-
-  .rail-themes[data-open="true"] .themes { display: flex; }
+  /* Nothing here about the Theme control. It is one disclosure with one
+     geometry at every width (#150), which is stated once beside the
+     chips above and is why this block has no arm of its own. */
 
   .page { padding: var(--space-6) var(--space-4) var(--space-8); }
 }
@@ -1775,10 +1781,6 @@ body.instrument main { gap: var(--space-3); }
   body.wide .page > * { max-width: 100%; }
 
   body.wide .narrow { max-width: 100%; }
-
-  /* The chips no longer share a line with anything on this screen, so
-     they may wrap inside their own panel rather than overflow it. */
-  .themes { flex-wrap: wrap; }
 
   .pair { flex-direction: column; }
 

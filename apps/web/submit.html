@@ -68,7 +68,7 @@
     </ul>
   </nav>
 
-  <div class="rail-themes">
+  <div class="theme-picker">
     <button type="button" class="theme-disclosure" id="theme-toggle"
             aria-expanded="false" aria-controls="theme-chips">Theme</button>
     <div class="themes" id="theme-chips" role="group"
@@ -77,8 +77,8 @@
       <button type="button" data-set-theme="pink">Pink</button>
       <!--
         "Parchment Daylight" - the owner's ruling on #127, and the one
-        place in this rail where the visible word and the code's name for
-        the same thing deliberately differ.
+        place in this control where the visible word and the code's name
+        for the same thing deliberately differ.
 
         The id stays `daylight`: here in data-set-theme, in theme.js's
         theme-color map and its light-preference answer, in two theme.css
@@ -92,12 +92,13 @@
         and check_contrast.py's display names from aspiration to fact:
         both already called this palette Parchment Daylight.
 
-        Nothing compares these four buttons across the three pages that
-        carry them. The rail-parity rule in tools/check_web.py reads
-        .rail-links and stops, and the name tables read titles, headings
-        and rail entries - so a rename that reaches two of the three
-        copies passes the whole gate. Raised on #127; the pin belongs in
-        check_web.py, which another slice holds.
+        Nothing compares these four buttons across the four pages that
+        carry them. check_web.py's check 19 pins that each of those pages
+        HAS the control and that no other page does; the rail-parity rule
+        reads .rail-links and stops, and the name tables read titles,
+        headings and rail entries - so a rename reaching three of the
+        four copies still passes the whole gate. That gap is filed as
+        #152.
       -->
       <button type="button" data-set-theme="daylight">Parchment Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>

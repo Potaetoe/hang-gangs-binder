@@ -3,7 +3,8 @@
  * the pages cannot drift. The saved palette is applied before first
  * paint by theme-init.js in each page's <head>; this file wires the
  * chip buttons, keeps the browser-chrome color (meta theme-color) in
- * step with the palette, and persists the choice.
+ * step with the palette, and persists the choice. What opens the chips
+ * is nav.js, which the four pages carrying a Theme control all load.
  */
 (function () {
   "use strict";
@@ -65,18 +66,22 @@
   try { stored = localStorage.getItem(KEY); } catch (e) {}
 
   /*
-   * The chips live in the rail now, so the two pages without one - the
-   * cover and the error page - reach this file with nothing to wire.
-   * They still have browser chrome to keep honest: theme-init.js paints
+   * The error page is the one page here with no chips, so it reaches
+   * this file with nothing to wire. Every other page carries the Theme
+   * control, the sign-in page included - the owner's ruling on #150,
+   * and tools/check_web.py's check 19 is what pins which pages those
+   * are.
+   *
+   * It still has browser chrome to keep honest: theme-init.js paints
    * the saved palette before first paint, and without this the address
    * bar on a phone would stay Midnight's near-black above a parchment
    * page.
    *
-   * data-theme is deliberately NOT written on those pages. The
-   * attribute outranks both :root:not([data-theme]) blocks in
-   * theme.css, so writing it for a visitor who has expressed no choice
-   * would freeze this moment's system setting onto a page that would
-   * otherwise keep following it.
+   * data-theme is deliberately NOT written there. The attribute
+   * outranks both :root:not([data-theme]) blocks in theme.css, so
+   * writing it for a visitor who has expressed no choice would freeze
+   * this moment's system setting onto a page that would otherwise keep
+   * following it.
    */
   if (!buttons.length) {
     paintChrome(stored || preferred());

@@ -100,6 +100,37 @@
   dashboard is instead of just naming it.
 -->
 <footer>
+  <!--
+    The same single Theme control the rail pages carry - the owner's
+    second ruling on #150. This page has no rail to put it in, so it
+    goes at the foot, in normal flow, below everything somebody came
+    here to do.
+
+    That position is the sign-in page's standing rule doing its work,
+    not a layout preference. The chips open IN FLOW and downward, so
+    every way the reveal can fail leaves the sign-in form untouched: a
+    dead theme.js leaves a button that opens nothing, a dead stylesheet
+    leaves four plain buttons in the footer, and neither can put
+    anything over the Telegram widget. The palette a visitor already
+    chose is painted before any of this runs, by theme-init.js in the
+    head.
+
+    Nothing here may be renamed on its own - see the long note in
+    submit.html, which owns that reasoning; these four buttons are the
+    fourth copy of it.
+  -->
+  <div class="theme-picker">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
+      <button type="button" data-set-theme="midnight">Midnight</button>
+      <button type="button" data-set-theme="pink">Pink</button>
+      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="contrast">Contrast</button>
+    </div>
+  </div>
+
   <p>
     <a href="dashboard.html">See what everyone adds up to</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
@@ -111,9 +142,12 @@
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <script src="auth.js"></script>
-<!-- nav.js is not loaded here. Its whole job is the rail - marking the
-     current destination and folding the theme chips behind the strip
-     disclosure - and this page has neither. -->
+<!-- nav.js is loaded here for its second job only: opening the Theme
+     chips above. Its first - marking which rail entry is the current
+     destination - finds no rail on this page and does nothing, which is
+     cheaper than a second copy of the disclosure wiring that could
+     drift from the one the rail pages run. -->
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>
