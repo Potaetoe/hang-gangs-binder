@@ -243,7 +243,7 @@
      */
     function offerMerge(cells) {
       const labels = cells.map(function (cell) { return cell.label; });
-      const key = labels.join(" ");
+      const key = labels.join("\0");
       if (key === builtFor) return;
       builtFor = key;
       boxes = [];
