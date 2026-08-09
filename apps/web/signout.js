@@ -118,11 +118,18 @@
   if (typeof document === "undefined") return;
 
   /*
-   * The rail's session home. The control ships `hidden` and is revealed
-   * only once a session is confirmed, which is the honest resting
-   * state: with no session there is nothing to end, and with scripts
-   * dead there is no way to end one, so a button offering to would be a
-   * control that does nothing.
+   * The rail's session home. The Sign out control ships `hidden` and is
+   * revealed only once a session is confirmed, which is the honest
+   * resting state: with no session there is nothing to end, and with
+   * scripts dead there is no way to end one, so a button offering to
+   * would be a control that does nothing.
+   *
+   * The Sign in route beside it is the same reasoning read the other
+   * way (#187). It ships VISIBLE: with scripts dead there is no
+   * session, the door is exactly what the rail must still carry - the
+   * anti-stranding rule in tools/check_web.py stands on it - and it is
+   * a plain link, so it works with nothing running. A confirmed session
+   * is what hides it, the reverse of the button below.
    *
    * The name is the member's own, on a screen their own session opened.
    * It is read from the session rather than fetched - this file makes
@@ -130,6 +137,7 @@
    */
   function paintSession() {
     const who = document.getElementById("session-who");
+    const door = document.getElementById("sign-in");
     const button = document.getElementById("sign-out");
     const session = Session ? Session.read() : null;
 
@@ -138,6 +146,7 @@
         ? "Signed in as " + session.username
         : "Not signed in";
     }
+    if (door) door.hidden = !!session;
     if (button) {
       button.hidden = !session;
       if (session) button.addEventListener("click", signOut);

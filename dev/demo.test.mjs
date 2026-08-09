@@ -805,8 +805,8 @@ await check("the phone size is written in CSS pixels, and desktop clears it", ()
  * touching dev/.
  *
  * 375 is a phone width only because apps/web says so. What UAT A1.10
- * asks the owner to see - the rail as a strip, its four destinations
- * still in flow - is one media block in the shipped stylesheet, and the
+ * asks the owner to see - the rail as a strip, its destinations still
+ * in flow - is one media block in the shipped stylesheet, and the
  * frame is only worth looking at if that block fires inside it. A later
  * slice moving that breakpoint below 375 leaves this console framing a
  * desktop rail at phone width: a screen the product does not have,

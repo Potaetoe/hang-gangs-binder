@@ -65,6 +65,7 @@
 
   function paintSession() {
     const who = document.getElementById("session-who");
+    const door = document.getElementById("sign-in");
     const button = document.getElementById("sign-out");
     const session = Session ? Session.read() : null;
 
@@ -73,6 +74,7 @@
         ? "Signed in as " + session.username
         : "Not signed in";
     }
+    if (door) door.hidden = !!session;
     if (button) {
       button.hidden = !session;
       if (session) button.addEventListener("click", signOut);
