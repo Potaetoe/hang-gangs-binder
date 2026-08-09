@@ -9,6 +9,24 @@ const sessionSource = await readFile(
   new URL("../apps/web/session.js", import.meta.url), "utf8");
 const adminSource = await readFile(
   new URL("../apps/web/admin.js", import.meta.url), "utf8");
+/*
+ * The real sign-out module, loaded rather than stubbed, because the
+ * server-side half of the idle teardown IS this file's `DELETE /session`
+ * (#90). A stub would let the page satisfy "it revoked" by calling
+ * something the browser never loads, which is the one thing worth
+ * proving here: the timer reaches the same revoke the button does.
+ */
+const signOutSource = await readFile(
+  new URL("../apps/web/signout.js", import.meta.url), "utf8");
+/*
+ * Read for one number. `ADMIN_IDLE_MINUTES` is the Worker's sliding
+ * window, and the page's own window has to stay INSIDE it - see the
+ * check that compares them, which is the only thing this source is used
+ * for. Parsed rather than restated, because a copy of that constant in
+ * this file would be a second home for it and would go stale silently.
+ */
+const workerSource = await readFile(
+  new URL("../server/worker.js", import.meta.url), "utf8");
 
 let failures = 0;
 let checks = 0;
@@ -106,11 +124,50 @@ globalThis.location = {
   replace(target) { redirects.push(target); },
 };
 
+/*
+ * A clock and an interval the scenarios drive, installed on the global
+ * rather than handed to the page.
+ *
+ * The page takes neither, and must not: `apps/web` carries no test hook
+ * (AGENTS.md, "Boundaries"). What a suite is allowed to control is the
+ * platform underneath the shipped bytes - `Date.now` and `setInterval`
+ * are the browser's, so replacing them here is the same act as running
+ * the file in a different browser.
+ *
+ * Driving the CLOCK rather than counting ticks is the part that matters.
+ * A machine that sleeps for an hour does not deliver an hour of
+ * intervals; it delivers one late one. A page that measured idleness by
+ * how often it had been called would wake believing seconds had passed,
+ * on the one page that holds every submission in the clear - so every
+ * check below moves `Date.now` and then delivers a single tick, which is
+ * exactly what a wake looks like.
+ */
+const realNow = Date.now;
+let fakeNow = null;
+Date.now = () => (fakeNow === null ? realNow.call(Date) : fakeNow);
+
+let timers = [];
+globalThis.setInterval = (fn, ms) => {
+  timers.push({ fn, ms, stopped: false });
+  return timers.length;
+};
+globalThis.clearInterval = (id) => {
+  const timer = timers[id - 1];
+  if (timer) timer.stopped = true;
+};
+
 globalThis.document = {
+  readyState: "complete",
   querySelector() { return null; },
+  // signout.js paints the rail the moment it loads. Nothing here has a
+  // rail, so this answers the honest thing rather than throwing out of
+  // the import.
+  getElementById() { return null; },
+  addEventListener() {},
 };
 await import("data:text/javascript," + encodeURIComponent(sessionSource));
 const Session = globalThis.BinderSession;
+await import("data:text/javascript," + encodeURIComponent(signOutSource));
 
 /*
  * The `GET /export` reply, column for column - `handleExport` in
@@ -278,21 +335,29 @@ function makePage() {
     "secret-only", "secret-only-ids",
     "membership-malformed", "membership-malformed-list",
     "membership-other", "membership-other-body",
+    // The attention warning - #91. It ships hidden, like every other
+    // card here that speaks only when it has something to say.
+    "idle-warning", "idle-countdown", "idle-stay",
   ];
   const INPUTS = ["token", "keyfile-picker", "publish-series",
     "member-telegram-id", "member-label"];
   const elements = Object.fromEntries(ids.map((id) => [id, makeElement(
     INPUTS.includes(id) ? "input"
       : id === "keyfile" ? "textarea"
-        : id === "member-add" ? "button" : "div",
+        : id === "member-add" || id === "idle-stay" ? "button" : "div",
     id,
   )]));
   for (const id of [
     "closed", "results", "dashboard", "publish-card", "failures",
     "unpublish", "publish-preview-body", "publish-status",
     "membership-status", "membership-malformed", "membership-other",
-    "secret-only-ids",
+    "secret-only-ids", "idle-warning",
   ]) elements[id].hidden = true;
+  // The one control on this page that has to be reachable without a
+  // mouse the moment it appears, so the page moves focus to it and the
+  // stub has to be able to say whether it did.
+  let focused = null;
+  elements["idle-stay"].focus = function () { focused = this; };
   elements.token.value = "DOM_INPUT_EXPORT_TOKEN";
   elements.keyfile.value = "DOM_INPUT_PRIVATE_KEY";
 
@@ -306,8 +371,20 @@ function makePage() {
   banner.appendChild(identity);
 
   const radios = [makeElement("input"), makeElement("input")];
+  /*
+   * What the page asked the document to tell it about, kept as the raw
+   * registrations rather than as a set of names.
+   *
+   * The options matter as much as the type. A listener registered
+   * without `capture` can be hidden by anything that stops propagation
+   * on the way down, and an attention timer that a stray handler can
+   * blind is worse than none - it reports attention it never saw.
+   */
+  const documentListeners = [];
   return {
     elements,
+    listeners: documentListeners,
+    focusedNow: () => focused,
     document: {
       readyState: "complete",
       getElementById(id) { return elements[id] || null; },
@@ -320,6 +397,9 @@ function makePage() {
           'input[name="basis"], input[name="units"]' ? radios : [];
       },
       createElement(tagName) { return makeElement(tagName); },
+      addEventListener(type, listener, options) {
+        documentListeners.push({ type, listener, options });
+      },
     },
   };
 }
@@ -353,6 +433,11 @@ const storedRecord = (over) => Object.assign({
   storedAt: "2026-08-08T09:00:00.000Z",
 }, over || {});
 
+// Where every scenario's clock starts. A fixed instant rather than the
+// real one, so a check that moves time by ten minutes moves it from
+// somewhere a failure message can name.
+const START = Date.parse("2026-08-09T12:00:00.000Z");
+
 let scenario = 0;
 async function loadAdmin(session, options = {}) {
   const page = makePage();
@@ -360,6 +445,8 @@ async function loadAdmin(session, options = {}) {
   const snapshots = [];
   const imported = [];
   const keysUsed = [];
+  timers = [];
+  fakeNow = START;
   Session.clear();
   if (session) Session.write(session);
   redirects.length = 0;
@@ -562,6 +649,7 @@ async function loadAdmin(session, options = {}) {
   URL.revokeObjectURL = revokeObjectURL;
   return {
     ...page, requests, snapshots, imported, keysUsed,
+    timers: timers.slice(),
     rows: storage ? storage.rows : null,
   };
 }
@@ -571,6 +659,31 @@ async function loadAdmin(session, options = {}) {
 function settle() {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+/*
+ * Time passing with nobody touching anything: the clock moves, and the
+ * page's interval is delivered once afterwards.
+ *
+ * Once, deliberately. Delivering one tick per elapsed second would let a
+ * page that counts calls pass this file, and counting calls is the shape
+ * that breaks on a machine coming back from sleep.
+ */
+async function idle(run, ms) {
+  fakeNow += ms;
+  for (const timer of run.timers) if (!timer.stopped) await timer.fn();
+  await settle();
+}
+
+// A real input event arriving at the document, the way a browser
+// delivers one - not a call into anything the page exported.
+async function interact(run, type) {
+  for (const registered of run.listeners) {
+    if (registered.type === type) await registered.listener({ type });
+  }
+  await settle();
+}
+
+const MINUTE = 60 * 1000;
 
 function requestsFor(run, suffix, method) {
   return run.requests.filter((request) =>
@@ -1330,6 +1443,246 @@ check("a refused row deletion ends the session and leaves",
 check("no authenticated call site decides for itself what a refusal means",
   !/\.status === 401/.test(adminSource) &&
   (adminSource.match(/status [!=]== REFUSED/g) || []).length === 2);
+
+/* ------------------------------------------------------------------ */
+/* The attention timer - #91, V-222390.                               */
+
+/*
+ * THE PAGE IS THE ONLY THING THAT CAN SEE ATTENTION.
+ *
+ * The Worker bounds a session by requests: `ADMIN_IDLE_MINUTES` slides
+ * on every authenticated call and the cap in `SESSION_HOURS` ends it
+ * regardless. Neither measures whether anybody is at the machine, and
+ * this is the page where that difference is the whole hazard - an admin
+ * who decrypts, reads and walks away leaves a tab holding every
+ * submitter's plaintext, with the private key in IndexedDB beside it.
+ *
+ * So what is attacked below is not "does a timer run". It is the five
+ * ways a timer on this page could be worse than none:
+ *
+ *   1. by counting its own ticks instead of reading the clock, which
+ *      makes a sleeping laptop look like an attentive admin;
+ *   2. by treating its own repaints, or the absence of an answer, as
+ *      attention - a timer fed by anything other than a person is a
+ *      timer that never fires;
+ *   3. by failing OPEN on a last-interaction time it cannot make sense
+ *      of, which is the same thing arriving through a bug;
+ *   4. by firing silently, so the page becomes useless mid-read and the
+ *      admin's next act is to sign in again and decrypt the corpus a
+ *      second time;
+ *   5. by tearing down locally and leaving the credential alive, which
+ *      is the half #90 exists to close.
+ */
+/*
+ * Reached through the same kind of shim as `press` above, and for the
+ * same reason: a contract commit runs against a page that exports none
+ * of this, and `verdictAt(...)` on an undefined function throws
+ * out of the whole file - so the red run would report ONE failure
+ * instead of every arm that is not implemented yet. A missing export
+ * still fails every check below; it just fails them out loud.
+ */
+const Admin = globalThis.BinderAdmin;
+const WINDOW = Admin.IDLE_WINDOW || {};
+const verdictAt = (last, now) =>
+  (Admin.idleVerdict ? verdictAt(last, now) : {});
+const noticeAt = (last, now) =>
+  (Admin.idleNotice ? Admin.idleNotice(verdictAt(last, now)) : null);
+
+check("the page's window is ten minutes with two minutes of warning",
+  WINDOW.idleMs === 10 * MINUTE && WINDOW.warnMs === 2 * MINUTE);
+
+/*
+ * The one number on this page that is only meaningful beside another
+ * file's, so it is compared against that file rather than restated.
+ *
+ * `ADMIN_IDLE_MINUTES` is the Worker's sliding window. The page's has to
+ * be SHORTER, and the ordering is the load-bearing part rather than
+ * either value: at ten against fifteen the page always acts first, so
+ * the tab discards its plaintext and revokes on its own initiative.
+ * Reversed, this timer becomes unreachable - the credential dies first,
+ * some call gets a 401, and the corpus stays on screen until it does.
+ * Lowering the Worker's number is the change that would do it, and
+ * nothing in `apps/web` can see that happen.
+ */
+const workerIdleMinutes = Number(
+  (/const ADMIN_IDLE_MINUTES = (\d+);/.exec(workerSource) || [])[1]);
+check("the page acts before the Worker's own idle window can",
+  Number.isFinite(workerIdleMinutes) &&
+  WINDOW.idleMs < workerIdleMinutes * MINUTE);
+
+check("a fresh interaction reads as active",
+  verdictAt(START, START).state === "active" &&
+  verdictAt(START, START + MINUTE).state === "active");
+
+check("the warning opens exactly two minutes before the end, not sooner",
+  verdictAt(START, START + 8 * MINUTE - 1).state === "active" &&
+  verdictAt(START, START + 8 * MINUTE).state === "warning" &&
+  verdictAt(START, START + 9 * MINUTE).state === "warning");
+
+check("the tenth minute is the end, and past it stays the end",
+  verdictAt(START, START + 10 * MINUTE - 1).state === "warning" &&
+  verdictAt(START, START + 10 * MINUTE).state === "expired" &&
+  verdictAt(START, START + 400 * MINUTE).state === "expired");
+
+/*
+ * The wake. A machine that slept through the whole window delivers one
+ * late tick and no others, so the verdict has to come from the clock
+ * rather than from how many times anything ran. This is arm 1 of the
+ * five above, asked of the pure half where it can be asked exactly.
+ */
+check("a clock that jumped the whole window reads expired, not missed",
+  verdictAt(START, START + 3 * 60 * MINUTE).state === "expired" &&
+  verdictAt(START, START + 3 * 60 * MINUTE).msLeft === 0);
+
+/*
+ * Arm 3: fail SAFE. A last-interaction time this function cannot read is
+ * not evidence of attention, and the difference between "no evidence"
+ * and "attention" is the whole corpus staying on a screen. There is no
+ * honest active answer here, so there is no active answer.
+ */
+check("an unreadable last-interaction time expires rather than persists",
+  [null, undefined, NaN, "just now", Infinity].every((value) =>
+    verdictAt(value, START).state === "expired"));
+
+check("a clock that ran backwards is not read as attention either",
+  // Ahead-of-now is not fresher than now; it is a clock nobody should
+  // trust. The safe reading of an untrustworthy clock is the same as the
+  // safe reading of an unreadable time.
+  verdictAt(START + MINUTE, START).state === "expired");
+
+check("the warning says how long is left and how to keep the page",
+  /\b1:00\b/.test(noticeAt(START, START + 9 * MINUTE)) &&
+  /clear/i.test(noticeAt(START, START + 9 * MINUTE)) &&
+  // And nothing to say while nobody needs telling.
+  noticeAt(START, START) === "");
+
+/* ------------------------------------------------------------------ */
+/* The same rules, wired to the page.                                 */
+
+const idling = await loadAdmin(ADMIN);
+await idling.elements.run.click();
+await settle();
+
+/*
+ * Arm 2, and the design fact this file is here to keep honest: what
+ * counts as attention is a real input event from a device.
+ *
+ * `scroll` is named and refused rather than merely absent. It is the
+ * tempting one - an admin reading a long table scrolls - but a scroll
+ * event is a CONSEQUENCE, and this page produces scrolls itself:
+ * focusing the warning's own button scrolls it into view, which would
+ * make the warning cancel the timer that raised it. `wheel` and
+ * `touchstart` are the device doing the scrolling, and they cannot be
+ * produced by a repaint.
+ */
+const listenedFor = idling.listeners.map((entry) => entry.type).sort();
+check("attention is real input events, and never a scroll or a timer",
+  listenedFor.join(",") === "keydown,pointerdown,touchstart,wheel");
+
+check("and it is listened for in the capture phase",
+  // A listener anything can hide by stopping propagation is a timer that
+  // reports attention it never saw.
+  idling.listeners.every((entry) => entry.options &&
+    entry.options.capture === true));
+
+const requestsBeforeWarning = idling.requests.length;
+await idle(idling, 8 * MINUTE);
+check("the warning appears before anything is taken away",
+  idling.elements["idle-warning"].hidden === false &&
+  /2:00/.test(idling.elements["idle-countdown"].textContent) &&
+  // Still signed in, still holding the rows it decrypted.
+  Session.read() !== null &&
+  idling.elements.tbody.children.length === 2);
+
+check("and the warning is what gets the keyboard, not just the screen",
+  idling.focusedNow() === idling.elements["idle-stay"]);
+
+check("nothing is sent to hold the session open while it warns",
+  // A page that pinged to keep itself alive would slide the Worker's
+  // window forever, which is the pane comment's rule for the whole page.
+  idling.requests.length === requestsBeforeWarning);
+
+await idle(idling, MINUTE);
+check("the countdown counts down rather than repeating itself",
+  /1:00/.test(idling.elements["idle-countdown"].textContent));
+
+await interact(idling, "keydown");
+check("a keystroke puts the warning away and gives the window back",
+  idling.elements["idle-warning"].hidden === true &&
+  Session.read() !== null);
+
+await idle(idling, 8 * MINUTE);
+check("and the window it gives back is the whole window",
+  // Not the remainder of the old one. A reset that only cancelled the
+  // warning would expire this tab a minute later.
+  idling.elements["idle-warning"].hidden === false &&
+  Session.read() !== null);
+
+/* The button, for whoever reaches for the mouse instead. */
+await idling.elements["idle-stay"].click();
+check("pressing Stay signed in is the same reprieve",
+  idling.elements["idle-warning"].hidden === true &&
+  Session.read() !== null);
+
+/*
+ * The teardown itself, which is the whole point and is asserted as all
+ * five things at once rather than as a status line.
+ */
+const expiring = await loadAdmin(ADMIN);
+await expiring.elements.run.click();
+await settle();
+check("the export this scenario tears down is really on the page",
+  expiring.elements.tbody.children.length === 2 &&
+  expiring.elements.results.hidden === false);
+
+await idle(expiring, 10 * MINUTE);
+
+const sessionDeletes = requestsFor(expiring, "/session", "DELETE");
+check("expiry revokes the session at the Worker, not only in this tab",
+  sessionDeletes.length === 1 &&
+  authorization(sessionDeletes[0]) === SESSION_AUTH &&
+  // keepalive, because the teardown navigates in the same turn and a
+  // browser cancels in-flight fetches when the page goes.
+  sessionDeletes[0].options.keepalive === true);
+
+check("expiry discards the plaintext this page had decrypted",
+  expiring.elements.tbody.children.length === 0 &&
+  expiring.elements.summary.textContent === "" &&
+  expiring.elements.results.hidden === true &&
+  expiring.elements.dashboard.hidden === true &&
+  expiring.elements["publish-card"].hidden === true);
+
+check("expiry clears the key text out of the page as well",
+  expiring.elements.keyfile.value === "");
+
+check("expiry ends the local session and leaves the page",
+  Session.read() === null && redirects.includes("index.html"));
+
+/*
+ * And the key on the DEVICE is not touched, which is the one thing here
+ * that must NOT happen. It is not authority - nothing issued it, nothing
+ * revokes it, and admin.js's note on KEY_DB is where that reasoning
+ * lives. Clear is its lever; an idle timer that also erased it would
+ * make walking away from a machine cost the keyholder their key.
+ */
+const keptThrough = await loadAdmin(ADMIN, { stored: storedRecord() });
+await idle(keptThrough, 10 * MINUTE);
+check("expiry does not take the keyholder's stored key with it",
+  keptThrough.rows.size === 1 &&
+  keptThrough.rows.get("current").privateKey === DEVICE_KEY);
+
+check("the timer stops once it has fired",
+  // Nothing left running against a page that has already been emptied,
+  // and no second revoke of a session that is already gone.
+  keptThrough.timers.every((timer) => timer.stopped) &&
+  requestsFor(keptThrough, "/session", "DELETE").length === 1);
+
+/* Not every session on this page gets one, because not every session
+ * reaches the surface that holds the corpus. */
+check("a member session that never reaches the tool starts no timer",
+  member.timers.length === 0 && member.listeners.length === 0);
+check("and neither does a signed-out visitor",
+  signedOut.timers.length === 0 && signedOut.listeners.length === 0);
 
 if (failures) {
   console.error(`\nadmin session/delete FAILED ${failures} of ${checks}`);
