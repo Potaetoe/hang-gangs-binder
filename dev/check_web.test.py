@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 239
+EXPECTED = 241
 
 
 def check(label, condition):
@@ -200,17 +200,26 @@ check("no page's shipped shell differs from its pin",
 
 # The rules, exercised on strings rather than on the five files, so they
 # are tested for the shape of the failure and not for today's markup.
+#
+# The fixture is the ruled shape of #187: .rail-links lists where a
+# signed-in member goes, and the route back to sign-in lives beside the
+# session instead - the wordmark and the session block both carry it.
 RAIL = (
-    '<aside class="rail"><ul class="rail-links">'
-    '<li><a href="index.html">Sign in</a></li>'
+    '<aside class="rail">'
+    '<a class="wordmark" href="index.html"><span>Binder</span></a>'
+    '<ul class="rail-links">'
     '<li><a href="submit.html">Submit</a></li>'
-    '</ul></aside>'
+    '<li><a href="dashboard.html">Progress</a></li>'
+    '</ul>'
+    '<div class="rail-session"><a id="sign-in" href="index.html">'
+    'Sign in</a></div>'
+    '</aside>'
     '<button id="theme-toggle"></button><div id="theme-chips"></div>'
 )
 
 check("a rail is read out of a page as its destinations, in order",
       [href for href, _ in check_web.rail_links(RAIL)] ==
-      ["index.html", "submit.html"])
+      ["submit.html", "dashboard.html"])
 check("a page with no rail reads as absence rather than as empty",
       check_web.rail_links("<p>nothing here</p>") is None)
 
@@ -220,12 +229,28 @@ check("a complete rail raises nothing",
 check("a rail page with no rail at all is reported",
       check_web.rail_page_problems("<p>nothing</p>") == ["has no rail"])
 
-# The anti-stranding arm, which survives into both shells rather than
-# into neither. A rail without the route to sign-in is the one a member
-# whose session expired cannot use.
-check("a rail naming no index.html is refused",
+# The anti-stranding arm, reading the whole rail aside since #187: the
+# route to sign-in may live in the wordmark or the session block, and
+# only an aside carrying it nowhere is a rail somebody can be stranded
+# behind. Both directions - the session block's copy alone satisfies
+# it, and stripping every copy is refused.
+check("the session block's route alone satisfies the stranding arm",
+      check_web.rail_page_problems(
+          RAIL.replace('<a class="wordmark" href="index.html">'
+                       '<span>Binder</span></a>', '')) == [])
+check("a rail aside with no route to sign-in anywhere is refused",
       any("stranded" in p for p in check_web.rail_page_problems(
           RAIL.replace('href="index.html"', 'href="dashboard.html"'))))
+
+# The other direction of the same ruling: the door is session state,
+# not navigation. A Sign in entry among the destinations is exactly
+# what #187 removed, and an arm that only demanded the route somewhere
+# would let it drift back in silence.
+check("the door among the rail destinations is refused",
+      any("door" in p for p in check_web.rail_page_problems(
+          RAIL.replace('<li><a href="submit.html">Submit</a></li>',
+                       '<li><a href="index.html">Sign in</a></li>'
+                       '<li><a href="submit.html">Submit</a></li>'))))
 
 # The hamburger is gone, and a page that kept it is a page that did not
 # get the rail - which the parity arm alone would not catch, because two

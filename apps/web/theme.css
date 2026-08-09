@@ -843,6 +843,11 @@ body.railed {
  * once a session is confirmed. That is the honest resting state: with
  * scripts dead there is no session to end and no way to end it, so a
  * button offering to would be a control that does nothing.
+ *
+ * The Sign in route lives here too since #187 - session state, not
+ * navigation - and rests the other way up: visible, because with
+ * scripts dead the door is what a member without a session needs, and
+ * it is a plain link that works with nothing running.
  */
 .rail-session {
   margin-top: auto;
@@ -862,6 +867,13 @@ body.railed {
   color: var(--color-text);
   font-weight: 600;
 }
+
+/* A link doing a button's job in a button's slot: the door and the
+   exit trade places in this block by session state, and a pair that
+   trade places should not also trade shapes. a.secondary above gives
+   it the chassis; this centers the word the way the button centers
+   its own. */
+.rail-signin { text-align: center; }
 
 /*
  * The Theme control: one disclosure and the chips it opens, wired by
@@ -1789,8 +1801,10 @@ body.instrument main { gap: var(--space-3); }
   .rail-session .runner { display: none; }
 
   /* Two words that must not become two lines. The strip is the width
-     that makes a button shrink until "Sign out" wraps, and a wrapped
-     verb reads as two controls. */
+     that makes a control shrink until "Sign out" - or the door's
+     "Sign in", which stands in the same slot when there is no
+     session - wraps, and a wrapped verb reads as two controls. */
+  .rail-signin,
   .rail-signout {
     white-space: nowrap;
     padding: var(--space-1) var(--space-3);

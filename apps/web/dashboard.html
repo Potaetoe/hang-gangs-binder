@@ -43,7 +43,6 @@
 
   <nav aria-label="Site">
     <ul class="rail-links">
-      <li><a href="index.html">Sign in</a></li>
       <li><a href="submit.html">Your binder</a></li>
       <li><a href="dashboard.html">Progress</a></li>
       <li>
@@ -53,23 +52,10 @@
     </ul>
   </nav>
 
-  <div class="theme-picker">
-    <button type="button" class="theme-disclosure" id="theme-toggle"
-            aria-expanded="false" aria-controls="theme-chips">Theme</button>
-    <div class="themes" id="theme-chips" role="group"
-         aria-label="Color theme">
-      <button type="button" data-set-theme="midnight">Midnight</button>
-      <button type="button" data-set-theme="pink">Pink</button>
-      <!-- The label is two words and the id is one. See the note in
-           submit.html; nothing here may be renamed on its own. -->
-      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
-      <button type="button" data-set-theme="contrast">Contrast</button>
-    </div>
-  </div>
-
   <div class="rail-session">
     <p class="runner"><span>Session</span></p>
     <p class="rail-who" id="session-who">Not signed in</p>
+    <a class="secondary rail-signin" id="sign-in" href="index.html">Sign in</a>
     <button type="button" class="secondary rail-signout" id="sign-out" hidden>
       Sign out
     </button>
@@ -277,6 +263,24 @@
 </main>
 
 <footer>
+  <!-- The Theme control, at the foot of the page on every themed page
+       alike - the owner's direction on #187. See the longer note in
+       submit.html's footer for the reasoning it shares with
+       index.html's. -->
+  <div class="theme-picker">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
+      <button type="button" data-set-theme="midnight">Midnight</button>
+      <button type="button" data-set-theme="pink">Pink</button>
+      <!-- The label is two words and the id is one. See the note in
+           submit.html; nothing here may be renamed on its own. -->
+      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="contrast">Contrast</button>
+    </div>
+  </div>
+
   <p>
     <a href="index.html">Sign in</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on

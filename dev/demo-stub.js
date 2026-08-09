@@ -38,8 +38,8 @@
    *
    * An iframe's width IS the viewport the page inside it lays out
    * against, so a shipped page in a 375-pixel frame takes its own phone
-   * rules - the rail as a strip, its four destinations still in flow,
-   * no sideways scroll - with nothing changed in apps/web and nothing
+   * rules - the rail as a strip, its destinations still in flow, no
+   * sideways scroll - with nothing changed in apps/web and nothing
    * recorded here. That is the whole feature: a width.
    *
    * The Theme control is deliberately not in that list. It is one

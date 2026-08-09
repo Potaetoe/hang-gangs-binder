@@ -171,11 +171,14 @@ day a check is added:
       cover would offer Sign out to somebody who has not signed in.
 
     The anti-stranding rule survives both shells rather than being
-    spent on the rail. A rail must name the directory index, because
-    sign-in is the route a visitor whose session died needs most; and
-    a plain page must still carry at least one local link out of
-    itself, in its own HTML, which is what stops "plain" from becoming
-    "a dead end with nice typography".
+    spent on the rail. A rail aside must carry the route to the
+    directory index somewhere - since #187 that is the wordmark and
+    the session block rather than a destination entry, because the
+    door is session state and not navigation, and a Sign in entry
+    among the destinations is refused in the same breath. And a plain
+    page must still carry at least one local link out of itself, in
+    its own HTML, which is what stops "plain" from becoming "a dead
+    end with nice typography".
 
 11. The sign-in page must not load crypto.js. It is the only page allowed
     to load Telegram's third-party script, and keeping submission plaintext
@@ -1421,7 +1424,7 @@ SHELLS = {
     "submit.html": "rail",
 }
 
-# The hamburger the rail replaced. The four destinations are visible at
+# The hamburger the rail replaced. The destinations are visible at
 # every width now - the owner's decision on #73 - and the only thing a
 # disclosure opens here is the theme chips, so a page still carrying
 # nav-toggle or nav-menu is a page that kept the hamburger. Those names
@@ -1438,6 +1441,23 @@ def rail_links(text):
         return None
     return re.findall(r'<a\s+href="([^"]+)"[^>]*>(.*?)</a>',
                       menu.group(0), re.S | re.I)
+
+
+def rail_aside(text):
+    """One page's whole rail <aside>, or None when it carries none.
+
+    The region the anti-stranding arm reads since #187. The route to
+    sign-in left .rail-links for the session block, and the wordmark
+    carries it too - so the claim "this rail can always get somebody
+    back to the door" is about the aside, not about the destinations
+    list inside it. Two of the three page footers also link the door,
+    but a footer is content and the rail is the shell: the shell is the
+    copy this file holds identical across pages, so the shell is the
+    copy the rule can stand on.
+    """
+    match = re.search(r'<aside[^>]*class="rail[\s"].*?</aside>',
+                      text, re.S | re.I)
+    return match.group(0) if match else None
 
 
 def local_links(text):
@@ -1494,13 +1514,35 @@ def rail_page_problems(text):
 
     # Identical incomplete rails still strand somebody. Sign-in is the
     # route a member whose session died needs most, so comparing the
-    # copies is not enough: every copy must name the directory index
-    # explicitly.
-    if not any(href == "index.html" for href, _ in links):
+    # copies is not enough: every copy of the aside must carry the
+    # directory index somewhere. Since #187 that somewhere is the
+    # wordmark and the session block rather than a destination entry,
+    # so the whole aside is read rather than .rail-links - the
+    # rationale outlived the selector it was first written as.
+    aside = rail_aside(text) or ""
+    if not any(rail_target(href) == "index.html"
+               for href in local_links(aside)):
         problems.append(
-            "has no index.html route to sign-in, so a member whose session "
-            "has expired can be stranded away from the page that mints a "
-            "new one")
+            "has no route to sign-in anywhere in its rail, so a member "
+            "whose session has expired can be stranded away from the page "
+            "that mints a new one")
+
+    # The other direction of the same ruling. #187 moved the door out of
+    # the destinations: .rail-links lists where a signed-in member goes,
+    # and Sign in in that list is the door offered to people already
+    # inside. Its home is the session block, beside the words that say
+    # whether there is a session to end - refused here rather than
+    # merely removed, because three hand-kept copies drift back the way
+    # they drifted apart.
+    for href, _ in links:
+        if rail_target(href) == "index.html":
+            problems.append(
+                "offers the sign-in door (%s) among its rail destinations. "
+                "#187 moved that route to the session block: navigation "
+                "lists where a signed-in member goes, and the session "
+                "block is the surface that knows whether to offer the "
+                "door or the exit" % href)
+            break
 
     for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
         problems.append(

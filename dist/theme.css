@@ -578,6 +578,10 @@ body.railed {
 
 
 
+.rail-signin { text-align: center; }
+
+
+
 .theme-picker {
   display: flex;
   flex-direction: column;
@@ -1237,6 +1241,7 @@ body.instrument main { gap: var(--space-3); }
 
   
 
+  .rail-signin,
   .rail-signout {
     white-space: nowrap;
     padding: var(--space-1) var(--space-3);

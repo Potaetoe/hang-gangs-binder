@@ -42,13 +42,22 @@
   copies, and tools/check_web.py fails the build if they disagree, and
   fails too if this markup appears on a page pinned plain.
 
+  The destinations are where a signed-in member goes. Sign in is not
+  one of them - the owner's direction on #187: the door was being
+  offered to people already inside - so the route lives in the session
+  block below, beside the words that say whether this tab holds a
+  session, and tools/check_web.py refuses it up here.
+
   Nothing in here is hidden by the `hidden` attribute except the Sign
   out control, and that is deliberate. [hidden] is display:none
   !important in theme.css, so anything hidden that way at one width
-  cannot be revealed at another; the four destinations stay in flow at
-  every width and the theme chips fold behind a data attribute instead.
-  Sign out is the one thing that genuinely has no state to be in until a
-  script confirms a session, so the attribute is right for it.
+  cannot be revealed at another; the destinations stay in flow at every
+  width. Sign out is the one thing that genuinely has no state to be in
+  until a script confirms a session, so the attribute is right for it -
+  and the Sign in route beside it ships VISIBLE for the same reasoning
+  read the other way: with scripts dead there is no session, the door
+  is the honest resting state, and signout.js hides it only once a
+  session is confirmed.
 -->
 <aside class="rail">
   <a class="wordmark" href="index.html">
@@ -58,7 +67,6 @@
 
   <nav aria-label="Site">
     <ul class="rail-links">
-      <li><a href="index.html">Sign in</a></li>
       <li><a href="submit.html">Your binder</a></li>
       <li><a href="dashboard.html">Progress</a></li>
       <li>
@@ -68,46 +76,10 @@
     </ul>
   </nav>
 
-  <div class="theme-picker">
-    <button type="button" class="theme-disclosure" id="theme-toggle"
-            aria-expanded="false" aria-controls="theme-chips">Theme</button>
-    <div class="themes" id="theme-chips" role="group"
-         aria-label="Color theme">
-      <button type="button" data-set-theme="midnight">Midnight</button>
-      <button type="button" data-set-theme="pink">Pink</button>
-      <!--
-        "Parchment Daylight" - the owner's ruling on #127, and the one
-        place in this control where the visible word and the code's name
-        for the same thing deliberately differ.
-
-        The id stays `daylight`: here in data-set-theme, in theme.js's
-        theme-color map and its light-preference answer, in two theme.css
-        selector blocks that must go on declaring identical colors, in
-        check_contrast.py's table keys, and - the one that cannot be
-        undone - in every member's stored preference. Renaming the id
-        would silently return everybody who has already chosen this
-        palette to the default.
-
-        The label is what moved, and it moves theme.css's own comments
-        and check_contrast.py's display names from aspiration to fact:
-        both already called this palette Parchment Daylight.
-
-        Nothing compares these four buttons across the four pages that
-        carry them. check_web.py's check 19 pins that each of those pages
-        HAS the control and that no other page does; the rail-parity rule
-        reads .rail-links and stops, and the name tables read titles,
-        headings and rail entries - so a rename reaching three of the
-        four copies still passes the whole gate. That gap is filed as
-        #152.
-      -->
-      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
-      <button type="button" data-set-theme="contrast">Contrast</button>
-    </div>
-  </div>
-
   <div class="rail-session">
     <p class="runner"><span>Session</span></p>
     <p class="rail-who" id="session-who">Not signed in</p>
+    <a class="secondary rail-signin" id="sign-in" href="index.html">Sign in</a>
     <button type="button" class="secondary rail-signout" id="sign-out" hidden>
       Sign out
     </button>
@@ -508,6 +480,52 @@
      rail entry says what it needs, so nobody follows it expecting a
      page they can use. -->
 <footer>
+  <!--
+    The same single Theme control every themed page carries, in the
+    place index.html has always kept its own - the owner's direction on
+    #187. In the rail it sat between the destinations and the session,
+    prime chrome for a set-once control, and at phone widths that put
+    it literally up top ahead of the content. Here the chips open IN
+    FLOW and downward, below everything somebody came to this page to
+    do, so every way the reveal can fail leaves the page above it
+    untouched. The palette a visitor already chose is painted before
+    any of this runs, by theme-init.js in the head.
+  -->
+  <div class="theme-picker">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
+      <button type="button" data-set-theme="midnight">Midnight</button>
+      <button type="button" data-set-theme="pink">Pink</button>
+      <!--
+        "Parchment Daylight" - the owner's ruling on #127, and the one
+        place in this control where the visible word and the code's name
+        for the same thing deliberately differ.
+
+        The id stays `daylight`: here in data-set-theme, in theme.js's
+        theme-color map and its light-preference answer, in two theme.css
+        selector blocks that must go on declaring identical colors, in
+        check_contrast.py's table keys, and - the one that cannot be
+        undone - in every member's stored preference. Renaming the id
+        would silently return everybody who has already chosen this
+        palette to the default.
+
+        The label is what moved, and it moves theme.css's own comments
+        and check_contrast.py's display names from aspiration to fact:
+        both already called this palette Parchment Daylight.
+
+        check_web.py's check 19 pins that each themed page HAS the
+        control and that no other page does, and check 23 holds the
+        four copies of these labels identical (#152) - so a rename
+        must reach all four in one slice, and this comment is the one
+        that says so.
+      -->
+      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="contrast">Contrast</button>
+    </div>
+  </div>
+
   <p>
     <a href="dashboard.html">See what everyone adds up to</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
