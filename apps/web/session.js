@@ -80,6 +80,13 @@
 
     // Malformed and expired credentials are not left around to fail every
     // request until the tab closes. They are no session, so store that fact.
+    //
+    // This is also where the announcement stops recursing, and the early
+    // return above is what stops it. clear() announces, listeners re-read,
+    // and they arrive back here - to a key that is already gone, which
+    // leaves before reaching this line. Moving the disposal ahead of that
+    // return, or announcing for a key that was never there, is a stack
+    // overflow on the expiry path rather than a tidier read().
     if (!value) clear();
     return value;
   }
@@ -102,6 +109,13 @@
     } catch (error) {
       throw new Error("This browser cannot keep a session for this tab.");
     }
+    // Gaining one is a change to the stored credential as much as losing
+    // one is. Announcing only the losses would make onChange a name for
+    // half of what it says, and leave the next surface to subscribe
+    // reacting to sign-out and silently not to sign-in - the same class
+    // of half-wired shell #166 is about. It is announced after the store
+    // succeeds, so nothing paints a session this function then refuses.
+    announce(value);
     return value;
   }
 
@@ -133,7 +147,7 @@
     return segment.indexOf(".") === -1 ? segment + ".html" : segment;
   }
 
-  function announce(value) {
+  function paintDevelopmentCard(value) {
     if (typeof document === "undefined") return;
     const banner = document.querySelector("[data-dev-session]");
     if (!banner) return;
@@ -142,6 +156,47 @@
     banner.hidden = !development;
     const identity = banner.querySelector("[data-dev-identity]");
     if (identity) identity.textContent = development ? value.username : "";
+  }
+
+  const listeners = [];
+
+  /*
+   * Who to tell when the stored credential changes.
+   *
+   * The card above is this file's own surface. The rail's "Signed in as
+   * <name>" is signout.js's, and neither this file nor the next surface
+   * to need the same treatment should be the place that knows about the
+   * other's markup: the store says its credential changed, and whoever
+   * paints from a session subscribes and looks again (#166).
+   *
+   * NOTHING IS HANDED TO THE LISTENER, AND THAT IS THE POINT. A listener
+   * given a copy can paint from a credential the store has already moved
+   * past - which is the bug this whole line of work is about, arriving by
+   * a shorter route. One that re-reads cannot, and read() stays the
+   * single answer to what is true.
+   */
+  function onChange(listener) {
+    if (typeof listener === "function") listeners.push(listener);
+  }
+
+  /*
+   * A listener that throws is a painting fault, and it must not become a
+   * credential fault. clear() runs from read() and from every refusal
+   * path, so an exception escaping here would turn disposing of a dead
+   * token into a broken page at a moment nobody chose - and would stop
+   * the listeners after it from hearing at all.
+   */
+  function announce(value) {
+    paintDevelopmentCard(value);
+    for (let i = 0; i < listeners.length; i += 1) {
+      try {
+        listeners[i]();
+      } catch (error) {
+        // Swallowed for the reason above. There is no surface to report
+        // it on: the one this would report through is the one that just
+        // failed to paint.
+      }
+    }
   }
 
   function redirectToSignIn() {
@@ -164,6 +219,7 @@
     authorization,
     pageName,
     require: requireSession,
+    onChange,
   });
 
   // Every interactive page loads this file, including admin's break-glass

@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 49);
+const { check, report } = nodeTestSuite("session/auth", 50);
 
 const values = new Map();
 globalThis.sessionStorage = {
@@ -461,10 +461,14 @@ check("and the way back in is offered again in the same breath",
  * thing that makes the question moot: the death repaint takes the
  * no-session branch and never reaches the registration at all. The first
  * half is what stops that reading from being free - the signed-in
- * repaint has to have wired the button before its absence means anything.
+ * repaint has to have wired the button before its absence means
+ * anything. How often it wired it is deliberately left open: that count
+ * is how many signed-in paints happened, which is not the contract, and
+ * pinning it would break this arm every time an announcement is added
+ * somewhere the rail is right to react to.
  */
 check("a repaint for a dead session wires no second sign-out handler",
-  registrationsHeld === 1 && railRegistrations === registrationsHeld);
+  registrationsHeld >= 1 && railRegistrations === registrationsHeld);
 
 /*
  * The caller nobody writes: read() disposing of a value it will not use.
@@ -505,5 +509,22 @@ Session.clear();
 check("a reader that throws costs neither the drop nor the next reader",
   Session.read() === null && reached === true &&
   rail["session-who"].textContent === "Not signed in");
+
+/*
+ * The other direction, and it is what keeps the exported name honest.
+ * A store that announced only losses would call itself onChange while
+ * reporting half of what it says, and the next surface to subscribe
+ * would react to sign-out and silently not to sign-in - a shell wired
+ * for one edge, which is the shape of the bug this all started as.
+ *
+ * Nothing has re-required the page here: the drop above left the rail
+ * reading "Not signed in", and write() alone has to move it.
+ */
+const railEmptied = rail["session-who"].textContent === "Not signed in";
+Session.write(GOOD);
+check("gaining a credential is announced as much as losing one",
+  railEmptied &&
+  rail["session-who"].textContent === "Signed in as somehandle" &&
+  rail["sign-in"].hidden === true && rail["sign-out"].hidden === false);
 
 report();
