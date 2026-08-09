@@ -505,9 +505,14 @@ Session.require();
 let reached = false;
 Session.onChange(function () { throw new Error("a paint that failed"); });
 Session.onChange(function () { reached = true; });
-Session.clear();
+// Caught here rather than left to the runner, so a store that stops
+// containing this reports as a named failure. Uncaught, it lands as an
+// exception mid-suite and takes every check after it down with no line
+// saying which promise the store broke.
+let escaped = null;
+try { Session.clear(); } catch (error) { escaped = error; }
 check("a reader that throws costs neither the drop nor the next reader",
-  Session.read() === null && reached === true &&
+  escaped === null && Session.read() === null && reached === true &&
   rail["session-who"].textContent === "Not signed in");
 
 /*
