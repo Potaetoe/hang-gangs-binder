@@ -59,8 +59,20 @@
 -- Worker which reads `supersedes` is deployed against it; there is no
 -- graceful degradation on the other side, deliberately, because a
 -- fallback would make a forgotten migration invisible in exactly the way
--- the block above describes. Re-running this file afterwards adds the
--- index, which is IF NOT EXISTS.
+-- the block above describes.
+--
+-- Re-running this file is safe to repeat and is NOT purely additive, and
+-- the difference matters to whoever runs it. Every run DROPs the old
+-- `supersedes` index before creating the unique one under its new name -
+-- see that statement's own block below for why a rename is the only
+-- honest way to make an existing index unique - so a run is idempotent
+-- in its result and destructive on the way there. Against a database
+-- holding two rows that name one target the CREATE fails, and the DROP
+-- that preceded it has already committed: the table is left with no
+-- index on `supersedes` at all, which is a working database with a
+-- silently slower GET /me and no chain rule under it. OPERATIONS.md
+-- carries the pre-flight query that stops that happening and the
+-- recovery if it has.
 --
 -- A whole new table is the easy case of the same rule: re-running this
 -- file creates `site_content` and `membership` where they are absent and
@@ -90,10 +102,26 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE INDEX IF NOT EXISTS submissions_account
   ON submissions(account_id);
 
--- Both of the questions asked about a submission id are "does any row
--- name it": GET /me counts the rows nobody names, and POST /submit
--- refuses a second correction of a row already corrected. The first runs
--- on an ordinary page load.
+-- Two questions are asked about a submission id, and they are NOT the
+-- same question - which is the thing to know before changing either one
+-- to match the other. GET /me counts the rows nobody names, scoped to
+-- one account: a superseding row has to belong to the member being
+-- counted. POST /submit refuses a correction of a row ANY row already
+-- names, scoped to nothing. The first runs on an ordinary page load,
+-- which is what this index is for.
+--
+-- Each scope is chosen against a different failure. /me is a member's
+-- own panel, so a row they did not write and cannot see must not be able
+-- to remove one of their entries from it - and rows written by another
+-- account do reach this table, through `wrangler d1 execute` and through
+-- an ACCOUNT_SECRET rotation that renames every account in the clear
+-- column and leaves the pointers untouched. /submit's rule is the one
+-- below: a UNIQUE index on `supersedes` alone asks about the whole
+-- table, so an endpoint asking a narrower question would accept writes
+-- the database then refuses, and the member's answer would come from an
+-- exception handler matching on an error string rather than from a check
+-- that diagnosed it. Making that pair agree is worth more than making
+-- the two endpoints agree with each other.
 --
 -- UNIQUE is the chain shape enforced by the database instead of only by
 -- the endpoint that checks it. A row may be superseded ONCE, which is
