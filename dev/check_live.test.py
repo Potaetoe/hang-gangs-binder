@@ -53,7 +53,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 63
+EXPECTED = 79
 
 
 def check(label, condition):
@@ -327,17 +327,18 @@ check("a published page with no ledger row fails the gate",
 # are gone is how a count stays reassuring while the thing it counts
 # leaves.
 check("a row for a route the router no longer dispatches is reported",
-      len(spined(COVERING + [entry(id="GET /gone")])) == 1)
+      len(spined([*COVERING, entry(id="GET /gone")])) == 1)
 
 check("a row for a page no longer published is reported",
-      len(spined(COVERING + [entry(id="old.html", surface="page",
+      len(spined([*COVERING, entry(id="old.html", surface="page",
                                    covers=["AGENTS.md"])])) == 1)
 
 check("a flow row is not held to the spine",
-      spined(COVERING + [entry(id="the key flow", surface="flow")]) == [])
+      spined([*COVERING,
+              entry(id="the key flow", surface="flow")]) == [])
 
 check("more than one row may cover one route",
-      spined(COVERING + [entry(id="GET /me, signed out")]) == [])
+      spined([*COVERING, entry(id="GET /me, signed out")]) == [])
 
 
 # ------------------------------------------------------------------ #
@@ -368,7 +369,8 @@ check("a guard the source no longer carries fails the gate",
       len(caused([PINNED], source="if (botToken === null) {")) == 1)
 
 check("the falsified-guard report says to reclassify or re-pin",
-      "reclassify" in only(caused([PINNED], source="nothing here")))
+      "reclassify"
+      in only(caused([PINNED], source="nothing here")).lower())
 
 WIDGET = entry(status="first-contact", cause="published-origin-only")
 
@@ -436,7 +438,11 @@ check("the shipped ledger passes every rule",
 for label, planted in (
     ("entry shape", [entry(status="mostly")]),
     ("spine completeness", [entry(id="GET /nowhere")]),
-    ("cause corroboration", [entry(id="z", status="first-contact",
+    # A flow row, so the only rule this can break is the cause rule.
+    # A route-shaped id would redden the spine instead and the arm
+    # would pass while proving nothing about what it names.
+    ("cause corroboration", [entry(id="z", surface="flow",
+                                   status="first-contact",
                                    cause="guarded-branch",
                                    guard="if (!nothing_pins_this)")]),
 ):

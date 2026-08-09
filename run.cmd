@@ -17,6 +17,8 @@ if not defined PY (
 
 if "%~1"=="check" ( %PY% tools\check.py & exit /b )
 if "%~1"=="docs" ( %PY% tools\check_docs.py & exit /b )
+rem Mirrors ./run live - read-only, offline, and it contacts nothing.
+if "%~1"=="live" ( %PY% tools\check_live.py --report & exit /b )
 if "%~1"=="serve" (
   echo Open http://127.0.0.1:8124  ^(127.0.0.1, not localhost - #72^)
   %PY% -m http.server 8124 --directory apps\web
@@ -64,6 +66,6 @@ if "%~1"=="bootstrap" (
 )
 
 echo usage: .\run ^<command^>
-echo   bootstrap ^| check ^| docs ^| serve ^| serve-root ^| keygen ^| demo ^| bake
+echo   bootstrap ^| check ^| docs ^| live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2
