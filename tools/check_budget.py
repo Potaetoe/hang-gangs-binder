@@ -292,11 +292,11 @@ WEB = os.path.join(REPO, "dist")
 # taken out of the CSS and the scripts - and this table now measures that
 # tree instead of the source:
 #
-#   404.html        120,715 -> 103,077   (-14.6%)
-#   admin.html      190,882 -> 136,117   (-28.7%)
-#   dashboard.html  154,823 -> 118,148   (-23.7%)
-#   index.html      130,088 -> 108,540   (-16.6%)
-#   submit.html     162,154 -> 125,621   (-22.5%)
+#   404.html        120,715 -> 103,072   (-14.6%)
+#   admin.html      190,882 -> 136,112   (-28.7%)
+#   dashboard.html  154,823 -> 118,143   (-23.7%)
+#   index.html      130,088 -> 108,535   (-16.6%)
+#   submit.html     162,154 -> 125,594   (-22.5%)
 #
 # admin.html is the page that needed it. It stood at 99% of its ceiling
 # after #69's membership pane landed - one ordinary card away from a
