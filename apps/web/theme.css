@@ -717,6 +717,11 @@ p {
 body.railed {
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  /* A grid, so this is the block axis: it keeps the rail from stretching
+     down a page taller than itself. The small-screen block states it
+     again rather than letting it through - there the container is a flex
+     column, where the same word addresses the inline axis. Change it
+     here and change it there. */
   align-items: start;
   padding: 0;
   gap: 0;
@@ -1687,13 +1692,38 @@ body.instrument main { gap: var(--space-3); }
  * the chips instead of down here.
  */
 @media (max-width: 64rem) {
+  /*
+   * The two `stretch` lines below are the point of this block, not the
+   * `display` change they sit with.
+   *
+   * `align-items: start` on the grid above addresses the block axis:
+   * do not stretch the rail down the page. Here the container is a flex
+   * column, where the identical word addresses the INLINE axis and
+   * means "size every child to its own content" instead. Let it through
+   * and `.page` takes its min-content width rather than the screen's -
+   * on admin.html that is the wider of the two, because a file input's
+   * intrinsic width ignores its own `max-width: 100%` while intrinsic
+   * sizes are computed. That is a page that scrolls sideways.
+   *
+   * `.rail` needs its own line because an item's `align-self` outranks
+   * its container, and it sets `start` for the same grid reason. Reset
+   * the container alone and the strip stops short of the right edge:
+   * its bottom rule ends mid-page and the `margin-left: auto` under it
+   * has nothing to push against.
+   *
+   * No check sees either line. A declaration whose meaning turns on a
+   * `display` set in another rule is not a string to match on, so this
+   * comment is the whole warning.
+   */
   body.railed {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 0;
   }
 
   .rail {
+    align-self: stretch;
     position: static;
     max-height: none;
     overflow: visible;
