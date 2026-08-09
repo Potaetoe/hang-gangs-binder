@@ -1115,6 +1115,16 @@
 
     
 
+    function withheldNote(snapshot) {
+      return snapshot.seriesWithheld
+        ? " Weight over time is not in it: fewer than " +
+          root.BinderDashboard.MIN_CELL +
+          " people have more than one entry."
+        : "";
+    }
+
+    
+
     $("publish-preview").addEventListener("click", function () {
       const body = $("publish-preview-body");
       if (!body.hidden) {
@@ -1122,8 +1132,14 @@
         body.textContent = "";
         return;
       }
-      body.textContent = JSON.stringify(publishable(), null, 2);
+      const preview = publishable();
+      body.textContent = JSON.stringify(preview, null, 2);
       body.hidden = false;
+       
+       
+       
+      const missing = withheldNote(preview);
+      if (missing) sayPublish(missing.trim(), null);
     });
 
     $("publish").addEventListener("click", async function () {
@@ -1133,13 +1149,17 @@
       }
       $("publish").disabled = true;
       sayPublish("Publishing…", null);
+       
+       
+       
+      const sent = publishable();
       try {
         const response = await fetch(config.endpoint + "/snapshot", {
           method: "POST",
           headers: Object.assign(
             { "Content-Type": "application/json" },
             root.BinderSession.authorization()),
-          body: JSON.stringify(publishable()),
+          body: JSON.stringify(sent),
         });
         if (response.status === 401) {
           throw new Error("The admin session was not accepted.");
@@ -1156,8 +1176,8 @@
       }
 
       $("publish").disabled = false;
-      sayPublish("Published. The public dashboard now shows these numbers.",
-        null);
+      sayPublish("Published. The public dashboard now shows these numbers." +
+        withheldNote(sent), null);
       await refreshPublishedState();
     });
 
