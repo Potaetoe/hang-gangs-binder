@@ -17,6 +17,7 @@ a test runner is not needed to compare values.
 
 import os
 import sys
+import tempfile
 
 # tools/ is not a package and check_web.py is a script, so the import has
 # to be made reachable before it can be named. isort would hoist the
@@ -35,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 169
+EXPECTED = 171
 
 
 def check(label, condition):
@@ -961,7 +962,8 @@ check("the branch is found at any breakpoint, not just 64rem",
       any("without stating align-items" in p
           for p in check_web.css_column_branch_problems(
               GRID + "@media (max-width: 30rem) {"
-              " body.railed { display: flex; } .rail { align-self: start; } }")))
+              " body.railed { display: flex; }"
+              " .rail { align-self: start; } }")))
 check("a second column branch is judged on its own",
       len(check_web.css_column_branch_problems(
           ANSWERED + "@media (max-width: 30rem) {"
@@ -1023,6 +1025,38 @@ check("the whole media block is read, not its first rule",
 
 check("the shipped stylesheet answers in its column branch",
       check_web.column_branch_alignment_problems() == [])
+
+
+# The arm that stops the one above being decorative, found by mutating
+# rather than by reading: replacing the wrapper's body with `return []`
+# left this whole suite green AND the gate green, because every arm
+# above drives the pure function and the arm above expects nothing.
+# A check that has been neutered where it meets the disk is a check
+# that looks armed. So the wrapper is pointed at a stylesheet that must
+# fail, which is the only way to establish that it reads a file at all
+# and applies the rule to what it finds.
+#
+# The directory is a temporary one outside the repository: a fixture
+# stylesheet written into apps/web would be published verbatim, and one
+# written anywhere in the tree is linted by the gate that runs this.
+BROKEN = GRID + ("@media (max-width: 64rem) {"
+                 " body.railed { display: flex; flex-direction: column; } }")
+
+with tempfile.TemporaryDirectory() as folder:
+    with open(os.path.join(folder, check_web.STYLESHEET), "w",
+              encoding="utf-8") as handle:
+        handle.write(BROKEN)
+    shipped = check_web.WEB
+    try:
+        check_web.WEB = folder
+        found = check_web.column_branch_alignment_problems()
+    finally:
+        check_web.WEB = shipped
+
+check("the wrapper reads the stylesheet rather than answering from "
+      "nowhere", len(found) == 2)
+check("and it is the shipped directory it normally reads",
+      check_web.WEB.endswith(os.path.join("apps", "web")))
 
 
 if failures:
