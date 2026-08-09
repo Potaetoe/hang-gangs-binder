@@ -1287,17 +1287,15 @@
       drawRows($("membership-malformed-list"), view.malformed, "admin");
       show($("membership-malformed"), view.malformed.length > 0);
 
-      const secret = $("secret-only");
-      secret.textContent = secretOnlyNotice(view);
-      if (view.secretOnly.length) {
-        const ids = document.createElement("span");
-        // The ids themselves, on one line and as text. An admin may see
-        // them - they are the same un-invertible values the rows above
-        // already carry - and seeing them is what makes "two remain"
-        // checkable against a re-read rather than a number to trust.
-        ids.textContent = " " + view.secretOnly.join(" ");
-        secret.appendChild(ids);
-      }
+      $("secret-only").textContent = secretOnlyNotice(view);
+      // The ids themselves, as machine text in a block that scrolls
+      // inside itself. An admin may see them - they are the same
+      // un-invertible values the rows above already carry - and seeing
+      // them is what makes "one remains" checkable against a re-read
+      // rather than a number to be trusted. They go nowhere else: no
+      // download, no clipboard, no storage.
+      $("secret-only-ids").textContent = view.secretOnly.join("\n");
+      show($("secret-only-ids"), view.secretOnly.length > 0);
 
       // Anything the reader could not place. A row here still grants
       // whatever its role says, so it is shown rather than dropped.

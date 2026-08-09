@@ -186,25 +186,23 @@
       more than the Worker offers and a surface implying parity would be
       lying about which lever revokes what.
 
-      - `admin` is the list this pane manages outright. adminAccountIds()
-        unions these rows with ADMIN_TELEGRAM_IDS today, and the owner's
-        flip shrinks that secret to the founding admin and then drops the
-        arm; the secret-only line below is how far that backfill has got.
-      - `always_allow` can only be ADDED to from here. Its secret arm is
-        checked FIRST and by numeric id, because it is the break-glass
-        for the case where the database is the thing that is wrong -
-        server/worker.js argues that at length - so a row removed here is
-        not a revocation while the secret still names that id.
-      - TELEGRAM_GROUP_CHAT_ID has no route and never gets one. It names
-        a chat rather than people, and it has to be recoverable in the
-        clear because isGroupMember() interpolates it into a URL.
+      - `admin` is managed outright. adminAccountIds() unions these rows
+        with ADMIN_TELEGRAM_IDS, and the owner's flip shrinks that secret
+        and then drops the arm; the secret-only line is how far that
+        backfill has got.
+      - `always_allow` can only be ADDED to. Its secret arm is checked
+        FIRST and by numeric id, because it is the break-glass for a
+        broken database - server/worker.js argues that at length - so a
+        row removed here is not a revocation while the secret names it.
+      - TELEGRAM_GROUP_CHAT_ID has no route and never gets one: it names
+        a chat rather than people, and isGroupMember() needs it in the
+        clear to interpolate into a URL.
 
-      NO FORM ELEMENT, DELIBERATELY. A numeric Telegram id typed here is
-      the last place that id exists: the Worker hashes it on receipt and
-      stores only the hash. A <form> would default to a GET submit, which
-      puts that id in the address bar and in browser history - the
-      membership oracle DESIGN.md exists to prevent, arriving through the
-      URL. Buttons and fetch, and the field is cleared on success.
+      NO FORM ELEMENT, DELIBERATELY. The numeric id typed here is the
+      last place that id exists - the Worker hashes it on receipt and
+      stores only the hash - and a <form> defaults to a GET submit, which
+      puts it in the address bar and in browser history. That is the
+      membership oracle DESIGN.md exists to prevent, arriving by URL.
     -->
     <div class="card narrow" id="membership-card">
       <p class="runner"><span>Membership</span></p>
@@ -277,6 +275,13 @@
       <h2>Admin</h2>
       <div id="membership-admin"></div>
       <p class="hint" id="secret-only"></p>
+      <!-- The ids themselves in the machine-text component rather than in
+           the sentence above, because a 64-character hex string has no
+           break opportunity in it: left in a paragraph it pushes the
+           whole page sideways at phone width, which is the defect #148
+           had just finished removing from this page. This component
+           scrolls inside itself, which is where wide content belongs. -->
+      <pre class="failure-list" id="secret-only-ids" hidden></pre>
 
       <h2>Always allow</h2>
       <div id="membership-always_allow"></div>

@@ -275,7 +275,8 @@ function makePage() {
     // containers up by role - see the note in admin.html.
     "membership-card", "member-telegram-id", "member-label", "member-add",
     "membership-status", "membership-admin", "membership-always_allow",
-    "secret-only", "membership-malformed", "membership-malformed-list",
+    "secret-only", "secret-only-ids",
+    "membership-malformed", "membership-malformed-list",
     "membership-other", "membership-other-body",
   ];
   const INPUTS = ["token", "keyfile-picker", "publish-series",
@@ -290,6 +291,7 @@ function makePage() {
     "closed", "results", "dashboard", "publish-card", "failures",
     "unpublish", "publish-preview-body", "publish-status",
     "membership-status", "membership-malformed", "membership-other",
+    "secret-only-ids",
   ]) elements[id].hidden = true;
   elements.token.value = "DOM_INPUT_EXPORT_TOKEN";
   elements.keyfile.value = "DOM_INPUT_PRIVATE_KEY";
@@ -945,7 +947,13 @@ check("a malformed row is drawn apart from the rows that grant",
 
 check("the secret-only list is reported with its count and named un-resolvable",
   /\b1\b/.test(lists.elements["secret-only"].textContent) &&
-  /name nobody/.test(lists.elements["secret-only"].textContent));
+  /name nobody/.test(lists.elements["secret-only"].textContent) &&
+  // The ids themselves go in the machine-text block rather than in the
+  // sentence: a 64-character hex string has no break opportunity in it,
+  // and in a paragraph it pushes the whole page sideways at phone width
+  // - the defect #148 had just finished removing from this page.
+  lists.elements["secret-only-ids"].hidden === false &&
+  lists.elements["secret-only-ids"].textContent === "d".repeat(64));
 
 check("a label is put back on the page as text and never as markup",
   // The label is typed by an admin and verified by nothing
@@ -1098,6 +1106,8 @@ const quiet = await loadAdmin(ADMIN, {
 check("a Worker that reported no secret-only list is not read as the signal",
   /did not report/.test(quiet.elements["secret-only"].textContent) &&
   !/go-signal/.test(quiet.elements["secret-only"].textContent) &&
+  // And no id block is offered, because there is no list to put in one.
+  quiet.elements["secret-only-ids"].hidden === true &&
   quiet.elements["membership-malformed"].hidden === true);
 
 /* A granting row this page cannot name still has to appear somewhere. */
