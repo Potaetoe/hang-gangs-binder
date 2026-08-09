@@ -684,12 +684,12 @@
   /*
    * The scenarios are the STAGING: which session the tab holds, which
    * corpus the stubbed snapshot route serves, whether a prefill or a
-   * revocation is waiting. They used to carry the walk-through too;
-   * #209 moved the person-facing half onto the FEATURES cards below
-   * and left the ids as plumbing, cited by the cards' actions and by
-   * dev/demo.test.mjs and by nothing a reader sees. UAT.md is the one
-   * home for a scripted walk now - #192 already showed what a script
-   * kept in two homes costs.
+   * revocation is waiting. The person-facing half lives on the
+   * FEATURES cards below (#209); the ids are plumbing, cited by the
+   * cards' actions and by dev/demo.test.mjs and by nothing a reader
+   * sees. No walk-through belongs here: UAT.md is the one home for a
+   * scripted walk, because #192 already showed what a script kept in
+   * two homes costs.
    *
    * `start` is where a card's action lands unless the action says
    * otherwise. Every destination stays reachable in every scenario,

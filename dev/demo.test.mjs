@@ -604,11 +604,11 @@ await check("every acceptance box is reachable from some scenario", () => {
 });
 
 /*
- * The chip walk that used to be pinned here (a step naming the palette
- * chips had to start on a page carrying them, #140) died with the
- * steps: the demo no longer scripts anybody's hands. The duty did not
- * die - the walk lives in UAT.md's shell section, which every card
- * sends the reader through, and check_web.py's THEMED_PAGES still pins
+ * No chip-walk pin here, and that is deliberate. #140's rule - a walk
+ * naming the palette chips must start on a page that carries them -
+ * needs steps to hold, and the demo scripts nobody's hands. The duty
+ * is alive elsewhere: the walk is UAT.md's shell section, which every
+ * card sends the reader through, and check_web.py's THEMED_PAGES pins
  * which pages carry the control at all.
  */
 
@@ -692,14 +692,14 @@ await check("the console script paints the cards and none of the bench", () =>
   !consoleJs.includes('$("edits")'));
 
 /*
- * F9, re-keyed by #209. The coupling used to run on scenario ids in
- * UAT.md's section headings; the ids are plumbing now and UAT.md walks
- * the cards instead. Each card owns one section, marked in its heading
- * as `card "Title"`, and the two documents must name exactly the same
- * cards - the contract is the same strength it was, spelled in the
- * words the reader actually sees. Until this check existed in its id
- * form, "contract" was a word in a comment and nothing else; keeping
- * it two-way is what keeps it a contract through the rename.
+ * F9, keyed to card titles rather than staging ids (#209): the ids
+ * are plumbing UAT.md's reader never sees, and a contract spelled in
+ * words nobody reads is a contract about nothing. Each card owns one
+ * UAT.md section, marked in its heading as `card "Title"`, and the
+ * two documents must name exactly the same cards. Two-way on purpose:
+ * one direction catches a stale section, the other catches a card no
+ * section walks, and losing either half is how "contract" goes back
+ * to being a word in a comment.
  */
 const uat = await readFile(HERE("../UAT.md"), "utf8");
 const uatCards = new Set();
