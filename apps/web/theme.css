@@ -1352,6 +1352,13 @@ code {
  * for the admin page would be styling a thing that page cannot produce.
  */
 .hero {
+  /* Full width, like the two panels that already claim it. #charts is a
+     two-column grid, so a hero left to auto-placement lands in the first
+     cell with the stat strip beside it in the second - which is a
+     headline sharing a line with the figures it is supposed to be the
+     headline for, and it also moves the strip, on the admin page's
+     component, for a page the admin page never draws. */
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
