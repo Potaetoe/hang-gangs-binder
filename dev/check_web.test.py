@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 258
+EXPECTED = 309
 
 
 def check(label, condition):
@@ -1582,6 +1582,400 @@ check("a themed page with no chips is left to check 19, not restated",
           "submit.html": CHIP_GROUP,
           "dashboard.html": "<p>Nothing here.</p>",
       }) == [])
+
+
+# ------------------------------------------------------------------
+# Check 24: the design tokens the mockup rules.
+#
+# Driven on strings for this suite's own reason: the shipped stylesheet
+# is one arrangement of the rules, and what has to hold is the SHAPE of
+# the failure. The stylesheet the arms below are fed is built out of
+# the pinned table itself rather than typed out again here - a fixture
+# holding a second copy of seventy-two hexes would go stale the day the
+# owner moves one, and would then be testing the copy.
+#
+# The wrapper arms at the end are the ones that read apps/web, and they
+# are what stops all of this being decorative: check 20's wrapper arm
+# recorded the lesson one suite up, where replacing a wrapper's body
+# with `return []` left every pure arm green.
+
+FACES = "\n".join(
+    '@font-face { font-family: %s; src: url("f.woff2"); }' % family
+    for family in ('"Playfair Display"', '"DM Sans"', '"JetBrains Mono"'))
+
+
+def declarations(table):
+    """One block's worth of custom-property declarations."""
+    return "\n".join("  %s: %s;" % pair for pair in sorted(table.items()))
+
+
+def block_text(key, table):
+    """A CSS block for `key`, inside its @media when it has one."""
+    media, selector = key
+    rule = "%s {\n%s\n}" % (selector, declarations(table))
+    return "@media %s {\n%s\n}" % (media, rule) if media else rule
+
+
+def token_css(overrides=None, extra=""):
+    """The stylesheet the pinned table describes, `overrides` applied.
+
+    `overrides` maps a block key to what that block should declare
+    instead of the ruled values; None drops the block entirely. The
+    block roster is read off the table rather than listed again, so a
+    palette added to the pin is exercised here without an edit.
+    """
+    overrides = overrides or {}
+    parts = []
+    for key in [*check_web.MOCKUP_PALETTE_BLOCKS,
+                check_web.MOCKUP_SCALE_BLOCK]:
+        if key == check_web.MOCKUP_SCALE_BLOCK:
+            table = check_web.MOCKUP_SCALE
+        else:
+            table = check_web.MOCKUP_PALETTES[
+                check_web.MOCKUP_PALETTE_BLOCKS[key]]
+        table = overrides.get(key, table)
+        if table is not None:
+            parts.append(block_text(key, table))
+    return "\n".join([*parts, extra, FACES])
+
+
+MIDNIGHT_BLOCK = ("", ':root, :root[data-theme="midnight"]')
+LIGHT_BLOCK = ("(prefers-color-scheme: light)", ":root:not([data-theme])")
+
+# The table has to describe the stylesheet before any arm driven off
+# it means anything. If this one goes red, every arm below is testing
+# a fiction and the wrapper arms at the end are the only real ones.
+check("the table's block roster names the midnight block",
+      MIDNIGHT_BLOCK in check_web.MOCKUP_PALETTE_BLOCKS)
+check("and the light-preference copy of daylight",
+      check_web.MOCKUP_PALETTE_BLOCKS.get(LIGHT_BLOCK) == "daylight")
+check("the scale block is not one of the palette blocks",
+      check_web.MOCKUP_SCALE_BLOCK
+      not in check_web.MOCKUP_PALETTE_BLOCKS)
+check("every block names a palette the table rules",
+      set(check_web.MOCKUP_PALETTE_BLOCKS.values())
+      == set(check_web.MOCKUP_PALETTES))
+# A palette short of a token is a palette carrying whatever the block
+# above it left in the cascade, which is #81's worst finding's shape.
+check("every palette rules the same set of tokens",
+      len({tuple(sorted(t)) for t in
+           check_web.MOCKUP_PALETTES.values()}) == 1)
+# The ids theme.css defines and the ids the pages offer are one set.
+check("the ruled chips and the ruled palettes are the same ids",
+      set(check_web.MOCKUP_CHIPS) == set(check_web.MOCKUP_PALETTES))
+
+
+check("the stylesheet the table describes has no problems",
+      check_web.token_problems(token_css()) == [])
+
+MOVED = dict(check_web.MOCKUP_PALETTES["midnight"])
+MOVED["--color-bg"] = "#0b0b0b"
+BG_MOVED = check_web.token_problems(
+    token_css({MIDNIGHT_BLOCK: MOVED}))
+check("a palette value that has left the mockup is reported",
+      len(BG_MOVED) == 1)
+# Both values, because the failure a reader has to act on is which of
+# the two is wrong, and that is not knowable from either alone.
+check("and the message carries the shipped value and the ruled one",
+      "#0b0b0b" in BG_MOVED[0] and "#120d10" in BG_MOVED[0])
+
+DROPPED = {k: v for k, v in check_web.MOCKUP_PALETTES["midnight"].items()
+           if k != "--color-focus"}
+check("a token the stylesheet stops declaring is reported",
+      any("--color-focus" in p for p in check_web.token_problems(
+          token_css({MIDNIGHT_BLOCK: DROPPED}))))
+
+ADDED = dict(check_web.MOCKUP_PALETTES["midnight"])
+ADDED["--color-halo"] = "#abcdef"
+check("a token the mockup does not rule is reported",
+      any("--color-halo" in p for p in check_web.token_problems(
+          token_css({MIDNIGHT_BLOCK: ADDED}))))
+
+# The direction that keeps the scale one decision. A palette free to
+# redefine --measure is a palette that re-lays out five pages.
+SHADOWED = dict(check_web.MOCKUP_PALETTES["midnight"])
+SHADOWED["--measure"] = "60rem"
+check("a scale token redeclared inside a palette is reported",
+      any("--measure" in p for p in check_web.token_problems(
+          token_css({MIDNIGHT_BLOCK: SHADOWED}))))
+
+WIDER = dict(check_web.MOCKUP_SCALE)
+WIDER["--measure"] = "60rem"
+check("a scale value that has left the mockup is reported",
+      any("--measure" in p and "46rem" in p for p in
+          check_web.token_problems(
+              token_css({check_web.MOCKUP_SCALE_BLOCK: WIDER}))))
+
+check("a palette block the stylesheet stops declaring is reported",
+      any("pink" in p for p in check_web.token_problems(
+          token_css({("", ':root[data-theme="pink"]'): None}))))
+
+check("a declaring block the mockup does not rule is reported",
+      any("sepia" in p for p in check_web.token_problems(token_css(
+          extra=':root[data-theme="sepia"] { --color-bg: #001122; }'))))
+
+# Last one wins, so a value corrected in the wrong copy changes
+# nothing and reads as done.
+check("the same block declared twice is reported",
+      any("twice" in p or "2 times" in p for p in
+          check_web.token_problems(token_css(
+              extra=block_text(check_web.MOCKUP_SCALE_BLOCK,
+                               check_web.MOCKUP_SCALE)))))
+
+# Daylight is written out twice - once for the attribute, once for a
+# system preferring light - and the two are kept in step by hand. This
+# is the arm that reads them against one ruled set instead of against
+# each other, so neither copy can be the drifted reference.
+DRIFTED_LIGHT = dict(check_web.MOCKUP_PALETTES["daylight"])
+DRIFTED_LIGHT["--color-surface"] = "#ffffff"
+check("the light-preference copy drifting from daylight is reported",
+      any("--color-surface" in p for p in check_web.token_problems(
+          token_css({LIGHT_BLOCK: DRIFTED_LIGHT}))))
+
+# theme.css quotes the selectors and the tokens it explains, at
+# length, in the block comments beside them.
+check("a palette written out inside a comment rules nothing",
+      check_web.token_problems(token_css(
+          extra="/* :root[data-theme='ghost'] { --color-bg: #fff; } */"
+      )) == [])
+
+
+# The mockup's own note names the one departure it could not avoid:
+# the live site serves vendored woff2 files where the mockup shows the
+# fallback stacks. That makes the coupling checkable - a stack leading
+# with a family nothing vendors still resolves, to the next name in
+# it, so every page keeps rendering in a face the mockup never showed.
+check("the stacks and the faces the stylesheet ships agree",
+      check_web.font_stack_problems(token_css()) == [])
+
+UNVENDORED = dict(check_web.MOCKUP_SCALE)
+UNVENDORED["--font-body"] = '"Inter", system-ui, sans-serif'
+check("a stack leading with a family nothing vendors is reported",
+      any("Inter" in p for p in check_web.font_stack_problems(
+          token_css({check_web.MOCKUP_SCALE_BLOCK: UNVENDORED}))))
+
+check("a vendored family no stack leads with is reported",
+      any("Comic Sans" in p for p in check_web.font_stack_problems(
+          token_css(extra='@font-face { font-family: "Comic Sans"; '
+                          'src: url("c.woff2"); }'))))
+
+
+# The reader under all of it. A table keyed on the exact bytes of a
+# selector goes stale the first time somebody rewraps a line, so the
+# normalizing is load-bearing rather than tidy.
+WRAPPED = """
+:root,
+:root[data-theme="midnight"] {
+  --font-body: "DM Sans", system-ui,
+               -apple-system, sans-serif;
+}
+"""
+WRAPPED_BLOCKS = check_web.custom_property_blocks(WRAPPED)
+check("a selector list wrapped over two lines is one selector",
+      [s for _m, s, _d in WRAPPED_BLOCKS]
+      == [':root, :root[data-theme="midnight"]'])
+check("and a value wrapped over two lines is one value",
+      WRAPPED_BLOCKS[0][2]
+      == [("--font-body", '"DM Sans", system-ui, -apple-system, '
+                          "sans-serif")])
+
+MEDIA_BLOCKS = check_web.custom_property_blocks(
+    "@media (prefers-contrast: more) { :root { --radius: 0; } }")
+check("a block inside @media is attributed to its condition",
+      MEDIA_BLOCKS == [("(prefers-contrast: more)", ":root",
+                        [("--radius", "0")])])
+
+check("a rule declaring no custom property is not a token block",
+      check_web.custom_property_blocks(
+          ".card { display: flex; } :root { color-scheme: dark; }") == [])
+check("and neither is a keyframe step",
+      check_web.custom_property_blocks(
+          "@keyframes o { from { opacity: 1; } to { opacity: 0; } }")
+      == [])
+
+
+# The palette names, which check 23 deliberately declines to pin: that
+# arm holds the four copies to each other and says so, and this is the
+# other side of the sentence - what the word they agree on has to be.
+def chip_page(chips):
+    """A page carrying exactly `chips`, as (id, label) pairs."""
+    return "".join(
+        '<button data-set-theme="%s">%s</button>' % pair for pair in chips)
+
+
+RULED_CHIPS = sorted(check_web.MOCKUP_CHIPS.items())
+check("the ruled palette names pass",
+      check_web.page_chip_label_problems(chip_page(RULED_CHIPS)) == [])
+
+RENAMED = [(i, "Parchment Daylight" if i == "daylight" else w)
+           for i, w in RULED_CHIPS]
+RENAMED_FOUND = check_web.page_chip_label_problems(chip_page(RENAMED))
+check("a palette wearing a name the mockup does not rule is reported",
+      len(RENAMED_FOUND) == 1)
+check("and the message carries both names",
+      "Parchment Daylight" in RENAMED_FOUND[0]
+      and "Daylight" in RENAMED_FOUND[0])
+
+check("a palette id the mockup does not rule is reported",
+      any("sepia" in p for p in check_web.page_chip_label_problems(
+          chip_page([*RULED_CHIPS, ("sepia", "Sepia")]))))
+
+# Three shapes check 23's roster arm already reports, each with a
+# different thing to go and look at. Restating them here is what that
+# arm's docstring declines to do in the other direction.
+check("an empty chip id is left to check 23",
+      check_web.page_chip_label_problems(
+          '<button data-set-theme="">Midnight</button>') == [])
+check("a chip with no words is left to check 23",
+      check_web.page_chip_label_problems(
+          '<button data-set-theme="midnight"></button>') == [])
+check("a chip whose element never closes is left to check 23",
+      check_web.page_chip_label_problems(
+          '<button data-set-theme="midnight">Midnight') == [])
+
+
+# Surfaces the mockup rules OUT. Absence is not a claim: .rail-note is
+# gone from every page and from theme.css today, and nothing else in
+# this gate would notice it coming back.
+check("a page carrying a refused surface is reported",
+      any("rail-note" in p for p in check_web.page_refused_problems(
+          '<span class="rail-note">Keyholder only</span>')))
+check("and it is found among a list of classes, not only alone",
+      check_web.page_refused_problems(
+          '<span class="small rail-note muted">x</span>') != [])
+check("a class that merely starts with the refused name is not it",
+      check_web.page_refused_problems(
+          '<span class="rail-notes">x</span>') == [])
+check("a clean page is clean",
+      check_web.page_refused_problems(
+          '<ul class="rail-links"><li>x</li></ul>') == [])
+
+check("a stylesheet still defining a refused surface is reported",
+      any("rail-note" in p for p in check_web.stylesheet_refused_problems(
+          ".rail-note { display: block; }")))
+check("a longer class name that contains it is not it",
+      check_web.stylesheet_refused_problems(
+          ".rail-note-hidden { display: none; }") == [])
+check("and a descendant selector still counts as defining it",
+      check_web.stylesheet_refused_problems(
+          ".rail .rail-note { color: red; }") != [])
+
+
+# The wrappers, against the shipped tree. Everything above drives pure
+# functions on strings, and a wrapper returning [] satisfies all of it.
+check("the shipped stylesheet is the mockup's token table",
+      check_web.mockup_token_problems() == [])
+check("the shipped pages call every palette what the mockup calls it",
+      check_web.chip_label_problems() == [])
+check("nothing shipped carries a surface the mockup ruled out",
+      check_web.refused_surface_problems() == [])
+
+
+def tokens_over(css):
+    """mockup_token_problems() against a stylesheet holding `css`."""
+    with tempfile.TemporaryDirectory() as folder:
+        with open(os.path.join(folder, check_web.STYLESHEET), "w",
+                  encoding="utf-8") as handle:
+            handle.write(css)
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.mockup_token_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+check("the token wrapper reads the stylesheet on disk",
+      any("--measure" in p for p in tokens_over(
+          token_css({check_web.MOCKUP_SCALE_BLOCK: WIDER}))))
+check("and it is the shipped stylesheet it normally reads",
+      check_web.WEB.endswith(os.path.join("apps", "web")))
+
+def tokens_with_no_stylesheet():
+    """mockup_token_problems() over a directory carrying no theme.css."""
+    with tempfile.TemporaryDirectory() as folder:
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.mockup_token_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+# A missing stylesheet is check 1's to report, and reporting it twice
+# is how one of the two gets weakened.
+check("a missing stylesheet is left to check 1",
+      tokens_with_no_stylesheet() == [])
+
+
+def refused_over(pages, css):
+    """refused_surface_problems() against a directory of `pages`."""
+    with tempfile.TemporaryDirectory() as folder:
+        for name, markup in pages.items():
+            with open(os.path.join(folder, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write(
+                    "<!doctype html><html><body>%s</body></html>" % markup)
+        with open(os.path.join(folder, check_web.STYLESHEET), "w",
+                  encoding="utf-8") as handle:
+            handle.write(css)
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.refused_surface_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+REFUSED_FOUND = refused_over(
+    {"submit.html": '<span class="rail-note">Keyholder only</span>'},
+    ".rail-note { display: block; }")
+check("the refusal wrapper reads the pages and the stylesheet",
+      {subject for subject, _p in REFUSED_FOUND}
+      == {"submit.html", check_web.STYLESHEET})
+# theme.css and every page carry long comments quoting the markup and
+# the selectors the rules refuse.
+check("a refused surface named only in a comment is not carried",
+      refused_over(
+          {"submit.html": '<!-- <span class="rail-note">x</span> -->'},
+          "/* .rail-note is gone, see #191 */") == [])
+
+
+def chip_labels_over(pages):
+    """chip_label_problems() against a directory of `pages`."""
+    with tempfile.TemporaryDirectory() as folder:
+        for name, markup in pages.items():
+            with open(os.path.join(folder, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write(
+                    "<!doctype html><html><body>%s</body></html>" % markup)
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.chip_label_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+check("the chip wrapper reads the pages rather than answering from "
+      "nowhere",
+      [s for s, _p in chip_labels_over({
+          "submit.html": chip_page(RENAMED),
+          "admin.html": chip_page(RULED_CHIPS),
+      })] == ["submit.html"])
+# A ruled palette that has stopped being offered anywhere is a stale
+# pin, and a stale pin is how a table stops describing the site.
+check("a ruled palette no page offers is reported against the pin",
+      any(subject == check_web.MOCKUP_CHIP_PIN for subject, _p in
+          chip_labels_over({
+              "submit.html": chip_page(RULED_CHIPS[:3]),
+              "admin.html": chip_page(RULED_CHIPS[:3]),
+          })))
+# Failing open here on purpose: a site with no chips at all is check
+# 19 failing on every themed page, and four more lines saying the
+# mockup rules a palette nothing offers help nobody.
+check("a site with no chips leaves the stale-pin arm quiet",
+      chip_labels_over({"submit.html": "<p>Nothing here.</p>"}) == [])
 
 
 if failures:

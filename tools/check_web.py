@@ -546,6 +546,12 @@ day a check is added:
       four copies passes here on purpose: agreement is the claim, not
       the wording. A check that pinned the words would have to be
       edited to ship a decision that is the owner's to make.
+
+      Check 24 now makes that edit, and it is the intended act: the
+      owner's decision lives in an artifact, and #203 made the
+      artifact machine-checked. The seam holds - agreement and order
+      stay here, and only the word the four copies agree on is read
+      against the mockup there.
     - WHAT AN ID MEANS. That `daylight` names a palette theme.js
       paints and theme.css defines is that coupling's business -
       theme.js's own BG map, check 21's slot pin, check_contrast.py's
@@ -566,6 +572,68 @@ day a check is added:
     check 19 counts a chip by. A chip that check can see and this one
     cannot read is REPORTED, never skipped - so the two arms cannot
     drift into disagreeing about what a chip is.
+
+24. The shipped design tokens are the ones the mockup rules: every
+    --color-* in each of the four palettes, the shared scale block
+    underneath them, the palette names a member reads, and the
+    surfaces the mockup rules OUT.
+
+    #203, and the gap it closes is that the design gate was not a
+    gate. The artifact "Binder — Site Mockup (post-cutover)" is the
+    owner's ruling on styling and design, CI cannot fetch it, and so
+    every styling decision in it was enforced by somebody remembering
+    to look. What it rules arrives here instead as a hand-derived
+    table, pinned outside the file it guards, in the arrangement
+    DESTINATIONS and SHELLS are already in and for the review bar's
+    reason: a check computed from the stylesheet cannot notice that
+    the stylesheet was redesigned.
+
+    The token layer is what is pinned, not the components. Every rule
+    in theme.css takes its color, type, spacing and measures from
+    these custom properties, so the tokens are the vocabulary the
+    mockup and the shipped site actually share - and it is the token
+    underneath that a one-character edit moves invisibly. --measure
+    from 46rem to 60rem re-lays out five pages and fails nothing.
+    Copying the component rules in instead would put a second
+    stylesheet inside a Python file, stale on the first honest
+    refactor.
+
+    Parity runs both directions on all of it, the DESTINATIONS way: a
+    pinned token the stylesheet has stopped declaring, a token it
+    declares that the mockup does not rule, a declaring block the
+    table does not know, a pinned block that has gone, and the same
+    block declared twice - where the last one wins, so a value
+    corrected in the wrong copy changes nothing and reads as done.
+    Daylight and Contrast are each written out twice, once for the
+    attribute a member picks and once for the preference they arrive
+    with, kept in step by hand; reading both against one ruled set
+    rather than against each other is what stops the drifted copy
+    being the reference.
+
+    Two arms are not about values. The font stacks are read against
+    the @font-face rules rather than against the table, because the
+    mockup's own note records the one departure it could not avoid -
+    the live site serves vendored woff2 where the mockup shows the
+    fallback stacks - and a stack leading with a family nothing
+    vendors still RESOLVES, to the next name in it. Every page keeps
+    rendering, in a face the mockup never showed, and nothing fails.
+    And the ruled-out surfaces are refused rather than merely absent,
+    in both the markup and the stylesheet, because absence is not a
+    claim: the keyholder note #191 deleted is gone from every page
+    today and nothing else here would notice it coming back on the
+    next page written from an old tab.
+
+    WHEN THE OWNER UPDATES THE ARTIFACT, this table is edited in the
+    same change as the stylesheet, with the mockup's own words for
+    the decision in the commit message - deliberately the same
+    two-place act as raising a ceiling in tools/check_budget.py. What
+    it deliberately does NOT pin, and why, is written out above the
+    table: the de-carded admin instrument (the mockup shows #178's
+    second branch and says so itself, so pinning it would redden this
+    gate for a change nobody has made yet), rendered pixels, and
+    taste. check_contrast.py reads the same hexes to a different
+    question - legible, versus ruled - and neither reads the other's
+    table.
 """
 
 import base64
@@ -3455,6 +3523,565 @@ def chip_problems():
     return problems + chip_parity_problems(rosters)
 
 
+# ------------------------------------------------------------------
+# Check 24: the design tokens the mockup rules.
+#
+# The artifact "Binder — Site Mockup (post-cutover)" is the owner's
+# styling and design gate of record (#203), and CI cannot fetch it. So
+# what it rules arrives here as a hand-derived table pinned outside the
+# file it guards - the arrangement DESTINATIONS, SHELLS and SCOPES in
+# check_contrast.py are already in, for the review bar's reason: a check
+# computed entirely from the stylesheet cannot detect that the
+# stylesheet was redesigned.
+#
+# WHEN THE OWNER UPDATES THE ARTIFACT this table is edited in the same
+# change as the stylesheet, and the mockup's own words for the decision
+# go in the commit message. That is deliberately the same two-place act
+# as raising a ceiling in tools/check_budget.py, where the rule moves
+# next to the reason it moved and a reviewer reads both at once. There
+# is no third place to keep in step: the artifact is not in this
+# repository, and this table is the whole of what the gate knows about
+# it.
+#
+# WHAT IS PINNED IS THE TOKEN LAYER, not the components. Every rule in
+# this stylesheet takes its color, its type, its spacing and its
+# measures out of these custom properties, so the tokens are the
+# vocabulary the mockup and the shipped site actually share. Copying the
+# component rules in instead would put a second stylesheet inside a
+# Python file, stale on the first legitimate refactor - and it is the
+# token underneath that a one-character edit moves invisibly. --measure
+# from 46rem to 60rem re-lays out five pages and fails nothing.
+#
+# WHAT IS DELIBERATELY NOT PINNED, because the next reader will ask:
+#
+#  - The de-carded admin instrument. The mockup shows #178's second
+#    branch and says in its own note that the branch does not - "the
+#    branch still shows the boxes; #178 is the ticket". Pinning it would
+#    redden this gate for a change nobody has made yet. It belongs in
+#    the diff that lands #178.
+#  - Rendered pixels. There is no layout engine here and #75 rejected
+#    jsdom for exactly this, so these are declared values, the same
+#    limit check_contrast.py states about itself. Which token paints
+#    which element is outside all of it.
+#  - Taste: visual weight, the cover's easing, the sample figures.
+#
+# HOW THIS SITS BESIDE check_contrast.py, which reads the same hexes.
+# That file asks whether a palette is LEGIBLE, and whether anything
+# ships unmeasured. This asks whether it is the palette the design gate
+# RULED. A shift from #120d10 to #0b0b0b clears every ratio there with
+# room to spare, and is exactly what this is for. Neither reads the
+# other's table; a fifth palette reddens both, in two sentences sending
+# the reader to two different places, because "unmeasured" and "unruled"
+# are two different repairs.
+MOCKUP = 'the "Binder — Site Mockup (post-cutover)" artifact'
+
+# (media condition, selector list) -> which palette that block declares,
+# both normalized for whitespace. Keyed on the pair rather than on the
+# selector alone because Daylight and Contrast are each written out
+# TWICE - once for the attribute a member picks, once for the system
+# preference somebody arrives with - and the two copies are kept in step
+# by hand, which is how the three rails drifted. Reading both against
+# one ruled set rather than against each other is what stops the drifted
+# copy being the reference.
+MOCKUP_PALETTE_BLOCKS = {
+    ("", ':root, :root[data-theme="midnight"]'): "midnight",
+    ("", ':root[data-theme="pink"]'): "pink",
+    ("", ':root[data-theme="daylight"]'): "daylight",
+    ("", ':root[data-theme="contrast"]'): "contrast",
+    ("(prefers-color-scheme: light)", ":root:not([data-theme])"): "daylight",
+    ("(prefers-contrast: more)", ":root:not([data-theme])"): "contrast",
+}
+
+# The one block that is not a palette. Everything a palette does not
+# decide is decided here, once, which is why a palette redeclaring one
+# of these fails below rather than being merged in.
+MOCKUP_SCALE_BLOCK = ("", ":root")
+
+# From the mockup's `.site` token block. The scale is one decision for
+# the whole site there as it is here, and the mockup's own note records
+# why the font stacks can be compared at all: the live site serves its
+# vendored woff2 files and the mockup shows the site's fallback stacks,
+# so these are the same strings on both sides.
+MOCKUP_SCALE = {
+    "--color-accent-quiet":
+        "color-mix(in oklab, var(--color-accent) 12%, transparent)",
+    "--font-display":
+        '"Playfair Display", Georgia, "Palatino Linotype", "Book Antiqua", serif',
+    "--font-body":
+        '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    "--font-mono":
+        '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    "--text-xs": "0.8125rem",
+    "--text-sm": "0.875rem",
+    "--text-base": "1rem",
+    "--text-lg": "1.125rem",
+    "--display": "clamp(1.5rem, 1.25rem + 1.1vw, 1.9rem)",
+    "--space-1": "0.25rem",
+    "--space-2": "0.5rem",
+    "--space-3": "0.75rem",
+    "--space-4": "1rem",
+    "--space-6": "1.5rem",
+    "--space-8": "2rem",
+    "--radius": "0.75rem",
+    "--radius-pill": "999px",
+    "--measure": "46rem",
+    "--measure-wide": "84rem",
+    "--rail-width": "15rem",
+}
+
+# The four palettes, from the mockup's `.site` block (Midnight, its
+# default) and its three `.frame[data-palette="…"] .site` blocks. Every
+# palette rules the same twenty-one tokens, and the suite pins that: a
+# palette short of one takes whatever the cascade left above it, which
+# is the shape of #81's worst finding.
+MOCKUP_PALETTES = {
+    # The default, and the mockup's own default frame.
+    "midnight": {
+        "--color-bg": "#120d10",
+        "--color-surface": "#1c1417",
+        "--color-accent": "#c73743",
+        "--color-accent-strong": "#bd3440",
+        "--color-text": "#f1e9e2",
+        "--color-text-muted": "#bba9a6",
+        "--color-border": "#4a3a40",
+        "--color-border-strong": "#7a6870",
+        "--color-warn-bg": "#3a2a18",
+        "--color-warn-text": "#e7b583",
+        "--color-field": "#120d10",
+        "--color-focus": "#f2a9b4",
+        "--color-accent-text": "#e4737c",
+        "--color-gold": "#d2a24c",
+        "--color-on-accent": "#fff7f1",
+        "--color-series-0": "var(--color-accent)",
+        "--color-series-1": "#c98500",
+        "--color-series-2": "#d55181",
+        "--color-series-3": "#9085e9",
+        "--color-series-4": "#199e70",
+        "--color-series-5": "#d95926",
+    },
+    "pink": {
+        "--color-bg": "#1e141a",
+        "--color-surface": "#2a1d26",
+        "--color-accent": "#e87fa8",
+        "--color-accent-strong": "#f4a6c6",
+        "--color-text": "#f5e6ee",
+        "--color-text-muted": "#c2aab8",
+        "--color-border": "#493742",
+        "--color-border-strong": "#8b7784",
+        "--color-warn-bg": "#3f2320",
+        "--color-warn-text": "#f0b49f",
+        "--color-field": "#1e141a",
+        "--color-focus": "#ffa8c8",
+        "--color-accent-text": "#e87fa8",
+        "--color-gold": "#d2a24c",
+        "--color-on-accent": "#1e141a",
+        "--color-series-0": "var(--color-accent)",
+        "--color-series-1": "#d95926",
+        "--color-series-2": "#199e70",
+        "--color-series-3": "#c98500",
+        "--color-series-4": "#9085e9",
+        "--color-series-5": "#e66767",
+    },
+    # "Daylight" throughout since #191 - the id already was daylight,
+    # and the longer label #127 chose was renamed by the same ruling.
+    # MOCKUP_CHIPS below is where that word is held.
+    "daylight": {
+        "--color-bg": "#f3eadb",
+        "--color-surface": "#fbf5ea",
+        "--color-accent": "#8e2530",
+        "--color-accent-strong": "#75161f",
+        "--color-text": "#2e2226",
+        "--color-text-muted": "#61524b",
+        "--color-border": "#d6c6b0",
+        "--color-border-strong": "#857567",
+        "--color-warn-bg": "#ebdcc2",
+        "--color-warn-text": "#6e4a1f",
+        "--color-field": "#fffdf6",
+        "--color-focus": "#5e1b23",
+        "--color-accent-text": "#8e2530",
+        "--color-gold": "#7e5a14",
+        "--color-on-accent": "#fbf1e4",
+        "--color-series-0": "var(--color-accent)",
+        "--color-series-1": "#9c6100",
+        "--color-series-2": "#2a78d6",
+        "--color-series-3": "#b23a63",
+        "--color-series-4": "#4a3aa7",
+        "--color-series-5": "#0a7d4f",
+    },
+    "contrast": {
+        "--color-bg": "#000000",
+        "--color-surface": "#0a0a0a",
+        "--color-accent": "#f08090",
+        "--color-accent-strong": "#f8b0bc",
+        "--color-text": "#ffffff",
+        "--color-text-muted": "#d6d0ce",
+        "--color-border": "#3a3a3a",
+        "--color-border-strong": "#a0a0a0",
+        "--color-warn-bg": "#201500",
+        "--color-warn-text": "#ffd08a",
+        "--color-field": "#000000",
+        "--color-focus": "#ffffff",
+        "--color-accent-text": "#f08090",
+        "--color-gold": "#f5c674",
+        "--color-on-accent": "#000000",
+        "--color-series-0": "var(--color-accent)",
+        "--color-series-1": "#d95926",
+        "--color-series-2": "#199e70",
+        "--color-series-3": "#c98500",
+        "--color-series-4": "#9085e9",
+        "--color-series-5": "#e66767",
+    },
+}
+
+# The words on the chips, from the mockup's theme picker - which every
+# page in it carries identically, in this order.
+#
+# This is the half check 23 declines. That arm holds the four hand-kept
+# copies to EACH OTHER, and its docstring says why it stops short of the
+# wording: a check pinning the words "would have to be edited to ship a
+# decision that is the owner's to make". #203 is the ticket that makes
+# that edit the intended act - the decision has been made, in the
+# artifact, and the artifact is now what the gate answers to. Order and
+# cross-page agreement stay check 23's, so neither arm restates the
+# other: 23 says the four copies agree, this says the word they agree on
+# is the ruled one.
+MOCKUP_CHIPS = {
+    "midnight": "Midnight",
+    "pink": "Pink",
+    "daylight": "Daylight",
+    "contrast": "Contrast",
+}
+
+# What a stale chip pin is attributed to, when there is no page to
+# blame. The parallel of CHIP_PIN one check up.
+MOCKUP_CHIP_PIN = "MOCKUP_CHIPS in tools/check_web.py"
+
+# Surfaces the mockup rules OUT, refused rather than merely absent.
+# Absence is not a claim: this note is gone from every page and from
+# theme.css after #191, and nothing else in this gate would notice it
+# coming back on the next page copied from a tab somebody had open.
+# RETIRED_IDS and RETIRED_LABEL are the same shape for the hamburger and
+# the old label component; this table is the one whose provenance is the
+# mockup rather than a component's retirement.
+REFUSED_CLASSES = {
+    "rail-note": (
+        "the keyholder note under Admin, removed outright by #191 - "
+        "\"seems silly to tell anyone what they may need\". The rail "
+        "says where a member can go, and nothing about who is allowed "
+        "in when they get there"),
+}
+
+# The three stacks whose lead family the site vendors. Held apart from
+# MOCKUP_SCALE because the arm below reads the stylesheet's own value
+# rather than the pinned one: a rename that reaches BOTH the mockup and
+# this table still has to arrive with a woff2 behind it.
+FONT_TOKENS = ("--font-display", "--font-body", "--font-mono")
+
+CUSTOM_PROPERTY = re.compile(r"(--[\w-]+)\s*:\s*([^;]+);")
+
+FONT_FACE_FAMILY = re.compile(
+    r"@font-face\s*\{[^{}]*?font-family\s*:\s*([^;]+);", re.S | re.I)
+
+
+def family_name(text):
+    """One font family, unquoted and unpadded."""
+    return text.strip().strip("\"'").strip()
+
+
+def lead_family(stack):
+    """The family a stack leads with - the one it asks for first."""
+    return family_name(stack.split(",")[0])
+
+
+def custom_property_blocks(css):
+    """[(media, selector, [(name, value)])] per block declaring one.
+
+    A block declaring no custom property is left out entirely, so an
+    @font-face, a component rule and a @keyframes step never appear
+    here at all. Both the media condition - "" outside any @media - and
+    the selector list are whitespace-normalized, because a table keyed
+    on the exact bytes of a selector goes stale the first time somebody
+    rewraps a line, and a stale key reads as a block that is missing
+    AND a block nothing rules.
+
+    Not media_block_bodies() one check up: that helper discards the
+    condition, which is all check 20 needs and the whole of what a
+    palette block is identified by here. The order blocks come back in
+    is not document order across an @media boundary; nothing below
+    depends on it, and everything it reports is sorted.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    blocks = []
+
+    def read(text, media):
+        for rule in CSS_RULE.finditer(text):
+            declared = [(name, " ".join(value.split()))
+                        for name, value in CUSTOM_PROPERTY.findall(
+                            rule.group(2))]
+            if declared:
+                blocks.append((media, " ".join(rule.group(1).split()),
+                               declared))
+
+    outside = []
+    index = 0
+    for opener in re.finditer(r"@media([^{]*)\{", css):
+        if opener.start() < index:
+            continue  # nested, and already inside a body read below
+        outside.append(css[index:opener.start()])
+        depth, end = 1, opener.end()
+        while end < len(css) and depth:
+            if css[end] == "{":
+                depth += 1
+            elif css[end] == "}":
+                depth -= 1
+            end += 1
+        read(css[opener.end():end - 1], " ".join(opener.group(1).split()))
+        index = end
+    outside.append(css[index:])
+    read("".join(outside), "")
+
+    return blocks
+
+
+def block_name(key):
+    """A block key written as something to go and look for."""
+    media, selector = key
+    return "%s inside @media %s" % (selector, media) if media else selector
+
+
+def token_problems(css):
+    """[problem] for a stylesheet that has left the mockup's table.
+
+    Takes the text rather than reading the file, for the reason check
+    18 gives: a rule reachable only through the stylesheet it guards is
+    a rule tested against today's stylesheet, and the shape of the
+    failure is what has to hold.
+    """
+    problems = []
+
+    declared_by = {}
+    for media, selector, declared in custom_property_blocks(css):
+        declared_by.setdefault((media, selector), []).append(dict(declared))
+
+    ruled = dict.fromkeys(MOCKUP_PALETTE_BLOCKS)
+    ruled.update(MOCKUP_PALETTE_BLOCKS)
+    ruled[MOCKUP_SCALE_BLOCK] = None  # the scale block rules no palette
+
+    for key in sorted(set(declared_by) - set(ruled)):
+        problems.append(
+            "declares custom properties in %s, and %s does not rule that "
+            "block. Either a design decision has shipped that the mockup "
+            "has not been shown, or MOCKUP_PALETTE_BLOCKS in "
+            "tools/check_web.py has not been told about it - a token "
+            "block nothing rules is this gate back where #203 found it"
+            % (block_name(key), MOCKUP))
+
+    for key in sorted(set(ruled) - set(declared_by)):
+        problems.append(
+            "declares nothing in %s, and %s rules that block as %s. Either "
+            "it has stopped shipping, or the pin in tools/check_web.py is "
+            "stale - and a stale pin is how a table stops describing the "
+            "site while still passing"
+            % (block_name(key), MOCKUP,
+               'the "%s" palette' % ruled[key] if ruled[key]
+               else "the shared scale"))
+
+    for key in sorted(set(declared_by) & set(ruled)):
+        copies = declared_by[key]
+        what = ('the "%s" palette' % ruled[key] if ruled[key]
+                else "the shared scale")
+        if len(copies) > 1:
+            problems.append(
+                "declares %s %d times over. The last one wins, so a value "
+                "corrected in any of the others changes nothing and reads "
+                "as done" % (block_name(key), len(copies)))
+
+        wanted = (MOCKUP_PALETTES[ruled[key]] if ruled[key]
+                  else MOCKUP_SCALE)
+        shipped = copies[-1]  # the one that wins, if there is more than one
+
+        for name in sorted(set(wanted) - set(shipped)):
+            problems.append(
+                "does not declare %s for %s (%s), and %s rules it as "
+                "\"%s\". A token a block stops declaring falls through "
+                "to whatever the cascade left above it"
+                % (name, what, block_name(key), MOCKUP, wanted[name]))
+
+        for name in sorted(set(shipped) - set(wanted)):
+            problems.append(
+                "declares %s for %s (%s), and %s rules no such token "
+                "there. Show the mockup the decision and pin it here in "
+                "the same change, or take it out"
+                % (name, what, block_name(key), MOCKUP))
+
+        for name in sorted(set(shipped) & set(wanted)):
+            if shipped[name] != wanted[name]:
+                problems.append(
+                    "declares %s as \"%s\" where %s rules \"%s\", for %s "
+                    "(%s)" % (name, shipped[name], MOCKUP, wanted[name],
+                              what, block_name(key)))
+
+    return problems
+
+
+def font_stack_problems(css):
+    """[problem] for the type stacks and the faces disagreeing.
+
+    The mockup's own note records the one departure it could not avoid:
+    the live site serves its vendored Playfair Display / DM Sans /
+    JetBrains Mono woff2 files where the mockup shows the fallback
+    stacks. That is what makes this checkable rather than a matter of
+    trust - and the failure is silent by construction, because a stack
+    leading with a family nothing vendors still RESOLVES, to the next
+    name in it. Every page keeps rendering, in a face the mockup never
+    showed, with nothing anywhere failing.
+
+    Read off the stylesheet's own values rather than out of
+    MOCKUP_SCALE, so that a rename reaching both the mockup and the
+    table still has to arrive with a font file behind it.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    vendored = {family_name(found)
+                for found in FONT_FACE_FAMILY.findall(css)}
+
+    leads = {}
+    for _media, _selector, declared in custom_property_blocks(css):
+        for name, value in declared:
+            if name in FONT_TOKENS:
+                leads[name] = lead_family(value)
+
+    problems = []
+    for name in FONT_TOKENS:
+        # A stack that is not declared at all is token_problems()' to
+        # report, and it reports it against the block it is missing
+        # from, which is the more useful sentence of the two.
+        if name in leads and leads[name] not in vendored:
+            problems.append(
+                "leads %s with \"%s\", and no @font-face here serves that "
+                "family. The stack still resolves - to the next name in "
+                "it - so every page renders in a face %s does not show, "
+                "and nothing fails" % (name, leads[name], MOCKUP))
+
+    for family in sorted(vendored - set(leads.values())):
+        problems.append(
+            "serves \"%s\" with an @font-face, and no font stack here "
+            "leads with it. Its woff2 is committed and copied into "
+            "dist/, and no page will ever ask for it" % family)
+
+    return problems
+
+
+def mockup_token_problems():
+    """token_problems() and font_stack_problems() against theme.css."""
+    css = stylesheet_text()
+    if css is None:
+        return []  # the missing-stylesheet case is check 1's to report
+    return token_problems(css) + font_stack_problems(css)
+
+
+def page_chip_label_problems(text):
+    """[problem] for one page's chips against the ruled palette names.
+
+    An empty id, an empty label and an element that never closes are
+    all check 23's roster arm to report, and it reports each of them
+    against a different thing to go and look at. They are skipped here
+    rather than restated, which is the same seam that arm's own
+    docstring holds with check 19.
+    """
+    problems = []
+    for name, label in page_chips(text):
+        if not name or not label:
+            continue
+        if name not in MOCKUP_CHIPS:
+            problems.append(
+                "offers the palette \"%s\", and %s rules four: %s. A "
+                "palette the design gate has not seen is one nobody has "
+                "measured, named or drawn"
+                % (name, MOCKUP, ", ".join(sorted(MOCKUP_CHIPS))))
+        elif label != MOCKUP_CHIPS[name]:
+            problems.append(
+                "calls the \"%s\" palette \"%s\", and %s calls it \"%s\". "
+                "The id is what theme.js stores and what theme.css selects "
+                "on, so the label is the only part of this a member ever "
+                "reads" % (name, label, MOCKUP, MOCKUP_CHIPS[name]))
+    return problems
+
+
+def chip_label_problems():
+    """[(subject, problem)] for palette names against the mockup."""
+    problems = []
+    offered = set()
+
+    for name in sorted(THEMED_PAGES & set(html_pages())):
+        text = page_text(name)
+        for problem in page_chip_label_problems(text):
+            problems.append((name, problem))
+        offered.update(palette for palette, _label in page_chips(text)
+                       if palette)
+
+    # Failing open when the site offers no chip at all, on purpose:
+    # that is check 19 failing on every themed page in this same run,
+    # and four more lines saying the mockup rules a palette nothing
+    # offers would send the reader somewhere that is not the problem.
+    if offered:
+        for palette in sorted(set(MOCKUP_CHIPS) - offered):
+            problems.append((
+                MOCKUP_CHIP_PIN,
+                "rules the \"%s\" palette and no page offers it. Either a "
+                "palette has been dropped from every page at once, or this "
+                "pin has outlived the mockup it was taken from"
+                % palette))
+
+    return problems
+
+
+def page_refused_problems(text):
+    """[problem] for one page carrying a surface the mockup ruled out."""
+    classes = set()
+    for attribute in re.findall(CLASS_ATTR, text):
+        classes.update(attribute.split())
+
+    return ["carries .%s, and %s rules it out: %s. Take the markup out "
+            "rather than hiding it - a hidden surface is one the next "
+            "page copied from this one inherits"
+            % (name, MOCKUP, REFUSED_CLASSES[name])
+            for name in sorted(REFUSED_CLASSES) if name in classes]
+
+
+def stylesheet_refused_problems(css):
+    """[problem] for a stylesheet still painting a ruled-out surface.
+
+    The boundary is stricter than check 16's `\\b`, which matches
+    between a word character and a hyphen and would read .rail-note-x
+    as .rail-note. A refusal is allowed to be wrong in the direction of
+    firing on garbage; it is not allowed to be wrong about a class
+    somebody legitimately named.
+    """
+    return ["still defines .%s, and %s rules it out: %s. A rule left "
+            "behind for a surface that has gone is what the next page "
+            "written from an old tab finds already styled"
+            % (name, MOCKUP, REFUSED_CLASSES[name])
+            for name in sorted(REFUSED_CLASSES)
+            if re.search(r"(^|[\s,{}>+~])\.%s(?![\w-])" % re.escape(name),
+                         css)]
+
+
+def refused_surface_problems():
+    """[(subject, problem)] for ruled-out surfaces still shipping."""
+    problems = []
+    for name in html_pages():
+        for problem in page_refused_problems(page_text(name)):
+            problems.append((name, problem))
+
+    css = stylesheet_text()
+    if css is not None:
+        for problem in stylesheet_refused_problems(css):
+            problems.append((STYLESHEET, problem))
+
+    return sorted(problems)
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -3559,6 +4186,15 @@ def main():
         problems.append("%s %s." % (page, problem))
 
     for subject, problem in chip_problems():
+        problems.append("%s %s." % (subject, problem))
+
+    for problem in mockup_token_problems():
+        problems.append("%s %s." % (STYLESHEET, problem))
+
+    for subject, problem in chip_label_problems():
+        problems.append("%s %s." % (subject, problem))
+
+    for subject, problem in refused_surface_problems():
         problems.append("%s %s." % (subject, problem))
 
     for where in ("apps/web", "dist"):
