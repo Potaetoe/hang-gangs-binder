@@ -566,6 +566,88 @@
   const MEMBER_ACCOUNT = accountIdFor("demo_member");
   const ADMIN_ACCOUNT = accountIdFor("demo_keyholder");
 
+  /* ---------------------------------------------------------------- */
+  /* The membership table, as a world (#69).                          */
+
+  /*
+   * A table rather than a fixed answer, because the admin page's
+   * membership pane makes claims about the SECOND read.
+   *
+   * The pane never keeps a local model: every write is followed by a
+   * fresh GET and the pane redraws from the answer. A stub that answered
+   * the same document forever would make that unfalsifiable - the screen
+   * would look identical whether or not the page ever asked again - and
+   * it would make the two refusals that matter undrivable, which is the
+   * demo showing a surface working in the one shape where it cannot go
+   * wrong.
+   */
+  const MEMBERSHIP_ROLES = ["admin", "always_allow"];
+  const ACCOUNT_ID = /^[0-9a-f]{64}$/;
+  const TELEGRAM_ID = /^[0-9]{1,20}$/;
+  const MAX_LABEL = 64;
+
+  /* server/worker.js's grantsAnything(), which is what makes the two
+   * lists GET returns disagree about nothing: the same predicate decides
+   * what is drawn and what actually grants. */
+  function grantsAnything(row) {
+    return Boolean(row) && typeof row.account_id === "string" &&
+      ACCOUNT_ID.test(row.account_id);
+  }
+
+  /*
+   * What the table holds before anybody touches it.
+   *
+   * Two admins rather than one, so a removal succeeds; and the last one
+   * then cannot come off, which is the guard #69 asked for and the only
+   * way to see it is to be holding the last row. The fourth entry is
+   * sixty-four correct characters in the WRONG CASE - what `wrangler d1
+   * execute` writes without complaint, what the authority read drops,
+   * and what GET reports in `malformed`. It is seeded rather than left
+   * to be typed because nothing reachable from a browser can create one.
+   */
+  const MEMBERSHIP_SEED = [
+    {
+      account_id: ADMIN_ACCOUNT,
+      role: "admin",
+      label: "The owner",
+      added_at: "2026-08-01T09:00:00.000Z",
+    },
+    {
+      account_id: accountIdFor("demo_second_admin"),
+      role: "admin",
+      label: "Second keyholder",
+      added_at: "2026-08-03T14:20:00.000Z",
+    },
+    {
+      account_id: accountIdFor("demo_break_glass"),
+      role: "always_allow",
+      label: "Break-glass phone",
+      added_at: "2026-08-02T11:00:00.000Z",
+    },
+    {
+      account_id: accountIdFor("demo_pasted_by_hand").toUpperCase(),
+      role: "admin",
+      label: "Pasted into the D1 console",
+      added_at: "2026-08-05T16:45:00.000Z",
+    },
+  ];
+
+  /*
+   * An admin ADMIN_TELEGRAM_IDS grants that no row covers - so the
+   * demo's `secretOnly` is non-empty until somebody backfills it, which
+   * is the state the flip's go-signal is read against. It is computed
+   * from the GRANTING rows only, as the Worker computes it: counting a
+   * dud would report a backfill complete while the flip it authorizes
+   * takes that admin's authority away.
+   */
+  const MEMBERSHIP_SECRET = [accountIdFor("demo_secret_only_admin")];
+
+  function membershipRows(state) {
+    return Array.isArray(state.membership)
+      ? state.membership
+      : MEMBERSHIP_SEED;
+  }
+
   /*
    * A numeric Telegram id on the member session, so #58's line paints on
    * the offline arm. It is a made-up number of the right length and
@@ -1268,17 +1350,131 @@
     }
 
     if (route === "/membership") {
+      const rows = membershipRows(state);
       if (method === "GET") {
+        const granting = rows.filter(grantsAnything);
+        const inTable = granting
+          .filter((row) => row.role === "admin")
+          .map((row) => row.account_id);
         return {
           status: 200,
-          body: { ok: true, membership: state.membership || [] },
+          body: {
+            ok: true,
+            membership: granting,
+            malformed: rows.filter((row) => !grantsAnything(row)),
+            secretOnly: MEMBERSHIP_SECRET.filter((id) =>
+              inTable.indexOf(id) === -1),
+          },
           next: next,
         };
       }
+
+      /*
+       * The Worker's own three refusals, in its own order and its own
+       * words. They are here rather than left to a 200 because they are
+       * the only thing an operator can provoke by typing, and a demo
+       * that accepted anything would be showing a pane whose error
+       * handling has never run.
+       */
+      const sent = request.body || {};
+      const telegramId = typeof sent.telegramId === "number" ||
+        typeof sent.telegramId === "string" ? String(sent.telegramId) : "";
+      if (!TELEGRAM_ID.test(telegramId)) {
+        return {
+          status: 400,
+          body: { error: "A numeric Telegram id is needed." },
+          next: next,
+        };
+      }
+      if (MEMBERSHIP_ROLES.indexOf(sent.role) === -1) {
+        return {
+          status: 400,
+          body: {
+            error: "A role is one of: " + MEMBERSHIP_ROLES.join(", ") + ".",
+          },
+          next: next,
+        };
+      }
+      const label = typeof sent.label === "string" ? sent.label.trim() : "";
+      if (!label || label.length > MAX_LABEL) {
+        return {
+          status: 400,
+          body: {
+            error: "A label of up to " + MAX_LABEL + " characters is " +
+              "needed, so the list can be read.",
+          },
+          next: next,
+        };
+      }
+
+      // The demo hashes with accountIdFor for the same reason the Worker
+      // hashes with HMAC: the numeric id goes no further than the
+      // request that carried it, and nothing the demo stores can be read
+      // back into a person.
+      const accountId = accountIdFor(telegramId);
+      const kept = rows.slice();
+      const already = kept.findIndex((row) =>
+        row.account_id === accountId && row.role === sent.role);
+      // Re-adding relabels and leaves added_at alone, which is what
+      // makes the call safe to repeat and a mistyped label fixable.
+      if (already === -1) {
+        kept.push({
+          account_id: accountId,
+          role: sent.role,
+          label: label,
+          added_at: new Date().toISOString(),
+        });
+      } else {
+        kept[already] = Object.assign({}, kept[already], { label: label });
+      }
+      next.membership = kept;
       return { status: 200, body: { ok: true }, next: next };
     }
 
-    if (route === "/membership/" || route === "/submission/") {
+    if (route === "/membership/") {
+      const parts = String(request.path).split("?")[0]
+        .slice("/membership/".length).split("/");
+      const role = decodeURIComponent(parts[0] || "");
+      const wanted = decodeURIComponent(parts[1] || "").toLowerCase();
+      if (MEMBERSHIP_ROLES.indexOf(role) === -1 || !ACCOUNT_ID.test(wanted)) {
+        return { status: 404, body: { error: "Not found." }, next: next };
+      }
+
+      const rows = membershipRows(state);
+      const survivors = rows.filter((row) =>
+        !(row.role === role &&
+          String(row.account_id).toLowerCase() === wanted));
+
+      /*
+       * THE LAST ADMIN ROW DOES NOT COME OFF - and this counts ALL admin
+       * rows, malformed ones included, because that is what the shipped
+       * Worker counts (the subquery is `WHERE role = 'admin'`, with no
+       * grants test). Modelling the fixed version would demonstrate a
+       * guard this deployment does not have; the runbook records the
+       * narrowing as work for the flip slice, and until then a dud row
+       * counting toward "more than one" is the live behavior.
+       *
+       * Deleting nothing still succeeds, as every other deletion here
+       * does: an admin who cannot tell "nothing to remove" from "not
+       * allowed" goes looking for a bug that is not there.
+       */
+      if (role === "admin" && survivors.length !== rows.length &&
+          rows.filter((row) => row.role === "admin").length <= 1) {
+        return {
+          status: 409,
+          body: {
+            error: "That is the last admin row. Add another admin before " +
+              "removing this one.",
+          },
+          next: next,
+        };
+      }
+
+      next.membership = survivors;
+      return { status: 200, body: { ok: true }, next: next };
+    }
+
+    if (route === "/submission/") {
       return { status: 200, body: { ok: true }, next: next };
     }
 

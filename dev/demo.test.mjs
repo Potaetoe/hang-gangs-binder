@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 96);
+const { check, mustReject, report } = suite("demo", 104);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -419,6 +419,111 @@ await check("publishing a snapshot makes it the one that reads back", () => {
   const back = Demo.answerFor({ method: "GET", path: "/snapshot" }, after);
   return back.status === 200 && back.body.snapshot.snapshot === 1;
 });
+
+/*
+ * The membership table the admin pane drives (#69).
+ *
+ * The pane keeps no local model - every write is followed by a fresh GET
+ * - so what these arms are really asserting is that the demo can be
+ * WRONG. A stub that answered the same document forever would let the
+ * pane look correct whether or not it ever asked again, and would leave
+ * the two refusals an operator can provoke undrivable.
+ */
+const membership = (over) => Demo.answerFor(
+  Object.assign({ method: "GET", path: "/membership" }, over || {}),
+  world("admin"));
+
+await check("granting rows and duds go back in separate lists", () => {
+  const answer = membership();
+  return answer.status === 200 &&
+    answer.body.membership.every((row) => /^[0-9a-f]{64}$/.test(row.account_id)) &&
+    answer.body.malformed.length === 1 &&
+    /[A-F]/.test(answer.body.malformed[0].account_id);
+});
+
+await check("secretOnly names an admin no granting row covers", () =>
+  membership().body.secretOnly.length === 1);
+
+await check("adding an id relabels rather than duplicating it", () => {
+  const first = Demo.answerFor({
+    method: "POST",
+    path: "/membership",
+    body: { role: "admin", telegramId: "8675309", label: "first name" },
+  }, world("admin")).next;
+  const again = Demo.answerFor({
+    method: "POST",
+    path: "/membership",
+    body: { role: "admin", telegramId: "8675309", label: "second name" },
+  }, Object.assign(world("admin"), first)).next;
+  const rows = Demo.answerFor({ method: "GET", path: "/membership" },
+    Object.assign(world("admin"), again)).body.membership
+    .filter((row) => row.role === "admin");
+  return rows.filter((row) => row.label === "second name").length === 1 &&
+    rows.filter((row) => row.label === "first name").length === 0;
+});
+
+await check("an add the Worker would refuse is refused here too", () =>
+  Demo.answerFor({
+    method: "POST",
+    path: "/membership",
+    body: { role: "admin", telegramId: "not-a-number", label: "x" },
+  }, world("admin")).status === 400 &&
+  Demo.answerFor({
+    method: "POST",
+    path: "/membership",
+    body: { role: "auditor", telegramId: "7", label: "x" },
+  }, world("admin")).status === 400 &&
+  Demo.answerFor({
+    method: "POST",
+    path: "/membership",
+    body: { role: "admin", telegramId: "7", label: "  " },
+  }, world("admin")).status === 400);
+
+await check("a dud is removable by the bytes GET handed back", () => {
+  const dud = membership().body.malformed[0].account_id;
+  const after = Demo.answerFor(
+    { method: "DELETE", path: "/membership/admin/" + dud }, world("admin"));
+  return after.status === 200 &&
+    Demo.answerFor({ method: "GET", path: "/membership" },
+      Object.assign(world("admin"), after.next)).body.malformed.length === 0;
+});
+
+await check("the last admin row does not come off", () => {
+  // Down to one admin row by removing the other two, then the guard.
+  let state = world("admin");
+  for (const row of membership().body.membership
+    .filter((one) => one.role === "admin").slice(1)) {
+    state = Object.assign({}, state, Demo.answerFor(
+      { method: "DELETE", path: "/membership/admin/" + row.account_id },
+      state).next);
+  }
+  const dud = Demo.answerFor({ method: "GET", path: "/membership" }, state)
+    .body.malformed[0].account_id;
+  state = Object.assign({}, state, Demo.answerFor(
+    { method: "DELETE", path: "/membership/admin/" + dud }, state).next);
+
+  const left = Demo.answerFor({ method: "GET", path: "/membership" }, state)
+    .body.membership.filter((row) => row.role === "admin");
+  const refused = Demo.answerFor(
+    { method: "DELETE", path: "/membership/admin/" + left[0].account_id },
+    state);
+  return left.length === 1 && refused.status === 409 &&
+    /last admin row/.test(refused.body.error);
+});
+
+await check("removing nothing still succeeds", () =>
+  Demo.answerFor({
+    method: "DELETE",
+    path: "/membership/always_allow/" + "f".repeat(64),
+  }, world("admin")).status === 200);
+
+await check("a role that is not a role is the same 404 as a bad id", () =>
+  Demo.answerFor({
+    method: "DELETE", path: "/membership/auditor/" + "a".repeat(64),
+  }, world("admin")).status === 404 &&
+  Demo.answerFor({
+    method: "DELETE", path: "/membership/admin/not-an-account-id",
+  }, world("admin")).status === 404);
 
 await check("the export rows come from the committed sample, by path", () => {
   const answer = Demo.answerFor({ method: "GET", path: "/export" },
