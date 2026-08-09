@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Eighteen checks:
+Nineteen checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -150,9 +150,10 @@ Eighteen checks:
     could not describe both:
 
     - RAIL. The signed-in pages. Each carries the wordmark, the same
-      destinations in the same order, the theme disclosure the strip
-      folds its chips behind, and the session home at the bottom.
-      Compared against each other and failing if they differ.
+      destinations in the same order, and the session home at the
+      bottom. Compared against each other and failing if they differ.
+      The Theme disclosure is NOT part of this shell any more and is
+      check 19's, because the sign-in page carries one without a rail.
     - PLAIN. The pages a signed-out visitor meets - the cover, which
       the owner decided carries no rail before sign-in, and the error
       page, which goes plain on principle. These must NOT carry rail
@@ -331,6 +332,25 @@ Eighteen checks:
     page built by copying admin.html keeps its clothes, and a member page
     announcing itself as the admin surface is a page somebody stops
     trusting.
+
+19. Every page that offers a palette carries the Theme disclosure, and
+    every page that does not carries no chip at all. The owner's ruling
+    on #150 is that this is ONE control at every width, and that the
+    sign-in page gets it too - so it stopped being a fact about the rail
+    the moment a page with no rail started carrying it, and check 10 is
+    no longer a place that could state it.
+
+    Which pages offer it is pinned in THEMED_PAGES, outside the markup,
+    for the reason SHELLS and CSP_PAGES give. The absent direction is
+    the one that would otherwise have nothing watching it: 404.html is
+    the one page here with no palette control, that is deliberate, and a
+    chip arriving on it by the usual route - somebody copying a page
+    that has one - would change a stored preference from an error page
+    and fail nothing.
+
+    What it pins is presence, on purpose. Whether the four copies agree
+    about a chip's LABEL is #152's, and two checks making the same claim
+    in different places is how one of them gets quietly weakened.
 """
 
 import base64
@@ -1042,18 +1062,11 @@ SHELLS = {
     "submit.html": "rail",
 }
 
-# The ids the strip disclosure is wired through. They are a pair rather
-# than one id because aria-controls has to name the thing the button
-# opens, and a button whose aria-controls points at nothing is a control
-# that announces a relationship the page does not have.
-#
-# Note what these are NOT. Before the rail, the disclosure hid the
-# navigation itself; now the four destinations are always visible and
-# the disclosure folds only the theme chips on a narrow screen, which is
-# the owner's decision on #73. A page still carrying nav-toggle or
-# nav-menu is a page that kept the old hamburger, so those names are
-# refused below rather than merely unused.
-STRIP_IDS = ("theme-toggle", "theme-chips")
+# The hamburger the rail replaced. The four destinations are visible at
+# every width now - the owner's decision on #73 - and the only thing a
+# disclosure opens here is the theme chips, so a page still carrying
+# nav-toggle or nav-menu is a page that kept the hamburger. Those names
+# are refused below rather than merely unused.
 RETIRED_IDS = ("nav-toggle", "nav-menu")
 
 RAIL_MARKUP = re.compile(r'class="rail[\s"]', re.I)
@@ -1129,12 +1142,6 @@ def rail_page_problems(text):
             "has no index.html route to sign-in, so a member whose session "
             "has expired can be stranded away from the page that mints a "
             "new one")
-
-    for missing in [i for i in STRIP_IDS if 'id="%s"' % i not in text]:
-        problems.append(
-            "has a rail but no id=\"%s\", which nav.js and aria-controls "
-            "both rely on to fold the theme chips behind the strip "
-            "disclosure" % missing)
 
     for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
         problems.append(
@@ -1214,6 +1221,95 @@ def shell_problems():
 
     # A rail link to a page that does not exist is caught by check 1 as a
     # broken reference, so it is not repeated here.
+    return problems
+
+
+# Which pages offer a palette. The owner's ruling on #150: ONE Theme
+# disclosure at every width, and the sign-in page carries it too - so
+# this crosses both shells and cannot be stated by the table above.
+#
+# Pinned outside the markup for the reason SHELLS gives, and here it is
+# the ABSENT direction that would otherwise have nothing watching it.
+# 404.html deliberately offers no palette, and the way a chip lands on
+# it is the way every copy-paste failure in this file lands: somebody
+# builds the next page from whichever one they had open. A chip there
+# writes a stored preference from an error page and fails nothing.
+THEMED_PAGES = frozenset({
+    "admin.html", "dashboard.html", "index.html", "submit.html",
+})
+
+# The ids the disclosure is wired through. A pair rather than one id
+# because aria-controls has to name the thing the button opens, and a
+# button whose aria-controls points at nothing announces a relationship
+# the page does not have.
+DISCLOSURE_IDS = ("theme-toggle", "theme-chips")
+
+# What theme.js wires a chip by. The button's own text is not read here:
+# whether the four copies agree about a label is #152's question, and
+# this one is only whether the control is on the page at all.
+CHIP_MARKUP = re.compile(r"\bdata-set-theme\s*=", re.I)
+
+
+def theme_control_problems(text, themed):
+    """[problem] for one page's Theme control, present or absent.
+
+    Takes markup rather than a filename for the reason
+    plain_page_problems() gives: a rule exercised only on the files that
+    ship today is a rule tested against today's markup, and what has to
+    hold is the shape of the failure.
+    """
+    problems = []
+
+    if themed:
+        for missing in [i for i in DISCLOSURE_IDS
+                        if 'id="%s"' % i not in text]:
+            problems.append(
+                "offers a palette and carries no id=\"%s\", which nav.js "
+                "and aria-controls both rely on to open the chips. The "
+                "control is one disclosure at every width - #150 - so a "
+                "page missing half of it has no way to reach a palette at "
+                "any width" % missing)
+        if not CHIP_MARKUP.search(text):
+            problems.append(
+                "offers a palette and carries no data-set-theme chip, so "
+                "its disclosure opens an empty group. theme.js wires the "
+                "chips by that attribute and finds nothing to wire")
+        return problems
+
+    for found in [i for i in DISCLOSURE_IDS if 'id="%s"' % i in text]:
+        problems.append(
+            "carries id=\"%s\" and is not pinned in THEMED_PAGES in "
+            "tools/check_web.py. Either this page now offers a palette "
+            "and the pin is stale, or it inherited the control from "
+            "whichever page it was copied from - say which" % found)
+    if CHIP_MARKUP.search(text):
+        problems.append(
+            "carries a data-set-theme chip and is not pinned in "
+            "THEMED_PAGES in tools/check_web.py. A chip writes a stored "
+            "preference, and this page is not one the site offers that "
+            "from")
+
+    return problems
+
+
+def theme_control_page_problems():
+    """(page, problem) for the Theme control across the published pages."""
+    problems = []
+    pages = html_pages()
+
+    for name in sorted(THEMED_PAGES - set(pages)):
+        problems.append((
+            name,
+            "is pinned in THEMED_PAGES in tools/check_web.py and is not a "
+            "page in apps/web. Delete the entry, or restore the page it "
+            "was written for - a pin with no page behind it is a check "
+            "that cannot fail"))
+
+    for name in pages:
+        for problem in theme_control_problems(page_text(name),
+                                              name in THEMED_PAGES):
+            problems.append((name, problem))
+
     return problems
 
 
@@ -2280,6 +2376,9 @@ def main():
         problems.append(problem + ".")
 
     for page, problem in shell_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for page, problem in theme_control_page_problems():
         problems.append("%s %s." % (page, problem))
 
     for code, problem in promoted_country_problems():

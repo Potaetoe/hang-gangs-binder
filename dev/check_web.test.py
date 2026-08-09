@@ -35,7 +35,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 136
+EXPECTED = 148
 
 
 def check(label, condition):
@@ -226,14 +226,6 @@ check("a rail naming no index.html is refused",
       any("stranded" in p for p in check_web.rail_page_problems(
           RAIL.replace('href="index.html"', 'href="dashboard.html"'))))
 
-# The disclosure ids, one at a time, so a message names the missing one.
-check("a rail missing the disclosure button is refused",
-      any("theme-toggle" in p for p in check_web.rail_page_problems(
-          RAIL.replace('id="theme-toggle"', 'id="something-else"'))))
-check("a rail missing the chips it controls is refused",
-      any("theme-chips" in p for p in check_web.rail_page_problems(
-          RAIL.replace('id="theme-chips"', 'id="something-else"'))))
-
 # The hamburger is gone, and a page that kept it is a page that did not
 # get the rail - which the parity arm alone would not catch, because two
 # pages can carry the same stale markup.
@@ -261,6 +253,84 @@ check("a fragment is not a way off a page",
 check("an off-site link is not a way through the site",
       any("no way off it" in p for p in check_web.plain_page_problems(
           '<a href="https://example.com">away</a>')))
+
+
+# ------------------------------------------------------------------ #
+# Check 19 - the Theme control, present where it is pinned and absent  #
+# everywhere else.                                                    #
+
+# The pin first, because every rule below describes whichever pages it
+# names. The sign-in page is in it and the error page is not, and that
+# pair is the whole ruling on #150: one control at every width, offered
+# signed out, and never on the page somebody reaches by accident.
+check("the sign-in page is pinned to offer a palette",
+      "index.html" in check_web.THEMED_PAGES)
+check("the error page is pinned to offer none",
+      "404.html" not in check_web.THEMED_PAGES)
+check("the three signed-in pages are pinned to offer a palette",
+      all(page in check_web.THEMED_PAGES
+          for page in ("submit.html", "dashboard.html", "admin.html")))
+
+# And the pin has to match what actually ships.
+check("no shipped page's Theme control differs from its pin",
+      check_web.theme_control_page_problems() == [])
+
+# The rules on strings, both directions on each. THEMED is the whole
+# control: the button, the group it names, and one chip inside it.
+THEMED = (
+    '<div class="theme-picker">'
+    '<button id="theme-toggle" aria-controls="theme-chips">Theme</button>'
+    '<div id="theme-chips"><button data-set-theme="midnight">M</button>'
+    '</div></div>'
+)
+
+check("a complete Theme control on a page pinned to offer one "
+      "raises nothing",
+      check_web.theme_control_problems(THEMED, True) == [])
+check("a page pinned to offer none, carrying none, raises nothing",
+      check_web.theme_control_problems('<main>Sorry.</main>', False) == [])
+
+# The ids one at a time, so a message names the missing one.
+check("a page that offers a palette and lost the button is refused",
+      any("theme-toggle" in p for p in check_web.theme_control_problems(
+          THEMED.replace('id="theme-toggle"', 'id="something-else"'), True)))
+check("a page that offers a palette and lost the chip group is refused",
+      any("theme-chips" in p for p in check_web.theme_control_problems(
+          THEMED.replace('id="theme-chips"', 'id="something-else"'), True)))
+
+# A disclosure opening an empty group is a control that reaches no
+# palette, and both ids survive that.
+check("a disclosure with no chip behind it is refused",
+      any("data-set-theme" in p for p in check_web.theme_control_problems(
+          THEMED.replace('data-set-theme', 'data-something'), True)))
+
+# The absent direction, which is what stops a chip landing on the error
+# page the way every other copy-paste failure here lands.
+check("a page pinned to offer no palette, carrying the button, "
+      "is refused",
+      any("theme-toggle" in p for p in check_web.theme_control_problems(
+          '<button id="theme-toggle"></button>', False)))
+check("a page pinned to offer no palette, carrying the chip group, "
+      "is refused",
+      any("theme-chips" in p for p in check_web.theme_control_problems(
+          '<div id="theme-chips"></div>', False)))
+check("a page pinned to offer no palette, carrying a chip, is refused",
+      any("stored preference" in p
+          for p in check_web.theme_control_problems(
+              '<button data-set-theme="pink">P</button>', False)))
+
+# The stale-pin arm. A roster entry with no page behind it is a check
+# that cannot fail, which is the failure #114 paid for - so it is
+# exercised here rather than assumed, by pinning a page that does not
+# ship and putting the real set back immediately.
+SHIPPING = check_web.THEMED_PAGES
+check_web.THEMED_PAGES = SHIPPING | {"nowhere.html"}
+check("a themed-page pin with no page behind it is refused",
+      any(page == "nowhere.html"
+          for page, _problem in check_web.theme_control_page_problems()))
+check_web.THEMED_PAGES = SHIPPING
+check("the real pin is back after the stale-pin arm",
+      check_web.theme_control_page_problems() == [])
 
 
 # ------------------------------------------------------------------ #
