@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 209
+EXPECTED = 239
 
 
 def check(label, condition):
@@ -1263,6 +1263,210 @@ check("a third-party script is not part of the run to order",
           "<html><head></head><body>"
           "<script src='https://telegram.org/js/w.js'></script>"
           "<script src='a.js'></script></body></html>") == ["a.js"])
+
+
+# ------------------------------------------------------------------ #
+# Check 23 - the palette chips, read side by side (#152).             #
+#                                                                     #
+# The defect is precise and every arm here is aimed at it: a chip      #
+# renamed on two of the four pages passed the whole gate. So the arm   #
+# that carries this suite is the one changing ONE page's label and     #
+# expecting a refusal - and its opposite, a rename reaching every      #
+# page raising nothing, because agreement is what this pins and the    #
+# words themselves are the owner's (#127).                             #
+
+
+def chip_markup(name, label, tag="button"):
+    return '<%s type="button" data-set-theme="%s">%s</%s>' % (
+        tag, name, label, tag)
+
+
+# The shipped roster, written out here rather than read off the pages,
+# so an arm below cannot agree with a page that has drifted.
+FOUR_CHIPS = [("midnight", "Midnight"), ("pink", "Pink"),
+              ("daylight", "Parchment Daylight"), ("contrast", "Contrast")]
+
+CHIP_GROUP = "".join(chip_markup(n, w) for n, w in FOUR_CHIPS)
+
+# The rename that reaches one page and not the others.
+DRIFTED_CHIPS = [(n, "Daylight" if n == "daylight" else w)
+                 for n, w in FOUR_CHIPS]
+
+# The reader first. Every one of these is a shape the gate would
+# certify without reading if the reader declined to see it.
+check("a chip's id and its words are read as one pair",
+      check_web.page_chips(chip_markup("pink", "Pink"))
+      == [("pink", "Pink")])
+check("chips are read in document order",
+      check_web.page_chips(CHIP_GROUP) == FOUR_CHIPS)
+check("a single-quoted chip id is read",
+      check_web.page_chips("<button data-set-theme='pink'>Pink</button>")
+      == [("pink", "Pink")])
+# theme.js queries the attribute, never the tag name, so a reader
+# restricted to <button> would certify a control it never saw.
+check("a chip on an element that is not a button is read",
+      check_web.page_chips(chip_markup("pink", "Pink", tag="a"))
+      == [("pink", "Pink")])
+check("an element with no chip attribute is not a chip",
+      check_web.page_chips('<button type="button">Save</button>') == [])
+check("a chip's words are read through its own inner markup",
+      check_web.page_chips(
+          '<button data-set-theme="pink"><span>Pink</span></button>')
+      == [("pink", "Pink")])
+# None, not "" - a chip with no closing tag and a chip with no words
+# send whoever reads the failure to look at different things.
+check("a chip whose element never closes has no label to compare",
+      check_web.page_chips('<button data-set-theme="pink">Pink')
+      == [("pink", None)])
+
+# One page's own roster, before any comparison.
+check("a page whose chips all read clean raises nothing",
+      check_web.chip_roster_problems(CHIP_GROUP) == [])
+# The reconciliation against check 19's own CHIP_MARKUP, and the case
+# is real rather than theoretical: a ">" inside a quoted attribute
+# value ends the opening tag as far as this file's reader is
+# concerned, while check 19 counts the chip anyway. The two disagree
+# about what is on the page, and saying so is the whole point - the
+# alternative is a comparison quietly performed on three chips.
+check("a chip check 19 counts and this reader cannot pair is refused",
+      any("pairs" in p for p in check_web.chip_roster_problems(
+          '<button title="a>b" data-set-theme="pink">Pink</button>')))
+check("an empty chip id is refused",
+      any("empty id" in p for p in check_web.chip_roster_problems(
+          '<button data-set-theme="">Pink</button>')))
+check("the same palette twice on one page is refused",
+      any("two chips" in p for p in check_web.chip_roster_problems(
+          chip_markup("pink", "Pink") + chip_markup("pink", "Rose"))))
+check("a chip with no visible words is refused",
+      any("no visible words" in p for p in check_web.chip_roster_problems(
+          '<button data-set-theme="pink"></button>')))
+check("a chip whose element never closes is refused",
+      any("never closes" in p for p in check_web.chip_roster_problems(
+          '<button data-set-theme="pink">Pink')))
+
+# The comparison. Both directions the issue names, and the third the
+# rail already pays for.
+check("pages agreeing about every chip raise nothing",
+      check_web.chip_parity_problems(
+          {"a.html": FOUR_CHIPS, "b.html": FOUR_CHIPS,
+           "c.html": FOUR_CHIPS}) == [])
+
+DRIFT_FOUND = check_web.chip_parity_problems(
+    {"admin.html": FOUR_CHIPS, "dashboard.html": FOUR_CHIPS,
+     "submit.html": DRIFTED_CHIPS})
+check("a label renamed on ONE page is refused",
+      len(DRIFT_FOUND) == 1)
+check("the refusal names the page that drifted",
+      bool(DRIFT_FOUND) and DRIFT_FOUND[0][0] == "submit.html")
+check("the refusal carries both spellings and the page to compare with",
+      bool(DRIFT_FOUND) and all(
+          word in DRIFT_FOUND[0][1]
+          for word in ("Daylight", "Parchment Daylight", "admin.html")))
+
+# What it deliberately does not pin. #127 ruled these words; a rename
+# reaching every copy is the site changing its mind, not drift, and a
+# check that refused it would have to be edited to ship a decision
+# that is not this file's to make.
+RENAMED_CHIPS = [(n, w + " palette") for n, w in FOUR_CHIPS]
+check("a rename that reaches every page raises nothing",
+      check_web.chip_parity_problems(
+          {"a.html": RENAMED_CHIPS, "b.html": RENAMED_CHIPS}) == [])
+
+SHORT_CHIPS = [pair for pair in FOUR_CHIPS if pair[0] != "contrast"]
+check("a palette missing from one page is refused",
+      any("different set" in p for _subject, p in
+          check_web.chip_parity_problems(
+              {"a.html": FOUR_CHIPS, "b.html": SHORT_CHIPS})))
+check("a palette on one page only is refused",
+      any("different set" in p for _subject, p in
+          check_web.chip_parity_problems(
+              {"a.html": SHORT_CHIPS, "b.html": FOUR_CHIPS})))
+
+# Order, for the reason rail parity pins it: the list is hand-copied
+# on every page, and a chip inserted where the page somebody copied
+# from did not have it is the same drift by the same route.
+REORDERED_CHIPS = [FOUR_CHIPS[1], FOUR_CHIPS[0], *FOUR_CHIPS[2:]]
+check("the same palettes in a different order are refused",
+      any("different order" in p for _subject, p in
+          check_web.chip_parity_problems(
+              {"a.html": FOUR_CHIPS, "b.html": REORDERED_CHIPS})))
+
+# A parity rule holding one copy cannot fail, which is the failure
+# #114 paid for - so it reports rather than passing.
+check("one roster is not a comparison, and says so",
+      any(subject == check_web.CHIP_PIN for subject, _p in
+          check_web.chip_parity_problems({"a.html": FOUR_CHIPS})))
+check("no roster at all is not a comparison either",
+      check_web.chip_parity_problems({}) != [])
+
+# And the shipped pages.
+check("the shipped pages agree about every palette chip",
+      check_web.chip_problems() == [])
+
+SHIPPED_CHIPS = {
+    name: check_web.page_chips(check_web.page_text(name))
+    for name in sorted(check_web.THEMED_PAGES)
+}
+check("every themed page ships one identical chip roster",
+      len({tuple(r) for r in SHIPPED_CHIPS.values()}) == 1)
+# Without this the arm above passes on four pages carrying no chips.
+check("and that roster is not empty",
+      SHIPPED_CHIPS["submit.html"] != [])
+
+
+# The arm that stops every arm above being decorative, and it is the
+# lesson check 20's wrapper arm records one file up: replacing the
+# wrapper's body with `return []` leaves all of them green, because
+# they drive the pure functions and the shipped arm expects nothing.
+# So the wrapper is pointed at pages that must fail.
+#
+# The directory is outside the repository. A fixture page written into
+# apps/web would be published verbatim, and one written anywhere in
+# the tree is linted by the gate that runs this.
+def chips_over(pages):
+    """chip_problems() against a directory holding exactly `pages`."""
+    with tempfile.TemporaryDirectory() as folder:
+        for name, markup in pages.items():
+            with open(os.path.join(folder, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write(
+                    "<!doctype html><html><body>%s</body></html>" % markup)
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.chip_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+DISK_FOUND = chips_over({
+    "admin.html": CHIP_GROUP,
+    "submit.html": "".join(chip_markup(n, w) for n, w in DRIFTED_CHIPS),
+})
+check("the wrapper reads the pages rather than answering from nowhere",
+      len(DISK_FOUND) == 1 and DISK_FOUND[0][0] == "submit.html")
+check("and it is the shipped directory it normally reads",
+      check_web.WEB.endswith(os.path.join("apps", "web")))
+
+# Not decorative: submit.html's note on the #127 ruling names this
+# attribute at length, so a reader taking raw markup would compare a
+# page against prose about itself.
+check("a chip written out inside a comment is not part of a roster",
+      chips_over({
+          "admin.html": CHIP_GROUP,
+          "submit.html": CHIP_GROUP + "<!-- %s -->" % chip_markup(
+              "ghost", "Ghost"),
+      }) == [])
+
+# A themed page carrying no chip at all is check 19's, and it fails
+# there in this same run from this same roster. Restating it here is
+# what that check's docstring declines to do, in the other direction.
+check("a themed page with no chips is left to check 19, not restated",
+      chips_over({
+          "admin.html": CHIP_GROUP,
+          "submit.html": CHIP_GROUP,
+          "dashboard.html": "<p>Nothing here.</p>",
+      }) == [])
 
 
 if failures:

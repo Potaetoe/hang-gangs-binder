@@ -491,6 +491,62 @@ day a check is added:
     shape as raising a ceiling in tools/check_budget.py: move the tags
     and change this check in the same diff, where a reviewer sees the
     rule move next to the reason it moved.
+
+23. The palette chips agree across the pages that carry them: the same
+    ids, the same visible words on each id, in the same order.
+
+    #152, and the shape of the gap is worth stating because several
+    arms look like they cover it and each reads something else. Check
+    19 pins that a page pinned to offer a palette HAS the control -
+    per page, in isolation. Check 10's rail parity compares
+    .rail-links and stops before the picker, which does not live in
+    the rail. Check 17's name tables read titles, headings and rail
+    entries. So a chip renamed on two of the four pages satisfied
+    every one of them, and the only thing reading the four labels side
+    by side was a person following the demo walk-through.
+
+    The failure is quiet by construction, which is why it needs a
+    gate. The id is what theme.js stores and what theme.css selects on;
+    the label is only words. Rename one copy and nothing breaks, no
+    console says anything, and the site simply calls one palette two
+    things depending on which page the member is standing on.
+
+    Three things it deliberately does NOT pin, each for its own
+    reason:
+
+    - PRESENCE, which is check 19's. That check's own docstring
+      declines to state label agreement because "two checks making the
+      same claim in different places is how one of them gets quietly
+      weakened"; this is the other side of that sentence. A page
+      pinned to offer a palette and carrying no chip at all is left
+      out of the comparison here, and check 19 fails on that same page
+      from that same roster in the same run.
+    - WHAT A LABEL SAYS. #127 ruled the words, "Parchment Daylight"
+      over the id `daylight` included. The reference page below is
+      only whichever name sorts first, and a rename that reaches all
+      four copies passes here on purpose: agreement is the claim, not
+      the wording. A check that pinned the words would have to be
+      edited to ship a decision that is the owner's to make.
+    - WHAT AN ID MEANS. That `daylight` names a palette theme.js
+      paints and theme.css defines is that coupling's business -
+      theme.js's own BG map, check 21's slot pin, check_contrast.py's
+      table. This arm reads the four pages against each other and
+      nothing else.
+
+    Order is pinned as well as membership. The list is written out by
+    hand on every page exactly as the rail is, so it drifts the way
+    the rail drifts - a chip inserted where the page somebody copied
+    from did not have it - and a set comparison is blind to that.
+
+    The reader is the part with teeth, because a checker that declines
+    to see half its input while the gate prints OK is the same silent
+    failure with a different cause. Two things hold it open:
+    theme.js wires `[data-set-theme]` on ANY element, so this reads
+    any element rather than <button>; and the count of chips it pairs
+    with a label is reconciled against CHIP_MARKUP, which is what
+    check 19 counts a chip by. A chip that check can see and this one
+    cannot read is REPORTED, never skipped - so the two arms cannot
+    drift into disagreeing about what a chip is.
 """
 
 import base64
@@ -2982,6 +3038,64 @@ def loading_problems():
     return problems
 
 
+# One palette chip's opening tag. Any element, not <button>, because
+# theme.js wires `document.querySelectorAll("[data-set-theme]")` and a
+# reader narrower than the thing it describes is a reader that goes
+# quiet on the day a chip is written some other way. It is found by its
+# attribute rather than by walking the group, so a chip that escapes
+# the group's div is still read.
+CHIP_OPEN = re.compile(r"<(\w+)\b([^>]*\bdata-set-theme\s*=[^>]*)>", re.I)
+
+CHIP_ATTRIBUTE = "data-set-theme"
+
+# What a failure with no page to blame is attributed to. The pin is the
+# subject in that case, not any one page.
+CHIP_PIN = "THEMED_PAGES in tools/check_web.py"
+
+
+def page_chips(text):
+    """[(id, label)] for one page's palette chips, in document order.
+
+    `label` is None for a chip whose element never closes, which says
+    something different from a chip carrying no words - the two send
+    whoever reads the failure to look at different things.
+
+    Takes comment-stripped markup, for the reason page_text() gives:
+    submit.html's note on the "Parchment Daylight" ruling names this
+    attribute repeatedly, and a rule reading a page's comments is
+    describing markup the page does not have.
+    """
+    return []
+
+
+def chip_roster_problems(text):
+    """[problem] for one page's own chips, before any page is compared.
+
+    A page failing here is left out of the comparison below, because a
+    roster this file could not read whole is not evidence about another
+    page - but it is REPORTED, never skipped. Failing open is the
+    default for a reader, and #152 exists because three separate rules
+    each stopped short of the chips in silence.
+    """
+    return []
+
+
+def chip_parity_problems(rosters):
+    """[(subject, problem)] for chip rosters that disagree.
+
+    `rosters` is {page: [(id, label)]} for the pages whose own chips
+    read clean. Compared against whichever page sorts first, for the
+    reason rail parity gives: a message naming a specific page to go
+    and look at beats one saying that they differ.
+    """
+    return []
+
+
+def chip_problems():
+    """(subject, problem) for the palette chips across the pinned pages."""
+    return []
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -3081,6 +3195,9 @@ def main():
 
     for page, problem in loading_problems():
         problems.append("%s %s." % (page, problem))
+
+    for subject, problem in chip_problems():
+        problems.append("%s %s." % (subject, problem))
 
     for rel, description in key_shaped_content():
         problems.append(
