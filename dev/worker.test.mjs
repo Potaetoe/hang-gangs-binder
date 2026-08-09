@@ -33,12 +33,25 @@ const { default: worker } = await import(
  * race check goes red instead of passing against a database carrying no
  * such rule. Nothing else here reads SQL off disk and nothing needs to:
  * every other statement under test arrives from the Worker.
+ *
+ * THE COMMENTS COME OUT FIRST, and that is the whole of what makes this
+ * read a fact rather than a mood. server/schema.sql explains its own
+ * index by quoting the statement - `CREATE UNIQUE INDEX IF NOT EXISTS`
+ * appears in the prose above it - and a regex over the raw file cannot
+ * tell the explanation from the rule. It is worse than a false positive
+ * on the file as it stands: `[^;]*` stops at the first semicolon, so
+ * whether the prose matches depends on which statements sit between it
+ * and the index, and removing the DROP is what lets the match run out of
+ * the comment and into a reverted, NON-unique `ON submissions(supersedes)`
+ * below it. The arm therefore stayed green against exactly the schema it
+ * exists to refuse. Strip `--` to end of line and the question is asked
+ * of SQL only.
  */
 const SCHEMA = await readFile(
   fileURLToPath(new URL("../server/schema.sql", import.meta.url)), "utf8");
 const SUPERSEDES_IS_UNIQUE =
   /CREATE\s+UNIQUE\s+INDEX[^;]*\bON\s+submissions\s*\(\s*supersedes\s*\)/i
-    .test(SCHEMA);
+    .test(SCHEMA.replace(/--[^\n]*/g, ""));
 
 /*
  * A D1 binding that remembers what it was asked to store.
