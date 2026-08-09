@@ -38,7 +38,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
  * silent wrong number with it - the same failure the arithmetic below is
  * about, one level up. See dev/harness.mjs.
  */
-const { check, report } = nodeTestSuite("dashboard.js", 134);
+const { check, report } = nodeTestSuite("dashboard.js", 138);
 
 await check("the exported object is frozen", () =>
   // `suppressCounts` and MIN_CELL are the suppression floor standing
@@ -848,6 +848,57 @@ await check("the keyholder sees both lines under the handle they share", () => {
  * that is still about individuals, pseudonyms or not. */
 await check("weight over time can be left out entirely", () =>
   snapshotOf(CORPUS, { identify: false, series: false }).series === null);
+
+/*
+ * WHICH KIND OF NULL A NULL SERIES IS - #177.
+ *
+ * `series: null` means two opposite things. Left out, because nobody
+ * asked for it; or asked for and taken out, because there were too few
+ * lines to hide in. One is a choice and the other is the floor
+ * protecting people, and until this field existed a reader of the
+ * document could not tell them apart - which is why the keyholder's
+ * Publish card and the member's page both showed silence.
+ *
+ * The reading side has no rows, so it cannot work this out for itself.
+ * The document has to carry it, and it carries a boolean and nothing
+ * else: how many lines there would have been is exactly what the floor
+ * is holding back.
+ */
+/* The same seven people, each keeping one row, plus two who submitted
+   twice. Two lines is under MIN_CELL and seven entries is over it, so
+   the bases publish and the series alone is taken out - which is the
+   state #177 was reported from. */
+const withheldRows = latestPerPerson(CORPUS).concat(
+  latestPerPerson(CORPUS).slice(0, 2).map((row, index) => ({
+    ...row,
+    id: 900 + index,
+    kg: row.kg + 3,
+    lb: row.lb + 6.6,
+    submittedAt: "2026-08-04T12:00:00.000Z",
+  })));
+
+await check("a series the floor removed says so in the document", () => {
+  const snap = snapshotOf(withheldRows, { identify: false });
+  return snap.series === null && snap.seriesWithheld === true;
+});
+
+await check("a series nobody asked for is not reported as withheld", () =>
+  snapshotOf(withheldRows, { identify: false, series: false })
+    .seriesWithheld === false);
+
+await check("a series that cleared the floor is not reported as withheld",
+  () => {
+    const snap = snapshotOf(CORPUS, { identify: false });
+    return snap.series.length >= MIN_CELL && snap.seriesWithheld === false;
+  });
+
+/* The keyholder has no floor, so nothing of theirs is ever withheld -
+ * and this is the field the drawing half reads to decide whether to say
+ * anything at all. If it could ever be true here, the instrument would
+ * start explaining a suppression it does not perform. */
+await check("the keyholder's own document never reports a withholding", () =>
+  snapshotOf(withheldRows, { identify: true }).seriesWithheld === false &&
+  snapshotOf(CORPUS.slice(0, 3), { identify: true }).seriesWithheld === false);
 
 /* ------------------------------------------------------------------ */
 /* Quantization of the published series.                               */

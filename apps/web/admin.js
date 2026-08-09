@@ -1504,6 +1504,26 @@
       UI.setStatus($("publish-status"), message, tone);
     }
 
+    /*
+     * What the document just built does NOT contain - #177. The box
+     * stayed ticked and the preview carried `"series": null`, so "I
+     * never asked for it" and "the floor took it out" looked identical
+     * on the one screen where the difference decides whether to publish.
+     *
+     * READ OFF THE DOCUMENT, never recounted here: the floor has one
+     * home, and a second count could disagree with the one that decided.
+     * Naming the floor is safe here and nowhere else - this page holds
+     * every row in the clear. The member-facing wording carries no
+     * number.
+     */
+    function withheldNote(snapshot) {
+      return snapshot.seriesWithheld
+        ? " Weight over time is not in it: fewer than " +
+          root.BinderDashboard.MIN_CELL +
+          " people have more than one entry."
+        : "";
+    }
+
     /* Shown on demand, because "trust me, there are no handles in it"
      * is not something a keyholder should have to take on faith about
      * a thing they are making public. */
@@ -1514,8 +1534,14 @@
         body.textContent = "";
         return;
       }
-      body.textContent = JSON.stringify(publishable(), null, 2);
+      const preview = publishable();
+      body.textContent = JSON.stringify(preview, null, 2);
       body.hidden = false;
+      // Only when there is something to report. A card that spoke on
+      // every preview would be noise, and noise is how a real notice
+      // stops being read.
+      const missing = withheldNote(preview);
+      if (missing) sayPublish(missing.trim(), null);
     });
 
     $("publish").addEventListener("click", async function () {
@@ -1525,13 +1551,17 @@
       }
       $("publish").disabled = true;
       sayPublish("Publishing…", null);
+      // Built once and kept, so the document reported on below is the
+      // document that went out rather than a second one built from the
+      // same rows a moment later.
+      const sent = publishable();
       try {
         const response = await fetch(config.endpoint + "/snapshot", {
           method: "POST",
           headers: Object.assign(
             { "Content-Type": "application/json" },
             root.BinderSession.authorization()),
-          body: JSON.stringify(publishable()),
+          body: JSON.stringify(sent),
         });
         if (response.status === 401) {
           throw new Error("The admin session was not accepted.");
@@ -1548,8 +1578,8 @@
       }
 
       $("publish").disabled = false;
-      sayPublish("Published. The public dashboard now shows these numbers.",
-        null);
+      sayPublish("Published. The public dashboard now shows these numbers." +
+        withheldNote(sent), null);
       await refreshPublishedState();
     });
 

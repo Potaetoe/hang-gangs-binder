@@ -1034,8 +1034,19 @@
      * So the panel publishes only when there are enough lines to hide
      * in, and otherwise not at all. It is already opt-in and off by
      * default; this is the second condition, not the first.
+     *
+     * WHICH KIND OF NULL THIS IS, recorded because nobody downstream can
+     * work it out. `series: null` means either "nobody asked for one" or
+     * "one was asked for and the floor took it out" - opposite claims,
+     * and the reading side has no rows to tell them apart, so it showed
+     * one silence for both (#177). A boolean and nothing more: how many
+     * lines there would have been is what the floor holds back.
      */
-    if (series && !identify && series.length < floor) series = null;
+    let seriesWithheld = false;
+    if (series && !identify && series.length < floor) {
+      series = null;
+      seriesWithheld = true;
+    }
 
     const bases = {
       people: basisOf(latestPerPerson(entries), floor),
@@ -1051,6 +1062,11 @@
         people: peopleCount(entries),
       },
       series: series,
+      // Additive and absent-tolerant, for the reason `movement` is: a
+      // document published before this field is already live, and a
+      // missing flag reads as "nothing was withheld", which is what
+      // every one of them means. SNAPSHOT_VERSION does not move.
+      seriesWithheld: seriesWithheld,
       // A data-quality panel is for whoever can act on it. Published,
       // it would be a list of strangers' heights and the handles they
       // answer to, and no use to anyone.
@@ -1175,6 +1191,26 @@
     wrap.appendChild(p);
     return wrap;
   }
+
+  /*
+   * What the page says where the floor removed something. A blank is a
+   * claim - "nobody answered", "nothing here" - and the true one is that
+   * enough people answered that the page will not say which.
+   *
+   * NONE CARRIES A NUMBER: the count, the cell size and how close it
+   * came to the floor are what suppression holds back, so naming one
+   * publishes in prose what the floor withheld in figures. Shared
+   * constants, because four wordings are four chances to say too much.
+   *
+   * ONE_BAND is not a suppression - one band holds everybody by
+   * construction, so it describes the picture rather than a reason.
+   */
+  const WITHHELD =
+    "Too few people to show this without describing individual people.";
+  const SERIES_WITHHELD = "Too few people have more than one entry to " +
+    "show this without identifying them.";
+  const ONE_BAND =
+    "Everybody here falls in a single band, so there is no shape to show.";
 
   function canvas(width, height) {
     const node = svg("svg", {
@@ -1355,6 +1391,49 @@
     return node;
   }
 
+  /*
+   * A categorical breakdown, or the sentence that stands in for it. No
+   * rows means two opposite things: floored, suppressCounts found
+   * nothing publishable without describing individuals; unfloored, the
+   * group has no rows at all. Only the first is a withholding.
+   *
+   * The caption goes with the chart, for the reason the band caption
+   * does below: "Multi-select, so these do not add up" over a panel with
+   * nothing in it describes a drawing that is not there.
+   *
+   * A null `total` is how a panel says it has no denominator (#182).
+   */
+  function breakdown(title, note, rows, total, floored) {
+    const drawn = rows.length > 0 || !floored;
+    const wrap = figure(title, drawn ? note : null);
+    if (drawn) wrap.appendChild(barChart(rows, total));
+    else emptyNote(wrap, WITHHELD);
+    return wrap;
+  }
+
+  /*
+   * A histogram, or the sentence that stands in for it. No bins on a
+   * floored document is suppressBins refusing a tail that would describe
+   * one person - not the same claim as nothing having been recorded. One
+   * bin is every band merged into a single bar filling the chart: no
+   * information, and indistinguishable from a fault. THE BAND CAPTION
+   * GOES WITH THE BAR in both: "in 20 lb bands" over a picture with no
+   * bands describes what was not drawn, and it is a digit the sentence
+   * beside it is careful not to carry.
+   *
+   * The instrument draws whatever it has, one band included: it has no
+   * floor, so nothing there merged.
+   */
+  function distribution(title, note, bins, unit, tick, absent, floored) {
+    const flat = floored && bins.length === 1;
+    const drawn = bins.length > 0 && !flat;
+    const wrap = figure(title, drawn || !floored ? note : null);
+    if (!bins.length) emptyNote(wrap, floored ? WITHHELD : absent);
+    else if (flat) emptyNote(wrap, ONE_BAND);
+    else wrap.appendChild(histogramChart(bins, unit, tick));
+    return wrap;
+  }
+
   function basisName(basis) {
     return basis === "entries" ? "entries" : "people";
   }
@@ -1505,6 +1584,21 @@
     const view = snapshot.bases[which];
 
     /*
+     * Whether this document was reduced - read off the document, not the
+     * caller. `identified` is the floor's own switch (snapshotOf takes
+     * `floor = identify ? 0 : MIN_CELL` from the same argument), so it is
+     * the one property saying whether an empty cell means suppressed or
+     * empty. Deciding by entry point would give the two surfaces
+     * different panel sequences for one document, and this split exists
+     * on the rule that only what comes FIRST may differ.
+     *
+     * `=== false` so a document with no flag says nothing: claiming a
+     * suppression that never happened is worse than saying nothing at
+     * all.
+     */
+    const floored = snapshot.identified === false;
+
+    /*
      * A basis is null when the group was too small to publish a
      * breakdown about. Say so, rather than drawing an empty page or
      * throwing - this is the ordinary state of a new group, not an
@@ -1573,6 +1667,19 @@
           "This fills in as people resubmit.");
       }
       container.appendChild(timeWrap);
+    } else if (snapshot.seriesWithheld === true) {
+      /*
+       * The keyholder asked for this chart and the floor took it out, so
+       * the panel stays and holds the reason: from outside, "withheld"
+       * and "never collected" are the same blank and mean opposite
+       * things (#177). No `floored` test beside it - snapshotOf sets
+       * this flag only on a document it reduced, so the instrument's own
+       * snapshot can never carry it.
+       */
+      const withheldWrap = figure("Weight over time");
+      withheldWrap.classList.add("chart-wide");
+      emptyNote(withheldWrap, SERIES_WITHHELD);
+      container.appendChild(withheldWrap);
     }
 
     /*
@@ -1625,40 +1732,37 @@
       container.appendChild(wrap);
     }
 
-    const weightWrap = figure("Weight", "in " + spec.weight.band);
-    if (measures.weight.bins.length) {
-      weightWrap.appendChild(histogramChart(
-        measures.weight.bins, spec.weight.suffix, spec.weight.tick));
-    } else emptyNote(weightWrap, "No weights recorded.");
-    container.appendChild(weightWrap);
+    container.appendChild(distribution("Weight", "in " + spec.weight.band,
+      measures.weight.bins, spec.weight.suffix, spec.weight.tick,
+      "No weights recorded.", floored));
 
-    const heightWrap = figure("Height", "in " + spec.height.band);
-    if (measures.height.bins.length) {
-      heightWrap.appendChild(histogramChart(
-        measures.height.bins, spec.height.suffix, spec.height.tick));
-    } else emptyNote(heightWrap, "No heights recorded.");
-    container.appendChild(heightWrap);
+    container.appendChild(distribution("Height", "in " + spec.height.band,
+      measures.height.bins, spec.height.suffix, spec.height.tick,
+      "No heights recorded.", floored));
 
-    const bmiWrap = figure("BMI",
+    container.appendChild(distribution("BMI",
       "Weight over height squared, and nothing more — the clinical " +
-      "category labels are deliberately not shown.");
-    if (view.bmi.bins.length) {
-      bmiWrap.appendChild(histogramChart(view.bmi.bins, "BMI"));
-    } else emptyNote(bmiWrap, "Not enough data to compute BMI.");
-    container.appendChild(bmiWrap);
+      "category labels are deliberately not shown.",
+      view.bmi.bins, "BMI", null,
+      "Not enough data to compute BMI.", floored));
 
-    const genderWrap = figure("Gender");
-    genderWrap.appendChild(barChart(view.gender, view.count));
-    container.appendChild(genderWrap);
+    container.appendChild(
+      breakdown("Gender", null, view.gender, view.count, floored));
 
-    const rolesWrap = figure("Feedism affiliations",
-      "Multi-select, so these do not add up to the number of entries.");
-    rolesWrap.appendChild(barChart(view.roles, view.count));
-    container.appendChild(rolesWrap);
+    /*
+     * No share on this one - #182. Affiliations are multi-select, so
+     * twelve people can produce twenty selections and no whole exists
+     * for a percentage to be part of: the published page printed
+     * `Other (fewer than 5) — 9 (180%)`. The counts are right; the share
+     * had nothing to be a share of, so it is gone rather than relabelled.
+     */
+    container.appendChild(breakdown("Feedism affiliations",
+      "Multi-select, so these do not add up to the number of entries — " +
+      "which is why no share is shown beside them.",
+      view.roles, null, floored));
 
-    const countryWrap = figure("Country",
-      view.country.length > 12 ? "Top 12 by count." : null);
-    countryWrap.appendChild(barChart(view.country.slice(0, 12), view.count));
-    container.appendChild(countryWrap);
+    container.appendChild(breakdown("Country",
+      view.country.length > 12 ? "Top 12 by count." : null,
+      view.country.slice(0, 12), view.count, floored));
   }
 })(globalThis);

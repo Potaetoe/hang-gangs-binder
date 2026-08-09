@@ -626,7 +626,11 @@
 
     
 
-    if (series && !identify && series.length < floor) series = null;
+    let seriesWithheld = false;
+    if (series && !identify && series.length < floor) {
+      series = null;
+      seriesWithheld = true;
+    }
 
     const bases = {
       people: basisOf(latestPerPerson(entries), floor),
@@ -642,6 +646,11 @@
         people: peopleCount(entries),
       },
       series: series,
+       
+       
+       
+       
+      seriesWithheld: seriesWithheld,
        
        
        
@@ -758,6 +767,15 @@
     wrap.appendChild(p);
     return wrap;
   }
+
+  
+
+  const WITHHELD =
+    "Too few people to show this without describing individual people.";
+  const SERIES_WITHHELD = "Too few people have more than one entry to " +
+    "show this without identifying them.";
+  const ONE_BAND =
+    "Everybody here falls in a single band, so there is no shape to show.";
 
   function canvas(width, height) {
     const node = svg("svg", {
@@ -937,6 +955,28 @@
     return node;
   }
 
+  
+
+  function breakdown(title, note, rows, total, floored) {
+    const drawn = rows.length > 0 || !floored;
+    const wrap = figure(title, drawn ? note : null);
+    if (drawn) wrap.appendChild(barChart(rows, total));
+    else emptyNote(wrap, WITHHELD);
+    return wrap;
+  }
+
+  
+
+  function distribution(title, note, bins, unit, tick, absent, floored) {
+    const flat = floored && bins.length === 1;
+    const drawn = bins.length > 0 && !flat;
+    const wrap = figure(title, drawn || !floored ? note : null);
+    if (!bins.length) emptyNote(wrap, floored ? WITHHELD : absent);
+    else if (flat) emptyNote(wrap, ONE_BAND);
+    else wrap.appendChild(histogramChart(bins, unit, tick));
+    return wrap;
+  }
+
   function basisName(basis) {
     return basis === "entries" ? "entries" : "people";
   }
@@ -1025,6 +1065,10 @@
 
     
 
+    const floored = snapshot.identified === false;
+
+    
+
     if (view === null) {
       const note = document.createElement("p");
       note.className = "muted";
@@ -1088,6 +1132,13 @@
           "This fills in as people resubmit.");
       }
       container.appendChild(timeWrap);
+    } else if (snapshot.seriesWithheld === true) {
+      
+
+      const withheldWrap = figure("Weight over time");
+      withheldWrap.classList.add("chart-wide");
+      emptyNote(withheldWrap, SERIES_WITHHELD);
+      container.appendChild(withheldWrap);
     }
 
     
@@ -1135,40 +1186,32 @@
       container.appendChild(wrap);
     }
 
-    const weightWrap = figure("Weight", "in " + spec.weight.band);
-    if (measures.weight.bins.length) {
-      weightWrap.appendChild(histogramChart(
-        measures.weight.bins, spec.weight.suffix, spec.weight.tick));
-    } else emptyNote(weightWrap, "No weights recorded.");
-    container.appendChild(weightWrap);
+    container.appendChild(distribution("Weight", "in " + spec.weight.band,
+      measures.weight.bins, spec.weight.suffix, spec.weight.tick,
+      "No weights recorded.", floored));
 
-    const heightWrap = figure("Height", "in " + spec.height.band);
-    if (measures.height.bins.length) {
-      heightWrap.appendChild(histogramChart(
-        measures.height.bins, spec.height.suffix, spec.height.tick));
-    } else emptyNote(heightWrap, "No heights recorded.");
-    container.appendChild(heightWrap);
+    container.appendChild(distribution("Height", "in " + spec.height.band,
+      measures.height.bins, spec.height.suffix, spec.height.tick,
+      "No heights recorded.", floored));
 
-    const bmiWrap = figure("BMI",
+    container.appendChild(distribution("BMI",
       "Weight over height squared, and nothing more — the clinical " +
-      "category labels are deliberately not shown.");
-    if (view.bmi.bins.length) {
-      bmiWrap.appendChild(histogramChart(view.bmi.bins, "BMI"));
-    } else emptyNote(bmiWrap, "Not enough data to compute BMI.");
-    container.appendChild(bmiWrap);
+      "category labels are deliberately not shown.",
+      view.bmi.bins, "BMI", null,
+      "Not enough data to compute BMI.", floored));
 
-    const genderWrap = figure("Gender");
-    genderWrap.appendChild(barChart(view.gender, view.count));
-    container.appendChild(genderWrap);
+    container.appendChild(
+      breakdown("Gender", null, view.gender, view.count, floored));
 
-    const rolesWrap = figure("Feedism affiliations",
-      "Multi-select, so these do not add up to the number of entries.");
-    rolesWrap.appendChild(barChart(view.roles, view.count));
-    container.appendChild(rolesWrap);
+    
 
-    const countryWrap = figure("Country",
-      view.country.length > 12 ? "Top 12 by count." : null);
-    countryWrap.appendChild(barChart(view.country.slice(0, 12), view.count));
-    container.appendChild(countryWrap);
+    container.appendChild(breakdown("Feedism affiliations",
+      "Multi-select, so these do not add up to the number of entries — " +
+      "which is why no share is shown beside them.",
+      view.roles, null, floored));
+
+    container.appendChild(breakdown("Country",
+      view.country.length > 12 ? "Top 12 by count." : null,
+      view.country.slice(0, 12), view.count, floored));
   }
 })(globalThis);

@@ -536,6 +536,30 @@ await check("a bar's value carries its share of the total", () =>
     withClass(figureNamed(KEY_PEOPLE, "Gender"), "chart-value"))) ===
   JSON.stringify(["7 (58%)", "5 (42%)"]));
 
+/*
+ * #182: the multi-select panel prints a count and no share.
+ *
+ * Roles are multi-select, so twelve people produce more than twelve
+ * selections and there is no denominator a percentage could be taken
+ * against - the published page printed `Other (fewer than 5) - 9 (180%)`
+ * and a reader concluded the site cannot add up. The counts were right
+ * the whole time; the share had nothing to be a share of.
+ *
+ * Both surfaces, and deliberately: this is arithmetic rather than
+ * disclosure, so there is no `identify` distinction to make. The gender
+ * arm above is the other direction - a single-select breakdown DOES sum
+ * to the basis, and its share still prints.
+ */
+await check("the multi-select panel prints counts and no share", () =>
+  textsOf(withClass(
+    figureNamed(KEY_PEOPLE, "Feedism affiliations"), "chart-value"))
+    .join("|") === "7|5|0|0");
+
+await check("the multi-select caption says why there is no share", () =>
+  hintOf(figureNamed(KEY_PEOPLE, "Feedism affiliations")) ===
+  "Multi-select, so these do not add up to the number of entries — " +
+  "which is why no share is shown beside them.");
+
 await check("the country panel is capped at twelve and says so only then",
   () => {
     const country = figureNamed(KEY_PEOPLE, "Country");
@@ -627,7 +651,12 @@ await check("a category counted zero times still gets a visible bar", () => {
     bar.getAttribute("width") === "1");
 });
 
-await check("with nothing counted a bar's value carries no percentage", () =>
+/* The multi-select panel carries no share on any corpus - see the pair
+   of arms in section 5. This is the zero case, and on its own it proves
+   nothing: a total of nothing suppresses a percentage all by itself, so
+   this line stays green whatever the share rule is. The arms in section
+   5 are what hold it; this one holds the edge they do not reach. */
+await check("with nothing counted a bar's value is still a bare count", () =>
   textsOf(withClass(figureNamed(EMPTY, "Feedism affiliations"),
     "chart-value")).join("|") === "0|0|0|0");
 
@@ -815,39 +844,237 @@ await check("the published lines are captioned with pseudonyms instead", () =>
     figureNamed(PUBLIC_PEOPLE, "Weight over time"), "chart-series-label"))
     .join("|") === "Person 1|Person 2|Person 3|Person 4|Person 5");
 
-/* Fewer repeat submitters than MIN_CELL, from otherwise identical rows.
-   dashboard.js:910 drops the whole panel rather than publishing four
-   identifiable trajectories. */
-const FEW = scene(() => draw(
-  D.snapshotOf(BASE.concat(REPEATS.slice(0, 3)), { identify: false }),
-  "people", "imperial"));
+/* ------------------------------------------------------------------ */
+/* 10a. A withheld thing says it was withheld - #177, #180.            */
 
-await check("too few lines to hide in publishes no time chart at all", () =>
-  figureNamed(FEW, "Weight over time") === null &&
-  figureNamed(draw(D.snapshotOf(BASE.concat(REPEATS.slice(0, 3)),
-    { identify: true }), "people", "imperial"), "Weight over time") !== null);
+/*
+ * THE RULE, AND WHERE IT ALREADY LIVED. movementText() answers a
+ * movement too few people drove with a sentence rather than a blank,
+ * because a blank reads as "nothing changed" - a different claim, and a
+ * false one. The weight series, the suppressed breakdowns and the
+ * collapsed histograms never had that rule applied: they rendered as an
+ * absent panel, a heading over nothing, and a full-width solid bar, all
+ * three of which a member reads as breakage rather than as protection.
+ *
+ * WHAT DECIDES. The DOCUMENT, through its own `identified` flag, and not
+ * which entry point is drawing. `identified` is the floor's own switch -
+ * snapshotOf sets `floor = identify ? 0 : MIN_CELL` from it - so a
+ * sentence about suppression is a fact about the data rather than about
+ * the surface. Gating on render-versus-renderProgress instead would give
+ * the two surfaces DIFFERENT panel sequences for one document, which is
+ * the seam section 13 pins shut.
+ *
+ * WHAT THE SENTENCES MAY NOT DO. None of them may carry a number. The
+ * count, the size of the cell, and how close it came to the floor are
+ * exactly what the floor is holding back, and a chatty explanation would
+ * publish in prose what suppression withheld in figures. They are
+ * written out here rather than read off the module, because a check that
+ * reads the copy it is checking cannot fail when the copy is deleted.
+ */
+const WITHHELD =
+  "Too few people to show this without describing individual people.";
+const SERIES_WITHHELD = "Too few people have more than one entry to " +
+  "show this without identifying them.";
+const ONE_BAND =
+  "Everybody here falls in a single band, so there is no shape to show.";
+
+/* The literals above hold no digit, which on its own is a statement
+   about this file. What makes it a statement about the module is that
+   every panel below is compared against them for equality, and the
+   rendered sweep at the end of this section reads the drawn text. */
+await check("the sentences these arms pin carry no digit", () =>
+  [WITHHELD, SERIES_WITHHELD, ONE_BAND].every((line) => !/\d/.test(line)));
+
+/* Fewer repeat submitters than MIN_CELL, from otherwise identical rows.
+   snapshotOf drops the whole series rather than publishing four
+   identifiable trajectories. */
+const FEW_ROWS = BASE.concat(REPEATS.slice(0, 3));
+const FEW = scene(() => draw(
+  D.snapshotOf(FEW_ROWS, { identify: false }), "people", "imperial"));
+
+await check("too few lines to hide in publishes no chart, and says so",
+  () => {
+    // The panel stays. What changes is that it holds a sentence instead
+    // of a line chart: an absent panel and a panel about nothing that
+    // happened are indistinguishable, and only one of them is true.
+    const time = figureNamed(FEW, "Weight over time");
+    return time !== null && withTag(time, "svg").length === 0 &&
+      emptyNotesOf(time)[0] === SERIES_WITHHELD;
+  });
+
+await check("the withheld series names no count and no repeat submitter",
+  () => {
+    const time = figureNamed(FEW, "Weight over time");
+    return !/\d/.test(time.textContent) && !/@/.test(time.textContent);
+  });
+
+await check("a series left out unasked is silent, not withheld", () =>
+  // The other kind of null. The keyholder who never ticked the box is
+  // not owed an explanation of a floor that was never reached, and a
+  // sentence there would be the page apologizing for a choice.
+  figureNamed(draw(D.snapshotOf(FEW_ROWS,
+    { identify: false, series: false }), "people", "imperial"),
+  "Weight over time") === null);
+
+await check("the keyholder's own view of the same rows draws the lines",
+  () => {
+    const own = draw(
+      D.snapshotOf(FEW_ROWS, { identify: true }), "people", "imperial");
+    const time = figureNamed(own, "Weight over time");
+    return withTag(time, "polyline").length === 3 &&
+      !own.textContent.includes("Too few people");
+  });
 
 await check("the published histogram is coarser than the keyholder's own",
   () => withClass(figureNamed(PUBLIC_PEOPLE, "Weight"), "chart-bar").length
     === 2 &&
     withClass(figureNamed(KEY_PEOPLE, "Weight"), "chart-bar").length === 5);
 
-/* Six people in six countries. Every cell is one person, the pooled
-   bucket cannot save it, and suppressCounts publishes nothing. */
+/* Six people in six countries, spread across all four roles. Every cell
+   is one or two people, the pooled bucket cannot save either breakdown,
+   and suppressCounts publishes nothing for them. Gender is left uniform
+   on purpose: one cell of six clears the floor, so the same scenario
+   shows a breakdown that survives beside two that do not. */
 const SCATTERED = D.snapshotOf(BODIES.slice(0, 6).map((body, index) =>
   entry(Object.assign({
     id: 40 + index, telegram: "far" + index, accountId: "acct-far" + index,
     country: ["US", "GB", "CA", "DE", "JP", "AU"][index],
+    roles: [["feedee"], ["feedee"], ["feeder"], ["feeder"], ["gainer"],
+      ["admirer"]][index],
   }, body))), { identify: false });
 const SUPPRESSED = scene(() => draw(SCATTERED, "people", "imperial"));
 
-await check("a breakdown suppressed to nothing draws a chart with no bars",
+await check("a breakdown suppressed to nothing says so instead of drawing",
   () => {
+    // A bar chart with no bars in it is a heading over a blank region,
+    // which is #180 exactly: the floor working and the page unable to
+    // say so, so a member reads protection as a fault.
     const country = figureNamed(SUPPRESSED, "Country");
-    return withTag(country, "svg").length === 1 &&
-      withClass(country, "chart-bar").length === 0 &&
+    return withTag(country, "svg").length === 0 &&
+      emptyNotesOf(country)[0] === WITHHELD &&
       withClass(figureNamed(SUPPRESSED, "Gender"), "chart-bar").length === 1;
   });
+
+await check("a suppressed breakdown's caption goes with its chart", () => {
+  // "Multi-select, so these do not add up" over a panel holding nothing
+  // describes a drawing that is not there - the same rule the band
+  // caption obeys, and the roles panel is where it shows, because it is
+  // the only breakdown carrying a caption on every corpus.
+  const roles = figureNamed(SUPPRESSED, "Feedism affiliations");
+  return hintOf(roles) === null && emptyNotesOf(roles)[0] === WITHHELD &&
+    hintOf(figureNamed(KEY_PEOPLE, "Feedism affiliations")) !== null;
+});
+
+/*
+ * Five people spread over three 20 lb bands, none of which holds five.
+ * suppressBins merges adjacent bands until each clears the floor, so all
+ * three become one - and drawn, that is a single bar filling the whole
+ * chart area under a caption still promising 20 lb bands.
+ */
+const ONE_BIN_ROWS = BODIES.slice(0, 5).map((body, index) =>
+  entry(Object.assign({
+    id: 70 + index, telegram: "band" + index, accountId: "acct-band" + index,
+  }, body)));
+const COLLAPSED = scene(() => draw(
+  D.snapshotOf(ONE_BIN_ROWS, { identify: false }), "people", "imperial"));
+
+await check("a histogram collapsed to one band is not drawn as one bar",
+  () => {
+    const weight = figureNamed(COLLAPSED, "Weight");
+    return withTag(weight, "svg").length === 0 &&
+      emptyNotesOf(weight)[0] === ONE_BAND;
+  });
+
+await check("the band caption goes with the bar it was describing", () =>
+  // "in 20 lb bands" over a picture that has no bands is the page
+  // describing something it did not draw, which is the half of #180
+  // that survives even if the bar is kept.
+  hintOf(figureNamed(COLLAPSED, "Weight")) === null &&
+  hintOf(figureNamed(COLLAPSED, "Height")) === null);
+
+await check("the same collapse on the keyholder's own view still draws",
+  () => {
+    // The instrument has no floor, so nothing merged and there is a real
+    // distribution to show. The sentence is about the published
+    // document, and the published document is the only place it appears.
+    const own = draw(
+      D.snapshotOf(ONE_BIN_ROWS, { identify: true }), "people", "imperial");
+    const weight = figureNamed(own, "Weight");
+    return withClass(weight, "chart-bar").length === 3 &&
+      hintOf(weight) === "in 20 lb bands" &&
+      !own.textContent.includes("Everybody here");
+  });
+
+/* Five people, two of whom recorded a weight. The bins hold two between
+   them, which is under the floor, so suppressBins publishes none at all
+   - and "No weights recorded." is then a false sentence as well as an
+   unhelpful one. */
+const THIN_ROWS = ONE_BIN_ROWS.map((row, index) => index < 3
+  ? Object.assign({}, row, { kg: null, lb: null })
+  : row);
+const THIN = scene(() => draw(
+  D.snapshotOf(THIN_ROWS, { identify: false }), "people", "imperial"));
+
+await check("a distribution suppressed to nothing is not called unrecorded",
+  () => emptyNotesOf(figureNamed(THIN, "Weight"))[0] === WITHHELD &&
+    // And its band caption goes too, for the same reason the collapsed
+    // one's does - plus the caption is where the digit would be.
+    hintOf(figureNamed(THIN, "Weight")) === null);
+
+await check("the keyholder still sees the two weights that were recorded",
+  () => {
+    // The floor is what emptied this panel, not the data. Reading the
+    // same rows without one draws them, which is the evidence that "No
+    // weights recorded." would have been a false sentence rather than
+    // an unhelpful one.
+    const own = draw(
+      D.snapshotOf(THIN_ROWS, { identify: true }), "people", "imperial");
+    return withClass(figureNamed(own, "Weight"), "chart-bar").length > 0;
+  });
+
+/*
+ * THE ARM THAT KEEPS THE INSTRUMENT AN INSTRUMENT - #73's ruling.
+ *
+ * admin.html draws `snapshotOf(entries, { identify: true })` and nothing
+ * else, so no sentence about a floor may reach it. This is checked at
+ * the rule rather than at the call site: every scenario the keyholder's
+ * own view produces is swept for all three sentences at once, so making
+ * snapshotOf set the withheld flag under `identify` - or making a panel
+ * say "too few" without consulting the document - reddens THIS line
+ * rather than passing because two functions happened to be called in
+ * the right places.
+ */
+/*
+ * THE WALL, READ OFF WHAT WAS DRAWN. Every panel a floored document
+ * replaced with a sentence is swept for a digit, in the rendered text
+ * rather than in the constant - so a sentence rewritten to name the
+ * count, the cell size or how close it came to the floor reddens here
+ * even if the arms above were updated to match it. That is the whole
+ * reason these panels exist: publishing the number in prose would undo
+ * the floor that removed it from the figures.
+ */
+const REPLACED_PANELS = [
+  figureNamed(FEW, "Weight over time"),
+  figureNamed(SUPPRESSED, "Country"),
+  figureNamed(COLLAPSED, "Weight"),
+  figureNamed(COLLAPSED, "Height"),
+  figureNamed(THIN, "Weight"),
+];
+
+await check("nothing a suppression sentence replaced carries a digit", () =>
+  REPLACED_PANELS.length === 5 &&
+  REPLACED_PANELS.every((panel) => panel !== null &&
+    emptyNotesOf(panel).length === 1 && !/\d/.test(panel.textContent)));
+
+const IDENTIFIED_VIEWS = [KEY_PEOPLE, EMPTY, WIDE, CROWDED, FLAT, EDGES]
+  .concat([FEW_ROWS, ONE_BIN_ROWS, THIN_ROWS, BASE.slice(0, 3)].map((rows) =>
+    scene(() => draw(
+      D.snapshotOf(rows, { identify: true }), "people", "imperial"))));
+
+await check("no suppression sentence reaches the identified instrument",
+  () => IDENTIFIED_VIEWS.length === 10 && IDENTIFIED_VIEWS.every(
+    (container) => [WITHHELD, SERIES_WITHHELD, ONE_BAND].every(
+      (line) => !container.textContent.includes(line))));
 
 /* Below the floor there is no breakdown at all, and saying so is the
    ordinary state of a new group rather than an error. */
@@ -1127,6 +1354,30 @@ await check("the hero paints through classes, like everything else here", () =>
   // dashboard.html's `style-src 'self'` and the hero would arrive naked.
   collect(PROGRESS, (node) => node.hasAttribute("style")).length === 0 &&
   classesOf(heroOf(PROGRESS)).includes("hero"));
+
+/*
+ * The member's own page, which is the surface all of section 10a is
+ * about. It is a separate arm rather than a repeat: dashboard.html calls
+ * renderProgress and nothing else, so a suppression sentence that
+ * reached only `render` would be invisible to every member and green in
+ * every check above.
+ */
+const PROGRESS_FEW = scene(() => drawProgress(
+  D.snapshotOf(FEW_ROWS, { identify: false }), "people", "imperial"));
+
+await check("Progress carries the same suppression sentences", () => {
+  const time = figureNamed(PROGRESS_FEW, "Weight over time");
+  return emptyNotesOf(time)[0] === SERIES_WITHHELD;
+});
+
+await check("a floored document draws the same panels on both surfaces", () =>
+  // The seam this file pins is that the split may move what comes FIRST
+  // and nothing else. Gating the sentences on the surface rather than on
+  // the document would have given Progress a panel the instrument omits,
+  // which is a widened seam wearing a bug fix's clothes.
+  JSON.stringify(captions(PROGRESS_FEW)) ===
+    JSON.stringify(captions(FEW)) &&
+  PROGRESS_FEW.children.length === FEW.children.length + 1);
 
 await check("a Progress redraw replaces the hero rather than stacking them",
   () => {
