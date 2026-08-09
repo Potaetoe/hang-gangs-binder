@@ -1388,7 +1388,223 @@ await check("a Progress redraw replaces the hero rather than stacking them",
   });
 
 /* ------------------------------------------------------------------ */
-/* 14. And nothing above threw on the way to being drawn.              */
+/* 14. #85's question card - the query engine's answers, drawn.        */
+
+/*
+ * WHY THE REAL ENGINE AND NOT A HAND-WRITTEN ANSWER. renderAnswer draws
+ * whatever apps/web/query.js hands back, and an answer literal written
+ * here would be this file's idea of that shape rather than the shape.
+ * The two files would then agree with each other and with nothing else,
+ * which is precisely how a drawing function keeps an arm for a `kind`
+ * the engine stopped emitting - and how it loses the arm for one the
+ * engine started. So every answer below comes out of the shipped module,
+ * run against the same corpus the checks above read.
+ *
+ * THE SEAM IS PINNED FOR THIS NAME TOO. Three drawing names now hang off
+ * one conditional and one freeze. A seam pinned for two of them is a
+ * seam with a hole the shape of the third, and the hole is the same one
+ * either way: a name exported under Node throws on its first `document`,
+ * and a name attached after the publish leaves the object every page
+ * holds a reference to editable for as long as the module runs.
+ */
+
+const QUERY_SOURCE = await readFile(
+  new URL("../apps/web/query.js", import.meta.url), "utf8");
+await import("data:text/javascript," + encodeURIComponent(QUERY_SOURCE) +
+  "#" + Math.random());
+const Q = globalThis.BinderQuery;
+
+/*
+ * Six people in three genders of two each: the smallest corpus where the
+ * basis itself is publishable and one split inside it is not.
+ * suppressCounts pools all three cells, the pool clears the floor, and
+ * no named cell is left to stand beside it - so the document carries an
+ * EMPTY gender breakdown rather than a suppressed one. That is the case
+ * an empty chart would report as "nobody is anything", and it is
+ * indistinguishable from a chart that never drew.
+ */
+const SPARSE = ["male", "male", "female", "female", "nonbinary", "nonbinary"]
+  .map((gender, index) => entry(Object.assign({
+    id: 40 + index, telegram: "sparse" + index,
+    accountId: "acct-sparse-" + index, gender,
+  }, BODIES[index])));
+
+const ASKABLE = Q.publishedSource(PUBLISHED);
+const ASKABLE_SPARSE = Q.publishedSource(
+  D.snapshotOf(SPARSE, { identify: false }));
+const ASKABLE_TINY = Q.publishedSource(
+  D.snapshotOf(BASE.slice(0, 3), { identify: false }));
+
+const asked = (source, query) => {
+  const container = makeNode("div", HTML_NS);
+  D.renderAnswer(container, Q.run(source, query), Q.describe(query));
+  return container;
+};
+
+await check("loaded with no document the module exports no answer arm", () =>
+  HEADLESS.renderAnswer === undefined);
+
+await check("loaded with a document the module exports the answer arm", () =>
+  typeof D.renderAnswer === "function");
+
+await check("the answer arm is frozen onto the same published object", () => {
+  const own = Object.getOwnPropertyDescriptor(D, "renderAnswer");
+  return own.writable === false && own.configurable === false;
+});
+
+await check("a categorical answer is one captioned figure with a bar per cell",
+  () => {
+    const query = { basis: "people", split: "gender" };
+    const cells = Q.run(ASKABLE, query).cells;
+    const container = asked(ASKABLE, query);
+    const drawn = figures(container);
+    return container.children.length === 1 && drawn.length === 1 &&
+      captionOf(drawn[0]) === "How many people, by gender" &&
+      withClass(drawn[0], "chart-bar").length === cells.length &&
+      JSON.stringify(textsOf(withClass(drawn[0], "chart-label"))) ===
+        JSON.stringify(cells.map((cell) => cell.label));
+  });
+
+await check("a widened histogram draws the engine's bands, not the document's",
+  () => {
+    // The check that says renderAnswer draws the ANSWER. Reading the
+    // snapshot's own bins instead would look identical at widen 1 and
+    // would quietly ignore every coarsening a member asked for.
+    const plain = { basis: "people", split: "weight", units: "metric" };
+    const wide = Object.assign({ widen: 3 }, plain);
+    const narrow = Q.run(ASKABLE, plain);
+    const combined = Q.run(ASKABLE, wide);
+    return combined.cells.length < narrow.cells.length &&
+      withClass(asked(ASKABLE, wide), "chart-bar").length ===
+        combined.cells.length &&
+      withClass(asked(ASKABLE, plain), "chart-bar").length ===
+        narrow.cells.length;
+  });
+
+await check("a merged answer draws the group under the name it was given",
+  () => {
+    const query = { basis: "people", split: "country",
+      merge: [{ as: "Anglosphere", labels: ["US", "GB"] }] };
+    const labels = textsOf(withClass(asked(ASKABLE, query), "chart-label"));
+    return labels.includes("Anglosphere") &&
+      !labels.includes("US") && !labels.includes("GB");
+  });
+
+await check("a middle is one stat cell carrying its unit, not a chart", () => {
+  const query = { basis: "people", split: "weight", units: "imperial",
+    measure: "median" };
+  const container = asked(ASKABLE, query);
+  const cells = withClass(container, "stat");
+  return captionOf(figures(container)[0]) ===
+      "The median weight across people (imperial)" &&
+    withClass(container, "chart-bar").length === 0 &&
+    cells.length === 1 && cells[0].children[0].textContent === "Median" &&
+    cells[0].children[1].textContent ===
+      D.statText(Q.run(ASKABLE, query).value, D.unitsFor("imperial").weight) &&
+    /lb$/.test(cells[0].children[1].textContent);
+});
+
+await check("a BMI middle is written bare, because BMI has no unit", () => {
+  // The strip beside it writes the median BMI the same way. A suffixed
+  // BMI would be a number claiming to be a weight.
+  const query = { basis: "people", split: "bmi", measure: "mean" };
+  const value = Q.run(ASKABLE, query).value;
+  const cells = withClass(asked(ASKABLE, query), "stat");
+  return typeof value === "number" &&
+    cells[0].children[1].textContent === String(value) &&
+    !/[a-z]/.test(cells[0].children[1].textContent);
+});
+
+await check("an answer over a basis below the floor says so rather than blank",
+  () => {
+    // Three people. The engine reports available:false because basisOf
+    // published no breakdown at all, and the page's whole answer has to
+    // be the sentence - a figure with nothing in it reads as broken.
+    const container = asked(ASKABLE_TINY, { basis: "people", split: "gender" });
+    const drawn = figures(container)[0];
+    return Q.run(ASKABLE_TINY, { basis: "people", split: "gender" })
+        .available === false &&
+      withClass(container, "chart-bar").length === 0 &&
+      emptyNotesOf(drawn).length === 1 &&
+      /too few entries here/.test(emptyNotesOf(drawn)[0]) &&
+      emptyNotesOf(drawn)[0].includes("at least 5");
+  });
+
+await check("an answer the floor emptied says so, and names the order", () => {
+  // available:true and no cells: the basis was publishable and this one
+  // split inside it was not. The sentence has to say that the floor ran
+  // BEFORE any combining, or a member reads the empty answer as an
+  // invitation to widen their way past it.
+  const query = { basis: "people", split: "gender" };
+  const result = Q.run(ASKABLE_SPARSE, query);
+  const drawn = figures(asked(ASKABLE_SPARSE, query))[0];
+  return result.available === true && result.cells.length === 0 &&
+    withClass(drawn, "chart-bar").length === 0 &&
+    emptyNotesOf(drawn).length === 1 &&
+    /before anything here is combined/.test(emptyNotesOf(drawn)[0]);
+});
+
+await check("the same document still answers a split the floor did not empty",
+  () =>
+    // The other half of the check above: an empty gender breakdown is a
+    // fact about gender in that document, not a page that stopped
+    // drawing.
+    withClass(asked(ASKABLE_SPARSE, { basis: "people", split: "country" }),
+      "chart-bar").length === 1);
+
+await check("every published answer carries the floor in its own words", () =>
+  ["gender", "country", "roles", "bmi", "weight", "height"].every((split) => {
+    const hint = hintOf(figures(asked(ASKABLE, { basis: "people", split }))[0]);
+    return hint !== null && hint.includes("smaller than 5") &&
+      hint.includes("only adds them up");
+  }));
+
+await check("the floor sentence is the source's, not a number in this file",
+  () => {
+    // The one arm that would survive MIN_CELL moving and still be wrong.
+    // renderAnswer reads answer.floor, which run() reads off the source,
+    // which publishedSource reads off dashboard.js - so a floor of five
+    // in the sentence is five because the module says so.
+    const hint = hintOf(figures(asked(ASKABLE, { basis: "people",
+      split: "gender" }))[0]);
+    return hint.includes("smaller than " + D.MIN_CELL);
+  });
+
+await check("an answer redraw replaces the figure rather than stacking them",
+  () => {
+    const container = makeNode("div", HTML_NS);
+    const first = { basis: "people", split: "gender" };
+    const second = { basis: "entries", split: "country" };
+    D.renderAnswer(container, Q.run(ASKABLE, first), Q.describe(first));
+    D.renderAnswer(container, Q.run(ASKABLE, second), Q.describe(second));
+    return container.children.length === 1 &&
+      captionOf(figures(container)[0]) === "How many entries, by country";
+  });
+
+await check("nothing an answer draws paints itself or carries a style", () =>
+  // The same two contracts every panel above obeys: dashboard.html's
+  // `style-src 'self'` would drop a style attribute on the floor, and a
+  // shape that fills itself cannot be themed.
+  ["gender", "weight", "bmi"].every((split) => {
+    const container = asked(ASKABLE, { basis: "people", split });
+    return collect(container, (node) => node.hasAttribute("style"))
+        .length === 0 &&
+      collect(container, (node) => node.hasAttribute("fill") ||
+        node.hasAttribute("stroke")).length === 0;
+  }));
+
+await check("an answer names no member, on any split this engine offers", () =>
+  // The published document carries no handles at all, and the question
+  // card cannot conjure one - but this is the assertion that would fail
+  // if a later slice pointed the card at a keyholder snapshot, which has
+  // the same shape and none of the properties.
+  Object.keys(Q.SPLITS).every((split) =>
+    ["people", "entries"].every((basis) =>
+      !/@|member\d|acct-/.test(
+        asked(ASKABLE, { basis, split }).textContent))));
+
+/* ------------------------------------------------------------------ */
+/* 15. And nothing above threw on the way to being drawn.              */
 
 /*
  * Last, because it is about the file rather than about the module: every
