@@ -324,6 +324,46 @@
 
    
    
+
+  
+
+  const IDLE_WINDOW = Object.freeze({
+    idleMs: 10 * 60 * 1000,
+    warnMs: 2 * 60 * 1000,
+  });
+
+  
+
+  function idleVerdict(lastInteraction, now, limits) {
+    const bounds = limits || IDLE_WINDOW;
+    const idle = now - lastInteraction;
+    if (!Number.isFinite(lastInteraction) || !Number.isFinite(now) ||
+        !(idle >= 0)) {
+      return { state: "expired", msLeft: 0 };
+    }
+    const msLeft = bounds.idleMs - idle;
+    if (msLeft <= 0) return { state: "expired", msLeft: 0 };
+    return {
+      state: msLeft <= bounds.warnMs ? "warning" : "active",
+      msLeft: msLeft,
+    };
+  }
+
+  
+
+  function idleNotice(verdict) {
+    if (!verdict || verdict.state !== "warning") return "";
+    const seconds = Math.ceil(verdict.msLeft / 1000);
+    const rest = seconds % 60;
+    return "Nobody has touched this page for a while. It is the only " +
+      "place the submissions exist in the clear, so it will clear itself " +
+      "and sign you out in " + Math.floor(seconds / 60) + ":" +
+      (rest < 10 ? "0" : "") + rest +
+      ". Any key, click or scroll keeps it open.";
+  }
+
+   
+   
    
    
   root.BinderAdmin = Object.freeze({
@@ -342,6 +382,9 @@
     refusalFor: refusalFor,
     addedNotice: addedNotice,
     removalStep: removalStep,
+    IDLE_WINDOW: IDLE_WINDOW,
+    idleVerdict: idleVerdict,
+    idleNotice: idleNotice,
   });
 
    
@@ -614,6 +657,83 @@
           "you have.",
         removed ? null : "bad");
     });
+
+     
+    
+
+
+    
+
+    const INTERACTION = ["pointerdown", "keydown", "wheel", "touchstart"];
+
+    
+
+    const TICK_MS = 1000;
+
+    let lastInteraction = Date.now();
+    let warned = false;
+    let ticker = null;
+
+    function hideWarning() {
+      if (!warned) return;
+      warned = false;
+      show($("idle-warning"), false);
+    }
+
+     
+     
+     
+    function markInteraction() {
+      lastInteraction = Date.now();
+      hideWarning();
+    }
+
+    for (const type of INTERACTION) {
+      document.addEventListener(type, markInteraction, {
+        capture: true,
+        passive: true,
+      });
+    }
+
+    
+
+    function endForIdle() {
+      root.clearInterval(ticker);
+      $("keyfile").value = "";
+      $("keyfile-picker").value = "";
+      reset();
+      root.BinderSignOut.signOut();
+    }
+
+    function checkAttention() {
+      const verdict = idleVerdict(lastInteraction, Date.now());
+      if (verdict.state === "expired") {
+        endForIdle();
+        return;
+      }
+      if (verdict.state !== "warning") {
+        hideWarning();
+        return;
+      }
+      $("idle-countdown").textContent = idleNotice(verdict);
+      if (warned) return;
+      warned = true;
+      show($("idle-warning"), true);
+       
+       
+       
+       
+       
+      $("idle-stay").focus();
+    }
+
+    ticker = root.setInterval(checkAttention, TICK_MS);
+
+     
+     
+     
+     
+    $("idle-stay").addEventListener("click", markInteraction);
 
     
 

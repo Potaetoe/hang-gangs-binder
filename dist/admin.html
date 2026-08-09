@@ -91,6 +91,39 @@
 
 <main class="stack">
 
+  <!--
+    The attention warning (#91). First in the column because it is the
+    one card here that has to be found rather than come across, and it
+    is built out of the components this page already wears - no new
+    visual grammar, and nothing added to theme.css.
+
+    NO LIVE REGION, DELIBERATELY. The countdown changes every second, and
+    an assertive region announcing each one is a barrage rather than a
+    warning. admin.js moves focus to the button instead: that announces
+    the card once, reads the countdown through aria-describedby, and puts
+    the way out under the keyboard of whoever was not using a mouse.
+
+    NO LABEL CHIP EITHER, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.
+    A `caution` chip is the component this card would otherwise wear, but
+    every chip's words are registered in LABELS in tools/check_web.py, and
+    an unregistered one fails the gate by design. The sentence below is
+    the warning in full - it names what this page holds and what is about
+    to happen to it - so the chip would repeat in two words what the card
+    already says at length, and the card arrives from nothing at the top
+    of the page and takes the keyboard, which is louder than a chip.
+
+    The button is `primary` because staying is what the reader almost
+    always wants, and the alternative is not a control at all - it is
+    doing nothing, which is what this card exists to describe.
+  -->
+  <div class="card narrow" id="idle-warning" hidden>
+    <p id="idle-countdown"></p>
+    <div class="row">
+      <button type="button" id="idle-stay" class="primary"
+              aria-describedby="idle-countdown">Stay on this page</button>
+    </div>
+  </div>
+
   <div class="card narrow" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
