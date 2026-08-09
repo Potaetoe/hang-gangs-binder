@@ -45,7 +45,14 @@ completes. That is why the Worker deploys before the site.
       string rather than for a Telegram user.)
 - [ ] **No open `enhancement` issues remain** — owner decision
       2026-08-08: every enhancement lands before the cutover. Check:
-      `gh issue list --label enhancement --state open`.
+      `gh issue list --label enhancement --state open`. Work labeled
+      `refactor` sits outside this gate by design (owner ruling
+      2026-08-09, on #74): it is shape work on code that already
+      ships rather than unshipped capability, and it is scheduled for
+      after the cutover deliberately — so #74 being open during the
+      sitting is the intent and not an unticked box. The exclusion is
+      that one label and nothing wider; the command above is still the
+      whole test.
 - [ ] **Back up production `submissions` immediately before the
       sitting** — `OPERATIONS.md`, "Backing up the submissions" — and
       open the file to confirm it holds `INSERT` rows. Step 4 is only
