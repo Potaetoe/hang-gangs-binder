@@ -54,8 +54,8 @@ date, or on a merge count, would block work the failing slice cannot
 unblock: the batch needs port 8124 (server/wrangler.toml pins the
 development origins to it) and it needs secrets, so it is owner-only by
 capability rather than by preference. `--report` states how far behind
-the record is and what is due; the exit code stays with the four
-structural rules.
+the record is and what is due; the exit code stays with the structural
+rules and never with the calendar.
 """
 
 import os
@@ -131,23 +131,51 @@ UNCORROBORATED_CEILING = 3
 # turns a cheap redeploy into ceremony.
 CADENCE_THRESHOLD = 15
 
-# The rehearsal every performed row below stands on: a sitting against
-# the deployed development Worker, with the pages served from this head.
-# The date and the head live here once rather than in every row, so the
-# next rehearsal is recorded in one place instead of being copied into
-# as many rows as it discharges.
+# The runs every performed row below stands on, oldest first. Each is a
+# sitting against the deployed development Worker with the pages served
+# from that head. The date and the head live here once rather than in
+# every row, so a run is recorded in one place instead of being copied
+# into as many rows as it discharges.
+#
+# There are two because they reached two different halves. REHEARSAL is
+# what a session holding no secret can drive: the origin gate, the
+# refusals, a forged token. SITTING is the owner at the keyboard with
+# the development sign-in secret and the private key file, which is the
+# only way to reach anything behind a session - server/wrangler.toml
+# pins the development origins to port 8124 and the values are write-
+# only once set, so this half is owner-only by capability.
+#
+# A row cites the run that produced it and is never re-dated to the
+# newer one. Staleness is derived per row against that row's own head,
+# so moving a row forward to the latest run would age its evidence
+# backwards and hide exactly the movement the STALE mark exists to
+# show.
+#
+# RUNS is read in the order written, and that order is the whole
+# statement of chronology: both of these carry the same date, so
+# nothing sorted on a date can tell them apart and max() would answer
+# with whichever the ledger lists first. Two rules hold the declaration
+# to something - a performed row must cite a run named here, and a run
+# named here must be cited by a performed row - so a head cannot appear
+# that the report has nowhere to put, and a run cannot outlive the last
+# row standing on it while still dating the cadence line.
 #
 # The head is the tree the sitting drove, which is not the same as the
 # build the deployed Worker was running - a Worker version is not
 # knowable from this repository at all. That gap is one more reason a
 # performed row ages into STALE rather than standing as a permanent
 # pass, and the reason each `how` states what came back rather than only
-# which step produced it: the step numbers belong to the rehearsal
+# which step produced it: the step numbers belong to a rehearsal
 # script, which is written to be thrown away once its steps become
 # UAT.md's live arm, and evidence that dies with its pointer is evidence
 # about nothing.
 REHEARSAL = {"date": "2026-08-09",
              "sha": "eca87b48142f916ac4c8469f608e6ad945515840"}
+
+SITTING = {"date": "2026-08-09",
+           "sha": "9e78ea9d11c883f10da563ed4b99eb7c3ba1e024"}
+
+RUNS = (REHEARSAL, SITTING)
 
 # The ledger. `covers` names the files a row's evidence stands on, so a
 # performed row goes stale when they move - see stale() for why that is
@@ -160,10 +188,12 @@ REHEARSAL = {"date": "2026-08-09",
 # each, never one row wearing a status that averages them.
 LEDGER = [
     # ---- routes: the surface that is inert until something is
-    # deployed. The rehearsal reached the routes that need no credential
-    # and no secret; everything behind a session is still debt, and the
-    # split between the two is #157's headline stated as data rather
-    # than as a sentence.
+    # deployed. Between them the two runs reach every route a public
+    # reader or a development session can drive. What stays debt is the
+    # doors that answer only to the break-glass token, the ones that
+    # destroy something and are deliberately hand-driven, and the
+    # content routes - whose claims are written against what a run can
+    # actually observe, because nothing in apps/web reads what they set.
     {
         "id": "OPTIONS *",
         "surface": "route",
@@ -201,7 +231,15 @@ LEDGER = [
         "surface": "route",
         "claim": "a development sign-in mints a real session",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="the route minted sessions against the deployed "
+                "development Worker in both shapes the sitting needed, "
+                "an admin subject and a member subject. Each was then "
+                "spent on other routes rather than only inspected, "
+                "which is the difference between a token being issued "
+                "and a session existing"),
     },
     {
         "id": "POST /auth/dev, a wrong secret",
@@ -223,7 +261,15 @@ LEDGER = [
         "claim": "signing out ends the row server-side, not only the "
                  "local copy",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="after Sign out the same token drew 401 from /me, "
+                "/export and /membership. Three routes rather than "
+                "one, because a page that has merely dropped its local "
+                "copy looks identical from the reader's side; only a "
+                "route that will not see the row again says the row is "
+                "gone"),
     },
     {
         "id": "GET /me",
@@ -231,7 +277,20 @@ LEDGER = [
         "claim": "the member panel reads its effective and superseded "
                  "counts back from stored rows",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="submit.html's account card painted from a live call - "
+                "Entries stored, and no \"Your Telegram id\" line for a "
+                "development session, which has none - and after a "
+                "correction landed the count held instead of going one "
+                "higher. The held count is the superseded half's "
+                "evidence rather than a second reading: the figure is "
+                "total minus superseded, so it is only right if both "
+                "were counted off real rows. No page paints the "
+                "superseded count itself, so that half was exercised "
+                "through the number depending on it and not read "
+                "directly"),
     },
     {
         "id": "GET /my-entries",
@@ -250,7 +309,24 @@ LEDGER = [
         "claim": "a sealed row reaches D1, and a correction supersedes "
                  "exactly one entry",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="rows sealed in the browser reached the deployed "
+                "database and came back openable under the "
+                "deployment's key, while rows pushed in beside them "
+                "carrying placeholder ciphertext did not - which is "
+                "what tells a row that made the whole round trip from "
+                "one that was seeded. A correction then stored 200 and "
+                "replaced exactly one row: the member's count held "
+                "rather than rising, a second correction of the same "
+                "row drew 409 in the wording the page shows, and the "
+                "fan-in query returned nothing before or after. The "
+                "refusals answer identically where they must - a "
+                "foreign entry, an absent one and a seeded one all 404 "
+                "byte for byte, so the route is not a way to test "
+                "which ids exist - and a malformed pointer draws 400 "
+                "with no coercion of \"1\" to 1"),
     },
     {
         "id": "GET /export",
@@ -261,12 +337,43 @@ LEDGER = [
         "status": "never",
     },
     {
+        "id": "GET /export, an admin session in a browser",
+        "surface": "route",
+        "claim": "the whole ciphertext corpus reaches the keyholder's "
+                 "browser, and a row the key cannot open is named "
+                 "rather than dropped",
+        "covers": ["server/worker.js", "apps/web/admin.js"],
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="admin.html fetched the export over an admin session "
+                "and opened seven real rows; two rows seeded with "
+                "placeholder ciphertext came back listed by id under "
+                "the rows that would not open, rather than silently "
+                "skipped - the ordinary cause of an unopenable row is "
+                "a rotated key, and hiding those rows reads as data "
+                "loss. The break-glass credential is the row above and "
+                "was not driven, so this row carries the browser half "
+                "only"),
+    },
+    {
         "id": "POST /snapshot",
         "surface": "route",
         "claim": "publishing writes a document carrying no handles and "
                  "no individual rows",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="the document was read as raw bytes before it was "
+                "sent, which is the only order in which this claim can "
+                "be checked at all: counts, medians and bins, no "
+                "handles, no individual rows and no ids, identified "
+                "false, and the series labelled generically. The "
+                "suppression floor was watched withholding whole "
+                "breakdowns rather than publishing stubs - gender and "
+                "country came back as empty lists - and a document "
+                "that merely omits nothing could not have shown that"),
     },
     {
         "id": "GET /snapshot",
@@ -275,7 +382,16 @@ LEDGER = [
                  "which is the half a refusal cannot show: a route that "
                  "refuses everybody refuses a signed-out reader too",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="a member session read the published document back on "
+                "dashboard.html - the combined-weight hero, an entries "
+                "and people line agreeing with what had been "
+                "submitted, a freshness line and the distributions. "
+                "The signed-out refusal below is what this pairs with: "
+                "a Worker refusing everybody would have answered that "
+                "one in exactly the same bytes"),
     },
     {
         "id": "GET /snapshot, a signed-out reader",
@@ -324,19 +440,38 @@ LEDGER = [
                 "for, and it is what gating this route by accident "
                 "would look like"),
     },
+    # These two claims are written against what a run can observe, and
+    # that is narrower than what the routes are for. Nothing in
+    # apps/web fetches /content: site_content appears in
+    # server/worker.js and in its test file and nowhere a browser
+    # loads. So an override reaching a page, and the shipped copy
+    # coming back when it is unset, are not claims any sitting can
+    # establish - there is no consumer, and no fallback to watch.
+    #
+    # They stay debt rather than moving to the permanent list, and the
+    # distinction is the point. First-contact means production is the
+    # first chance; this is a capability with no client, which
+    # production does not fix either. A `never` row goes on being
+    # counted as owed, which is the correct pressure - the answer is a
+    # consumer or a decision to stop shipping the routes, not a status
+    # that excuses them.
     {
         "id": "POST /content",
         "surface": "route",
-        "claim": "an admin override reaches the page that reads that "
-                 "name",
+        "claim": "an override is stored and comes back on the "
+                 "credential-free read, which is as far as this route "
+                 "can be followed while no page in apps/web asks for "
+                 "one",
         "covers": ["server/worker.js"],
         "status": "never",
     },
     {
         "id": "DELETE /content/{}",
         "surface": "route",
-        "claim": "unsetting an override brings the shipped copy back "
-                 "intact, rather than publishing a blank",
+        "claim": "unsetting a name takes it out of that same read; "
+                 "that the shipped copy comes back in its place is "
+                 "unobservable for the reason above, there being no "
+                 "page that prefers an override to what it ships with",
         "covers": ["server/worker.js"],
         "status": "never",
     },
@@ -346,7 +481,17 @@ LEDGER = [
         "claim": "the listing separates membership from malformed and "
                  "never mixes the two",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="the listing carried the one row a development session "
+                "may write, and then, with rows the interface would "
+                "never allow seeded straight into the table, it "
+                "carried the two well-formed admin rows under "
+                "membership and the non-hex one under malformed, "
+                "alone. The seeding is what makes this a check: "
+                "wrangler validates nothing, and that door is the "
+                "whole reason the malformed list exists"),
     },
     {
         "id": "POST /membership",
@@ -354,7 +499,17 @@ LEDGER = [
         "claim": "a development session may not write an admin row, "
                  "and is refused in the same bytes as everything else",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="a development session writing an admin row drew 401 "
+                "in the same bytes as every other refusal on this "
+                "Worker, so the refusal teaches a caller nothing about "
+                "what the route would have said next. The one role it "
+                "may write stored 200 and then appeared in the "
+                "listing - the allow arm, without which a route that "
+                "refused everything would answer the first exactly the "
+                "same way"),
     },
     {
         "id": "DELETE /membership/{}/{}",
@@ -364,19 +519,65 @@ LEDGER = [
         "covers": ["server/worker.js"],
         "status": "never",
     },
+    {
+        "id": "DELETE /membership/{}/{}, a development session",
+        "surface": "route",
+        "claim": "a development session may not remove an admin row "
+                 "either, and is refused in the bytes it is refused "
+                 "for writing one in",
+        "covers": ["server/worker.js"],
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="DELETE against an admin row over a development "
+                "session answered 401, matching the POST refusal "
+                "above. What this route exists to guard - the last "
+                "admin row, and a row spelled in a case this Worker "
+                "cannot honor still being removable - answers only to "
+                "the break-glass token and is the row above"),
+    },
 
     # ---- pages: apps/web is copied verbatim to the published site, so
     # every page's live behavior is unexercised until it is served from
-    # somewhere a Worker will answer. What the rehearsal reached here is
-    # the refusal half - a forged session token draws a real 401 from a
-    # deployed Worker, and no secret is needed to forge one. The signed-
-    # in half needs a credential and is still debt.
+    # somewhere a Worker will answer. Both halves are recorded here
+    # now. The refusal half needs no secret - a forged session token
+    # draws a real 401 from a deployed Worker - and the signed-in half
+    # needed the development sign-in secret and a person at the
+    # keyboard, which is why it waited for the second run.
     {
         "id": "index.html",
         "surface": "page",
         "claim": "the sign-in page reaches a live Worker and lands a "
                  "signed-in member on the submit page",
         "covers": ["apps/web/index.html"],
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="signed in from this page through the script it ships "
+                "against the deployed Worker, as an admin and as a "
+                "member, and the session it minted carried the reader "
+                "on to submit.html, where the form and the account "
+                "card painted. The widget is its own row on the "
+                "first-contact list below; what is discharged here is "
+                "that this page reaches a live Worker at all and that "
+                "what it mints is accepted by the next page"),
+    },
+    # The retest of the arm below starts by restarting the browser, and
+    # the reading is worth nothing without it: the operating system
+    # setting does not reach a browser that is already running, so
+    # matchMedia goes on answering false, the page paints the animation
+    # it would have painted anyway, and what looks like a pass is a
+    # pass for the wrong reason. Ten seconds, in the right order.
+    {
+        "id": "index.html, the reduced-motion arm",
+        "surface": "page",
+        "claim": "a reader asking for reduced motion is given no frame "
+                 "of the closed cover at all, the stylesheet "
+                 "cancelling that animation outright rather than "
+                 "shortening it - at 0.01ms the first frame still "
+                 "paints, and the first frame is an opaque panel "
+                 "across the whole viewport",
+        "covers": ["apps/web/index.html", "apps/web/theme.css"],
         "status": "never",
     },
     {
@@ -384,7 +585,16 @@ LEDGER = [
         "surface": "page",
         "claim": "the form round-trips to a live Worker",
         "covers": ["apps/web/submit.html", "apps/web/submit.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="entries were typed into the form and sealed in the "
+                "browser, and what came back out of the export under "
+                "the deployment's key was those same values - so the "
+                "round trip closed on a real Worker rather than at the "
+                "POST, which is the most a page can tell on its own. "
+                "The account card on the same page read its count back "
+                "from the service"),
     },
     {
         "id": "submit.html, a live 401",
@@ -404,7 +614,21 @@ LEDGER = [
         "surface": "page",
         "claim": "the published figures paint from a real snapshot",
         "covers": ["apps/web/dashboard.html", "apps/web/public.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="read as a member: the combined-weight hero first, "
+                "before any chart, entries and people agreeing with "
+                "what had been submitted, a freshness line, the "
+                "distributions, and a privacy paragraph that matched "
+                "what the document actually carried. A second publish "
+                "with nothing changed drew the movement line stating "
+                "its own suppression - too few entries have moved to "
+                "say by how much - rather than a blank, a blank being "
+                "the different and false claim that nothing changed. "
+                "That the figures paint is this row. That every "
+                "suppressed cell paints legibly is not: defects were "
+                "filed against three that do not"),
     },
     {
         "id": "dashboard.html, a live 401",
@@ -434,9 +658,10 @@ LEDGER = [
                 "project's life: the key card, Fetch and decrypt, Clear "
                 "and Unpublish all painted, and no export-token box "
                 "appeared. What is behind the key card was not reached "
-                "- decrypting needs the development private key, which "
-                "is held offline - so the two key-flow rows below "
-                "carry that debt and this row does not"),
+                "at this head - decrypting needs the development "
+                "private key, which is held offline - so what the key "
+                "opens is carried by the key-flow rows below and never "
+                "by this one, whatever status those rows wear"),
     },
     {
         "id": "admin.html, a live 401",
@@ -522,7 +747,19 @@ LEDGER = [
                  "once and a later visit decrypts without another "
                  "paste, against a real export",
         "covers": ["apps/web/admin.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="the key file was picked before a single row existed, "
+                "and the page proved it cryptographically there and "
+                "then - a probe sealed to the deployment's published "
+                "key and opened again - so the expensive discovery of "
+                "holding the wrong key was available against an empty "
+                "database rather than against a corpus already "
+                "dropped. It then survived five sign-outs and a "
+                "navigation, and opened a real export with no second "
+                "paste, which is the half that a key merely accepted "
+                "cannot show"),
     },
     {
         "id": "charts painted from decrypted rows",
@@ -530,14 +767,55 @@ LEDGER = [
         "claim": "a chart is drawn from rows a live Worker returned, "
                  "rather than asserted in Node with no layout engine",
         "covers": ["apps/web/dashboard.js", "apps/web/admin.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="the first human view of that SVG: weight over time "
+                "drew a real slope for the two people carrying two "
+                "entries and a single point for the three carrying "
+                "one, and the distributions and the height panel "
+                "populated. Every assertion about this drawing until "
+                "the run was made in Node, with no layout engine and "
+                "no pixels"),
     },
+    # Two rows, because one status cannot describe both parties to the
+    # refusal. A pair of corrections fired from a console arrives at
+    # the Worker serialized, so the 409 comes from the ordinary check
+    # and says nothing at all about the index; recording that as the
+    # race arm is how a guard gets written down as raced when it has
+    # only been asked twice. The index refusing under a genuine race is
+    # held by the suite's holdInsert seam in dev/worker.test.mjs and by
+    # nothing live.
     {
         "id": "the supersede guard against real D1",
         "surface": "flow",
-        "claim": "the guarded insert and the UNIQUE index refuse a "
-                 "second correction of one entry, against a database "
-                 "rather than a hand-written stub",
+        "claim": "the guarded insert refuses a second correction of "
+                 "one entry against a database rather than a "
+                 "hand-written stub, and no entry is left with two "
+                 "current rows",
+        "covers": ["server/worker.js", "server/schema.sql"],
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="against the deployed development database, with "
+                "submissions_supersedes_unique confirmed on the table "
+                "before anything was written: a correction stored 200 "
+                "and left the member's count where it was, a second "
+                "correction of the same row drew 409 in the wording "
+                "the page shows, and the fan-in query returned no rows "
+                "before or after. Which party refused is the row "
+                "below, and it is not this one"),
+    },
+    {
+        "id": "the supersede guard against real D1, the index as the "
+              "refusing party",
+        "surface": "flow",
+        "claim": "with two corrections genuinely in flight at once the "
+                 "UNIQUE index is what refuses the second, rather than "
+                 "the ordinary check getting there first - the half "
+                 "that decides whether the guard survives a race, and "
+                 "the half a hand-driven pair cannot reach because the "
+                 "requests serialize on the way out",
         "covers": ["server/worker.js", "server/schema.sql"],
         "status": "never",
     },
@@ -557,7 +835,8 @@ LEDGER = [
                 "failed migration leaves the table with no index at "
                 "all, and the non-unique predecessor spells itself "
                 "differently. That the index REFUSES a second "
-                "correction is the row above, and it was not reached"),
+                "correction is the race row above, and neither run has "
+                "reached it"),
     },
     {
         "id": "the crypto module's real bytes in a browser",
@@ -575,6 +854,27 @@ LEDGER = [
                 "a Content-Security-Policy no published page carries, "
                 "so what round-tripped is the browser's WebCrypto and "
                 "not any shipped page's policy"),
+    },
+    {
+        "id": "query.js frozen in a browser engine",
+        "surface": "flow",
+        "claim": "the shipped bytes publish BinderQuery and the freeze "
+                 "holds under the engine that will run them, rather "
+                 "than only under Node's loader",
+        "covers": ["apps/web/query.js"],
+        "status": "performed",
+        "performed": dict(
+            SITTING,
+            how="loaded in a browser: BinderQuery published, "
+                "Object.isFrozen answering true on it, the whole "
+                "contract present, and describe() answering with its "
+                "caption. The exported-objects-are-frozen rule is "
+                "asserted everywhere else by a Node suite, and a "
+                "loader is not an engine. What this does NOT say is "
+                "that anything loads the file in the course of using "
+                "the site: no page in apps/web requests it, which is a "
+                "decision about whether it should ship yet and not "
+                "something a run can settle"),
     },
 
     # ---- first contact: permanently unreachable before production.
@@ -928,6 +1228,15 @@ def status_problems(rid, row):
             return ["ledger row %r needs an account of what actually "
                     "ran; a date alone is a claim about a calendar"
                     % rid]
+        if evidence["sha"] not in {run["sha"] for run in RUNS}:
+            return ["ledger row %r stands on a head that RUNS does not "
+                    "declare. Two runs here share a date, so the "
+                    "report reads a declared order rather than sorting "
+                    "the rows; a head outside it is evidence the query "
+                    "has nowhere to put, and the row would drop out of "
+                    "the cadence line without a word. Declare the run "
+                    "beside the others, or cite the one that produced "
+                    "this row" % rid]
         return []
 
     if status == "first-contact":
@@ -1004,6 +1313,28 @@ def spine_problems(ledger, routes, pages):
                 "publishes" % rid)
 
     return problems
+
+
+def cited_runs(ledger):
+    return {row["performed"]["sha"] for row in ledger
+            if row["status"] == "performed" and row.get("performed")}
+
+
+def run_problems(ledger):
+    """A declared run with no row standing on it.
+
+    The other direction is entry_problems', row by row: a row may only
+    cite a declared run. This one stops the declaration outliving its
+    evidence. A run whose last row has been reclassified still sets the
+    cadence line's date and the head that staleness is measured from,
+    which is a confident answer about a sitting nothing remembers.
+    """
+    return ["RUNS declares the run at %s and no performed row stands "
+            "on it. A run outliving its last row goes on dating the "
+            "cadence line and setting the head staleness is measured "
+            "against, for evidence the ledger no longer carries"
+            % run["sha"][:12]
+            for run in RUNS if run["sha"] not in cited_runs(ledger)]
 
 
 def loopback(origin):
@@ -1108,12 +1439,20 @@ def debt(ledger):
 
 
 def last_rehearsal(ledger):
-    """The most recent performed evidence, or None."""
-    dates = [row["performed"] for row in ledger
-             if row["status"] == "performed" and row.get("performed")]
-    if not dates:
-        return None
-    return max(dates, key=lambda evidence: evidence["date"])
+    """The newest run any performed row stands on, or None.
+
+    RUNS is walked backwards rather than the rows sorted by date. Two
+    runs here fall on one day, so a sort has nothing to break the tie
+    with and answers with whichever row the ledger lists first - the
+    older head, and the cadence line would then measure drift from a
+    run that is not the latest. That failure is silent and reads in the
+    reassuring direction, which is the shape this whole file is against.
+    """
+    cited = cited_runs(ledger)
+    for run in reversed(RUNS):
+        if run["sha"] in cited:
+            return run
+    return None
 
 
 def changed_since(sha, paths):
@@ -1258,6 +1597,7 @@ def problems():
     found = entry_problems(LEDGER)
     found += spine_problems(LEDGER, routes, page_names())
     found += cause_problems(LEDGER, source, blocks)
+    found += run_problems(LEDGER)
     return found
 
 
