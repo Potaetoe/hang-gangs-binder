@@ -627,7 +627,20 @@ const DB = {
              */
             const visible = bound.length
               ? rowsOf().filter((r) => matches(r, a)) : rowsOf();
-            return { results: visible.map(projectListing) };
+            /*
+             * The row cap, read off the statement for the same reason
+             * every other rule here is. Ignoring it would let a Worker
+             * that dropped the clause answer the same rows this stub
+             * already had in hand, so the arm asserting the cap would
+             * pass against no cap at all; applying a number written
+             * here instead would agree with this file rather than with
+             * what was sent. A statement with no LIMIT is unbounded,
+             * which is what D1 does with one.
+             */
+            const capped = /\bLIMIT\s+(\d+)\s*$/i.exec(trimmed);
+            const rows = capped
+              ? visible.slice(0, Number(capped[1])) : visible;
+            return { results: rows.map(projectListing) };
           }
           return { results: rowsOf().filter((r) => matches(r, a)).map(project) };
         },
@@ -746,7 +759,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 338);
+const { check, report } = suite("worker.js", 347);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -2549,25 +2562,133 @@ check("the listing and the count ask one supersede question, not two copies",
   shared ? shared[0].slice(0, 60) + "…" : "no predicate in GET /me");
 
 /*
- * An entry is a handle, a date and a flag. The key set is asserted
- * rather than the presence of three fields, so a fourth one cannot
- * arrive without somebody reading this arm and the paragraph above it -
- * which is the whole guard against ciphertext being added back for
- * convenience. The envelope is asserted the same way: no account id
- * here, because GET /me owns that fact, and no handle anywhere, because
- * this Worker holds none.
+ * An entry is a handle, a date, a flag and the sealed bytes. The key set
+ * is asserted rather than the presence of four fields, so a fifth one
+ * cannot arrive without somebody reading this arm and the paragraph
+ * above it. The envelope is asserted the same way: no account id here,
+ * because GET /me owns that fact, and no handle anywhere, because this
+ * Worker holds none.
+ *
+ * THE CIPHERTEXT ARRIVED WITH #85's DEVICE KEY AND NOT BEFORE. This arm
+ * previously asserted the opposite - that no stored blob appeared in the
+ * response at all - on the reasoning that the bytes were inert to the
+ * only caller allowed to ask for them, because nothing in the tree could
+ * open one. apps/web/memberkey.js is what changes that, and the field
+ * that was refused as gratuitous is now the whole point of the route.
+ * What has NOT changed is the reason the old arm existed: a stolen
+ * member session downloads this member's sealed history, which is why
+ * the revocation arm below is here and why the cap above it is.
  */
 const listedText = await (await myEntries(READER)).text();
 const entryKeys = [...new Set(
   listedEntries.flatMap((e) => Object.keys(e)))].sort();
 
-check("an entry is an id, a date and a flag, and the envelope adds nothing",
+check("an entry is an id, a date, a flag and the bytes, and the envelope " +
+  "adds nothing",
   JSON.stringify(entryKeys) ===
-    JSON.stringify(["id", "receivedAt", "superseded"]) &&
+    JSON.stringify(["ciphertext", "id", "receivedAt", "superseded"]) &&
   JSON.stringify(Object.keys(JSON.parse(listedText)).sort()) ===
-    JSON.stringify(["entries", "ok"]) &&
-  !stored.some((r) => listedText.includes(r.ciphertext)),
+    JSON.stringify(["entries", "ok"]),
   `${JSON.stringify(entryKeys)} in ${listedText.slice(0, 60)}…`);
+
+/*
+ * The bytes come back exactly as they were stored, which is the whole of
+ * what this route may do with them.
+ *
+ * Asserted per row against the table rather than "some ciphertext is
+ * present", because the failure that matters is not an absent field: it
+ * is a field that arrives re-encoded. This Worker holds no key and must
+ * not acquire an opinion about the format - a v1 row and a v2 row are
+ * the same opaque string to it, and a page that has to decode what the
+ * server helpfully normalised cannot open what the browser sealed.
+ */
+const mineNow = stored.filter((r) => r.account_id === FIXTURE_4242);
+const listedById = new Map(
+  entriesOf(await (await myEntries(READER)).json()).map((e) => [e.id, e]));
+
+check("every row's sealed bytes come back byte for byte as stored",
+  mineNow.length > 0 && mineNow.every((row) =>
+    listedById.has(row.id) &&
+    listedById.get(row.id).ciphertext === row.ciphertext),
+  `${listedById.size} listed against ${mineNow.length} stored`);
+
+/*
+ * And the direction that is a breach rather than a bug. The scope arm
+ * above compares ids; this one compares BYTES, because an id list can
+ * stay correct while a projection widened underneath it - the leak this
+ * route would produce is somebody else's ciphertext in somebody's
+ * response, and nothing that reads only ids can see it.
+ */
+check("no other account's bytes appear in this member's listing",
+  !listedText.includes(NOT_MINE) &&
+  stored.filter((r) => r.account_id !== FIXTURE_4242).length > 0,
+  listedText.slice(0, 60) + "…");
+
+/*
+ * One statement, not two. The account scope lives in the SQL, and a
+ * second read to fetch the bytes is exactly how it gets lost: the
+ * clause is on the first statement, the ids come back from it, and the
+ * fetch keyed on those ids looks obviously safe while being scoped by
+ * nothing. Counting the statements is what refuses that shape before
+ * anybody writes it.
+ */
+const beforeOne = executed.length;
+await myEntries(READER);
+const asked = executed.slice(beforeOne)
+  .filter((e) => e.table === "submissions");
+
+check("the bytes ride the scoped statement rather than a second read",
+  asked.length === 1 && /mine\.ciphertext/i.test(asked[0].sql) &&
+  /WHERE mine\.account_id = \?/i.test(asked[0].sql),
+  `${asked.length} statement(s): ${asked.map((e) => e.sql.slice(0, 40))}`);
+
+/*
+ * The Worker stays incapable of telling a member-sealed row from a
+ * keyholder-only one, and this is what that means operationally: bytes
+ * that are not an envelope, not base64, not anything, come back
+ * unchanged rather than being parsed, validated or skipped.
+ *
+ * It matters because the alternative is a route whose behavior depends
+ * on the contents of the column. A per-row try/catch or a shape check
+ * here would make "which of this member's rows are readable" a question
+ * answerable from the server side - and answerable, therefore, by
+ * anybody who reaches the server side. Every row this account owns is
+ * listed, openable or not; which ones open is decided in the browser
+ * that holds the key, which is the only place that can decide it.
+ */
+const GARBAGE = "not base64 at all !!!   <>&";
+stored.push({
+  id: 9100, account_id: FIXTURE_4242, ciphertext: GARBAGE,
+  received_at: new Date().toISOString(), supersedes: null,
+});
+const withGarbage = entriesOf(await (await myEntries(READER)).json());
+
+check("bytes the Worker cannot parse are listed unchanged, not dropped",
+  withGarbage.some((e) => e.id === 9100 && e.ciphertext === GARBAGE),
+  JSON.stringify(withGarbage.map((e) => e.id)));
+
+stored = stored.filter((r) => r.id !== 9100);
+
+/*
+ * A member with no rows is answered the same way as one whose rows are
+ * somebody else's: 200 and an empty list.
+ *
+ * This is the membership-oracle rule at the response level. A 404, a
+ * different message, or a count in a header would each answer "is there
+ * an account behind this session, and has it ever submitted" - and the
+ * whole point of an account id being an HMAC is that nothing outside the
+ * keyholder's browser answers that. The envelope is compared byte for
+ * byte against the shape a populated listing uses, because "an empty
+ * array" and "no entries key" are the same thing to a page and very
+ * different things to somebody counting bytes on the wire.
+ */
+const SILENT = (await (await signIn({ id: 5150 })).clone().json()).session;
+const empty = await myEntries(SILENT);
+const emptyText = await empty.clone().text();
+
+check("a member with no rows is answered 200 and an empty list",
+  empty.status === 200 && emptyText === '{"ok":true,"entries":[]}',
+  `${empty.status} ${emptyText}`);
 
 /*
  * A row written through the other door cannot take one of this member's
@@ -2608,6 +2729,101 @@ const glassAsked = executed.slice(beforeGlass)
 check("the break-glass token is refused before the table is asked anything",
   glassList.status === 401 && glassAsked.length === 0,
   `${glassList.status}, ${glassAsked.length} statement(s) against submissions`);
+
+/*
+ * The read is bounded, and the bound is in the statement.
+ *
+ * WHY A CAP AT ALL, now that the bytes travel. Before #85's device key
+ * the response was three small fields per row and its size was a
+ * non-question; now one row is up to MAX_CIPHERTEXT of base64, so a
+ * listing is the largest thing this Worker ever sends and its size is
+ * chosen by whoever has been submitting. A stolen session already
+ * downloads that member's history - the cap does not change that and is
+ * not pretending to - what it stops is one account turning one request
+ * into an unbounded transfer.
+ *
+ * READ OFF THE STATEMENT rather than written here, for the reason every
+ * other rule in this file is: a hand-written number would agree with
+ * whatever this file expected instead of with what the Worker sent, and
+ * a Worker that dropped the clause would pass. Both arms are needed
+ * because they fail to different mutations - the first to a cap that
+ * became a bound parameter, the second to a cap applied to the results
+ * after D1 had already read and sent everything, which is a cap on the
+ * wire and none at all where the cost is.
+ */
+reset();
+const HEAVY = (await (await signIn({ id: 6161 })).clone().json()).session;
+await submit(HEAVY, { ciphertext: MINE_ONE });
+const capBefore = executed.length;
+await myEntries(HEAVY);
+const capStatement = executed.slice(capBefore)
+  .find((e) => e.table === "submissions");
+const capSql = capStatement ? capStatement.sql : "";
+const capRead = /\bLIMIT\s+(\d+)\s*$/i.exec(capSql);
+const cap = capRead ? Number(capRead[1]) : 0;
+
+check("the listing statement carries a row cap, and it is a literal",
+  cap > 0 && !/LIMIT\s+\?/i.test(capSql),
+  capSql ? capSql.slice(-40) : "no statement against submissions");
+
+const capAccount = stored[0].account_id;
+while (stored.length < cap + 3) {
+  stored.push({
+    id: 20000 + stored.length, account_id: capAccount,
+    ciphertext: MINE_TWO, received_at: new Date().toISOString(),
+    supersedes: null,
+  });
+}
+const cappedRows = entriesOf(await (await myEntries(HEAVY)).json());
+
+check("an account holding more rows than the cap is answered the cap",
+  cap > 0 && stored.length > cap && cappedRows.length === cap,
+  `${cappedRows.length} of ${stored.length} row(s), cap ${cap}`);
+
+/*
+ * And nothing on the wire can move it. The route takes no parameter at
+ * all - the property every scope arm above rests on - so this asks the
+ * question from the other side: a caller who sends one anyway is
+ * answered exactly as a caller who did not.
+ */
+const withParam = await call("GET", "/my-entries?limit=99999&since=0",
+  { headers: bearer(HEAVY) });
+const paramRows = entriesOf(JSON.parse(await withParam.clone().text()));
+
+check("a limit the caller sends is not a limit",
+  withParam.status === 200 && paramRows.length === cap,
+  `${withParam.status}, ${paramRows.length} row(s) against cap ${cap}`);
+
+/*
+ * A revoked session reads no bytes back, and the capture happens BEFORE
+ * the revoke.
+ *
+ * The order is the whole test. Reading a token out of a page after Sign
+ * out proves only that the page dropped its copy, which was never in
+ * doubt; what a member pressing Sign out is buying is that a token
+ * somebody else already holds stops working - and until this slice the
+ * most that token could take was counts. Now it is the sealed history,
+ * which is the thing apps/web/memberkey.js exists to open.
+ *
+ * WHAT THIS ARM CANNOT SAY: the stub deletes a row from an array, so
+ * what is proven here is that this route resolves the caller against the
+ * session table on every call rather than trusting a token's shape.
+ * That D1 really removes the row is a live claim, and
+ * tools/check_live.py carries the row that says it is unmade.
+ */
+reset();
+const CAPTURED = (await (await signIn({ id: 7272 })).clone().json()).session;
+await submit(CAPTURED, { ciphertext: MINE_ONE });
+const beforeRevoke = await myEntries(CAPTURED);
+const beforeText = await beforeRevoke.clone().text();
+await call("DELETE", "/session", { headers: bearer(CAPTURED) });
+const afterRevoke = await myEntries(CAPTURED);
+const afterText = await afterRevoke.clone().text();
+
+check("a token captured before Sign out reads no bytes after it",
+  beforeRevoke.status === 200 && beforeText.includes(MINE_ONE) &&
+  afterRevoke.status === 401 && !afterText.includes(MINE_ONE),
+  `${beforeRevoke.status} then ${afterRevoke.status}`);
 
 /* ------------------------------------------------------------------ */
 /* Site content - the one document served without a credential (#87).  */
