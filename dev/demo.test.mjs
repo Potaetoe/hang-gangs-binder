@@ -608,28 +608,56 @@ await check("the phone size is written in CSS pixels, and desktop clears it", ()
 
 /*
  * The cross-file arm, and the one that can go red without anybody
- * touching dev/. 375 is a phone width only because apps/web says so:
- * the rail folds to a strip and the theme chips fold behind the
- * disclosure at the widest of the shipped breakpoints, and the tier
- * that stacks the stats single-file sits below 375 on purpose. A later
- * slice moving either past 375 leaves this console framing a desktop
- * rail, or the narrowest tier no phone reaches - and UAT A1.10 would be
- * walked against a screen the product does not have. The breakpoints
- * are READ out of the shipped stylesheet for the same reason the page
- * list is read out of apps/web: a copy of them here is a copy that will
- * disagree.
+ * touching dev/.
+ *
+ * 375 is a phone width only because apps/web says so. What UAT A1.10
+ * asks the owner to see - the rail as a strip, the theme chips behind a
+ * disclosure - is one media block in the shipped stylesheet, and the
+ * frame is only worth looking at if that block fires inside it. A later
+ * slice moving that breakpoint below 375 leaves this console framing a
+ * desktop rail at phone width: a screen the product does not have,
+ * shown as if it were the product.
+ *
+ * The breakpoint is READ out of theme.css rather than written down
+ * here, for the same reason the page list is read out of apps/web. It
+ * is found by the rule that folds the chips rather than by being the
+ * largest, because "the largest max-width in the file" is a fact about
+ * ordering that any unrelated block can change - a first attempt at
+ * this check compared the largest and the smallest breakpoints, and
+ * moving the rail-folding block from 64rem to 20rem left it green, with
+ * an unrelated 52rem block satisfying it.
  */
 const themeCss = await readFile(HERE("../apps/web/theme.css"), "utf8");
 const ROOT_PX = 16;
-const breakpoints = [...themeCss
-  .matchAll(/@media\s*\(max-width:\s*([\d.]+)rem\s*\)/g)]
-  .map((one) => Number(one[1]) * ROOT_PX);
 
-await check("the phone frame sits inside the band apps/web calls a phone", () => {
+function widthBlocks(css) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const blocks = [];
+  const OPEN = /@media\s*\(max-width:\s*([\d.]+)rem\s*\)\s*\{/g;
+  let found;
+  while ((found = OPEN.exec(clean)) !== null) {
+    let depth = 1;
+    let index = OPEN.lastIndex;
+    while (index < clean.length && depth > 0) {
+      if (clean[index] === "{") depth++;
+      else if (clean[index] === "}") depth--;
+      index++;
+    }
+    blocks.push({
+      px: Number(found[1]) * ROOT_PX,
+      body: clean.slice(OPEN.lastIndex, index - 1),
+    });
+  }
+  return blocks;
+}
+
+const foldingBlocks = widthBlocks(themeCss)
+  .filter((one) => /\.theme-disclosure\s*\{/.test(one.body) &&
+    /\.rail-links\s*\{/.test(one.body));
+
+await check("the block that folds the rail and the chips fires in the phone frame", () => {
   const phone = Demo.viewportFor("phone");
-  return breakpoints.length >= 2 &&
-    Math.max(...breakpoints) >= phone.width &&
-    Math.min(...breakpoints) < phone.width;
+  return foldingBlocks.length === 1 && foldingBlocks[0].px >= phone.width;
 });
 
 /* ------------------------------------------------------------------ */
