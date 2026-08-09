@@ -91,6 +91,10 @@ the Binder does** is one card per feature; each section below names its
 card in the heading. Press the card's button and the console stages
 everything that feature needs — the session this tab should hold, the
 figures the charts draw — and opens the right page in the frame.
+Above the frame, the feed narrates what actually happened — the
+press's own staging first, then a line for each answer the stubbed
+Worker gives as the page asks — and the pointer under it names the
+one thing to try in the frame next.
 **Go anywhere** keeps every page reachable regardless of what you
 pressed last, **Reset the demo state** puts the current card's world
 back how its button starts it, and the frame-size buttons show the

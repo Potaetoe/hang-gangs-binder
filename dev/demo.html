@@ -79,6 +79,17 @@
       <div class="viewports" id="viewports" role="group"
            aria-label="Frame size"></div>
     </div>
+    <!--
+      The feed. A press that works can look like nothing happening - a
+      proof that "signed out means signed out" is just the sign-in page
+      appearing - so the console says what a press really did. Every
+      line is computed from an event that occurred: the staging the
+      press wrote, or an answer the stubbed Worker gave. The pointer
+      under it names the one thing to try in the frame next.
+    -->
+    <h2>What just happened</h2>
+    <ol id="feed" aria-live="polite"></ol>
+    <p id="try-next"></p>
     <iframe id="stage" title="The product, running"></iframe>
   </section>
 </main>

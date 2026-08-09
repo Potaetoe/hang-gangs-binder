@@ -91,6 +91,18 @@
    */
   const STORAGE_KEYS = ["hgb-demo-scenario", "hgb-demo-data", "hgb-demo-world"];
 
+  /*
+   * The one channel the feed's narrations travel on, named here for the
+   * same reason the keys above are: dev/demo.test.mjs scans apps/web
+   * for this name, because a shipped page listening on it would be a
+   * demo hook in the published bytes - one that names none of the
+   * demo's files, so the scan for those cannot see it. A
+   * BroadcastChannel rather than a reference between documents, because
+   * the mirrored pages run inside the console's frame AND in their own
+   * tab, and a channel reaches the console from both.
+   */
+  const EVENT_CHANNEL = "hgb-demo-events";
+
   /* ---------------------------------------------------------------- */
   /* The mirror: the only bytes the demo changes, and why.             */
   /* ---------------------------------------------------------------- */
@@ -780,6 +792,12 @@
    * no card can reach - and holds UAT.md to one section per card,
    * marked `card "Title"` in its heading, titles agreeing exactly in
    * both directions.
+   *
+   * `try` is the one thing to touch in the frame after the press,
+   * carried on the action itself rather than painted from a separate
+   * list, because a pointer that cannot name its action is a pointer
+   * that outlives it. Same register as the cards, held to it by the
+   * same word list.
    */
   const FEATURES = [
     {
@@ -787,7 +805,12 @@
       blurb: "Press the Telegram button and you are in - no password, " +
         "no account form. The demo swaps the real widget for a local " +
         "stand-in; everything after the press is the shipped code.",
-      actions: [{ label: "Arrive signed out", scenario: "signed-out" }],
+      actions: [{
+        label: "Arrive signed out",
+        scenario: "signed-out",
+        try: "Press the Telegram button on the page - everything " +
+          "after the press is the shipped sign-in.",
+      }],
     },
     {
       title: "Weigh in",
@@ -795,67 +818,107 @@
         "form for a new weigh-in. Your numbers are sealed inside your " +
         "browser before anything is sent, so the server only ever " +
         "holds them locked.",
-      actions: [{ label: "Open Your page", scenario: "member" }],
+      actions: [{
+        label: "Open Your page",
+        scenario: "member",
+        try: "Fill in a weight and submit it - what leaves the form " +
+          "is already sealed.",
+      }],
     },
     {
       title: "The form remembers you",
       blurb: "Come back and the form is already filled with your last " +
         "measurements. They are kept on this device and keyed to your " +
         "account - signing out wipes them.",
-      actions: [
-        { label: "Return to a filled form", scenario: "member-prefilled" },
-      ],
+      actions: [{
+        label: "Return to a filled form",
+        scenario: "member-prefilled",
+        try: "Look at the form: your last measurements are already " +
+          "in it. Sign out and watch it empty.",
+      }],
     },
     {
       title: "Fix a mistake",
       blurb: "A correction replaces its row instead of adding another, " +
         "so the count on record only claims what stands.",
-      actions: [{ label: "See a corrected record", scenario: "supersede" }],
+      actions: [{
+        label: "See a corrected record",
+        scenario: "supersede",
+        try: "Read the counts on your page: four entries stand, and " +
+          "two corrections rest behind them.",
+      }],
     },
     {
       title: "Signed out means signed out",
       blurb: "Sign out on one device and every other tab finds out the " +
         "moment it asks for anything. A token captured before sign-out " +
         "opens nothing.",
-      actions: [
-        { label: "Arrive after signing out elsewhere", scenario: "revoked" },
-      ],
+      actions: [{
+        label: "Arrive after signing out elsewhere",
+        scenario: "revoked",
+        try: "Touch anything on the page - the first request is " +
+          "refused and you land back at Sign in.",
+      }],
     },
     {
       title: "The keyholder's desk",
       blurb: "The export opens only for the key. Fetch the sealed " +
         "rows, unlock them with the demo's throwaway key, store the " +
         "key for next time, and clear both copies with one press.",
-      actions: [{ label: "Sit at the desk", scenario: "keyholder" }],
+      actions: [{
+        label: "Sit at the desk",
+        scenario: "keyholder",
+        try: "Fetch the sealed rows, unlock them with the throwaway " +
+          "demo key, then clear both copies with one press.",
+      }],
     },
     {
       title: "The admin's panel",
       blurb: "One surface for the club's controls: publish a fresh " +
         "snapshot, manage who counts as an admin, export the rows.",
-      actions: [{ label: "Run the panel", scenario: "admin" }],
+      actions: [{
+        label: "Run the panel",
+        scenario: "admin",
+        try: "Publish a fresh snapshot, then open Muse's charts and " +
+          "see it drawn.",
+      }],
     },
     {
       title: "Before anything is written",
       blurb: "A brand-new deployment has no site copy yet, and every " +
         "page shows the words it ships with. The first run is a " +
         "normal day, not an error.",
-      actions: [{ label: "Start from empty", scenario: "config-fallback" }],
+      actions: [{
+        label: "Start from empty",
+        scenario: "config-fallback",
+        try: "Read the page's wording - it is the shipped fallback, " +
+          "shown because nothing is written over it yet.",
+      }],
     },
     {
       title: "Muse's charts",
       blurb: "Everyone's progress drawn as one line - the combined " +
         "weight, the deltas, the weight-over-time chart. Muse sees " +
         "everyone and no one.",
-      actions: [
-        { label: "See the charts", scenario: "member", open: "dashboard.html" },
-      ],
+      actions: [{
+        label: "See the charts",
+        scenario: "member",
+        open: "dashboard.html",
+        try: "Scroll the charts: the combined weight, the deltas, " +
+          "and everyone's line drawn together.",
+      }],
     },
     {
       title: "Too few to show",
       blurb: "When fewer people have weighed in than the privacy floor " +
         "allows, the charts hold back rather than point at somebody. " +
         "A missing cell is the promise being kept.",
-      actions: [{ label: "See a thin week", scenario: "suppressed" }],
+      actions: [{
+        label: "See a thin week",
+        scenario: "suppressed",
+        try: "Look for the missing cells in the charts - each one is " +
+          "the privacy floor holding.",
+      }],
     },
   ];
 
@@ -1506,6 +1569,153 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* The feed: one line per thing that actually happened.             */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * Both halves of the console's feed, pure so dev/demo.test.mjs can
+   * drive every line under Node.
+   *
+   * The lines are computed from what occurred - the staging a press
+   * just wrote, the status and body the stubbed Worker just answered -
+   * never from a script of what a press should do. A scripted feed
+   * would be the false-confidence lie dev/demo.test.mjs's header
+   * names, told in the one place built to dispel it.
+   *
+   * narrate() turns one answer into one line of the driver's language,
+   * or into null. Null is load-bearing: every page asks for site copy
+   * on load, so narrating that read would bury the press being watched
+   * under a line per page view - and a route nobody taught this
+   * function stays silent rather than guessing, because a guessed
+   * sentence in the feed is a plausible screen with no event under it.
+   */
+  function narrate(event) {
+    const method = String(event.method || "GET").toUpperCase();
+    const path = String(event.path || "").split("?")[0];
+    const status = event.status;
+    const body = event.body || {};
+
+    /*
+     * Refusals come first, and they carry the Worker's own words:
+     * those words are the product behavior being demonstrated, and a
+     * paraphrase would put a second opinion between the driver and the
+     * thing they are judging. The 401 arm adds where the page goes,
+     * because the bounce to Sign in is all the screen itself shows -
+     * and it is one arm for every path, because every gated route
+     * refuses a dead session the same way.
+     */
+    if (status === 401) {
+      return "Refused: " + (body.error || "the session is gone.") +
+        " Every gated page answers this by returning you to Sign in.";
+    }
+    if (status >= 400) {
+      return "The Worker said no: " +
+        (body.error || "status " + status + ".");
+    }
+
+    if (path === "/me" && method === "GET") {
+      const line = "Your record came back: " + body.entries +
+        " entries stand";
+      return body.superseded > 0
+        ? line + ", with " + body.superseded +
+          " corrections resting behind them."
+        : line + ".";
+    }
+
+    if (path === "/session" && method === "DELETE") {
+      return "Signed out - the Worker deleted the session row, so a " +
+        "token captured before this press opens nothing.";
+    }
+
+    if (path === "/submit" && method === "POST") {
+      return "A weigh-in landed, sealed in the browser before it was " +
+        "sent" + (body.id ? " - row " + body.id + " holds it." : ".");
+    }
+
+    if (path === "/export" && method === "GET") {
+      return "The export rows arrived, still sealed - nothing in " +
+        "them opens without the key.";
+    }
+
+    if (path === "/snapshot") {
+      if (method === "POST") {
+        return "A fresh snapshot is published - the charts draw from " +
+          "it on their next load.";
+      }
+      if (method === "DELETE") {
+        return "The published snapshot is taken down.";
+      }
+      return "The published snapshot arrived and the charts drew it.";
+    }
+
+    if (path === "/membership" && method === "GET") {
+      const rows = Array.isArray(body.membership)
+        ? body.membership.length : 0;
+      return "The membership list came back: " + rows +
+        " rows that grant access.";
+    }
+    if (path === "/membership" && method === "POST") {
+      return "A membership row was written; the pane reads the list " +
+        "back rather than trusting what it sent.";
+    }
+    if (path.indexOf("/membership/") === 0 && method === "DELETE") {
+      return "A membership row came off, and the pane reads the " +
+        "list back to prove it.";
+    }
+
+    if (path === "/content" && method === "POST") {
+      return "Site copy saved - every page reads it from here on.";
+    }
+
+    return null;
+  }
+
+  /*
+   * The press's own half: what the staging just did to this tab, told
+   * from the staging's fields rather than from a description written
+   * beside them - so a scenario that stages something new with no
+   * story for it fails dev/demo.test.mjs rather than staging silently.
+   *
+   * The session line is unconditional because every staging decides
+   * what the tab holds, including deciding it holds nothing - and
+   * "nothing" is the line a driver most needs said out loud, because
+   * a signed-out tab looks exactly like a tab nobody staged.
+   */
+  function stagingStory(scenario) {
+    const staged = scenario || {};
+    const lines = [];
+
+    lines.push(staged.session
+      ? "This tab is signed in as " + staged.session.username +
+        (staged.session.isAdmin ? ", who holds admin." : ".")
+      : "This tab is not signed in, so the pages treat you as a " +
+        "stranger.");
+
+    if (staged.prefill) {
+      lines.push("Your last measurements are already saved on this " +
+        "device, keyed to your account, so the form arrives filled in.");
+    }
+    if (staged.revoked) {
+      lines.push("The session was signed out somewhere else - the " +
+        "next thing this page asks for is refused.");
+    }
+    if (staged.id === "supersede") {
+      lines.push("The record holds a correction: one row is replaced " +
+        "rather than added beside.");
+    }
+    if (staged.id === "suppressed") {
+      lines.push("Too few people have weighed in for every chart to " +
+        "publish - the held-back cells are the point.");
+    }
+    if (staged.id === "config-fallback") {
+      lines.push("No site copy is written yet, so every page shows " +
+        "the words it ships with.");
+    }
+
+    return lines;
+  }
+
+  /* ---------------------------------------------------------------- */
   /* The corpora the snapshots are built from.                        */
   /* ---------------------------------------------------------------- */
 
@@ -1633,6 +1843,7 @@
     CONFIG_STANDIN: CONFIG_STANDIN,
     LOCAL_FILES: LOCAL_FILES,
     STORAGE_KEYS: STORAGE_KEYS,
+    EVENT_CHANNEL: EVENT_CHANNEL,
     SCENARIOS: SCENARIOS,
     FEATURES: FEATURES,
     BOXES: BOXES,
@@ -1658,6 +1869,8 @@
     scenarioFor: scenarioFor,
     answerFor: answerFor,
     meFor: meFor,
+    narrate: narrate,
+    stagingStory: stagingStory,
     corpusInputs: corpusInputs,
     entriesFrom: entriesFrom,
   });
