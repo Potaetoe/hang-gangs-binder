@@ -122,6 +122,33 @@ let batchViews = [];
  */
 let holdInsert = null;
 
+/*
+ * A database failure this route did not cause, stated where D1 would
+ * raise one.
+ *
+ * POST /submit catches exactly one error out of its correction batch -
+ * the UNIQUE index on `supersedes` refusing a correction that lost a
+ * race - and answers it as a refusal the member can act on. Every other
+ * failure has to reach fetch()'s handler instead, because a refusal the
+ * member is told to act on is the wrong sentence for a fault they cannot
+ * do anything about.
+ *
+ * Nothing this stub can be driven into produces that case on its own:
+ * `submissions` carries one unique constraint today, so every UNIQUE
+ * violation reachable through these routes IS the one that is absorbed,
+ * and the discrimination therefore sits unarmed - delete it outright and
+ * every other arm in this file stays green. Naming the error is what
+ * makes the second UNIQUE index somebody adds later a case this suite
+ * has already been asked about rather than one it silently absorbs.
+ *
+ * The rows are put back rather than left, because a transaction that
+ * rejects wrote nothing. A stub that kept the row would let this arm
+ * pass against an implementation that stored one and then reported a
+ * failure - which is the same success-with-no-row inversion the
+ * read-back on this route exists to refuse.
+ */
+let batchRejects = null;
+
 function reset() {
   stored = [];
   sessions = [];
@@ -134,6 +161,7 @@ function reset() {
   overlappingBatches = false;
   batchViews = [];
   holdInsert = null;
+  batchRejects = null;
 }
 
 /*
@@ -544,8 +572,15 @@ const DB = {
     // being made to overlap on purpose. Null the rest of the time, so
     // every other check in this file reads the table as it stands.
     batchViews[id - 1] = overlappingBatches ? stored.slice() : null;
+    // What the table held before this transaction opened, kept so an
+    // injected rejection can undo the statements that ran before it.
+    const opened = stored.slice();
     const out = [];
     for (const statement of statements) out.push(await statement.all(id));
+    if (batchRejects) {
+      stored = opened;
+      throw new Error(batchRejects);
+    }
     return out;
   },
 };
@@ -615,7 +650,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 323);
+const { check, report } = suite("worker.js", 327);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1902,6 +1937,55 @@ check("and nothing asks whether that row is the caller's outside one",
     s.batch !== 0 || !/WHERE id = \? AND account_id = \?/i.test(s.sql)));
 
 /*
+ * THE WRITE'S OWN RULES, compared against the ones the diagnosis reports.
+ *
+ * The belt and the braces are only ever asked about together above, and
+ * that is a hole rather than an economy: take the chain clause out of the
+ * guarded INSERT and leave it in the diagnosis, and every arm in this
+ * file stays green - because the UNIQUE index refuses the write instead,
+ * with the same status, the same words and the same row count. The two
+ * enforcements are indistinguishable from outside by construction, which
+ * is the property "the constraint's refusal reads exactly like the
+ * check's" exists to guarantee, so no outcome assertion can ever tell
+ * them apart. The arm has to look at the statement.
+ *
+ * It matters most where the index is not there to cover for it. A
+ * database that has had the schema's `CREATE UNIQUE INDEX` applied is
+ * one migration; server/schema.sql's own header warns that a half-applied
+ * one leaves a working database carrying no such rule, and there the WHERE
+ * is the only thing enforcing the chain shape at all.
+ *
+ * The two statements are compared with each other rather than against a
+ * column list written here, because a rule this file spelled out would be
+ * a third copy of it - the thing the fragments in server/worker.js exist
+ * to prevent. Which of them is negated is asserted as a count for the
+ * same reason: the write refuses what the diagnosis merely reports, so
+ * exactly one clause flips, and naming which one would map by hand what
+ * reading the statement already answers.
+ */
+const clausesIn = (batch, verb) => {
+  const found = batch.find((s) =>
+    verb.test(s.sql) && /\bEXISTS\b/i.test(s.sql));
+  return found ? existsClauses(found.sql) : [];
+};
+const enforcedBy = correctionBatches.map((b) =>
+  clausesIn(b, /^\s*INSERT INTO submissions/i));
+const diagnosed = correctionBatches.map((b) => clausesIn(b, /^\s*SELECT/i));
+const columnsOf = (clauses) => JSON.stringify(clauses.map((c) => c.columns));
+
+check("the write carries the same two rules the diagnosis beside it reports",
+  enforcedBy.length === 2 && enforcedBy.every((clauses, index) =>
+    clauses.length === 2 && columnsOf(clauses) === columnsOf(diagnosed[index])),
+  `${columnsOf(enforcedBy[0])} written vs ${columnsOf(diagnosed[0])} diagnosed`);
+
+check("and it is the write that refuses one of them, not the diagnosis",
+  enforcedBy.every((clauses) =>
+    clauses.filter((c) => c.negated).length === 1) &&
+  diagnosed.every((clauses) => clauses.every((c) => !c.negated)),
+  `${enforcedBy[0].filter((c) => c.negated).length} negated in the write, ` +
+  `${diagnosed[0].filter((c) => c.negated).length} in the diagnosis`);
+
+/*
  * The index, asked for on its own.
  *
  * With both guards reading the table as it stands, the guard always wins
@@ -1952,6 +2036,66 @@ const byCheck = await (left.status === 409 ? left : right).clone().json();
 check("and the constraint's refusal reads exactly like the check's",
   JSON.stringify(byConstraint) === JSON.stringify(byCheck),
   JSON.stringify(byConstraint));
+
+/*
+ * WHICH UNIQUE violation gets that answer, and which does not.
+ *
+ * Absorbing the index's refusal is what makes a lost race and a second
+ * correction the same event to the member, and the arms above are what
+ * pin it. What they cannot see is the other half: a UNIQUE violation
+ * this route has no answer for must NOT be dressed up as one the member
+ * can act on. "That entry has already been corrected" told to somebody
+ * whose entry was not corrected sends them to look for a correction that
+ * does not exist, and it converts a fault that belongs in the Worker's
+ * error path into a refusal nobody investigates.
+ *
+ * The probe names a second constraint on the SAME table, because that is
+ * the ratchet this arm is set against rather than an abstract one: the
+ * absorb is a match on an error message, and `submissions` carries one
+ * unique constraint today only. A test naming another table would be
+ * satisfied by a rule that discriminated no further than `submissions.`,
+ * and the next index added to this table would be absorbed by it. What
+ * the route may absorb is one column's constraint, so that is what the
+ * probe asks about.
+ *
+ * Both directions are asserted here rather than one, because the arm is
+ * about a discrimination and half of it is not a discrimination at all -
+ * a rule that rethrew everything would pass the first check on its own.
+ *
+ * The refusal is named as `byCheck.error` - the body the chain rule
+ * itself produced a few lines above - rather than as a fourth copy of
+ * the sentence. What these two arms are about is which fault reaches
+ * that answer, so the answer has to be the one the route really speaks
+ * and not a string this file believes it speaks.
+ */
+reset();
+
+const ABSORB = (await (await signIn({})).clone().json()).session;
+await submit(ABSORB, { ciphertext: "YWJzb3Ji" });
+const absorbTarget = stored.find((r) => r.account_id === FIXTURE_4242);
+const rowsBeforeFault = stored.length;
+
+batchRejects = "D1_ERROR: UNIQUE constraint failed: submissions.ciphertext";
+const faulted = await submit(ABSORB,
+  { ciphertext: "Zm9yZWlnbg==", supersedes: absorbTarget.id });
+const faultedBody = await faulted.clone().json();
+batchRejects = null;
+
+check("a UNIQUE violation on another constraint is not this route's 409",
+  faulted.status === 500 && faultedBody.error !== byCheck.error &&
+  stored.length === rowsBeforeFault,
+  `${faulted.status} ` + JSON.stringify(faultedBody.error) +
+  `, ${stored.length - rowsBeforeFault} row(s) written`);
+
+batchRejects = "D1_ERROR: UNIQUE constraint failed: submissions.supersedes";
+const absorbed = await submit(ABSORB,
+  { ciphertext: "Zm9yZWlnbg==", supersedes: absorbTarget.id });
+const absorbedBody = await absorbed.clone().json();
+batchRejects = null;
+
+check("while the constraint this route does answer for is still absorbed",
+  absorbed.status === 409 && absorbedBody.error === byCheck.error,
+  `${absorbed.status} ` + JSON.stringify(absorbedBody.error));
 
 /*
  * Depth: a superseding row that is not the member's own.
