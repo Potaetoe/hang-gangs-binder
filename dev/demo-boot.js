@@ -75,6 +75,28 @@
   }
 
   /*
+   * The feed's transport. What to say is Demo.narrate's - a pure
+   * decision dev/demo.test.mjs drives - and this file only posts what
+   * comes back, when something does. The channel is named by
+   * demo-stub.js because dev/demo.test.mjs scans apps/web for the
+   * name; a second copy here could drift out from under that scan.
+   *
+   * Guarded, and failing silent: this file runs before every shipped
+   * script, so anything thrown here stops fetch being replaced at all
+   * - and a page reaching real endpoints is strictly worse than a
+   * feed with nothing in it.
+   */
+  const channel = typeof root.BroadcastChannel === "function"
+    ? new root.BroadcastChannel(Demo.EVENT_CHANNEL)
+    : null;
+
+  function tell(event) {
+    if (channel === null) return;
+    const line = Demo.narrate(event);
+    if (line !== null) channel.postMessage({ line: line });
+  }
+
+  /*
    * Which requests belong to the Worker, and which may leave at all.
    *
    * BINDER_CONFIG is read at call time rather than at load time, because
@@ -140,6 +162,18 @@
 
     const answer = Demo.answerFor(request, world());
     remember(answer.next);
+
+    // Told here, on the one path every stubbed answer passes through,
+    // so the feed narrates the traffic that happened rather than the
+    // traffic some page was expected to make. The /export answer has
+    // no body and narrates anyway - the fetch of the sealed rows is
+    // the keyholder card's visible moment.
+    tell({
+      method: request.method,
+      path: request.path,
+      status: answer.status,
+      body: answer.body,
+    });
 
     /*
      * A proxied answer goes through the SAME decision rather than

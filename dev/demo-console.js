@@ -42,6 +42,42 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* The feed.                                                        */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * The console never composes a feed line of its own. The staging
+   * lines come from Demo.stagingStory, computed from the staging's
+   * fields; everything after them arrives on the channel from the page
+   * in the frame, computed by Demo.narrate from an answer the stub
+   * really gave. Painting is all that happens here, and that is what
+   * keeps the feed honest: a line the console invented would be a
+   * script of what should happen, in the one place built to show what
+   * did.
+   */
+  function feedLine(text) {
+    const holder = $("feed");
+    const item = document.createElement("li");
+    item.textContent = text;
+    holder.appendChild(item);
+    // The newest line narrates the press just made, so it is the one
+    // the feed keeps on screen.
+    holder.scrollTop = holder.scrollHeight;
+  }
+
+  // Guarded the same way the posting side is: a browser without the
+  // channel gets a console whose feed carries the staging stories
+  // alone, not a console that fails to boot.
+  if (typeof root.BroadcastChannel === "function") {
+    const events = new root.BroadcastChannel(Demo.EVENT_CHANNEL);
+    events.addEventListener("message", function (event) {
+      if (event.data && typeof event.data.line === "string") {
+        feedLine(event.data.line);
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Staging.                                                         */
   /* ---------------------------------------------------------------- */
 
@@ -87,6 +123,16 @@
     } else {
       root.localStorage.removeItem(PREFILL_KEY);
     }
+
+    /*
+     * The feed starts over at the press. What stands in it afterwards
+     * is this press's own story, then whatever the page in the frame
+     * does about it as the narrations arrive - so everything on screen
+     * belongs to the world the frame is actually showing.
+     */
+    $("feed").textContent = "";
+    Demo.stagingStory(chosen).forEach(feedLine);
+    $("try-next").textContent = action.try;
 
     paintFeatures();
     open(action.open || chosen.start);

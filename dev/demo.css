@@ -154,8 +154,49 @@ main {
   color: var(--dim);
 }
 
+/* The feed is capped and scrolls inside itself, so a page that asks
+ * for many things never pushes the frame down the stage - the frame
+ * is the thing being judged and the feed is its caption. The empty
+ * list paints its own placeholder, so there is no separate empty
+ * state for the script to keep in step. */
+#feed {
+  margin: 0 0 0.4rem;
+  padding: 0.45rem 0.7rem 0.45rem 2.2rem;
+  max-height: 8.5rem;
+  overflow-y: auto;
+  border: 1px solid var(--edge);
+  border-radius: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+#feed:empty::before {
+  content: "Nothing has happened yet. Press a card, and every press "
+    "is narrated here.";
+}
+#feed li { animation: feed-arrive 0.3s ease-out; }
+@keyframes feed-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #feed li { animation: none; }
+}
+
+/* The pointer is the one instruction the driver needs next, so it
+ * takes the accent the status line already carries. */
+#try-next {
+  margin: 0 0 0.5rem;
+  min-height: 1.4em;
+  font-size: 0.88rem;
+  color: var(--warn);
+}
+
 /* The frame is tall enough to hold a whole page, because scrolling a
  * short frame hides the thing being judged - the shape of a full page.
+ * Sized against the viewport minus what shares the pinned stage with
+ * it - the frame bar, the feed and its pointer, the panel's own
+ * chrome - because the stage rides the scroll pinned: any part of the
+ * frame that does not fit under 100vh is never on screen at all.
  *
  * Width and height here are what the phone view overrides, on this
  * element and only this element: an iframe's own width is the viewport
@@ -169,7 +210,7 @@ iframe {
   display: block;
   margin-inline: auto;
   width: 100%;
-  height: 78vh;
+  height: calc(100vh - 21rem);
   min-height: 34rem;
   border: 0;
   border-radius: 0.35rem;
