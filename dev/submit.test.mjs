@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 63;
+const EXPECTED = 65;
 
 function check(label, condition) {
   performed++;
@@ -498,9 +498,21 @@ check("a successful submit re-reads /me instead of incrementing a local tally",
   refreshed.requests.every((request) =>
     request.url === "https://worker.example/me") &&
   refreshed.elements["member-entry-count"].textContent === "11");
+/*
+ * A source-position check, and the substring it looks for stops at the
+ * event name rather than at the closing parenthesis. The announcement
+ * carries the accepted height for the guard (#172), and `detail` is a
+ * getter with no setter on CustomEvent.prototype - so a payload can only
+ * arrive through the constructor's init argument, and no dispatch that
+ * carries one can be spelled `new CustomEvent("binder:submitted")`.
+ * Pinning the exact call shape would make this check fail for the arity
+ * of a call rather than for the property it is about, which is where the
+ * announcement stands relative to the response guard.
+ */
+const STORED_DISPATCH = `new CustomEvent("${SUBMITTED_EVENT}"`;
 check("form.js announces success only after the Worker stores the entry",
-  formSource.includes(`new CustomEvent("${SUBMITTED_EVENT}")`) &&
-  formSource.indexOf(`new CustomEvent("${SUBMITTED_EVENT}")`) >
+  formSource.includes(STORED_DISPATCH) &&
+  formSource.indexOf(STORED_DISPATCH) >
     formSource.indexOf("if (!response.ok)"));
 
 const tabs = await loadSubmit({
@@ -760,6 +772,37 @@ check("a device with nothing remembered ticks no box for the member",
 check("and shows no note claiming this browser remembers anything",
   !isPainted(firstVisit.elements["prefill-note"]) &&
   !isPainted(firstVisit.elements["over18-remembered"]));
+
+/*
+ * The third state, between the two above, and the one the two of them
+ * cannot see between them: this member's own remembered entry, with the
+ * 18+ bit not in it.
+ *
+ * Found by mutation - `show($("over18-remembered"), over18)` hard-wired
+ * to `true` passed every other arm in this file. The arms above exercise
+ * a record with the bit set and no record at all, and a device with no
+ * memory never reaches the reveal, so nothing asked what happens when
+ * the record is real and the bit is not.
+ *
+ * It matters because of what that line says: "Remembered from your last
+ * entry on this browser." Printed under a box nothing ticked, it is an
+ * invented memory sitting on the one assertion this form still asks a
+ * member to make - and a member who reads it and presses on has been
+ * told their age was confirmed by a device that never confirmed it. The
+ * note above it is a different question and stays shown, because there
+ * genuinely is a remembered entry to explain.
+ */
+const partlyRemembered = await loadSubmit({
+  prefill: JSON.stringify({
+    ...JSON.parse(rememberedEntry), over18: false,
+  }),
+  replies: [mine()],
+});
+check("a remembered entry without the 18+ bit ticks nothing",
+  partlyRemembered.elements.over18.checked === false);
+check("and explains no confirmation it did not make",
+  !isPainted(partlyRemembered.elements["over18-remembered"]) &&
+  isPainted(partlyRemembered.elements["prefill-note"]));
 
 /*
  * The leak #56 was filed for, re-asked for the fields #172 adds. Gender,

@@ -381,10 +381,20 @@ await check("the ciphertext is base64 the endpoint accepts", async () => {
  * after it. More than one dispatch would make one stored row trigger several
  * route reads and would obscure which result the panel is rendering.
  */
+/*
+ * The needle stops after the event name rather than at the end of the
+ * statement. The announcement carries the accepted height for the guard
+ * (#172), and `detail` is a getter with no setter on
+ * CustomEvent.prototype - a payload can only arrive through the
+ * constructor's init argument, so the call spans lines and no dispatch
+ * that carries one can be spelled `new CustomEvent("binder:submitted"));`.
+ * Every property this check is about survives the shorter needle: one
+ * occurrence, after the failure return, before the success UI.
+ */
 await check("the stored event exists only on the successful network path",
   () => {
     const dispatch =
-      'document.dispatchEvent(new CustomEvent("binder:submitted"));';
+      'document.dispatchEvent(new CustomEvent("binder:submitted"';
     const occurrences = formSrc.split(dispatch).length - 1;
     const failureMessage = formSrc.indexOf(
       '" Nothing was stored - try again.", "bad");');
