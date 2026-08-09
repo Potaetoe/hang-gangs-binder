@@ -430,10 +430,25 @@ async function loadAdmin(session, options = {}) {
   globalThis.BinderXlsx = {
     build() { return new Uint8Array([1, 2, 3]); },
   };
+  /*
+   * Whether the document this stub builds reports the weight series as
+   * withheld. Captured out here for the reason the `refuse` capture
+   * below names: snapshotOf's own parameter is called `options` too, and
+   * reading the scenario off it inside the stub is the mistake that
+   * comment already records.
+   *
+   * The real floor is dashboard.js's and is attacked in
+   * dev/dashboard.test.mjs. What this file is for is the WIRING - that
+   * the card reads the document it just built rather than recounting
+   * anybody, and that it stays silent when there is nothing to report.
+   */
+  const withheldSeries = options.seriesWithheld === true;
   globalThis.BinderDashboard = {
     DEFAULT_UNITS: "imperial",
+    MIN_CELL: 5,
     snapshotOf(entries, options) {
       const snapshot = {
+        seriesWithheld: withheldSeries && options.series === true,
         ids: entries.map((entry) => entry.id),
         // What the real dashboard groups on. Recording it here is what
         // makes "the identity reached the charts" checkable without
@@ -715,6 +730,56 @@ check("taking the page down drops the anchor with it",
   // see any more. Held as its own check because the failure is silent:
   // a kept anchor produces a perfectly plausible number.
   republish.snapshots.at(-1).options.previous === null);
+
+/*
+ * A ticked box that publishes nothing, and the card that said nothing
+ * about it - #177.
+ *
+ * The keyholder ticked "Include weight over time", pressed "Show what
+ * would be sent", and read `"series": null` in the preview. The card was
+ * silent, so "I did not ask for it" and "the floor took it out" looked
+ * the same from the one screen where the difference decides whether to
+ * publish. The document already records which; the card reads it.
+ *
+ * It speaks through the status line the card already has rather than
+ * through a new element: admin.html is at 94% of its byte ceiling, this
+ * page is contended by #166 and #174, and a sentence is not worth a
+ * fourth pass over the markup.
+ */
+const withheld = await loadAdmin(ADMIN, { seriesWithheld: true });
+await withheld.elements.run.click();
+withheld.elements["publish-series"].checked = true;
+await withheld.elements["publish-preview"].click();
+
+check("the preview says the series was withheld, not merely absent",
+  withheld.elements["publish-status"].textContent.includes(
+    "Weight over time is not in it") &&
+  withheld.elements["publish-status"].textContent.includes(
+    "more than one entry"));
+
+check("the preview still shows the document it is describing",
+  JSON.parse(withheld.elements["publish-preview-body"].textContent)
+    .seriesWithheld === true);
+
+await withheld.elements.publish.click();
+check("publishing repeats what the document does not contain",
+  // The keyholder may never press the preview. The moment they publish
+  // is the last one at which the omission can still be told to them.
+  withheld.elements["publish-status"].textContent.startsWith("Published.") &&
+  withheld.elements["publish-status"].textContent.includes(
+    "Weight over time is not in it"));
+
+const included = await loadAdmin(ADMIN, { seriesWithheld: false });
+await included.elements.run.click();
+included.elements["publish-series"].checked = true;
+await included.elements["publish-preview"].click();
+await included.elements.publish.click();
+
+check("a document that carries the series says nothing about withholding",
+  // The other direction. A card that reported a withholding on every
+  // publish would be noise, and noise is how a real one stops being read.
+  !included.elements["publish-status"].textContent.includes("not in it") &&
+  included.elements["publish-status"].textContent.startsWith("Published."));
 
 /*
  * The key this device keeps - #70.
