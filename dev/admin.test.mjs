@@ -618,9 +618,14 @@ await check("the secretOnly notice says the ids resolve to nobody", () =>
 await check("401 discards the session and leaves", () =>
   refusalFor(401, { error: "Unauthorized." }).action === "signed-out");
 
-await check("409 re-reads and drops nothing", () => {
+await check("409 says the removal did not happen, and stays", () => {
+  // The page stays and re-reads; what is particular about a 409 is the
+  // sentence, not the act, so the sentence is what this pins. A `reread`
+  // action was written here first and taken out - the caller re-reads
+  // after every refusal that leaves the page, so nothing could ever have
+  // read it, and a mutation on it reddened nothing.
   const refusal = refusalFor(409, { error: "That is the last admin row." });
-  return refusal.action === "reread" &&
+  return refusal.action === "show" &&
     /last admin row/.test(refusal.message) &&
     /Nothing was removed/.test(refusal.message);
 });

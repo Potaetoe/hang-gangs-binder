@@ -430,20 +430,26 @@
    * What the page does about a refusal, and what it says.
    *
    * One function because the three membership calls must not each invent
-   * their own answer to the same three questions, and because the
-   * answers are not interchangeable:
+   * their own answer to the same two questions - does the page stay, and
+   * what does it say.
    *
    *   401 - the session is gone. Discard it and leave. This page holds
    *         every submission in the clear, so a session the Worker no
    *         longer accepts is a tab that should not stay open on it.
-   *   409 - the Worker refused a removal that would have emptied the
-   *         admin list. NOTHING was removed, so the page must re-read
-   *         rather than drop a row locally: a page that removed the row
-   *         from its own list first would show the lockout it was just
-   *         prevented from causing.
-   *   else - show what the Worker said. Its `{error}` is written for the
-   *         admin who provoked it and is more specific than anything
-   *         this side could guess.
+   *   else - stay, and show what the Worker said. Its `{error}` is
+   *         written for the admin who provoked it and is more specific
+   *         than anything this side could guess.
+   *
+   * TWO ACTIONS RATHER THAN THREE, and the missing one is deliberate.
+   * A `reread` action for the 409 was written first and then taken out,
+   * because nothing could read it: the caller re-reads after EVERY
+   * refusal that leaves the page, and it has to - a refused removal
+   * means the table is whatever it already was, and a refused anything
+   * else means this page does not know what the table holds. An action
+   * no branch depends on is a value that looks like a decision and is
+   * not one, and the mutation meant to prove it load-bearing reddened
+   * nothing. What is genuinely particular about the 409 is its
+   * SENTENCE, so that is where it lives.
    */
   function refusalFor(status, payload) {
     const said = payload && typeof payload === "object" &&
@@ -460,7 +466,7 @@
     }
     if (status === 409) {
       return {
-        action: "reread",
+        action: "show",
         message: (said || "The Worker refused that removal.") +
           " Nothing was removed; the lists below are what it holds now.",
       };
@@ -1320,13 +1326,13 @@
     }
 
     /*
-     * One refusal handler for all three calls, because they are three
-     * different acts and only one of them is "print the message".
+     * One refusal handler for all three calls.
      *
      * A 401 ends the tab: this page holds every submission in the clear,
      * and a session the Worker no longer accepts is not one to keep a
      * key and a corpus sitting behind. Returning true means the caller
-     * should stop - the page is leaving.
+     * should stop, because the page is leaving; every other refusal
+     * returns false and the caller re-reads.
      */
     function handleRefusal(status, payload) {
       const refusal = refusalFor(status, payload);
