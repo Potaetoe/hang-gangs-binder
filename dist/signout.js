@@ -86,4 +86,8 @@
   } else {
     paintSession();
   }
+
+  
+
+  if (Session) Session.onChange(paintSession);
 })(globalThis);

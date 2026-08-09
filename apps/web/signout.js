@@ -166,4 +166,27 @@
   } else {
     paintSession();
   }
+
+  /*
+   * And again whenever the credential changes under the tab - #166.
+   *
+   * The paint above runs once, at load, which is right for the case it
+   * was written for: a member arrives already signed in. It is wrong for
+   * the case that ends a session without leaving the page. A Worker 401
+   * on the dashboard, or a stored value that expires while the tab sits
+   * open, both drop the credential and stay put - and the rail goes on
+   * naming the member, three inches from a page saying the sign-in is no
+   * longer valid.
+   *
+   * The whole handler is the same function again, and nothing about it
+   * had to change: it reads the session fresh, recomputes all three
+   * controls from it, and on the path that matters here - no session -
+   * never reaches the click registration at all.
+   *
+   * The subscription is not conditional on there being a session now.
+   * The state worth reacting to is precisely the one that does not exist
+   * yet, and a page that loads signed out is the page a session is about
+   * to be minted on.
+   */
+  if (Session) Session.onChange(paintSession);
 })(globalThis);
