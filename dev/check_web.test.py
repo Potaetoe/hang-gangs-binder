@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 241
+EXPECTED = 258
 
 
 def check(label, condition):
@@ -279,6 +279,86 @@ check("a fragment is not a way off a page",
 check("an off-site link is not a way through the site",
       any("no way off it" in p for p in check_web.plain_page_problems(
           '<a href="https://example.com">away</a>')))
+
+
+# The wordmark, which crosses both shells and is the one hand-kept copy
+# nothing compares. Check 10's own docstring says the rail "carries the
+# wordmark" while the comparison reads .rail-links and stops; the name
+# tables read titles, headings and rail entries, and the chip arm reads
+# chips. So the site's own name can be changed on three of its four
+# copies with the whole gate green - #152's disease with a different
+# subject, found while #191 renamed all four.
+check("every page pinned to carry the wordmark exists",
+      set(check_web.WORDMARK_PAGES) <= pages)
+check("the pin covers the rail pages and the cover",
+      set(check_web.WORDMARK_PAGES) ==
+      {"admin.html", "dashboard.html", "index.html", "submit.html"})
+
+MARK = ('<span class="wordmark-owner">Hang Gang</span>'
+        '<span class="wordmark-name">Binder</span>')
+
+check("a wordmark is read out of a page as its two lines",
+      check_web.page_wordmark(MARK) == ("Hang Gang", "Binder"))
+check("a page with no wordmark reads as absence in both halves",
+      check_web.page_wordmark("<p>nothing here</p>") == (None, None))
+check("a wordmark line is read through the markup inside it",
+      check_web.page_wordmark(
+          '<span class="wordmark-owner"><em>Hang</em> Gang</span>')[0] ==
+      "Hang Gang")
+# Both quote styles, for the reason the label roles give: an arm a
+# single quote walks past is a refusal that fails open while the gate
+# reports the page as checked.
+check("the wordmark reader is not walked past by a single quote",
+      check_web.page_wordmark(
+          "<span class='wordmark-name'>Binder</span>")[1] == "Binder")
+
+# One page's own wordmark, before any page is compared with another.
+check("a complete wordmark on a page pinned to carry one raises nothing",
+      check_web.page_wordmark_problems(MARK, True) == [])
+check("a page pinned to carry the wordmark and carrying none is refused",
+      any("carries no wordmark" in p
+          for p in check_web.page_wordmark_problems("<p>hello</p>", True)))
+check("half a wordmark is refused",
+      any("only the" in p for p in check_web.page_wordmark_problems(
+          '<span class="wordmark-name">Binder</span>', True)))
+check("a wordmark line with no words in it is refused",
+      any("no words" in p for p in check_web.page_wordmark_problems(
+          MARK.replace(">Hang Gang<", "><"), True)))
+
+# The copy-paste direction, and the one that keeps the table honest: a
+# page carrying the site's name and named by no pin is a copy nothing
+# compares, which is the whole failure this arm exists for.
+check("a page carrying a wordmark it is not pinned to carry is refused",
+      any("names no page in WORDMARK_PAGES" in p
+          for p in check_web.page_wordmark_problems(MARK, False)))
+check("a page pinned plain of the wordmark and carrying none raises "
+      "nothing",
+      check_web.page_wordmark_problems("<p>Not found</p>", False) == [])
+
+# Parity itself, on rosters rather than on files.
+check("wordmarks that agree raise nothing",
+      check_web.wordmark_parity_problems(
+          {"a.html": ("Hang Gang", "Binder"),
+           "b.html": ("Hang Gang", "Binder")}) == [])
+check("a wordmark renamed on one copy of four is refused",
+      any("Muse's" in p for p in dict(check_web.wordmark_parity_problems(
+          {"admin.html": ("Hang Gang", "Binder"),
+           "index.html": ("Hang Gang", "Binder"),
+           "submit.html": ("Hang Gang", "Binder"),
+           "dashboard.html": ("Muse's", "Binder")})).values()))
+check("a second line renamed on one copy is refused",
+      any("Ledger" in p for p in dict(check_web.wordmark_parity_problems(
+          {"a.html": ("Hang Gang", "Binder"),
+           "b.html": ("Hang Gang", "Ledger")})).values()))
+# One roster is not a parity claim. The chip arm paid for this exact
+# hole in #114: a rule holding a single copy cannot fail.
+check("a single wordmark leaves the arm nothing to compare",
+      any("cannot fail" in p for _, p in
+          check_web.wordmark_parity_problems({"a.html": ("Hang Gang",
+                                                         "Binder")})))
+
+check("no shipped page's wordmark disagrees with another's",
+      check_web.wordmark_problems() == [])
 
 
 # ------------------------------------------------------------------ #
