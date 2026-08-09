@@ -8,7 +8,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     
 
-    const here = location.pathname.split("/").pop() || "index.html";
+    const here = BinderSession.pageName();
     const links = document.querySelectorAll(".rail-links a");
     Array.prototype.forEach.call(links, function (link) {
       const target = link.getAttribute("href").split("/").pop();

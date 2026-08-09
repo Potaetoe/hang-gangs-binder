@@ -38,13 +38,19 @@
     /*
      * Which link is this page.
      *
-     * Compared on the last path segment rather than the whole href,
-     * because the same markup is served from a directory root, from
-     * /apps/web/ under a locally served repository root, and from
-     * GitHub Pages under a project path. An empty segment is the
-     * directory index, which is the sign-in page.
+     * The name comes from BinderSession.pageName() rather than a second
+     * reading of location.pathname, because the two consumers have to
+     * agree: a rail and a sign-in gate with separate opinions of "which
+     * page is this" is how #188 shipped - Cloudflare Pages serves
+     * "submit.html" at "submit", and the raw last segment matched no
+     * href, so the hosted rail marked nothing. pageName() restores the
+     * suffix, and the hrefs keep theirs, so the comparison holds from a
+     * directory root, from /apps/web/ under a locally served repository
+     * root, from GitHub Pages under a project path, and from a
+     * pretty-URL CDN alike. session.js loads before this file on all
+     * four pages, and tools/check_web.py holds the script order.
      */
-    const here = location.pathname.split("/").pop() || "index.html";
+    const here = BinderSession.pageName();
     const links = document.querySelectorAll(".rail-links a");
     Array.prototype.forEach.call(links, function (link) {
       const target = link.getAttribute("href").split("/").pop();

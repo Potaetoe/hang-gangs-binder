@@ -92,11 +92,27 @@
     return value ? { Authorization: "Bearer " + value.session } : {};
   }
 
+  /*
+   * The one answer to "which page is this" - the sign-in gate below and
+   * the rail marking in nav.js both stand on it, which is why it is
+   * exported: two readings of location.pathname is how the two could
+   * disagree about the same page.
+   *
+   * The suffix is restored before anything compares the name. Cloudflare
+   * Pages serves "submit.html" at "submit" and 308s the full name away,
+   * with no setting that refuses (#188, found on #143's hosted bake).
+   * Compared raw, that segment matches no rail href, and a host that
+   * strips the index name the same way turns requireSession()'s redirect
+   * into a loop: the sign-in page arrives named "index", which is never
+   * "index.html".
+   */
   function pageName() {
     if (!root.location || typeof root.location.pathname !== "string") {
       return "index.html";
     }
-    return root.location.pathname.split("/").pop() || "index.html";
+    const segment = root.location.pathname.split("/").pop();
+    if (!segment) return "index.html";
+    return segment.indexOf(".") === -1 ? segment + ".html" : segment;
   }
 
   function announce(value) {
@@ -128,6 +144,7 @@
     write,
     clear,
     authorization,
+    pageName,
     require: requireSession,
   });
 
