@@ -491,6 +491,62 @@ day a check is added:
     shape as raising a ceiling in tools/check_budget.py: move the tags
     and change this check in the same diff, where a reviewer sees the
     rule move next to the reason it moved.
+
+23. The palette chips agree across the pages that carry them: the same
+    ids, the same visible words on each id, in the same order.
+
+    #152, and the shape of the gap is worth stating because several
+    arms look like they cover it and each reads something else. Check
+    19 pins that a page pinned to offer a palette HAS the control -
+    per page, in isolation. Check 10's rail parity compares
+    .rail-links and stops before the picker, which does not live in
+    the rail. Check 17's name tables read titles, headings and rail
+    entries. So a chip renamed on two of the four pages satisfied
+    every one of them, and the only thing reading the four labels side
+    by side was a person following the demo walk-through.
+
+    The failure is quiet by construction, which is why it needs a
+    gate. The id is what theme.js stores and what theme.css selects on;
+    the label is only words. Rename one copy and nothing breaks, no
+    console says anything, and the site simply calls one palette two
+    things depending on which page the member is standing on.
+
+    Three things it deliberately does NOT pin, each for its own
+    reason:
+
+    - PRESENCE, which is check 19's. That check's own docstring
+      declines to state label agreement because "two checks making the
+      same claim in different places is how one of them gets quietly
+      weakened"; this is the other side of that sentence. A page
+      pinned to offer a palette and carrying no chip at all is left
+      out of the comparison here, and check 19 fails on that same page
+      from that same roster in the same run.
+    - WHAT A LABEL SAYS. #127 ruled the words, "Parchment Daylight"
+      over the id `daylight` included. The reference page below is
+      only whichever name sorts first, and a rename that reaches all
+      four copies passes here on purpose: agreement is the claim, not
+      the wording. A check that pinned the words would have to be
+      edited to ship a decision that is the owner's to make.
+    - WHAT AN ID MEANS. That `daylight` names a palette theme.js
+      paints and theme.css defines is that coupling's business -
+      theme.js's own BG map, check 21's slot pin, check_contrast.py's
+      table. This arm reads the four pages against each other and
+      nothing else.
+
+    Order is pinned as well as membership. The list is written out by
+    hand on every page exactly as the rail is, so it drifts the way
+    the rail drifts - a chip inserted where the page somebody copied
+    from did not have it - and a set comparison is blind to that.
+
+    The reader is the part with teeth, because a checker that declines
+    to see half its input while the gate prints OK is the same silent
+    failure with a different cause. Two things hold it open:
+    theme.js wires `[data-set-theme]` on ANY element, so this reads
+    any element rather than <button>; and the count of chips it pairs
+    with a label is reconciled against CHIP_MARKUP, which is what
+    check 19 counts a chip by. A chip that check can see and this one
+    cannot read is REPORTED, never skipped - so the two arms cannot
+    drift into disagreeing about what a chip is.
 """
 
 import base64
@@ -2982,6 +3038,184 @@ def loading_problems():
     return problems
 
 
+# One palette chip's opening tag. Any element, not <button>, because
+# theme.js wires `document.querySelectorAll("[data-set-theme]")` and a
+# reader narrower than the thing it describes is a reader that goes
+# quiet on the day a chip is written some other way. It is found by its
+# attribute rather than by walking the group, so a chip that escapes
+# the group's div is still read.
+CHIP_OPEN = re.compile(r"<(\w+)\b([^>]*\bdata-set-theme\s*=[^>]*)>", re.I)
+
+CHIP_ATTRIBUTE = "data-set-theme"
+
+# What a failure with no page to blame is attributed to. The pin is the
+# subject in that case, not any one page.
+CHIP_PIN = "THEMED_PAGES in tools/check_web.py"
+
+
+def page_chips(text):
+    """[(id, label)] for one page's palette chips, in document order.
+
+    `label` is None for a chip whose element never closes, which says
+    something different from a chip carrying no words - the two send
+    whoever reads the failure to look at different things.
+
+    Takes comment-stripped markup, for the reason page_text() gives:
+    submit.html's note on the "Parchment Daylight" ruling names this
+    attribute repeatedly, and a rule reading a page's comments is
+    describing markup the page does not have.
+    """
+    chips = []
+    for found in CHIP_OPEN.finditer(text):
+        tag, attributes = found.group(1), found.group(2)
+        closing = re.compile(r"</%s\s*>" % re.escape(tag), re.I)
+        end = closing.search(text, found.end())
+        label = label_text(text[found.end():end.start()]) if end else None
+        chips.append((tag_attribute(attributes, CHIP_ATTRIBUTE) or "",
+                      label))
+    return chips
+
+
+def chip_roster_problems(text):
+    """[problem] for one page's own chips, before any page is compared.
+
+    A page failing here is left out of the comparison below, because a
+    roster this file could not read whole is not evidence about another
+    page - but it is REPORTED, never skipped. Failing open is the
+    default for a reader, and #152 exists because three separate rules
+    each stopped short of the chips in silence.
+    """
+    problems = []
+    chips = page_chips(text)
+
+    counted = len(CHIP_MARKUP.findall(text))
+    if counted != len(chips):
+        problems.append(
+            "carries %d %s attribute(s) and this check pairs %d of them "
+            "with a label. CHIP_MARKUP is what check 19 counts a chip by, "
+            "so a chip that check can see and this one cannot read is a "
+            "chip nothing compares - teach the reader in "
+            "tools/check_web.py the shape that got past it, rather than "
+            "leaving the comparison below to run on what is left"
+            % (counted, CHIP_ATTRIBUTE, len(chips)))
+
+    seen = set()
+    for name, label in chips:
+        if not name:
+            problems.append(
+                "carries a %s chip with an empty id. theme.js stores that "
+                "string as the member's palette preference, so a chip with "
+                "nothing in it returns whoever presses it to the default "
+                "and reports success" % CHIP_ATTRIBUTE)
+        elif name in seen:
+            problems.append(
+                "carries two chips for the palette \"%s\". A page "
+                "disagreeing with itself is not something comparing it "
+                "with another page can settle" % name)
+        else:
+            seen.add(name)
+
+        if label is None:
+            problems.append(
+                "carries a chip for \"%s\" whose element never closes, so "
+                "there are no words to compare and the rest of the page is "
+                "inside the button" % (name or CHIP_ATTRIBUTE))
+        elif not label:
+            problems.append(
+                "carries a chip for \"%s\" with no visible words in it. "
+                "The id is what gets stored; the label is the only part a "
+                "member ever reads" % name)
+
+    return problems
+
+
+def chip_parity_problems(rosters):
+    """[(subject, problem)] for chip rosters that disagree.
+
+    `rosters` is {page: [(id, label)]} for the pages whose own chips
+    read clean. Compared against whichever page sorts first, for the
+    reason rail parity gives: a message naming a specific page to go
+    and look at beats one saying that they differ.
+    """
+    if len(rosters) < 2:
+        return [(CHIP_PIN,
+                 "leaves this arm %d roster to compare. Parity is a claim "
+                 "about copies, and a rule holding one copy cannot fail - "
+                 "which is the failure #114 paid for. Either the pages "
+                 "that offer a palette come back, or this arm has outlived "
+                 "its subject and goes out with the reason written down"
+                 % len(rosters))]
+
+    problems = []
+    reference = sorted(rosters)[0]
+    for name in sorted(rosters):
+        if name == reference:
+            continue
+        here, there = rosters[name], rosters[reference]
+        ids_here = [i for i, _ in here]
+        ids_there = [i for i, _ in there]
+
+        missing = [i for i in ids_there if i not in ids_here]
+        extra = [i for i in ids_here if i not in ids_there]
+        if missing or extra:
+            problems.append((
+                name,
+                "offers a different set of palettes from %s: %s has %s "
+                "that this page does not, and this page has %s that %s "
+                "does not. A palette offered on some pages and not others "
+                "is one a member chooses and then cannot get back to"
+                % (reference, reference, missing or "nothing",
+                   extra or "nothing", reference)))
+            continue
+
+        words = dict(there)
+        drifted = [(i, w) for i, w in here if w != words[i]]
+        for palette, label in drifted:
+            problems.append((
+                name,
+                "calls the \"%s\" palette %r where %s calls it %r. Every "
+                "page writes these buttons out by hand and the id is what "
+                "gets stored, so a rename reaching some of the copies "
+                "breaks nothing, says nothing, and leaves one palette "
+                "wearing two names on one site (#152)"
+                % (palette, label, reference, words[palette])))
+        if drifted:
+            continue
+
+        if ids_here != ids_there:
+            problems.append((
+                name,
+                "offers the same palettes as %s in a different order (%s "
+                "against %s). This list is hand-copied exactly as the rail "
+                "is, and it drifts the same way - a chip inserted where "
+                "the page somebody copied from did not have it"
+                % (reference, ids_here, ids_there)))
+
+    return problems
+
+
+def chip_problems():
+    """(subject, problem) for the palette chips across the pinned pages."""
+    problems = []
+    rosters = {}
+
+    for name in sorted(THEMED_PAGES & set(html_pages())):
+        text = page_text(name)
+        if not CHIP_MARKUP.search(text):
+            # Presence is check 19's, and it fails on this same page,
+            # from this same roster, in this same run. Restating it here
+            # is what that check's docstring declines to do in the other
+            # direction - so the page is left out of the comparison and
+            # nothing is lost, because the gate is one exit code.
+            continue
+        own = chip_roster_problems(text)
+        problems.extend((name, problem) for problem in own)
+        if not own:
+            rosters[name] = page_chips(text)
+
+    return problems + chip_parity_problems(rosters)
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -3081,6 +3315,9 @@ def main():
 
     for page, problem in loading_problems():
         problems.append("%s %s." % (page, problem))
+
+    for subject, problem in chip_problems():
+        problems.append("%s %s." % (subject, problem))
 
     for rel, description in key_shaped_content():
         problems.append(
