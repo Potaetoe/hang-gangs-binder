@@ -278,9 +278,23 @@ const DB = {
             // swept here instead would let a revoke that signed the
             // whole group out pass every assertion in this file.
             sessions = sessions.filter((s) => s.token_hash !== a[0]);
-          } else {
+          } else if (/account_id/i.test(sql)) {
+            // Ending every session one account holds. The rows are
+            // chosen by the statement's own WHERE rather than by a rule
+            // written here, so a WHERE that lost its account_id sweeps
+            // this table exactly as it would sweep D1 - and the
+            // bystander check below is what sees that happen.
+            sessions = sessions.filter((s) => !matches(s, a));
+          } else if (/expires_at/i.test(sql)) {
             const cutoff = Date.parse(a[0]);
             sessions = sessions.filter((s) => Date.parse(s.expires_at) > cutoff);
+          } else {
+            // The else that is not a silent skip. Three DELETEs are sent
+            // against this table and they mean three different things -
+            // one row, one account, everything expired. A fourth shape
+            // arriving here without this arm would be modelled as
+            // whichever branch happened to sit last and would pass.
+            throw new Error("unmodelled DELETE against sessions: " + sql);
           }
         } else if (verb === "UPDATE") {
           // Sliding an idle window finds one row by token hash and moves
@@ -601,7 +615,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 290);
+const { check, report } = suite("worker.js", 313);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -932,6 +946,135 @@ await statusOf("the allowlist overrides the group check",
 globalThis.fetch = async () => { throw new Error("Telegram unreachable"); };
 await statusOf("an unreachable Telegram refuses rather than admits",
   signIn({}, gated), 403);
+globalThis.fetch = realFetch;
+
+/* ------------------------------------------------------------------ */
+/* Leaving the group ends the session it left behind (#136).           */
+
+/*
+ * The gap this closes: sign-in asked Telegram, and nothing asked again.
+ * A member who left the group kept a live session until it expired.
+ *
+ * What is asserted here is the WHOLE of the bound, in both directions,
+ * because the two directions fail differently and only one of them is
+ * loud. Revoking too little leaves the defect in place, which is
+ * invisible. Revoking too much signs the group out during a Telegram
+ * outage, which is invisible until the outage.
+ *
+ * `answer` is what Telegram says, set per case; an Error means the call
+ * itself fails. `telegramCalls` counts the round trips, which is the
+ * only way to assert that break-glass short-circuits BEFORE the network
+ * rather than merely arriving at the same verdict afterwards.
+ */
+reset();
+
+let telegramCalls = 0;
+let answer = { ok: true, result: { status: "member" } };
+globalThis.fetch = async () => {
+  telegramCalls += 1;
+  if (answer instanceof Error) throw answer;
+  return new Response(JSON.stringify(answer), { headers: TYPE });
+};
+
+/* A session minted while Telegram still says "member", whatever the
+ * case under test is about to make it say. Restoring `answer` rather
+ * than leaving it set is what keeps each case independent of the last. */
+const mintFor = async (user) => {
+  const was = answer;
+  answer = { ok: true, result: { status: "member" } };
+  const token = (await (await signIn(user, gated)).json()).session;
+  answer = was;
+  return token;
+};
+
+const leaver = await mintFor({});
+const bystander = await mintFor({ id: 7, username: "bystander" });
+check("two accounts hold live sessions before any of this",
+  sessions.length === 2, `${sessions.length} sessions`);
+
+answer = { ok: true, result: { status: "left" } };
+await statusOf("a leaver is refused at their next sign-in",
+  signIn({}, gated), 403);
+await statusOf("and the session they were still holding is gone",
+  call("GET", "/me", { headers: bearer(leaver) }), 401);
+/* The control, and the reason it is here: a revocation that swept the
+ * table would satisfy every assertion above it and sign out the group. */
+await statusOf("while another account's session is untouched",
+  call("GET", "/me", { headers: bearer(bystander) }), 200);
+
+/*
+ * A DEFINITIVE departure - Telegram answered, and the answer names a
+ * status this Worker knows means gone. These end the session.
+ */
+const DEPARTURES = [
+  ["left", { ok: true, result: { status: "left" } }],
+  ["kicked", { ok: true, result: { status: "kicked" } }],
+  ["a restricted member who has actually left",
+    { ok: true, result: { status: "restricted", is_member: false } }],
+];
+
+for (const [what, reply] of DEPARTURES) {
+  const token = await mintFor({});
+  answer = reply;
+  await statusOf(`${what}: the sign-in is refused`, signIn({}, gated), 403);
+  await statusOf(`${what}: and the live session it left behind ends`,
+    call("GET", "/me", { headers: bearer(token) }), 401);
+}
+
+/*
+ * NOT a departure - the sign-in is refused just the same, because the
+ * posture is fail-closed and this slice does not soften it, but nothing
+ * is revoked. This is the arm most likely to be "simplified" later into
+ * "refused means gone", and simplifying it means a Telegram outage plus
+ * one sign-in attempt signs that member out of a session they still
+ * hold. An unreadable answer is not evidence of anything.
+ */
+const NOT_DEPARTURES = [
+  ["an unreachable Telegram", new Error("Telegram unreachable")],
+  ["an answer Telegram could not give",
+    { ok: false, description: "chat not found" }],
+  ["a result carrying no status at all", { ok: true, result: {} }],
+  ["a status this Worker has not been taught",
+    { ok: true, result: { status: "wizard" } }],
+];
+
+for (const [what, reply] of NOT_DEPARTURES) {
+  const token = await mintFor({});
+  answer = reply;
+  await statusOf(`${what}: the sign-in is refused just the same`,
+    signIn({}, gated), 403);
+  await statusOf(`${what}: and nothing is revoked`,
+    call("GET", "/me", { headers: bearer(token) }), 200);
+}
+
+/*
+ * Break-glass, unchanged and asserted at the network rather than at the
+ * status code. ALWAYS_ALLOW_TELEGRAM_IDS exists for the case where the
+ * group check itself has failed - the bot removed from the group, the
+ * API down - so it has to be answered before anything is dialled.
+ */
+reset();
+telegramCalls = 0;
+answer = new Error("Telegram unreachable");
+await statusOf("the allowlist signs in with Telegram unreachable",
+  signIn({}, { ...gated, ALWAYS_ALLOW_TELEGRAM_IDS: "4242" }), 200);
+check("and asked Telegram nothing at all",
+  telegramCalls === 0, `${telegramCalls} round trips`);
+
+/*
+ * The development Worker's arm. It carries no group chat id and no bot
+ * token, and both absences have to stay quiet answers rather than a
+ * dereference of something that is not there.
+ */
+telegramCalls = 0;
+await statusOf("with no group chat id configured the check is off",
+  signIn({}, env), 200);
+check("and nothing was interpolated into a Telegram URL",
+  telegramCalls === 0, `${telegramCalls} round trips`);
+
+await statusOf("a Worker with no bot token refuses cleanly rather than throwing",
+  signIn({}, { ...env, TELEGRAM_BOT_TOKEN: undefined }), 401);
+
 globalThis.fetch = realFetch;
 
 /* ------------------------------------------------------------------ */
