@@ -3065,7 +3065,15 @@ def page_chips(text):
     attribute repeatedly, and a rule reading a page's comments is
     describing markup the page does not have.
     """
-    return []
+    chips = []
+    for found in CHIP_OPEN.finditer(text):
+        tag, attributes = found.group(1), found.group(2)
+        closing = re.compile(r"</%s\s*>" % re.escape(tag), re.I)
+        end = closing.search(text, found.end())
+        label = label_text(text[found.end():end.start()]) if end else None
+        chips.append((tag_attribute(attributes, CHIP_ATTRIBUTE) or "",
+                      label))
+    return chips
 
 
 def chip_roster_problems(text):
@@ -3077,7 +3085,48 @@ def chip_roster_problems(text):
     default for a reader, and #152 exists because three separate rules
     each stopped short of the chips in silence.
     """
-    return []
+    problems = []
+    chips = page_chips(text)
+
+    counted = len(CHIP_MARKUP.findall(text))
+    if counted != len(chips):
+        problems.append(
+            "carries %d %s attribute(s) and this check pairs %d of them "
+            "with a label. CHIP_MARKUP is what check 19 counts a chip by, "
+            "so a chip that check can see and this one cannot read is a "
+            "chip nothing compares - teach the reader in "
+            "tools/check_web.py the shape that got past it, rather than "
+            "leaving the comparison below to run on what is left"
+            % (counted, CHIP_ATTRIBUTE, len(chips)))
+
+    seen = set()
+    for name, label in chips:
+        if not name:
+            problems.append(
+                "carries a %s chip with an empty id. theme.js stores that "
+                "string as the member's palette preference, so a chip with "
+                "nothing in it returns whoever presses it to the default "
+                "and reports success" % CHIP_ATTRIBUTE)
+        elif name in seen:
+            problems.append(
+                "carries two chips for the palette \"%s\". A page "
+                "disagreeing with itself is not something comparing it "
+                "with another page can settle" % name)
+        else:
+            seen.add(name)
+
+        if label is None:
+            problems.append(
+                "carries a chip for \"%s\" whose element never closes, so "
+                "there are no words to compare and the rest of the page is "
+                "inside the button" % (name or CHIP_ATTRIBUTE))
+        elif not label:
+            problems.append(
+                "carries a chip for \"%s\" with no visible words in it. "
+                "The id is what gets stored; the label is the only part a "
+                "member ever reads" % name)
+
+    return problems
 
 
 def chip_parity_problems(rosters):
@@ -3088,12 +3137,83 @@ def chip_parity_problems(rosters):
     reason rail parity gives: a message naming a specific page to go
     and look at beats one saying that they differ.
     """
-    return []
+    if len(rosters) < 2:
+        return [(CHIP_PIN,
+                 "leaves this arm %d roster to compare. Parity is a claim "
+                 "about copies, and a rule holding one copy cannot fail - "
+                 "which is the failure #114 paid for. Either the pages "
+                 "that offer a palette come back, or this arm has outlived "
+                 "its subject and goes out with the reason written down"
+                 % len(rosters))]
+
+    problems = []
+    reference = sorted(rosters)[0]
+    for name in sorted(rosters):
+        if name == reference:
+            continue
+        here, there = rosters[name], rosters[reference]
+        ids_here = [i for i, _ in here]
+        ids_there = [i for i, _ in there]
+
+        missing = [i for i in ids_there if i not in ids_here]
+        extra = [i for i in ids_here if i not in ids_there]
+        if missing or extra:
+            problems.append((
+                name,
+                "offers a different set of palettes from %s: %s has %s "
+                "that this page does not, and this page has %s that %s "
+                "does not. A palette offered on some pages and not others "
+                "is one a member chooses and then cannot get back to"
+                % (reference, reference, missing or "nothing",
+                   extra or "nothing", reference)))
+            continue
+
+        words = dict(there)
+        drifted = [(i, w) for i, w in here if w != words[i]]
+        for palette, label in drifted:
+            problems.append((
+                name,
+                "calls the \"%s\" palette %r where %s calls it %r. Every "
+                "page writes these buttons out by hand and the id is what "
+                "gets stored, so a rename reaching some of the copies "
+                "breaks nothing, says nothing, and leaves one palette "
+                "wearing two names on one site (#152)"
+                % (palette, label, reference, words[palette])))
+        if drifted:
+            continue
+
+        if ids_here != ids_there:
+            problems.append((
+                name,
+                "offers the same palettes as %s in a different order (%s "
+                "against %s). This list is hand-copied exactly as the rail "
+                "is, and it drifts the same way - a chip inserted where "
+                "the page somebody copied from did not have it"
+                % (reference, ids_here, ids_there)))
+
+    return problems
 
 
 def chip_problems():
     """(subject, problem) for the palette chips across the pinned pages."""
-    return []
+    problems = []
+    rosters = {}
+
+    for name in sorted(THEMED_PAGES & set(html_pages())):
+        text = page_text(name)
+        if not CHIP_MARKUP.search(text):
+            # Presence is check 19's, and it fails on this same page,
+            # from this same roster, in this same run. Restating it here
+            # is what that check's docstring declines to do in the other
+            # direction - so the page is left out of the comparison and
+            # nothing is lost, because the gate is one exit code.
+            continue
+        own = chip_roster_problems(text)
+        problems.extend((name, problem) for problem in own)
+        if not own:
+            rosters[name] = page_chips(text)
+
+    return problems + chip_parity_problems(rosters)
 
 
 def main():
