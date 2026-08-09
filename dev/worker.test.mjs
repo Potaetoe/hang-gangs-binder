@@ -2569,15 +2569,12 @@ check("the listing and the count ask one supersede question, not two copies",
  * because GET /me owns that fact, and no handle anywhere, because this
  * Worker holds none.
  *
- * THE CIPHERTEXT ARRIVED WITH #85's DEVICE KEY AND NOT BEFORE. This arm
- * previously asserted the opposite - that no stored blob appeared in the
- * response at all - on the reasoning that the bytes were inert to the
- * only caller allowed to ask for them, because nothing in the tree could
- * open one. apps/web/memberkey.js is what changes that, and the field
- * that was refused as gratuitous is now the whole point of the route.
- * What has NOT changed is the reason the old arm existed: a stolen
- * member session downloads this member's sealed history, which is why
- * the revocation arm below is here and why the cap above it is.
+ * THE BYTES ARE HERE BECAUSE apps/web/memberkey.js CAN OPEN THEM. Read
+ * the key set as the load-bearing half: a fifth field cannot arrive
+ * without somebody reading this paragraph, and the reason a fourth one
+ * was worth this much argument is that a stolen member session takes a
+ * whole sealed history rather than counts. That cost is what the cap
+ * arms and the revocation arm below are for.
  */
 const listedText = await (await myEntries(READER)).text();
 const entryKeys = [...new Set(

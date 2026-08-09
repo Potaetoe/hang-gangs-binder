@@ -80,8 +80,11 @@ await check("the device key gets a database of its own", () =>
  * neither, and a slice that moved it into either would be moving
  * exportable bytes into storage a script can read back as a string.
  */
+const code = source.replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
 await check("the key touches neither web storage", () =>
-  !/\blocalStorage\b/.test(source) && !/\bsessionStorage\b/.test(source));
+  !/\blocalStorage\b/.test(code) && !/\bsessionStorage\b/.test(code));
 
 /* ------------------------------------------------------------------ */
 /* The key itself.                                                     */
@@ -101,21 +104,32 @@ await check("the key touches neither web storage", () =>
  * that has to fail.
  */
 const generateCall =
-  /generateKey\(\s*\{\s*name:\s*"ECDH",\s*namedCurve:\s*"P-256"\s*\},\s*(\w+),\s*\[([^\]]*)\]/
-    .exec(source);
+  /generateKey\(\s*\{\s*name:\s*"ECDH",\s*namedCurve:\s*([\w"-]+)\s*\},\s*(\w+),\s*\[([^\]]*)\]/
+    .exec(code);
+
+/*
+ * The curve may be a literal or the named constant crypto.js also uses,
+ * and both are resolved here rather than one of them being assumed. A
+ * constant that quietly became P-384 would leave every arm below green
+ * against a key crypto.js cannot seal to.
+ */
+const curve = generateCall && (/^"/.test(generateCall[1])
+  ? generateCall[1].replace(/"/g, "")
+  : (new RegExp("const " + generateCall[1] + ' = "([^"]+)"').exec(code) ||
+      [])[1]);
 
 await check("the shipped file asks for a P-256 ECDH pair", () =>
-  Boolean(generateCall));
+  Boolean(generateCall) && curve === "P-256");
 
 await check("and asks for it non-extractable, in the file rather than here",
-  () => generateCall[1] === "false");
+  () => generateCall[2] === "false");
 
 await check("with deriveBits and nothing else", () =>
-  generateCall[2].replace(/\s|"/g, "") === "deriveBits");
+  generateCall[3].replace(/\s|"/g, "") === "deriveBits");
 
 const pair = await crypto.subtle.generateKey(
-  { name: "ECDH", namedCurve: "P-256" }, generateCall[1] === "true",
-  generateCall[2].replace(/\s|"/g, "").split(",").filter(Boolean));
+  { name: "ECDH", namedCurve: curve }, generateCall[2] === "true",
+  generateCall[3].replace(/\s|"/g, "").split(",").filter(Boolean));
 
 await check("the private half cannot be exported by anything", async () => {
   if (pair.privateKey.extractable) return false;
@@ -169,7 +183,11 @@ await check("and a different device key opens nothing of the first one's",
       await Crypto.decrypt(blob, other.privateKey);
       return false;
     } catch (error) {
-      return /could not be opened/.test(error.message);
+      // The envelope's refusal rather than the single-recipient one. A
+      // second device key is a v2 row by construction, and a member
+      // reading "sealed to different keys" about a row that has two
+      // blocks neither of which is theirs is being told the wrong thing.
+      return /none of this row's recipient blocks opened/.test(error.message);
     }
   });
 
@@ -303,9 +321,25 @@ await check("forgetting a key that cannot exist is not an error",
  * pins a decision that would otherwise be provable only in a browser,
  * and each names what a mutation of it would cost.
  */
-await check("the record is keyed by account id, not by a fixed row name",
-  () => /store\.put\(record,\s*record\.accountId\)/.test(source) ||
-    /put\(\s*record,\s*accountId\s*\)/.test(source));
+/*
+ * Keyed by account id, and by the record's OWN account id rather than
+ * by a key handed in beside it.
+ *
+ * `keyPath` is what makes those the same thing: the store reads the key
+ * out of the object it is storing, so a record cannot be filed under an
+ * account it does not claim to belong to. Storing under an out-of-line
+ * key would leave the two able to disagree, and a record filed under
+ * one member while claiming another is a record `custodyVerdict` reads
+ * as foreign every time - a key regenerated on every load, which looks
+ * like nothing at all until an export finds rows nobody can open.
+ *
+ * A fixed row name is the other failure, and it is #56's: one row means
+ * one key per browser, handed to whoever signs in next.
+ */
+await check("the store keys records by the account id inside them", () =>
+  /createObjectStore\([^,]+,\s*\{\s*keyPath:\s*ROW_KEY\s*\}\)/.test(code) &&
+  Keys.ROW_KEY === "accountId" &&
+  /store\.get\(accountId\)/.test(code));
 
 await check("the key material is stored as objects, never as JWK or bytes",
   () => !/exportKey\(\s*"jwk"/.test(source) && !/\.d\b/.test(source));
@@ -358,7 +392,7 @@ await check("and the name it calls is the name this module exports", () => {
  * every erase has to be started before it.
  */
 await check("the key is destroyed before the page navigates away", () => {
-  const body = /function signOut\(\)[\s\S]*?\n  \}/.exec(signOutSource)[0];
+  const body = /function signOut\(\)[\s\S]*?\n {2}\}/.exec(signOutSource)[0];
   return body.indexOf("forget") < body.indexOf("location") &&
     body.indexOf("revokeSession") < body.indexOf("forget");
 });

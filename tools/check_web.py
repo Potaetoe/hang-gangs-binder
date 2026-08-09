@@ -2775,6 +2775,7 @@ MODULE_EXPORTS = {
     "crypto.js": "BinderCrypto",
     "dashboard.js": "BinderDashboard",
     "form.js": "BinderForm",
+    "memberkey.js": "BinderMemberKey",
     "query.js": "BinderQuery",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
@@ -3292,6 +3293,96 @@ def module_captures(js):
             if re.search(CAPTURED_NAMESPACE % namespace, js)}
 
 
+# A namespace one script reads at CALL time from a page that may not have
+# published it, declared here with the reason - and admitted only when the
+# reading script is SHAPED that way, which is what the two arms below
+# verify.
+#
+# Why the exemption has to exist at all: signout.js is loaded by every
+# signed-in page because Sign out is in the rail, while memberkey.js is
+# loaded only by the page that seals entries. Requiring the publisher
+# beside every reader would put a member's device key on dashboard.html
+# and admin.html to satisfy a check - which is weight on two pages for
+# nothing, and a capability on the instrument page that DESIGN.md's
+# per-page table exists to keep narrow. The alternative of dropping the
+# reference is worse: DESIGN.md says signing out destroys the device key,
+# and a sign-out that does not is that sentence going quiet.
+#
+# Why it is safe HERE and would not be in general: the hazard the rule
+# above names is a value captured while the page loads, when the
+# publisher has not run - `const UI = root.BinderUI;` at the top of a
+# file. A read inside a function that runs when somebody presses a button
+# has no such window, and a read that is guarded before use answers
+# "this page has no key of its own" instead of throwing.
+#
+# So a declaration alone does not buy the exemption. Both properties are
+# checked, because a pair listed here would otherwise be a permanent
+# hole that outlives the shape that justified it: the reference must
+# never appear at the module's own top level, and the value must be
+# guarded before it is used.
+DEFERRED_CAPTURES = {
+    ("signout.js", "BinderMemberKey"):
+        "Sign out is in the rail on every signed-in page; the device key "
+        "exists only on the page that seals entries. Read when the button "
+        "is pressed, and guarded, so a page without the module destroys "
+        "nothing rather than throwing",
+}
+
+
+def deferred_capture_problems(name, js):
+    """[problem] for a declared deferred capture whose shape does not hold.
+
+    Pure over one script's text, so the two properties can be exercised
+    against sources this tree does not contain - a rule tested only
+    against the file it was written for is a rule that says yes to
+    whatever that file happens to do.
+    """
+    problems = []
+    for (script, namespace), reason in sorted(DEFERRED_CAPTURES.items()):
+        if script != name:
+            continue
+        if not reason.strip():
+            problems.append(
+                "%s is exempted for %s with no reason written down. The "
+                "reason is the whole of what makes this reviewable"
+                % (script, namespace))
+        reference = re.compile(CAPTURED_NAMESPACE % namespace)
+        # Brace depth, counted from the file's own IIFE. Everything a
+        # module writes sits at depth 1; a function body is deeper. A
+        # reference at depth 1 is read while the page loads, which is
+        # exactly the hazard the exemption does not cover.
+        depth = 0
+        for index, character in enumerate(js):
+            if character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+            elif reference.match(js, index) and depth <= 1:
+                problems.append(
+                    "%s reads %s at its own top level while claiming to "
+                    "defer it. That runs as the page loads, which is the "
+                    "capture this exemption does not cover" % (script, namespace))
+                break
+        # The guard is required on the name the read was bound to, not
+        # merely present somewhere in the file. Any `if` anywhere would
+        # otherwise satisfy this, which is a check that cannot fail.
+        bound = re.search(
+            r"(?:const|let|var)\s+(\w+)\s*=\s*" + (CAPTURED_NAMESPACE % namespace),
+            js)
+        if not bound:
+            problems.append(
+                "%s reads %s without binding it to a name, so there is "
+                "nothing for the absence guard to test" % (script, namespace))
+            continue
+        local = bound.group(1)
+        if not re.search(r"if\s*\(\s*%s\s*&&" % local, js):
+            problems.append(
+                "%s reads %s into `%s` and does not guard on it. A page "
+                "that does not publish the module must go quiet, not throw"
+                % (script, namespace, local))
+    return problems
+
+
 def run_order_problems(run, captures):
     """[problem] for a run of scripts that reads a namespace too early.
 
@@ -3309,6 +3400,12 @@ def run_order_problems(run, captures):
         for namespace in sorted(captures.get(name, ())):
             owner = publisher.get(namespace)
             if owner is None or owner == name:
+                continue
+            # Declared as read when something is pressed rather than as
+            # the page loads, and shape-checked where the script is read.
+            # The ordering rule has nothing to say about it: there is no
+            # load-time window to be on the wrong side of.
+            if (name, namespace) in DEFERRED_CAPTURES:
                 continue
             if owner not in at:
                 problems.append(
@@ -3329,12 +3426,19 @@ def run_order_problems(run, captures):
 def loading_problems():
     """(page, problem) for every published page's loading shape."""
     captures = {}
+    problems = []
     for name in sorted(os.listdir(WEB)):
         if name.endswith(".js"):
-            captures[name] = module_captures(strip_js_comments(
-                open(os.path.join(WEB, name), encoding="utf-8").read()))
+            js = strip_js_comments(
+                open(os.path.join(WEB, name), encoding="utf-8").read())
+            captures[name] = module_captures(js)
+            # Attributed to the script rather than to a page: an
+            # exemption whose shape has gone is wrong wherever it is
+            # loaded, and blaming the first page to load it would send
+            # the reader to the wrong file.
+            for problem in deferred_capture_problems(name, js):
+                problems.append((name, problem))
 
-    problems = []
     for name in html_pages():
         text = open(os.path.join(WEB, name), encoding="utf-8").read()
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)

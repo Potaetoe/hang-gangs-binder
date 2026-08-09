@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 309
+EXPECTED = 318
 
 
 def check(label, condition):
@@ -635,7 +635,7 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 11 and all(frozen_in_place))
+      len(frozen_in_place) == 12 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -1368,6 +1368,58 @@ check("the refusal names both files and the namespace",
 check("a publisher absent from the page entirely is refused",
       any("never loads ui.js" in p for p in check_web.run_order_problems(
           ["auth.js"], CAPTURES)))
+
+# The deferred-capture exemption, and the shape that is the whole of what
+# admits it. Exercised against sources this tree does not contain,
+# because a rule tested only against the one file it was written for is a
+# rule that says yes to whatever that file happens to do - and this one
+# is an exemption, so it is the rule most able to turn into a hole.
+DEFERRED = ("signout.js", "BinderMemberKey")
+
+check("every deferred capture is declared with a reason",
+      all(reason.strip()
+          for reason in check_web.DEFERRED_CAPTURES.values()))
+check("a declared deferred capture is exempt from the ordering rule",
+      check_web.run_order_problems(
+          ["signout.js"], {"signout.js": {"BinderMemberKey"}}) == [])
+# The pair, not the namespace. Another script reading the same namespace
+# without a declaration of its own gets no exemption from this one -
+# otherwise one entry would quietly cover the whole tree.
+check("the exemption is per script, not per namespace",
+      any("never loads memberkey.js" in p for p in
+          check_web.run_order_problems(
+              ["submit.js"], {"submit.js": {"BinderMemberKey"}})))
+
+GUARDED = ('(function (root) { function go() { const keys = '
+           'root.BinderMemberKey; if (keys && keys.forget) keys.forget(); } '
+           '})(globalThis);')
+
+check("a deferred read inside a function, guarded, raises nothing",
+      check_web.deferred_capture_problems("signout.js", GUARDED) == [])
+check("the same read at the module's own top level is refused",
+      any("top level" in p for p in check_web.deferred_capture_problems(
+          "signout.js",
+          "(function (root) { const keys = root.BinderMemberKey; })"
+          "(globalThis);")))
+check("an unguarded deferred read is refused",
+      any("does not guard" in p for p in check_web.deferred_capture_problems(
+          "signout.js",
+          "(function (root) { function go() { const keys = "
+          "root.BinderMemberKey; keys.forget(); } })(globalThis);")))
+check("a deferred read bound to no name is refused",
+      any("nothing for the absence guard" in p
+          for p in check_web.deferred_capture_problems(
+              "signout.js",
+              "(function (root) { function go() { "
+              "root.BinderMemberKey.forget(); } })(globalThis);")))
+check("a script with no declaration of its own is not shape-checked here",
+      check_web.deferred_capture_problems("ui.js", GUARDED) == [])
+check("and the shipped signout.js satisfies the shape it claims",
+      check_web.deferred_capture_problems(
+          DEFERRED[0],
+          check_web.strip_js_comments(open(
+              os.path.join(check_web.WEB, DEFERRED[0]),
+              encoding="utf-8").read())) == [])
 
 check("the shipped pages' script runs are read, not assumed",
       check_web.page_script_run(
