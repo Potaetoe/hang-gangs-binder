@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 111);
+const { check, mustReject, report } = suite("demo", 126);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -671,6 +671,7 @@ await check("a card speaks the driver's language, not the harness's", () =>
  */
 const consoleHtml = await readFile(HERE("./demo.html"), "utf8");
 const consoleJs = await readFile(HERE("./demo-console.js"), "utf8");
+const bootSource = await readFile(HERE("./demo-boot.js"), "utf8");
 
 await check("the console page carries the cards and the destinations", () =>
   consoleHtml.includes('id="features"') &&
@@ -718,6 +719,196 @@ await check("UAT.md and the console name exactly the same cards", () => {
     [...mine].every((title) => uatCards.has(title)) &&
     [...uatCards].every((title) => mine.has(title));
 });
+
+/* ------------------------------------------------------------------ */
+/* #212. The feed: a press narrates what actually happened.            */
+
+/*
+ * The cards stage correctly and the frame shows the right page, and the
+ * owner still could not see anything HAPPEN - a press that proves
+ * "signed out means signed out" looks like nothing more than the
+ * sign-in page appearing (#212). So the console carries a feed, and the
+ * feed is honest by construction: every line is computed from an event
+ * that occurred - the staging the press just wrote, or an answer the
+ * stubbed Worker just gave - never from a script of what should happen.
+ * A scripted feed would be the false-confidence lie this suite's header
+ * names, told in the one place built to dispel it.
+ *
+ * Both halves are pure and live in demo-stub.js so they are driven
+ * here: narrate() turns one Worker answer into a line or into null,
+ * stagingStory() turns one staging into its lines. demo-boot.js posts
+ * narrations on a BroadcastChannel as the traffic happens, and the
+ * console only paints what arrives.
+ */
+
+await check("the demo names one event channel, and apps/web never says it", () =>
+  typeof Demo.EVENT_CHANNEL === "string" &&
+  Demo.EVENT_CHANNEL.startsWith("hgb-demo") &&
+  Object.values(webSource).every((src) =>
+    !src.includes(Demo.EVENT_CHANNEL)));
+
+await check("a /me answer is narrated with the count on record", () => {
+  const line = Demo.narrate({ method: "GET", path: "/me", status: 200,
+    body: { ok: true, entries: 4, superseded: 0 } });
+  return typeof line === "string" && line.includes("4");
+});
+
+/*
+ * The supersede card's whole payoff is two numbers moving differently,
+ * and the feed is where the difference gets said out loud: a replaced
+ * row is a CORRECTION, in the driver's word for it, with its count.
+ */
+await check("a superseded row is narrated as a correction, with its count", () => {
+  const line = Demo.narrate({ method: "GET", path: "/me", status: 200,
+    body: { ok: true, entries: 4, superseded: 2 } });
+  return typeof line === "string" && /correction/i.test(line) &&
+    line.includes("2");
+});
+
+/*
+ * The 401 is the revoked card's one visible moment - the page just
+ * bounces to Sign in, and only the feed can say WHY. Whatever the path:
+ * every gated route refuses the same way, so the narration must not be
+ * keyed to one of them.
+ */
+await check("a 401 is narrated as the session refusing, whatever the path", () =>
+  ["/me", "/submit", "/export"].every((path) => {
+    const line = Demo.narrate({ method: "GET", path, status: 401,
+      body: { error: "This session is no longer valid." } });
+    return typeof line === "string" && /session/i.test(line) &&
+      /sign in/i.test(line);
+  }));
+
+await check("signing out is narrated as the deletion it is", () => {
+  const line = Demo.narrate({ method: "DELETE", path: "/session",
+    status: 200, body: { ok: true } });
+  return typeof line === "string" && /signed out/i.test(line);
+});
+
+await check("a submission is narrated sealed, because sealed is its point", () => {
+  const line = Demo.narrate({ method: "POST", path: "/submit", status: 200,
+    body: { ok: true, id: 900 } });
+  return typeof line === "string" && /sealed/i.test(line);
+});
+
+/*
+ * Null is a real answer and the feed depends on it: every page asks for
+ * site copy on load, so narrating it would bury the signal under a line
+ * per page view - and a route nobody taught the narrator must stay
+ * silent rather than guess.
+ */
+await check("chatter is not narrated, so the feed stays signal", () =>
+  Demo.narrate({ method: "GET", path: "/content", status: 200,
+    body: { ok: true, content: {} } }) === null &&
+  Demo.narrate({ method: "GET", path: "/never-taught", status: 200,
+    body: { ok: true } }) === null);
+
+/*
+ * A refusal the operator provoked carries the Worker's own words,
+ * because those words are the product behavior being demonstrated -
+ * paraphrasing them would put a second opinion between the driver and
+ * the thing they are judging.
+ */
+await check("a refusal is narrated with the Worker's words in it", () => {
+  const line = Demo.narrate({ method: "POST", path: "/membership",
+    status: 400, body: { error: "A numeric Telegram id is needed." } });
+  return typeof line === "string" && line.includes("numeric Telegram id");
+});
+
+/*
+ * The sweep: real requests through the real stub, and every line that
+ * comes out speaks the driver's language. Driven through answerFor
+ * rather than hand-built events so the narrations are held against the
+ * answers the stub actually gives - a narrate() tuned to events the
+ * stub never produces would pass any hand-written list.
+ */
+await check("every narration of real traffic speaks the driver's language", () =>
+  [
+    { request: { method: "POST", path: "/auth/telegram", body: {} },
+      state: world("signed-out") },
+    { request: { method: "GET", path: "/me" }, state: world("member") },
+    { request: { method: "GET", path: "/me" }, state: world("supersede") },
+    { request: { method: "POST", path: "/submit", body: {} },
+      state: world("member") },
+    { request: { method: "DELETE", path: "/session" }, state: world("member") },
+    { request: { method: "GET", path: "/me" }, state: world("revoked") },
+    { request: { method: "GET", path: "/export" }, state: world("keyholder") },
+    { request: { method: "GET", path: "/snapshot" }, state: world("member") },
+    { request: { method: "POST", path: "/snapshot", body: { snapshot: 1 } },
+      state: world("admin") },
+    { request: { method: "GET", path: "/membership" }, state: world("admin") },
+    { request: { method: "POST", path: "/membership",
+      body: { role: "admin", telegramId: "x" } }, state: world("admin") },
+    { request: { method: "GET", path: "/content" }, state: world("member") },
+    { request: { method: "POST", path: "/content",
+      body: { name: "site.title", value: "X" } }, state: world("admin") },
+    { request: { method: "GET", path: "/nothing" }, state: world("member") },
+  ].every((one) => {
+    const answer = Demo.answerFor(one.request, one.state);
+    const line = Demo.narrate({
+      method: one.request.method,
+      path: one.request.path,
+      status: answer.status,
+      body: answer.body,
+    });
+    return line === null ||
+      (typeof line === "string" && line.length > 0 &&
+        !CARD_JARGON.test(line) && !line.includes("`"));
+  }));
+
+/*
+ * The other half of the feed: what the press itself just did. Also pure,
+ * also derived - from the staging's own fields, not from a description
+ * beside them - so a scenario that stages something new with no story
+ * for it fails here rather than staging silently.
+ */
+await check("every staging tells its story, in the driver's language", () =>
+  Demo.SCENARIOS.every((one) => {
+    const story = Demo.stagingStory(one);
+    return Array.isArray(story) && story.length >= 1 &&
+      story.every((line) => typeof line === "string" && line.length > 0 &&
+        !CARD_JARGON.test(line) && !line.includes("`"));
+  }));
+
+await check("the stories say the thing each staging exists to show", () => {
+  const storyOf = (id) => Demo.stagingStory(Demo.scenarioFor(id)).join(" ");
+  return /signed out/i.test(storyOf("revoked")) &&
+    /device/i.test(storyOf("member-prefilled")) &&
+    /few/i.test(storyOf("suppressed")) &&
+    /signed in/i.test(storyOf("signed-out"));
+});
+
+/*
+ * One pointer per action, so a driver who just watched the feed knows
+ * what to touch in the frame. On the action rather than painted from a
+ * separate list, because a pointer that cannot name its action is a
+ * pointer that outlives it.
+ */
+await check("every card action tells the driver what to try next", () =>
+  Demo.FEATURES.every((card) => card.actions.every((action) =>
+    typeof action.try === "string" && action.try.length > 0 &&
+    !CARD_JARGON.test(action.try) && !action.try.includes("`"))));
+
+/*
+ * The wiring, held at source level the way the boot scripts themselves
+ * are: the browser halves cannot run under Node, and what matters is
+ * that the one file every stubbed answer passes through is the file
+ * that posts, and the console is the file that listens.
+ */
+await check("the boot script narrates the traffic onto the channel", () =>
+  bootSource.includes("Demo.narrate") &&
+  bootSource.includes("BroadcastChannel") &&
+  bootSource.includes("EVENT_CHANNEL"));
+
+await check("the console page carries the feed and the pointer", () =>
+  consoleHtml.includes('id="feed"') &&
+  consoleHtml.includes('id="try-next"'));
+
+await check("the console script paints the feed from the channel and the stories", () =>
+  consoleJs.includes('$("feed")') &&
+  consoleJs.includes("BroadcastChannel") &&
+  consoleJs.includes("stagingStory") &&
+  consoleJs.includes("try-next"));
 
 /* ------------------------------------------------------------------ */
 /* F2. A box must not flip to drivable on a comment.                   */
