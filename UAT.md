@@ -7,18 +7,19 @@ a mystery.
 
 The product this accepts is the accounts redesign: rail navigation on
 signed-in pages, a plain sign-in page and a plain error page, the cover
-that opens once, a palette set switched from the rail — a dark default,
-a light one, a pink-leaning one and a high-contrast one — the wordmark
+that opens once, a palette set switched from one **Theme** control at
+every width on every page but the error page — a dark default, a light
+one, a pink-leaning one and a high-contrast one — the wordmark
 **Muse's Binder** under the site title **HangGang**, and sign out
 reachable from every railed page.
 
 **Palettes are described by character here and never by chip label.**
-Nothing compares the chip labels across the three pages that carry them,
-so a rename reaching two copies of three passes the whole gate — a step
+Nothing compares the chip labels across the four pages that carry them,
+so a rename reaching three copies of four passes the whole gate — a step
 naming a chip would send a driver looking for one that is not there and
-let them record a pass for a palette they never opened. The rail is the
-list, and counting the chips against it is what catches one going
-missing.
+let them record a pass for a palette they never opened. The **Theme**
+control in front of you is the list, and counting the chips against it
+is what catches one going missing.
 
 **It is in two parts because the split is forced, not a convenience.**
 
@@ -131,11 +132,11 @@ request, so it is the cheapest section and the one that fails first.
 | A1.4 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
 | A1.5 | On `member`, open `submit.html`, `dashboard.html` and `admin.html` | All three carry the same rail, same four destinations, same order | Three hand-written copies; a rail that differs per page is how somebody gets stranded |
 | A1.6 | On each, check which destination is marked current | The one you are on, and only it | The rail is also the answer to "where am I" |
-| A1.7 | Press **every chip the rail offers, in turn** — the rail is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the rail marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the rail rather than against a list written here is also what catches one going missing |
+| A1.7 | Open **Theme** and press **every chip it offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the control rather than against a list written here is also what catches one going missing |
 | A1.8 | On the **high-contrast** palette — the one the site applies when the operating system asks for increased contrast — read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test. Identified by what it does, because that is the part of it that will not be renamed |
-| A1.9 | With no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The site answers each without a script running, and a chosen palette still beats all three afterwards | The signed-out pages carry no chips, so a visitor's expressed preference has to be honored some other way |
-| A1.10 | Narrow to a phone width | The rail becomes a strip, all four destinations stay in flow, the theme chips fold behind a disclosure, and the page never scrolls sideways | The destinations are what somebody needs; the chips are what can afford to fold |
-| A1.11 | Open the disclosure, then press Escape | It closes and focus returns to the button | Focus left inside something no longer on screen restarts the next Tab from the top |
+| A1.9 | On `signed-out`, open **Theme** on `index.html` and press a chip. Then, with no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The sign-in page carries the same single control the rail pages do, its chips open **in place below the button** and repaint the page, and the choice survives a reload. With nothing ever chosen the site answers each system setting without a script running, and a chosen palette still beats all three afterwards | Signed out is where a visitor meets this site, so the palette is offered there too (#150). What answers a visitor who never opens the control is the pre-paint and the stylesheet's own media blocks, which is also all `404.html` has — it carries no chips at all |
+| A1.10 | Narrow to a phone width | The rail becomes a strip, all four destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays |
+| A1.11 | **At every width, on each of the four pages that offer one** — open the **Theme** disclosure, then press Escape | The chips appear in place and push what is below them down, nothing floats over the page, and Escape closes them and returns focus to the button | Focus left inside something no longer on screen restarts the next Tab from the top. It is one control with one behavior at every width (#150), so a pass at one width is not a pass |
 | A1.12 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
 | A1.13 | Read the browser tab on every page | Every title ends **— HangGang**, and the page's own name is the same word the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint |
 

@@ -1,6 +1,15 @@
 /*
- * The rail. Marking where you are, and folding the theme chips away on
- * a screen too narrow to hold them beside the links.
+ * Two jobs: marking where you are in the rail, and opening the Theme
+ * chips.
+ *
+ * They travel together in one file because they are wired to the same
+ * markup on the three rail pages. The sign-in page loads this file for
+ * the second job alone - the owner's ruling on #150 gives it the same
+ * single Theme control, and it has no rail - so the current-destination
+ * half finds nothing there and returns. A second copy of the disclosure
+ * wiring would be the cheaper-looking answer and the wrong one: two
+ * copies drift, and this control has to behave identically on all four
+ * pages.
  *
  * The destinations themselves are in the HTML of each rail page, not
  * built here. That is deliberate and it is the opposite of what
@@ -11,12 +20,10 @@
  * same list written three times, which is real - so tools/check_web.py
  * fails the build if the copies ever disagree.
  *
- * What this file no longer does is open the navigation. Before the rail
- * the four links lived behind a hamburger and this file was what made
- * them reachable; now they are always in flow at every width, and the
- * disclosure below opens the theme chips instead. That is the owner's
- * decision on #73 - the links are the thing somebody needs, so they are
- * the thing that stays.
+ * What this file does not do is open the navigation. The four links are
+ * always in flow at every width, and the disclosure below opens the
+ * theme chips instead. That is the owner's decision on #73 - the links
+ * are the thing somebody needs, so they are the thing that stays.
  *
  * All wiring, no pure half. There is nothing here to test under Node
  * that reading the file does not already tell you; what could break is
@@ -48,7 +55,7 @@
     const chips = document.getElementById("theme-chips");
     if (!toggle || !chips) return;
 
-    const group = toggle.closest(".rail-themes");
+    const group = toggle.closest(".theme-picker");
     if (!group) return;
 
     function isOpen() {
@@ -62,10 +69,10 @@
      *
      * A data attribute rather than the `hidden` one, and that is forced
      * rather than chosen: theme.css makes [hidden] display:none
-     * !important, so chips folded that way on a phone could not be
-     * shown again on a desktop by any rule in the stylesheet. The
-     * folding is a fact about the width, so the stylesheet has to stay
-     * the thing that decides it.
+     * !important, so chips folded that way could not be revealed again
+     * by any rule in the stylesheet. This file says open or closed; the
+     * stylesheet owns what that looks like, and it has to stay the
+     * thing that owns it.
      */
     function setOpen(open) {
       toggle.setAttribute("aria-expanded", open ? "true" : "false");
@@ -86,21 +93,13 @@
       }
     });
 
-    // A click anywhere else closes it. `contains` covers the toggle too,
-    // so this does not fight the button's own handler and immediately
-    // reopen what that just closed.
-    document.addEventListener("click", function (event) {
-      if (!isOpen()) return;
-      if (!group.contains(event.target)) setOpen(false);
-    });
-
-    // Leaving by keyboard closes it as well. Tabbing past the last chip
-    // onto the page behind should not leave a panel hanging open over
-    // it.
-    document.addEventListener("focusin", function (event) {
-      if (!isOpen()) return;
-      if (!group.contains(event.target)) setOpen(false);
-    });
+    // There is deliberately no click-outside and no focus-out
+    // dismissal. Those belong to a panel floating over the page, and
+    // the chips open in flow (#150) - nothing is covered, so there is
+    // no "outside" to be dismissed from, and closing a list the reader
+    // can still see would take it away for no reason they could
+    // observe. #82 is where a floating layer gets decided, and it is
+    // where these come back if it does.
 
     // Closed to start with, whatever the markup said. The attribute is
     // what stops the two disagreeing if somebody edits one of them.

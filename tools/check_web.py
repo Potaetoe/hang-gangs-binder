@@ -2121,7 +2121,8 @@ MODULE_EXPORTS = {
 NO_MODULE_EXPORT = {
     "config.js": "resolves the environment arm; it exports no helpers",
     "countries.js": "is two data tables the form reads",
-    "nav.js": "wires the rail disclosure in place and returns",
+    "nav.js": "wires the current-destination mark and the Theme "
+              "disclosure in place and returns",
     "public.js": "wires dashboard.html and calls into BinderDashboard",
     "submit.js": "wires submit.html and calls into BinderForm",
     "theme-init.js": "sets the pre-paint theme attribute and returns",

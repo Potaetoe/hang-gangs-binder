@@ -291,17 +291,20 @@ check("the extractor finds real references in a real page",
 
 check("and the stylesheet is among them", "theme.css" in INDEX_REFS)
 
-# nav.js is deliberately absent from this set. Its whole job is the
-# rail, and the sign-in page is pinned plain in tools/check_web.py's
-# SHELLS - so a page loading it here would be the drift, not its
-# absence. The rest are what the cover genuinely pulls in: the pre-paint
-# theme script from the head, and the body scripts that sign somebody
-# in.
+# What the cover genuinely pulls in: the pre-paint theme script from the
+# head, the body scripts that sign somebody in, and nav.js - which is
+# here for the Theme disclosure this page carries at every width (#150)
+# rather than for a rail it does not have.
 check("and the scripts are among them",
       {"theme-init.js", "config.js", "ui.js", "session.js", "auth.js",
-       "theme.js"} <= set(INDEX_REFS))
+       "theme.js", "nav.js"} <= set(INDEX_REFS))
+
+# The negative arm, and crypto.js is the right file to hold it: this
+# page is the one page tools/check_web.py's check 11 refuses it on, so
+# the day it appears in this set is the day the extractor started
+# inventing references rather than reading them.
 check("and a script the page does not load is not counted against it",
-      "nav.js" not in INDEX_REFS)
+      "crypto.js" not in INDEX_REFS)
 
 check("and the third-party widget is not",
       not any("telegram" in ref for ref in INDEX_REFS))
