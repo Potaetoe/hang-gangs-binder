@@ -691,41 +691,50 @@
    * `start` is where the walk-through begins. Every destination stays
    * reachable in every scenario, because half of what this demo has to
    * show is the rail carrying somebody between them.
+   *
+   * THE STEPS ARE WRITTEN TO THE PERSON DRIVING, and that register is an
+   * owner ruling (#192): each step is something to do and what doing it
+   * looks like, in the driver's own words. The system's reasons live in
+   * the acceptance boxes and the issues those cite, not here - a walk
+   * that asserts internal state the screen never shows reads as a
+   * broken demo to the person it was written for, which is what #192
+   * was filed about. A step must never claim a render the shipped page
+   * does not perform; when a scenario's payoff is not on screen yet,
+   * the step says so and points at the boxes, which are read from the
+   * shipped bytes and flip on their own the day the slice lands.
    */
   const SCENARIOS = [
     {
       id: "signed-out",
-      label: "Signed out, arriving cold",
+      label: "Arriving for the first time, signed out",
       start: "index.html",
       session: null,
       boxes: ["shell", "signin-id"],
       steps: [
-        "The cover is closed and opens once. Reload to see it again; " +
-          "turn on reduced motion in the operating system and reload to " +
-          "see it snap open instead of animating.",
-        "The wordmark is Playfair Display - if it renders as a plain " +
-          "serif the font did not load, which is the thing to look for.",
-        "There is no rail on Sign in, by decision on #73 - but the " +
-          "Theme control is here, because it is one disclosure at " +
-          "every width and on every page that offers a palette (#150). " +
-          "Open it: the control works signed out, which is the point " +
-          "of it not living in the rail.",
-        "Press the Telegram button. It is a local stand-in for the " +
-          "widget and calls the page's own callback, so what happens " +
-          "after the press is the shipped code.",
-        "Sign-in lands on Your binder with the member's own numeric id " +
-          "on screen (#58).",
+        "Watch the cover: it opens once and stays open. Reload to see " +
+          "it again - and with reduced motion set in your operating " +
+          "system, it snaps open instead of animating.",
+        "Look at the wordmark. It should be Playfair Display, the tall " +
+          "bookish serif; a plain default serif means the font did not " +
+          "load.",
+        "Open the Theme control and try a palette. It works before you " +
+          "sign in, which is why it lives outside the rail (#150).",
+        "Press the Telegram button - the demo's local stand-in for the " +
+          "real widget. Everything that happens after the press is the " +
+          "shipped code.",
+        "You land on Your binder, and the panel prints your own " +
+          "Telegram number (#58).",
       ],
     },
     {
       id: "member",
-      label: "A member with a history",
+      label: "Signed in, with a history",
       start: "submit.html",
       session: MEMBER_SESSION,
       boxes: ["shell", "signin-id", "panel", "dashboard"],
       steps: [
-        "Entries shows what this account currently claims, and the " +
-          "numeric id line is painted.",
+        "Your binder opens on Entries: what this account claims so " +
+          "far, with your Telegram number printed under it.",
         // The chips are named by the page, not here: a walk-through
         // that spells out a label needs correcting every time one
         // moves, so this step names none.
@@ -746,58 +755,63 @@
         // step stays and why it is worded as a render rather than a
         // reading.
         "Switch every palette chip in turn and watch the page repaint " +
-          "under each one - the labels themselves are compared across " +
-          "pages by the gate, so what is being driven here is whether " +
-          "the palette actually applies.",
-        "New entry opens the form; the rail carries you to Progress and " +
-          "back without losing the tab you were on.",
-        "Progress draws the full payoff for this scenario: the " +
-          "combined-weight hero, the deltas, and the marquee " +
-          "weight-over-time series.",
+          "under each one.",
+        "Open New entry, then take the rail to Progress and come back. " +
+          "The tab you were on is still the tab you are on.",
+        "Progress is this scenario's payoff: the combined-weight hero, " +
+          "the deltas, and the weight-over-time chart.",
       ],
     },
     {
       id: "member-prefilled",
-      label: "A member returning to a filled form",
+      label: "Coming back to a form that remembers you",
       start: "submit.html",
       session: MEMBER_SESSION,
       prefill: true,
       boxes: ["panel", "signout"],
       steps: [
-        "New entry is already filled in. That prefill is device-local " +
-          "and scoped to this account id (#56), never to the browser.",
-        "Sign out, then come back: the prefill is gone with the " +
-          "session. Signing out clears both.",
+        "Open New entry. The form is already filled with this " +
+          "member's last measurements - kept on this device, keyed to " +
+          "this account, sent nowhere (#56).",
+        "Press Sign out in the rail, then sign back in with the " +
+          "Telegram button and open New entry again. The form is " +
+          "empty: signing out erased the saved measurements along " +
+          "with the session.",
       ],
     },
     {
       id: "supersede",
-      label: "A correction that supersedes",
+      label: "A mistake, corrected",
       start: "submit.html",
       session: MEMBER_SESSION,
       boxes: ["panel", "supersede"],
       steps: [
-        "Entries reads the effective count from GET /me and nowhere " +
-          "else: four entries with two superseded, not six.",
-        "The tombstones are reported beside the count rather than " +
-          "subtracted in silence, so a correction that landed looks " +
-          "different from one that was refused.",
+        "Entries says 4. Six rows exist for this member - two were " +
+          "mistakes this member corrected, and a correction replaces " +
+          "its row rather than adding one, so the count claims only " +
+          "what stands.",
+        "That count is all this page shows of the story so far. " +
+          "Correcting an entry from here, and seeing the corrected " +
+          "rows named beside the count, belong to #84 and #193; the " +
+          "boxes under this frame are read from the shipped bytes and " +
+          "flip the day those land.",
       ],
     },
     {
       id: "revoked",
-      label: "A session revoked on the server",
+      label: "Signed out somewhere else",
       start: "submit.html",
       session: MEMBER_SESSION,
       revoked: true,
       boxes: ["signout", "revocation"],
       steps: [
-        "The tab still holds a session, and the server has already " +
-          "deleted the row - which is the state a member is in one " +
-          "moment after signing out somewhere else.",
-        "The next request is refused, the page drops its copy and " +
-          "returns to Sign in. A token captured before sign-out is not " +
-          "a working credential (#90).",
+        "This tab still holds a session the server has already " +
+          "revoked - you are one moment after pressing Sign out on " +
+          "another device.",
+        "Ask the server for anything: reload the page, or switch " +
+          "panel tabs. The request is refused, this tab drops its " +
+          "copy, and you are back at Sign in. A token captured before " +
+          "sign-out opens nothing (#90).",
       ],
     },
     {
@@ -807,46 +821,47 @@
       session: ADMIN_SESSION,
       boxes: ["keyholder", "admin-panel"],
       steps: [
-        "Fetch and decrypt. The rows are dev/sample-submissions.json, " +
-          "sealed to the throwaway dev/test-key.json and to nothing real.",
-        "Load dev/test-key.json in the key picker. Expect 17 of 18 rows " +
-          "to open and row 16 to be named as unopenable - that is the " +
-          "rotated-key case, not a fault.",
-        "Store the key, reload, and Fetch and decrypt again: it needs no " +
-          "paste the second time (#70).",
-        "Clear destroys both copies.",
+        "Press Fetch and decrypt. The rows are the demo's own sample " +
+          "submissions, sealed to a throwaway key and to nothing real.",
+        "Load dev/test-key.json in the key picker. 17 of 18 rows " +
+          "open, and row 16 is named as unopenable - that is the " +
+          "rotated-key case being reported, not a fault.",
+        "Press Store the key, reload the page, and Fetch and decrypt " +
+          "again: no paste the second time (#70).",
+        "Press Clear. Both copies of the key are gone.",
       ],
     },
     {
       id: "admin",
-      label: "The admin instrument panel",
+      label: "Running the admin panel",
       start: "admin.html",
       session: ADMIN_SESSION,
       boxes: ["admin-panel", "signout"],
       steps: [
-        "Read the page as a surface rather than a stack of boxes (#68): " +
-          "the instrument panel, its measures, and the export controls.",
-        "Publish. The stub keeps the snapshot, so Progress then draws " +
-          "what this page just published.",
-        "Sign out here ends the session and leaves the stored key in " +
-          "place; Clear is what removes the key. That is the designed " +
-          "behavior, not a gap.",
+        "Read the page as one surface (#68): the instrument panel, " +
+          "its measures, and the export controls.",
+        "Press Publish, then take the rail to Progress: the chart is " +
+          "drawing the snapshot you just published.",
+        "Press Sign out and the session ends while the stored key " +
+          "stays. Clear is the lever that removes the key - " +
+          "deliberate, not a gap.",
       ],
     },
     {
       id: "config-fallback",
-      label: "Site copy falling back to the shipped words",
+      label: "Before anyone has written the site copy",
       start: "admin.html",
       session: ADMIN_SESSION,
       boxes: ["config"],
       steps: [
-        "The stub answers GET /content with an empty document, which is " +
-          "what the Worker answers before an admin has set anything.",
-        "Every page shows the copy it ships with. The fallback is the " +
-          "normal first-run state, not an error.",
-        "The pane that edits this copy is PR 5. The console says " +
-          "whether it has landed, and the answer is read out of the " +
-          "shipped bytes rather than written down here.",
+        "The server is answering with an empty content document - the " +
+          "state every deployment starts in, before an admin has set " +
+          "anything.",
+        "Walk the pages: each shows the copy it ships with. The " +
+          "fallback is the normal first run, not an error.",
+        "The pane that edits this copy is a later slice. The boxes " +
+          "under this frame say whether it has landed - read from the " +
+          "shipped bytes, not from a promise.",
       ],
     },
     {
@@ -856,12 +871,13 @@
       session: MEMBER_SESSION,
       boxes: ["dashboard", "privacy"],
       steps: [
-        "The same page, drawn from a sparse corpus: three people where " +
-          "the floor is five.",
-        "Cells below the floor are suppressed and the weight-over-time " +
-          "series is withheld entirely - a line is one person, so four " +
-          "lines would be four identifiable trajectories.",
-        "Nothing published carries a handle or a row.",
+        "This is Progress drawn from three people, where the floor is " +
+          "five.",
+        "Look for what is missing: cells under the floor are held " +
+          "back, and the weight-over-time chart is withheld whole - a " +
+          "line is one person, so publishing four lines would publish " +
+          "four people.",
+        "Nothing on the page carries a handle or a row.",
       ],
     },
   ];
