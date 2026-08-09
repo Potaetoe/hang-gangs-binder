@@ -2,7 +2,7 @@
 
 `tools/check_live.py` holds the ledger — every surface of this project
 that only a running system can exercise, each carrying a verification
-status — and the four rules that stop it rotting. It is what makes
+status — and the rules that stop it rotting. It is what makes
 #157's claim true that "what has never been tried against a running
 system" is a command rather than a reading of thirty pull requests.
 
@@ -12,8 +12,9 @@ every label was correct and the sum was a systemic gap nobody owned.
 A ledger that only describes is the same failure one layer up, so the
 rules here are the ones that can go red: a route added without a row,
 a page added without a row, a row that names a file no longer in the
-tree, and a first-contact classification whose stated reason the code
-has since falsified.
+tree, a first-contact classification whose stated reason the code has
+since falsified, and a performed row citing a head no declared run
+accounts for.
 
 Rules are exercised on strings rather than on the tree they happen to
 guard, for #34's reason and check_docs.test.py's: a mutation written
