@@ -258,13 +258,17 @@
 
   
 
+  const REFUSED = 401;
+
+  
+
   function refusalFor(status, payload) {
     const said = payload && typeof payload === "object" &&
       typeof payload.error === "string" && payload.error.trim()
       ? payload.error.trim()
       : "";
 
-    if (status === 401) {
+    if (status === REFUSED) {
       return {
         action: "signed-out",
         message: "The admin session was not accepted, so it has been " +
@@ -490,6 +494,24 @@
       kept = "";
     }
 
+    
+
+    function sessionEnded(where) {
+      where(refusalFor(REFUSED).message, "bad");
+      root.BinderSession.clear();
+      if (root.location && typeof root.location.replace === "function") {
+        root.location.replace("index.html");
+      }
+    }
+
+    
+
+    function sessionRefused(response, where) {
+      if (response.status !== REFUSED) return false;
+      sessionEnded(where);
+      return true;
+    }
+
      
      
      
@@ -679,9 +701,7 @@
         const response = await fetch(config.endpoint + "/export", {
           headers: root.BinderSession.authorization(),
         });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, say)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
@@ -770,6 +790,11 @@
         const response = await fetch(config.endpoint + "/snapshot", {
           headers: root.BinderSession.authorization(),
         });
+        
+
+        if (sessionRefused(response, function (message) {
+          state.textContent = message;
+        })) return;
         if (response.status === 404) {
           publishedNow = null;
           state.textContent = "Nothing is published. The public dashboard " +
@@ -811,9 +836,7 @@
           method: "DELETE",
           headers: root.BinderSession.authorization(),
         });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, sayUnpublish)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
@@ -963,13 +986,12 @@
 
     function handleRefusal(status, payload) {
       const refusal = refusalFor(status, payload);
-      sayMembership(refusal.message, "bad");
-      if (refusal.action !== "signed-out") return false;
-      root.BinderSession.clear();
-      if (root.location && typeof root.location.replace === "function") {
-        root.location.replace("index.html");
+      if (refusal.action === "signed-out") {
+        sessionEnded(sayMembership);
+        return true;
       }
-      return true;
+      sayMembership(refusal.message, "bad");
+      return false;
     }
 
      
@@ -1161,9 +1183,7 @@
             root.BinderSession.authorization()),
           body: JSON.stringify(sent),
         });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, sayPublish)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
@@ -1192,9 +1212,7 @@
             method: "DELETE",
             headers: root.BinderSession.authorization(),
           });
-        if (response.status === 401) {
-          throw new Error("The admin session was not accepted.");
-        }
+        if (sessionRefused(response, say)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }

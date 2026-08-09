@@ -158,10 +158,16 @@ async function loadForm({ submitStatus = 200 } = {}) {
     endpoint: "https://worker.example",
     publicKey: "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMP",
   };
+  // Counted rather than ignored - #166. Dropping the credential the Worker
+  // has just refused is half of what this page owes a member whose session
+  // died mid-entry; the other half is the sentence, and a stub with no
+  // clear() would let a fix that only writes the sentence pass.
+  const cleared = [];
   globalThis.BinderSession = {
     read() { return MEMBER; },
     require() { return MEMBER; },
     authorization() { return { Authorization: "Bearer token" }; },
+    clear() { cleared.push(true); },
   };
   globalThis.BinderCrypto = {
     unavailableReason() { return null; },
@@ -208,7 +214,7 @@ async function loadForm({ submitStatus = 200 } = {}) {
   await import("data:text/javascript," +
     encodeURIComponent(formSource) + "#" + Math.random());
 
-  return { page, dispatched, events, bootErrors };
+  return { page, dispatched, events, bootErrors, cleared };
 }
 
 function fillValidEntry(byId) {
@@ -308,6 +314,37 @@ function fillValidEntry(byId) {
   await page.document.dispatch(ADD_ENTRY_SHOWN_EVENT);
   check("after a refusal, returning shows no repeat note",
     page.byId("repeat-note").hidden === true);
+}
+
+/* ------------------------------------------------------------------ */
+/* 5b. The refusal that is not about the entry at all - #166.          */
+
+/*
+ * A 401 here is not a bad submission, and until now it read as one. The
+ * member was told "It was encrypted, but it could not be sent. The server
+ * refused it (401). Nothing was stored - try again." Every clause of that
+ * is either raw HTTP or advice that cannot work: trying again with the same
+ * dead credential fails identically, forever, and the one thing that would
+ * help is not mentioned.
+ *
+ * Driven through the shipped handler rather than grepped, because the fix
+ * has to sit inside the send path ahead of the generic !response.ok throw,
+ * and a source check cannot tell a branch that runs from one that is
+ * shadowed by the line above it.
+ */
+{
+  const { page, cleared } = await loadForm({ submitStatus: 401 });
+  fillValidEntry(page.byId);
+  await page.byId("submission").dispatch("submit");
+  const said = page.byId("status").textContent;
+
+  check("a send refused for a dead session names the sign-in, not the number",
+    /no longer valid/i.test(said) && /sign in again/i.test(said) &&
+    !/\b401\b/.test(said));
+  check("and does not tell the member to try what cannot work",
+    !/try again/i.test(said));
+  check("and the credential the Worker just refused is dropped",
+    cleared.length === 1);
 }
 
 /* ------------------------------------------------------------------ */
