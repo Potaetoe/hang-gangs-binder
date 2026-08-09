@@ -415,6 +415,83 @@ const DB = {
       stored.some((r) => r.supersedes === row.id &&
         (!sameAccountOnly || r.account_id === row.account_id));
 
+    /*
+     * The member-scoped listing, which is the one statement here that
+     * projects columns AND computes one in the same select list.
+     *
+     * `project` above cannot read it, and the reason is worth stating
+     * rather than working around: that regex takes everything up to the
+     * first ` FROM `, and the first FROM in this statement belongs to
+     * the subquery inside the computed column. It would hand back a
+     * column list of fragments, every one of them absent from the row,
+     * and the response would arrive empty while looking projected.
+     *
+     * So the select list is bounded and split at PAREN DEPTH ZERO. Split
+     * on every comma instead and the computed column becomes three
+     * fragments; bound at the first FROM instead and it becomes none.
+     * Both failures are silent in the direction that matters - a column
+     * this stub loses reads as a Worker that never sent it.
+     */
+    const depthZero = (text, find) => {
+      let depth = 0;
+      const at = [];
+      for (let i = 0; i < text.length; i += 1) {
+        if (text[i] === "(") depth += 1;
+        else if (text[i] === ")") depth -= 1;
+        else if (depth === 0 && find(text, i)) at.push(i);
+      }
+      return at;
+    };
+
+    const trimmed = sql.trim();
+    const listing = verb === "SELECT" && !counting &&
+      /\bFROM\s+submissions\s+AS\s+mine\b/i.test(sql);
+    const listFrom = listing
+      ? depthZero(trimmed, (t, i) => /^\s+FROM\s/i.test(t.slice(i, i + 6)))
+      : [];
+    const listItems = [];
+    if (listing && listFrom.length) {
+      const list = trimmed.slice("SELECT".length, listFrom[0]);
+      let from = 0;
+      for (const comma of depthZero(list, (t, i) => t[i] === ",")) {
+        listItems.push(list.slice(from, comma).trim());
+        from = comma + 1;
+      }
+      listItems.push(list.slice(from).trim());
+    }
+
+    /*
+     * Each item modelled by what it IS, so the mutations stay visible.
+     * A plain `mine.<column> AS <alias>` copies that column; an item
+     * carrying an EXISTS over `supersedes` is answered by the same
+     * namedByAnother() the count above uses, whose account scoping is
+     * read off this statement rather than written here - so a listing
+     * that stopped scoping its supersede question flags a row another
+     * account corrected, exactly as D1 would.
+     *
+     * Anything else THROWS rather than being dropped. A computed column
+     * this stub does not model would otherwise arrive as undefined, and
+     * an arm asserting the entry's key set would pass against a Worker
+     * whose new column is permanently absent.
+     */
+    const projectListing = (row) => {
+      const out = {};
+      for (const item of listItems) {
+        const copied = /^mine\.(\w+)\s+AS\s+(\w+)$/i.exec(item);
+        if (copied) {
+          out[copied[2]] = row[copied[1]];
+          continue;
+        }
+        const computed = /\bAS\s+(\w+)$/i.exec(item);
+        if (computed && /EXISTS/i.test(item) && /supersedes/i.test(item)) {
+          out[computed[1]] = namedByAnother(row) ? 1 : 0;
+          continue;
+        }
+        throw new Error("unmodelled column in a listing: " + item);
+      }
+      return out;
+    };
+
     const read = (a) => {
       if (table === "snapshots") return snapshot;
       if (table === "sessions") {
@@ -533,6 +610,25 @@ const DB = {
             });
             return { results: [row] };
           }
+          if (listing) {
+            if (!listItems.length) {
+              throw new Error("a listing whose select list is unreadable, " +
+                "which would answer empty and look scoped: " + sql);
+            }
+            /*
+             * A statement whose WHERE binds nothing selects the WHOLE
+             * table, because that is what D1 does with one. The generic
+             * path below cannot say that - `matches` refuses every row
+             * when nothing is bound - so a listing that lost its account
+             * clause would read here as one that found nobody's rows
+             * instead of as one that found everybody's. The mutation
+             * that matters on this route has to produce the leak, not a
+             * blank.
+             */
+            const visible = bound.length
+              ? rowsOf().filter((r) => matches(r, a)) : rowsOf();
+            return { results: visible.map(projectListing) };
+          }
           return { results: rowsOf().filter((r) => matches(r, a)).map(project) };
         },
       }),
@@ -650,7 +746,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 327);
+const { check, report } = suite("worker.js", 338);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -813,6 +909,16 @@ const matrix = [
   ["POST", "/submit", "sekrit-token-value", 401],
   ["GET", "/me", null, 401],
   ["GET", "/me", MEMBER, 200],
+  /*
+   * Reading your own entries needs an account to own them, so this is
+   * the second route the break-glass token cannot reach - it is admin
+   * and it is nobody. The whole corpus is already its by GET /export,
+   * so nothing is withheld from it; what is refused is the request to
+   * pick a member for a caller that is not one.
+   */
+  ["GET", "/my-entries", null, 401],
+  ["GET", "/my-entries", MEMBER, 200],
+  ["GET", "/my-entries", "sekrit-token-value", 401],
   ["GET", "/export", null, 401],
   ["GET", "/export", MEMBER, 401],
   ["GET", "/export", ADMIN, 200],
@@ -2289,6 +2395,219 @@ check("replaying somebody else's ciphertext is refused, not answered 200",
   JSON.stringify(replayedBody) === JSON.stringify(inventedBody),
   `${replayed.status}, ${stored.length - rowsBeforeReplay} row(s) written, ` +
   JSON.stringify(replayedBody.error));
+
+/* ------------------------------------------------------------------ */
+/* Reading your own entries - GET /my-entries (#84).                   */
+
+/*
+ * The route that makes the page half buildable at all. Correcting an
+ * entry means naming one, and without this a member can name none:
+ * POST /submit answers `{ok:true}`, GET /me answers counts and a date,
+ * and GET /export is admin. So this hands back handles - an id, the
+ * receipt time this side attested to, and whether something supersedes
+ * it - and stops there.
+ *
+ * IT HANDS BACK NO CIPHERTEXT, which is a decision and not an omission.
+ * The member cannot open one: the device key that would decrypt it is
+ * #85's half and is not in the tree, so the bytes are inert to the only
+ * caller allowed to ask for them - while a stolen member session, which
+ * today can append rows and read counts, would be able to download that
+ * member's whole sealed history. The narrow shape is also the additive
+ * one: a field can arrive the day something can read it, and a field
+ * that has shipped cannot be taken back.
+ *
+ * WHAT THIS SUITE CANNOT SAY, so that nobody reads more into it than it
+ * proves. The statement carries ORDER BY and nothing here falsifies it:
+ * the stub answers out of an array in insertion order, which is id
+ * order, so a Worker that dropped the clause passes every arm below.
+ * That claim is a live one, and tools/check_live.py carries the row
+ * that says it has never been made.
+ */
+
+reset();
+
+const READER = (await (await signIn({})).clone().json()).session;
+const READER_TWO = (await (await signIn({ id: 7777 })).clone().json()).session;
+
+const myEntries = (token) =>
+  call("GET", "/my-entries", { headers: bearer(token) });
+
+/*
+ * The entries a listing answered with, or none of them.
+ *
+ * A route that is not dispatched answers 404 with a body carrying no
+ * `entries` at all, and reading straight through that THROWS rather than
+ * fails - which would take every arm in the two sections below this one
+ * down with it instead of reporting these eight red and moving on. The
+ * guard is part of the condition rather than a skip in front of it, so
+ * an absent route still FAILS these arms.
+ */
+const entriesOf = (body) => (Array.isArray(body.entries) ? body.entries : []);
+
+/* Distinctive bytes rather than the short blobs above, because one arm
+ * asserts that no ciphertext appears anywhere in the response text and a
+ * four-character blob could match a substring of a date. */
+const MINE_ONE = "bXktZmlyc3QtZW50cnk=";
+const MINE_TWO = "bXktc2Vjb25kLWVudHJ5";
+const NOT_MINE = "c29tZWJvZHktZWxzZXM=";
+const MY_FIX = "bXktY29ycmVjdGlvbg==";
+
+await submit(READER, { ciphertext: MINE_ONE });
+await submit(READER, { ciphertext: MINE_TWO });
+await submit(READER_TWO, { ciphertext: NOT_MINE });
+
+const readerRows = stored.filter((r) => r.account_id === FIXTURE_4242);
+await submit(READER, { ciphertext: MY_FIX, supersedes: readerRows[0].id });
+
+const mineListed = await myEntries(READER);
+const listedBody = await mineListed.clone().json();
+const listedEntries = entriesOf(listedBody);
+const listedIds = listedEntries.map((e) => e.id);
+const byId = (a, b) => a - b;
+
+check("the listing carries this account's rows and no others",
+  mineListed.status === 200 && listedBody.ok === true &&
+  JSON.stringify(listedIds.slice().sort(byId)) ===
+    JSON.stringify(stored.filter((r) => r.account_id === FIXTURE_4242)
+      .map((r) => r.id).sort(byId)),
+  `${mineListed.status}, ids=${JSON.stringify(listedIds)}`);
+
+/*
+ * Absent is not the same as unreachable, and only the second one is a
+ * boundary. This route takes no parameter at all - there is nothing on
+ * the wire naming an account - so the proof available is that the two
+ * answers PARTITION the table: neither caller sees a row that is not
+ * theirs, and every row is seen by exactly one of them. A listing that
+ * stopped scoping at the SQL fails all three clauses at once rather
+ * than reading as an empty answer, which is what the stub's own
+ * unbound-WHERE modelling is for.
+ */
+const theirRow = stored.find((r) => r.account_id !== FIXTURE_4242);
+const theirs = await myEntries(READER_TWO);
+const theirIds = entriesOf(await theirs.clone().json()).map((e) => e.id);
+
+check("another account's row is unreachable from here, not merely absent",
+  !listedIds.includes(theirRow.id) &&
+  JSON.stringify(theirIds) === JSON.stringify([theirRow.id]) &&
+  listedIds.length + theirIds.length === stored.length,
+  `mine=${JSON.stringify(listedIds)} theirs=${JSON.stringify(theirIds)} ` +
+  `of ${stored.length} row(s)`);
+
+/* The tombstone is listed rather than filtered out, and it is the flag
+ * that tells it from the head. A route that returned only current rows
+ * would leave the page unable to distinguish the two, which is exactly
+ * what a page told to offer only the head needs in order to obey. */
+const flagged = listedEntries.filter((e) => e.superseded).map((e) => e.id);
+check("a corrected row is listed and flagged, and its correction is not",
+  JSON.stringify(flagged) === JSON.stringify([readerRows[0].id]) &&
+  listedEntries.length === 3,
+  `flagged=${JSON.stringify(flagged)} of ${listedEntries.length}`);
+
+/* The two member-facing surfaces must not be able to disagree about one
+ * corpus. They cannot, because they compute from one predicate - the arm
+ * below pins that structurally; this one pins the consequence, which is
+ * the thing a member would actually notice. */
+const alongside = await (await call("GET", "/me",
+  { headers: bearer(READER) })).json();
+check("the flags and /me's counts describe the same corpus",
+  alongside.entries === listedEntries.length - flagged.length &&
+  alongside.superseded === flagged.length && flagged.length > 0,
+  `/me ${alongside.entries}+${alongside.superseded}, listing ` +
+  `${listedEntries.length - flagged.length}+${flagged.length}`);
+
+/*
+ * One rule, read off the two statements and compared with each other.
+ *
+ * Asserting instead that the listing's predicate carries an account
+ * clause would put a third copy of the rule in this file - the thing
+ * that goes stale. Taking the whole predicate off the statement GET /me
+ * sent and requiring those exact bytes in the statement this route sent
+ * cannot: narrow either copy and they stop matching, and change the
+ * shared constant and both move together, which is a change no arm
+ * should resist.
+ *
+ * The extractor stops at the first `)`, so a predicate that ever grows
+ * a nested one would be captured truncated and this arm would quietly
+ * weaken. The balance check is what makes that a red arm instead: it
+ * fails, and the message says the extractor needs the fix.
+ */
+const sentSql = (want) => {
+  const found = executed.find((e) => e.table === "submissions" &&
+    /FROM submissions AS mine/i.test(e.sql) &&
+    /COUNT\(\*\)/i.test(e.sql) === want);
+  return found ? found.sql : "";
+};
+const balanced = (text) =>
+  (text.match(/\(/g) || []).length === (text.match(/\)/g) || []).length;
+const shared =
+  /EXISTS\s*\(SELECT 1 FROM submissions AS newer WHERE [^)]+\)/i
+    .exec(sentSql(true));
+
+check("the listing and the count ask one supersede question, not two copies",
+  Boolean(shared) && balanced(shared[0]) &&
+  sentSql(false).includes(shared[0]),
+  shared ? shared[0].slice(0, 60) + "…" : "no predicate in GET /me");
+
+/*
+ * An entry is a handle, a date and a flag. The key set is asserted
+ * rather than the presence of three fields, so a fourth one cannot
+ * arrive without somebody reading this arm and the paragraph above it -
+ * which is the whole guard against ciphertext being added back for
+ * convenience. The envelope is asserted the same way: no account id
+ * here, because GET /me owns that fact, and no handle anywhere, because
+ * this Worker holds none.
+ */
+const listedText = await (await myEntries(READER)).text();
+const entryKeys = [...new Set(
+  listedEntries.flatMap((e) => Object.keys(e)))].sort();
+
+check("an entry is an id, a date and a flag, and the envelope adds nothing",
+  JSON.stringify(entryKeys) ===
+    JSON.stringify(["id", "receivedAt", "superseded"]) &&
+  JSON.stringify(Object.keys(JSON.parse(listedText)).sort()) ===
+    JSON.stringify(["entries", "ok"]) &&
+  !stored.some((r) => listedText.includes(r.ciphertext)),
+  `${JSON.stringify(entryKeys)} in ${listedText.slice(0, 60)}…`);
+
+/*
+ * A row written through the other door cannot take one of this member's
+ * entries away from them. `wrangler d1 execute` validates nothing and is
+ * how the schema, every backup and every restore are applied, and an
+ * ACCOUNT_SECRET rotation renames every account in the clear column
+ * while leaving these pointers untouched - so a foreign row naming this
+ * member's entry is a state the table reaches without POST /submit ever
+ * accepting one. Unscoped, it deletes an entry from the member's own
+ * listing, and they cannot see what did it.
+ */
+stored.push({
+  id: 9001, account_id: "f".repeat(64), ciphertext: NOT_MINE,
+  received_at: new Date().toISOString(), supersedes: readerRows[1].id,
+});
+const withForeign = entriesOf(await (await myEntries(READER)).json());
+const stillCurrent = withForeign
+  .filter((e) => !e.superseded).map((e) => e.id);
+
+check("a foreign row naming my entry does not supersede it",
+  stillCurrent.includes(readerRows[1].id) &&
+  !withForeign.some((e) => e.id === 9001),
+  `current=${JSON.stringify(stillCurrent)} of ` +
+  `${JSON.stringify(withForeign.map((e) => e.id))}`);
+
+/*
+ * The break-glass token is refused in the router, and the mechanism is
+ * what is asserted rather than the status - the gating matrix above
+ * already has the status. A guard that ran after the query would leave
+ * the same 401 on the wire and would have asked D1 to scope a read to an
+ * account id of null first.
+ */
+const beforeGlass = executed.length;
+const glassList = await myEntries("sekrit-token-value");
+const glassAsked = executed.slice(beforeGlass)
+  .filter((e) => e.table === "submissions");
+
+check("the break-glass token is refused before the table is asked anything",
+  glassList.status === 401 && glassAsked.length === 0,
+  `${glassList.status}, ${glassAsked.length} statement(s) against submissions`);
 
 /* ------------------------------------------------------------------ */
 /* Site content - the one document served without a credential (#87).  */
