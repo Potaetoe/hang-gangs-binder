@@ -22,9 +22,9 @@
 <header class="top">
   <h1>Demo console</h1>
   <p class="lede">
-    Every enhancement, drivable. The pages in the frame are the shipped
-    files, read off disk on every request — so this walks whatever has
-    landed, not a recording of it.
+    What the Binder does, one card each. Press a card's button and the
+    frame shows that feature live — the pages in the frame are the
+    shipped files, not a recording of them.
   </p>
   <p class="warn" id="offline-note">
     Nothing here reaches a real endpoint. The Worker's answers are
@@ -50,17 +50,13 @@
 
 <main>
   <section class="driver">
-    <h2>1 — Pick a scenario</h2>
-    <ul class="scenarios" id="scenarios"></ul>
+    <h2>What the Binder does</h2>
+    <div class="features" id="features"></div>
 
-    <h2>2 — Walk it</h2>
-    <p class="muted" id="scenario-label">No scenario chosen yet.</p>
-    <ol class="steps" id="steps"></ol>
-
-    <h2>3 — Any destination, any time</h2>
+    <h2>Go anywhere</h2>
     <p class="muted small">
-      The rail is part of what is being demonstrated, so every
-      destination stays reachable in every scenario.
+      The site's own navigation is part of the product, so every page
+      stays reachable whatever you pressed last.
     </p>
     <div class="destinations" id="destinations"></div>
     <p class="small">
@@ -86,30 +82,6 @@
     <iframe id="stage" title="The product, running"></iframe>
   </section>
 </main>
-
-<section class="record">
-  <h2>What has landed</h2>
-  <p class="muted small">
-    Read out of the shipped bytes each time this page loads, never
-    written down here. A box whose slice has not landed blocks
-    <a href="https://github.com/Potaetoe/hang-gangs-binder/issues/122">#122</a>
-    exactly as long as it blocks the cutover, so this reports that state
-    rather than asserting one.
-  </p>
-  <table class="boxes"><tbody id="boxes"></tbody></table>
-</section>
-
-<section class="record">
-  <h2>What the mirror changes</h2>
-  <p class="muted small">
-    <code>apps/web</code> is copied verbatim to the published site and
-    takes no test hook. The pages in the frame are served from a mirror
-    that applies exactly these edits on the way out, and
-    <code>dev/demo.test.mjs</code> fails if a mirrored page differs from
-    the shipped one in any other way.
-  </p>
-  <table class="boxes"><tbody id="edits"></tbody></table>
-</section>
 
 <footer>
   <p>

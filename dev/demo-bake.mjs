@@ -200,9 +200,10 @@ code { font-family: ui-monospace, monospace; font-size: 0.9em; }
 </p>
 
 <p>
-  <a href="/dev/demo.html">Open the demo console</a> — pick a scenario and
-  it stages the session and the corpus that scenario needs, then puts a
-  real page in the frame.
+  <a href="/dev/demo.html">Open the demo console</a> — one card per
+  feature, in plain terms. Press a card's button and the console sets up
+  everything that feature needs, then shows it happening on a real page
+  in the frame.
 </p>
 
 <p>

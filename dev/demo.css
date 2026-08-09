@@ -16,8 +16,6 @@
   --back: #17171b;
   --panel: #1f1f25;
   --warn: #ffc46b;
-  --yes: #7bd88f;
-  --no: #ff8f8f;
 }
 
 * { box-sizing: border-box; }
@@ -66,13 +64,12 @@ main {
   main { grid-template-columns: 1fr; }
 }
 
-.driver, .stage, .record {
+.driver, .stage {
   background: var(--panel);
   border: 1px solid var(--edge);
   border-radius: 0.5rem;
   padding: 1rem 1.1rem;
 }
-.record { margin-top: 1.2rem; }
 
 /* The stage scrolls sideways rather than squeezing what is in it. A
  * frame held to a phone width has to keep that width on a console
@@ -89,34 +86,30 @@ main {
   margin-bottom: 0.5rem;
 }
 
-.scenarios { list-style: none; margin: 0; padding: 0; }
-.scenarios li { margin: 0 0 0.35rem; }
-.scenarios button {
-  display: block;
-  width: 100%;
-  text-align: left;
+.features { display: grid; gap: 0.6rem; }
+.card {
+  border: 1px solid var(--edge);
+  border-radius: 0.35rem;
+  padding: 0.6rem 0.8rem;
+}
+.card h3 { margin: 0 0 0.25rem; font-size: 0.98rem; }
+.card p { margin: 0 0 0.5rem; color: var(--dim); font-size: 0.88rem; }
+.card .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; }
+.card .actions button {
   font: inherit;
-  padding: 0.5rem 0.7rem;
+  font-size: 0.88rem;
+  padding: 0.3rem 0.65rem;
   border: 1px solid var(--edge);
   border-radius: 0.35rem;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
 }
-.scenarios button:hover { border-color: var(--dim); }
-.scenarios button[aria-pressed="true"] {
+.card .actions button:hover { border-color: var(--dim); }
+.card .actions button[aria-pressed="true"] {
   border-color: var(--warn);
   color: var(--warn);
 }
-.scenarios .id {
-  display: block;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.78rem;
-  color: var(--dim);
-}
-
-.steps { margin: 0; padding-left: 1.2rem; }
-.steps li { margin-bottom: 0.5rem; }
 
 .destinations, .viewports { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .destinations button, .viewports button, #open-tab, #reset {
@@ -162,23 +155,14 @@ iframe {
   min-height: 34rem;
   border: 0;
   border-radius: 0.35rem;
-  /* The console's own panel dark, not white (#196): every scenario
-   * pick reloads the frame, and this backdrop is what shows until the
-   * page inside paints its own background. White here was a flashbulb
-   * against a dark console on every pick. A light-palette page still
+  /* The console's own panel dark, not white (#196): every card press
+   * reloads the frame, and this backdrop is what shows until the page
+   * inside paints its own background. White here was a flashbulb
+   * against a dark console on every press. A light-palette page still
    * covers the whole viewport the moment it renders, so the backdrop
    * only ever owns the unpainted gap. */
   background: var(--panel);
 }
-
-.boxes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-.boxes td { border-top: 1px solid var(--edge); padding: 0.45rem 0.5rem;
-            vertical-align: top; }
-.boxes tr:first-child td { border-top: 0; }
-.boxes .verdict { white-space: nowrap; font-weight: 600; }
-.boxes .verdict.yes { color: var(--yes); }
-.boxes .verdict.no { color: var(--no); }
-.boxes .why { color: var(--dim); }
 
 footer {
   max-width: 60rem;
