@@ -1064,6 +1064,33 @@ async function handleMe(request, env, origin, caller) {
  * The ownership question binds the session's account and never anything
  * from the body, and it asks about existence and ownership together so
  * that no answer here distinguishes them.
+ *
+ * THE SECOND RULE IS SCOPED TO NOTHING, on purpose, and it is not an
+ * oversight left where the first one has an account clause. It asks the
+ * question the UNIQUE index on `supersedes` asks, because that index is
+ * what enforces the same rule when this check is raced - and a narrower
+ * question here would accept writes the database then refuses, turning a
+ * refusal the member can act on into an exception. server/schema.sql
+ * holds that reasoning beside the index, along with why GET /me's count
+ * is scoped where this is not.
+ *
+ * WHAT IT COSTS, so that nobody has to rediscover it from a support
+ * question. POST /submit refuses a pointer at somebody else's row, so
+ * this cannot be reached through this door - but the door is not the
+ * only one. `wrangler d1 execute` validates nothing and is how the
+ * schema, every backup and every restore are applied. A row written that
+ * way, naming a member's entry from another account, leaves that member
+ * an entry their own panel still calls current - the count IS scoped, so
+ * the foreign row hides nothing - and no correction of it they can ever
+ * make: this predicate finds the foreign row and answers 409 for as long
+ * as it is there. Only a delete through the other door clears it.
+ *
+ * That outcome is accepted rather than unnoticed, and the alternative is
+ * worse in a way that is easy to miss: an account clause here would
+ * disagree with the global index, so the raced correction the index
+ * still refuses would come back as a 500 instead of the 409 that tells
+ * the member what to do next. Fixing the rarer harm by making the
+ * common path lie is not a trade this route takes.
  */
 const OWNED_BY_CALLER =
   "EXISTS (SELECT 1 FROM submissions WHERE id = ? AND account_id = ?)";
@@ -1198,11 +1225,24 @@ async function handleSubmit(request, env, origin, caller) {
      * work to do next, and telling them apart would publish which of
      * them the database happened to serve first.
      *
-     * Only that violation is absorbed. Anything else is a failure this
-     * route has no answer for and must not report as a refusal the
-     * member could act on, so it goes to fetch()'s handler.
+     * Only that violation is absorbed, and the constraint is named down
+     * to its column. Anything else is a failure this route has no answer
+     * for and must not report as a refusal the member could act on, so
+     * it goes to fetch()'s handler: "that entry has already been
+     * corrected", told to somebody whose entry was not corrected, sends
+     * them looking for a correction that does not exist and turns a
+     * fault into a refusal nobody investigates.
+     *
+     * Matching the whole message class instead would be a ratchet rather
+     * than a present bug - `submissions` carries exactly one unique
+     * constraint, so today every UNIQUE violation reachable here IS this
+     * one. The cost of the wide match falls on whoever adds the second
+     * index to this table, and it falls silently. SQLite names the table
+     * and the column in that order, which is what makes the narrow form
+     * available.
      */
-    if (!/UNIQUE constraint failed/i.test(String(error && error.message))) {
+    if (!/UNIQUE constraint failed: submissions\.supersedes/i
+      .test(String(error && error.message))) {
       throw error;
     }
     return json({ error: ALREADY_CORRECTED }, 409, origin);
