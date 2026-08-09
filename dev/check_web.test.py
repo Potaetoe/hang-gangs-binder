@@ -17,6 +17,7 @@ a test runner is not needed to compare values.
 
 import os
 import sys
+import tempfile
 
 # tools/ is not a package and check_web.py is a script, so the import has
 # to be made reachable before it can be named. isort would hoist the
@@ -35,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 156
+EXPECTED = 171
 
 
 def check(label, condition):
@@ -902,6 +903,160 @@ check("a nameplate with nothing to set it off is refused",
           ".surface-mark { padding: 1rem; }")))
 check("the shipped stylesheet dresses the admin instrument",
       check_web.surface_style_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 20 - the alignment that changes axis with its container.      #
+#
+# Driven on strings for the reason the surface arms above are: what is
+# being tested is whether a width block ANSWERS the alignment question,
+# and a suite that only ever sees today's theme.css cannot tell an
+# answer apart from a stylesheet that happens not to need one.
+#
+# The grid rule is included in every fixture even though the check
+# never reads it. It is what makes the fixture a fair model of the
+# hazard - the inherited `start` is the whole reason the branch has to
+# speak - and a fixture without it would pass for the wrong reason.
+GRID = ("body.railed { display: grid;"
+        " grid-template-columns: 15rem minmax(0, 1fr); align-items: start; }"
+        ".rail { align-self: start; position: sticky; }")
+
+ANSWERED = GRID + ("@media (max-width: 64rem) {"
+                   " body.railed { display: flex; flex-direction: column;"
+                   " align-items: stretch; }"
+                   " .rail { align-self: stretch; position: static; }"
+                   " .rail-links { flex-direction: row; } }")
+
+check("a column branch that states both alignments raises nothing",
+      check_web.css_column_branch_problems(ANSWERED) == [])
+
+# #148 exactly: the container flips to a flex column and says nothing
+# about alignment, so the grid's start reaches the inline axis.
+check("a column branch silent on align-items is refused",
+      any("without stating align-items" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 64rem) {"
+              " body.railed { display: flex; flex-direction: column; }"
+              " .rail { align-self: stretch; } }")))
+
+# The half a container-only fix leaves behind. This is the arm that
+# would have gone green on a fix that only widened the page.
+check("a column branch silent on .rail's align-self is refused",
+      any("without stating align-self on .rail" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 64rem) {"
+              " body.railed { display: flex; align-items: stretch; }"
+              " .rail { position: static; } }")))
+
+check("a column branch with no .rail rule at all is refused",
+      any("without stating align-self on .rail" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 64rem) {"
+              " body.railed { display: flex; align-items: stretch; } }")))
+
+# The breakpoint is not what identifies the branch. A redesign moving
+# 64rem anywhere else keeps the hazard, so the rule has to keep finding
+# it - and a SECOND column branch added later is caught by the same
+# rule rather than by somebody remembering to extend a list.
+check("the branch is found at any breakpoint, not just 64rem",
+      any("without stating align-items" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 30rem) {"
+              " body.railed { display: flex; }"
+              " .rail { align-self: start; } }")))
+check("a second column branch is judged on its own",
+      len(check_web.css_column_branch_problems(
+          ANSWERED + "@media (max-width: 30rem) {"
+          " body.railed { display: flex; } }")) == 2)
+
+# A width block that leaves the grid alone has no question to answer,
+# and a check that reported one would fail on every unrelated media
+# block in the file.
+check("a width block that does not touch body.railed raises nothing",
+      check_web.css_column_branch_problems(
+          GRID + "@media (max-width: 52rem) { .pair"
+          " { flex-direction: column; } }") == [])
+check("a width block that keeps body.railed a grid raises nothing",
+      check_web.css_column_branch_problems(
+          GRID + "@media (max-width: 52rem) {"
+          " body.railed { padding: 0; } }") == [])
+
+# `.rail-links` and `.rail-session` are not `.rail`. Both live in the
+# real branch, so a reader that matched on a prefix would find an
+# align-self that answers for a different element entirely.
+check("align-self on .rail-session does not answer for .rail",
+      any("without stating align-self on .rail" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 64rem) {"
+              " body.railed { display: flex; align-items: stretch; }"
+              " .rail-links { align-self: stretch; }"
+              " .rail-session { align-self: stretch; } }")))
+# And the other direction: a selector list is a real way to write this,
+# so refusing it would report a stylesheet that is correct.
+check("align-self reached through a selector list does answer",
+      check_web.css_column_branch_problems(
+          GRID + "@media (max-width: 64rem) {"
+          " body.railed { display: flex; align-items: stretch; }"
+          " .rail, .page { align-self: stretch; } }") == [])
+
+# Comments are stripped before anything is matched. A stylesheet whose
+# only `align-items` in the branch sits inside the note explaining the
+# hazard is the exact stylesheet this check exists to refuse, and it is
+# what theme.css looks like from a distance.
+check("an alignment named only in a comment does not answer",
+      any("without stating align-items" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 64rem) {"
+              " /* align-items: stretch belongs here */"
+              " body.railed { display: flex; }"
+              " .rail { align-self: stretch; } }")))
+
+# Brace counting rather than matching to the first `}`. A media block
+# is a block of blocks, and stopping early would hand back the first
+# rule and judge the branch on it - here that reads body.railed as
+# complete and never sees the missing .rail answer.
+check("the whole media block is read, not its first rule",
+      any("without stating align-self on .rail" in p
+          for p in check_web.css_column_branch_problems(
+              GRID + "@media (max-width: 64rem) {"
+              " body.railed { display: flex; align-items: stretch; }"
+              " .rail { position: static; }"
+              " .page { padding: 1rem; } }")))
+
+check("the shipped stylesheet answers in its column branch",
+      check_web.column_branch_alignment_problems() == [])
+
+
+# The arm that stops the one above being decorative, found by mutating
+# rather than by reading: replacing the wrapper's body with `return []`
+# left this whole suite green AND the gate green, because every arm
+# above drives the pure function and the arm above expects nothing.
+# A check that has been neutered where it meets the disk is a check
+# that looks armed. So the wrapper is pointed at a stylesheet that must
+# fail, which is the only way to establish that it reads a file at all
+# and applies the rule to what it finds.
+#
+# The directory is a temporary one outside the repository: a fixture
+# stylesheet written into apps/web would be published verbatim, and one
+# written anywhere in the tree is linted by the gate that runs this.
+BROKEN = GRID + ("@media (max-width: 64rem) {"
+                 " body.railed { display: flex; flex-direction: column; } }")
+
+with tempfile.TemporaryDirectory() as folder:
+    with open(os.path.join(folder, check_web.STYLESHEET), "w",
+              encoding="utf-8") as handle:
+        handle.write(BROKEN)
+    shipped = check_web.WEB
+    try:
+        check_web.WEB = folder
+        found = check_web.column_branch_alignment_problems()
+    finally:
+        check_web.WEB = shipped
+
+check("the wrapper reads the stylesheet rather than answering from "
+      "nowhere", len(found) == 2)
+check("and it is the shipped directory it normally reads",
+      check_web.WEB.endswith(os.path.join("apps", "web")))
 
 
 if failures:
