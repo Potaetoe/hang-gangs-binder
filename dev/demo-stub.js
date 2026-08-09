@@ -617,18 +617,12 @@
         "The cover is closed and opens once. Reload to see it again; " +
           "turn on reduced motion in the operating system and reload to " +
           "see it snap open instead of animating.",
-        // The chips are named by the page, not here, and the driver is
-        // sent to read the rail rather than a list. Two reasons, both
-        // still live now that the owner has ruled the light palette's
-        // label on #127: a walk-through that spells out a label needs
-        // correcting every time one moves, and nothing in the gate
-        // compares these four buttons across the three pages that carry
-        // them, so counting them against the rail is what makes this
-        // step notice one going missing.
-        "Switch every palette chip in the rail in turn. The wordmark is " +
-          "Playfair Display - if it renders as a plain serif the font " +
-          "did not load, which is the thing to look for.",
-        "There is no rail on Sign in, by decision on #73.",
+        "The wordmark is Playfair Display - if it renders as a plain " +
+          "serif the font did not load, which is the thing to look for.",
+        "There is no rail on Sign in, by decision on #73, and no " +
+          "palette switch with it: theme-init.js paints whatever was " +
+          "saved and this page offers no way to change it. Switching " +
+          "is the member scenario's step, on a page that has the rail.",
         "Press the Telegram button. It is a local stand-in for the " +
           "widget and calls the page's own callback, so what happens " +
           "after the press is the shipped code.",
@@ -645,6 +639,16 @@
       steps: [
         "Entries shows what this account currently claims, and the " +
           "numeric id line is painted.",
+        // The chips are named by the page, not here, and the driver is
+        // sent to read the rail rather than a list. Two reasons, both
+        // still live now that the owner has ruled the light palette's
+        // label on #127: a walk-through that spells out a label needs
+        // correcting every time one moves, and nothing in the gate
+        // compares these four buttons across the three pages that carry
+        // them, so counting them against the rail is what makes this
+        // step notice one going missing.
+        "Switch every palette chip in the rail in turn. This is the " +
+          "first scenario that starts on a page carrying them.",
         "New entry opens the form; the rail carries you to Progress and " +
           "back without losing the tab you were on.",
         "Progress draws the full payoff for this scenario: the " +

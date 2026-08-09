@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 94);
+const { check, mustReject, report } = suite("demo", 96);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -484,6 +484,47 @@ await check("every acceptance box is reachable from some scenario", () => {
   });
   return Demo.BOXES.every((box) => covered.has(box.id));
 });
+
+/*
+ * A step must not send the driver to a control its own starting page
+ * does not carry.
+ *
+ * #140's residue was exactly this and nothing here could see it: the
+ * signed-out walk said to switch every palette chip in the rail, and
+ * the next line of the same walk said there is no rail on Sign in.
+ * index.html carries no `data-set-theme` element at all, so the step
+ * was not merely misplaced - it could not be performed. The only check
+ * over `steps` asserted the array was not empty, which is how the text
+ * survived a nine-finding adversarial pass.
+ *
+ * ASSERTED IN ONE DIRECTION ON PURPOSE: a walk that names the chips
+ * must start on a page that has them. Not the converse - #150 is adding
+ * the control to the sign-in page, and a check demanding that every
+ * page with chips be walked for them would turn this suite red on a
+ * neighboring slice's merge for no defect.
+ *
+ * The page is read rather than remembered, so this follows the markup
+ * wherever it goes.
+ */
+const CHIP_MARKUP = "data-set-theme";
+
+await check("a walk naming the palette chips starts on a page that has them", () =>
+  Demo.SCENARIOS.every((one) => {
+    const namesChips = (one.steps || []).some((step) =>
+      /palette chip|theme chip/i.test(step));
+    if (!namesChips) return true;
+    return String(shipped[one.start] || "").includes(CHIP_MARKUP);
+  }));
+
+/*
+ * The pair, so the check above cannot pass by matching nothing. Some
+ * scenario has to be walking the chips somewhere, or the demo has
+ * quietly stopped showing the palette at all.
+ */
+await check("some scenario does walk the chips, on a page that carries them", () =>
+  Demo.SCENARIOS.some((one) =>
+    (one.steps || []).some((step) => /palette chip/i.test(step)) &&
+    String(shipped[one.start] || "").includes(CHIP_MARKUP)));
 
 /*
  * F9. The stub's comment calls the scenario ids a contract with UAT.md,
