@@ -177,10 +177,22 @@ const SESSION_HOURS = { member: 24 * 7, admin: 2 };
  * gone, the token captured. Any authenticated request slides this
  * window, so that timer needs no route added here to hold it open.
  *
- * Member sessions have no window, deliberately. A member session appends
- * rows for one account and reads a document carrying no handles and no
- * rows, so there is no plaintext corpus behind it to leave on a screen.
- * DESIGN.md, "Sessions", records that as a decision (V-222389).
+ * Member sessions have no window, deliberately, and the decision stands
+ * on two legs rather than one. A member session appends rows for one
+ * account and reads a document carrying no handles and no rows, so
+ * there is no plaintext corpus behind it to leave on a screen; and the
+ * measurable thing here is requests, while somebody filling in
+ * apps/web/submit.html sends none until they submit. A window short
+ * enough to behave like an attention timer therefore signs a member out
+ * mid-entry, and nothing in apps/web polls to hold one open - so the
+ * failure mode is losing what they typed, for a session that had no
+ * corpus behind it to protect. DESIGN.md, "Sessions", records that as a
+ * decision (V-222389).
+ *
+ * That leaves the member cap in SESSION_HOURS bounding a second thing
+ * besides the lifetime, which is where a reader should go next:
+ * revokeAccountSessions() below states the residual the cap is the only
+ * bound on, and why a window here would not close it.
  */
 const ADMIN_IDLE_MINUTES = 15;
 
@@ -551,6 +563,18 @@ async function groupStanding(env, userId) {
  * a payload HMAC-signed under the bot token for that account's numeric
  * id, which is that account's own sign-in. A stolen session token cannot
  * forge one, so nobody can revoke anybody but themselves.
+ *
+ * An idle window on member sessions is the obvious thing to reach for
+ * against that residual, and it half-bounds it. A window ends the
+ * session nobody is touching; a leaver who keeps using theirs slides it
+ * out again on every request, all the way to the cap - so the half a
+ * window closes is the half the cap already closes on its own, and the
+ * half where somebody is actively using a credential they should not
+ * have is the half it cannot reach. The bound is therefore stated here
+ * rather than shortened, and ADMIN_IDLE_MINUTES carries what a member
+ * window would cost besides. dev/worker.test.mjs pins both this
+ * residual and the no-window decision as assertions, so shortening
+ * either breaks the suite instead of passing quietly.
  *
  * By account id and never by token, because the point is every session
  * that account holds - a leaver with three tabs open is three rows.

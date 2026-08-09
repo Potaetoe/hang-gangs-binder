@@ -175,6 +175,13 @@ DoD baseline would set it: the timer that sees real interaction belongs
 on the page, and since any authenticated request slides the server-side
 window, that timer needs no route of its own to hold one open.
 
+Those seven days therefore bound more than a lifetime. Somebody who has
+left the group is refused at their next sign-in and every session that
+account holds ends there, so a leaver who never attempts again is
+bounded by the cap and by nothing else — `revokeAccountSessions()` in
+`server/worker.js` is where that residual is stated, along with why an
+idle window would close only the half of it the cap already closes.
+
 **The page is not the gate.** A static site cannot gate a static page;
 the form page bouncing signed-out visitors is a courtesy. The gate is
 the Worker refusing `POST /submit` without a valid session — the one
