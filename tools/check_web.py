@@ -8,7 +8,7 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Nineteen checks:
+Twenty checks:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -359,6 +359,19 @@ Nineteen checks:
     What it pins is presence, on purpose. Whether the four copies agree
     about a chip's LABEL is #152's, and two checks making the same claim
     in different places is how one of them gets quietly weakened.
+
+20. A width block that turns `body.railed` into a flex column states
+    its own `align-items`, and states `align-self` on `.rail`, rather
+    than letting the grid rule's `start` through. On the grid that
+    declaration addresses the block axis; in a flex column the same
+    word addresses the inline axis, so inheriting it sizes the page
+    column to its own content instead of to the screen and the widest
+    page scrolls sideways (#148).
+
+    It pins the declaration, not the render - this gate has no layout
+    engine and #75 rejected jsdom for that. The long note above the
+    check says what that does and does not buy, and why the branch is
+    found by what it does rather than by its breakpoint.
 """
 
 import base64
@@ -1092,6 +1105,131 @@ def hidden_attribute_problem():
             % STYLESHEET)
 
 
+# The one declaration in this stylesheet whose MEANING changes with its
+# container, which is why it gets a check of its own.
+#
+# `body.railed` is a grid at full width, and there `align-items: start`
+# addresses the block axis: it keeps the rail from being stretched down
+# a page taller than itself. A width block that turns that same
+# container into a flex column re-points the identical declaration at
+# the INLINE axis, where `start` means "size every child to its own
+# content" instead. `.page` then takes its min-content width rather
+# than the screen's, and on a page holding one control that will not
+# shrink - admin.html's file input, whose intrinsic width is what it
+# contributes while intrinsic sizes are computed - that is wider than a
+# phone. The page scrolls sideways (#148).
+#
+# `.rail` is checked separately because an item's own `align-self`
+# outranks its container's `align-items`, and it sets `start` for the
+# same grid reason. Answering only on the container leaves the strip
+# short of the right edge, its bottom rule ending mid-page.
+#
+# WHAT THIS PINS IS THE DECLARATION, NOT THE RENDER. It cannot say a
+# page fits its viewport: there is no layout engine in this gate, and
+# #75 rejected jsdom for exactly this - `getBoundingClientRect()`
+# returns 0x0 there, so a width assertion passes vacuously, which is
+# worse than no assertion. What it can say is that the column branch
+# ANSWERS the alignment question instead of inheriting an answer aimed
+# at a different axis. That is the part no reader sees, because the two
+# rules are nine hundred lines apart and the second one looks complete.
+#
+# The branch is found by what it does to the container, never by its
+# breakpoint. "The 64rem block" is a fact about a number any redesign
+# may move, and a second column branch added later has the identical
+# hazard and is caught by the identical rule. dev/demo.test.mjs reached
+# the same conclusion picking this same block by its rules rather than
+# by its size, after a first attempt keyed on ordering went green with
+# an unrelated block satisfying it.
+FLEX_CONTAINER = re.compile(r"\bdisplay\s*:\s*flex\b", re.I)
+DECLARES_ALIGN_ITEMS = re.compile(r"\balign-items\s*:", re.I)
+DECLARES_ALIGN_SELF = re.compile(r"\balign-self\s*:", re.I)
+
+# One rule: everything up to `{`, then everything up to `}`. Media
+# blocks are stripped of their own braces first, so no rule here ever
+# contains another.
+CSS_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.S)
+
+
+def media_block_bodies(css):
+    """The body of every @media block, brace-matched.
+
+    Counted rather than matched to the first `}`, because a media block
+    is a block OF blocks - stopping at the first closing brace would
+    hand back one rule and call it the branch.
+    """
+    bodies = []
+    for opener in re.finditer(r"@media[^{]*\{", css):
+        depth = 1
+        index = opener.end()
+        while index < len(css) and depth:
+            if css[index] == "{":
+                depth += 1
+            elif css[index] == "}":
+                depth -= 1
+            index += 1
+        bodies.append(css[opener.end():index - 1])
+    return bodies
+
+
+def rule_bodies(block, selector):
+    """Every rule body in `block` whose selector list names `selector`.
+
+    The list is split and compared whole rather than searched, so
+    `.rail-links` is not mistaken for `.rail` and `.rail, .page {…}`
+    still counts as answering for the rail.
+    """
+    bodies = []
+    for rule in CSS_RULE.finditer(block):
+        parts = [one.strip() for one in rule.group(1).split(",")]
+        if selector in parts:
+            bodies.append(rule.group(2))
+    return bodies
+
+
+def css_column_branch_problems(css):
+    """Descriptions of a width block inheriting the grid's alignment.
+
+    Takes the stylesheet's text rather than reading the file, so the
+    suite can exercise the SHAPE of the failure instead of whatever
+    theme.css happens to say today - the split check 18 argues for.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    problems = []
+    for block in media_block_bodies(css):
+        railed = rule_bodies(block, "body.railed")
+        if not any(FLEX_CONTAINER.search(body) for body in railed):
+            continue
+
+        if not any(DECLARES_ALIGN_ITEMS.search(body) for body in railed):
+            problems.append(
+                "turns body.railed into a flex container in a width block "
+                "without stating align-items there. The grid rule's "
+                "align-items: start then applies to the inline axis "
+                "instead of the block axis, and every child is sized to "
+                "its own content rather than to the screen")
+
+        if not any(DECLARES_ALIGN_SELF.search(body)
+                   for body in rule_bodies(block, ".rail")):
+            problems.append(
+                "turns body.railed into a flex container in a width block "
+                "without stating align-self on .rail there. An item's own "
+                "alignment outranks its container's, so the rail keeps the "
+                "grid's start and the strip stops short of the edge it "
+                "draws its bottom rule across")
+
+    return problems
+
+
+def column_branch_alignment_problems():
+    """css_column_branch_problems() against the shipped stylesheet."""
+    path = os.path.join(WEB, STYLESHEET)
+    if not os.path.exists(path):
+        return []  # the missing-stylesheet case is check 1's to report
+    return css_column_branch_problems(
+        open(path, encoding="utf-8").read())
+
+
 # Which shell each published page carries. Pinned here rather than read
 # off the markup: a rule derived from what the pages happen to contain
 # cannot fail when a page arrives carrying the wrong one, and arriving
@@ -1417,7 +1555,7 @@ RETIRED_LABEL = "eyebrow"
 # rule reading a class here is a REFUSAL - so a reader pinned to one
 # spelling does not merely miss things, it fails open while the gate
 # reports the page as checked. class='eyebrow' brought the retired
-# component back with all eighteen checks green.
+# component back with the whole gate green.
 #
 # The quotes are not required to match each other. Mismatched quotes are
 # malformed markup nothing here should be lenient about, and the error
@@ -1748,7 +1886,7 @@ def rail_target(href):
     #127's motivating example came back through the missing half of
     this. `if href in DESTINATIONS` reads "./admin.html" as something
     other than a destination and skips it in silence, so the rails could
-    call the admin page Export again with all eighteen checks green - a
+    call the admin page Export again with the whole gate green - a
     membership test with no else-branch fails open, and the browser
     resolves both spellings to the same file.
 
@@ -2419,6 +2557,9 @@ def main():
     problem = hidden_attribute_problem()
     if problem:
         problems.append(problem + ".")
+
+    for problem in column_branch_alignment_problems():
+        problems.append("%s %s." % (STYLESHEET, problem))
 
     for page, problem in shell_problems():
         problems.append("%s %s." % (page, problem))
