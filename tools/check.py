@@ -99,6 +99,13 @@ NODE_SUITES = [
     # This stage is what notices - it binds a socket and drives the real
     # mirror, so it is late in the list beside the other slow one.
     ("drivable demo + its mirror", "dev/demo.test.mjs"),
+    # The same demo as files (#143). A separate stage from the one above
+    # because the two fail for different reasons: that one goes red when
+    # the demo drifts from the product, this one when the EMITTED SET
+    # does - a page written without the mirror's edits, a glob that
+    # swept dev/ onto a public host, a snapshot with no commit on it.
+    # Reading which of those broke off one label is worth the line.
+    ("baked static demo + its manifest", "dev/demo-bake.test.mjs"),
 ]
 
 
