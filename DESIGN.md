@@ -376,17 +376,28 @@ the site without inheriting the data.
 
 - **No bot check** — a session costs a Telegram account, which is the
   lock; junk from a member is a moderation problem and deletable now.
-- **No framework, no build step, no bundler.** `apps/web` *is* the
-  build. Linters are gates, not builds: nothing rewrites a file; a
-  failure refuses a release rather than producing one. That is the test
-  for any future tooling — does it change what ships, or refuse to
-  ship?
+- **No framework and no bundler, and one build step that meets the test
+  below.** The test is the durable part: *can this tooling change what
+  ships without the repository noticing?* Linters cannot — nothing they
+  run rewrites a file, and a failure refuses a release rather than
+  producing one. `tools/build_web.mjs` does write a file, and still
+  cannot: it generates `dist/` from `apps/web` by removing comments and
+  nothing else, `dist/` is **committed** so what ships arrives in a diff
+  somebody reviews, and the gate rebuilds and byte-compares it in both
+  directions — a source edited without rebuilding and an artifact edited
+  by hand are the same failing check. It refuses a release rather than
+  quietly producing one, which is what the rule was protecting.
+  Everything a bundler would add — a step that runs at release time,
+  output nobody read, source no longer recoverable from what shipped —
+  is still refused. #181 has the measurements: the design record was
+  16,013 gzipped bytes of `theme.css` on every page, and it is kept in
+  full where it is read rather than sent to browsers that cannot use it.
 - **No service worker, no manifest** — offline queueing of writes it
   cannot confirm, and a home-screen icon naming this project is a
   privacy cost.
 - **No webfont** — third-party code on the page that handles plaintext.
-- **No staging branch** — `apps/web` is the build, so there is nothing
-  to promote. The development *environment* (second Worker, second D1,
+- **No staging branch** — the build is a committed directory in the
+  same commit as its source, so there is nothing to promote. The development *environment* (second Worker, second D1,
   `config.js` choosing by hostname, with an unknown hostname getting
   **no** endpoint rather than a production fallback) answers the need a
   staging branch would have pretended to.

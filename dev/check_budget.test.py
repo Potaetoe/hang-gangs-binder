@@ -45,7 +45,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 53
+EXPECTED = 55
 
 
 def check(label, condition):
@@ -311,13 +311,32 @@ check("and the third-party widget is not",
 
 measured, unmeasurable = check_budget.measure()
 
-check("every page in apps/web is measured",
+# The arm that says WHICH tree, and it is load-bearing rather than
+# bookkeeping (#181). This check answers "how many bytes travel", and
+# after the split into a hand-written apps/web and a generated dist/
+# there are two trees it could read. Pointed at the source it would
+# measure a tree no visitor downloads and overstate every page by the
+# weight of its own comments - 78% of theme.css - which is a wrong
+# answer that looks exactly like a right one. Nothing else in the gate
+# would notice, because every other property of the two trees is the
+# same by construction.
+check("the budget measures the published tree rather than the source",
+      os.path.basename(check_budget.WEB) == "dist"
+      and os.path.isdir(os.path.join(check_budget.REPO, "apps", "web")))
+
+check("and the two trees are genuinely different bytes",
+      len(open(os.path.join(check_budget.REPO, "apps", "web", "theme.css"),
+               encoding="utf-8").read())
+      > len(open(os.path.join(check_budget.WEB, "theme.css"),
+                 encoding="utf-8").read()) + 40000)
+
+check("every published page is measured",
       set(measured) == set(check_budget.html_pages()) and len(measured) >= 5)
 
 check("every reference in the tree resolves, so nothing is unmeasurable",
       unmeasurable == [])
 
-check("every page in apps/web has a pinned ceiling",
+check("every published page has a pinned ceiling",
       set(measured) <= set(check_budget.CEILINGS))
 
 check("every pinned ceiling names a page that exists",

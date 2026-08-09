@@ -27,6 +27,18 @@ case "${1:-}" in
     exec $PY tools/check.py ;;
   docs)
     exec $PY tools/check_docs.py ;;
+  build)
+    # Write dist/, the site the deploy job publishes: apps/web with the
+    # comments taken out of the CSS and the scripts (#181). Node rather
+    # than $PY because the JavaScript half is parsed with acorn - a "/*"
+    # inside a string or a regex literal is not a comment, and a scanner
+    # that thinks it is ships corrupted code.
+    #
+    # dist/ is COMMITTED, so this is a verb you run and then read the
+    # diff of, not a step that happens on the way to a release. `./run
+    # check` refuses a dist/ that is not what apps/web builds to, in
+    # both directions.
+    exec node tools/build_web.mjs ;;
   live)
     # The answer to "what has never been tried against a running
     # system" (#157). Read-only and offline: it reads the ledger, the
@@ -93,6 +105,9 @@ case "${1:-}" in
 usage: ./run <command>          (PowerShell: .\run <command>)
 
   bootstrap   make a fresh checkout gate-ready (installs lint deps)
+  build       write dist/ - apps/web with the comments taken out, which
+              is what the deploy job publishes (committed; `check`
+              refuses a stale one)
   check       run every check the project has - the same set CI runs
   docs        run only the documentation checks
   live        what has never been exercised against a running system,

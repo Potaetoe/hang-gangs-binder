@@ -2,7 +2,7 @@
   "name": "hang-gangs-binder",
   "version": "0.0.0",
   "private": true,
-  "description": "Tooling only. This package is NOT the site - apps/web is copied verbatim to the published output and nothing here is bundled, transpiled, or shipped. See DESIGN.md, 'What is deliberately not here'.",
+  "description": "Tooling only. This package is NOT the site - dist/ is the published output and it is committed, built from apps/web by tools/build_web.mjs, which removes comments and nothing else. Nothing here is bundled or transpiled and nothing from node_modules is shipped. See DESIGN.md, 'What is deliberately not here'.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
+    "acorn": "8.18.0",
     "eslint": "^9.15.0",
     "globals": "^15.12.0"
   }

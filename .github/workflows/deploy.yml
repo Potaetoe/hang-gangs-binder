@@ -1,20 +1,25 @@
 name: Verify and deploy
 
-# Publishes apps/web to GitHub Pages, but only after the checks pass.
+# Publishes dist/ to GitHub Pages, but only after the checks pass.
 #
 # ---------------------------------------------------------------------
-# THE BUILD IS A COPY
+# THE BUILD IS STILL A COPY, AND THAT IS THE POINT
 #
-# apps/web contains exactly what gets published - nothing more. Checks,
-# the key generator and the test harness live in tools/ and dev/, which
-# are sibling directories the deploy never looks at.
+# dist/ contains exactly what gets published - nothing more. It is
+# apps/web with the comments taken out of the CSS and the scripts (#181),
+# written by tools/build_web.mjs and COMMITTED, so this job copies a
+# reviewed directory rather than producing one. Checks, the key generator
+# and the test harness live in tools/ and dev/, which are sibling
+# directories the deploy never looks at.
 #
-# This matters more here than it did in the project this pattern came
-# from. There, a strip step going wrong would have published a test
-# fixture. Here, the thing that must never be published is the private
-# key that every submitter's privacy depends on, and a deletion that
-# never happens cannot fail to happen. tools/check_web.py additionally
-# fails the build if anything key-shaped is sitting in apps/web.
+# The generation deliberately does not happen here. A step that builds
+# during the release is a step whose output nobody has read, and the
+# thing that must never be published is the private key that every
+# submitter's privacy depends on. Generating in a commit means what ships
+# is in a diff; the verify job's `dist is the build of apps/web` stage
+# then refuses a dist/ that has come apart from its source in either
+# direction, and tools/check_web.py fails the build if anything
+# key-shaped is sitting in either tree.
 #
 # A push to main is a release. What protects production is this job, plus
 # running the site locally before pushing. A non-production *environment*
@@ -147,11 +152,14 @@ jobs:
       - uses: actions/configure-pages@v5
 
       - name: Build the site
-        # A copy. apps/web is the product, so there is nothing to strip
-        # and nothing to guard against having failed to strip.
+        # Still a copy. dist/ is the product and it is committed, so
+        # there is nothing to strip here and nothing to guard against
+        # having failed to strip - the generation happened in a commit a
+        # reviewer read, and the verify job above refuses a dist/ that is
+        # not what apps/web builds to. See the header of this file.
         run: |
           rm -rf _site
-          cp -r apps/web _site
+          cp -r dist _site
           echo "publishing ($(du -sh _site | cut -f1)):"
           ls -R _site
 

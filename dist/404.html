@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Same policy as index.html. See the comment there. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Not found — HangGang</title>
+<meta name="description" content="That page does not exist on Hang Gang's Binder.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#120d10">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!--
+  GitHub Pages serves this file for any path it cannot find, so its
+  relative links resolve against the requested URL rather than the site
+  root. The site is flat - every real page is one level deep - so a
+  relative href is correct for anything a visitor could plausibly land
+  on, and it keeps this page working on localhost too.
+-->
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<body>
+
+<!--
+  The quietest treatment the system has: no rail, no session, one link
+  home. A page that failed is not a stage, and the rail's session home
+  would be actively wrong here - this page is reachable signed out, and
+  the hrefs below resolve against whatever path was requested rather
+  than the site root, so a rail's four links would be four chances to
+  guess wrong instead of one.
+
+  tools/check_web.py pins this page as plain, refuses rail markup on it,
+  and still requires the one link out that keeps "plain" from meaning
+  "a dead end".
+-->
+<!-- The status code carries no label component of its own. It is the
+     one decorated thing this page had, and the error page is the one
+     surface the design keeps as plain as it will go - so it loses the
+     treatment rather than gaining a new one. -->
+<header class="stack-tight">
+  <p class="muted small">404</p>
+  <h1>Not found</h1>
+  <p class="muted">The link may be old, or the address mistyped.</p>
+</header>
+
+<main class="stack">
+  <div class="card">
+    <p><a href="index.html">Go to sign in</a></p>
+  </div>
+</main>
+
+<footer>
+  <p>
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+<!-- nav.js is not loaded here, for the reason index.html gives: its
+     whole job is the rail, and this page is plain. -->
+<script src="theme.js"></script>
+</body>
+</html>

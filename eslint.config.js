@@ -1,12 +1,17 @@
 /*
  * Lint rules for this repository.
  *
- * A LINTER IS A GATE, NOT A BUILD. DESIGN.md rejects a bundler because it
- * "adds a step that can fail between the source and the published site".
- * Nothing here sits between the two: `apps/web` is still copied verbatim,
- * this config transforms no file, and a lint failure blocks a release
+ * A LINTER IS A GATE, NOT A BUILD. DESIGN.md's test for tooling is
+ * whether it can change what ships without the repository noticing, and
+ * this config transforms no file at all: a lint failure blocks a release
  * rather than changing what gets released. That is the same shape as
  * tools/check_web.py, which has always been allowed for the same reason.
+ *
+ * There IS a step between the source and the published site now -
+ * tools/build_web.mjs, which writes dist/ (#181) - and it meets that
+ * same test rather than being an exception to it: its output is
+ * committed and the gate rebuilds and byte-compares it in both
+ * directions. See DESIGN.md, "What is deliberately not here".
  *
  * The three groups below are genuinely different environments and were
  * getting one set of assumptions applied to all of them by eye:
@@ -36,8 +41,14 @@ export default [
     // main. A gate that fails for a reason the author cannot act on is
     // worse than a slow one: it teaches you to read red as noise, and
     // that is how a real failure gets waved through.
-    ignores: ["node_modules/**", "_site/**", ".wrangler/**", ".claude/**",
-              "dev/sample-submissions.json", "dev/fixture.json"],
+    // dist/ is generated (#181): it is apps/web with the comments taken
+    // out, so every rule below has already been applied to the file it
+    // was built from. Linting it would be linting the same code twice
+    // and reporting the second copy's line numbers, which point at
+    // nothing anybody can edit - the fix always belongs in apps/web.
+    ignores: ["node_modules/**", "_site/**", "dist/**", ".wrangler/**",
+              ".claude/**", "dev/sample-submissions.json",
+              "dev/fixture.json"],
   },
 
   js.configs.recommended,
@@ -224,6 +235,34 @@ export default [
       quotes: ["error", "double", { avoidEscape: true }],
       semi: ["error", "always"],
       // A suite prints its results. That is its whole job.
+      "no-console": "off",
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_",
+                                    caughtErrors: "none" }],
+    },
+  },
+
+  {
+    /*
+     * The one tool in tools/ that is not Python: tools/build_web.mjs,
+     * which generates dist/ (#181). It is in tools/ rather than dev/
+     * because it is not a test - `./run build` runs it, and `./run
+     * check` runs its --check arm as a gate stage.
+     *
+     * console is on, and that is the same allowance dev/ gets: a tool
+     * whose output is a report has to be able to print one.
+     */
+    files: ["tools/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-var": "error",
+      "prefer-const": "error",
+      eqeqeq: ["error", "always", { null: "ignore" }],
+      quotes: ["error", "double", { avoidEscape: true }],
+      semi: ["error", "always"],
       "no-console": "off",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_",
                                     caughtErrors: "none" }],

@@ -44,7 +44,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 52
+EXPECTED = 58
 
 
 def check(label, condition):
@@ -340,6 +340,46 @@ check("the exemption is exactly the two self-referential files",
 
 check("and neither exempt file is scanned",
       not any(rel in check_comments.EXEMPT for rel in scanned))
+
+
+# ------------------------------------------------------------------ #
+# The generated site, which this check must never read.               #
+#
+# #181 splits the tree in two: apps/web is written by a person and dist/
+# is the same code with every comment removed on purpose. Pointed at
+# dist/ this check enforces a rule about comments against files built to
+# have none - and the ordinary failure is not a red gate, it is a GREEN
+# one, because a file with no comments has no comment narrating a
+# change. A check that cannot fail is the thing this repository holds to
+# be worse than no check at all, so the scan set is pinned from out here
+# rather than trusted to a comment inside it.
+
+check("scanning the generated tree is refused",
+      len(check_comments.generated_tree_problems(
+          [("dist", (".js", ".css"))])) == 1)
+
+check("and so is a directory inside it",
+      len(check_comments.generated_tree_problems(
+          [("dist/fonts", (".js",))])) == 1)
+
+check("and the refusal says which tree to read instead",
+      "source" in check_comments.generated_tree_problems(
+          [("dist", (".js",))])[0])
+
+# The other direction. A rule that fires on everything is not a rule,
+# and this one has to leave the four real entries alone.
+check("the real scan set is not refused",
+      check_comments.generated_tree_problems() == [])
+
+check("and it still names the source tree",
+      any(dirname == "apps/web" for dirname, _e in check_comments.SCAN))
+
+# A near-miss, because the test above would pass on a rule matching the
+# exact string "dist" and nothing else - and it would then miss
+# "dist/fonts", which is the shape somebody actually writes.
+check("a directory merely starting with the same letters is not refused",
+      check_comments.generated_tree_problems(
+          [("distributions", (".py",))]) == [])
 
 
 if failures:

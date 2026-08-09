@@ -110,6 +110,21 @@ export const IMPORT_SCRIPTS = ["form.js", "dashboard.js", "admin.js"];
 
 export const OUT_DEFAULT = "_demo";
 
+/*
+ * apps/web rather than dist/, matching dev/demo-server.mjs (#181), and
+ * chosen rather than inherited.
+ *
+ * A baked demo is not a release. It is the same instrument the server
+ * drives, written to files so it can be hosted off this machine, and the
+ * thing it has to stay true to is the tree somebody is working in - so
+ * `./run bake` on an unbuilt checkout must not emit last week's build.
+ * The published site is dist/ and it has its own gate stage saying so.
+ *
+ * The demo's absolute /apps/web/ paths below are the other half of this:
+ * they name where the corpus worker reads its scripts from, and pointing
+ * the bake at a different tree while those stay put is how a manifest
+ * comes to describe files nobody emitted.
+ */
 const WEB = "apps/web/";
 const MIRROR = "demo/";
 

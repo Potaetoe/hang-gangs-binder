@@ -896,8 +896,9 @@ lives.
 
 ## Getting back
 
-The site is a `git revert` — `apps/web` is the build, so reverting
-restores the pages exactly. The Worker is not: it deploys separately.
+The site is a `git revert` — the published `dist/` is committed
+beside the `apps/web` it was built from, so reverting restores the
+pages exactly and cannot leave the two disagreeing. The Worker is not: it deploys separately.
 A capture of the pre-accounts production script exists **outside this
 repository** at `binder-recovery/` (version
 `2d3c73a5-1095-42db-a810-c8c0ba1a5c24`, with its own README), and

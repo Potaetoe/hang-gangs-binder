@@ -40,10 +40,17 @@ the two directories are dangerous for opposite reasons: apps/web is
 copied verbatim to a public site, and server/ is the directory that gets
 run. See the docstring in tools/check_server.py.
 
-The linters are a gate, not a build. Nothing they run rewrites a file
-and apps/web is still copied verbatim to the published site; they refuse
-a release rather than producing one. See DESIGN.md, "What is
-deliberately not here".
+The linters are a gate, not a build: nothing they run rewrites a file,
+and they refuse a release rather than producing one.
+
+There IS one thing here that writes a file - tools/build_web.mjs, which
+generates dist/ from apps/web by removing comments (#181) - and this
+gate never runs it. The "dist is the build of apps/web" stage below asks
+whether the committed artifact is what the source builds to, in both
+directions, and reports; it does not fix. That is the same shape as
+every other check here, and it is what keeps DESIGN.md's test satisfied:
+a release is refused rather than quietly produced. See DESIGN.md, "What
+is deliberately not here".
 
 What none of it can see is the Cloudflare dashboard. A Worker with no
 D1 binding, or no EXPORT_TOKEN, passes every check here and fails on
@@ -158,9 +165,10 @@ def run_linters(node):
     the failure this repository has hit twice - a suite registered
     locally but not in CI, and a check that could not fail.
 
-    Neither of these is a build step. apps/web is still copied verbatim
-    and nothing here rewrites a file; they refuse a release rather than
-    producing one. See DESIGN.md, "What is deliberately not here".
+    Neither of these rewrites a file; they refuse a release rather than
+    producing one. The one generator this repository has is not run from
+    here either - see this module's docstring. DESIGN.md, "What is
+    deliberately not here".
     """
     results = []
 

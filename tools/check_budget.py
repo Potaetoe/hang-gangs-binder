@@ -162,7 +162,20 @@ import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEB = os.path.join(REPO, "apps", "web")
+
+# dist/, not apps/web - #181. This check is the one place in the gate
+# where the question is literally "how many bytes travel", so it has to
+# read the bytes that travel: the generated site the deploy job
+# publishes, with the design record taken out of the CSS and the scripts.
+# Pointed at apps/web it would measure a tree nobody downloads and
+# overstate every page by the weight of its own comments, which is 78%
+# of theme.css.
+#
+# It is also why tools/check.py runs the build stage BEFORE this one. A
+# stale dist/ makes every number here a fact about a site that is not
+# being shipped, and a budget measuring the wrong tree is worse than no
+# budget: it is a wrong answer with a table around it.
+WEB = os.path.join(REPO, "dist")
 
 # Gzipped bytes per page: the page plus everything it pulls in. Pinned
 # at roughly HEADROOM above what each measures, taking the CI runner's
@@ -273,12 +286,46 @@ WEB = os.path.join(REPO, "apps", "web")
 # from being one on a runner whose zlib compresses this tree larger than
 # the one that measured it, and a ceiling nobody re-pinned is a ceiling
 # that stopped tracking its page.
+#
+# And then all five fall, which is the first time these numbers have
+# moved DOWN. #181 ships the site from dist/ - apps/web with the comments
+# taken out of the CSS and the scripts - and this table now measures that
+# tree instead of the source:
+#
+#   404.html        120,715 -> 103,077   (-14.6%)
+#   admin.html      190,882 -> 136,117   (-28.7%)
+#   dashboard.html  154,823 -> 118,148   (-23.7%)
+#   index.html      130,088 -> 108,540   (-16.6%)
+#   submit.html     162,154 -> 125,621   (-22.5%)
+#
+# admin.html is the page that needed it. It stood at 99% of its ceiling
+# after #69's membership pane landed - one ordinary card away from a
+# failing gate on a page nobody had made heavier since.
+#
+# theme.css alone accounts for 16,021 B of every one of those, because it
+# is in all five totals and 78% of it was prose. admin.html and
+# dashboard.html take the rest from dashboard.js, admin.js and crypto.js,
+# which are the heavily-reasoned files.
+#
+# Nothing was deleted to get this. The comments are still in apps/web,
+# where they are read and edited; what changed is that they are no longer
+# sent to a browser that cannot use them. That distinction is the whole
+# of #181 and it is why the route #80 measured (deleting four dead
+# selectors, 19 B) and the route #160 measured (a per-surface split, 3-7
+# KB and a gzip-dictionary penalty that made admin.html heavier) were
+# both correctly refused.
+#
+# Re-pinned at HEADROOM against the new measurement, all five, for the
+# reason every earlier re-pin gives: the stale arm exists precisely so a
+# ceiling that has stopped tracking its page fails. Leaving these at
+# their old numbers would have parked every page at 63-79% of a pin
+# nobody had looked at, which is what that arm is written to refuse.
 CEILINGS = {
-    "404.html": 131000,
-    "admin.html": 193500,
-    "dashboard.html": 163000,
-    "index.html": 137600,
-    "submit.html": 175200,
+    "404.html": 113400,
+    "admin.html": 144900,
+    "dashboard.html": 130000,
+    "index.html": 119400,
+    "submit.html": 138200,
 }
 
 # What a fresh pin gets: about ten percent of room to grow into. Large
