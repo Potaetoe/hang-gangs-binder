@@ -147,6 +147,31 @@
       <p>
         Entries stored: <strong id="member-entry-count">&mdash;</strong>
       </p>
+      <!--
+        The rows a correction replaced, beside the count rather than
+        subtracted from it. The count above is the effective one, so
+        without this line a member who fixed a mistake watches their
+        number shrink with nothing on the page accounting for the
+        difference - which reads as the correction having eaten an
+        entry. GET /me carries the second number for exactly this;
+        handleMe in server/worker.js argues it at length.
+
+        `hidden` is the resting state and submit.js reveals it, because
+        most members on most days have corrected nothing, and a line
+        reading "0 corrections" invites the question of what a
+        correction is from the one person who has never made one.
+
+        "Corrections" and not the field's name: `superseded` is the
+        column and `tombstone` is DESIGN.md's word for what it leaves,
+        and neither is how this product speaks to somebody who fixed a
+        typo. The count itself is written by submit.js, noun included,
+        because "1 corrections" is the tell of a number pasted into a
+        sentence.
+      -->
+      <p class="muted small" id="member-corrections-line" hidden>
+        Plus <strong id="member-corrections"></strong> resting behind them
+        &mdash; rows you replaced, kept rather than erased.
+      </p>
       <p class="muted small">
         Last submitted: <time id="member-last-at">Checking&hellip;</time>
       </p>
