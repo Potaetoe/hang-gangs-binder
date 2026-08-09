@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 67;
+const EXPECTED = 72;
 
 function check(label, condition) {
   performed++;
@@ -127,6 +127,12 @@ function makePage() {
     "add-entry-pane": makeElement("add-entry-pane", true),
     "member-entry-count": makeElement("member-entry-count"),
     "member-last-at": makeElement("member-last-at"),
+    // Starts hidden, as the markup does, and for the same reason the
+    // Telegram line does: the resting state is the one a member with
+    // nothing corrected sees, and a stub that began painted would let
+    // a line that never hides pass every check below.
+    "member-corrections-line": makeElement("member-corrections-line", true),
+    "member-corrections": makeElement("member-corrections"),
     // Starts hidden, as the markup does. A line that begins painted
     // would let a page which never renders anything pass the check
     // that it is on screen.
@@ -336,6 +342,7 @@ const panelIds = [
   "your-entries-tab", "add-entry-tab", "your-entries-pane",
   "add-entry-pane", "member-entry-count", "member-last-at",
   "member-telegram-id-line", "member-telegram-id",
+  "member-corrections-line", "member-corrections",
 ];
 check("submit.html declares the panel controls and loads its shipped module",
   panelIds.every((id) => submitHtml.includes(`id="${id}"`)) &&
@@ -442,6 +449,95 @@ check("the panel renders the route's exact count and last-submitted time",
   panel.elements["member-last-at"].dateTime === lastAt &&
   panel.elements["member-last-at"].textContent ===
     new Date(lastAt).toLocaleString());
+
+/*
+ * #193. GET /me reports corrected rows BESIDE the effective count
+ * rather than subtracting them in silence, because a count that does
+ * not move looks the same whether a correction landed or was refused -
+ * server/worker.js says so at length above handleMe. The panel drew
+ * `entries` and nothing else, so the second number arrived and no
+ * screen carried it: a member who corrected a mistake watched their
+ * count shrink with nothing on the page accounting for the difference.
+ *
+ * What is asserted is that the number PAINTS. `textContent` alone
+ * would pass on a line written into a permanently hidden element,
+ * which is the same amount of use to that member as not writing it -
+ * the trap the Telegram-id check above names in the same words.
+ *
+ * The staging is the demo console's supersede scenario exactly - four
+ * standing, two corrected - so the browser walk-through and this file
+ * are looking at the same screen.
+ */
+const corrected = await loadSubmit({
+  replies: [response(200, {
+    ok: true, entries: 4, superseded: 2, lastAt,
+  })],
+});
+check("a member who corrected rows reads the corrections beside the count",
+  corrected.elements["member-entry-count"].textContent === "4" &&
+  corrected.elements["member-corrections"].textContent === "2 corrections" &&
+  isPainted(corrected.elements["member-corrections-line"]));
+
+/*
+ * Singular, because the line is a sentence a member reads and "1
+ * corrections" is the tell of a number pasted into prose. Pinned
+ * rather than left to review: the plural is correct for every count
+ * this staging happens to use, so nothing else in this file would
+ * ever go red for it.
+ */
+const oneCorrection = await loadSubmit({
+  replies: [response(200, { ok: true, entries: 3, superseded: 1, lastAt })],
+});
+check("one corrected row is announced as one correction, not one corrections",
+  oneCorrection.elements["member-corrections"].textContent === "1 correction" &&
+  isPainted(oneCorrection.elements["member-corrections-line"]));
+
+/*
+ * And the absent case, which is most members on most days. A line
+ * reading "0 corrections" is noise on a panel whose whole job is to be
+ * the one place a member trusts about their own rows - it invites the
+ * question of what a correction is from somebody who has never made
+ * one. Both halves: hidden AND empty, because a hidden element still
+ * holding "0 corrections" is one CSS change away from painting it.
+ */
+const uncorrected = await loadSubmit({
+  replies: [response(200, { ok: true, entries: 4, superseded: 0, lastAt })],
+});
+check("a member with nothing corrected is told nothing, not told zero",
+  // The count is asserted alongside so that a render which never ran
+  // cannot satisfy this: the stub starts hidden and empty, so "hidden
+  // and empty" is also what a dead panel looks like.
+  uncorrected.elements["member-entry-count"].textContent === "4" &&
+  !isPainted(uncorrected.elements["member-corrections-line"]) &&
+  uncorrected.elements["member-corrections"].textContent === "");
+
+/*
+ * A summary that carries no such field at all, which is what an older
+ * Worker answers. The panel degrades to the line it drew before this
+ * change rather than throwing: a page that refuses to render its count
+ * because a second number is missing turns a route it cannot control
+ * into a dead panel, and the count is the part the member came for.
+ * `panel` above is that response - its stub body names no `superseded`.
+ */
+check("a summary with no corrections field paints a count and no line",
+  panel.elements["member-entry-count"].textContent === "41" &&
+  !isPainted(panel.elements["member-corrections-line"]) &&
+  panel.elements["member-corrections"].textContent === "");
+
+/*
+ * The register, asserted on what a member can actually read. `superseded`
+ * is the column's name and `tombstone` is the design's word for the row
+ * it leaves; both are how this repository talks to itself, and neither
+ * is how the product talks to the person who fixed a typo - UAT A5 and
+ * the demo console both say "correction". Comments are stripped first
+ * because they are where those two words BELONG on this page: they name
+ * the field the render reads, and a check that forbade them there would
+ * push the explanation out of the file that needs it.
+ */
+const visibleMarkup = submitHtml.replace(/<!--[\s\S]*?-->/g, "");
+check("the panel speaks of corrections, never of superseding or tombstones",
+  /\bcorrection/i.test(visibleMarkup) &&
+  !/superseded|tombstone/i.test(visibleMarkup));
 
 /*
  * #58. The Worker returns the caller's own numeric id at sign-in for
