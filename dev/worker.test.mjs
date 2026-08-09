@@ -1051,7 +1051,7 @@ for (const [what, reply] of NOT_DEPARTURES) {
  * Break-glass, unchanged and asserted at the network rather than at the
  * status code. ALWAYS_ALLOW_TELEGRAM_IDS exists for the case where the
  * group check itself has failed - the bot removed from the group, the
- * API down - so it has to be answered before anything is dialled.
+ * API down - so it has to be answered before any call is made.
  */
 reset();
 telegramCalls = 0;
