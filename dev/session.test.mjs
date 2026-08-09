@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 35);
+const { check, report } = nodeTestSuite("session/auth", 39);
 
 const values = new Map();
 globalThis.sessionStorage = {
@@ -59,6 +59,32 @@ redirects.length = 0;
 location.pathname = "/index.html";
 check("the sign-in page does not redirect itself",
   Session.require() === null && redirects.length === 0);
+
+/*
+ * The page's name, on a host that rewrites the URL - #188. Cloudflare
+ * Pages serves "submit.html" at "submit" and 308s the full name away,
+ * with no setting that refuses (#143's hosted bake is where this bit).
+ * Compared raw, that segment matches no rail href, and a host that
+ * strips the index name the same way turns requireSession()'s redirect
+ * into a loop: the sign-in page arrives named "index", which is never
+ * "index.html". So the answer lives in one exported place with the
+ * suffix restored, and nav.js asks it rather than keeping a second
+ * computation that can disagree with the sign-in gate.
+ */
+location.pathname = "/demo/submit";
+check("a host-stripped page name answers with its file's own name",
+  Session.pageName() === "submit.html");
+location.pathname = "/demo/submit.html";
+check("a name the host left alone passes through untouched",
+  Session.pageName() === "submit.html");
+location.pathname = "/demo/";
+check("a directory index is the sign-in page",
+  Session.pageName() === "index.html");
+location.pathname = "/demo/index";
+redirects.length = 0;
+check("a signed-out sign-in page stays put when the host strips its name",
+  Session.require() === null && redirects.length === 0);
+location.pathname = "/index.html";
 
 const GOOD = {
   ok: true,
