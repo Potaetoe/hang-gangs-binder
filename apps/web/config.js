@@ -48,7 +48,26 @@ ENVIRONMENTS["127.0.0.1"] = ENVIRONMENTS.localhost;
 
 // No production fallback. An unknown host gets no endpoint and no key, so
 // the existing page guards close submissions instead of reaching live data.
-globalThis.BINDER_CONFIG = ENVIRONMENTS[location.hostname] || {
-  name: "unknown",
-  publicKey: null,
-};
+//
+// Frozen and locked because this object carries the publicKey every
+// submission encrypts to. form.js captures BINDER_CONFIG early, in setUp(),
+// but reads config.publicKey late, when the submit button is pressed; a
+// script with same-origin write access must not be able to swap the key
+// between those two moments, in either of the two ways it could. Object.freeze
+// closes member mutation of the resolved arm (config.publicKey = ...); the
+// non-writable, non-configurable defineProperty closes reassignment of the
+// global itself (BINDER_CONFIG = ...). Either swap would redirect ciphertext
+// to a key the keyholder does not hold, silently, until an export fails to
+// open. tools/check_web.py fails the build if either protection is dropped:
+// the freeze through the export roster, the lock through config_environments.
+globalThis.BINDER_CONFIG = Object.freeze(
+  ENVIRONMENTS[location.hostname] || {
+    name: "unknown",
+    publicKey: null,
+  }
+);
+
+Object.defineProperty(globalThis, "BINDER_CONFIG", {
+  writable: false,
+  configurable: false,
+});
