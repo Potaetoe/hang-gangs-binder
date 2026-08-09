@@ -284,6 +284,143 @@
         "key file: it is what puts the key back.";
   }
 
+  /* ---------------------------------------------------------------- */
+  /* The membership lists (#69).                                      */
+
+  /*
+   * The two lists this page draws, in the order it draws them.
+   *
+   * These are `MEMBERSHIP_ROLES` in server/worker.js, and the page holds
+   * its own copy rather than learning them from a response, because the
+   * page has to be able to draw an EMPTY admin list. A page that
+   * discovered its sections from the rows it was sent would render
+   * nothing at all on the day the admin list is empty - which is the one
+   * state that most needs a screen, since it is the lockout #69 opens
+   * with.
+   *
+   * The order is not alphabetical and is not arbitrary: `admin` is the
+   * list this page manages outright, and `always_allow` is the one it
+   * can only add to. The consequential list goes first.
+   */
+  const MEMBERSHIP_ROLES = Object.freeze(["admin", "always_allow"]);
+
+  /*
+   * What `GET /membership` answered, sorted into what the page draws.
+   *
+   * FOUR OUTPUTS RATHER THAN TWO, and the two extra ones are the reason
+   * this is a function with a suite rather than a loop inside the
+   * renderer.
+   *
+   * `unknown` is the else-branch of the role test, and it is the arm
+   * that stops this reader failing open. Every row in `membership` has
+   * already passed the Worker's own `grantsAnything()` - the same
+   * predicate its authority read uses - so a row here GRANTS whatever
+   * its role says. A renderer that sorted rows into `admin`,
+   * `always_allow` and silence would hide a live grant from the one
+   * screen that exists to show them, and the gate would stay green
+   * because nothing counts rows that were never drawn. A membership test
+   * with no else is a silent skip; what this one would skip is
+   * authority.
+   *
+   * `absent` is the difference between a field that came back empty and
+   * one that did not come back at all, and it is not a nicety.
+   * `secretOnly` reading empty is the flip's go-signal (OPERATIONS.md,
+   * "Making someone an admin"), so a page that renders a missing field
+   * as an empty one prints that go-signal from a Worker that never gave
+   * it. Absent is never empty anywhere in this file.
+   *
+   * `dropped` counts entries that were not rows at all. They cannot be
+   * drawn - there is nothing to draw - so the count is what keeps them
+   * from being silently discarded.
+   */
+  function membershipView(payload) {
+    return null;
+  }
+
+  /*
+   * What the `secretOnly` list means, in the words the runbook uses.
+   *
+   * Three states and not two. Empty is the go-signal; non-empty is a
+   * backfill that is not finished; ABSENT is a Worker that did not
+   * answer the question, and saying "the backfill is complete" there
+   * would be inventing the one fact this page exists to report.
+   *
+   * The ids themselves are HMACs and the sentence says so. An admin may
+   * see them - they are the same un-invertible values sitting in the
+   * rows above, going to a caller who may read every one of those rows
+   * anyway - but a reader who thinks a 64-character hex string is
+   * something they can look up will go looking, so the copy closes that
+   * door explicitly.
+   */
+  function secretOnlyNotice(view) {
+    return "";
+  }
+
+  /*
+   * What the page does about a refusal, and what it says.
+   *
+   * One function because the three membership calls must not each invent
+   * their own answer to the same three questions, and because the
+   * answers are not interchangeable:
+   *
+   *   401 - the session is gone. Discard it and leave. This page holds
+   *         every submission in the clear, so a session the Worker no
+   *         longer accepts is a tab that should not stay open on it.
+   *   409 - the Worker refused a removal that would have emptied the
+   *         admin list. NOTHING was removed, so the page must re-read
+   *         rather than drop a row locally: a page that removed the row
+   *         from its own list first would show the lockout it was just
+   *         prevented from causing.
+   *   else - show what the Worker said. Its `{error}` is written for the
+   *         admin who provoked it and is more specific than anything
+   *         this side could guess.
+   */
+  function refusalFor(status, payload) {
+    return null;
+  }
+
+  /*
+   * What to say after a row is added, which is the half of this that can
+   * only be got wrong in words.
+   *
+   * ADDING AN ADMIN ROW DOES NOTHING FOR A SESSION THAT ALREADY EXISTS.
+   * `is_admin` is minted at sign-in and the per-request re-read can only
+   * take adminness away (server/schema.sql, the `sessions` block), so
+   * the new admin sees no change until they sign out and in again. An
+   * admin who is not told that reads the unchanged screen as the add
+   * having failed, and adds it again.
+   *
+   * For `always_allow` the sentence that has to be said is the other
+   * one: this row is an ADDITION beside ALWAYS_ALLOW_TELEGRAM_IDS, which
+   * is checked first and by numeric id and is not managed from here - so
+   * removing this row later is not a revocation.
+   */
+  function addedNotice(role, label) {
+    return "";
+  }
+
+  /*
+   * A removal button's text, on each of its two presses.
+   *
+   * The removal is two presses of the same button rather than one, and
+   * the second press names the row. This is a courtesy and NOT a guard:
+   * the thing that actually stops the admin list being emptied is the
+   * Worker's last-admin subquery, which is inside the DELETE and cannot
+   * be raced. A browser-side confirmation protects nothing - anything
+   * that can reach this page can issue the request without it - so it is
+   * built as what it is: a second look before an irreversible act, in
+   * the page's own components rather than in a platform dialog.
+   *
+   * The label rather than the account id, because the account id is a
+   * 64-character HMAC and nobody can tell two of them apart at a glance.
+   * A row with no readable label falls back to naming nothing rather
+   * than to naming the hex, since a confirmation that reads as noise is
+   * a confirmation nobody reads.
+   */
+  function removalStep(row, armed) {
+    return "";
+  }
+
   // Frozen because admin.html is where decrypt output becomes a CSV: an
   // export a later script can rewrite is a `toCsv` that can be swapped
   // for one that keeps a copy, on the one page in this site that holds
@@ -298,6 +435,12 @@
     fileName: fileName,
     storedKeyVerdict: storedKeyVerdict,
     storedKeyNotice: storedKeyNotice,
+    MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
+    membershipView: membershipView,
+    secretOnlyNotice: secretOnlyNotice,
+    refusalFor: refusalFor,
+    addedNotice: addedNotice,
+    removalStep: removalStep,
   });
 
   /* ---------------------------------------------------------------- */

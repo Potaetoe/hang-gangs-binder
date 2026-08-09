@@ -270,16 +270,26 @@ function makePage() {
     "download-xlsx", "download-json", "published-state", "unpublish",
     "unpublish-status", "publish-series", "publish", "publish-preview",
     "publish-preview-body", "publish-status",
+    // The membership pane. `membership-admin` and `membership-always_allow`
+    // carry the Worker's own role names, because the page looks its
+    // containers up by role - see the note in admin.html.
+    "membership-card", "member-telegram-id", "member-label", "member-add",
+    "membership-status", "membership-admin", "membership-always_allow",
+    "secret-only", "membership-malformed", "membership-malformed-list",
+    "membership-other", "membership-other-body",
   ];
+  const INPUTS = ["token", "keyfile-picker", "publish-series",
+    "member-telegram-id", "member-label"];
   const elements = Object.fromEntries(ids.map((id) => [id, makeElement(
-    id === "token" || id === "keyfile-picker" || id === "publish-series"
-      ? "input"
-      : id === "keyfile" ? "textarea" : "div",
+    INPUTS.includes(id) ? "input"
+      : id === "keyfile" ? "textarea"
+        : id === "member-add" ? "button" : "div",
     id,
   )]));
   for (const id of [
     "closed", "results", "dashboard", "publish-card", "failures",
     "unpublish", "publish-preview-body", "publish-status",
+    "membership-status", "membership-malformed", "membership-other",
   ]) elements[id].hidden = true;
   elements.token.value = "DOM_INPUT_EXPORT_TOKEN";
   elements.keyfile.value = "DOM_INPUT_PRIVATE_KEY";
@@ -375,7 +385,13 @@ async function loadAdmin(session, options = {}) {
       element.textContent = message;
       element.hidden = false;
     },
-    checkedValue(name, fallback) { return fallback; },
+    // The role radio is a real choice the pane reads, so a scenario has
+    // to be able to make it. Anything the scenario did not stage keeps
+    // the page's own fallback.
+    checkedValue(name, fallback) {
+      const staged = options.checked || {};
+      return Object.hasOwn(staged, name) ? staged[name] : fallback;
+    },
     boot(setUp, failed) {
       try { setUp(); } catch (error) { failed(error); }
     },
@@ -442,10 +458,43 @@ async function loadAdmin(session, options = {}) {
    * Worker does.
    */
   let live = options.published || null;
+
+  /*
+   * What GET /membership answers, and what it answers NEXT.
+   *
+   * A list rather than a value, because half of what this pane promises
+   * is about the SECOND read: a removal the Worker refused must leave
+   * the row on screen, and an add must be followed by a re-read rather
+   * than by a local guess. A stub that answered the same document
+   * forever would make both of those unfalsifiable - the screen would
+   * look right whether or not the page ever asked again.
+   */
+  const membershipAnswers = (Array.isArray(options.membership)
+    ? options.membership.slice()
+    : [options.membership || {
+      ok: true, membership: [], malformed: [], secretOnly: [],
+    }]);
+  function nextMembership() {
+    if (membershipAnswers.length > 1) membershipAnswers.shift();
+    return membershipAnswers[0];
+  }
+
+  // Captured out here because `fetch`'s own second parameter is called
+  // `options` too, and reading the scenario off it inside the stub is
+  // the mistake the snapshot arm above already records in its comment.
+  const refuse = typeof options.refuse === "function" ? options.refuse : null;
+
   globalThis.fetch = async function (url, options) {
     const request = { url, options: options || {} };
     requests.push(request);
     const method = request.options.method || "GET";
+    const path = url.slice(url.indexOf("/", "https://".length));
+    if (path.startsWith("/membership")) {
+      const refused = refuse ? refuse(method, path) : null;
+      if (refused) return response(refused.status, refused.body);
+      if (method === "GET") return response(200, nextMembership());
+      return response(200, { ok: true });
+    }
     if (url.endsWith("/export") && method === "GET") {
       return response(200, { ok: true, submissions: SUBMISSIONS });
     }
@@ -807,6 +856,263 @@ check("with no storage at all the key file still opens the rows",
   requestsFor(noStorage, "/export", "GET").length === 1 &&
   JSON.stringify(rowIds(noStorage)) === JSON.stringify([41, 99]) &&
   noStorage.imported.length === 1);
+
+/* ------------------------------------------------------------------ */
+/* The membership pane - #69.                                         */
+
+/*
+ * The door that replaces a hand-issued curl carrying a credential.
+ *
+ * What is attacked here is not "does the pane draw". It is the four ways
+ * this pane could lie to the admin operating it:
+ *
+ *   1. by putting a numeric Telegram id somewhere durable - a URL, the
+ *      history, storage, a log. The Worker HMACs the id on receipt and
+ *      stores only the HMAC, so this page is the last place a numeric id
+ *      exists at all, and DESIGN.md's "the identifier is the whole
+ *      problem" is what it would be undoing;
+ *   2. by dropping a row locally that the Worker refused to remove,
+ *      which shows the lockout the Worker just prevented;
+ *   3. by rendering a missing field as an empty one, which prints the
+ *      flip's go-signal from a Worker that never gave it;
+ *   4. by keeping a session the Worker has stopped accepting, on the one
+ *      page that holds every submission in the clear.
+ */
+const ADMIN_ROW = {
+  account_id: "a".repeat(64),
+  role: "admin",
+  label: "The founder",
+  added_at: "2026-08-08T09:00:00.000Z",
+};
+const ALWAYS_ROW = {
+  account_id: "b".repeat(64),
+  role: "always_allow",
+  label: "Break glass",
+  added_at: "2026-08-08T09:05:00.000Z",
+};
+// Sixty-four correct characters in the wrong case. `wrangler d1 execute`
+// writes it without complaint, the Worker's authority read drops it, and
+// GET hands it back in `malformed` - so Remove has to send back exactly
+// the bytes it was given, because the Worker folds case on both sides
+// and a page that lower-cased first would be removing a different row.
+const MALFORMED_ROW = {
+  account_id: "C".repeat(64),
+  role: "admin",
+  label: "pasted into the console",
+  added_at: "2026-08-08T09:10:00.000Z",
+};
+
+const FULL = {
+  ok: true,
+  membership: [ADMIN_ROW, ALWAYS_ROW],
+  malformed: [MALFORMED_ROW],
+  secretOnly: ["d".repeat(64)],
+};
+
+const textOf = (element) =>
+  descendants(element).map((child) => child.textContent).join(" ");
+const buttonsIn = (element) =>
+  descendants(element).filter((child) => child.tagName === "BUTTON");
+/*
+ * A press of a button that may not be there yet.
+ *
+ * A contract commit is a suite written against a page that does not draw
+ * these controls at all, and `buttons[0].click()` on an empty list
+ * throws out of the whole file - so the red run reports ONE failure
+ * instead of every arm that is not implemented. The contract has to be
+ * able to say what it knows.
+ */
+const press = async (button) => { if (button) await button.click(); };
+const textIn = (button) => (button ? button.textContent : "");
+
+const lists = await loadAdmin(ADMIN, { membership: FULL });
+const membershipGets = requestsFor(lists, "/membership", "GET");
+check("the pane reads the lists once, with the admin session, and does not poll",
+  membershipGets.length === 1 &&
+  authorization(membershipGets[0]) === SESSION_AUTH);
+
+check("each row is drawn in its own list",
+  textOf(lists.elements["membership-admin"]).includes("The founder") &&
+  !textOf(lists.elements["membership-admin"]).includes("Break glass") &&
+  textOf(lists.elements["membership-always_allow"]).includes("Break glass"));
+
+check("a malformed row is drawn apart from the rows that grant",
+  lists.elements["membership-malformed"].hidden === false &&
+  textOf(lists.elements["membership-malformed-list"])
+    .includes("pasted into the console") &&
+  !textOf(lists.elements["membership-admin"])
+    .includes("pasted into the console"));
+
+check("the secret-only list is reported with its count and named un-resolvable",
+  /\b1\b/.test(lists.elements["secret-only"].textContent) &&
+  /name nobody/.test(lists.elements["secret-only"].textContent));
+
+check("a label is put back on the page as text and never as markup",
+  // The label is typed by an admin and verified by nothing
+  // (server/schema.sql, the membership block). This page holds every
+  // submission in the clear, so a label that could carry markup is the
+  // whole corpus behind an injected script.
+  !/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML/.test(adminSource));
+
+/*
+ * Adding somebody. The numeric id is the one value on this page that
+ * must not survive the request that carries it.
+ */
+const added = await loadAdmin(ADMIN, {
+  membership: [
+    { ok: true, membership: [], malformed: [], secretOnly: [] },
+    { ok: true, membership: [ADMIN_ROW], malformed: [], secretOnly: [] },
+  ],
+  checked: { "member-role": "admin" },
+});
+added.elements["member-telegram-id"].value = "8675309";
+added.elements["member-label"].value = "The founder";
+await added.elements["member-add"].click();
+await settle();
+
+const adds = requestsFor(added, "/membership", "POST");
+const addBody = adds.length ? JSON.parse(adds[0].options.body) : null;
+check("adding posts the numeric id, the role and the label, and nothing else",
+  adds.length === 1 && authorization(adds[0]) === SESSION_AUTH &&
+  addBody && addBody.telegramId === "8675309" &&
+  addBody.role === "admin" && addBody.label === "The founder" &&
+  Object.keys(addBody).sort().join(",") === "label,role,telegramId");
+
+check("the numeric id is cleared from the page once it has been sent",
+  added.elements["member-telegram-id"].value === "");
+
+check("the numeric id reaches no URL, no storage and no second request",
+  added.requests.every((request) => !request.url.includes("8675309")) &&
+  ![...values.values()].some((value) => String(value).includes("8675309")) &&
+  adds.length === 1);
+
+check("adding an admin says the new admin must sign out and in",
+  /sign out and in/.test(added.elements["membership-status"].textContent));
+
+check("a successful add re-reads rather than guessing what the table holds",
+  requestsFor(added, "/membership", "GET").length === 2 &&
+  textOf(added.elements["membership-admin"]).includes("The founder"));
+
+/* The Worker's own refusal, shown in its own words - and the id kept, so
+ * a typo is corrected rather than retyped. */
+const refusedAdd = await loadAdmin(ADMIN, {
+  refuse: (method) => method === "POST"
+    ? { status: 400, body: { error: "A numeric Telegram id is needed." } }
+    : null,
+});
+refusedAdd.elements["member-telegram-id"].value = "not-a-number";
+refusedAdd.elements["member-label"].value = "whoever";
+await refusedAdd.elements["member-add"].click();
+await settle();
+check("a refused add shows what the Worker said and keeps what was typed",
+  refusedAdd.elements["membership-status"].textContent ===
+    "A numeric Telegram id is needed." &&
+  refusedAdd.elements["member-telegram-id"].value === "not-a-number");
+
+check("an empty field is not sent as a request at all",
+  // Not a validator - the Worker owns the shape rules and this page
+  // deliberately does not restate them, so they cannot drift. This is
+  // only the difference between a round trip and no round trip.
+  requestsFor(await (async () => {
+    const blank = await loadAdmin(ADMIN);
+    await blank.elements["member-add"].click();
+    await settle();
+    return blank;
+  })(), "/membership", "POST").length === 0);
+
+/*
+ * Removal: two presses, and the Worker is the thing that decides.
+ */
+const removing = await loadAdmin(ADMIN, { membership: FULL });
+const adminButtons = buttonsIn(removing.elements["membership-admin"]);
+await press(adminButtons[0]);
+await settle();
+check("the first press asks rather than removes",
+  requestsFor(removing, "/membership/", "DELETE").length === 0 &&
+  /^Confirm removing The founder/.test(textIn(adminButtons[0])));
+
+await press(adminButtons[0]);
+await settle();
+const removals = removing.requests.filter((request) =>
+  (request.options.method || "GET") === "DELETE" &&
+  request.url.includes("/membership/"));
+check("the second press removes exactly that account from exactly that list",
+  removals.length === 1 &&
+  removals[0].url.endsWith("/membership/admin/" + "a".repeat(64)) &&
+  authorization(removals[0]) === SESSION_AUTH);
+
+const malformedRemoval = await loadAdmin(ADMIN, { membership: FULL });
+const dudButtons = buttonsIn(
+  malformedRemoval.elements["membership-malformed-list"]);
+await press(dudButtons[0]);
+await press(dudButtons[0]);
+await settle();
+const dudRemovals = malformedRemoval.requests.filter((request) =>
+  (request.options.method || "GET") === "DELETE" &&
+  request.url.includes("/membership/"));
+check("a malformed row is removed by the bytes GET handed back",
+  dudRemovals.length === 1 &&
+  dudRemovals[0].url.endsWith("/membership/admin/" + "C".repeat(64)));
+
+/* The last admin row. The Worker refuses inside the DELETE; this page's
+ * job is to believe it. */
+const refusedRemoval = await loadAdmin(ADMIN, {
+  membership: FULL,
+  refuse: (method) => method === "DELETE"
+    ? {
+      status: 409,
+      body: {
+        error: "That is the last admin row. Add another admin before " +
+          "removing this one.",
+      },
+    }
+    : null,
+});
+const lastButtons = buttonsIn(refusedRemoval.elements["membership-admin"]);
+await press(lastButtons[0]);
+await press(lastButtons[0]);
+await settle();
+check("a refused removal leaves the row on the page and re-reads",
+  textOf(refusedRemoval.elements["membership-admin"]).includes("The founder") &&
+  /last admin row/.test(
+    refusedRemoval.elements["membership-status"].textContent) &&
+  requestsFor(refusedRemoval, "/membership", "GET").length === 2);
+
+/* A session the Worker has stopped accepting, on the page that holds
+ * every submission in the clear. */
+const expired = await loadAdmin(ADMIN, {
+  refuse: () => ({ status: 401, body: { error: "Unauthorized." } }),
+});
+await settle();
+check("a membership call the session cannot make ends the session and leaves",
+  Session.read() === null && redirects.includes("index.html"));
+
+/* The go-signal, which is the one thing on this pane that a missing
+ * field could turn into a lie. */
+const quiet = await loadAdmin(ADMIN, {
+  membership: { ok: true, membership: [ADMIN_ROW] },
+});
+check("a Worker that reported no secret-only list is not read as the signal",
+  /did not report/.test(quiet.elements["secret-only"].textContent) &&
+  !/go-signal/.test(quiet.elements["secret-only"].textContent) &&
+  quiet.elements["membership-malformed"].hidden === true);
+
+/* A granting row this page cannot name still has to appear somewhere. */
+const future = await loadAdmin(ADMIN, {
+  membership: {
+    ok: true,
+    membership: [ADMIN_ROW, { ...ADMIN_ROW, role: "auditor", label: "later" }],
+    malformed: [],
+    secretOnly: [],
+  },
+});
+check("a row with a role this page cannot name is reported rather than hidden",
+  future.elements["membership-other"].hidden === false &&
+  textOf(future.elements["membership-other"]).includes("later"));
+
+/* The pane is behind the same gate as everything else here. */
+check("a member session never reaches the membership routes",
+  requestsFor(member, "/membership", "GET").length === 0);
 
 if (failures) {
   console.error(`\nadmin session/delete FAILED ${failures} of ${checks}`);
