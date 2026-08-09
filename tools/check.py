@@ -33,7 +33,9 @@ drift.) In outline:
       table; a palette that table does not name fails)
     - eslint and ruff pass
     - every dev/ suite passes, from the crypto fixture to the Worker's
-      gating matrix - NODE_SUITES below is the roster
+      gating matrix - NODE_SUITES below is the roster, and it is held
+      against dev/ in both directions, so a suite that arrives without
+      a line is a failure rather than a file nobody runs (#204)
 
 Checks 1 and 3 are siblings and not one check with two scopes, because
 the two directories are dangerous for opposite reasons: apps/web is
@@ -69,10 +71,24 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Where the roster arm below looks, and what it counts as a suite.
+# Named rather than inlined so dev/check.test.py can pin the scope: a
+# SUITE_DIR of "." would enumerate the whole repository, and a scope
+# wall is checked rather than promised here (AGENTS.md, "The review
+# bar").
+SUITE_DIR = "dev"
+SUITE_SUFFIX = ".test.mjs"
+
 # (label, path relative to the repo root). The dev/ suites are listed
 # here rather than discovered by globbing dev/*.test.mjs, because a
 # suite that stops being run should be a deletion somebody made on
 # purpose, not a file that quietly stopped matching a pattern.
+#
+# The list is kept honest against that glob in BOTH directions by
+# roster_problems() below, and the second direction is the one this
+# comment was missing: keeping the list by hand answers for a suite
+# departing, and says nothing about one arriving. A dev/*.test.mjs
+# nobody added here was never run and the gate was green (#204).
 NODE_SUITES = [
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
     ("form record building", "dev/form.test.mjs"),
@@ -120,6 +136,81 @@ NODE_SUITES = [
     # against a fresh build can see. #181.
     ("build_web strippers + staleness", "dev/build_web.test.mjs"),
 ]
+
+# {path: why it is not run}. Empty, and the emptiness is the point: a
+# suite left out on purpose is then a sentence somebody wrote, which is
+# the entire difference between left out and forgotten. An entry the
+# enumeration cannot find fails the same way a check_comments.py pin
+# that stops matching does, so this list can only shrink and cannot go
+# stale.
+NODE_SUITES_EXCLUDED = {}
+
+
+def roster_problems(listed=None, excluded=None, repo=None):
+    """Every way the hand roster and dev/ can disagree, as readable lines.
+
+    Both directions in one walk, which is the point rather than a
+    saving - the same shape tools/build_web.mjs differences() uses for
+    dist/. "A suite was deleted and its line stayed" and "a suite was
+    added and no line names it" are one question asked twice, and an arm
+    for the first that can pass while the second is broken is exactly
+    what #204 found here.
+
+    Only SUITE_DIR is enumerated. A registered path outside it is still
+    required to exist, because that is the whole of what this can say
+    about one without walking a directory it has no business walking.
+
+    The parameters exist so dev/check.test.py can drive this over a
+    directory it builds. Reading the real tree is the stage's job in
+    main(), and a rule exercised only against the tree it guards cannot
+    be shown to fail.
+    """
+    listed = NODE_SUITES if listed is None else listed
+    excluded = NODE_SUITES_EXCLUDED if excluded is None else excluded
+    repo = REPO if repo is None else repo
+
+    directory = os.path.join(repo, SUITE_DIR)
+    if not os.path.isdir(directory):
+        return ["%s/ is not there at all, so nothing was enumerated and "
+                "this roster was compared against an empty answer. A "
+                "reader that found nothing to read prints the same "
+                "silence as a roster that agrees." % SUITE_DIR]
+
+    found = {SUITE_DIR + "/" + name for name in os.listdir(directory)
+             if name.endswith(SUITE_SUFFIX)}
+    registered = {path for _, path in listed}
+    problems = []
+
+    for path in sorted(registered):
+        if not os.path.isfile(os.path.join(repo, path)):
+            problems.append(
+                "%s is registered in NODE_SUITES and there is no such "
+                "file. Either the suite moved and its line did not, or "
+                "the suite was deleted and its line stayed - a stage "
+                "that cannot run is a stage that reports FAILED for a "
+                "reason nobody can act on." % path)
+
+    for path in sorted(found - registered - set(excluded)):
+        problems.append(
+            "%s is not in NODE_SUITES, so the gate never runs it. A "
+            "suite nobody runs is decoration that reads as coverage: "
+            "add it there with a label, or say in NODE_SUITES_EXCLUDED "
+            "why it is skipped." % path)
+
+    for path in sorted(excluded):
+        if path not in found:
+            problems.append(
+                "NODE_SUITES_EXCLUDED names %s and the enumeration does "
+                "not find it. An exclusion for a file that is not there "
+                "excuses nothing and hides the next reader from the one "
+                "that is - delete the entry." % path)
+        if path in registered:
+            problems.append(
+                "%s is both registered and excluded. The gate runs it, "
+                "so the exclusion is a false sentence about this gate - "
+                "delete whichever of the two is wrong." % path)
+
+    return problems
 
 
 def find_node():
@@ -321,6 +412,20 @@ def main():
         "check_live parser + ledger rules",
         [sys.executable, "dev/check_live.test.py"]
     )))
+
+    # NODE_SUITES against dev/, in both directions, before the suites it
+    # governs run below. In-process rather than a subprocess like its
+    # neighbors, because the thing being checked IS NODE_SUITES thirty
+    # lines up: a second interpreter would import this file only to read
+    # the list back out of it. #204.
+    roster = roster_problems()
+    print("\n=== dev/ suite roster ===", flush=True)
+    for problem in roster:
+        print(problem)
+    if not roster:
+        print("ok - NODE_SUITES and %s/*%s name the same set, and every "
+              "exclusion still names a file." % (SUITE_DIR, SUITE_SUFFIX))
+    results.append(("dev/ suite roster", not roster))
 
     # This gate's own roster rules. Every other checker in tools/ has a
     # suite in dev/ holding its reader to strings; the gate itself had
