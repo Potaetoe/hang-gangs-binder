@@ -141,23 +141,39 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 # admin-ness from its own request payload, and sessionFor re-reads
 # DEV_LOGIN_SECRET rather than an id list for a dev session - so a dev
 # admin exists without any of the four. Unset, they read as empty lists
-# everywhere they are consulted, which leaves the `membership` table as
-# the only ID LIST that grants anything here - which is not the same as
-# the only arm. The two secrets above still grant admin by their own
-# routes: DEV_LOGIN_SECRET through POST /auth/dev, EXPORT_TOKEN as
-# break-glass, and either one reaches every membership route. Reading
-# this block as "the table is the whole authority on this Worker" is
-# what makes an admin row written from a local login look harmless;
-# server/worker.js's router refuses one, and says why. With no bot token,
-# verifyTelegramPayload returns null at its first guard and
-# POST /auth/telegram answers a clean 401 rather than throwing - probed
-# live, not inferred.
+# everywhere they are consulted, so no ID LIST grants anything here -
+# and the `membership` table grants nothing either, for the separate
+# reason the next paragraph gives. What grants admin on this Worker is
+# the two secrets above, by their own routes: DEV_LOGIN_SECRET through
+# POST /auth/dev, EXPORT_TOKEN as break-glass, and either one reaches
+# every membership route. Reading this block as "the table is the
+# authority on this Worker" is what makes an admin row written from a
+# local login look harmless; server/worker.js's router refuses one, and
+# says why. With no bot token, verifyTelegramPayload returns null at its
+# first guard and POST /auth/telegram answers a clean 401 rather than
+# throwing - probed live, not inferred.
 #
-# The dev database's `membership` rows DO grant authority here, the same
-# way production's do. That is the point of having a dev Worker at all,
-# and it is why a dev session may not write an `admin` row - a row
-# minted from a local login is a real one. server/worker.js's router
-# carries that refusal.
+# THE DEV DATABASE'S `membership` ROWS GRANT NOTHING HERE. Every
+# consumption site of that table sits inside the Telegram sign-in:
+# groupStanding reads the always-allow rows and handleTelegramAuth is
+# its only caller, and adminAccountIds is read there and in sessionFor's
+# `!isDev` branch. This Worker holds no bot token, so
+# verifyTelegramPayload returns null and handleTelegramAuth answers 401
+# ahead of all of it; POST /auth/dev is the only route that mints a
+# session here, always with is_dev = 1, and sessionFor takes that
+# branch's adminness from DEV_LOGIN_SECRET instead. handleReadMembership
+# does still LIST rows, and listing is not granting. So a row here is
+# writable, readable and inert - the same words tools/check_live.py's
+# first-contact row for this carries, because it is one fact and these
+# are its two homes. What that costs is worth saying plainly: the whole
+# dual-read model cannot be exercised on the one deployment that exists
+# to exercise things, so it stays first contact until production.
+#
+# That leaves the router's refusal above standing on a reason of its
+# own: a dev session may not write an `admin` row, because after a flip
+# to table-only the row IS the whole authority on whatever database
+# holds it, so a row minted from a local login is a real one wherever it
+# is minted. server/worker.js's router carries that refusal.
 #
 # And the widget cannot be exercised here anyway: BotFather binds it to
 # potaetoe.github.io, so it will not render on localhost. See archive/UAT.md A7.

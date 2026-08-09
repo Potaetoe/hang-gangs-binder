@@ -131,16 +131,39 @@ UNCORROBORATED_CEILING = 3
 # turns a cheap redeploy into ceremony.
 CADENCE_THRESHOLD = 15
 
+# The rehearsal every performed row below stands on: a sitting against
+# the deployed development Worker, with the pages served from this head.
+# The date and the head live here once rather than in every row, so the
+# next rehearsal is recorded in one place instead of being copied into
+# as many rows as it discharges.
+#
+# The head is the tree the sitting drove, which is not the same as the
+# build the deployed Worker was running - a Worker version is not
+# knowable from this repository at all. That gap is one more reason a
+# performed row ages into STALE rather than standing as a permanent
+# pass, and the reason each `how` states what came back rather than only
+# which step produced it: the step numbers belong to the rehearsal
+# script, which is written to be thrown away once its steps become
+# UAT.md's live arm, and evidence that dies with its pointer is evidence
+# about nothing.
+REHEARSAL = {"date": "2026-08-09",
+             "sha": "eca87b48142f916ac4c8469f608e6ad945515840"}
+
 # The ledger. `covers` names the files a row's evidence stands on, so a
 # performed row goes stale when they move - see stale() for why that is
 # derived at read time rather than stored.
 #
 # A route row's id is the route as the router spells it, optionally
 # followed by ", <qualifier>" when one route wants more than one claim.
+# A qualifier is how one surface carries two claims that a single status
+# cannot describe: a route half exercised is two rows with one status
+# each, never one row wearing a status that averages them.
 LEDGER = [
     # ---- routes: the surface that is inert until something is
-    # deployed. Every one of these is currently debt, which is #157's
-    # headline stated as data rather than as a sentence.
+    # deployed. The rehearsal reached the routes that need no credential
+    # and no secret; everything behind a session is still debt, and the
+    # split between the two is #157's headline stated as data rather
+    # than as a sentence.
     {
         "id": "OPTIONS *",
         "surface": "route",
@@ -148,7 +171,13 @@ LEDGER = [
                  "403 for a foreign one, which every browser POST "
                  "below depends on",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="OPTIONS /submit answered 204 for http://127.0.0.1:8124 "
+                "and 403 for a foreign origin, carrying "
+                "Access-Control-Allow-Origin for the caller, Vary: "
+                "Origin and Max-Age: 86400"),
     },
     {
         "id": "POST /auth/telegram",
@@ -156,15 +185,37 @@ LEDGER = [
         "claim": "with no bot token configured the route answers a "
                  "clean 401 rather than throwing",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="the deployment was read as carrying three secrets and "
+                "no TELEGRAM_BOT_TOKEN, and the route then answered 401 "
+                '{"error":"That sign-in could not be verified."} to a '
+                "plausible payload and to an empty one - a status, not "
+                "a throw. The 401 alone cannot say which guard closed "
+                "the path, because a wrong hash answers in the same "
+                "bytes; the secret listing is what discriminates"),
     },
     {
         "id": "POST /auth/dev",
         "surface": "route",
-        "claim": "a development sign-in mints a real session, and a "
-                 "wrong secret answers 404 rather than 401",
+        "claim": "a development sign-in mints a real session",
         "covers": ["server/worker.js"],
         "status": "never",
+    },
+    {
+        "id": "POST /auth/dev, a wrong secret",
+        "surface": "route",
+        "claim": "the route answers 404 rather than 401, in the bytes a "
+                 "route that does not exist would answer in",
+        "covers": ["server/worker.js"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how='a wrong secret answered 404 {"error":"Not found."}, '
+                "byte-identical to GET /nope - a control the sitting "
+                "added, because 404 on its own does not show that the "
+                "route declines to advertise itself"),
     },
     {
         "id": "DELETE /session",
@@ -209,10 +260,25 @@ LEDGER = [
     {
         "id": "GET /snapshot",
         "surface": "route",
-        "claim": "the published document is members-only and refuses a "
-                 "signed-out reader",
+        "claim": "a signed-in member reads the published document back, "
+                 "which is the half a refusal cannot show: a route that "
+                 "refuses everybody refuses a signed-out reader too",
         "covers": ["server/worker.js"],
         "status": "never",
+    },
+    {
+        "id": "GET /snapshot, a signed-out reader",
+        "surface": "route",
+        "claim": "a reader carrying no credential is refused by the "
+                 "route rather than by the origin gate in front of it",
+        "covers": ["server/worker.js"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how='401 {"error":"Not authorized."} from an allowed '
+                "origin with no credential, against the gate's 403 "
+                '{"error":"Origin not allowed."} - two different '
+                "refusals, so the 401 is the route's own"),
     },
     {
         "id": "DELETE /snapshot",
@@ -237,7 +303,15 @@ LEDGER = [
         "claim": "the one route that answers without a credential "
                  "still answers without one",
         "covers": ["server/worker.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how='200 {"ok":true,"content":{}} with no Authorization '
+                "header at all. The empty object is the deployment "
+                "having no override set, not the route declining to "
+                "answer - a 401 here is the failure this row watches "
+                "for, and it is what gating this route by accident "
+                "would look like"),
     },
     {
         "id": "POST /content",
@@ -282,7 +356,10 @@ LEDGER = [
 
     # ---- pages: apps/web is copied verbatim to the published site, so
     # every page's live behavior is unexercised until it is served from
-    # somewhere a Worker will answer.
+    # somewhere a Worker will answer. What the rehearsal reached here is
+    # the refusal half - a forged session token draws a real 401 from a
+    # deployed Worker, and no secret is needed to forge one. The signed-
+    # in half needs a credential and is still debt.
     {
         "id": "index.html",
         "surface": "page",
@@ -294,27 +371,77 @@ LEDGER = [
     {
         "id": "submit.html",
         "surface": "page",
-        "claim": "the form round-trips to a live Worker, and a live "
-                 "401 clears the token and sends the reader back",
+        "claim": "the form round-trips to a live Worker",
         "covers": ["apps/web/submit.html", "apps/web/submit.js"],
         "status": "never",
     },
     {
+        "id": "submit.html, a live 401",
+        "surface": "page",
+        "claim": "a refused session clears the stored token and sends "
+                 "the reader back to the sign-in page",
+        "covers": ["apps/web/submit.html", "apps/web/submit.js"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="a forged session token drew a real 401 from the "
+                "deployed Worker; the token was cleared and the page "
+                "replaced itself with index.html"),
+    },
+    {
         "id": "dashboard.html",
         "surface": "page",
-        "claim": "the published figures paint from a real snapshot, "
-                 "and a live 401 says so in the page rather than "
-                 "redirecting",
+        "claim": "the published figures paint from a real snapshot",
         "covers": ["apps/web/dashboard.html", "apps/web/public.js"],
         "status": "never",
+    },
+    {
+        "id": "dashboard.html, a live 401",
+        "surface": "page",
+        "claim": "a refused session clears the token and the page says "
+                 "so where it stands, rather than redirecting",
+        "covers": ["apps/web/dashboard.html", "apps/web/public.js"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="the same forged token; the token was cleared, the page "
+                "stayed put and read \"Your sign-in is no longer "
+                "valid.\" Three pages answer a live 401 three different "
+                "ways, so one row could not have covered them"),
     },
     {
         "id": "admin.html",
         "surface": "page",
         "claim": "the page that holds the whole corpus in the clear "
-                 "has never been opened in a browser at all",
+                 "paints its key card and its controls when it is "
+                 "served from an origin the Worker answers",
         "covers": ["apps/web/admin.html", "apps/web/admin.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="opened in a browser for the first time in this "
+                "project's life: the key card, Fetch and decrypt, Clear "
+                "and Unpublish all painted, and no export-token box "
+                "appeared. What is behind the key card was not reached "
+                "- decrypting needs the development private key, which "
+                "is held offline - so the two key-flow rows below "
+                "carry that debt and this row does not"),
+    },
+    {
+        "id": "admin.html, a live 401",
+        "surface": "page",
+        "claim": "a refused session draws an error card, and this page "
+                 "alone neither redirects nor clears the token the "
+                 "Worker has just refused",
+        "covers": ["apps/web/admin.html", "apps/web/admin.js"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="the export call answered 401, observed by "
+                "instrumenting window.fetch rather than by reading the "
+                "page's own words back; the card said \"The admin "
+                "session was not accepted.\", the page stayed, and the "
+                "refused token was still in sessionStorage afterwards"),
     },
     {
         "id": "404.html",
@@ -322,13 +449,61 @@ LEDGER = [
         "claim": "the page says so plainly, offers one way back, and "
                  "requests nothing off-origin",
         "covers": ["apps/web/404.html"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="opened directly: a plain message, one way back, no "
+                "rail and no Theme chips, and nothing requested "
+                "off-origin under its connect-src 'self'"),
     },
 
     # ---- flows: voluntary rows, seeded from the cutover review pack's
     # Tier A and the dev-arm rehearsal's ledger. Nothing forces one into
     # existence; these are the largest debts stated as data so the query
-    # answers the question the owner actually asks.
+    # answers the question the owner actually asks. A flow is also where
+    # a discharged claim lands when it is about no single route and no
+    # single page - the origin gate is in front of every route, and the
+    # signed-out bounce is a property of the pages together.
+    {
+        "id": "the origin gate, all three answers",
+        "surface": "flow",
+        "claim": "an allowed origin reaches the handler and is refused "
+                 "on its credential, while a foreign origin and no "
+                 "origin at all are refused by the gate in bytes "
+                 "identical to each other",
+        "covers": ["server/worker.js", "server/wrangler.toml"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="GET /snapshot answered 401 for http://127.0.0.1:8124 "
+                "and for http://localhost:8124, and 403 for "
+                "https://potaetoe.github.io and for a request with no "
+                "Origin header. The three answers together are the "
+                "check: the first alone cannot tell a working gate from "
+                "a Worker that allows everything, and a probe that "
+                "forgets the header reads exactly like a foreign origin "
+                "being refused. http://127.0.0.1:8130 - a delegated "
+                "slice's own assigned port - also answered 403, which "
+                "is the mechanical reason live verification has been "
+                "unreachable from every slice but the one holding 8124"),
+    },
+    {
+        "id": "the signed-out bounce, with nothing announced",
+        "surface": "flow",
+        "claim": "a reader with no session is sent to the sign-in page "
+                 "from every gated page, and no request leaves at all - "
+                 "a request that earns a 401 has still announced the "
+                 "reader to the Worker",
+        "covers": ["apps/web/session.js", "apps/web/submit.js",
+                   "apps/web/public.js", "apps/web/admin.js"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="with sessionStorage empty, submit.html, dashboard.html "
+                "and admin.html each sent the reader to index.html; no "
+                "form, no figures and no key box painted, and the "
+                "network panel stayed empty on all three"),
+    },
     {
         "id": "the import-once, return-later key flow",
         "surface": "flow",
@@ -356,17 +531,52 @@ LEDGER = [
         "status": "never",
     },
     {
+        "id": "the UNIQUE index on supersedes, on the deployed database",
+        "surface": "flow",
+        "claim": "the index the guard falls back on is applied to the "
+                 "development database, under the name that makes it "
+                 "unique rather than the one it replaced",
+        "covers": ["server/schema.sql"],
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="sqlite_master on hg_binder_db_dev listed "
+                "submissions_supersedes_unique beside "
+                "submissions_account. The name is the whole evidence: a "
+                "failed migration leaves the table with no index at "
+                "all, and the non-unique predecessor spells itself "
+                "differently. That the index REFUSES a second "
+                "correction is the row above, and it was not reached"),
+    },
+    {
         "id": "the crypto module's real bytes in a browser",
         "surface": "flow",
         "claim": "both stored formats round-trip in a browser's "
                  "WebCrypto rather than only in Node's",
         "covers": ["dev/crypto-browser-check.html", "apps/web/crypto.js"],
-        "status": "never",
+        "status": "performed",
+        "performed": dict(
+            REHEARSAL,
+            how="dev/crypto-browser-check.html served over loopback and "
+                "opened: every check green, both stored formats, and a "
+                "seal to config.js's development key that the Worker "
+                "accepts as base64. Bounded honestly: that page carries "
+                "a Content-Security-Policy no published page carries, "
+                "so what round-tripped is the browser's WebCrypto and "
+                "not any shipped page's policy"),
     },
 
     # ---- first contact: permanently unreachable before production.
     # Not debt. A row here is a risk that survives a perfect rehearsal,
     # and every one of them is the identity half of the design.
+    #
+    # No row here moves on a rehearsal, by construction - a sitting that
+    # discharged one would be a sitting that had falsified the reason
+    # the row is here, and the pinned guards are what would say so. The
+    # membership row is the one to read beside server/wrangler.toml:
+    # that file's [env.dev] block owns the same fact for the deployment
+    # and this row owns it for the ledger, in the same words, so a
+    # future sweep finds one fact rather than a disagreement.
     {
         "id": "telegram sign-in past the bot-token guard",
         "surface": "flow",
@@ -1015,9 +1225,10 @@ def report():
     lines.append("  development origins to port 8124, which the agent "
                  "pack reserves, and the sitting needs secrets.")
     lines.append("  Discharging a row means editing it here to "
-                 "\"performed\" with the date, the full head it ran at,")
-    lines.append("  and what ran. The steps themselves belong in "
-                 "UAT.md's live arm, not in this file.")
+                 "\"performed\" with an account of what ran, beside the")
+    lines.append("  date and the full head of the sitting that ran it. "
+                 "The steps themselves belong in UAT.md's")
+    lines.append("  live arm, not in this file.")
     return "\n".join(lines)
 
 

@@ -53,7 +53,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 79
+EXPECTED = 80
 
 
 def check(label, condition):
@@ -333,6 +333,14 @@ check("a row for a page no longer published is reported",
       len(spined([*COVERING, entry(id="old.html", surface="page",
                                    covers=["AGENTS.md"])])) == 1)
 
+# The qualifier reads through to the same rule. A row that says one more
+# thing about a route names that route and then a comma, so the reverse
+# rule has to resolve the id before it compares - otherwise a qualified
+# id is the way to put a row in the ledger for a surface that is not in
+# the tree, and it would read as covered.
+check("a qualified row for a route that has left is still reported",
+      len(spined([*COVERING, entry(id="GET /gone, signed out")])) == 1)
+
 check("a flow row is not held to the spine",
       spined([*COVERING,
               entry(id="the key flow", surface="flow")]) == [])
@@ -500,10 +508,22 @@ check("staleness is not asserted when git cannot answer",
 # The ledger itself, read as data. These are the properties #157 asks  #
 # for that no individual rule above states.                            #
 
-check("no rehearsal is recorded, which is the finding #157 opens with",
-      [e for e in check_live.LEDGER if e["status"] == "performed"] == [])
+# A ratchet in the one direction that can go wrong quietly. A row is
+# discharged by editing a status, and a status edits back just as
+# easily: dropping every performed row would restore the ledger to the
+# state #157 opens by describing, and nothing outside this arm would
+# say so. Evidence shape is asserted here as well as in entry_problems
+# because this arm reads the shipped LEDGER rather than a fixture, and
+# an evidence dict that never reaches a rule is a claim about a date.
+check("a recorded rehearsal cannot be walked back to none, and every "
+      "performed row states the head and the day it ran",
+      [e for e in check_live.LEDGER if e["status"] == "performed"] != []
+      and all(check_live.SHA.match(e["performed"]["sha"])
+              and check_live.DATE.match(e["performed"]["date"])
+              for e in check_live.LEDGER
+              if e["status"] == "performed"))
 
-check("the debt is not empty while nothing has been performed",
+check("discharging rows does not empty the debt",
       len([e for e in check_live.LEDGER if e["status"] == "never"]) > 0)
 
 check("every registered cause is carried by at least one entry",
@@ -522,8 +542,13 @@ check("every guard pinned by the ledger is in the shipped worker",
 check("every claim is a sentence rather than a label",
       all(len(e["claim"].split()) >= 4 for e in check_live.LEDGER))
 
+# Resolved through route_of, the same way the spine reads an id. The
+# property is that the part naming the route is the router's own
+# spelling; comparing the whole id instead forbids the second claim
+# about one route that this ledger's vocabulary allows and its own
+# spine arm above accepts.
 check("the ledger ids are the router's spelling, not a paraphrase",
-      all(e["id"] in REAL_ROUTES
+      all(check_live.route_of(e["id"]) in REAL_ROUTES
           for e in check_live.LEDGER if e["surface"] == "route"))
 
 check("no ledger id carries leading or trailing space",
