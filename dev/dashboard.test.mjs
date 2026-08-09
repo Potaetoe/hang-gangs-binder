@@ -56,14 +56,21 @@ await check("the headless export carries no drawing half", () =>
   // conditional above the freeze is doing its job.
   globalThis.BinderDashboard.render === undefined);
 
-await check("the headless export carries no per-surface drawing half either",
-  () =>
-    // The split gave the drawing half a second entry point, and a seam
-    // pinned for one name and not the other is a seam half-pinned: the
-    // new name is the one nothing had a habit of checking, so it is the
-    // one that would have been exported under Node without anybody
-    // noticing until it threw on its first `document`.
-    globalThis.BinderDashboard.renderProgress === undefined);
+await check("the headless export carries no drawing entry point at all", () =>
+  // The check above names `render` because it is the one every reader
+  // knows. This one is the arm that does not go stale: the drawing half
+  // has grown two more entry points since - `renderProgress` for the
+  // member surface and `renderAnswer` for #85's question card - and a
+  // seam pinned name by name is a seam half-pinned, because the newest
+  // name is always the one nothing had a habit of checking and the one
+  // that would be exported under Node until it threw on its first
+  // `document`.
+  //
+  // It leans on the naming convention, and that is the trap worth
+  // naming: a drawing entry point NOT called render-something is invisible
+  // here and has to be added by hand.
+  Object.keys(globalThis.BinderDashboard)
+    .filter((name) => name.indexOf("render") === 0).length === 0);
 
 /*
  * A row as entryFor() hands it to this file, carrying both identities.

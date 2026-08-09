@@ -13,9 +13,30 @@ const dashboardHtml = await readFile(
   new URL("../apps/web/dashboard.html", import.meta.url), "utf8");
 
 let failures = 0;
+let ran = 0;
+
+/*
+ * A condition, or a function returning one.
+ *
+ * The thunk arm is not a style choice. A bare expression is evaluated
+ * BEFORE check() is called, so a check that reaches into something the
+ * page did not build takes the whole process down - and the first red
+ * run of a contract then prints four results and a stack trace instead
+ * of the twenty-odd failures it knows about. That is the shape this
+ * repository has already paid for; a contract has to say everything it
+ * knows on the run where nothing is implemented yet.
+ */
 function check(label, condition) {
-  if (!condition) failures++;
-  console.log(condition ? "pass " : "FAIL ", label);
+  ran++;
+  let ok = false;
+  let note = "";
+  try {
+    ok = Boolean(typeof condition === "function" ? condition() : condition);
+  } catch (error) {
+    note = " - threw: " + (error && error.message ? error.message : error);
+  }
+  if (!ok) failures++;
+  console.log((ok ? "pass  " : "FAIL  ") + label + note);
 }
 
 const values = new Map();
@@ -67,35 +88,85 @@ globalThis.document = {
 await import("data:text/javascript," + encodeURIComponent(sessionSource));
 const Session = globalThis.BinderSession;
 
+/*
+ * An element with enough DOM to be wired to.
+ *
+ * The question card is built rather than only read - public.js creates a
+ * checkbox per published cell and hangs one listener on the card - so
+ * this stub carries children, listeners and a textContent that CLEARS
+ * its children when written, the way the real one does. Without that
+ * last part `list.textContent = ""` would leave every rebuild stacked on
+ * the last, and "the combine list is rebuilt from the answer" would pass
+ * against a list that only ever grows.
+ */
 function makeElement(id, hidden = false) {
   const reason = { textContent: "" };
-  return {
+  let own = "";
+  const element = {
     id,
     hidden,
-    textContent: "",
     className: "",
+    value: "",
+    type: "",
+    checked: false,
+    children: [],
+    listeners: {},
+    appendChild(child) { element.children.push(child); return child; },
+    addEventListener(name, fn) {
+      (element.listeners[name] = element.listeners[name] || []).push(fn);
+    },
+    /* Listeners on the card itself, plus the ones a bubbling `input`
+     * would reach it through. public.js relies on that bubble for the
+     * merge boxes, so firing here is firing what the browser fires. */
+    fire(name) {
+      (element.listeners[name] || []).forEach((fn) => fn());
+    },
     querySelector(selector) {
       return selector === "[data-reason]" ? reason : null;
     },
     reason,
   };
+  Object.defineProperty(element, "textContent", {
+    get() {
+      return own + element.children.map((child) => child.textContent).join("");
+    },
+    set(value) { element.children.length = 0; own = String(value); },
+  });
+  return element;
 }
 
+const PAGE_IDS = [
+  "tool", "closed", "status", "freshness", "charts",
+  "question", "q-controls", "q-status", "q-split", "q-measure-field",
+  "q-widen-field", "q-merge-field", "q-merge-labels", "q-merge-name",
+  "answer",
+];
+
 function makePage() {
-  const elements = {
-    tool: makeElement("tool", true),
-    closed: makeElement("closed", true),
-    status: makeElement("status"),
-    freshness: makeElement("freshness"),
-    charts: makeElement("charts"),
-  };
+  const elements = {};
+  for (const id of PAGE_IDS) {
+    elements[id] = makeElement(id, id === "tool" || id === "closed" ||
+      id === "question");
+  }
+  /* The card starts on a split the engine knows, because a <select> with
+   * no value selected is a state the shipped page cannot be in - its
+   * first option is selected by the browser. */
+  elements["q-split"].value = "gender";
+  /* The page's own Count and Units choices, which belong to the panels
+     and which the question card rides along on rather than duplicating.
+     Returned from the one selector public.js asks for them by. */
+  const shared = [makeElement("basis-input"), makeElement("units-input")];
   return {
     elements,
+    shared,
     document: {
       readyState: "complete",
       getElementById(id) { return elements[id] || null; },
+      createElement(tag) { return makeElement(tag); },
       querySelector() { return null; },
-      querySelectorAll() { return []; },
+      querySelectorAll(selector) {
+        return /name="basis"/.test(selector) ? shared : [];
+      },
     },
   };
 }
@@ -116,11 +187,50 @@ const SNAPSHOT = {
   },
 };
 
+/*
+ * The shipped engine, loaded for its tables rather than stubbed.
+ *
+ * SPLITS, BASES and MEASURES are the contract query.js's own header calls
+ * a contract, and the page's pickers are built against them. A copy of
+ * those key sets written here would be a third list for the first two to
+ * drift away from - so the checks below read the real ones, and the
+ * page-versus-engine pin has exactly two sides.
+ *
+ * Loading it defines the namespace and calls nothing: query.js reaches
+ * for BinderDashboard only when a source is built or a query normalized,
+ * which is why this needs no dashboard.js beside it.
+ */
+const querySource = await readFile(
+  new URL("../apps/web/query.js", import.meta.url), "utf8");
+await import("data:text/javascript," + encodeURIComponent(querySource));
+const Engine = globalThis.BinderQuery;
+
+/* An answer of the shape run() returns, for the wiring checks. The
+   drawing of these is dev/dashboard-render.test.mjs's job, against the
+   real engine; what is asserted here is which query produced them. */
+function answerOf(query, cells) {
+  return {
+    source: "published", basis: query.basis, split: query.split,
+    units: query.units, measure: query.measure,
+    kind: query.measure === "count" ? "categorical" : "stat",
+    available: true, floor: 5, cells, total: 0, value: 0,
+  };
+}
+
 let scenario = 0;
-async function loadPublic(session, nextResponse) {
+async function loadPublic(session, nextResponse, options = {}) {
   const page = makePage();
+  if (options.split) page.elements["q-split"].value = options.split;
+  if (options.groupName) page.elements["q-merge-name"].value = options.groupName;
   const requests = [];
   const renders = [];
+  const answers = [];
+  const engine = {
+    sources: [],
+    runs: [],
+    personal: 0,
+    captions: [],
+  };
   Session.clear();
   if (session) Session.write(session);
   redirects.length = 0;
@@ -131,7 +241,11 @@ async function loadPublic(session, nextResponse) {
   globalThis.BinderUI = {
     byId(id) { return page.elements[id] || null; },
     show(element, visible) { if (element) element.hidden = !visible; },
-    checkedValue(name, fallback) { return fallback; },
+    checkedValue(name, fallback) {
+      return Object.prototype.hasOwnProperty.call(options.checked || {}, name)
+        ? options.checked[name]
+        : fallback;
+    },
     boot(setUp, failed) {
       try {
         const result = setUp();
@@ -163,9 +277,50 @@ async function loadPublic(session, nextResponse) {
     render(element, snapshot, basis, units) {
       renders.push({ element, snapshot, basis, units, surface: "instrument" });
     },
+    renderAnswer(element, answer, caption) {
+      answers.push({ element, answer, caption });
+    },
   };
-  globalThis.fetch = async function (url, options) {
-    requests.push({ url, options: options || {} });
+
+  /*
+   * The engine, recorded rather than replayed.
+   *
+   * SPLITS comes from the shipped module, so a page offering a split the
+   * engine does not have fails here for the reason it would fail live.
+   * publishedSource hands back a marked object and personalSource COUNTS
+   * ITS CALLS - the check that matters is not that the personal arm
+   * behaves, it is that this page never reaches it at all.
+   */
+  globalThis.BinderQuery = options.noEngine ? undefined : {
+    SPLITS: Engine.SPLITS,
+    BASES: Engine.BASES,
+    MEASURES: Engine.MEASURES,
+    publishedSource(snapshot) {
+      if (options.sourceRefuses) throw new Error(options.sourceRefuses);
+      const source = { published: snapshot };
+      engine.sources.push(source);
+      return source;
+    },
+    personalSource() {
+      engine.personal++;
+      return { personal: true };
+    },
+    run(source, query) {
+      engine.runs.push({ source, query });
+      if (options.runThrows) throw new Error(options.runThrows);
+      return answerOf(query, query.merge
+        ? [{ label: query.merge[0].as, count: 9 }]
+        : (options.cells || [{ label: "male", count: 7 },
+          { label: "female", count: 5 }]));
+    },
+    describe(query) {
+      engine.captions.push(query);
+      return "asked: " + query.split;
+    },
+  };
+
+  globalThis.fetch = async function (url, fetchOptions) {
+    requests.push({ url, options: fetchOptions || {} });
     return nextResponse;
   };
 
@@ -173,7 +328,7 @@ async function loadPublic(session, nextResponse) {
   await import("data:text/javascript," + encodeURIComponent(publicSource) +
     "#public-session-" + scenario);
   await new Promise((resolve) => setImmediate(resolve));
-  return { ...page, requests, renders };
+  return { ...page, requests, renders, answers, engine };
 }
 
 function authorization(request) {
@@ -365,8 +520,287 @@ check("a snapshot that never arrives writes no staleness display at all",
   empty.elements.status.className === "" &&
   empty.elements.tool.hidden === true);
 
+/* ------------------------------------------------------------------ */
+/* #85's question card: which source it builds, and what it can ask.   */
+
+/*
+ * THE BOUNDARY THIS SECTION EXISTS FOR. apps/web/query.js has two
+ * sources. `publishedSource` reads the members-only document, every cell
+ * of which was already reduced to at least MIN_CELL people before it was
+ * published. `personalSource` reads ONE member's own rows and applies no
+ * floor at all, because their own data is theirs.
+ *
+ * This page holds a published document, so it may build exactly one of
+ * those and it is checked here for exactly that - by counting calls to
+ * the arm it must never reach, not by asserting that the arm it does
+ * reach behaves. `run` takes the floor off the SOURCE and a query has no
+ * member naming a floor, so "a caller cannot ask for floor 0 over a
+ * published document" is a property of the engine's shape; what this
+ * page can get wrong is handing that shape the wrong document, and that
+ * is what is asserted.
+ */
+
+const asking = await loadPublic(MEMBER, response(200, SNAPSHOT));
+
+check("the question card is opened once the engine is on the page",
+  asking.elements.question.hidden === false &&
+  asking.elements["q-controls"].hidden === false &&
+  asking.answers.length === 1);
+
+check("the page builds the floored published source and no other",
+  asking.engine.sources.length === 1 && asking.engine.personal === 0 &&
+  asking.engine.sources[0].published === SNAPSHOT.snapshot &&
+  asking.engine.runs.length > 0 &&
+  asking.engine.runs.every((call) => call.source === asking.engine.sources[0]));
+
+check("no query this page builds names a floor or a source",
+  // The engine would ignore such a member, which is the point: if one
+  // ever appears here it is somebody reaching for a lever that does not
+  // exist, and the reach is the thing worth catching.
+  asking.engine.runs.every((call) =>
+    !("floor" in call.query) && !("source" in call.query) &&
+    !("identify" in call.query)));
+
+/*
+ * Both of the next two read the file with its COMMENTS REMOVED, and the
+ * scope is the whole point rather than a convenience.
+ *
+ * The boundary is explained at length in both files, by name - that is
+ * the explanation a reader arriving in a year needs, and it names the arm
+ * this page must never reach. A check run over the raw bytes would make
+ * writing that explanation the thing it forbids, which is a check that
+ * punishes the documentation it depends on. So: say it in prose freely,
+ * reach for it in code never.
+ */
+const withoutComments = (source) => source
+  .replace(/\/\*[\s\S]*?\*\//g, " ")
+  .replace(/<!--[\s\S]*?-->/g, " ");
+
+check("the shipped page script reaches for the published arm and no other",
+  /\bpublishedSource\b/.test(withoutComments(publicSource)) &&
+  !/\bpersonalSource\b/.test(withoutComments(publicSource)));
+
+check("the page offers no control that could name a source or a floor",
+  // Read off the markup, because the absence has to hold for a member
+  // with a devtools console open as much as for the wiring above. There
+  // is no id, name, value or word of copy on this page that could be
+  // mistaken for a lever over the suppression floor, because there is no
+  // lever.
+  //
+  // The word list is the limit worth stating: it catches a control named
+  // after the thing, not one that reaches it under some other name. The
+  // wiring checks above cover that by counting the calls; this arm is
+  // the one that survives the wiring being rewritten.
+  !/\b(floor|min-?cell|personal|unsuppress)/i
+    .test(withoutComments(dashboardHtml)));
+
+/*
+ * The page's pickers against the engine's tables, both directions.
+ *
+ * Same shape as check 16's naming pins and for the same reason: an
+ * option the engine does not know throws where a member clicks, and a
+ * split the engine grows with nothing offering it is a question nobody
+ * on the site can ask. Neither direction is visible from one file.
+ */
+const optionValues = (dashboardHtml.match(
+  /<select id="q-split">([\s\S]*?)<\/select>/) || ["", ""])[1]
+  .match(/value="([^"]*)"/g) || [];
+const splitOptions = optionValues.map((raw) => raw.slice(7, -1));
+
+const radioValues = (name) =>
+  (dashboardHtml.match(
+    new RegExp('name="' + name + '"[^>]*value="([^"]*)"', "g")) || [])
+    .map((raw) => raw.match(/value="([^"]*)"/)[1]);
+
+check("every split the page offers is a split the engine answers",
+  splitOptions.length > 0 &&
+  splitOptions.every((split) => Object.prototype.hasOwnProperty.call(
+    Engine.SPLITS, split)));
+
+check("every split the engine answers is a split the page offers",
+  Object.keys(Engine.SPLITS).every((split) => splitOptions.includes(split)));
+
+check("the page's Count choices are exactly the engine's bases",
+  JSON.stringify(radioValues("basis").slice().sort()) ===
+  JSON.stringify(Engine.BASES.slice().sort()));
+
+check("the page's Measure choices are exactly the engine's measures",
+  JSON.stringify(radioValues("q-measure").slice().sort()) ===
+  JSON.stringify(Engine.MEASURES.slice().sort()));
+
+/* ------------------------------------------------------------------ */
+/* What the controls become, and what they cannot become.              */
+
+/*
+ * The queries a scenario asked, read so that a page which asked NONE
+ * fails the checks below rather than ending the process on a
+ * dereference. A file-scope throw here would turn "the question card
+ * does not work" into a suite that prints four results and dies, which
+ * is the shape this repository has already paid for twice - a contract
+ * has to say everything it knows on the first red run, or it is not
+ * doing the job a contract is for.
+ */
+const queryAt = (page, index) => {
+  const runs = page.engine.runs;
+  const call = index < 0 ? runs[runs.length + index] : runs[index];
+  return (call && call.query) || {};
+};
+
+const categorical = queryAt(asking, 0);
+
+check("a categorical split is asked as a count, with no band to widen",
+  // normalize() refuses a middle over a split with no numbers and
+  // refuses widen over one that is not a histogram. The card does not
+  // offer either, so the refusal is unreachable rather than routed
+  // around - and the fields that would offer them are hidden.
+  categorical.split === "gender" && categorical.measure === "count" &&
+  !("widen" in categorical) &&
+  asking.elements["q-measure-field"].hidden === true &&
+  asking.elements["q-widen-field"].hidden === true &&
+  asking.elements["q-merge-field"].hidden === false);
+
+const histogram = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  split: "weight",
+  checked: { "q-measure": "count", "q-widen": "3", units: "metric" },
+});
+const widened = queryAt(histogram, 0);
+
+check("a histogram split carries the widen factor as a whole number",
+  widened.split === "weight" && widened.widen === 3 &&
+  typeof widened.widen === "number" && widened.units === "metric" &&
+  histogram.elements["q-widen-field"].hidden === false &&
+  histogram.elements["q-merge-field"].hidden === true);
+
+const middle = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  split: "bmi", checked: { "q-measure": "median" },
+});
+
+check("a middle over a histogram hides the levers that do not apply to it",
+  queryAt(middle, 0).measure === "median" &&
+  middle.elements["q-measure-field"].hidden === false &&
+  middle.elements["q-widen-field"].hidden === true &&
+  middle.elements["q-merge-field"].hidden === true);
+
+check("the caption drawn is the engine's own, from the query it just ran",
+  () =>
+  // describe() runs the same validator run() does, so a caption can
+  // never describe a question that would have thrown. A caption built
+  // here from the control labels would be free to.
+  asking.answers[0].caption === "asked: gender" &&
+  asking.answers[0].element === asking.elements.answer &&
+  middle.answers[middle.answers.length - 1].caption === "asked: bmi");
+
+/* ------------------------------------------------------------------ */
+/* Combining, which is the lever the union-only rule is about.         */
+
+/* The checkbox inside each built label, and only the ones really there:
+   a page that built no list must fail the checks below rather than throw
+   past them. */
+const boxesOf = (page) => page.elements["q-merge-labels"].children
+  .map((label) => label.children[0]).filter(Boolean);
+
+/* Tick the first `count` cells and let the card hear it, without
+   assuming the card built any. A page that built no list has to fail the
+   checks below, not end the run before they print. */
+const tick = (page, count) => {
+  boxesOf(page).slice(0, count).forEach((box) => { box.checked = true; });
+  page.elements["q-controls"].fire("input");
+};
+
+check("the combine list is built from the answer, one box per published cell",
+  boxesOf(asking).length === 2 &&
+  asking.elements["q-merge-labels"].textContent === "malefemale");
+
+const combining = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  groupName: "Anglosphere",
+});
+tick(combining, 2);
+const merged = queryAt(combining, -1);
+
+check("ticking two cells asks again, naming only cells the document gave",
+  () => merged.merge.length === 1 && merged.merge[0].as === "Anglosphere" &&
+  JSON.stringify(merged.merge[0].labels) === JSON.stringify(["male", "female"]) &&
+  // Asked twice on purpose: plain first, to learn which cells exist, then
+  // merged. The plain answer is what the tick list was built from, which
+  // is why a member can only ever name a cell that cleared the floor.
+  combining.engine.runs.length >= 3 &&
+  !("merge" in queryAt(combining, -2)));
+
+const alone = await loadPublic(MEMBER, response(200, SNAPSHOT));
+tick(alone, 1);
+
+check("one cell on its own is not a group and is not asked as one",
+  alone.engine.runs.every((call) => !("merge" in call.query)));
+
+const unnamed = await loadPublic(MEMBER, response(200, SNAPSHOT));
+tick(unnamed, 2);
+
+check("a group with no name is called by its parts rather than refused",
+  // normalize() needs a non-empty name, and an empty text field is the
+  // ordinary state of that control. Inventing a word would be inventing
+  // a claim about the group; joining its parts describes it exactly.
+  (queryAt(unnamed, -1).merge || [{}])[0].as === "male + female");
+
+/* ------------------------------------------------------------------ */
+/* When the engine is not there, and when it refuses.                  */
+
+const engineless = await loadPublic(MEMBER, response(200, SNAPSHOT),
+  { noEngine: true });
+
+check("without the engine the card stays shut and the panels still draw",
+  // The panels are what this page is for. A member reading correct
+  // aggregates beats a page that refuses to start because an additive
+  // script did not arrive.
+  engineless.elements.question.hidden === true &&
+  engineless.renders.length === 1 &&
+  engineless.elements.tool.hidden === false &&
+  engineless.elements.closed.hidden === true);
+
+const refused = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  sourceRefuses: "that is a keyholder snapshot, not a published one",
+});
+
+check("a document the engine refuses takes the controls away and says why",
+  // The refusal names WHICH refusal it was - a version this engine does
+  // not read, or a keyholder snapshot arriving where a published one
+  // belongs. A house paraphrase would lose the only explanation anyone
+  // gets, and inert controls would invite a member to keep clicking.
+  refused.elements.question.hidden === false &&
+  refused.elements["q-controls"].hidden === true &&
+  refused.elements["q-status"].className === "status bad" &&
+  /keyholder snapshot/.test(refused.elements["q-status"].textContent) &&
+  refused.answers.length === 0 &&
+  refused.renders.length === 1);
+
+const throwing = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  runThrows: "a median over \"gender\" is not a question",
+});
+
+check("a question the engine refuses is reported in the engine's own words",
+  throwing.elements["q-status"].className === "status bad" &&
+  throwing.elements["q-status"].textContent ===
+    "a median over \"gender\" is not a question" &&
+  throwing.answers.length === 0 &&
+  // and the page is still a page
+  throwing.elements.tool.hidden === false &&
+  throwing.renders.length === 1);
+
+/* ------------------------------------------------------------------ */
+
+const shared = await loadPublic(MEMBER, response(200, SNAPSHOT));
+const beforeShared = { panels: shared.renders.length,
+  answers: shared.answers.length };
+shared.shared[0].fire("change");
+
+check("the page's own Count and Units choices move the answer with the panels",
+  // The card's copy promises a question here is about the same people
+  // the panels are. A second pair of controls could disagree with the
+  // first; sharing one pair cannot.
+  shared.renders.length === beforeShared.panels + 1 &&
+  shared.answers.length === beforeShared.answers + 1);
+
 if (failures) {
   console.error(`\npublic dashboard FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\npublic dashboard OK - 23 checks");
+console.log(`\npublic dashboard OK - ${ran} checks`);

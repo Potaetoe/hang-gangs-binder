@@ -972,14 +972,26 @@
    * Worker serves this body verbatim to anybody with a member session,
    * so a figure the page declines to paint is still a figure.
    *
-   * WHAT THIS DOES NOT CLOSE, stated rather than discovered. The count
+   * WHAT THIS DOES NOT CLOSE, and the ruling that accepted it. The count
    * and the mean weight are published in every document, and their
    * product is the combined weight. A reader who keeps two documents can
-   * therefore compute this delta whatever the floor says. The floor
-   * bounds what the page STATES; closing the arithmetic channel would
-   * mean suppressing the mean, which is a larger decision than this one
-   * and belongs to the owner. Recorded on #73 rather than left for the
-   * next reader to find.
+   * therefore compute this delta whatever the floor says.
+   *
+   * That channel is OPEN ON PURPOSE - the owner ruled it accepted on
+   * #153, and the floor is a bound on what the page STATES rather than on
+   * what somebody holding two saved documents can derive. The grounds, so
+   * the next reader does not have to re-argue them: deriving it takes two
+   * snapshots and a calculation by somebody already authorized to read
+   * both floored documents, which is disclosure between people who can
+   * already see the data rather than leakage outward; and the mean is a
+   * number members legitimately use, so closing the door would cost real
+   * value to shut one of several - count times mean is not the only pair
+   * here that reconstructs a third figure. DESIGN.md, "The dashboard and
+   * the snapshot", is where that now lives in full.
+   *
+   * THE TRIGGER TO RE-TAKE IT: if published snapshots ever reach an
+   * audience wider than members, the calculus changes and the ruling does
+   * not carry over.
    */
   function movementOf(entries, previous, bases, floor) {
     if (!previous || typeof previous !== "object") return null;
@@ -1141,15 +1153,17 @@
   // where calling it throws on its first `document`; that is a tested
   // regression, not a tidy-up.
   //
-  // BOTH drawing names go on here, inside the one conditional and before
-  // the one freeze. `renderProgress` is the surface split, and the same
-  // seam has to be pinned for it: a second name attached after the
-  // publish is the exact shape check 15's member-assignment arm refuses,
-  // and a second name attached outside this conditional would be
-  // exported under Node where its first `document` throws.
+  // EVERY drawing name goes on here, inside the one conditional and
+  // before the one freeze. `renderProgress` is the surface split and
+  // `renderAnswer` is #85's question card, and the same seam has to be
+  // pinned for each of them: a name attached after the publish is the
+  // exact shape check 15's member-assignment arm refuses, and a name
+  // attached outside this conditional would be exported under Node
+  // where its first `document` throws.
   if (typeof document !== "undefined") {
     api.render = render;
     api.renderProgress = renderProgress;
+    api.renderAnswer = renderAnswer;
   }
   root.BinderDashboard = Object.freeze(api);
 
@@ -1518,6 +1532,127 @@
     return wrap;
   }
 
+  /* One labeled figure in a bordered cell. The stat strip builds six of
+   * these and the question card's middles build one, and two copies of
+   * the markup would be two things theme.css's `.stat` rules could stop
+   * describing one at a time. */
+  function statCell(label, value) {
+    const cell = document.createElement("div");
+    cell.className = "stat";
+    const name = document.createElement("span");
+    name.className = "stat-label";
+    name.textContent = label;
+    const figure = document.createElement("strong");
+    figure.className = "stat-value tabular";
+    figure.textContent = String(value);
+    cell.appendChild(name);
+    cell.appendChild(figure);
+    return cell;
+  }
+
+  /* What the floor leaves when it leaves nothing, in one place. The
+   * panels say it about a whole basis and the question card says it
+   * about one answer, and two copies of a sentence promising what is
+   * hidden and why is two promises that can drift apart. */
+  function tooFewNote() {
+    return "There are too few entries here to publish a breakdown without " +
+      "describing individual people. Nothing is shown until there are " +
+      "at least " + MIN_CELL + ".";
+  }
+
+  /* BMI is an index and carries no unit in either system, so its figures
+   * are written bare - exactly as the stat strip writes the median BMI
+   * beside five figures that all carry one. */
+  const INDEX_MEASURE = { stat: plain };
+
+  /*
+   * The measure spec an answer's figures are written in.
+   *
+   * `units` is null on precisely the splits the engine reports as
+   * unitless, so this reads the answer rather than keeping a second list
+   * of which splits carry units. A second list is the one that goes
+   * stale when a split is added to query.js and nobody looks here.
+   */
+  function answerSpec(answer) {
+    return answer.units === null
+      ? INDEX_MEASURE
+      : unitsFor(answer.units)[answer.split];
+  }
+
+  /* "Median" or "Mean". The caption above already says of what and
+   * across whom; this is what keeps the figure from being a number
+   * alone in a card. */
+  function measureLabel(measure) {
+    return measure.charAt(0).toUpperCase() + measure.slice(1);
+  }
+
+  /*
+   * The floor, written on the answer itself rather than only in the
+   * page's standing prose - because the question card is where a member
+   * does the combining, and the combining is what the sentence is about.
+   * Widening bands and naming groups only ever add cells together, and a
+   * member should be able to read that off the thing they just widened.
+   *
+   * Null at floor 0. A personal source is one member's own rows with no
+   * floor at all, and a promise about groups of five printed over
+   * somebody's own history would be false as well as strange.
+   */
+  function floorNote(answer) {
+    if (!(answer.floor > 0)) return null;
+    return "Groups smaller than " + answer.floor + " were folded together " +
+      "before this was published, and widening or combining only adds " +
+      "them up - so every group here already cleared that floor.";
+  }
+
+  /*
+   * One answer from apps/web/query.js, drawn in the same clothes as the
+   * panels above it.
+   *
+   * IT TAKES AN ANSWER AND A CAPTION, NEVER A QUERY, and never mentions
+   * BinderQuery. admin.html loads this module and does not load query.js,
+   * so a reference to that namespace here would be a global the
+   * instrument's own page never defines. The caller is also the only one
+   * that knows what it asked: dashboard.html names its question through
+   * the engine's own `describe`, so a caption can never describe a query
+   * that would have thrown.
+   *
+   * EVERY ARM WITH NOTHING TO DRAW SAYS SO, which is most of why this
+   * function exists rather than a courtesy. `available` is false when the
+   * keyholder published no breakdown for that basis at all; an empty cell
+   * list is a partition the floor left nothing safe to say about, which
+   * is what suppressCounts and suppressBins both return in that case. An
+   * empty chart for either reads as "the answer is nothing" - a different
+   * claim, a false one, and one a member cannot tell apart from a page
+   * that failed to draw.
+   */
+  function renderAnswer(container, answer, caption) {
+    container.textContent = "";
+    const wrap = figure(caption, floorNote(answer));
+
+    if (!answer.available) {
+      emptyNote(wrap, tooFewNote());
+    } else if (answer.kind === "stat") {
+      const strip = document.createElement("div");
+      strip.className = "stats";
+      strip.appendChild(statCell(measureLabel(answer.measure),
+        statText(answer.value, answerSpec(answer))));
+      wrap.appendChild(strip);
+    } else if (!answer.cells.length) {
+      emptyNote(wrap, "No group in this answer was large enough to " +
+        "publish, and pooling the small ones still described too few " +
+        "people. The floor is applied before anything here is combined, " +
+        "so there is nothing this document can say about it.");
+    } else if (answer.kind === "categorical") {
+      wrap.appendChild(barChart(answer.cells, answer.total));
+    } else {
+      const spec = answerSpec(answer);
+      wrap.appendChild(histogramChart(answer.cells,
+        answer.units === null ? "BMI" : spec.suffix, spec.tick));
+    }
+
+    container.appendChild(wrap);
+  }
+
   /*
    * Draws a snapshot for the ADMIN INSTRUMENT. Not rows - a snapshot,
    * which is what makes the keyholder's dashboard and the public one the
@@ -1607,10 +1742,7 @@
     if (view === null) {
       const note = document.createElement("p");
       note.className = "muted";
-      note.textContent =
-        "There are too few entries here to publish a breakdown without " +
-        "describing individual people. Nothing is shown until there are " +
-        "at least " + MIN_CELL + ".";
+      note.textContent = tooFewNote();
       container.appendChild(note);
       return;
     }
@@ -1627,17 +1759,7 @@
       ["Median BMI", view.bmi.median === null ? "—" : view.bmi.median],
       ["Mean weight", statText(measures.weight.mean, spec.weight)],
     ].forEach(function (pair) {
-      const cell = document.createElement("div");
-      cell.className = "stat";
-      const label = document.createElement("span");
-      label.className = "stat-label";
-      label.textContent = pair[0];
-      const value = document.createElement("strong");
-      value.className = "stat-value tabular";
-      value.textContent = String(pair[1]);
-      cell.appendChild(label);
-      cell.appendChild(value);
-      strip.appendChild(cell);
+      strip.appendChild(statCell(pair[0], pair[1]));
     });
     container.appendChild(strip);
 

@@ -723,9 +723,11 @@
    
    
    
+   
   if (typeof document !== "undefined") {
     api.render = render;
     api.renderProgress = renderProgress;
+    api.renderAnswer = renderAnswer;
   }
   root.BinderDashboard = Object.freeze(api);
 
@@ -1039,6 +1041,87 @@
 
   
 
+  function statCell(label, value) {
+    const cell = document.createElement("div");
+    cell.className = "stat";
+    const name = document.createElement("span");
+    name.className = "stat-label";
+    name.textContent = label;
+    const figure = document.createElement("strong");
+    figure.className = "stat-value tabular";
+    figure.textContent = String(value);
+    cell.appendChild(name);
+    cell.appendChild(figure);
+    return cell;
+  }
+
+  
+
+  function tooFewNote() {
+    return "There are too few entries here to publish a breakdown without " +
+      "describing individual people. Nothing is shown until there are " +
+      "at least " + MIN_CELL + ".";
+  }
+
+  
+
+  const INDEX_MEASURE = { stat: plain };
+
+  
+
+  function answerSpec(answer) {
+    return answer.units === null
+      ? INDEX_MEASURE
+      : unitsFor(answer.units)[answer.split];
+  }
+
+  
+
+  function measureLabel(measure) {
+    return measure.charAt(0).toUpperCase() + measure.slice(1);
+  }
+
+  
+
+  function floorNote(answer) {
+    if (!(answer.floor > 0)) return null;
+    return "Groups smaller than " + answer.floor + " were folded together " +
+      "before this was published, and widening or combining only adds " +
+      "them up - so every group here already cleared that floor.";
+  }
+
+  
+
+  function renderAnswer(container, answer, caption) {
+    container.textContent = "";
+    const wrap = figure(caption, floorNote(answer));
+
+    if (!answer.available) {
+      emptyNote(wrap, tooFewNote());
+    } else if (answer.kind === "stat") {
+      const strip = document.createElement("div");
+      strip.className = "stats";
+      strip.appendChild(statCell(measureLabel(answer.measure),
+        statText(answer.value, answerSpec(answer))));
+      wrap.appendChild(strip);
+    } else if (!answer.cells.length) {
+      emptyNote(wrap, "No group in this answer was large enough to " +
+        "publish, and pooling the small ones still described too few " +
+        "people. The floor is applied before anything here is combined, " +
+        "so there is nothing this document can say about it.");
+    } else if (answer.kind === "categorical") {
+      wrap.appendChild(barChart(answer.cells, answer.total));
+    } else {
+      const spec = answerSpec(answer);
+      wrap.appendChild(histogramChart(answer.cells,
+        answer.units === null ? "BMI" : spec.suffix, spec.tick));
+    }
+
+    container.appendChild(wrap);
+  }
+
+  
+
   function render(container, snapshot, basis, units) {
     container.textContent = "";
     drawPanels(container, snapshot, basis, units);
@@ -1072,10 +1155,7 @@
     if (view === null) {
       const note = document.createElement("p");
       note.className = "muted";
-      note.textContent =
-        "There are too few entries here to publish a breakdown without " +
-        "describing individual people. Nothing is shown until there are " +
-        "at least " + MIN_CELL + ".";
+      note.textContent = tooFewNote();
       container.appendChild(note);
       return;
     }
@@ -1092,17 +1172,7 @@
       ["Median BMI", view.bmi.median === null ? "—" : view.bmi.median],
       ["Mean weight", statText(measures.weight.mean, spec.weight)],
     ].forEach(function (pair) {
-      const cell = document.createElement("div");
-      cell.className = "stat";
-      const label = document.createElement("span");
-      label.className = "stat-label";
-      label.textContent = pair[0];
-      const value = document.createElement("strong");
-      value.className = "stat-value tabular";
-      value.textContent = String(pair[1]);
-      cell.appendChild(label);
-      cell.appendChild(value);
-      strip.appendChild(cell);
+      strip.appendChild(statCell(pair[0], pair[1]));
     });
     container.appendChild(strip);
 

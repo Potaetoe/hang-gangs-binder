@@ -164,6 +164,101 @@
       <div id="charts"></div>
     </div>
 
+    <!--
+      #85's question card. Hidden until public.js finds query.js loaded,
+      because a card of controls that answer nothing is worse than no
+      card: the panels above are this page's job and they do not need
+      the engine.
+
+      There is no source control here and no floor control, and that is
+      the design rather than an omission. query.js has two sources - the
+      floored published document, and a member's own rows with no floor
+      at all - and this page holds exactly one of those things. The floor
+      arrives from the source, so nothing a member can touch on this page
+      can name one. See the longer note in public.js.
+    -->
+    <div class="card" id="question" hidden>
+      <h2>Ask a question</h2>
+      <p class="muted small">
+        The same published figures, asked your way. Counting and units
+        come from the two choices above, so a question here is always
+        about the same people the panels are.
+      </p>
+
+      <div class="stack" id="q-controls">
+        <div class="field">
+          <label for="q-split">About</label>
+          <select id="q-split">
+            <option value="gender">Gender</option>
+            <option value="country">Country</option>
+            <option value="roles">Feedism affiliations</option>
+            <option value="bmi">BMI</option>
+            <option value="weight">Weight</option>
+            <option value="height">Height</option>
+          </select>
+        </div>
+
+        <fieldset class="field" id="q-measure-field">
+          <legend>Measure</legend>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="q-measure" value="count" checked>
+              <span>How many</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="q-measure" value="median">
+              <span>The median</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="q-measure" value="mean">
+              <span>The mean</span>
+            </label>
+          </div>
+          <p class="hint">
+            A middle needs numbers to take the middle of, so this only
+            offers itself for weight, height and BMI.
+          </p>
+        </fieldset>
+
+        <fieldset class="field" id="q-widen-field">
+          <legend>Bands</legend>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="q-widen" value="1" checked>
+              <span>As published</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="q-widen" value="2">
+              <span>Two at a time</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="q-widen" value="3">
+              <span>Three at a time</span>
+            </label>
+          </div>
+          <p class="hint">
+            Wider bands are the published bands added together. Nothing
+            here splits one.
+          </p>
+        </fieldset>
+
+        <fieldset class="field" id="q-merge-field">
+          <legend>Combine</legend>
+          <div class="choices" id="q-merge-labels"></div>
+          <label for="q-merge-name">Call them</label>
+          <input type="text" id="q-merge-name" autocomplete="off">
+          <p class="hint">
+            Tick two or more and they are counted as one. The list fills
+            in from the answer, so the only groups you can name are
+            groups this document already published.
+          </p>
+        </fieldset>
+      </div>
+
+      <p class="status" id="q-status" role="status" aria-live="polite"></p>
+      <div id="answer"></div>
+    </div>
+
     <div class="card narrow">
       <p class="runner"><span>What this is</span></p>
       <p class="muted small">
@@ -193,6 +288,17 @@
 
 <script src="config.js"></script>
 <script src="dashboard.js"></script>
+<!-- After dashboard.js, whose namespace this reads: query.js takes the
+     suppression floor, the snapshot builder and the unit table from
+     BinderDashboard rather than keeping second copies, because a second
+     copy of MIN_CELL is a floor that can be lowered in one file and not
+     the other. It looks them up when a source is built rather than at
+     load, and says which module is missing if it cannot.
+
+     admin.html deliberately does not load this. The instrument reads
+     the whole document already; the question card is the member's way
+     of asking a floored one something it was not published with. -->
+<script src="query.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <!-- After config.js: the revoke reads BINDER_CONFIG.endpoint. See the

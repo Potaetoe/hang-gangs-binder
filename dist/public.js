@@ -123,5 +123,144 @@
 
     show($("tool"), true);
     draw();
+    askable(snapshot);
+  }
+
+  
+
+  function askable(snapshot) {
+    const Query = root.BinderQuery;
+    const card = $("question");
+
+    
+
+    if (!Query || !card) return;
+    show(card, true);
+
+    const status = $("q-status");
+    let source;
+    try {
+      source = Query.publishedSource(snapshot);
+    } catch (error) {
+      
+
+      show($("q-controls"), false);
+      status.className = "status bad";
+      status.textContent = "This document cannot be queried. " +
+        (error && error.message ? error.message : "");
+      return;
+    }
+
+    
+
+    let boxes = [];
+    let builtFor = null;
+
+    function choiceBox(label) {
+      const wrap = document.createElement("label");
+      wrap.className = "choice";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      const words = document.createElement("span");
+      words.textContent = label;
+      wrap.appendChild(box);
+      wrap.appendChild(words);
+      boxes.push({ label: label, box: box });
+      return wrap;
+    }
+
+    
+
+    function offerMerge(cells) {
+      const labels = cells.map(function (cell) { return cell.label; });
+      const key = labels.join("\0");
+      if (key === builtFor) return;
+      builtFor = key;
+      boxes = [];
+      const list = $("q-merge-labels");
+      list.textContent = "";
+      labels.forEach(function (label) {
+        list.appendChild(choiceBox(label));
+      });
+    }
+
+    function ticked() {
+      return boxes.filter(function (item) { return item.box.checked; })
+        .map(function (item) { return item.label; });
+    }
+
+    function ask() {
+      const split = $("q-split").value;
+      const shape = Query.SPLITS[split];
+      
+
+      if (!shape) {
+        status.className = "status bad";
+        status.textContent = "This page offers a question the engine does " +
+          "not answer: " + split + ".";
+        return;
+      }
+
+      const bins = shape.kind === "bins";
+      
+
+      const measure = bins
+        ? UI.checkedValue("q-measure", "count")
+        : "count";
+      show($("q-measure-field"), bins);
+      show($("q-widen-field"), bins && measure === "count");
+      show($("q-merge-field"), !bins && measure === "count");
+
+      const query = {
+        basis: UI.checkedValue("basis", "people"),
+        split: split,
+        measure: measure,
+        units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+      };
+      if (bins) query.widen = Number(UI.checkedValue("q-widen", "1"));
+
+      let answer;
+      try {
+        answer = Query.run(source, query);
+        if (!bins && measure === "count") {
+          
+
+          offerMerge(answer.cells);
+          const labels = ticked();
+          if (labels.length > 1) {
+            const named = $("q-merge-name").value.trim();
+            answer = Query.run(source, Object.assign({}, query, {
+              merge: [{ as: named || labels.join(" + "), labels: labels }],
+            }));
+          }
+        }
+        status.className = "status";
+        status.textContent = "";
+      } catch (error) {
+        
+
+        status.className = "status bad";
+        status.textContent = error && error.message
+          ? error.message
+          : "That question could not be answered.";
+        $("answer").textContent = "";
+        return;
+      }
+
+      root.BinderDashboard.renderAnswer($("answer"), answer,
+        Query.describe(query));
+    }
+
+    
+
+    $("q-controls").addEventListener("input", ask);
+
+    
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="basis"], input[name="units"]'),
+      function (input) { input.addEventListener("change", ask); });
+
+    ask();
   }
 })(globalThis);
