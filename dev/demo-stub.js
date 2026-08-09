@@ -38,9 +38,13 @@
    *
    * An iframe's width IS the viewport the page inside it lays out
    * against, so a shipped page in a 375-pixel frame takes its own phone
-   * rules - the rail as a strip, the theme chips behind the disclosure,
+   * rules - the rail as a strip, its four destinations still in flow,
    * no sideways scroll - with nothing changed in apps/web and nothing
    * recorded here. That is the whole feature: a width.
+   *
+   * The Theme control is deliberately not in that list. It is one
+   * disclosure at every width (#150), so it sits outside every media
+   * query and is not something narrowing the frame reveals.
    *
    * NOTHING HERE EMULATES A DEVICE. No touch, no user agent, no pixel
    * ratio. The demo is never driven on a phone (the owner's ruling on
@@ -133,6 +137,20 @@
         "draws a button and calls the page's own data-onauth, which is " +
         "the one thing the widget contributes.",
     },
+    {
+      id: "config",
+      what: "Points config.js at a stand-in naming an address that " +
+        "cannot resolve.",
+      why: "config.js chooses by location.hostname and knows two: the " +
+        "published site and localhost. Anywhere else it hands back no " +
+        "endpoint and a null key, which closes the page guards - and " +
+        "makes config.endpoint + \"/me\" the relative URL " +
+        "\"undefined/me\", aimed at whatever host is serving. The " +
+        "stand-in seals to the same throwaway development key and " +
+        "points at a reserved name that resolves nowhere, so the one " +
+        "case that reaches the network is the case where this demo " +
+        "already failed.",
+    },
   ];
 
   const BOOT_SCRIPTS =
@@ -141,6 +159,9 @@
 
   const TELEGRAM_WIDGET = /https:\/\/telegram\.org\/js\/telegram-widget\.js[^"']*/g;
   const TELEGRAM_STANDIN = "/dev/demo-telegram.js";
+
+  const CONFIG_TAG = '<script src="config.js"></script>';
+  const CONFIG_STANDIN = '<script src="/dev/demo-config.js"></script>';
 
   /*
    * Inserted before the first <script>, which on every page in apps/web
@@ -166,6 +187,13 @@
     }
     TELEGRAM_WIDGET.lastIndex = 0;
 
+    // 404.html loads no config.js, so this edit does not apply to every
+    // page and the console's table would be wrong to imply it does.
+    if (out.indexOf(CONFIG_TAG) !== -1) {
+      out = out.split(CONFIG_TAG).join(CONFIG_STANDIN);
+      applied.push("config");
+    }
+
     return { html: out, applied: applied };
   }
 
@@ -178,7 +206,45 @@
   function unmirror(html) {
     return String(html)
       .replace(BOOT_SCRIPTS, "")
+      .split(CONFIG_STANDIN).join(CONFIG_TAG)
       .split(TELEGRAM_STANDIN).join("https://telegram.org/js/telegram-widget.js?22");
+  }
+
+  /*
+   * Where a baked build writes what it is a snapshot OF.
+   *
+   * The live console cannot go stale - it reads apps/web off disk on
+   * every request - so this region says so, and a bake replaces it with
+   * the commit it was taken at. That asymmetry is the whole point: a
+   * hosted copy is stale the moment the next slice merges, and a
+   * snapshot that does not say when it was taken is read as current for
+   * as long as it is up.
+   *
+   * A console whose markers have gone answers null rather than being
+   * written through unstamped. Refusing is the safe direction here: an
+   * unstamped build on a public URL is indistinguishable from a current
+   * one, which is the failure this region exists to prevent.
+   */
+  const STAMP_OPEN = "<!-- BAKED-AT -->";
+  const STAMP_CLOSE = "<!-- /BAKED-AT -->";
+
+  /*
+   * THE MARKERS SURVIVE THE STAMP, so a stamped console is still
+   * stampable. Consuming them would make the operation one-way: a bake
+   * over a directory that already holds one would refuse for the reason
+   * that means "somebody removed the region", and the two situations
+   * would be indistinguishable from the error. It is also what lets
+   * dev/demo-bake.test.mjs assert that a baked console differs from the
+   * source in this region and nowhere else, by stamping both the same
+   * way and comparing.
+   */
+  function stampInto(html, replacement) {
+    const text = String(html);
+    const open = text.indexOf(STAMP_OPEN);
+    const close = text.indexOf(STAMP_CLOSE);
+    if (open === -1 || close === -1 || close < open) return null;
+    return text.slice(0, open) + STAMP_OPEN + String(replacement) +
+      STAMP_CLOSE + text.slice(close + STAMP_CLOSE.length);
   }
 
   /* ---------------------------------------------------------------- */
@@ -392,6 +458,85 @@
     return null;
   }
 
+  /*
+   * The files this demo may really fetch from the origin it is served
+   * from. By path, and this list is the whole of it.
+   *
+   * The export rows are a committed file, so the honest way to serve
+   * eighteen ciphertexts is to read them rather than carry them through
+   * sessionStorage. That is one file, and it is named here rather than
+   * being "anything same-origin". Widen this to an origin test and a
+   * hosted build reads whatever else the bake emitted, which a static
+   * host serves to anybody without asking.
+   */
+  const LOCAL_FILES = ["/dev/sample-submissions.json"];
+
+  /*
+   * What a request IS: a call the stub answers, a file in this build the
+   * browser may fetch for real, or a refusal.
+   *
+   * SAME ORIGIN IS DECIDED FIRST, AND NEVER AS A WORKER CALL. This
+   * ordering is the fix for a collision that cannot happen on
+   * 127.0.0.1 and is guaranteed on the address this demo is hosted at.
+   * workerPathOf treats any host ending `.workers.dev` as the Worker -
+   * right, because it catches a page reaching the endpoint by some
+   * route other than the configured one. Serve the build from a
+   * workers.dev URL and that arm matches the PAGE'S OWN origin, so
+   * every same-origin request is read as a call to the Worker and
+   * answered 404 by a stub that was never asked about files. The demo
+   * does not leak; it stops working, and the symptom is a product page
+   * failing to load its own data, which reads as the product being
+   * broken rather than as the demo being wrong.
+   *
+   * Ordered rather than keyed on the hosting domain, because a fix that
+   * names the host stops working the day the owner moves the build -
+   * and because same-origin is the narrower claim in every case, so
+   * deciding it first is correct everywhere rather than merely
+   * sufficient here.
+   *
+   * A refusal carries the URL. A demo that quietly declined to fetch
+   * something would be debugged as a broken page.
+   */
+  function requestKindOf(url, base, endpoint) {
+    const there = resolved(url, base);
+    if (there === null) {
+      return {
+        kind: "refuse",
+        why: "The demo could not make sense of the URL \"" + url +
+          "\", so it refused it. An input it cannot parse is not " +
+          "evidence that the input is harmless.",
+      };
+    }
+
+    if (sameOriginAs(url, base)) {
+      const path = there.pathname || "/";
+      if (LOCAL_FILES.indexOf(path) !== -1) {
+        return { kind: "file", path: path };
+      }
+      return {
+        kind: "refuse",
+        why: "The demo refused a request for " + path + ". It reads " +
+          "only the files it names, and that is not one of them.",
+      };
+    }
+
+    const path = workerPathOf(url, base, endpoint);
+    if (path !== null) return { kind: "worker", path: path };
+
+    /*
+     * Anything else is a third party, and this is where the demo's one
+     * promise is kept: it does not reach a real endpoint. Refused
+     * loudly rather than passed through, because a demo that quietly
+     * phoned home would be indistinguishable from one that did not
+     * until somebody read a packet capture.
+     */
+    return {
+      kind: "refuse",
+      why: "The demo refused a request to " + url + ". Nothing here " +
+        "reaches a real endpoint.",
+    };
+  }
+
   /* ---------------------------------------------------------------- */
   /* The scenarios.                                                   */
   /* ---------------------------------------------------------------- */
@@ -476,18 +621,13 @@
         "The cover is closed and opens once. Reload to see it again; " +
           "turn on reduced motion in the operating system and reload to " +
           "see it snap open instead of animating.",
-        // The chips are named by the page, not here, and the driver is
-        // sent to read the rail rather than a list. Two reasons, both
-        // still live now that the owner has ruled the light palette's
-        // label on #127: a walk-through that spells out a label needs
-        // correcting every time one moves, and nothing in the gate
-        // compares these four buttons across the three pages that carry
-        // them, so counting them against the rail is what makes this
-        // step notice one going missing.
-        "Switch every palette chip in the rail in turn. The wordmark is " +
-          "Playfair Display - if it renders as a plain serif the font " +
-          "did not load, which is the thing to look for.",
-        "There is no rail on Sign in, by decision on #73.",
+        "The wordmark is Playfair Display - if it renders as a plain " +
+          "serif the font did not load, which is the thing to look for.",
+        "There is no rail on Sign in, by decision on #73 - but the " +
+          "Theme control is here, because it is one disclosure at " +
+          "every width and on every page that offers a palette (#150). " +
+          "Open it: the control works signed out, which is the point " +
+          "of it not living in the rail.",
         "Press the Telegram button. It is a local stand-in for the " +
           "widget and calls the page's own callback, so what happens " +
           "after the press is the shipped code.",
@@ -504,6 +644,31 @@
       steps: [
         "Entries shows what this account currently claims, and the " +
           "numeric id line is painted.",
+        // The chips are named by the page, not here, and the driver is
+        // sent to read the control rather than a list. Two reasons, and
+        // the second one carries an expiry worth writing down.
+        //
+        // A walk-through that spells out a label needs correcting every
+        // time one moves, so this step names none.
+        //
+        // And this walk is the only thing that reads the labels side by
+        // side. check_web.py pins that a page offering a palette
+        // carries the disclosure and at least one data-set-theme chip -
+        // presence, per page, judged in isolation. It does not compare
+        // one page's chip labels against another's, so every page can
+        // satisfy it while disagreeing about what the palettes are
+        // called. A human switching each chip in turn across the walk
+        // is what sees that.
+        //
+        // THE TRIGGER, SO THE NEXT READER INHERITS IT RATHER THAN
+        // FINDING IT: if a parity arm ever pins the labels across
+        // pages, the second reason is spent and this step is
+        // re-justified or deleted. Do not leave it standing on a reason
+        // a check has taken over - that is exactly how this comment
+        // came to need rewriting.
+        "Switch every palette chip in turn, and read what they are " +
+          "called - this walk is what compares those labels across " +
+          "the pages that carry them.",
         "New entry opens the form; the rail carries you to Progress and " +
           "back without losing the tab you were on.",
         "Progress draws the full payoff for this scenario: the " +
@@ -729,6 +894,36 @@
     let text = withoutComments(source, extension);
     if (probe.markup === true) text = markupOf(text);
     return text.indexOf(probe.pattern) !== -1;
+  }
+
+  /*
+   * Where the console fetches a probe's bytes from, and how it gets the
+   * SHIPPED bytes back out of them.
+   *
+   * A page probe is read through the mirror, and the reason is the one
+   * rule a hosted build cannot bend: an apps/web page served at a path
+   * the mirror did not produce carries no dev/demo-boot.js, so its own
+   * scripts call fetch for real. So a bake emits no page anywhere but
+   * /demo/, and the console reads the mirrored copy and undoes the
+   * edits - which returns the shipped file byte for byte, the round
+   * trip dev/demo.test.mjs already holds the mirror to.
+   *
+   * Everything else is read from its own path: unmirror is a no-op on a
+   * stylesheet, and routing it through /demo/ would only add a way for
+   * the two paths to disagree.
+   *
+   * One rule for both arms, so what the local server serves and what a
+   * bake emits are answering the same question.
+   */
+  function probeUrlFor(file) {
+    const path = String(file);
+    if (extensionOf(path) !== ".html") return "/" + path;
+    return "/demo/" + path.slice(path.lastIndexOf("/") + 1);
+  }
+
+  function probeSourceOf(file, text) {
+    return extensionOf(String(file)) === ".html"
+      ? unmirror(text) : String(text);
   }
 
   /*
@@ -1248,6 +1443,8 @@
     MIRROR_EDITS: MIRROR_EDITS,
     BOOT_SCRIPTS: BOOT_SCRIPTS,
     TELEGRAM_STANDIN: TELEGRAM_STANDIN,
+    CONFIG_STANDIN: CONFIG_STANDIN,
+    LOCAL_FILES: LOCAL_FILES,
     STORAGE_KEYS: STORAGE_KEYS,
     SCENARIOS: SCENARIOS,
     BOXES: BOXES,
@@ -1259,11 +1456,15 @@
     accountIdFor: accountIdFor,
     mirror: mirror,
     unmirror: unmirror,
+    stampInto: stampInto,
     endpointCallsIn: endpointCallsIn,
     routeFor: routeFor,
     probeHit: probeHit,
+    probeUrlFor: probeUrlFor,
+    probeSourceOf: probeSourceOf,
     sameOriginAs: sameOriginAs,
     workerPathOf: workerPathOf,
+    requestKindOf: requestKindOf,
     viewportFor: viewportFor,
     frameStyleFor: frameStyleFor,
     scenarioFor: scenarioFor,

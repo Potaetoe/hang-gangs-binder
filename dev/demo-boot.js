@@ -27,11 +27,14 @@
   const [SCENARIO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
 
   /*
-   * The real fetch, kept before anything can take it away, and used for
-   * exactly one thing: same-origin files out of this repository. The
-   * demo's export rows are a committed file, so the honest way to serve
-   * them is to read them, not to carry eighteen ciphertexts through
-   * sessionStorage.
+   * The real fetch, kept before anything can take it away. It is the
+   * only thing in this demo that can reach the network at all, so both
+   * of its call sites below are gated on the same allowlist in
+   * demo-stub.js - by path, not by "same origin".
+   *
+   * It exists for one file: the demo's export rows are a committed
+   * sample, so the honest way to serve them is to read them rather than
+   * carry eighteen ciphertexts through sessionStorage.
    */
   const realFetch = root.fetch.bind(root);
 
@@ -86,12 +89,18 @@
     return typeof config.endpoint === "string" ? config.endpoint : "";
   }
 
-  function targetOf(url) {
-    return Demo.workerPathOf(url, root.location.href, endpointOf());
-  }
-
-  function sameOrigin(url) {
-    return Demo.sameOriginAs(url, root.location.href);
+  /*
+   * One decision for both directions, made in demo-stub.js.
+   *
+   * Do not split this back into two questions asked here in sequence -
+   * is this the Worker, and failing that is it same-origin. That order
+   * breaks only when the demo is hosted: served from a workers.dev
+   * URL, the Worker test matches the page's own origin and swallows
+   * every request for a file. demo-stub.js states why the same-origin
+   * arm runs first and what the file arm is allowed to reach.
+   */
+  function decide(url) {
+    return Demo.requestKindOf(url, root.location.href, endpointOf());
   }
 
   function respond(answer) {
@@ -118,34 +127,39 @@
 
   root.fetch = async function (input, init) {
     const url = input && input.url ? input.url : input;
-    const path = targetOf(url);
+    const decided = decide(url);
 
-    if (path === null) {
-      if (sameOrigin(url)) return realFetch(input, init);
-
-      /*
-       * Anything else is a third party, and this is where the demo's one
-       * promise is kept: it does not reach a real endpoint. Refusing
-       * loudly rather than passing it through, because a demo that
-       * quietly phoned home would be indistinguishable from one that did
-       * not until somebody read a packet capture.
-       */
-      throw new Error(
-        "The demo refused a request to " + url + ". Nothing here " +
-        "reaches a real endpoint."
-      );
-    }
+    if (decided.kind === "refuse") throw new Error(decided.why);
+    if (decided.kind === "file") return realFetch(input, init);
 
     const request = {
       method: (init && init.method) || "GET",
-      path: path,
+      path: decided.path,
       body: await parseBody(init),
     };
 
     const answer = Demo.answerFor(request, world());
     remember(answer.next);
 
-    if (answer.proxy) return realFetch(answer.proxy);
+    /*
+     * A proxied answer goes through the SAME decision rather than
+     * straight to the real fetch. realFetch is the untouched browser
+     * one, so a path arriving here is a path nothing has checked - and
+     * this is the only call site that reaches the network at all. Held
+     * to the allowlist, the export route can serve the committed sample
+     * and cannot be turned into a read of anything else the build
+     * emitted, which on a static host is served to whoever asks.
+     *
+     * It is also what arms that allowlist: this is the one code path a
+     * scenario actually drives through it, so removing the sample from
+     * the list breaks the keyholder walk rather than passing unnoticed.
+     */
+    if (answer.proxy) {
+      const proxied = decide(answer.proxy);
+      if (proxied.kind !== "file") throw new Error(proxied.why ||
+        "The demo refused to proxy " + answer.proxy + ".");
+      return realFetch(answer.proxy);
+    }
     return respond(answer);
   };
 })(globalThis);

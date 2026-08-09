@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 75);
+const { check, mustReject, report } = suite("demo", 96);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -183,6 +183,46 @@ await check("every declared edit is one the mirror actually applies", () => {
   return Demo.MIRROR_EDITS.every((edit) => applied.has(edit.id)) &&
     applied.size === Demo.MIRROR_EDITS.length;
 });
+
+/*
+ * THE EDITS ARE NAMED HERE, AS LITERALS, AND THE COUNT IS SPELLED OUT.
+ * The check above compares the table to itself: it holds just as well
+ * for two edits, or for five, so an edit added without anybody deciding
+ * to add one passes it. What the console renders and what the owner is
+ * asked to take on trust is this list, so this is the check that has to
+ * fail when it grows.
+ */
+await check("the mirror declares exactly three edits, and they are these three", () =>
+  Demo.MIRROR_EDITS.length === 3 &&
+  Demo.MIRROR_EDITS.map((edit) => edit.id).sort().join(",") ===
+    "boot,config,telegram" &&
+  Demo.MIRROR_EDITS.every((edit) =>
+    typeof edit.what === "string" && edit.what.length > 0 &&
+    typeof edit.why === "string" && edit.why.length > 0));
+
+/*
+ * The third edit, and why the demo cannot be hosted without it.
+ *
+ * config.js keys on location.hostname and knows two: the published site
+ * and localhost. Anywhere else it deliberately hands back no endpoint
+ * and a null publicKey, so the page guards close - correct for a
+ * stranger's fork, fatal for a demo served from any other host. Worse
+ * than dead: `config.endpoint + "/me"` with endpoint undefined is the
+ * relative URL "undefined/me", which resolves against whatever origin
+ * the build is sitting on.
+ */
+await check("the config edit points every page that loads config.js at the stand-in", () =>
+  PAGES.filter((page) => shipped[page].includes('<script src="config.js">'))
+    .every((page) => {
+      const out = Demo.mirror(shipped[page]).html;
+      return out.includes('<script src="/dev/demo-config.js">') &&
+        !out.includes('<script src="config.js">') &&
+        Demo.mirror(shipped[page]).applied.includes("config");
+    }));
+
+await check("a page that loads no config.js gets no config edit", () =>
+  PAGES.filter((page) => !shipped[page].includes('<script src="config.js">'))
+    .every((page) => !Demo.mirror(shipped[page]).applied.includes("config")));
 
 /* ------------------------------------------------------------------ */
 /* apps/web pays nothing for the demo.                                 */
@@ -444,6 +484,55 @@ await check("every acceptance box is reachable from some scenario", () => {
   });
   return Demo.BOXES.every((box) => covered.has(box.id));
 });
+
+/*
+ * A step must not send the driver to a control its own starting page
+ * does not carry.
+ *
+ * #140's residue was a walk that told the driver to switch every
+ * palette chip in the rail on a page that had neither, and nothing here
+ * could see it: the only check over `steps` asserted the array was not
+ * empty, which is how that text survived a nine-finding adversarial
+ * pass. What breaks if this goes away is a walk-through that cannot be
+ * performed, read by somebody deciding the cutover.
+ *
+ * ASSERTED IN ONE DIRECTION ON PURPOSE: a walk that names the chips
+ * must start on a page that has them, never the converse. A check
+ * demanding that every page with a palette be walked for it would go
+ * red whenever a slice adds the control somewhere, which is a merge
+ * rather than a defect - #150 spread the Theme disclosure to four pages
+ * including sign-in, and this arm was written to survive exactly that
+ * and did.
+ *
+ * What that costs, stated rather than glossed: this no longer catches a
+ * chip walk staged on the sign-in page, because that page now carries
+ * the control and such a walk is no longer a defect. What it still
+ * catches is a chip walk on a page that genuinely has none - 404.html
+ * today, which check_web.py's THEMED_PAGES pins as deliberately
+ * palette-free, or whatever ships next without a control.
+ *
+ * The page is read rather than remembered, so this follows the markup
+ * wherever it goes.
+ */
+const CHIP_MARKUP = "data-set-theme";
+
+await check("a walk naming the palette chips starts on a page that has them", () =>
+  Demo.SCENARIOS.every((one) => {
+    const namesChips = (one.steps || []).some((step) =>
+      /palette chip|theme chip/i.test(step));
+    if (!namesChips) return true;
+    return String(shipped[one.start] || "").includes(CHIP_MARKUP);
+  }));
+
+/*
+ * The pair, so the check above cannot pass by matching nothing. Some
+ * scenario has to be walking the chips somewhere, or the demo has
+ * quietly stopped showing the palette at all.
+ */
+await check("some scenario does walk the chips, on a page that carries them", () =>
+  Demo.SCENARIOS.some((one) =>
+    (one.steps || []).some((step) => /palette chip/i.test(step)) &&
+    String(shipped[one.start] || "").includes(CHIP_MARKUP)));
 
 /*
  * F9. The stub's comment calls the scenario ids a contract with UAT.md,
@@ -708,6 +797,166 @@ await check("the Worker path is derived by origin, not by substring", () => {
   return Demo.workerPathOf(endpoint + "/me", BASE, endpoint) === "/me" &&
     Demo.workerPathOf("https://api.example.workers.dev@evil.example/me",
       BASE, endpoint) === null;
+});
+
+/* ------------------------------------------------------------------ */
+/* #143. Hosting the demo puts it ON an origin the demo has opinions   */
+/* about, and the two decisions collide there.                         */
+
+/*
+ * THE COLLISION, AND WHY IT ONLY EXISTS ONCE THE DEMO IS HOSTED.
+ *
+ * workerPathOf has a wildcard arm: any host ending `.workers.dev` is
+ * treated as the Worker, so a page reaching the endpoint by some route
+ * other than the configured one is still stubbed rather than let out.
+ * That arm is right, and on 127.0.0.1 it can never match the page's own
+ * origin.
+ *
+ * Host the build on a workers.dev URL and it matches the page itself.
+ * Every same-origin request - the console's own probes, an asset, the
+ * committed sample - is then read as a call to the Worker and answered
+ * 404 by a stub that was never asked about files. The demo does not
+ * leak; it stops working, in a way whose symptom is a product page
+ * failing to load its own data, which reads as the product being
+ * broken.
+ *
+ * So same-origin is decided FIRST and never as a Worker call, on every
+ * host rather than on the one that exposed it - a fix keyed on the
+ * hosting domain is a fix that stops working when the owner moves the
+ * build.
+ */
+const HOSTED = "https://hgbinder-demo.example.workers.dev/dev/demo.html";
+const ENDPOINT = "https://demo.invalid";
+
+await check("on a workers.dev host, a same-origin URL is not read as a Worker call", () =>
+  Demo.requestKindOf(
+    "https://hgbinder-demo.example.workers.dev/dev/sample-submissions.json",
+    HOSTED, ENDPOINT).kind === "file");
+
+await check("the same URL one host over is still the stub's to answer", () =>
+  Demo.requestKindOf("https://hgbinderworker-dev.sorcererbiggz.workers.dev/me",
+    HOSTED, ENDPOINT).kind === "worker");
+
+/*
+ * Same-origin is an ALLOWLIST, not a pass. A fall-through handing any
+ * same-origin URL to the real fetch is, on a static host, a read of
+ * whatever else got baked - and the emitted set is the one thing a
+ * static host will serve to anybody without asking.
+ */
+await check("the one file the demo really fetches is allowed by name", () =>
+  Demo.requestKindOf("/dev/sample-submissions.json", HOSTED, ENDPOINT)
+    .kind === "file" &&
+  Demo.LOCAL_FILES.length === 1 &&
+  Demo.LOCAL_FILES[0] === "/dev/sample-submissions.json");
+
+await check("a sibling under the same directory is refused, not fetched", () =>
+  Demo.requestKindOf("/dev/test-key.json", HOSTED, ENDPOINT).kind === "refuse" &&
+  Demo.requestKindOf("/dev/demo-stub.js", HOSTED, ENDPOINT).kind === "refuse");
+
+await check("the configured endpoint is answered by the stub, path and all", () => {
+  const decided = Demo.requestKindOf(ENDPOINT + "/me?x=1", HOSTED, ENDPOINT);
+  return decided.kind === "worker" && decided.path === "/me?x=1";
+});
+
+await check("a plain third party is refused with the URL in the message", () => {
+  const decided = Demo.requestKindOf("https://evil.example/x", HOSTED, ENDPOINT);
+  return decided.kind === "refuse" && String(decided.why).includes("evil.example");
+});
+
+await check("a URL that will not parse is refused rather than fetched", () =>
+  Demo.requestKindOf("http://[not a host]/x", HOSTED, ENDPOINT)
+    .kind === "refuse");
+
+/*
+ * And the same decisions still hold where the demo has always run, so
+ * the hosted arm is not a second set of rules nobody drives locally.
+ */
+await check("the local demo decides the same three ways", () =>
+  Demo.requestKindOf("/dev/sample-submissions.json", BASE, ENDPOINT)
+    .kind === "file" &&
+  Demo.requestKindOf(ENDPOINT + "/session", BASE, ENDPOINT).kind === "worker" &&
+  Demo.requestKindOf("https://evil.example/x", BASE, ENDPOINT)
+    .kind === "refuse");
+
+/* ------------------------------------------------------------------ */
+/* #143. The stand-in behind the config edit.                          */
+
+const demoConfig = await readFile(HERE("./demo-config.js"), "utf8");
+
+/*
+ * PINNED AGAINST config.js, NOT AGAINST ITSELF. The stand-in carries a
+ * copy of the development public key, and a copy is a thing that
+ * drifts: rotate the development pair and the demo would go on sealing
+ * to a key the committed sample was never sealed to, which surfaces as
+ * rows that will not open and reads as a crypto bug.
+ *
+ * The comparison is one-directional - the stand-in's key must be one
+ * config.js names - so adding an environment to config.js does not turn
+ * this red.
+ */
+await check("the demo config seals to the development key config.js ships", () => {
+  const keys = (webSource["config.js"].match(/publicKey:\s*"([^"]+)"/g) || [])
+    .map((one) => /"([^"]+)"/.exec(one)[1]);
+  const mine = /publicKey:\s*"([^"]+)"/.exec(demoConfig);
+  return keys.length >= 2 && mine !== null && keys.includes(mine[1]);
+});
+
+/*
+ * The endpoint is deliberately NOT the development Worker. The stub
+ * intercepts every call, so the name never resolves in normal
+ * operation - which is exactly why it matters what it says: the one
+ * case that reaches the network is the case where the interception
+ * failed, and that case must not arrive at a Worker that exists.
+ * `.invalid` is reserved and resolves nowhere, and the pages' own
+ * connect-src does not name it either, so the browser refuses it a
+ * second time.
+ */
+await check("the demo config points at a name that cannot resolve", () => {
+  const endpoint = /endpoint:\s*"([^"]+)"/.exec(demoConfig);
+  return endpoint !== null && /\.invalid(\/|$)/.test(endpoint[1]) &&
+    !demoConfig.includes("workers.dev");
+});
+
+await check("no page's connect-src names the demo's endpoint", () =>
+  PAGES.every((page) => !shipped[page].includes(".invalid")));
+
+/* ------------------------------------------------------------------ */
+/* #143. A probe has to be readable in a build with no server.         */
+
+/*
+ * The console reads the shipped bytes to fill the acceptance table, and
+ * a baked build cannot serve apps/web's PAGES at their own path -
+ * an un-mirrored page is one with no fetch replacement on it. So an
+ * HTML probe is read through the mirror and undone, which gives back
+ * the shipped bytes exactly (the round trip is checked above), and
+ * everything else is read from its own path.
+ */
+await check("an HTML probe is read through the mirror, not from apps/web", () =>
+  Demo.probeUrlFor("apps/web/admin.html") === "/demo/admin.html");
+
+await check("a source probe is read from its own path", () =>
+  Demo.probeUrlFor("apps/web/submit.js") === "/apps/web/submit.js" &&
+  Demo.probeUrlFor("apps/web/theme.css") === "/apps/web/theme.css");
+
+await check("an HTML probe's bytes are undone back to what apps/web ships", () =>
+  Demo.probeSourceOf("apps/web/admin.html",
+    Demo.mirror(shipped["admin.html"]).html) === shipped["admin.html"]);
+
+await check("a source probe's bytes are passed through untouched", () =>
+  Demo.probeSourceOf("apps/web/submit.js", webSource["submit.js"]) ===
+    webSource["submit.js"]);
+
+/*
+ * And the verdict is unchanged by the trip, which is the property that
+ * makes the detour honest rather than merely convenient.
+ */
+await check("reading a probe through the mirror gives the same verdict", () => {
+  const box = Demo.BOXES.find((one) => one.probe.file.endsWith(".html"));
+  const direct = Demo.probeHit(shipped["admin.html"], box.probe);
+  const round = Demo.probeHit(
+    Demo.probeSourceOf(box.probe.file,
+      Demo.mirror(shipped["admin.html"]).html), box.probe);
+  return direct === round;
 });
 
 /* ------------------------------------------------------------------ */

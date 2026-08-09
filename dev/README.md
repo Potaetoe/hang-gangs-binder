@@ -35,6 +35,7 @@ two ways a check may be written and why both are still accepted.
 | `check_server.test.py` | `check_server.py`'s vars parser and rules, including that its key pattern still matches real key material |
 | `make-sample.test.mjs` | `make-sample.mjs` still runs and still writes what its summary claims — the generator loads the shipped `form.js` and `crypto.js`, and nothing else here exercises it (#66) |
 | `demo.test.mjs` | the drivable demo cannot drift. Undoing the mirror's declared edits returns the shipped page byte for byte, every Worker path `apps/web` calls has an answer in the stub, and `apps/web` names nothing under `dev/`. It binds a socket and drives the real mirror |
+| `demo-bake.test.mjs` | the **emitted set** of a hosted build, which is a different failure from drift: no `apps/web` page written outside `/demo/` (a page with no `fetch` replacement on it is the product, live, on a public URL), no source off the allowlist, and a stamp that names the commit and refuses a dirty tree |
 
 ## Two kinds of fixture, opposite rules
 
@@ -119,18 +120,22 @@ and the only keys anywhere near it are the throwaway pairs above.
 The pages come from a mirror at `/demo/`, read out of `apps/web` on every
 request — so a page PR 4 or PR 5 changes is a page the demo shows changed,
 with no work here. **`apps/web` still takes no hook.** The mirror applies
-exactly two edits on the way out, both listed in `demo-stub.js` and both
+three edits on the way out, every one listed in `demo-stub.js` and
 rendered by the console so nobody has to take that on trust: it adds the
-two dev scripts ahead of the page's own, and it points the Telegram
-widget at a local stand-in. `demo.test.mjs` fails if a mirrored page
-differs from the shipped one in any other way.
+two dev scripts ahead of the page's own, it points the Telegram widget
+at a local stand-in, and it points `config.js` at a stand-in naming an
+address that cannot resolve. `demo.test.mjs` fails if a mirrored page
+differs from the shipped one in any other way, and pins the table at
+those three by name.
 
 Over the frame is a **frame size**, and the phone one narrows the frame
 to the CSS pixel size `demo-stub.js` names. An iframe's width is the
 viewport the page inside it lays out against, so the shipped pages run
-their own phone rules in it — the rail as a strip, the theme chips behind
-the disclosure — which is what makes `UAT.md`'s phone-width steps
-drivable here rather than by narrowing the window. It is a width and
+their own phone rules in it — the rail as a strip, its destinations still
+in flow — which is what makes `UAT.md`'s phone-width steps
+drivable here rather than by narrowing the window. The Theme control is
+not one of those rules: it is one disclosure at every width, so it is
+there in both. It is a width and
 nothing else: the console stays a desktop tool, no touch, user agent or
 pixel ratio is emulated, and `apps/web` is not touched to make it work.
 
@@ -144,3 +149,56 @@ The offline arm is not the only one. `./run serve` against the dev Worker
 is the live end-to-end feel, and the console names it; what the offline
 arm adds is the states a live database cannot be asked for on demand — a
 revoked session, a correction that supersedes, a cell under the floor.
+
+## Hosting the demo off this machine
+
+`./run bake` writes that same demo to `_demo/` as ordinary static files
+— the mirror's output at real paths, the console, the stub, the corpus
+builder and the fabricated sample. Serve that directory with anything at
+all and drive `/dev/demo.html` exactly as you drive the local one.
+`--out PATH` writes somewhere else; the directory is generated on demand
+and never committed.
+
+**It writes files and does nothing else.** No upload, no wrangler, no
+deploy — where a build lands is a separate act with its own approval,
+and this is not it.
+
+Two things the bake refuses. A tree with uncommitted changes, because
+the stamp's whole value is that somebody can check out the named commit
+and get these bytes back, and a stamp naming a commit that is not what
+was baked is worse than no stamp. And any source that is neither under
+`apps/web` nor on the list of demo files named in `demo-bake.mjs` — an
+allowlist by filename rather than a pattern over `dev/`, because `dev/`
+also holds both stored-format fixtures, every suite, and whatever the
+next slice puts here, and nobody re-reads a pattern before it publishes
+something.
+
+**No page from `apps/web` is written anywhere but `/demo/`.** That is
+the rule with no exceptions: `demo-boot.js` is what replaces `fetch`, it
+arrives only through the mirror, and a page without it is a live copy of
+the product on a public URL calling whatever `config.js` resolves to.
+The bake re-reads the bytes it is about to write and refuses any page
+that does not undo back to the shipped file exactly. The two pages
+outside `/demo/` — the console and a landing page — load nothing from
+`apps/web` at all.
+
+Hosting adds a third mirror edit, and `demo-stub.js` explains it beside
+the other two: `config.js` chooses by `location.hostname` and knows the
+published site and localhost, so anywhere else it hands back a null key
+and no endpoint — which also turns `config.endpoint + "/me"` into the
+relative URL `undefined/me`, aimed at whichever host is serving. The
+stand-in seals to the same throwaway development key and points at a
+reserved name that resolves nowhere, so the one case that reaches the
+network is the case where the demo already failed.
+
+What is deliberately not in a build: no private key, no real endpoint,
+no real row, no secret, and nothing from `dev/` but the demo's own files
+and the throwaway pairs above. The corpus is fabricated by the shipped
+code from made-up people. The landing page says so, every page keeps the
+`noindex` it ships with, and `apps/web`'s own `robots.txt` is emitted at
+the root where a crawler reads it.
+
+A build is a **snapshot** and says which commit it was taken at, on the
+console and on the landing page. The local demo cannot go stale because
+it re-reads `apps/web` per request; a hosted copy is stale the moment
+the next slice merges, so re-bake on each merge wave or on demand.

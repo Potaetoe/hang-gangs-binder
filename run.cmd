@@ -44,6 +44,15 @@ if "%~1"=="demo" (
   node dev\demo-server.mjs %2 %3
   exit /b
 )
+if "%~1"=="bake" (
+  rem Mirrors ./run bake - see the reasoning there, including that this
+  rem writes a directory and deploys nothing.
+  rem
+  rem %2 %3 rather than a shift, for the reason the demo block above
+  rem gives: cmd expands arguments when it parses the block.
+  node dev\demo-bake.mjs %2 %3
+  exit /b
+)
 if "%~1"=="bootstrap" (
   rem Mirrors ./run bootstrap - see the reasoning there, including why
   rem the probe is the eslint binary rather than the directory.
@@ -55,6 +64,6 @@ if "%~1"=="bootstrap" (
 )
 
 echo usage: .\run ^<command^>
-echo   bootstrap ^| check ^| docs ^| serve ^| serve-root ^| keygen ^| demo
+echo   bootstrap ^| check ^| docs ^| serve ^| serve-root ^| keygen ^| demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2
