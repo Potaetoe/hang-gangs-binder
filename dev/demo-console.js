@@ -30,6 +30,11 @@
   let scenario = null;
   let destination = null;
 
+  // The frame opens at whatever the viewport table lists first, and that
+  // one carries no size of its own, so nothing is written onto the frame
+  // until somebody asks for a width.
+  let viewport = Demo.VIEWPORTS[0].id;
+
   function say(message) {
     $("status").textContent = message || "";
   }
@@ -91,6 +96,44 @@
     $("stage").src = path;
     $("frame-path").textContent = root.location.origin + path;
     paintDestinations();
+  }
+
+  /*
+   * The frame's size, and nothing else on the page.
+   *
+   * Written onto the frame element itself because that element's width
+   * is the viewport the page inside it lays out against; a width on the
+   * section around it would leave a desktop page in a phone-shaped hole,
+   * which is the one thing this control can get wrong that still looks
+   * right. What to write is demo-stub.js's, so dev/demo.test.mjs holds
+   * the same function this does.
+   *
+   * A size rather than a reload, so the walk keeps its place: a form
+   * half filled in is still half filled in on the other side of the
+   * toggle, which is the whole reason to look at the page narrow.
+   *
+   * The id comes back off the button rather than out of the closure,
+   * because a stale id is how this refusal gets reached - the same shape
+   * as a scenario id that outlived a rename.
+   */
+  function frame(id) {
+    const style = Demo.frameStyleFor(id);
+    if (style === null) {
+      say("No frame size is named " + id + ", so the frame is unchanged.");
+      return;
+    }
+
+    viewport = id;
+    $("stage").style.width = style.width;
+    $("stage").style.height = style.height;
+    paintViewports();
+
+    const view = Demo.viewportFor(id);
+    say(view.width === null
+      ? "The frame fills the stage again."
+      : "The frame is " + view.width + " by " + view.height + " CSS " +
+        "pixels, so the page in it is laying itself out at a phone's " +
+        "width. It is a width, not a device - nothing here is emulated.");
   }
 
   /* ---------------------------------------------------------------- */
@@ -161,6 +204,26 @@
       button.setAttribute("aria-pressed",
         one.file === destination ? "true" : "false");
       button.addEventListener("click", function () { open(one.file); });
+      holder.appendChild(button);
+    });
+  }
+
+  function paintViewports() {
+    const holder = $("viewports");
+    holder.textContent = "";
+    Demo.VIEWPORTS.forEach(function (one) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = one.label;
+      button.dataset.viewport = one.id;
+      button.title = one.width === null
+        ? "The frame fills the stage."
+        : one.width + " by " + one.height + " CSS pixels";
+      button.setAttribute("aria-pressed",
+        one.id === viewport ? "true" : "false");
+      button.addEventListener("click", function (event) {
+        frame(event.currentTarget.dataset.viewport);
+      });
       holder.appendChild(button);
     });
   }
@@ -282,6 +345,7 @@
     paintScenarios();
     paintScenario();
     paintDestinations();
+    paintViewports();
     paintEdits();
 
     say("Building the demo corpus from the shipped code…");

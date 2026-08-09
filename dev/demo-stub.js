@@ -34,6 +34,40 @@
   ];
 
   /*
+   * The sizes the console can give the frame, in CSS pixels.
+   *
+   * An iframe's width IS the viewport the page inside it lays out
+   * against, so a shipped page in a 375-pixel frame takes its own phone
+   * rules - the rail as a strip, the theme chips behind the disclosure,
+   * no sideways scroll - with nothing changed in apps/web and nothing
+   * recorded here. That is the whole feature: a width.
+   *
+   * NOTHING HERE EMULATES A DEVICE. No touch, no user agent, no pixel
+   * ratio. The demo is never driven on a phone (the owner's ruling on
+   * #142), the console around this frame stays a desktop tool, and a
+   * faked device would put a screen in front of the owner that no
+   * browser on the machine can be asked to reproduce - which is the
+   * false-confidence direction this whole demo is built to refuse.
+   *
+   * One residual, stated rather than hidden: a desktop browser draws a
+   * classic scrollbar inside the frame, so a page here gets 375 pixels
+   * of viewport and about 360 of content, where a phone with an overlay
+   * scrollbar gives it all 375. That is the direction that makes a page
+   * look narrower than it will be, never wider, so what the owner is
+   * shown is the harder of the two cases.
+   *
+   * `desktop` carries no size of its own on purpose, and leads the list
+   * because the console opens on whichever viewport comes first. It is
+   * the frame filling the stage the way dev/demo.css sizes it, so the
+   * default cannot drift into a number nobody chose and switching back
+   * is a clear rather than a second measurement to keep in step.
+   */
+  const VIEWPORTS = [
+    { id: "desktop", label: "Desktop", width: null, height: null },
+    { id: "phone", label: "Phone", width: 375, height: 812 },
+  ];
+
+  /*
    * The names the demo writes into the browser's own storage, and their
    * one home.
    *
@@ -787,6 +821,44 @@
   ];
 
   /* ---------------------------------------------------------------- */
+  /* The frame's size.                                                 */
+  /* ---------------------------------------------------------------- */
+
+  function viewportFor(id) {
+    for (const one of VIEWPORTS) {
+      if (one.id === id) return one;
+    }
+    return null;
+  }
+
+  /*
+   * What the console writes onto the frame element, and why the two
+   * assignments are computed here rather than there.
+   *
+   * The hazard this control carries is a frame that LOOKS phone-shaped
+   * around a page still laid out at desktop width - a screen that reads
+   * as evidence and is not, shown to the person deciding the cutover.
+   * Sizing anything other than the frame itself produces it, so the size
+   * is a value dev/demo.test.mjs can assert and the browser half only
+   * assigns.
+   *
+   * An unknown id is refused rather than answered with the default. A
+   * silent fall back to desktop paints a desktop page under a control
+   * reading Phone, which is the same lie an unstaged scenario id told
+   * before it was made to refuse.
+   *
+   * The empty strings are a clear, not a size: assigning "" removes the
+   * inline declaration and hands the frame back to dev/demo.css, so
+   * there is one place that says how big the desktop frame is.
+   */
+  function frameStyleFor(id) {
+    const view = viewportFor(id);
+    if (view === null) return null;
+    if (view.width === null) return { width: "", height: "" };
+    return { width: view.width + "px", height: view.height + "px" };
+  }
+
+  /* ---------------------------------------------------------------- */
   /* The stubbed Worker.                                              */
   /* ---------------------------------------------------------------- */
 
@@ -1169,6 +1241,7 @@
 
   root.BinderDemo = Object.freeze({
     DESTINATIONS: DESTINATIONS,
+    VIEWPORTS: VIEWPORTS,
     MIRROR_EDITS: MIRROR_EDITS,
     BOOT_SCRIPTS: BOOT_SCRIPTS,
     TELEGRAM_STANDIN: TELEGRAM_STANDIN,
@@ -1188,6 +1261,8 @@
     probeHit: probeHit,
     sameOriginAs: sameOriginAs,
     workerPathOf: workerPathOf,
+    viewportFor: viewportFor,
+    frameStyleFor: frameStyleFor,
     scenarioFor: scenarioFor,
     answerFor: answerFor,
     meFor: meFor,

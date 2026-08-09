@@ -56,7 +56,18 @@
   </section>
 
   <section class="stage">
-    <p class="frame-path" id="frame-path"></p>
+    <div class="frame-bar">
+      <p class="frame-path" id="frame-path"></p>
+      <!--
+        The frame's size, not the console's. An iframe's width is the
+        viewport the page inside it lays out against, so narrowing this
+        frame is how the shipped pages' own phone rules are seen; the
+        console around it stays a desktop tool and nothing here pretends
+        to be a device.
+      -->
+      <div class="viewports" id="viewports" role="group"
+           aria-label="Frame size"></div>
+    </div>
     <iframe id="stage" title="The product, running"></iframe>
   </section>
 </main>
