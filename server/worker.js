@@ -1068,8 +1068,10 @@ async function handleSubmit(request, env, origin, caller) {
         caller.accountId, ciphertext, now, supersedes,
         supersedes, caller.accountId, supersedes
       ),
-      env.DB.prepare("SELECT ciphertext FROM submissions WHERE supersedes = ?")
-        .bind(supersedes),
+      env.DB.prepare(
+        "SELECT ciphertext FROM submissions " +
+        "WHERE supersedes = ? AND account_id = ?"
+      ).bind(supersedes, caller.accountId),
     ]);
   } catch (error) {
     /*
@@ -1104,11 +1106,20 @@ async function handleSubmit(request, env, origin, caller) {
    * exactly the 200-with-no-row the member cannot see, and it is the
    * worst outcome available on this route.
    *
-   * The row is identified by its ciphertext because that is the one
-   * thing about it the caller already knows. Two seals of the same
-   * measurement never agree - a fresh ephemeral point and fresh nonces
-   * per submission, which apps/web/crypto.js is held to - so this cannot
-   * mistake somebody else's correction for its own.
+   * The row is identified by its ciphertext AND by the caller's account,
+   * and the account clause is the load-bearing half. The ciphertext is
+   * the one thing about the row the caller already knows, which is what
+   * makes it a usable handle - but it is a value the caller SENT, not a
+   * fact about them: ciphertext is not a secret, every blob travels to
+   * the keyholder in the export, and the field is free text on the wire.
+   * Ask only "is there a row naming this target whose bytes are these"
+   * and a member naming somebody else's entry, replaying the ciphertext
+   * of the correction that already supersedes it, reads back a row they
+   * did not write and is told 200 while nothing was stored. Do not
+   * simplify this WHERE back to the pointer alone. Nothing legitimate
+   * depends on the wider question: a row this statement is looking for is
+   * one the insert above would have written, and that row always carries
+   * the caller's own account id.
    *
    * Every row naming the target is examined rather than the first one,
    * and the difference is only visible against a database this index has
