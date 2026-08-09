@@ -31,6 +31,19 @@ _demo/
 # opposite and starts hunting for a secret to ignore.
 .wrangler/
 
+# The fleet's machine-local state - agent worktrees, settings.json /
+# settings.local.json, scheduled_tasks.lock. This is how the parallel
+# agent sessions are driven on this one machine; none of it describes
+# the project and none of it should ever ship. It is also what makes
+# `git status --porcelain` non-empty while it sits untracked, which is
+# enough to make `./run bake` refuse to stamp a commit against a dirty
+# tree - so ignoring it is what lets the bake run at all.
+#
+# Nothing sensitive is being hidden here either: like .wrangler above,
+# no credentials live in this directory. The fleet's secrets live in
+# the user profile, outside the repository.
+.claude/
+
 # ---------------------------------------------------------------------
 # KEYS. Nothing resembling a private key may ever reach a commit.
 #
