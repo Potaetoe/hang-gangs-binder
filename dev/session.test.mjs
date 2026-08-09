@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 41);
+const { check, report } = nodeTestSuite("session/auth", 49);
 
 const values = new Map();
 globalThis.sessionStorage = {
@@ -38,12 +38,34 @@ const banner = {
     return selector === "[data-dev-identity]" ? identity : null;
   },
 };
+/*
+ * The rail's session home - the half of the shell session.js does not
+ * paint and must not learn about. signout.js owns these three, and the
+ * stub draws them because every signed-in page does.
+ *
+ * They start in the markup's own resting state: the name says nothing,
+ * the door is open, the exit is hidden. A stub that started at the
+ * signed-in reading would let a repaint that never ran look identical
+ * to one that ran correctly.
+ */
+let railRegistrations = 0;
+const rail = {
+  "session-who": { textContent: "" },
+  "sign-in": { hidden: false },
+  "sign-out": {
+    hidden: true,
+    addEventListener() { railRegistrations += 1; },
+  },
+};
+
 globalThis.document = {
   readyState: "complete",
   querySelector(selector) {
     return selector === "[data-dev-session]" ? banner : null;
   },
-  getElementById() { return null; },
+  getElementById(id) {
+    return Object.prototype.hasOwnProperty.call(rail, id) ? rail[id] : null;
+  },
 };
 
 await import("data:text/javascript," + encodeURIComponent(sessionSource));
@@ -371,5 +393,117 @@ check("the prefill key is declared in signout.js",
 check("submit.js borrows that key rather than declaring a second copy",
   !/"hgb-submit-prefill"/.test(submitSource) &&
   /BinderSignOut|SignOut\.prefillKey/.test(submitSource));
+
+/* ------------------------------------------------------------------ */
+/* The rail, which is the shell half this file must not paint - #166.  */
+
+/*
+ * The development-session card above is session.js's own surface and is
+ * already un-announced when the credential goes. The rail is not: it is
+ * painted once by signout.js at load and, until this, never again. So a
+ * credential dropped under the tab left the rail describing it, and the
+ * page said "your sign-in is no longer valid" three inches from "Signed
+ * in as alice" with nothing on screen to say which half was true.
+ *
+ * THE DIRECTION IS THE CONTRACT, NOT JUST THE EFFECT. The store
+ * announces that its credential changed and says nothing about what
+ * paints; a surface subscribes and re-reads. Wired the other way round -
+ * session.js reaching for #session-who - every behavioral arm below
+ * still passes, and the credential store has acquired the rail's markup,
+ * so the next surface that needs the same treatment is another edit to
+ * the store. The last two arms are what refuse that shape.
+ *
+ * The notification carries no value on purpose. A listener handed a copy
+ * can act on a credential the store has already moved past; one that
+ * re-reads cannot, and the store stays the single home of what is true.
+ *
+ * signout.js is loaded here rather than at the top because loading it
+ * earlier would have it repainting through every clear() above, and an
+ * arm that passes because some unrelated line happened to leave the rail
+ * blank is not an arm.
+ */
+check("the credential store names no rail element of its own",
+  !/session-who/.test(sessionSource));
+check("the rail subscribes rather than the store reaching for the rail",
+  /onChange\s*\(/.test(signOutSource) && /onChange/.test(sessionSource));
+
+// Cleared before the file is loaded so the paint it does on the way in is
+// the signed-out one. Inheriting whatever session the section above left
+// behind would make the first reading below depend on test order.
+Session.clear();
+await import("data:text/javascript," + encodeURIComponent(signOutSource));
+
+location.pathname = "/submit.html";
+redirects.length = 0;
+Session.write(GOOD);
+Session.require();
+
+// Captured before the act, for the reason the banner's arm gives: "Not
+// signed in" after the fact is also what a repaint that never happened
+// leaves behind, and the door standing open is the state the markup
+// ships in. Each arm below carries this, so none of them can pass on a
+// rail that was never painted at all.
+const railHeld =
+  rail["session-who"].textContent === "Signed in as somehandle" &&
+  rail["sign-out"].hidden === false && rail["sign-in"].hidden === true;
+const registrationsHeld = railRegistrations;
+
+Session.clear();
+check("the rail stops naming a member whose credential has just gone",
+  railHeld && rail["session-who"].textContent === "Not signed in");
+check("and the way back in is offered again in the same breath",
+  railHeld && rail["sign-in"].hidden === false &&
+  rail["sign-out"].hidden === true);
+/*
+ * A browser drops a repeat addEventListener with the same type and the
+ * same function reference, so re-registering is a no-op there and this
+ * stub cannot prove that - it has no such rule. What it can prove is the
+ * thing that makes the question moot: the death repaint takes the
+ * no-session branch and never reaches the registration at all. The first
+ * half is what stops that reading from being free - the signed-in
+ * repaint has to have wired the button before its absence means anything.
+ */
+check("a repaint for a dead session wires no second sign-out handler",
+  registrationsHeld === 1 && railRegistrations === registrationsHeld);
+
+/*
+ * The caller nobody writes: read() disposing of a value it will not use.
+ * A subscription bolted to the pages that act on a 401 leaves this path
+ * repainting nothing, and this is the path that runs when a tab is left
+ * open past the session's expiry - the common way to meet the bug.
+ */
+Session.write(GOOD);
+Session.require();
+let notices = 0;
+Session.onChange(function () { notices += 1; });
+values.set("hgb-session", "not json");
+check("a credential that rots under the tab repaints the rail as it goes",
+  Session.read() === null &&
+  rail["session-who"].textContent === "Not signed in");
+/*
+ * Once, and the count is the point rather than a tidiness check. Every
+ * listener re-reads, and read() is itself a caller of clear(): a store
+ * that announced again from inside its own announcement would recurse
+ * through its readers until the stack gave out, in the browser, on the
+ * expiry path.
+ */
+check("and the store announces that once, not once per reader that looks",
+  notices === 1);
+
+/*
+ * A reader that throws is a painting bug. Letting it out of clear() would
+ * make it a credential bug: clear() is called from read() and from the
+ * refusal paths, and an exception escaping it turns disposal of a dead
+ * token into a page-breaking error at a moment nobody chose.
+ */
+Session.write(GOOD);
+Session.require();
+let reached = false;
+Session.onChange(function () { throw new Error("a paint that failed"); });
+Session.onChange(function () { reached = true; });
+Session.clear();
+check("a reader that throws costs neither the drop nor the next reader",
+  Session.read() === null && reached === true &&
+  rail["session-who"].textContent === "Not signed in");
 
 report();
