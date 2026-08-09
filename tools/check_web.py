@@ -8,7 +8,9 @@ Derived from what is actually in the directory rather than from a
 hand-maintained list, because a hand-maintained list only knows about
 files somebody remembered to add to it.
 
-Twenty checks:
+The checks, numbered - the count is the list rather than a sentence
+above it, because a number in prose is the thing that goes stale on the
+day a check is added:
 
 1. Every local href/src in the HTML resolves to a file that exists. A
    rename that misses one reference publishes a page that 404s its own
@@ -372,6 +374,123 @@ Twenty checks:
     engine and #75 rejected jsdom for that. The long note above the
     check says what that does and does not buy, and why the branch is
     found by what it does rather than by its breakpoint.
+
+21. The number of chart series slots is one number, and it is written in
+    three places that must agree: the .series-N rules in theme.css, the
+    --color-series-N set in every palette, and the cycle length
+    dashboard.js divides by when it picks a slot.
+
+    This is the guard rail #80's unused-CSS cross-check asked for, and
+    the reason that cross-check does not ship as a general dead-CSS
+    tool. dashboard.js names no series class anywhere. It BUILDS them:
+
+        const cls = "chart-series series-" + (index % 6);
+
+    and hangs the result on a <polyline>, a <circle> and a <text>. So a
+    plain search of this repository for "series-0" finds nothing, in any
+    file, while those twelve selectors are the most heavily exercised
+    chart rules in the stylesheet - every line, dot and end-label on the
+    weight-over-time chart wears one. A checker that harvests unused CSS
+    by looking for literal strings deletes all twelve and goes green.
+    THAT is the hazard here, and it is why the arm below is a pin on the
+    coupling rather than a search for orphans.
+
+    Both directions, and neither is loud on its own:
+
+    - a slot the stylesheet does not define paints a line with an unset
+      custom property, which is a line drawn in the inherited color -
+      two people's histories rendered as one color, on a chart whose
+      whole job is telling them apart.
+    - a slot nothing ever selects is a rule that renders never, which is
+      the orphan the cross-check was looking for in the first place.
+    - a palette carrying fewer slots than the others fails the same way
+      as the first case, on that palette only. A fifth palette is a live
+      prospect (#82), and it arrives by copying a block that already has
+      six values in it - so the direction to watch is a copy that got
+      trimmed, on a theme nobody had open.
+
+    dashboard.js's half is READ, never edited, and its absence is a
+    reported problem rather than a skip: a producer that stopped
+    composing the class, or that started composing it some other way,
+    leaves the stylesheet's slots answering to nothing, and #34 is what
+    this repository paid to learn that a rule which cannot find its
+    subject must say so instead of passing.
+
+22. The loading shape: theme-init.js is the only script in any page's
+    head and blocks there deliberately, and every other script the site
+    ships runs at the end of the body, classic.
+
+    #80 asked for a review of end-of-body classic scripts against
+    defer-in-head as the pages were rebuilt. The pages have settled and
+    the answer recorded here is DO NOT MOVE THEM. The reasoning, so the
+    question is not reopened without new facts:
+
+    - It buys no bytes. This whole issue is a transfer budget, and defer
+      changes when a file is fetched and executed, never how big it is.
+    - It buys no meaningful earlier fetch either. Every page here is a
+      few kilobytes of HTML, so the browser's preload scanner has
+      already seen every <script src> in the document - end of body
+      included - before the first byte of any of them arrives. The
+      window head+defer would win back is the parse time of a document
+      that arrives in one packet.
+    - It costs the invariant this check exists to hold. Today "the head
+      contains exactly one script, and it is the one that must block" is
+      a sentence a reader can verify at a glance. Move ten deferred
+      files up there and the head becomes a place scripts live, which is
+      the state in which an eleventh arriving WITHOUT defer reintroduces
+      the flash and reads as ordinary.
+
+    So the arm worth having is the one nothing watched before: the
+    anti-flash contract itself. theme-init.js exists as a same-origin
+    file rather than an inline <script> because the CSP forbids
+    'unsafe-inline', and it earns that request by running before first
+    paint. Add `defer` to it - one word, in the direction the whole
+    ticket was pointing - and it paints the default palette first, then
+    corrects it. Every other check in this gate stays green through
+    that, and the flash is a frame long, which is exactly the kind of
+    regression nobody reproduces on demand.
+
+    The body half holds two more, and the second is the one worth the
+    check. POSITION: every same-origin script sits after all the markup,
+    in one run, because session.js and theme.js query the document at
+    top level with nothing guarding them. Content appearing after that
+    run is refused rather than reasoned about, because "is this element
+    queried at top level by any of the ten files above it?" is a
+    question no reviewer should have to answer twice.
+
+    ORDER: a script is loaded after whichever module publishes the
+    namespace it captures. This is not a precaution. The wiring modules
+    here do not reach for a namespace when they use it; they take it off
+    the global object AS THEY RUN -
+
+        const UI = root.BinderUI;                 apps/web/auth.js
+        const Session = root.BinderSession;       apps/web/signout.js
+
+    - one statement at module level, evaluated the moment the file
+    executes. Put auth.js above ui.js and UI is undefined for the life
+    of the page. What makes that worth a gate rather than a code review
+    is the next line in each of them: these modules guard on the
+    captured value (`if (element && UI)`), so nothing throws, no console
+    error appears, and the page simply stops saying anything. The
+    publisher roster this arm orders against is MODULE_EXPORTS, already
+    in this file for check 15 - one home for which module publishes
+    what, read twice.
+
+    That arm is also the precondition on any future move. head+defer
+    preserves document order for classic scripts, so the run COULD go up
+    there intact - but "intact" is the whole load, and until now nothing
+    said so. Whoever reopens this decision inherits a machine-checked
+    order rather than an argument.
+
+    Third-party scripts are outside all of this by origin: index.html's
+    Telegram widget is async, loads from telegram.org, and is the one
+    script here whose execution point is not document order. It is
+    exempt because nothing in this repository sets its attributes.
+
+    Reversing the decision is a normal act and a visible one, the same
+    shape as raising a ceiling in tools/check_budget.py: move the tags
+    and change this check in the same diff, where a reviewer sees the
+    rule move next to the reason it moved.
 """
 
 import base64
@@ -2513,6 +2632,354 @@ def module_export_problems():
     return problems
 
 
+CHART_FILE = "dashboard.js"
+
+# What dashboard.js does instead of naming a series class: it builds one,
+# and the built name is the only place the cycle length is written down on
+# that side. Anchored on the concatenation rather than on a line number,
+# because the producer moves within its file and this shape does not.
+#
+# A producer spelled some other way - a named constant instead of a
+# literal, say - matches nothing here and is reported as ABSENT rather
+# than passed over. That direction is deliberate: the stylesheet's slots
+# would then be answering to a number this check cannot read, and a rule
+# that has lost its subject must say so.
+SERIES_CYCLE = re.compile(
+    r"""["'][^"']*\bseries-["']\s*\+\s*"""
+    r"""\(\s*[A-Za-z_$][\w$]*\s*%\s*(\d+)\s*\)""")
+
+# The stylesheet's three halves of the same number. Stroke on the line,
+# fill on the shapes meant to be solid, and the value each slot resolves
+# to, one set per palette.
+SERIES_STROKE = re.compile(r"^\.series-(\d+)$")
+SERIES_FILL = re.compile(r"^(?:circle|text)\.series-(\d+)$")
+SERIES_TOKEN = re.compile(r"--color-series-(\d+)\s*:")
+
+
+def series_cycle_length(js):
+    """How many slots the chart script cycles through, or None."""
+    found = SERIES_CYCLE.search(js)
+    return int(found.group(1)) if found else None
+
+
+def stylesheet_series(css):
+    """(stroke slots, fill slots, [(palette, slots)]) out of stylesheet text.
+
+    Takes the text rather than reading the file, for the reason
+    css_role_problems() gives: a rule exercised only through the
+    directory it guards is a rule tested against today's content.
+    """
+    stroke = set()
+    fill = set()
+    palettes = []
+    for selectors, block in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        for part in selectors.split(","):
+            part = part.strip()
+            found = SERIES_STROKE.match(part)
+            if found:
+                stroke.add(int(found.group(1)))
+            found = SERIES_FILL.match(part)
+            if found:
+                fill.add(int(found.group(1)))
+        slots = {int(n) for n in SERIES_TOKEN.findall(block)}
+        if slots:
+            palettes.append((re.sub(r"\s+", " ", selectors).strip(), slots))
+    return stroke, fill, palettes
+
+
+def missing_slots(slots, cycle):
+    """Which of 0..cycle-1 a set lacks, and which it has beyond them."""
+    wanted = set(range(cycle))
+    return sorted(wanted - slots), sorted(slots - wanted)
+
+
+def css_series_problems(css, js):
+    """[problem] for a chart script and a stylesheet that disagree on slots.
+
+    The trap, restated where somebody reading a failure meets it: no
+    .series-N name appears as a literal string anywhere in this
+    repository, so every one of these selectors looks unused to a search
+    and none of them is.
+    """
+    problems = []
+    cycle = series_cycle_length(js)
+    if cycle is None:
+        return ["apps/web/%s composes no series class this check can read, "
+                "so nothing says how many slots theme.css must define. The "
+                "shape it reads is a string ending \"series-\" concatenated "
+                "with a modulo - if the chart now picks its slot some other "
+                "way, teach this check the new shape rather than leaving "
+                "the stylesheet's slots answering to nothing" % CHART_FILE]
+    if not cycle:
+        return ["apps/web/%s cycles through 0 series slots, so every chart "
+                "line would divide by zero picking one" % CHART_FILE]
+
+    stroke, fill, palettes = stylesheet_series(css)
+
+    absent, extra = missing_slots(stroke, cycle)
+    if absent:
+        problems.append(
+            "apps/web/%s cycles through %d series slots and apps/web/%s "
+            "defines no .series-%s rule, so a chart line at that slot is "
+            "stroked in whatever color it inherits - which is the color "
+            "of the line beside it, on the one chart whose job is telling "
+            "two people apart"
+            % (CHART_FILE, cycle, STYLESHEET,
+               ", .series-".join(str(n) for n in absent)))
+    if extra:
+        problems.append(
+            "apps/web/%s defines .series-%s, past the %d slots apps/web/%s "
+            "cycles through, so those rules render never"
+            % (STYLESHEET, ", .series-".join(str(n) for n in extra),
+               cycle, CHART_FILE))
+
+    if fill != stroke:
+        problems.append(
+            "apps/web/%s strokes slots %s but fills %s. The dot on a point "
+            "and the handle at the end of a line wear the same class as the "
+            "line does, so a slot with a stroke and no fill draws its "
+            "history in one color and labels it in another"
+            % (STYLESHEET, sorted(stroke) or "none", sorted(fill) or "none"))
+
+    if not palettes:
+        problems.append(
+            "apps/web/%s sets no --color-series-N anywhere, so every "
+            ".series-N rule above resolves to an unset custom property and "
+            "the chart draws in one color" % STYLESHEET)
+    for palette, slots in palettes:
+        short, over = missing_slots(slots, cycle)
+        if short or over:
+            problems.append(
+                "apps/web/%s gives \"%s\" the series values %s, and there "
+                "are %d slots to fill. A palette is copied from the one "
+                "open at the time and trimmed, and the chart only looks "
+                "wrong on that theme"
+                % (STYLESHEET, palette, sorted(slots), cycle))
+
+    return problems
+
+
+def series_problems():
+    """[problem] for the shipped stylesheet and the shipped chart script."""
+    css = stylesheet_text()
+    path = os.path.join(WEB, CHART_FILE)
+    if css is None or not os.path.exists(path):
+        return []  # check 1's to report
+    return css_series_problems(
+        css, strip_js_comments(open(path, encoding="utf-8").read()))
+
+
+PREPAINT_SCRIPT = "theme-init.js"
+
+HEAD_CLOSE = re.compile(r"</head\s*>", re.I)
+BODY_CLOSE = re.compile(r"</body\s*>", re.I)
+SCRIPT_OPEN = re.compile(r"<script\b[^>]*>", re.I)
+SCRIPT_ELEMENT = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.S | re.I)
+
+# A bare attribute name, so a filename containing the word does not read
+# as the attribute. Both are valueless in practice and both are accepted
+# with a value, because HTML accepts defer="defer".
+LOADING_ATTRIBUTE = re.compile(r"(?:^|\s)(defer|async)(?=[\s/>=])", re.I)
+
+# Anything that is not a same-origin path: a scheme, a protocol-relative
+# host, an inline payload.
+OFF_ORIGIN = re.compile(r"^(?:[a-z][a-z0-9+.-]*:)?//|^[a-z]+:", re.I)
+
+
+def tag_attribute(tag, name):
+    """One quoted attribute value out of a tag, or None.
+
+    Both quote styles, for the reason the label roles give: an arm that
+    walks past a single quote fails open, and the gate then says the
+    thing was checked.
+    """
+    for quote in ('"', "'"):
+        found = re.search(r"\b%s\s*=\s*%s([^%s]*)%s"
+                          % (name, quote, quote, quote), tag, re.I)
+        if found:
+            return found.group(1)
+    return None
+
+
+def loading_attribute(tag):
+    """"defer", "async", or None for a script tag that carries neither."""
+    found = LOADING_ATTRIBUTE.search(tag)
+    return found.group(1).lower() if found else None
+
+
+def same_origin_scripts(markup):
+    """(tag, src) for every same-origin <script src> in document order."""
+    found = []
+    for tag in SCRIPT_OPEN.findall(markup):
+        source = tag_attribute(tag, "src") or ""
+        if source and not OFF_ORIGIN.match(source):
+            found.append((tag, source))
+    return found
+
+
+def page_body(text):
+    """The markup between </head> and </body>, or None if either is absent."""
+    head_close = HEAD_CLOSE.search(text)
+    body_close = BODY_CLOSE.search(text)
+    if not head_close or not body_close:
+        return None
+    return text[head_close.end():body_close.start()]
+
+
+def page_script_run(text):
+    """The site's own scripts on one page, in the order they execute."""
+    body = page_body(text)
+    return [] if body is None else [src for _tag, src
+                                    in same_origin_scripts(body)]
+
+
+def page_loading_problems(text):
+    """[problem] for one page's script placement and loading attributes.
+
+    Takes the page text with comments already gone, so both arms can be
+    exercised on strings rather than only through the five files that
+    happen to exist.
+    """
+    head_close = HEAD_CLOSE.search(text)
+    body_close = BODY_CLOSE.search(text)
+    if not head_close or not body_close:
+        return ["has no %s, so where its scripts sit cannot be read. A "
+                "check that cannot find its subject reports that rather "
+                "than passing" % ("</head>" if not head_close else "</body>")]
+
+    problems = []
+    head = text[:head_close.start()]
+    body = text[head_close.end():body_close.start()]
+
+    head_scripts = SCRIPT_OPEN.findall(head)
+    prepaint = [tag for tag in head_scripts
+                if tag_attribute(tag, "src") == PREPAINT_SCRIPT]
+
+    for tag in head_scripts:
+        if tag in prepaint:
+            continue
+        problems.append(
+            "loads %s in its head. %s is the only script that may block "
+            "there, and it earns that by painting the saved palette "
+            "before the first frame - a head that scripts live in is a "
+            "head where the next one arrives without anybody weighing it"
+            % (tag_attribute(tag, "src") or "an inline script",
+               PREPAINT_SCRIPT))
+
+    for tag in prepaint:
+        attribute = loading_attribute(tag)
+        if attribute:
+            problems.append(
+                "gives %s the %s attribute, which is the one edit that "
+                "silently undoes it: the browser then paints the default "
+                "palette and corrects it a frame later. It is a file "
+                "rather than an inline script because the CSP forbids "
+                "'unsafe-inline', and it is worth that request only while "
+                "it blocks" % (PREPAINT_SCRIPT, attribute))
+
+    if not prepaint:
+        problems.append(
+            "carries no %s in its head, so it paints the default palette "
+            "and corrects it once the body runs" % PREPAINT_SCRIPT)
+
+    own = same_origin_scripts(body)
+    for tag, source in own:
+        attribute = loading_attribute(tag)
+        if attribute:
+            problems.append(
+                "gives %s the %s attribute. The site's own scripts run at "
+                "the end of the body, classic and in document order, and "
+                "check 22's entry in this file records why - moving one "
+                "means moving the run and changing that check in the same "
+                "diff" % (source, attribute))
+
+    if own:
+        first = body.index(own[0][0])
+        tail = SCRIPT_ELEMENT.sub("", body[first:])
+        if tail.strip():
+            problems.append(
+                "puts content after the run of scripts at the end of its "
+                "body. Two of those files query the document at top level "
+                "with nothing guarding them, so markup below them is "
+                "markup they may not find. Scripts and whitespace only "
+                "down there, or move the run and say so here")
+
+    return problems
+
+
+# A namespace TAKEN OFF the global object, which is the form that makes
+# document order load-bearing. `const UI = root.BinderUI;` runs the moment
+# the file does, so a script placed above its publisher captures undefined
+# and every later call reads a member of nothing.
+#
+# The prefix is what makes this narrow enough to be worth having. The
+# names also appear in prose and in messages, and a bare search for
+# "BinderUI" would order a page against a sentence. Measured rather than
+# assumed before it was written this way: across every script in apps/web
+# the prefixed and unprefixed counts are identical, every one of the 24
+# references, so nothing is lost by requiring the prefix.
+CAPTURED_NAMESPACE = r"%s\s*\.\s*%%s\b" % GLOBAL_OBJECT
+
+
+def module_captures(js):
+    """The namespaces one script takes off the global object."""
+    return {namespace for namespace in set(MODULE_EXPORTS.values())
+            if re.search(CAPTURED_NAMESPACE % namespace, js)}
+
+
+def run_order_problems(run, captures):
+    """[problem] for a run of scripts that reads a namespace too early.
+
+    Pure, over a run and a capture map, because the hazard is a page's
+    ORDER and a rule exercised only against the five orders that exist
+    today is a rule tested against today's content.
+    """
+    publisher = {namespace: name for name, namespace in MODULE_EXPORTS.items()}
+    at = {}
+    for index, name in enumerate(run):
+        at.setdefault(name, index)
+
+    problems = []
+    for name in run:
+        for namespace in sorted(captures.get(name, ())):
+            owner = publisher.get(namespace)
+            if owner is None or owner == name:
+                continue
+            if owner not in at:
+                problems.append(
+                    "loads %s, which takes %s off the global object as it "
+                    "runs, and never loads %s. It captures undefined, and "
+                    "the failure surfaces wherever that value is next read "
+                    "rather than here" % (name, namespace, owner))
+            elif at[owner] > at[name]:
+                problems.append(
+                    "loads %s before %s. %s takes %s off the global object "
+                    "as it runs, so it captures undefined - and these "
+                    "modules guard on the captured value, which means the "
+                    "page does not throw, it goes quiet"
+                    % (name, owner, name, namespace))
+    return problems
+
+
+def loading_problems():
+    """(page, problem) for every published page's loading shape."""
+    captures = {}
+    for name in sorted(os.listdir(WEB)):
+        if name.endswith(".js"):
+            captures[name] = module_captures(strip_js_comments(
+                open(os.path.join(WEB, name), encoding="utf-8").read()))
+
+    problems = []
+    for name in html_pages():
+        text = open(os.path.join(WEB, name), encoding="utf-8").read()
+        text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+        for problem in page_loading_problems(text):
+            problems.append((name, problem))
+        for problem in run_order_problems(page_script_run(text), captures):
+            problems.append((name, problem))
+    return problems
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -2606,6 +3073,12 @@ def main():
 
     for problem in surface_style_problems():
         problems.append("%s %s." % (STYLESHEET, problem))
+
+    for problem in series_problems():
+        problems.append("%s." % problem)
+
+    for page, problem in loading_problems():
+        problems.append("%s %s." % (page, problem))
 
     for rel, description in key_shaped_content():
         problems.append(
