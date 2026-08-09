@@ -864,10 +864,12 @@ await check("weight over time can be left out entirely", () =>
  * else: how many lines there would have been is exactly what the floor
  * is holding back.
  */
-const withheldRows = CORPUS.concat(
-  /* Three repeat submitters, below MIN_CELL, from rows the corpus
-     already has - so nothing but the number of lines changes. */
-  CORPUS.slice(0, 3).map((row, index) => ({
+/* The same seven people, each keeping one row, plus two who submitted
+   twice. Two lines is under MIN_CELL and seven entries is over it, so
+   the bases publish and the series alone is taken out - which is the
+   state #177 was reported from. */
+const withheldRows = latestPerPerson(CORPUS).concat(
+  latestPerPerson(CORPUS).slice(0, 2).map((row, index) => ({
     ...row,
     id: 900 + index,
     kg: row.kg + 3,

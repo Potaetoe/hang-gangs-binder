@@ -652,10 +652,10 @@ await check("a category counted zero times still gets a visible bar", () => {
 });
 
 /* The multi-select panel carries no share on any corpus - see the pair
-   of arms in section 5. Here it is the zero case, which is the one that
-   used to pass for the wrong reason: a total of nothing suppressed the
-   percentage all by itself, so this line stayed green through every
-   version of the 180% defect. */
+   of arms in section 5. This is the zero case, and on its own it proves
+   nothing: a total of nothing suppresses a percentage all by itself, so
+   this line stays green whatever the share rule is. The arms in section
+   5 are what hold it; this one holds the edge they do not reach. */
 await check("with nothing counted a bar's value is still a bare count", () =>
   textsOf(withClass(figureNamed(EMPTY, "Feedism affiliations"),
     "chart-value")).join("|") === "0|0|0|0");
@@ -937,10 +937,9 @@ const SUPPRESSED = scene(() => draw(SCATTERED, "people", "imperial"));
 
 await check("a breakdown suppressed to nothing says so instead of drawing",
   () => {
-    // It used to draw a bar chart with no bars in it: a heading, and a
-    // blank region under it. That is #180 exactly - the floor working
-    // and the page unable to say so, so a member reads protection as a
-    // fault.
+    // A bar chart with no bars in it is a heading over a blank region,
+    // which is #180 exactly: the floor working and the page unable to
+    // say so, so a member reads protection as a fault.
     const country = figureNamed(SUPPRESSED, "Country");
     return withTag(country, "svg").length === 0 &&
       emptyNotesOf(country)[0] === WITHHELD &&
