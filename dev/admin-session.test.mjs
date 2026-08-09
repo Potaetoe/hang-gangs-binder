@@ -506,9 +506,19 @@ async function loadAdmin(session, options = {}) {
     requests.push(request);
     const method = request.options.method || "GET";
     const path = url.slice(url.indexOf("/", "https://".length));
+    /*
+     * Consulted for EVERY route rather than for /membership alone - #166.
+     *
+     * A refusal hook that only the membership calls could see made the
+     * other five authenticated calls on this page untestable against the
+     * one thing that matters about them, which is what they do when the
+     * Worker stops accepting the session. Five of them did nothing, and
+     * the suite could not say so. Every scenario below that names a path
+     * relies on this being asked first.
+     */
+    const refused = refuse ? refuse(method, path) : null;
+    if (refused) return response(refused.status, refused.body);
     if (path.startsWith("/membership")) {
-      const refused = refuse ? refuse(method, path) : null;
-      if (refused) return response(refused.status, refused.body);
       if (method === "GET") return response(200, nextMembership());
       return response(200, { ok: true });
     }
@@ -1069,7 +1079,9 @@ check("a successful add re-reads rather than guessing what the table holds",
 /* The Worker's own refusal, shown in its own words - and the id kept, so
  * a typo is corrected rather than retyped. */
 const refusedAdd = await loadAdmin(ADMIN, {
-  refuse: (method) => method === "POST"
+  // Named by path as well as method since the hook went site-wide, so this
+  // still says what it always said: the ADD was refused, not every POST.
+  refuse: (method, path) => method === "POST" && path.startsWith("/membership")
     ? { status: 400, body: { error: "A numeric Telegram id is needed." } }
     : null,
 });
@@ -1131,7 +1143,7 @@ check("a malformed row is removed by the bytes GET handed back",
  * job is to believe it. */
 const refusedRemoval = await loadAdmin(ADMIN, {
   membership: FULL,
-  refuse: (method) => method === "DELETE"
+  refuse: (method, path) => method === "DELETE" && path.startsWith("/membership")
     ? {
       status: 409,
       body: {
@@ -1154,7 +1166,9 @@ check("a refused removal leaves the row on the page and re-reads",
 /* A session the Worker has stopped accepting, on the page that holds
  * every submission in the clear. */
 const expired = await loadAdmin(ADMIN, {
-  refuse: () => ({ status: 401, body: { error: "Unauthorized." } }),
+  refuse: (method, path) => path.startsWith("/membership")
+    ? { status: 401, body: { error: "Unauthorized." } }
+    : null,
 });
 await settle();
 check("a membership call the session cannot make ends the session and leaves",
@@ -1192,6 +1206,120 @@ check("a row with a role this page cannot name is reported rather than hidden",
 /* The pane is behind the same gate as everything else here. */
 check("a member session never reaches the membership routes",
   requestsFor(member, "/membership", "GET").length === 0);
+
+/* ------------------------------------------------------------------ */
+/* Every authenticated call, one answer to a refused session - #166.  */
+
+/*
+ * THE RULE THIS PAGE ALREADY WROTE DOWN, HONORED BY ONE CALL IN SIX.
+ *
+ * admin.js says it twice, in its own words: "a 401 ends the tab: this page
+ * holds every submission in the clear, and a session the Worker no longer
+ * accepts is not one to keep a key and a corpus sitting behind." Only the
+ * membership family did it. Export, the published-status read, unpublish,
+ * publish and row deletion each printed a sentence and stayed - on a page
+ * holding the decrypted corpus, with the private key in IndexedDB beside
+ * it. The gate was green throughout, because nothing had ever asked those
+ * five what they do with a 401.
+ *
+ * So each of the six is driven separately rather than through one loop.
+ * They are six different closures reached by six different acts, and a
+ * loop over a shared helper would prove the helper works while saying
+ * nothing about whether a given button reaches it - which is the exact
+ * shape of the bug: the helper existed and five callers went around it.
+ *
+ * What each arm asserts is the whole answer, not the sentence alone:
+ *   - the credential is gone (Session.read()),
+ *   - the tab is leaving (redirects),
+ *   - and the words name the session rather than the number, because
+ *     "The server answered 401." is what F8 put in front of an admin who
+ *     had clicked nothing.
+ */
+const DEAD = { status: 401, body: { error: "Unauthorized." } };
+const named = (element) =>
+  /sign in again/i.test(element.textContent) &&
+  !/\b401\b/.test(element.textContent) &&
+  !/server answered/i.test(element.textContent);
+
+/*
+ * The read that fires on page load, before the admin has touched
+ * anything - F8's own case. It is also the only one of the six that had
+ * no 401 branch at all, so it fell through to the raw-status sentence.
+ */
+const deadOnLoad = await loadAdmin(ADMIN, {
+  refuse: (method, path) => method === "GET" && path === "/snapshot"
+    ? DEAD : null,
+});
+await settle();
+check("the published-state read answers a dead session in words, not a number",
+  named(deadOnLoad.elements["published-state"]));
+check("and the read nobody asked for still ends the session and leaves",
+  Session.read() === null && redirects.includes("index.html"));
+
+const deadExport = await loadAdmin(ADMIN, {
+  refuse: (method, path) => path === "/export" ? DEAD : null,
+});
+await deadExport.elements.run.click();
+await settle();
+check("a refused export ends the session and leaves",
+  named(deadExport.elements.status) && Session.read() === null &&
+  redirects.includes("index.html"));
+
+/* Unpublish and publish both need something on the public page first:
+ * the button is only offered when there is a document to take down. */
+const deadUnpublish = await loadAdmin(ADMIN, {
+  published: LIVE,
+  refuse: (method, path) => method === "DELETE" && path === "/snapshot"
+    ? DEAD : null,
+});
+await deadUnpublish.elements.unpublish.click();
+await settle();
+check("a refused unpublish ends the session and leaves",
+  named(deadUnpublish.elements["unpublish-status"]) &&
+  Session.read() === null && redirects.includes("index.html"));
+
+const deadPublish = await loadAdmin(ADMIN, {
+  refuse: (method, path) => method === "POST" && path === "/snapshot"
+    ? DEAD : null,
+});
+await deadPublish.elements.run.click();
+await deadPublish.elements.publish.click();
+await settle();
+check("a refused publish ends the session and leaves",
+  named(deadPublish.elements["publish-status"]) && Session.read() === null &&
+  redirects.includes("index.html"));
+
+/* Row deletion, which is reached only after an export has drawn rows -
+ * so this scenario lets /export through and refuses the delete alone. */
+const deadDelete = await loadAdmin(ADMIN, {
+  refuse: (method, path) => path.startsWith("/submission/") ? DEAD : null,
+});
+await deadDelete.elements.run.click();
+await settle();
+const deadRow = deadDelete.elements.tbody.children.find((row) =>
+  Number(row.children[0] && row.children[0].textContent) === 41);
+const deadRowButton = deadRow && descendants(deadRow).find((element) =>
+  element.tagName === "BUTTON");
+await press(deadRowButton);
+await settle();
+check("a refused row deletion ends the session and leaves",
+  named(deadDelete.elements.status) && Session.read() === null &&
+  redirects.includes("index.html"));
+
+/*
+ * And the structural half, which is what stops the sixth caller from
+ * being written the old way tomorrow.
+ *
+ * One comparison against 401 in the whole file means one place decides
+ * what a refused session means. The five behavioral arms above cannot say
+ * this: they pass against a page with five correct copies, and five
+ * copies is the defect - the sixth is the one that gets forgotten, and it
+ * already was. Paired with those arms deliberately, because on its own a
+ * count computed from the file it guards cannot tell a unified page from
+ * a rearranged one.
+ */
+check("the page decides what a 401 means in exactly one place",
+  (adminSource.match(/status === 401/g) || []).length === 1);
 
 if (failures) {
   console.error(`\nadmin session/delete FAILED ${failures} of ${checks}`);

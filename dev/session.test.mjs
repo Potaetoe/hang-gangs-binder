@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 39);
+const { check, report } = nodeTestSuite("session/auth", 41);
 
 const values = new Map();
 globalThis.sessionStorage = {
@@ -143,6 +143,40 @@ Session.write(GOOD);
 Session.clear();
 check("clear removes the credential and its header",
   Session.read() === null && !Session.authorization().Authorization);
+
+/*
+ * The shell stops claiming a session the moment the credential goes - #166.
+ *
+ * Observed on the live dev-arm rehearsal, not argued from source: after a
+ * Worker 401 the page said "Your sign-in is no longer valid" and, three
+ * inches away, "Signed in as alice", with sessionStorage already null. The
+ * announcement is the only thing on the page that knows a session exists,
+ * and it ran once at load and never again - so every surface it paints was
+ * describing a credential that had been thrown away.
+ *
+ * Both directions are driven here because clear() has two callers with
+ * nothing in common: a page acting on a refusal, and read() disposing of a
+ * value it will not use. A fix wired into only the first leaves the second
+ * painting a dead session for the rest of the tab's life, and the second is
+ * the one no page calls on purpose.
+ */
+Session.write(GOOD);
+Session.require();
+// The precondition is captured before the act rather than asserted inside
+// the check, so a failure cannot be read two ways: this says the banner was
+// up and then came down, not merely that it is down now - which is also
+// true of an announcement that never ran at all.
+const announced = banner.hidden === false && identity.textContent === "somehandle";
+Session.clear();
+check("a session announced and then discarded leaves nothing announced",
+  announced && banner.hidden === true && identity.textContent === "");
+
+Session.write(GOOD);
+Session.require();
+values.set("hgb-session", "not json");
+check("a credential that rots under the tab is un-announced as it is dropped",
+  Session.read() === null && banner.hidden === true &&
+  identity.textContent === "");
 
 /* ------------------------------------------------------------------ */
 /* The common half of /auth/dev and the future widget callback.        */
