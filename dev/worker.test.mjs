@@ -601,7 +601,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 289);
+const { check, report } = suite("worker.js", 290);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1795,6 +1795,62 @@ check("and a refused correction moves neither of them",
   afterRefusals.superseded === beforeRefusals.superseded,
   `${beforeRefusals.entries}/${beforeRefusals.superseded} -> ` +
   `${afterRefusals.entries}/${afterRefusals.superseded}`);
+
+/* ------------------------------------------------------------------ */
+/* The read-back answers about the caller's own row (#84).             */
+
+/*
+ * POST /submit reports success by reading its own row back inside the
+ * batch, and the only handle it has on that row is the ciphertext the
+ * caller sent. A ciphertext is not a secret and it is not proof of
+ * authorship: every one of them travels to the keyholder in the export,
+ * and a caller can put whatever bytes they like in the field. So the
+ * read-back has to be scoped to the caller's account as well as to the
+ * pointer.
+ *
+ * Unscoped, this is the one refusal on this route that fails open. A
+ * member naming somebody else's entry, carrying the ciphertext of the
+ * correction that already supersedes it, finds that row, matches it, and
+ * is answered 200 while nothing at all was written - the
+ * success-with-no-row the comment on this path calls the worst outcome
+ * available here, handed to precisely the caller who should have been
+ * refused. The guarded insert is not what is wrong: it correctly stores
+ * nothing. What is wrong is the sentence the endpoint then speaks.
+ *
+ * Nothing legitimate is lost by scoping it, and that is why the fix is
+ * this and not a second lookup: the row the insert would have written
+ * always carries the caller's own account id, so a clause naming that
+ * account can never hide the row the caller is asking about.
+ */
+reset();
+
+const REPLAY = (await (await signIn({})).clone().json()).session;
+const REPLAY_OTHER = (await (await signIn({ id: 7777 })).clone().json()).session;
+
+await submit(REPLAY, { ciphertext: "dGFyZ2V0" });
+const replayTarget = stored.find((r) => r.account_id === FIXTURE_4242);
+const REPLAYED = "c3VwZXJzZWRpbmc=";
+await submit(REPLAY, { ciphertext: REPLAYED, supersedes: replayTarget.id });
+
+const rowsBeforeReplay = stored.length;
+const replayed = await submit(REPLAY_OTHER,
+  { ciphertext: REPLAYED, supersedes: replayTarget.id });
+const replayedBody = await replayed.clone().json();
+
+/* The refusal a foreign target gets when the caller invents its own
+ * ciphertext, which is the answer the replay must be indistinguishable
+ * from. Both are 404 rather than 409: the caller has not proved the row
+ * is theirs, so the chain rule is never reached and never spoken about. */
+const invented = await submit(REPLAY_OTHER,
+  { ciphertext: "QUJDRA==", supersedes: replayTarget.id });
+const inventedBody = await invented.clone().json();
+
+check("replaying somebody else's ciphertext is refused, not answered 200",
+  replayed.status === 404 && stored.length === rowsBeforeReplay &&
+  replayed.status === invented.status &&
+  JSON.stringify(replayedBody) === JSON.stringify(inventedBody),
+  `${replayed.status}, ${stored.length - rowsBeforeReplay} row(s) written, ` +
+  JSON.stringify(replayedBody.error));
 
 /* ------------------------------------------------------------------ */
 /* Site content - the one document served without a credential (#87).  */
