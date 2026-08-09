@@ -86,11 +86,15 @@
     return value ? { Authorization: "Bearer " + value.session } : {};
   }
 
+  
+
   function pageName() {
     if (!root.location || typeof root.location.pathname !== "string") {
       return "index.html";
     }
-    return root.location.pathname.split("/").pop() || "index.html";
+    const segment = root.location.pathname.split("/").pop();
+    if (!segment) return "index.html";
+    return segment.indexOf(".") === -1 ? segment + ".html" : segment;
   }
 
   function announce(value) {
@@ -122,6 +126,7 @@
     write,
     clear,
     authorization,
+    pageName,
     require: requireSession,
   });
 
