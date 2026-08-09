@@ -1329,6 +1329,60 @@ code {
  * fill and stroke are ordinary CSS properties, so a class does the job
  * and inherits the palette for free.
  */
+/*
+ * The hero on Progress, and only there.
+ *
+ * One number - what the whole group weighs, added up - and how far it
+ * has moved since the last publish. It is the page's headline, so it is
+ * the one thing on it set in the display step and the serif that carries
+ * the wordmark; everything below stays at body size, which is what keeps
+ * a headline reading as a headline rather than as the first of ten
+ * equally loud figures.
+ *
+ * NO NEW COLOR TOKEN. The label takes --color-gold, which is already the
+ * section-name voice on these pages and is already held against both
+ * --color-bg and --color-surface in tools/check_contrast.py. A hero
+ * arriving with its own token would be a pairing the contrast tables do
+ * not defend - and #128 established that the coverage arm does not add
+ * a second pairing for a token that already appears in one.
+ *
+ * There is no `body.instrument` override here on purpose. The instrument
+ * never draws a hero at all (apps/web/dashboard.js exports two entry
+ * points and admin.js takes the one without it), so a rule dressing this
+ * for the admin page would be styling a thing that page cannot produce.
+ */
+.hero {
+  /* Full width, like the two panels that already claim it. #charts is a
+     two-column grid, so a hero left to auto-placement lands in the first
+     cell with the stat strip beside it in the second - which is a
+     headline sharing a line with the figures it is supposed to be the
+     headline for, and it also moves the strip, on the admin page's
+     component, for a page the admin page never draws. */
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+}
+
+.hero-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--color-gold);
+}
+
+.hero-value {
+  font-family: var(--font-display);
+  font-size: var(--display);
+  line-height: 1.15;
+}
+
+.hero-delta {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));

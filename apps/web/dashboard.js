@@ -66,6 +66,16 @@
     return round(total / values.length, 1);
   }
 
+  /* The same rule as every other figure here: nothing invents a zero for
+   * a measurement nobody gave. An empty group has no combined weight,
+   * which is not the same claim as a group that weighs nothing. */
+  function sum(values) {
+    if (!values.length) return null;
+    let total = 0;
+    for (const value of values) total += value;
+    return round(total, 1);
+  }
+
   /*
    * BMI, as arithmetic and nothing more. The number is reported; the
    * WHO category labels are not. Those labels are a clinical judgement
@@ -726,6 +736,27 @@
         weight: measureFor(entries, UNITS[name].weight),
         height: measureFor(entries, UNITS[name].height),
       };
+      /*
+       * What everybody weighs, added together - the one figure on
+       * Progress that is about the group rather than about a middle.
+       *
+       * Weight only, and that is not an oversight: a combined height is
+       * arithmetic with no meaning behind it, and a figure nobody can
+       * interpret is a figure that gets misread.
+       *
+       * It is summed from this system's own stored field, like every
+       * other number in this file. Converting the other system's total
+       * would be a second copy of form.js's arithmetic, free to drift
+       * from it.
+       *
+       * On what it discloses: the count and the mean weight are both
+       * already published beside it, and their product IS this number to
+       * within rounding. So the total itself is not a new disclosure. Its
+       * MOVEMENT between two documents is, which is what the floor in
+       * movementOf() below is about.
+       */
+      out[name].weight.total =
+        sum(numbers(entries, UNITS[name].weight.field));
     }
 
     /*
@@ -876,6 +907,103 @@
     };
   }
 
+  /*
+   * How many PEOPLE have an entry no older than a moment.
+   *
+   * People rather than rows, and the distinction is the whole floor. One
+   * member submitting five times is one member, and a floor that counted
+   * rows would publish that member's gain the fifth time they filled the
+   * form in - which is exactly the disclosure the floor exists to
+   * prevent, arrived at by the member themselves.
+   *
+   * identityOf() rather than the handle, for the reason it always is
+   * here: the account is the identity and the handle is a label the
+   * member's own browser wrote.
+   */
+  function movedSince(entries, since) {
+    const at = Date.parse(since);
+    if (!Number.isFinite(at)) return 0;
+    const people = new Set();
+    for (const entry of entries) {
+      if (timeOf(entry) >= at) people.add(identityOf(entry));
+    }
+    return people.size;
+  }
+
+  /* One basis's combined weight in every system, minus the same figures
+   * in the document being replaced. Null when either side has nothing to
+   * subtract - a basis suppressed below the floor, or a document
+   * published before the combined weight existed. Absent is NOT zero:
+   * treating a missing total as zero would report the whole group's
+   * weight as this month's gain. */
+  function weightMovement(now, before) {
+    if (!now || !before) return null;
+    const out = {};
+    for (const name in UNITS) {
+      if (!Object.prototype.hasOwnProperty.call(UNITS, name)) continue;
+      const here = now[name] ? num(now[name].weight.total) : null;
+      const there = before[name] ? num(before[name].weight.total) : null;
+      if (here === null || there === null) return null;
+      out[name] = { weight: round(here - there, 1) };
+    }
+    return out;
+  }
+
+  /*
+   * How far the combined weight has moved since the document this one
+   * replaces, and whether that is a thing this document may say.
+   *
+   * THE ANCHOR IS A PROPERTY OF THE DOCUMENT. `since` is the previous
+   * document's own `generated`, never the reader's clock: two people
+   * opening the same bytes an hour apart have to see the same movement,
+   * or the figure is about when you looked rather than about the group.
+   *
+   * THE FLOOR IS ON HOW MANY PEOPLE MOVED IT, and it is the owner's
+   * ruling on #73. A combined weight is a group figure and safe; its
+   * DELTA can be one person. If one member submitted since the last
+   * publish and nobody else did, "+4 lb" is that member's four pounds,
+   * handed to everybody who reads the page. So the same discipline
+   * MIN_CELL applies to every other published cell applies here, and the
+   * keyholder's identified view floors at zero exactly as it does
+   * everywhere else.
+   *
+   * SUPPRESSED MEANS ABSENT. When the floor is not cleared the numbers
+   * are left out of the document rather than left in and undrawn - the
+   * Worker serves this body verbatim to anybody with a member session,
+   * so a figure the page declines to paint is still a figure.
+   *
+   * WHAT THIS DOES NOT CLOSE, stated rather than discovered. The count
+   * and the mean weight are published in every document, and their
+   * product is the combined weight. A reader who keeps two documents can
+   * therefore compute this delta whatever the floor says. The floor
+   * bounds what the page STATES; closing the arithmetic channel would
+   * mean suppressing the mean, which is a larger decision than this one
+   * and belongs to the owner. Recorded on #73 rather than left for the
+   * next reader to find.
+   */
+  function movementOf(entries, previous, bases, floor) {
+    if (!previous || typeof previous !== "object") return null;
+    const since = previous.generated;
+    if (typeof since !== "string" || !Number.isFinite(Date.parse(since))) {
+      return null;
+    }
+    if (!previous.bases) return null;
+
+    const moved = {};
+    let comparable = false;
+    for (const basis in bases) {
+      if (!Object.prototype.hasOwnProperty.call(bases, basis)) continue;
+      moved[basis] = weightMovement(bases[basis], previous.bases[basis]);
+      if (moved[basis] !== null) comparable = true;
+    }
+    if (!comparable) return null;
+
+    if (floor > 1 && movedSince(entries, since) < floor) {
+      return { since: since, bases: null };
+    }
+    return { since: since, bases: moved };
+  }
+
   function snapshotOf(entries, options, now) {
     const opts = options || {};
     const identify = opts.identify === true;
@@ -909,6 +1037,11 @@
      */
     if (series && !identify && series.length < floor) series = null;
 
+    const bases = {
+      people: basisOf(latestPerPerson(entries), floor),
+      entries: basisOf(entries, floor),
+    };
+
     return {
       snapshot: SNAPSHOT_VERSION,
       generated: new Date(now === undefined ? Date.now() : now).toISOString(),
@@ -927,10 +1060,18 @@
             handleChanges: handleDisagreements(entries),
           }
         : null,
-      bases: {
-        people: basisOf(latestPerPerson(entries), floor),
-        entries: basisOf(entries, floor),
-      },
+      bases: bases,
+      /*
+       * Additive, which is why SNAPSHOT_VERSION does not move. A document
+       * published before this field existed is already live and public.js
+       * is already reading it; nothing about it became wrong, so bumping
+       * the version would only strand a document that still renders
+       * correctly for the whole interval between deploying this and the
+       * keyholder's next publish. Null when there is nothing comparable
+       * to measure from, which every reader here treats as "say nothing"
+       * rather than "say zero".
+       */
+      movement: movementOf(entries, opts.previous, bases, floor),
     };
   }
 
@@ -959,6 +1100,7 @@
     ROLE_VOCABULARY: ROLE_VOCABULARY,
     basisOf: basisOf,
     snapshotOf: snapshotOf,
+    movedSince: movedSince,
     suppressCounts: suppressCounts,
     suppressBins: suppressBins,
     MIN_CELL: MIN_CELL,
@@ -982,7 +1124,17 @@
   // Delete the conditional and `render` is exported under Node too,
   // where calling it throws on its first `document`; that is a tested
   // regression, not a tidy-up.
-  if (typeof document !== "undefined") api.render = render;
+  //
+  // BOTH drawing names go on here, inside the one conditional and before
+  // the one freeze. `renderProgress` is the surface split, and the same
+  // seam has to be pinned for it: a second name attached after the
+  // publish is the exact shape check 15's member-assignment arm refuses,
+  // and a second name attached outside this conditional would be
+  // exported under Node where its first `document` throws.
+  if (typeof document !== "undefined") {
+    api.render = render;
+    api.renderProgress = renderProgress;
+  }
   root.BinderDashboard = Object.freeze(api);
 
   /* ---------------------------------------------------------------- */
@@ -1203,21 +1355,153 @@
     return node;
   }
 
+  function basisName(basis) {
+    return basis === "entries" ? "entries" : "people";
+  }
+
+  /* The minus sign, written as its own code point rather than as a
+   * hyphen. It is the character that lines up with the digits and with
+   * the plus beside it; a hyphen in a column of tabular figures is a
+   * different width and reads as a dash. */
+  const MINUS = "−";
+
   /*
-   * Draws a snapshot. Not rows - a snapshot, which is what makes the
-   * keyholder's dashboard and the public one the same code rather than
-   * two things that look alike.
+   * How far the group's combined weight has moved, in words, or null if
+   * this document has nothing to say about that.
+   *
+   * Three states, and the middle one is the one worth keeping. A
+   * document with no comparable predecessor says nothing at all. A
+   * document whose movement was driven by too few people SAYS SO - a
+   * blank there would read as "nothing changed", which is a different
+   * claim and a false one. And a movement over the floor is a signed
+   * number, with the date it is measured from, because a delta with no
+   * anchor is a number nobody can check.
+   *
+   * The direction is reported and never characterized. Which way is good
+   * news is not this page's opinion to hold about anybody.
+   */
+  function movementText(snapshot, basis, spec) {
+    const movement = snapshot.movement;
+    if (!movement || typeof movement.since !== "string") return null;
+    const day = movement.since.slice(0, 10);
+
+    if (movement.bases === null) {
+      return "Too few entries have moved since " + day +
+        " to say by how much.";
+    }
+    const moved = movement.bases[basisName(basis)];
+    const value = moved ? num(moved[spec.name].weight) : null;
+    if (value === null) return null;
+
+    return (value < 0 ? MINUS : "+") +
+      spec.weight.stat(round(Math.abs(value), 1)) + " since " + day + ".";
+  }
+
+  /*
+   * The one figure on this page that is about the group rather than
+   * about a middle, and the reason #73 calls the dashboard the payoff.
+   *
+   * Null rather than an em dash when there is no combined weight to
+   * show: a hero reading "—" is a headline about nothing, and the panels
+   * below already say what is missing in their own words.
+   */
+  function heroFor(snapshot, view, basis, spec) {
+    const total = view[spec.name] ? num(view[spec.name].weight.total) : null;
+    if (total === null) return null;
+
+    const wrap = document.createElement("div");
+    wrap.className = "hero";
+
+    const label = document.createElement("p");
+    label.className = "hero-label";
+    label.textContent = basisName(basis) === "entries"
+      ? "Every entry, added up"
+      : "What we weigh, together";
+    wrap.appendChild(label);
+
+    /* Not `tabular`, which every other number on these pages takes. That
+     * class is the mono face, for figures that have to line up in a
+     * column; this one stands alone and is set in the display face the
+     * wordmark uses, which is what makes it read as the page's headline
+     * rather than as the loudest of ten equal figures. */
+    const value = document.createElement("p");
+    value.className = "hero-value";
+    value.textContent = statText(total, spec.weight);
+    wrap.appendChild(value);
+
+    const moved = movementText(snapshot, basis, spec);
+    if (moved !== null) {
+      const delta = document.createElement("p");
+      delta.className = "hero-delta";
+      delta.textContent = moved;
+      wrap.appendChild(delta);
+    }
+    return wrap;
+  }
+
+  /*
+   * Draws a snapshot for the ADMIN INSTRUMENT. Not rows - a snapshot,
+   * which is what makes the keyholder's dashboard and the public one the
+   * same code rather than two things that look alike.
+   *
+   * This is one of two entry points into one drawing body. The other is
+   * renderProgress() below, and the only difference between them is what
+   * comes before the stat strip. Both call drawPanels(), so there is no
+   * second copy of the panel sequence for the two surfaces to drift
+   * apart on - which matters because only one of them is driven daily,
+   * and the copy nobody drives is the copy that rots.
+   *
+   * Which surface is drawing is an argument at the call site
+   * (apps/web/admin.js and apps/web/public.js each name the one they
+   * want) rather than something inferred from a global. A module that
+   * sniffs which page it is on is a module that behaves differently in
+   * a test than in a browser.
+   */
+  function render(container, snapshot, basis, units) {
+    container.textContent = "";
+    drawPanels(container, snapshot, basis, units);
+  }
+
+  /*
+   * Draws the same snapshot for PROGRESS, the member-facing page, which
+   * leads with the combined-weight hero.
+   *
+   * The hero is deliberately not on the instrument. admin.html is a
+   * panel for reading data, and a headline is a thing said to somebody -
+   * the owner's decision on #73 is that the instrument stays plainly an
+   * instrument.
+   *
+   * No hero when the basis is suppressed: below the floor the page's
+   * whole answer is a sentence explaining that too few people are here
+   * to describe, and a group figure printed above that sentence would be
+   * the page arguing with itself.
+   */
+  function renderProgress(container, snapshot, basis, units) {
+    container.textContent = "";
+    const view = snapshot.bases[basisName(basis)];
+    if (view !== null) {
+      const hero = heroFor(snapshot, view, basis, unitsFor(units));
+      if (hero !== null) container.appendChild(hero);
+    }
+    drawPanels(container, snapshot, basis, units);
+  }
+
+  /*
+   * Everything both surfaces draw, in one order.
    *
    * `basis` picks what the distributions count: one row per person, or
    * every row. The weight-over-time chart ignores it and always uses
    * everything, because the repeats are the entire point of it.
    * `units` picks which of the two precomputed systems is shown, and
    * nothing here converts anything.
+   *
+   * It does not clear the container. Its callers do, before they add
+   * whatever their surface puts first - which is what lets one of them
+   * lead with a hero without this function knowing there is one.
    */
-  function render(container, snapshot, basis, units) {
-    container.textContent = "";
+  function drawPanels(container, snapshot, basis, units) {
     const spec = unitsFor(units);
-    const which = basis === "entries" ? "entries" : "people";
+    const which = basisName(basis);
     const view = snapshot.bases[which];
 
     /*

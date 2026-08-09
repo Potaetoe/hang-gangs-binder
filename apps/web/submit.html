@@ -75,7 +75,31 @@
          aria-label="Color theme">
       <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
-      <button type="button" data-set-theme="daylight">Daylight</button>
+      <!--
+        "Parchment Daylight" - the owner's ruling on #127, and the one
+        place in this rail where the visible word and the code's name for
+        the same thing deliberately differ.
+
+        The id stays `daylight`: here in data-set-theme, in theme.js's
+        theme-color map and its light-preference answer, in two theme.css
+        selector blocks that must go on declaring identical colors, in
+        check_contrast.py's table keys, and - the one that cannot be
+        undone - in every member's stored preference. Renaming the id
+        would silently return everybody who has already chosen this
+        palette to the default.
+
+        The label is what moved, and it moves theme.css's own comments
+        and check_contrast.py's display names from aspiration to fact:
+        both already called this palette Parchment Daylight.
+
+        Nothing compares these four buttons across the three pages that
+        carry them. The rail-parity rule in tools/check_web.py reads
+        .rail-links and stops, and the name tables read titles, headings
+        and rail entries - so a rename that reaches two of the three
+        copies passes the whole gate. Raised on #127; the pin belongs in
+        check_web.py, which another slice holds.
+      -->
+      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
   </div>
@@ -98,7 +122,10 @@
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>
   <h1>Your binder</h1>
-  <p class="muted">Your session lasts for this tab. Fill the form, done.</p>
+  <p class="muted">
+    Fill the form and you are in the binder. Your session lasts as long
+    as this tab.
+  </p>
 </header>
 
 <main class="stack">
@@ -382,7 +409,15 @@
         </div>
       </div>
 
-      <button type="submit" id="submit" class="primary">Submit</button>
+      <!-- The submit moment, and the one label on this page that is
+           worth a warm word: "Submit" names the mechanism, and this
+           names what actually happens - the entry joins the binder the
+           rail is called after. Nothing rewrites this label at runtime
+           and no name table pins it, so the words are this page's own
+           (#73). -->
+      <button type="submit" id="submit" class="primary">
+        Add to the binder
+      </button>
 
       <p class="status" id="status" role="status" aria-live="polite" hidden></p>
 

@@ -129,8 +129,13 @@
         "of date.";
     }
 
+    /* renderProgress, not render: this is the member-facing surface, and
+     * it is the one that leads with the combined-weight hero. admin.js
+     * names the instrument's entry point in the same way, so which
+     * surface is being drawn is written at the call site rather than
+     * sniffed from the page. */
     function draw() {
-      root.BinderDashboard.render(
+      root.BinderDashboard.renderProgress(
         $("charts"), snapshot,
         UI.checkedValue("basis", "people"),
         UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS));

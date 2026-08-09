@@ -816,6 +816,23 @@
       UI.setStatus($("unpublish-status"), message, tone);
     }
 
+    /*
+     * The document currently on the public page, or null.
+     *
+     * It is kept because the next one has to be able to say how far the
+     * group's combined weight has moved SINCE it, and a delta measured
+     * from anything else is a delta about the reader's clock rather than
+     * about the group. Only this page can supply it: the public page
+     * holds one document and has nothing to compare it against, and the
+     * Worker never parses what it stores.
+     *
+     * Cleared on 404 and on a failed read, both deliberately. A stale
+     * anchor is worse than no anchor - the next publish would measure
+     * from a document nobody is looking at any more and print the
+     * difference as this month's movement.
+     */
+    let publishedNow = null;
+
     async function refreshPublishedState() {
       const state = $("published-state");
       try {
@@ -823,6 +840,7 @@
           headers: root.BinderSession.authorization(),
         });
         if (response.status === 404) {
+          publishedNow = null;
           state.textContent = "Nothing is published. The public dashboard " +
             "shows an empty notice.";
           show($("unpublish"), false);
@@ -833,6 +851,7 @@
         }
         const payload = await response.json();
         const snapshot = payload.snapshot || {};
+        publishedNow = payload.snapshot || null;
         const counts = snapshot.counts || {};
         const when = snapshot.generated
           ? new Date(snapshot.generated).toISOString()
@@ -843,6 +862,7 @@
           (snapshot.series ? ", including weight over time." : ".");
         show($("unpublish"), true);
       } catch (error) {
+        publishedNow = null;
         state.textContent = "Could not check what is published. " +
           (error && error.message ? error.message : "The connection failed.");
         // Offered anyway. If the check failed because the network is
@@ -939,6 +959,13 @@
       return root.BinderDashboard.snapshotOf(entries, {
         identify: false,
         series: $("publish-series").checked,
+        // The document this one replaces, so the new one can say how far
+        // the combined weight has moved since it. snapshotOf floors that
+        // movement on how many people drove it and leaves the numbers
+        // out entirely when too few did; a null here simply means there
+        // is nothing to measure from, and the document says nothing
+        // rather than saying zero.
+        previous: publishedNow,
       });
     }
 

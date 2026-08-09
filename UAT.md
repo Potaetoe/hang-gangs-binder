@@ -13,10 +13,12 @@ a light one, a pink-leaning one and a high-contrast one — the wordmark
 reachable from every railed page.
 
 **Palettes are described by character here and never by chip label.**
-The labels are still moving (#127), so a step naming one would be
-falsified by the rename it is meant to survive — and worse, it would
-send a driver looking for a chip that is not there and let them record
-a pass for a palette they never opened. The rail is the list.
+Nothing compares the chip labels across the three pages that carry them,
+so a rename reaching two copies of three passes the whole gate — a step
+naming a chip would send a driver looking for one that is not there and
+let them record a pass for a palette they never opened. The rail is the
+list, and counting the chips against it is what catches one going
+missing.
 
 **It is in two parts because the split is forced, not a convenience.**
 
@@ -248,7 +250,7 @@ accept.
 | A10.1 | Open `dashboard.html` with nothing published | "No figures have been published yet" — a first-publication message | This must be **distinguishable** from being signed out |
 | A10.2 | Clear the session and reload | Sent to sign-in, **not** the "nothing published" message | A member told "nothing published" because their session expired learns something false |
 | A10.3 | With figures published, open it again | The combined-weight hero reads first, before any chart | It is the number the group actually came for |
-| A10.4 | Read the deltas | They say which way and by how much, against a stated earlier point | A delta with no baseline named is decoration |
+| A10.4 | Read the movement under the hero | Either a signed figure against a stated earlier date, or a line saying too few entries have moved since that date to say by how much. **A blank is a failure** | A delta with no baseline named is decoration, and a blank where a group has plainly changed reads as "nothing moved" |
 | A10.5 | Read the marquee series | It draws, and it is legible on all four palettes | The one chart worth the space |
 | A10.6 | Read how old the figures are | Stated on the page | Figures with no date are trusted longer than they deserve |
 | A10.7 | Look for any handle, any individual row, anywhere on the page | **None** | Members see totals; the corpus is the keyholder's |
@@ -267,6 +269,7 @@ people whose data it holds.
 | A11.4 | With five or more, publish twice and compare | Points carry a **date**, not an instant, and weights sit on bin edges | Rounding is what makes following one person across snapshots an inference rather than a lookup |
 | A11.5 | Read the series labels | "Person 1", never a handle | A stable label across snapshots would rebuild the thing the rounding removed |
 | A11.6 | On every page: devtools → Application → both storages | The session is in `sessionStorage`, never `localStorage`; only the prefill is in `localStorage` | A credential outliving the tab is a different exposure |
+| A11.7 | Publish, have **one** member submit, publish again, and read the raw document | The movement figures are **absent from the JSON**, not merely undrawn — and the page says too few entries have moved | A combined weight is a group figure; its delta can be one person's gain, and the served body is readable by anybody holding a member session |
 
 > **When a privacy check reads "absent", confirm the thing would
 > otherwise have been present.** A11.2's first run in the previous pass

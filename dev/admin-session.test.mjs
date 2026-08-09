@@ -430,6 +430,18 @@ async function loadAdmin(session, options = {}) {
     },
     render() {},
   };
+  /*
+   * What the public page is currently serving, which this stub has to
+   * MODEL rather than pretend is constant.
+   *
+   * A stub that answered the same document to every read would say
+   * "publishing changes nothing about what is published" and "taking the
+   * page down leaves it up" - two false claims, and the checks that lean
+   * on this would pass against a page that kept a dead anchor forever.
+   * So a POST replaces it and a DELETE clears it, which is what the
+   * Worker does.
+   */
+  let live = options.published || null;
   globalThis.fetch = async function (url, options) {
     const request = { url, options: options || {} };
     requests.push(request);
@@ -438,7 +450,26 @@ async function loadAdmin(session, options = {}) {
       return response(200, { ok: true, submissions: SUBMISSIONS });
     }
     if (url.endsWith("/snapshot") && method === "GET") {
-      return response(404, { error: "No snapshot." });
+      // 404 unless a scenario says something is already published. A
+      // document on the public page is what the next one measures its
+      // combined-weight movement against, and nothing else on this page
+      // can supply it - the public page holds one document and the
+      // Worker never parses what it stores.
+      //
+      // `live` rather than reaching for options.published here: this
+      // function's own second parameter is called `options` too, and it
+      // is the fetch init the page passed. Reading the scenario's
+      // document off it silently answered 404 for every scenario and
+      // made the anchor look like something the page never kept.
+      return live
+        ? response(200, { ok: true, snapshot: live })
+        : response(404, { error: "No snapshot." });
+    }
+    if (url.endsWith("/snapshot") && method === "POST") {
+      live = JSON.parse(request.options.body);
+    }
+    if (url.endsWith("/snapshot") && method === "DELETE") {
+      live = null;
     }
     return response(200, { ok: true });
   };
@@ -529,6 +560,12 @@ check("unpublish carries the admin session",
 check("publish carries the admin session",
   snapshotPosts.length === 1 &&
   authorization(snapshotPosts[0]) === SESSION_AUTH);
+
+/* Read here, before the deletion scenarios below publish again: this
+   site had nothing on its public page, and the first document a site
+   ever makes has nothing to measure from. A fabricated anchor would
+   report the whole group's weight as its first month's gain (#73). */
+const firstEverAnchor = admin.snapshots.at(-1).options.previous;
 check("an undecryptable submission is listed by id without shifting rows",
   admin.elements["failure-list"].textContent.includes(
     "row 73: could not be opened with this key") &&
@@ -579,6 +616,54 @@ check("deletion removes only that row from live state without refetching",
   JSON.stringify(rowIds(admin)) === JSON.stringify([99]) &&
   requestsFor(admin, "/export", "GET").length === exportsBeforeDelete &&
   lastSnapshot && JSON.stringify(lastSnapshot.ids) === JSON.stringify([99]));
+
+/*
+ * The publish pipeline carries the document it replaces - #73.
+ *
+ * A combined-weight delta needs an anchor, and the anchor has to be a
+ * property of the document rather than the reader's clock, or two people
+ * opening the same bytes an hour apart see different movements. Only
+ * this page can supply it: the public page holds one document with
+ * nothing to compare against, and the Worker stores the body verbatim
+ * without ever parsing it.
+ *
+ * What is asserted here is the WIRING - that the current document
+ * reaches snapshotOf as `previous`, and that a stale one never does.
+ * Whether the delta it produces is safe to publish is dashboard.js's
+ * floor, and dev/dashboard.test.mjs is where that is attacked.
+ */
+const LIVE = {
+  snapshot: 1,
+  generated: "2026-07-01T00:00:00.000Z",
+  counts: { entries: 9, people: 9 },
+  bases: { people: {}, entries: {} },
+};
+
+const republish = await loadAdmin(ADMIN, { published: LIVE });
+await republish.elements.run.click();
+await republish.elements.publish.click();
+check("publishing measures from the document already on the public page",
+  republish.snapshots.at(-1).options.previous === LIVE);
+
+check("publishing with nothing published measures from nothing",
+  firstEverAnchor === null);
+
+await republish.elements.publish.click();
+check("the next document measures from the one just published, not the old one",
+  // The page re-reads what is live after publishing, so a second press
+  // moves the anchor forward. A stuck anchor would publish the same
+  // month's movement twice and then double it.
+  republish.snapshots.at(-1).options.previous !== LIVE &&
+  republish.snapshots.at(-1).options.previous !== null);
+
+await republish.elements.unpublish.click();
+await republish.elements.publish.click();
+check("taking the page down drops the anchor with it",
+  // The document is gone from the public page, so measuring the next
+  // one from it would print the difference against something nobody can
+  // see any more. Held as its own check because the failure is silent:
+  // a kept anchor produces a perfectly plausible number.
+  republish.snapshots.at(-1).options.previous === null);
 
 /*
  * The key this device keeps - #70.

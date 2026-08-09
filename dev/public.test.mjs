@@ -143,10 +143,25 @@ async function loadPublic(session, nextResponse) {
       }
     },
   };
+  /*
+   * The stub carries BOTH drawing names, and only one of them records.
+   *
+   * dashboard.js splits its entry points by surface, and this page is
+   * the member-facing one - so a `render` call from here is the page
+   * drawing itself as the admin instrument, with no hero and the wrong
+   * clothes. Stubbing only `renderProgress` would make that a throw,
+   * which UI.boot() would turn into "this page did not start up
+   * correctly" and every check below would fail for a reason none of
+   * them is about. Recording only the Progress arm is what keeps the
+   * render count an assertion about which surface was drawn.
+   */
   globalThis.BinderDashboard = {
     DEFAULT_UNITS: "imperial",
+    renderProgress(element, snapshot, basis, units) {
+      renders.push({ element, snapshot, basis, units, surface: "progress" });
+    },
     render(element, snapshot, basis, units) {
-      renders.push({ element, snapshot, basis, units });
+      renders.push({ element, snapshot, basis, units, surface: "instrument" });
     },
   };
   globalThis.fetch = async function (url, options) {
@@ -194,6 +209,14 @@ check("a member session authorizes the snapshot read and draws the dashboard",
   authorization(member.requests[0]) === "Bearer member-session-token" &&
   member.renders.length === 1 && !member.elements.tool.hidden &&
   redirects.length === 0);
+
+/* dashboard.js draws two surfaces from one body, and which one a page
+   gets is decided HERE rather than sniffed inside the module. Calling
+   the instrument's entry point would silently drop the combined-weight
+   hero this page exists to lead with - and a missing headline looks
+   exactly like a page that has nothing to headline. */
+check("this page draws itself as the member surface, not as the instrument",
+  member.renders.length === 1 && member.renders[0].surface === "progress");
 
 const admin = await loadPublic(ADMIN, response(200, SNAPSHOT));
 check("an admin's member session still opens the dashboard",
@@ -346,4 +369,4 @@ if (failures) {
   console.error(`\npublic dashboard FAILED ${failures} check(s)`);
   process.exit(1);
 }
-console.log("\npublic dashboard OK - 22 checks");
+console.log("\npublic dashboard OK - 23 checks");
