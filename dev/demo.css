@@ -64,6 +64,24 @@ main {
   main { grid-template-columns: 1fr; }
 }
 
+/* In two columns the cards scroll inside their own column and the
+ * stage rides the page scroll pinned, because the frame is the thing
+ * being judged: a card list ten features long otherwise scrolls the
+ * frame off screen and leaves blank panel where the product was. A
+ * hair above the collapse width so the one-column layout keeps the
+ * page's own scroll - a scrollbox inside a scrolling page is two
+ * scrollbars fighting over one wheel. */
+@media (min-width: 60.0625rem) {
+  .driver, .stage {
+    position: sticky;
+    top: 1.5rem;
+  }
+  .driver {
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+  }
+}
+
 .driver, .stage {
   background: var(--panel);
   border: 1px solid var(--edge);
