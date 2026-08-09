@@ -32,6 +32,7 @@ const submitHtml = await readFile(
 
 const SUBMITTED_EVENT = "binder:submitted";
 const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
+const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
 
 let failures = 0;
 function check(label, condition) {
@@ -122,8 +123,9 @@ function makePage() {
       for (const listener of handlers) listener.call(document, event);
       return true;
     },
-    async dispatch(type) {
-      const event = { type, target: document, currentTarget: document };
+    async dispatch(type, detail) {
+      const event = { type, detail, target: document,
+        currentTarget: document };
       for (const listener of documentListeners.get(type) || []) {
         await listener.call(document, event);
       }
@@ -144,6 +146,11 @@ globalThis.CustomEvent = class CustomEvent {
 async function loadForm({ submitStatus = 200 } = {}) {
   const page = makePage();
   const dispatched = [];
+  // The whole event as well as its type. The panel remembers the height
+  // this page just had accepted, and it can only learn it from the
+  // announcement - so what rides on the announcement is part of the
+  // contract, not an implementation detail of the dispatch.
+  const events = [];
   const bootErrors = [];
 
   globalThis.document = page.document;
@@ -192,6 +199,7 @@ async function loadForm({ submitStatus = 200 } = {}) {
   const original = page.document.dispatchEvent.bind(page.document);
   page.document.dispatchEvent = function (event) {
     dispatched.push(event.type);
+    events.push(event);
     return original(event);
   };
 
@@ -200,7 +208,7 @@ async function loadForm({ submitStatus = 200 } = {}) {
   await import("data:text/javascript," +
     encodeURIComponent(formSource) + "#" + Math.random());
 
-  return { page, dispatched, bootErrors };
+  return { page, dispatched, events, bootErrors };
 }
 
 function fillValidEntry(byId) {
@@ -326,6 +334,161 @@ function fillValidEntry(byId) {
       noteCopy ? noteCopy[1] : ""));
   check("the confirmation still promises the form can be filled again",
     flat.includes("just fill the form again"));
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. The height guard - #172. It lives here rather than in validate()  */
+/*    because it is not a rule about the entry: it is a question about  */
+/*    a number only this browser knows, and the answer to "are you      */
+/*    sure" is a second press.                                          */
+
+function setHeight(byId, feet, inches) {
+  byId("height-ft").value = feet;
+  byId("height-in").value = inches;
+}
+
+/* 7a. The fresh device. Nothing has been remembered here, so the entry
+ *     that started #172 - 3 ft against a person who is 5 ft 9 - goes
+ *     straight through. This is the bound the copy has to admit, and it
+ *     is asserted rather than described: a guard that fired here would
+ *     be inventing a comparison. */
+{
+  const { page, dispatched } = await loadForm();
+  fillValidEntry(page.byId);
+  setHeight(page.byId, "3", "0");
+  await page.byId("submission").dispatch("submit");
+
+  check("with nothing remembered an implausible height is sent on one press",
+    dispatched.includes(SUBMITTED_EVENT) &&
+    page.byId("submission").hidden === true);
+  check("and no height notice is shown for a comparison that cannot be made",
+    page.byId("error-height").hidden === true);
+}
+
+/* 7b. The same entry on a browser that remembers 175.3cm. */
+{
+  const { page, dispatched } = await loadForm();
+  await page.document.dispatch(HEIGHT_BASELINE_EVENT, { lastHeightCm: 175.3 });
+  fillValidEntry(page.byId);
+  setHeight(page.byId, "3", "0");
+  await page.byId("submission").dispatch("submit");
+
+  check("a large height change stops the first press",
+    !dispatched.includes(SUBMITTED_EVENT) &&
+    page.byId("submission").hidden === false &&
+    page.byId("done").hidden === true);
+  check("and says so in the height field's own slot",
+    page.byId("error-height").hidden === false &&
+    page.byId("error-height").textContent.includes("5 ft 9 in") &&
+    page.byId("error-height").textContent.includes("3 ft 0 in"));
+
+  /* The second press. The point of a prompt rather than a refusal: the
+   * remembered number may itself be the typo, and a member whose real
+   * height the form will not accept has no way out of a hard block. */
+  await page.byId("submission").dispatch("submit");
+  check("pressing again sends the entry as typed",
+    dispatched.includes(SUBMITTED_EVENT) &&
+    page.byId("done").hidden === false);
+}
+
+/* 7c. The control that keeps 7b from passing on a guard that simply
+ *     lets the second press through regardless. Changing the height to
+ *     a different implausible value re-arms it - otherwise one confirm
+ *     would license every later typo in the same sitting. */
+{
+  const { page, dispatched } = await loadForm();
+  await page.document.dispatch(HEIGHT_BASELINE_EVENT, { lastHeightCm: 175.3 });
+  fillValidEntry(page.byId);
+  setHeight(page.byId, "3", "0");
+  await page.byId("submission").dispatch("submit");
+  setHeight(page.byId, "7", "6");
+  await page.byId("submission").dispatch("submit");
+
+  check("a different implausible height is asked about again",
+    !dispatched.includes(SUBMITTED_EVENT) &&
+    page.byId("error-height").hidden === false &&
+    page.byId("error-height").textContent.includes("7 ft 6 in"));
+}
+
+/* 7d. A remembered height the entry agrees with never interrupts. Without
+ *     this, 7b passes on a guard that fires on every entry. */
+{
+  const { page, dispatched } = await loadForm();
+  await page.document.dispatch(HEIGHT_BASELINE_EVENT, { lastHeightCm: 177.8 });
+  fillValidEntry(page.byId);
+  await page.byId("submission").dispatch("submit");
+
+  check("an entry that agrees with the remembered height is not interrupted",
+    dispatched.includes(SUBMITTED_EVENT) &&
+    page.byId("error-height").hidden === true);
+}
+
+/* 7e. The announcement the panel needs back. The panel cannot read the
+ *     form's boxes - form.js owns them - so the height that was actually
+ *     accepted rides on the event that says a row was stored. Without
+ *     it the baseline never moves, and a member who corrects a typo is
+ *     asked about the correction forever. */
+{
+  const { page, events } = await loadForm();
+  fillValidEntry(page.byId);
+  await page.byId("submission").dispatch("submit");
+
+  const stored = events.find((event) => event.type === SUBMITTED_EVENT);
+  check("the stored announcement carries the height that was accepted",
+    Boolean(stored) && stored.detail &&
+    stored.detail.heightCm === 177.8);
+}
+
+/* 7f. A refused send announces nothing, so it moves no baseline either.
+ *     The same property check 5 holds for the confirmation card, on the
+ *     value that decides what the next entry is measured against. */
+{
+  const { page, events } = await loadForm({ submitStatus: 401 });
+  fillValidEntry(page.byId);
+  await page.byId("submission").dispatch("submit");
+
+  check("a refused send carries no height into the browser's memory",
+    !events.some((event) => event.type === SUBMITTED_EVENT));
+}
+
+/* 7g. A baseline that arrives unusable is no baseline. The value crosses
+ *     a document event from a JSON store, so "175.3" and NaN are both
+ *     things that can turn up, and both would compare in a way that
+ *     silently never fires. */
+{
+  const { page, dispatched } = await loadForm();
+  await page.document.dispatch(HEIGHT_BASELINE_EVENT, { lastHeightCm: "175.3" });
+  fillValidEntry(page.byId);
+  setHeight(page.byId, "3", "0");
+  await page.byId("submission").dispatch("submit");
+
+  check("a remembered height that is not a number is treated as none",
+    dispatched.includes(SUBMITTED_EVENT));
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. The copy that admits what this device does and does not know.    */
+
+{
+  const flat = submitHtml.replace(/\s+/g, " ");
+
+  check("submit.html carries the note about what was carried forward",
+    submitHtml.includes('id="prefill-note"'));
+  check("the prefill note ships hidden, for a device with nothing to say",
+    /id="prefill-note"[^>]*hidden/.test(submitHtml));
+  const prefillCopy = flat.match(/id="prefill-note"[^>]*>(.*?)<\/p>/);
+  check("the note says this browser remembers, not the account",
+    /this browser/i.test(prefillCopy ? prefillCopy[1] : "") &&
+    !/your account remembers/i.test(prefillCopy ? prefillCopy[1] : ""));
+  check("and says signing out erases it",
+    /sign(ing)? out/i.test(prefillCopy ? prefillCopy[1] : ""));
+
+  check("submit.html carries the line explaining a remembered 18+",
+    submitHtml.includes('id="over18-remembered"'));
+  check("the 18+ line ships hidden, so an unremembered box explains nothing",
+    /id="over18-remembered"[^>]*hidden/.test(submitHtml));
+  check("the 18+ box itself still ships unticked",
+    /id="over18"(?![^>]*checked)/.test(submitHtml));
 }
 
 console.log(failures === 0

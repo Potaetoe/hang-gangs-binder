@@ -26,6 +26,7 @@ await import("data:text/javascript," + encodeURIComponent(formSrc));
 const {
   normalizeTelegram, parseNumber, weightFromKg, weightFromLb,
   heightFromCm, heightFromFeetInches, validate, buildRecord,
+  heightChangeNotice,
 } = globalThis.BinderForm;
 
 // The end-to-end check at the bottom needs the real encryption too.
@@ -380,10 +381,20 @@ await check("the ciphertext is base64 the endpoint accepts", async () => {
  * after it. More than one dispatch would make one stored row trigger several
  * route reads and would obscure which result the panel is rendering.
  */
+/*
+ * The needle stops after the event name rather than at the end of the
+ * statement. The announcement carries the accepted height for the guard
+ * (#172), and `detail` is a getter with no setter on
+ * CustomEvent.prototype - a payload can only arrive through the
+ * constructor's init argument, so the call spans lines and no dispatch
+ * that carries one can be spelled `new CustomEvent("binder:submitted"));`.
+ * Every property this check is about survives the shorter needle: one
+ * occurrence, after the failure return, before the success UI.
+ */
 await check("the stored event exists only on the successful network path",
   () => {
     const dispatch =
-      'document.dispatchEvent(new CustomEvent("binder:submitted"));';
+      'document.dispatchEvent(new CustomEvent("binder:submitted"';
     const occurrences = formSrc.split(dispatch).length - 1;
     const failureMessage = formSrc.indexOf(
       '" Nothing was stored - try again.", "bad");');
@@ -393,6 +404,125 @@ await check("the stored event exists only on the successful network path",
     return occurrences === 1 && failureMessage !== -1 && failureReturn !== -1 &&
       failureReturn < dispatchAt && dispatchAt < successUi;
   });
+
+/* ------------------------------------------------------------------ */
+/* The height guard - #172.                                            */
+
+/*
+ * A person's height does not move, so a large jump between entries is a
+ * typo. Nothing caught it before: the owner's own sitting produced
+ * 91.4cm -> 175.3cm and 162.1cm -> 175.3cm in the published document,
+ * and both passed every bound this form has. `LIMITS` is why they did -
+ * it asks whether one number is a possible height, and 3 ft is one.
+ *
+ * What this function knows is strictly less than it looks like. Its
+ * `previousCm` comes from this browser's own storage under shape A, so
+ * on a device that has never submitted there is nothing to compare and
+ * the honest answer is silence. Every arm below that passes `null` is
+ * that case, not an edge case: it is what a new phone always does.
+ */
+
+/* The compared value is absent on a device that has not submitted here.
+ * Silence rather than a guess is the whole of the device-local bound
+ * the owner ruled this slice must admit rather than paper over. */
+await check("a device with no remembered height raises nothing", () =>
+  heightChangeNotice(GOOD_METRIC, null) === null);
+
+/* The same absence in the shapes storage actually produces. A stored
+ * number that came back as a string, or as NaN through JSON, must not
+ * become a comparison - `"175.3" - 178` is arithmetic that works and
+ * `NaN > 5` is false, so both fail silently in opposite directions. */
+await check("an unusable remembered height is treated as no memory", () =>
+  heightChangeNotice(GOOD_METRIC, undefined) === null &&
+  heightChangeNotice(GOOD_METRIC, "178") === null &&
+  heightChangeNotice(GOOD_METRIC, NaN) === null);
+
+await check("the same height again raises nothing", () =>
+  heightChangeNotice(GOOD_METRIC, 178) === null);
+
+/* Shoes, a different tape, a different time of day. A guard that fires
+ * on these is a guard people learn to press through, which costs the
+ * 83.9cm case below its only alarm. */
+await check("an ordinary few centimetres of disagreement is accepted", () =>
+  heightChangeNotice(GOOD_METRIC, 175) === null &&
+  heightChangeNotice(GOOD_METRIC, 181) === null);
+
+/* The boundary itself, pinned as a number rather than read back off the
+ * module: a test that computes the edge from the constant it is
+ * checking passes for every threshold, including one somebody widens to
+ * 50 to quiet a complaint. More than 5cm speaks; 5cm exactly does not. */
+await check("the threshold is more than five centimetres, from either side",
+  () =>
+    heightChangeNotice(GOOD_METRIC, 173) === null &&
+    heightChangeNotice(GOOD_METRIC, 183) === null &&
+    heightChangeNotice(GOOD_METRIC, 172.9) !== null &&
+    heightChangeNotice(GOOD_METRIC, 183.1) !== null);
+
+await check("a notice is addressed to the height field", () => {
+  const notice = heightChangeNotice(GOOD_METRIC, 120);
+  return notice.field === "height";
+});
+
+/* The live evidence, both rows, in the units each was typed in. The
+ * first is how 91.4cm got past `LIMITS` at all: 3 ft is a legal number
+ * of feet, so nothing in the form's bounds had an opinion about it. */
+await check("the sitting's 3ft entry against a remembered 5ft9 speaks", () => {
+  const notice = heightChangeNotice(
+    vary(GOOD_IMPERIAL, { heightFeet: "3", heightInches: "0" }), 175.3);
+  return notice !== null && notice.message.includes("5 ft 9 in") &&
+    notice.message.includes("3 ft 0 in");
+});
+
+await check("and the sitting's 162.1cm row speaks in centimetres", () => {
+  const notice = heightChangeNotice(
+    vary(GOOD_METRIC, { heightCm: "175.3" }), 162.1);
+  return notice !== null && notice.message.includes("162.1 cm") &&
+    notice.message.includes("175.3 cm");
+});
+
+/*
+ * The units are the ones on screen, not the ones the remembered value
+ * happens to be stored in. Somebody looking at a feet box being told
+ * their last entry was 175.3cm has to convert before they can judge the
+ * one thing they are being asked to judge.
+ */
+await check("both heights are spoken in the units the form is showing", () => {
+  const metric = heightChangeNotice(GOOD_METRIC, 91.4);
+  const imperial = heightChangeNotice(GOOD_IMPERIAL, 91.4);
+  return metric.message.includes(" cm") && !metric.message.includes(" ft ") &&
+    imperial.message.includes(" ft ") && !imperial.message.includes(" cm");
+});
+
+/* An entry with no readable height is `validate`'s problem, and a
+ * guard that invented a comparison for it would print a sentence about
+ * a number nobody typed. */
+await check("an unreadable entered height raises nothing", () =>
+  heightChangeNotice(vary(GOOD_METRIC, { heightCm: "" }), 178) === null &&
+  heightChangeNotice(vary(GOOD_METRIC, { heightCm: "tall" }), 178) === null &&
+  heightChangeNotice(
+    vary(GOOD_IMPERIAL, { heightFeet: "" }), 178) === null);
+
+/*
+ * The copy, and this is the arm the owner's ruling is really about.
+ *
+ * The comparison is against one number, from one browser, which may
+ * itself be the typo. A message that says the entry is wrong claims
+ * something this function cannot know, and a member who is told they
+ * are wrong about their own height either believes a bad number or
+ * stops trusting the form. So it has to name where the number came
+ * from, and it must not be phrased as a refusal.
+ */
+await check("the notice says which browser it is comparing against", () => {
+  const message = heightChangeNotice(GOOD_METRIC, 91.4).message;
+  return /this browser/i.test(message) && !/your account/i.test(message);
+});
+
+await check("the notice is a prompt rather than a verdict", () => {
+  const message = heightChangeNotice(GOOD_METRIC, 91.4).message;
+  return /again/i.test(message) &&
+    !/\b(impossible|invalid|incorrect|error|refus\w*|reject\w*|must)\b/i
+      .test(message);
+});
 
 /* ------------------------------------------------------------------ */
 

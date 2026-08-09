@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 48;
+const EXPECTED = 67;
 
 function check(label, condition) {
   performed++;
@@ -98,6 +98,18 @@ function makeElement(id, hidden = false) {
         await listener.call(this, event);
       }
     },
+    // The page's own dispatch, synchronous the way a browser's is.
+    // restorePrefill fires `change` on the units radio it selected, so
+    // that the group's listeners see the restored choice rather than
+    // the one the markup shipped - and a stub without this method turns
+    // that line into a TypeError inside setUp, which reads as the whole
+    // panel failing to start.
+    dispatchEvent(event) {
+      for (const listener of listeners.get(event && event.type) || []) {
+        listener.call(this, event);
+      }
+      return true;
+    },
     setAttribute(name, value) { attributes.set(name, String(value)); },
     getAttribute(name) {
       return attributes.has(name) ? attributes.get(name) : null;
@@ -144,17 +156,50 @@ function makePage() {
     "height-in": makeElement("height-in"),
     "weight-kg": makeElement("weight-kg"),
     "height-cm": makeElement("height-cm"),
+    // #172's optional half. These are the fields a returning member
+    // re-enters unchanged every week, and the two lines that admit the
+    // memory is this browser's rather than the account's. Both lines
+    // start hidden, as the markup does: a stub that began painted would
+    // let the reveal stop happening without a check noticing, and the
+    // note is the one thing standing between a prefilled form and a
+    // member who believes their account followed them here.
+    gender: makeElement("gender"),
+    country: makeElement("country"),
+    over18: makeElement("over18"),
+    "prefill-note": makeElement("prefill-note", true),
+    "over18-remembered": makeElement("over18-remembered", true),
   };
+  // Radio and checkbox groups are reached by name rather than by id, so
+  // they live beside `elements` rather than in it. Imperial is checked
+  // because the shipped markup ships it checked.
+  const units = [
+    makeElement("units-imperial"), makeElement("units-metric"),
+  ];
+  units[0].value = "imperial";
+  units[0].checked = true;
+  units[1].value = "metric";
+  const roles = ["feeder", "feedee", "gainer", "admirer"].map((value) => {
+    const input = makeElement("role-" + value);
+    input.value = value;
+    return input;
+  });
   const documentListeners = new Map();
   // Every type this page dispatched, so a check can assert the panel told
   // form.js the form is on screen again - #64. The panel must announce
   // rather than reach into #done and #submission, which belong to form.js.
   const dispatchedHere = [];
+  // And the events themselves. What rides on the height announcement is
+  // the contract - form.js cannot read this store and the panel cannot
+  // read form.js's boxes, so the number crossing between them is the
+  // whole of the guard's memory.
+  const eventsHere = [];
   const document = {
     readyState: "complete",
     dispatchedHere,
+    eventsHere,
     dispatchEvent(event) {
       dispatchedHere.push(event && event.type);
+      eventsHere.push(event);
       const handlers = documentListeners.get(event && event.type) || [];
       for (const listener of handlers) listener.call(document, event);
       return true;
@@ -164,20 +209,28 @@ function makePage() {
       if (selector === "[data-dev-session]") return null;
       return null;
     },
-    querySelectorAll() { return []; },
+    querySelectorAll(selector) {
+      if (selector === 'input[name="units"]') return units;
+      if (selector === 'input[name="roles"]') return roles;
+      if (selector === 'input[name="roles"]:checked') {
+        return roles.filter((input) => input.checked);
+      }
+      return [];
+    },
     addEventListener(type, listener) {
       const handlers = documentListeners.get(type) || [];
       handlers.push(listener);
       documentListeners.set(type, handlers);
     },
-    async dispatch(type) {
-      const event = { type, target: document, currentTarget: document };
+    async dispatch(type, detail) {
+      const event = { type, detail, target: document,
+        currentTarget: document };
       for (const listener of documentListeners.get(type) || []) {
         await listener.call(document, event);
       }
     },
   };
-  return { document, elements };
+  return { document, elements, units, roles };
 }
 
 globalThis.document = makePage().document;
@@ -470,9 +523,21 @@ check("a successful submit re-reads /me instead of incrementing a local tally",
   refreshed.requests.every((request) =>
     request.url === "https://worker.example/me") &&
   refreshed.elements["member-entry-count"].textContent === "11");
+/*
+ * A source-position check, and the substring it looks for stops at the
+ * event name rather than at the closing parenthesis. The announcement
+ * carries the accepted height for the guard (#172), and `detail` is a
+ * getter with no setter on CustomEvent.prototype - so a payload can only
+ * arrive through the constructor's init argument, and no dispatch that
+ * carries one can be spelled `new CustomEvent("binder:submitted")`.
+ * Pinning the exact call shape would make this check fail for the arity
+ * of a call rather than for the property it is about, which is where the
+ * announcement stands relative to the response guard.
+ */
+const STORED_DISPATCH = `new CustomEvent("${SUBMITTED_EVENT}"`;
 check("form.js announces success only after the Worker stores the entry",
-  formSource.includes(`new CustomEvent("${SUBMITTED_EVENT}")`) &&
-  formSource.indexOf(`new CustomEvent("${SUBMITTED_EVENT}")`) >
+  formSource.includes(STORED_DISPATCH) &&
+  formSource.indexOf(STORED_DISPATCH) >
     formSource.indexOf("if (!response.ok)"));
 
 const tabs = await loadSubmit({
@@ -673,6 +738,177 @@ for (const [why, stored] of unusablePrefills) {
     rejected.bootErrors.length === 0);
 }
 
+/* ------------------------------------------------------------------ */
+/*
+ * #172. The form remembers the person filling it - on this browser and
+ * nowhere else.
+ *
+ * The store the arms above describe is the one this extends: same key,
+ * same account scoping, same erase-on-rejection. What is new is what
+ * rides in it. The optional fields are the ones a returning member
+ * re-enters unchanged every week; the 18+ bit is a fact about a person
+ * rather than a measurement; and `lastHeightCm` is the only value here
+ * that is not a draft, because it moves when the Worker accepts a row
+ * and at no other time.
+ *
+ * That last distinction is the one worth stating, because getting it
+ * wrong produces a guard that passes every test and catches nothing: a
+ * baseline written on every keystroke is a baseline the entry is
+ * compared against itself.
+ */
+const rememberedEntry = JSON.stringify({
+  accountId: ACCOUNT,
+  units: "metric",
+  weightLb: "", heightFeet: "", heightInches: "",
+  weightKg: "104", heightCm: "175.3",
+  gender: "female",
+  country: "GB",
+  roles: ["feedee", "gainer"],
+  over18: true,
+  lastHeightCm: 175.3,
+});
+
+const carried = await loadSubmit({
+  prefill: rememberedEntry,
+  replies: [mine()],
+});
+check("the optional fields carry forward from the last entry here",
+  carried.elements.gender.value === "female" &&
+  carried.elements.country.value === "GB");
+check("and so do the affiliations, exactly the ones that were chosen",
+  carried.roles.filter((input) => input.checked).map((input) => input.value)
+    .join(",") === "feedee,gainer");
+check("the 18+ confirmation is remembered rather than asked again",
+  carried.elements.over18.checked === true);
+check("and the page says why that box is ticked",
+  isPainted(carried.elements["over18-remembered"]));
+check("the note about what was carried forward is shown",
+  isPainted(carried.elements["prefill-note"]));
+
+/*
+ * The other direction, and the one the owner's ruling turns on. A device
+ * that has never submitted here has nothing to say, so it says nothing:
+ * no ticked box, no note claiming a memory, and - asserted in the wiring
+ * suite - no height guard at all.
+ */
+const firstVisit = await loadSubmit({ replies: [mine()] });
+check("a device with nothing remembered ticks no box for the member",
+  firstVisit.elements.over18.checked === false);
+check("and shows no note claiming this browser remembers anything",
+  !isPainted(firstVisit.elements["prefill-note"]) &&
+  !isPainted(firstVisit.elements["over18-remembered"]));
+
+/*
+ * The third state, between the two above, and the one the two of them
+ * cannot see between them: this member's own remembered entry, with the
+ * 18+ bit not in it.
+ *
+ * Found by mutation - `show($("over18-remembered"), over18)` hard-wired
+ * to `true` passed every other arm in this file. The arms above exercise
+ * a record with the bit set and no record at all, and a device with no
+ * memory never reaches the reveal, so nothing asked what happens when
+ * the record is real and the bit is not.
+ *
+ * It matters because of what that line says: "Remembered from your last
+ * entry on this browser." Printed under a box nothing ticked, it is an
+ * invented memory sitting on the one assertion this form still asks a
+ * member to make - and a member who reads it and presses on has been
+ * told their age was confirmed by a device that never confirmed it. The
+ * note above it is a different question and stays shown, because there
+ * genuinely is a remembered entry to explain.
+ */
+const partlyRemembered = await loadSubmit({
+  prefill: JSON.stringify({
+    ...JSON.parse(rememberedEntry), over18: false,
+  }),
+  replies: [mine()],
+});
+check("a remembered entry without the 18+ bit ticks nothing",
+  partlyRemembered.elements.over18.checked === false);
+check("and explains no confirmation it did not make",
+  !isPainted(partlyRemembered.elements["over18-remembered"]) &&
+  isPainted(partlyRemembered.elements["prefill-note"]));
+
+/*
+ * The leak #56 was filed for, re-asked for the fields #172 adds. Gender,
+ * country and affiliations are precisely the fields the encryption
+ * exists to protect - shape C was rejected on sight for putting them in
+ * the clear on the server - so a shared browser handing them to the next
+ * member is the same exposure in a different place.
+ */
+const notMine = await loadSubmit({
+  prefill: rememberedEntry,
+  replies: [mine({ accountId: OTHER_ACCOUNT })],
+});
+check("another account's optional fields are not shown to whoever signs in",
+  notMine.elements.gender.value === "" &&
+  notMine.elements.country.value === "" &&
+  notMine.roles.every((input) => input.checked === false) &&
+  notMine.elements.over18.checked === false);
+check("and their 18+ bit is not confirmed on their behalf",
+  !isPainted(notMine.elements["over18-remembered"]) &&
+  !localValues.has(PREFILL_KEY));
+
+/* Writing them. A select and a checkbox change rather than take input,
+ * so the listener is a different event from the measurement boxes' - and
+ * a slice that wired only `input` would restore these forever without
+ * ever recording a change to them. */
+const writingChoices = await loadSubmit({ replies: [mine()] });
+writingChoices.elements.gender.value = "nonbinary";
+writingChoices.elements.country.value = "CA";
+writingChoices.roles[0].checked = true;
+writingChoices.elements.over18.checked = true;
+await writingChoices.elements.gender.dispatch("change");
+let savedChoices = null;
+try { savedChoices = JSON.parse(localValues.get(PREFILL_KEY)); }
+catch { /* a missing or malformed stored value is a failed check below */ }
+check("changing an optional field records it for the next entry",
+  savedChoices && savedChoices.gender === "nonbinary" &&
+  savedChoices.country === "CA" &&
+  JSON.stringify(savedChoices.roles) === JSON.stringify(["feeder"]));
+check("and the 18+ bit is recorded with them",
+  savedChoices && savedChoices.over18 === true);
+
+/*
+ * The baseline, and its one write path. form.js announces the height
+ * that was accepted on the event that says a row was stored, because
+ * this file cannot read that form's boxes and must not guess.
+ */
+const baseline = await loadSubmit({ replies: [mine(), mine({ entries: 2 })] });
+await baseline.document.dispatch(SUBMITTED_EVENT, { heightCm: 177.8 });
+let savedBaseline = null;
+try { savedBaseline = JSON.parse(localValues.get(PREFILL_KEY)); }
+catch { /* a missing or malformed stored value is a failed check below */ }
+check("a stored row moves the remembered height",
+  savedBaseline && savedBaseline.lastHeightCm === 177.8);
+check("and the guard is told about it without waiting for a reload",
+  baseline.document.eventsHere.some((event) =>
+    event && event.type === "binder:height-baseline" &&
+    event.detail && event.detail.lastHeightCm === 177.8));
+
+/* Typing does not move it. This is the check that fails on the obvious
+ * wrong implementation - saving the baseline beside the draft - and the
+ * one that keeps the guard from comparing an entry against itself. */
+const typing = await loadSubmit({
+  prefill: rememberedEntry,
+  replies: [mine()],
+});
+typing.elements["height-cm"].value = "91.4";
+await typing.elements["height-cm"].dispatch("input");
+let afterTyping = null;
+try { afterTyping = JSON.parse(localValues.get(PREFILL_KEY)); }
+catch { /* a missing or malformed stored value is a failed check below */ }
+check("typing a new height does not move what it will be compared against",
+  afterTyping && afterTyping.heightCm === "91.4" &&
+  afterTyping.lastHeightCm === 175.3);
+
+/* And the baseline reaches the guard on an ordinary load, which is the
+ * only way a member who last submitted in a previous tab gets one. */
+check("a remembered height is announced to the guard at startup",
+  carried.document.eventsHere.some((event) =>
+    event && event.type === "binder:height-baseline" &&
+    event.detail && event.detail.lastHeightCm === 175.3));
+
 /*
  * #90. Signing out ends the session at the endpoint as well as in this
  * tab: without the request below the row survives to its natural expiry,
@@ -690,6 +926,37 @@ const signingOut = await loadSubmit({
 });
 await signingOut.elements["sign-out"].dispatch("click");
 check("sign out clears body-measurement prefill, session, and returns home",
+  !localValues.has(PREFILL_KEY) && Session.read() === null &&
+  redirects.at(-1) === "index.html");
+
+/*
+ * #172, and the reason this is its own arm rather than covered by the
+ * one above. The record now holds gender, country, affiliations and an
+ * age confirmation as well as measurements, and the erase is one
+ * removeItem on one key - so the check that matters is not that the
+ * erase still runs but that nothing was moved out from under it. A
+ * second key, a second store, a field kept "because it is only a
+ * boolean", and Sign out silently stops meaning what AGENTS.md says it
+ * means: this device retains neither the session nor the body data.
+ *
+ * Asserted from a record that has every field in it, and asserted as
+ * "the whole store is gone" rather than field by field, because a
+ * field-by-field check is one somebody adding a field forgets to
+ * extend.
+ */
+const signingOutFull = await loadSubmit({
+  prefill: rememberedEntry,
+  replies: [mine(), response(200, { ok: true })],
+});
+let beforeSignOut = null;
+try { beforeSignOut = JSON.parse(localValues.get(PREFILL_KEY)); }
+catch { /* an unreadable store is a failed check here */ }
+check("the remembered entry is readable before the member signs out",
+  Boolean(beforeSignOut) && beforeSignOut.gender === "female" &&
+  beforeSignOut.over18 === true && beforeSignOut.lastHeightCm === 175.3 &&
+  signingOutFull.elements.gender.value === "female");
+await signingOutFull.elements["sign-out"].dispatch("click");
+check("and signing out leaves nothing of it on the device",
   !localValues.has(PREFILL_KEY) && Session.read() === null &&
   redirects.at(-1) === "index.html");
 
@@ -851,7 +1118,7 @@ async function loadFormSubmit({ failWith }) {
     dispatchEvent(event) { dispatched.push(event && event.type); return true; },
   };
   globalThis.CustomEvent = class {
-    constructor(type) { this.type = type; }
+    constructor(type, init) { this.type = type; this.detail = init && init.detail; }
   };
   globalThis.BINDER_CONFIG = {
     endpoint: "https://worker.example",
