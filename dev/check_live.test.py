@@ -53,7 +53,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 80
+EXPECTED = 86
 
 
 def check(label, condition):
@@ -230,9 +230,13 @@ check("covers naming a real path is not reported",
       check_live.entry_problems(
           [entry(covers=["server/worker.js", "AGENTS.md"])]) == [])
 
+# The head of a run the ledger declares. Evidence has to stand on one
+# of those and this fixture is held to the same rule as a shipped row,
+# because a fixture free to cite any head would exercise every arm
+# below except the one that says which heads are citable.
 GOOD = {"date": "2026-08-09",
-        "sha": "588dac536feab3506a0f2466a75a00974a67e02d",
-        "how": "Phase 1.1, three origins, three answers"}
+        "sha": "9e78ea9d11c883f10da563ed4b99eb7c3ba1e024",
+        "how": "three origins, three answers"}
 
 check("a performed entry with full evidence raises nothing",
       check_live.entry_problems(
@@ -254,6 +258,15 @@ check("performed with an unreadable date is reported",
 check("performed with no account of what ran is reported",
       len(check_live.entry_problems([entry(
           status="performed", performed=dict(GOOD, how=""))])) == 1)
+
+# A well-formed head is not the same as a citable one. Two runs share a
+# date here, so the report cannot sort its way to the later of them and
+# reads a declared order instead; a row citing a head outside that
+# order is evidence the query has nowhere to put, and it would drop out
+# of the cadence line without a word.
+check("performed evidence standing on an undeclared head is reported",
+      len(check_live.entry_problems([entry(
+          status="performed", performed=dict(GOOD, sha="0" * 40))])) == 1)
 
 # The two statuses may not be worn at once. This is the arm that stops
 # an entry being marked discharged and permanently-impossible together,
@@ -462,6 +475,22 @@ for label, planted in (
         check_live.LEDGER = saved
     check("the %s rule is wired into problems()" % label, drove != [])
 
+# The declared-run rule breaks by taking rows away rather than by
+# adding one, so it cannot ride the loop above - and dropping every
+# performed row also empties the spine, which would make a bare
+# "something failed" arm pass for the wrong reason. The message is
+# named instead.
+saved = check_live.LEDGER
+try:
+    check_live.LEDGER = [e for e in saved if e["status"] != "performed"]
+    without = check_live.problems()
+finally:
+    check_live.LEDGER = saved
+
+check("the declared-run rule is wired into problems()",
+      any("no performed row stands on it" in problem
+          for problem in without))
+
 
 # ------------------------------------------------------------------ #
 # The query. `./run live` is the answer #157 asks for, so what it says #
@@ -481,6 +510,30 @@ check("the report states the cadence threshold",
 check("the report says outright when no rehearsal has ever run",
       ("no rehearsal" in TEXT.lower())
       == (check_live.last_rehearsal(check_live.LEDGER) is None))
+
+# Which run the cadence line names. RUNS is read in the order it is
+# written because a date cannot break the tie: two sittings on one day
+# sort equal, max() answers with whichever the ledger happens to list
+# first, and the cadence line then measures drift from the wrong head -
+# quietly, and in the reassuring direction if the older head is picked
+# last. Chronology is authored here rather than derived, so these arms
+# are what hold the authoring to something.
+BOTH = [entry(status="performed",
+              performed=dict(check_live.REHEARSAL, how="the first")),
+        entry(id="q", status="performed",
+              performed=dict(check_live.SITTING, how="the second"))]
+
+check("the latest run any performed row cites is the one reported",
+      check_live.last_rehearsal(BOTH) == check_live.SITTING)
+
+check("a run no performed row cites is not reported as the latest",
+      check_live.last_rehearsal(BOTH[:1]) == check_live.REHEARSAL)
+
+check("a declared run that no row stands on is reported",
+      len(check_live.run_problems([])) == len(check_live.RUNS))
+
+check("the shipped ledger stands on every run it declares",
+      check_live.run_problems(check_live.LEDGER) == [])
 
 check("every ledger entry reaches the report",
       all(e["id"] in TEXT for e in check_live.LEDGER))
