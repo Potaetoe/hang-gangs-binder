@@ -615,7 +615,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 313);
+const { check, report } = suite("worker.js", 323);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1490,6 +1490,129 @@ await statusOf("an admin row with an unreadable created_at still answers",
   call("GET", "/export", { headers: bearer(ODD_ADMIN) }), 200);
 check("and falls back to the window rather than to anything longer",
   near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
+/*
+ * The member arm of the same decision, asserted rather than only
+ * written down - and the residual it leaves.
+ *
+ * Members have no idle window on purpose (DESIGN.md, "Sessions"). A
+ * decision recorded only in prose is one the next reader can undo by
+ * accident: a member window added here would be a behavior change with
+ * a data-loss failure mode that no assertion in this file would notice,
+ * because every arm above it is about admins. So the deviation is
+ * pinned. Breaking these arms is what tells whoever tries that the
+ * record has to move with the code.
+ *
+ * The bound is stated in both halves, because they are separate claims
+ * and a member window would have to break both:
+ *
+ *   1. The deadline. A member row carries the seven-day cap measured
+ *      from sign-in and nothing takes a window off it, on the row at
+ *      mint or on any request afterwards.
+ *   2. The write. sessionFor() writes only admin rows, which is what
+ *      the cost argument on it rests on - a slide extended to members
+ *      is a D1 write on every authenticated member request, and it is
+ *      invisible in the deadline because a member's slide would write
+ *      the value the row already holds.
+ *
+ * And what the seven days therefore bound, which is more than the
+ * lifetime: #136's residual. A member Telegram has definitively said is
+ * gone keeps the session they already hold until they attempt to sign
+ * in again or the cap ends it, because the account id on the row is an
+ * HMAC and getChatMember needs the numeric id - see
+ * revokeAccountSessions() in server/worker.js. These arms are what say
+ * that is the residual as designed rather than an accident, and they
+ * are the arms an idle window would be reached for to close.
+ */
+reset();
+
+const SIX_DAYS = 6 * 24 * 3600 * 1000;
+const memberRow = () => sessions.find((s) => s.is_admin === 0);
+const sessionWrites = () => executed.filter(
+  (s) => s.table === "sessions" && /^\s*UPDATE\b/i.test(s.sql)).length;
+
+/*
+ * A row minted six days ago and not touched since. Six days is chosen
+ * against the cap rather than against the window: it leaves a day, so a
+ * refusal here is an idle refusal and never the ordinary expiry, and it
+ * is five hundred and seventy-six admin windows of silence.
+ */
+const QUIET_MEMBER = (await (await signIn({})).clone().json()).session;
+memberRow().created_at = new Date(Date.now() - SIX_DAYS).toISOString();
+memberRow().expires_at =
+  new Date(Date.now() - SIX_DAYS + MEMBER_CAP_MS).toISOString();
+
+await statusOf("a member session unused for six days still works",
+  call("GET", "/me", { headers: bearer(QUIET_MEMBER) }), 200);
+check("and the day left on it is the cap's, with no window taken off",
+  near(leftOn(memberRow()), MEMBER_CAP_MS - SIX_DAYS),
+  inMinutes(leftOn(memberRow())));
+
+/*
+ * The write, counted rather than inferred from the deadline. A slide
+ * extended to members writes deadlineAt(created, false, now), which is
+ * the absolute expiry - the same string the row already carries - so
+ * every deadline assertion above would still hold and only the count
+ * says it happened.
+ */
+const beforeMember = sessionWrites();
+await statusOf("a member request is answered from the row",
+  call("GET", "/me", { headers: bearer(QUIET_MEMBER) }), 200);
+check("and writes nothing back to the sessions table",
+  sessionWrites() - beforeMember === 0,
+  `${sessionWrites() - beforeMember} write(s)`);
+
+/* The control. Without it a stub that had lost its UPDATE arm would
+ * pass the check above with an implementation that slides everybody. */
+const BUSY_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
+const beforeAdmin = sessionWrites();
+await statusOf("the admin request beside it is answered too",
+  call("GET", "/me", { headers: bearer(BUSY_ADMIN) }), 200);
+check("and writes exactly one row back",
+  sessionWrites() - beforeAdmin === 1,
+  `${sessionWrites() - beforeAdmin} write(s)`);
+
+/*
+ * #136's residual as behavior. `gated` is what puts a group check in
+ * front of sign-in at all; `answer` says what Telegram would reply if
+ * anything asked, and the point of the first arm is that nothing does.
+ *
+ * The Telegram stub is re-installed here rather than assumed. The block
+ * that first sets it puts the real fetch back when it is finished, so a
+ * sign-in run here without this reaches the network and is refused for
+ * a reason that has nothing to do with the rule under test - which is
+ * how this arm read on its first run.
+ */
+reset();
+const beforeResidual = globalThis.fetch;
+globalThis.fetch = async () => {
+  if (answer instanceof Error) throw answer;
+  return new Response(JSON.stringify(answer), { headers: TYPE });
+};
+
+answer = { ok: true, result: { status: "member" } };
+const LEAVER = await mintFor({});
+answer = { ok: true, result: { status: "left" } };
+
+await statusOf("a member Telegram calls gone keeps the session they hold",
+  call("GET", "/me", { headers: bearer(LEAVER) }, gated), 200);
+
+memberRow().created_at = new Date(Date.now() - SIX_DAYS).toISOString();
+memberRow().expires_at =
+  new Date(Date.now() - SIX_DAYS + MEMBER_CAP_MS).toISOString();
+await statusOf("and six days of never touching it does not end that one",
+  call("GET", "/me", { headers: bearer(LEAVER) }, gated), 200);
+
+/* The control on the arms above, and the reason they mean what they
+ * say: the same account, the same answer, at the one place that does
+ * ask - so "nothing re-checks" is asserted against a lever that is
+ * demonstrably live rather than against one that might be broken. */
+await statusOf("while the sign-in attempt they never make would end it",
+  signIn({}, gated), 403);
+await statusOf("and it is that attempt, not the passage of time, that does",
+  call("GET", "/me", { headers: bearer(LEAVER) }, gated), 401);
+
+globalThis.fetch = beforeResidual;
 
 /* ------------------------------------------------------------------ */
 /* Corrections - a new row that names the row it supersedes (#84).     */
