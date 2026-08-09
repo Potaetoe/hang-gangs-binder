@@ -130,6 +130,14 @@ issue by hand with a comment saying what landed.
   live, and never let one imply another. A check you could not run is
   reported as *not performed*, never omitted. A queued CI run is not a
   green run.
+- **A `live` claim nobody could perform belongs in the ledger, not
+  only in a pull request body.** `./run live` is the query for what
+  has never been exercised against a running system, what never can be
+  before production, and when the next batch is due; `tools/check_live.py`
+  carries it, and the gate fails on a route or a page that has no row.
+  A body is not in the repository, so a correct label written in thirty
+  of them summed into a gap nobody owned — which is what the ledger
+  exists to stop.
 - **Check that a CI run exists for the head commit**, not merely that
   none failed — an absent run reads as success in every listing:
   `gh api "repos/OWNER/REPO/actions/runs?head_sha=<sha>"` with the
