@@ -239,8 +239,15 @@ await check("a record with no account on it is erased", () => {
  * the opposite one: a record whose id merely case-folds to this member's
  * is a record this file did not write, and it is erased.
  */
-await check("an account id that only case-folds to this one is erased", () =>
-  Keys.custodyVerdict(good(), "A".repeat(64)) === "erase");
+await check("an account id that only case-folds to this one is erased", () => {
+  // The RECORD carries the folded form and the caller carries the real
+  // one, which is the only arrangement that tests the comparison. The
+  // other way round tests the account-id pattern instead - "A" is not
+  // hex to it - and passes whatever the comparison does.
+  const record = good();
+  record.accountId = "A".repeat(64);
+  return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
+});
 
 await check("a record carrying no private key is erased", () => {
   const record = good();
