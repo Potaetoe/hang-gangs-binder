@@ -1622,11 +1622,20 @@ a { color: var(--color-accent-text); }
  */
 body.instrument .runner { color: var(--color-text-muted); }
 
-body.instrument h1 {
+/* h2 is in this rule for the same reason h1 is: the decision above gives
+   the title up to the body face because a display face is decoration on
+   a page meant to be operated, and a card heading is that decoration one
+   level down. Left to the cascade h2 renders at 24px serif against this
+   page's 18px sans h1 - the loudest thing on the admin surface would be
+   a subheading. The sizes stay ordered so the title stays largest. */
+body.instrument h1,
+body.instrument h2 {
   font-family: var(--font-body);
-  font-size: var(--text-lg);
   letter-spacing: 0.01em;
 }
+
+body.instrument h1 { font-size: var(--text-lg); }
+body.instrument h2 { font-size: var(--text-base); }
 
 body.instrument .page { gap: var(--space-4); }
 

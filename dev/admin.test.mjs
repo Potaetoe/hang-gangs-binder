@@ -28,7 +28,9 @@ await load("../apps/web/form.js");
 await load("../apps/web/crypto.js");
 
 const { COLUMNS, entryFor, rowFor, csvCell, toCsv, toJson, fileName,
-  storedKeyVerdict, storedKeyNotice } = globalThis.BinderAdmin;
+  storedKeyVerdict, storedKeyNotice, MEMBERSHIP_ROLES, membershipView,
+  secretOnlyNotice, refusalFor, addedNotice, removalStep } =
+  globalThis.BinderAdmin;
 const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
 
 /* A stored row straight to a CSV row. entryFor is the normalization
@@ -478,6 +480,193 @@ await check("a row encrypted to another key refuses to open", async () => {
   } catch (error) {
     return /could not be opened/.test(error.message);
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* The membership lists (#69).                                        */
+
+/*
+ * The reader that turns GET /membership into a screen.
+ *
+ * Every check below is aimed at the same failure: a reader that declines
+ * to see part of a valid answer and reports the page as drawn anyway.
+ * The rows in this response are AUTHORITY - the Worker has already
+ * filtered them through the same grantsAnything() its admin check uses -
+ * so a row this reader drops is a live grant that no screen shows, and
+ * nothing downstream can notice, because a row that was never drawn is
+ * not something a renderer can count.
+ */
+const ROW = (over) => Object.assign({
+  account_id: "a".repeat(64),
+  role: "admin",
+  label: "The founder",
+  added_at: "2026-08-08T09:00:00.000Z",
+}, over || {});
+
+const ANSWER = (over) => Object.assign({
+  ok: true,
+  membership: [],
+  malformed: [],
+  secretOnly: [],
+}, over || {});
+
+const rowsFor = (view, role) =>
+  view.lists.filter((list) => list.role === role)[0].rows;
+
+await check("both lists are drawn even when the answer is empty", () => {
+  // The state that most needs a screen is the one with no admin rows in
+  // it, because that is the lockout this issue opens with. A view built
+  // from the rows it was sent would have no sections to draw at all.
+  const view = membershipView(ANSWER());
+  return same(view.lists.map((list) => list.role), MEMBERSHIP_ROLES) &&
+    view.lists.every((list) => list.rows.length === 0);
+});
+
+await check("rows land in their own list, in the order they arrived", () => {
+  const view = membershipView(ANSWER({
+    membership: [
+      ROW({ account_id: "b".repeat(64), label: "second" }),
+      ROW({ account_id: "c".repeat(64), role: "always_allow", label: "bg" }),
+      ROW({ account_id: "d".repeat(64), label: "fourth" }),
+    ],
+  }));
+  return same(rowsFor(view, "admin").map((row) => row.label),
+    ["second", "fourth"]) &&
+    same(rowsFor(view, "always_allow").map((row) => row.label), ["bg"]);
+});
+
+await check("a granting row with an unknown role is reported, not dropped",
+  () => {
+    // THE ELSE-BRANCH. A role this page has never heard of still grants
+    // whatever the Worker says it grants; sorting it into silence would
+    // hide authority from the one screen that exists to show it.
+    const view = membershipView(ANSWER({
+      membership: [ROW({ role: "auditor", label: "a role from the future" })],
+    }));
+    return view.unknown.length === 1 &&
+      view.unknown[0].label === "a role from the future" &&
+      view.lists.every((list) => list.rows.length === 0);
+  });
+
+await check("an entry that is not a row at all is counted rather than lost",
+  () => {
+    const view = membershipView(ANSWER({
+      membership: [null, "a string", ROW(), { role: "admin" }],
+    }));
+    return rowsFor(view, "admin").length === 1 && view.dropped === 3;
+  });
+
+await check("malformed rows stay in their own list", () => {
+  const view = membershipView(ANSWER({
+    malformed: [ROW({ account_id: "A".repeat(64), label: "typed by hand" })],
+  }));
+  return view.malformed.length === 1 &&
+    view.malformed[0].account_id === "A".repeat(64) &&
+    rowsFor(view, "admin").length === 0;
+});
+
+await check("an absent field is not an empty one", () => {
+  // The whole point of `absent`. `secretOnly` empty is the flip's
+  // go-signal, so a page that renders a field the Worker never sent as
+  // an empty one prints a go-signal nobody gave.
+  const view = membershipView({ ok: true });
+  return same(view.absent.slice().sort(),
+    ["malformed", "membership", "secretOnly"]);
+});
+
+await check("a field that came back empty is not reported absent", () =>
+  membershipView(ANSWER()).absent.length === 0);
+
+await check("a response that is not an object at all is all-absent", () =>
+  membershipView(null).absent.length === 3 &&
+  membershipView("no").lists.length === MEMBERSHIP_ROLES.length);
+
+await check("secretOnly keeps only the ids it can draw", () => {
+  const view = membershipView(ANSWER({
+    secretOnly: ["e".repeat(64), 7, null, "f".repeat(64)],
+  }));
+  return same(view.secretOnly, ["e".repeat(64), "f".repeat(64)]) &&
+    view.dropped === 2;
+});
+
+/* The go-signal, in its three states. Two of them are easy and the third
+ * is the one that matters: a Worker that did not answer the question
+ * must not be reported as having answered it well. */
+await check("an empty secretOnly reads as the go-signal", () =>
+  /go-signal/.test(secretOnlyNotice(membershipView(ANSWER()))));
+
+await check("a non-empty secretOnly says the backfill is not finished", () => {
+  const notice = secretOnlyNotice(membershipView(ANSWER({
+    secretOnly: ["e".repeat(64), "f".repeat(64)],
+  })));
+  return /not finished/.test(notice) && /\b2\b/.test(notice);
+});
+
+await check("an absent secretOnly says so rather than claiming the signal",
+  () => {
+    const notice = secretOnlyNotice(membershipView({ ok: true }));
+    return /did not report/.test(notice) && !/go-signal/.test(notice);
+  });
+
+await check("the secretOnly notice says the ids resolve to nobody", () =>
+  /name nobody/.test(secretOnlyNotice(membershipView(ANSWER({
+    secretOnly: ["e".repeat(64)],
+  })))));
+
+/* The three refusals, which are three different acts and not three
+ * different sentences. */
+await check("401 discards the session and leaves", () =>
+  refusalFor(401, { error: "Unauthorized." }).action === "signed-out");
+
+await check("409 says the removal did not happen, and stays", () => {
+  // The page stays and re-reads; what is particular about a 409 is the
+  // sentence, not the act, so the sentence is what this pins. A `reread`
+  // action was written here first and taken out - the caller re-reads
+  // after every refusal that leaves the page, so nothing could ever have
+  // read it, and a mutation on it reddened nothing.
+  const refusal = refusalFor(409, { error: "That is the last admin row." });
+  return refusal.action === "show" &&
+    /last admin row/.test(refusal.message) &&
+    /Nothing was removed/.test(refusal.message);
+});
+
+await check("every other refusal shows what the Worker said", () => {
+  const refusal = refusalFor(400, { error: "A numeric Telegram id is needed." });
+  return refusal.action === "show" &&
+    refusal.message === "A numeric Telegram id is needed.";
+});
+
+await check("a refusal with no readable body still says something", () =>
+  refusalFor(500, null).message === "The server answered 500." &&
+  refusalFor(0, null).message === "The connection failed.");
+
+await check("a 409 the Worker did not explain still says nothing was removed",
+  () => /Nothing was removed/.test(refusalFor(409, {}).message));
+
+/* After an add: the sentence that stops the same row being added three
+ * times because nothing on the new admin's screen changed. */
+await check("adding an admin says the flag arrives at the next sign-in", () => {
+  const notice = addedNotice("admin", "The founder");
+  return /The founder/.test(notice) && /sign out and in/.test(notice);
+});
+
+await check("adding an always-allow row says removal is not revocation", () =>
+  /not a revocation/.test(addedNotice("always_allow", "Break glass")));
+
+await check("an add with no label still reads as a sentence", () =>
+  addedNotice("admin", "").length > 0 &&
+  !/""/.test(addedNotice("admin", "")));
+
+/* The two-step removal. */
+await check("a removal names the row on its second press", () => {
+  const row = ROW({ label: "The founder" });
+  return removalStep(row, false) === "Remove The founder" &&
+    /^Confirm removing The founder/.test(removalStep(row, true));
+});
+
+await check("a row with no label is not confirmed by its hex", () => {
+  const text = removalStep(ROW({ label: "" }), true);
+  return !/a{10}/.test(text) && text.length > 0;
 });
 
 /* ------------------------------------------------------------------ */

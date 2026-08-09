@@ -284,6 +284,263 @@
         "key file: it is what puts the key back.";
   }
 
+  /* ---------------------------------------------------------------- */
+  /* The membership lists (#69).                                      */
+
+  /*
+   * The two lists this page draws, in the order it draws them.
+   *
+   * These are `MEMBERSHIP_ROLES` in server/worker.js, and the page holds
+   * its own copy rather than learning them from a response, because the
+   * page has to be able to draw an EMPTY admin list. A page that
+   * discovered its sections from the rows it was sent would render
+   * nothing at all on the day the admin list is empty - which is the one
+   * state that most needs a screen, since it is the lockout #69 opens
+   * with.
+   *
+   * The order is not alphabetical and is not arbitrary: `admin` is the
+   * list this page manages outright, and `always_allow` is the one it
+   * can only add to. The consequential list goes first.
+   */
+  const MEMBERSHIP_ROLES = Object.freeze(["admin", "always_allow"]);
+
+  /*
+   * What `GET /membership` answered, sorted into what the page draws.
+   *
+   * FOUR OUTPUTS RATHER THAN TWO, and the two extra ones are the reason
+   * this is a function with a suite rather than a loop inside the
+   * renderer.
+   *
+   * `unknown` is the else-branch of the role test, and it is the arm
+   * that stops this reader failing open. Every row in `membership` has
+   * already passed the Worker's own `grantsAnything()` - the same
+   * predicate its authority read uses - so a row here GRANTS whatever
+   * its role says. A renderer that sorted rows into `admin`,
+   * `always_allow` and silence would hide a live grant from the one
+   * screen that exists to show them, and the gate would stay green
+   * because nothing counts rows that were never drawn. A membership test
+   * with no else is a silent skip; what this one would skip is
+   * authority.
+   *
+   * `absent` is the difference between a field that came back empty and
+   * one that did not come back at all, and it is not a nicety.
+   * `secretOnly` reading empty is the flip's go-signal (OPERATIONS.md,
+   * "Making someone an admin"), so a page that renders a missing field
+   * as an empty one prints that go-signal from a Worker that never gave
+   * it. Absent is never empty anywhere in this file.
+   *
+   * `dropped` counts entries that were not rows at all. They cannot be
+   * drawn - there is nothing to draw - so the count is what keeps them
+   * from being silently discarded.
+   */
+  const MEMBERSHIP_FIELDS = ["membership", "malformed", "secretOnly"];
+
+  /* A row this page can draw: an object carrying an account id it can
+   * put on a button. Anything else is counted rather than drawn, because
+   * there is nothing to draw. */
+  function isRow(row) {
+    return Boolean(row) && typeof row === "object" &&
+      typeof row.account_id === "string" && row.account_id !== "";
+  }
+
+  function membershipView(payload) {
+    const body = payload && typeof payload === "object" ? payload : {};
+    const lists = MEMBERSHIP_ROLES.map(function (role) {
+      return { role: role, rows: [] };
+    });
+    const unknown = [];
+    const malformed = [];
+    const secretOnly = [];
+    const absent = [];
+    let dropped = 0;
+
+    for (const field of MEMBERSHIP_FIELDS) {
+      if (!Array.isArray(body[field])) absent.push(field);
+    }
+
+    for (const row of Array.isArray(body.membership) ? body.membership : []) {
+      if (!isRow(row)) {
+        dropped++;
+        continue;
+      }
+      const known = lists.filter(function (list) {
+        return list.role === row.role;
+      })[0];
+      // The else, said out loud. See the note above this function.
+      if (known) known.rows.push(row);
+      else unknown.push(row);
+    }
+
+    for (const row of Array.isArray(body.malformed) ? body.malformed : []) {
+      if (isRow(row)) malformed.push(row);
+      else dropped++;
+    }
+
+    for (const id of Array.isArray(body.secretOnly) ? body.secretOnly : []) {
+      if (typeof id === "string" && id) secretOnly.push(id);
+      else dropped++;
+    }
+
+    return {
+      lists: lists,
+      unknown: unknown,
+      malformed: malformed,
+      secretOnly: secretOnly,
+      absent: absent,
+      dropped: dropped,
+    };
+  }
+
+  /*
+   * What the `secretOnly` list means, in the words the runbook uses.
+   *
+   * Three states and not two. Empty is the go-signal; non-empty is a
+   * backfill that is not finished; ABSENT is a Worker that did not
+   * answer the question, and saying "the backfill is complete" there
+   * would be inventing the one fact this page exists to report.
+   *
+   * The ids themselves are HMACs and the sentence says so. An admin may
+   * see them - they are the same un-invertible values sitting in the
+   * rows above, going to a caller who may read every one of those rows
+   * anyway - but a reader who thinks a 64-character hex string is
+   * something they can look up will go looking, so the copy closes that
+   * door explicitly.
+   */
+  function secretOnlyNotice(view) {
+    if (!view || view.absent.indexOf("secretOnly") !== -1) {
+      return "This Worker did not report which admins the secret grants " +
+        "on its own, so nothing here can say whether the backfill is " +
+        "finished. Read GET /membership directly before acting on this.";
+    }
+    if (!view.secretOnly.length) {
+      return "Every admin the ADMIN_TELEGRAM_IDS secret grants also holds " +
+        "a row above. That is the go-signal: dropping the secret arm now " +
+        "would take nobody's authority away.";
+    }
+    return view.secretOnly.length + " admin(s) are granted by the " +
+      "ADMIN_TELEGRAM_IDS secret and by no row above, so the backfill is " +
+      "not finished. Their account ids are listed below, and they name " +
+      "nobody: each is a one-way hash, nothing on this page can turn one " +
+      "back into a person, and the numeric ids behind them are inside a " +
+      "secret that is unreadable by design. Add each of those people by " +
+      "their numeric id above until this list is empty.";
+  }
+
+  /*
+   * What the page does about a refusal, and what it says.
+   *
+   * One function because the three membership calls must not each invent
+   * their own answer to the same two questions - does the page stay, and
+   * what does it say.
+   *
+   *   401 - the session is gone. Discard it and leave. This page holds
+   *         every submission in the clear, so a session the Worker no
+   *         longer accepts is a tab that should not stay open on it.
+   *   else - stay, and show what the Worker said. Its `{error}` is
+   *         written for the admin who provoked it and is more specific
+   *         than anything this side could guess.
+   *
+   * TWO ACTIONS RATHER THAN THREE, and the missing one is deliberate.
+   * A `reread` action for the 409 was written first and then taken out,
+   * because nothing could read it: the caller re-reads after EVERY
+   * refusal that leaves the page, and it has to - a refused removal
+   * means the table is whatever it already was, and a refused anything
+   * else means this page does not know what the table holds. An action
+   * no branch depends on is a value that looks like a decision and is
+   * not one, and the mutation meant to prove it load-bearing reddened
+   * nothing. What is genuinely particular about the 409 is its
+   * SENTENCE, so that is where it lives.
+   */
+  function refusalFor(status, payload) {
+    const said = payload && typeof payload === "object" &&
+      typeof payload.error === "string" && payload.error.trim()
+      ? payload.error.trim()
+      : "";
+
+    if (status === 401) {
+      return {
+        action: "signed-out",
+        message: "The admin session was not accepted, so it has been " +
+          "discarded. Sign in again.",
+      };
+    }
+    if (status === 409) {
+      return {
+        action: "show",
+        message: (said || "The Worker refused that removal.") +
+          " Nothing was removed; the lists below are what it holds now.",
+      };
+    }
+    return {
+      action: "show",
+      message: said || (status
+        ? "The server answered " + status + "."
+        : "The connection failed."),
+    };
+  }
+
+  /*
+   * What to say after a row is added, which is the half of this that can
+   * only be got wrong in words.
+   *
+   * ADDING AN ADMIN ROW DOES NOTHING FOR A SESSION THAT ALREADY EXISTS.
+   * `is_admin` is minted at sign-in and the per-request re-read can only
+   * take adminness away (server/schema.sql, the `sessions` block), so
+   * the new admin sees no change until they sign out and in again. An
+   * admin who is not told that reads the unchanged screen as the add
+   * having failed, and adds it again.
+   *
+   * For `always_allow` the sentence that has to be said is the other
+   * one: this row is an ADDITION beside ALWAYS_ALLOW_TELEGRAM_IDS, which
+   * is checked first and by numeric id and is not managed from here - so
+   * removing this row later is not a revocation.
+   */
+  function addedNotice(role, label) {
+    const named = typeof label === "string" && label.trim()
+      ? label.trim()
+      : "That account";
+    if (role === "admin") {
+      return named + " is on the admin list, and becomes an admin at " +
+        "their NEXT sign-in: the admin flag is minted when a session is " +
+        "created, so a session they are already holding does not change. " +
+        "Ask them to sign out and in again.";
+    }
+    return named + " is on the always-allow list, and is past the group " +
+      "check from their next request. Removing this row later is not a " +
+      "revocation while ALWAYS_ALLOW_TELEGRAM_IDS still names them - that " +
+      "secret is checked first, and it is not managed from here.";
+  }
+
+  /*
+   * A removal button's text, on each of its two presses.
+   *
+   * The removal is two presses of the same button rather than one, and
+   * the second press names the row. This is a courtesy and NOT a guard:
+   * the thing that actually stops the admin list being emptied is the
+   * Worker's last-admin subquery, which is inside the DELETE and cannot
+   * be raced. A browser-side confirmation protects nothing - anything
+   * that can reach this page can issue the request without it - so it is
+   * built as what it is: a second look before an irreversible act, in
+   * the page's own components rather than in a platform dialog.
+   *
+   * The label rather than the account id, because the account id is a
+   * 64-character HMAC and nobody can tell two of them apart at a glance.
+   * A row with no readable label falls back to naming nothing rather
+   * than to naming the hex, since a confirmation that reads as noise is
+   * a confirmation nobody reads.
+   */
+  function removalStep(row, armed) {
+    const named = row && typeof row.label === "string" && row.label.trim()
+      ? row.label.trim()
+      : "";
+    if (armed) {
+      return named
+        ? "Confirm removing " + named
+        : "Confirm removing this row";
+    }
+    return named ? "Remove " + named : "Remove this row";
+  }
+
   // Frozen because admin.html is where decrypt output becomes a CSV: an
   // export a later script can rewrite is a `toCsv` that can be swapped
   // for one that keeps a copy, on the one page in this site that holds
@@ -298,6 +555,12 @@
     fileName: fileName,
     storedKeyVerdict: storedKeyVerdict,
     storedKeyNotice: storedKeyNotice,
+    MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
+    membershipView: membershipView,
+    secretOnlyNotice: secretOnlyNotice,
+    refusalFor: refusalFor,
+    addedNotice: addedNotice,
+    removalStep: removalStep,
   });
 
   /* ---------------------------------------------------------------- */
@@ -939,8 +1202,276 @@
       }
     }
 
+    /* -------------------------------------------------------------- */
+    /*
+     * The membership lists (#69).
+     *
+     * Everything here goes through one function that reads
+     * `GET /membership` and redraws from the answer. There is no local
+     * model of the table and no optimistic update, and that is the whole
+     * design rather than laziness: the Worker refuses some removals
+     * (the last admin row), silently relabels some adds, and folds case
+     * on the ids it matches - so a page keeping its own copy would draw
+     * a table the Worker does not have, and the case it would get wrong
+     * is the lockout this issue opens with.
+     *
+     * Read once when the page starts and once after every write. No
+     * timer and no keepalive: #91 ends an admin session on idle, and a
+     * pane that polled would hold that session open on the one page in
+     * this site that shows every submission in the clear.
+     */
+    function sayMembership(message, tone) {
+      UI.setStatus($("membership-status"), message, tone);
+    }
+
+    // A row's own line: what it is called, when it arrived, and the way
+    // to take it off. The label is somebody's typing and goes on through
+    // textContent - see the note on the table renderer above.
+    function membershipRow(row, role) {
+      const line = document.createElement("div");
+      line.className = "row";
+
+      const name = document.createElement("span");
+      name.textContent = row.label ? String(row.label) : "(no label)";
+      line.appendChild(name);
+
+      const when = document.createElement("span");
+      when.className = "hint";
+      when.textContent = row.added_at
+        ? "added " + String(row.added_at).slice(0, 10)
+        : "added at an unrecorded time";
+      line.appendChild(when);
+
+      /*
+       * Two presses, and the second one names the row.
+       *
+       * This is a second look before an irreversible act, and it is NOT
+       * a guard: what actually stops the admin list being emptied is the
+       * Worker's subquery inside the DELETE, which cannot be raced by
+       * two admins tidying the list at once. Anything that can reach
+       * this page can issue the request without pressing anything here.
+       *
+       * Armed state lives on the button rather than in a variable
+       * outside it, so a redraw disarms every button by replacing it -
+       * an armed button left over from the previous answer would be one
+       * press away from removing a row the admin never looked at.
+       */
+      const button = document.createElement("button");
+      let armed = false;
+      button.type = "button";
+      button.className = "secondary";
+      button.textContent = removalStep(row, false);
+      button.addEventListener("click", function () {
+        if (!armed) {
+          armed = true;
+          button.textContent = removalStep(row, true);
+          return;
+        }
+        return removeMembership(row, role, button);
+      });
+      line.appendChild(button);
+      return line;
+    }
+
+    function drawRows(container, rows, role) {
+      container.textContent = "";
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No rows.";
+        container.appendChild(empty);
+        return;
+      }
+      for (const row of rows) container.appendChild(membershipRow(row, role));
+    }
+
+    function drawMembership(view) {
+      for (const list of view.lists) {
+        drawRows($("membership-" + list.role), list.rows, list.role);
+      }
+
+      drawRows($("membership-malformed-list"), view.malformed, "admin");
+      show($("membership-malformed"), view.malformed.length > 0);
+
+      $("secret-only").textContent = secretOnlyNotice(view);
+      // The ids themselves, as machine text in a block that scrolls
+      // inside itself. An admin may see them - they are the same
+      // un-invertible values the rows above already carry - and seeing
+      // them is what makes "one remains" checkable against a re-read
+      // rather than a number to be trusted. They go nowhere else: no
+      // download, no clipboard, no storage.
+      $("secret-only-ids").textContent = view.secretOnly.join("\n");
+      show($("secret-only-ids"), view.secretOnly.length > 0);
+
+      // Anything the reader could not place. A row here still grants
+      // whatever its role says, so it is shown rather than dropped.
+      const other = view.unknown.length > 0 || view.dropped > 0 ||
+        view.absent.length > 0;
+      show($("membership-other"), other);
+      if (other) {
+        const notes = view.unknown.map(function (row) {
+          return "role " + String(row.role) + ": " + String(row.label || "") +
+            " (" + String(row.account_id) + ")";
+        });
+        if (view.dropped) {
+          notes.push(view.dropped +
+            " entrie(s) in this answer were not rows this page could read.");
+        }
+        if (view.absent.length) {
+          notes.push("this answer carried no " + view.absent.join(", ") +
+            " list at all.");
+        }
+        $("membership-other-body").textContent = notes.join("\n");
+      }
+    }
+
+    /*
+     * One refusal handler for all three calls.
+     *
+     * A 401 ends the tab: this page holds every submission in the clear,
+     * and a session the Worker no longer accepts is not one to keep a
+     * key and a corpus sitting behind. Returning true means the caller
+     * should stop, because the page is leaving; every other refusal
+     * returns false and the caller re-reads.
+     */
+    function handleRefusal(status, payload) {
+      const refusal = refusalFor(status, payload);
+      sayMembership(refusal.message, "bad");
+      if (refusal.action !== "signed-out") return false;
+      root.BinderSession.clear();
+      if (root.location && typeof root.location.replace === "function") {
+        root.location.replace("index.html");
+      }
+      return true;
+    }
+
+    // The body of a refusal, or null. A Worker that answered something
+    // other than JSON is a refusal with nothing to quote, not a crash.
+    async function refusalBody(response) {
+      try {
+        return await response.json();
+      } catch (error) {
+        return null;
+      }
+    }
+
+    async function readMembership() {
+      let payload;
+      try {
+        const response = await fetch(config.endpoint + "/membership", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (!response.ok) {
+          handleRefusal(response.status, await refusalBody(response));
+          return;
+        }
+        payload = await response.json();
+      } catch (error) {
+        sayMembership("The membership lists could not be read. " +
+          (error && error.message ? error.message : "The connection failed."),
+          "bad");
+        return;
+      }
+      drawMembership(membershipView(payload));
+    }
+
+    $("member-add").addEventListener("click", async function () {
+      const telegramId = $("member-telegram-id").value.trim();
+      const label = $("member-label").value.trim();
+
+      /*
+       * The only thing checked on this side, and it is not a validator.
+       * The shape rules - how many digits, how long a label - live in
+       * server/worker.js and are deliberately not restated here: two
+       * copies of a rule drift, and the copy in the browser is the one
+       * that cannot be trusted anyway. This is the difference between a
+       * round trip and no round trip on an empty field, nothing more,
+       * and every other refusal is shown in the Worker's own words.
+       */
+      if (!telegramId || !label) {
+        sayMembership("A numeric Telegram id and a label are both needed.",
+          "bad");
+        return;
+      }
+
+      const role = UI.checkedValue("member-role", MEMBERSHIP_ROLES[0]);
+      $("member-add").disabled = true;
+      sayMembership("Adding…", null);
+      try {
+        const response = await fetch(config.endpoint + "/membership", {
+          method: "POST",
+          headers: Object.assign(
+            { "Content-Type": "application/json" },
+            root.BinderSession.authorization()),
+          body: JSON.stringify({
+            role: role,
+            telegramId: telegramId,
+            label: label,
+          }),
+        });
+        if (!response.ok) {
+          $("member-add").disabled = false;
+          handleRefusal(response.status, await refusalBody(response));
+          return;
+        }
+      } catch (error) {
+        $("member-add").disabled = false;
+        sayMembership("That could not be sent. " +
+          (error && error.message ? error.message : "The connection failed."),
+          "bad");
+        return;
+      }
+
+      // Cleared only now, and only the id. A refused add keeps what was
+      // typed so a typo is corrected rather than retyped; a sent one
+      // leaves nothing behind, because this page is the last place that
+      // numeric id exists.
+      $("member-telegram-id").value = "";
+      $("member-add").disabled = false;
+      await readMembership();
+      sayMembership(addedNotice(role, label), null);
+    });
+
+    async function removeMembership(row, role, button) {
+      button.disabled = true;
+      sayMembership("Removing…", null);
+      try {
+        // The account id exactly as GET handed it back. The Worker folds
+        // case on both sides so a malformed row can be removed at all;
+        // lower-casing here would ask it to remove a different row.
+        const response = await fetch(
+          config.endpoint + "/membership/" +
+            encodeURIComponent(role) + "/" +
+            encodeURIComponent(String(row.account_id)),
+          {
+            method: "DELETE",
+            headers: root.BinderSession.authorization(),
+          });
+        if (!response.ok) {
+          button.disabled = false;
+          const left = handleRefusal(response.status,
+            await refusalBody(response));
+          // A refusal means the table is whatever it already was. Nothing
+          // is dropped from this page first - a page that removed the row
+          // locally would draw the lockout the Worker just prevented.
+          if (!left) await readMembership();
+          return;
+        }
+      } catch (error) {
+        button.disabled = false;
+        sayMembership("That could not be removed. " +
+          (error && error.message ? error.message : "The connection failed."),
+          "bad");
+        return;
+      }
+
+      await readMembership();
+      sayMembership("Removed.", null);
+    }
+
     loadStoredKey();
     refreshPublishedState();
+    readMembership();
 
     /*
      * Publishing.
