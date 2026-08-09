@@ -295,9 +295,9 @@ more, not less:
 
 - **A published cell describes at least five people** (`MIN_CELL`).
   Suppression is by **subtraction, not redaction** — removed cells fold
-  into an `Other` bucket that itself clears the floor, so nothing is
-  disclosed by arithmetic on the remainder. Histograms merge adjacent
-  bins instead.
+  into an `Other` bucket that itself clears the floor, so *within a
+  single document* the remainder cannot be differenced back to a
+  suppressed cell. Histograms merge adjacent bins instead.
 - **One partition, not two.** Both unit systems report the same groups
   under converted edges; two independently-binned partitions can be
   differenced back into sub-floor cells (demonstrated in 2899 of 3000
@@ -315,6 +315,26 @@ more, not less:
 - The height-discrepancy panel is never published — it is a tool for
   the keyholder, and published it would be a list of strangers'
   heights. BMI is a number, never a clinical label.
+
+**Every floor above bounds what a document *states*, not what the
+corpus *discloses*.** The distinction is real and it is accepted
+deliberately. Each published document carries a count and a mean weight
+per basis, and their product is the combined weight to within rounding
+— so a reader who has kept two documents can compute the movement
+between them whatever the floor in `movementOf()` declined to print.
+The owner ruled on 2026-08-09 (#153) to accept that channel rather than
+close it, on three grounds. Deriving the figure takes two saved
+snapshots and arithmetic done by somebody already entitled to read both
+floored documents, which makes it disclosure among people who can each
+already see the data rather than leakage outward. The mean is a number
+members use for its own sake, so suppressing it to close the channel
+would charge every member real value. And it buys less than it looks:
+count multiplied by mean is not the only pair of published figures that
+reconstructs a third, so shutting this door leaves the room with
+several. **Re-take this ruling if the readership widens** — it is
+argued entirely from a members-only audience, and published snapshots
+reaching anyone beyond the membership changes the calculus rather than
+merely enlarging it.
 
 ## Threat model, honestly stated
 
