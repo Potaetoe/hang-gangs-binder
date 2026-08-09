@@ -21,7 +21,7 @@
   Pages does not serve one.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Your binder — HangGang</title>
+<title>Your page — Hang Gang Binder</title>
 <meta name="description" content="Your page in the Hang Gang's binder. Entries are encrypted in your browser before they are sent.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
@@ -61,18 +61,15 @@
 -->
 <aside class="rail">
   <a class="wordmark" href="index.html">
-    <span class="wordmark-owner">Muse's</span>
+    <span class="wordmark-owner">Hang Gang</span>
     <span class="wordmark-name">Binder</span>
   </a>
 
   <nav aria-label="Site">
     <ul class="rail-links">
-      <li><a href="submit.html">Your binder</a></li>
-      <li><a href="dashboard.html">Progress</a></li>
-      <li>
-        <a href="admin.html">Admin</a>
-        <span class="rail-note">Keyholder only — needs the key</span>
-      </li>
+      <li><a href="submit.html">Your page</a></li>
+      <li><a href="dashboard.html">Muse's charts</a></li>
+      <li><a href="admin.html">Admin</a></li>
     </ul>
   </nav>
 
@@ -94,7 +91,7 @@
      entries panel. -->
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>
-  <h1>Your binder</h1>
+  <h1>Your page</h1>
   <p class="muted">
     Fill the form and you are in the binder. Your session lasts as long
     as this tab.
@@ -123,15 +120,15 @@
        which theme.css measures against the page rather than against a
        card. -->
   <div class="stack-tight" id="member-tabs" hidden>
-    <div role="tablist" aria-label="Your binder">
+    <div role="tablist" aria-label="Your page">
       <button type="button" id="your-entries-tab" role="tab"
               aria-controls="your-entries-pane" aria-selected="true">
-        Entries
+        On record
       </button>
       <button type="button" id="add-entry-tab" role="tab"
               aria-controls="add-entry-pane" aria-selected="false"
               tabindex="-1">
-        New entry
+        Weigh in
       </button>
     </div>
     <p class="status" id="member-panel-status" role="status"
@@ -463,9 +460,9 @@
   </section>
 </main>
 
-<!-- Progress is linked here as well as in the rail: this link is at
-     the end of the form, which is where somebody who has just submitted
-     actually is.
+<!-- Muse's charts is linked here as well as in the rail: this link is
+     at the end of the form, which is where somebody who has just
+     submitted actually is.
 
      It says what that page is rather than naming it, which is the one
      deliberate departure from the site's one-name-per-destination rule
@@ -499,29 +496,28 @@
       <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
       <!--
-        "Parchment Daylight" - the owner's ruling on #127, and the one
-        place in this control where the visible word and the code's name
-        for the same thing deliberately differ.
+        "Daylight" - the owner's ruling on #191, which reverses #127's
+        longer label by direction of the same owner. The word and the
+        id now agree, and nothing in this control asks a reader to hold
+        two names for one palette.
 
-        The id stays `daylight`: here in data-set-theme, in theme.js's
-        theme-color map and its light-preference answer, in two theme.css
-        selector blocks that must go on declaring identical colors, in
-        check_contrast.py's table keys, and - the one that cannot be
-        undone - in every member's stored preference. Renaming the id
-        would silently return everybody who has already chosen this
-        palette to the default.
-
-        The label is what moved, and it moves theme.css's own comments
-        and check_contrast.py's display names from aspiration to fact:
-        both already called this palette Parchment Daylight.
+        The id is `daylight` and stays that way whatever the label does:
+        here in data-set-theme, in theme.js's theme-color map and its
+        light-preference answer, in two theme.css selector blocks that
+        must go on declaring identical colors, in check_contrast.py's
+        table keys, and - the one that cannot be undone - in every
+        member's stored preference. Renaming the id would silently
+        return everybody who has already chosen this palette to the
+        default, which is why a label ruling is safe and an id ruling
+        would not be.
 
         check_web.py's check 19 pins that each themed page HAS the
         control and that no other page does, and check 23 holds the
-        four copies of these labels identical (#152) - so a rename
-        must reach all four in one slice, and this comment is the one
-        that says so.
+        four copies of these labels identical (#152) - so a rename must
+        reach all four in one slice, and this comment is the one that
+        says so.
       -->
-      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
   </div>

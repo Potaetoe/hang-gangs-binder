@@ -180,6 +180,22 @@ day a check is added:
     its own HTML, which is what stops "plain" from becoming "a dead
     end with nice typography".
 
+    The wordmark is the shell's other hand-kept copy, and it crosses
+    both shells - three rails and the sign-in cover - which is half of
+    why nothing was comparing it. The paragraph above says the rail
+    "carries the wordmark" while the comparison reads .rail-links and
+    stops; the name tables read titles, headings and rail entries; the
+    chip arm reads chips. So the site's own name could be renamed on
+    three copies of four with the whole gate green, which is #152's
+    disease with a different subject. WORDMARK_PAGES pins which pages
+    carry one, outside the markup and in both directions, for the
+    reason SHELLS gives - and the copy-paste direction has the teeth
+    here too: a page carrying the site's name and named by no pin is a
+    copy nothing compares. Agreement is the claim and the WORDS are
+    not, for the reason check 23 gives about a chip's label: what the
+    wordmark says is the owner's to rule, and #191 is where it is
+    ruled.
+
 11. The sign-in page must not load crypto.js. It is the only page allowed
     to load Telegram's third-party script, and keeping submission plaintext
     and the private key off that page limits what the trusted widget can
@@ -524,8 +540,8 @@ day a check is added:
       pinned to offer a palette and carrying no chip at all is left
       out of the comparison here, and check 19 fails on that same page
       from that same roster in the same run.
-    - WHAT A LABEL SAYS. #127 ruled the words, "Parchment Daylight"
-      over the id `daylight` included. The reference page below is
+    - WHAT A LABEL SAYS. #191 ruled the words, "Daylight" over the
+      longer label #127 chose included. The reference page below is
       only whichever name sorts first, and a rename that reaches all
       four copies passes here on purpose: agreement is the claim, not
       the wording. A check that pinned the words would have to be
@@ -1625,6 +1641,164 @@ def shell_problems():
     return problems
 
 
+# Which pages write the site's own name out by hand. Three rails and
+# the sign-in cover, so it crosses both shells and neither shell rule
+# could state it - which is half of why nothing was comparing it.
+#
+# Pinned outside the markup for the reason SHELLS gives, and the ABSENT
+# direction is the one with teeth: a page carrying the wordmark and
+# named by no pin is a fifth copy nothing compares, and a page arriving
+# is exactly when somebody copies a shell from whichever page they had
+# open. 404.html deliberately carries none.
+WORDMARK_PAGES = frozenset({
+    "admin.html", "dashboard.html", "index.html", "submit.html",
+})
+
+# The two lines, by the classes theme.css paints them with. Read as
+# words inside the class list rather than as the whole attribute, for
+# the reason CLASS_ATTR gives: a second class beside this one is the
+# same component, and an equality test never saw it.
+WORDMARK_LINES = (
+    ("wordmark-owner", "first"),
+    ("wordmark-name", "second"),
+)
+
+# What a parity failure with no page to blame is attributed to, for the
+# reason CHIP_PIN gives: the pin is the subject in that case.
+WORDMARK_PIN = "WORDMARK_PAGES in tools/check_web.py"
+
+
+def wordmark_line(text, component):
+    """The words one wordmark line shows, or None if the page has none."""
+    found = re.search(
+        r'<span\b[^>]*class\s*=\s*["\'][^"\']*\b%s\b[^"\']*["\'][^>]*>'
+        r'(.*?)</span>' % re.escape(component), text, re.S | re.I)
+    return label_text(found.group(1)) if found else None
+
+
+def page_wordmark(text):
+    """(first line, second line) for one page's wordmark.
+
+    A half is None when the page does not carry it at all and "" when it
+    is there with nothing in it. The two say different things to whoever
+    reads the failure - a missing line is a shell that was copied wrong,
+    an empty one is a rename halfway through - so they are not folded
+    together here.
+    """
+    return tuple(wordmark_line(text, component)
+                 for component, _ in WORDMARK_LINES)
+
+
+def page_wordmark_problems(text, carries):
+    """[problem] for one page's own wordmark, before any comparison.
+
+    Takes markup rather than a filename for the reason
+    plain_page_problems() gives: what has to hold is the shape of the
+    failure, not today's four files.
+    """
+    problems = []
+    lines = page_wordmark(text)
+
+    if not carries:
+        if any(line is not None for line in lines):
+            problems.append(
+                "carries the wordmark and names no page in WORDMARK_PAGES "
+                "in tools/check_web.py. Every copy of the site's own name "
+                "is written out by hand, so a copy this table does not "
+                "know about is one no rename will ever reach and nothing "
+                "will ever compare")
+        return problems
+
+    if all(line is None for line in lines):
+        problems.append(
+            "is pinned to carry the wordmark and carries no wordmark at "
+            "all. The name over the door is part of the shell, and a page "
+            "that lost it in a copy looks like somebody else's site")
+        return problems
+
+    for (component, position), line in zip(WORDMARK_LINES, lines):
+        if line is None:
+            problems.append(
+                "carries only the other half of the wordmark: there is no "
+                ".%s on it. The name is two lines and one of them is "
+                "missing" % component)
+        elif not line:
+            problems.append(
+                "carries a %s wordmark line with no words in it. The "
+                "class still paints, so this reads on the page as a gap "
+                "above or below the half that survived" % position)
+
+    return problems
+
+
+def wordmark_parity_problems(marks):
+    """[(page, problem)] for wordmarks that disagree.
+
+    `marks` is {page: (first, second)} for the pages whose own wordmark
+    read clean. Compared against whichever page sorts first, for the
+    reason rail parity gives: a message naming a page to go and look at
+    beats one saying only that they differ.
+    """
+    if len(marks) < 2:
+        return [(WORDMARK_PIN,
+                 "leaves this arm %d wordmark to compare. Parity is a "
+                 "claim about copies, and a rule holding one copy cannot "
+                 "fail - the hole check 23 paid for in #114. Either the "
+                 "pages carrying the name come back, or this arm has "
+                 "outlived its subject and goes out with the reason "
+                 "written down" % len(marks))]
+
+    problems = []
+    reference = sorted(marks)[0]
+    for name in sorted(marks):
+        if name == reference:
+            continue
+        for (_, position), here, there in zip(WORDMARK_LINES, marks[name],
+                                              marks[reference]):
+            if here == there:
+                continue
+            problems.append((
+                name,
+                "writes the %s line of the wordmark as %r where %s writes "
+                "%r. Every page writes these two lines out by hand and "
+                "nothing else on the site reads them, so a rename reaching "
+                "some of the copies breaks nothing, says nothing, and "
+                "leaves one site wearing two names depending on which page "
+                "somebody is standing on"
+                % (position, here, reference, there)))
+
+    return problems
+
+
+def wordmark_problems():
+    """(page, problem) for the site's own name across its hand-kept copies."""
+    problems = []
+    pages = html_pages()
+    marks = {}
+
+    for name in sorted(set(WORDMARK_PAGES) - set(pages)):
+        problems.append((
+            name,
+            "is pinned in WORDMARK_PAGES in tools/check_web.py and is not a "
+            "page in apps/web. Delete the entry, or restore the page - a "
+            "pin with no page behind it is a check that cannot fail"))
+
+    for name in pages:
+        text = page_text(name)
+        carries = name in WORDMARK_PAGES
+        own = page_wordmark_problems(text, carries)
+        problems.extend((name, problem) for problem in own)
+        # A page whose own wordmark could not be read whole is no
+        # evidence about another page's, so it is left out of the
+        # comparison - but it is REPORTED above, never skipped, which is
+        # the discipline #152 was filed for.
+        if carries and not own:
+            marks[name] = page_wordmark(text)
+
+    problems.extend(wordmark_parity_problems(marks))
+    return problems
+
+
 # Which pages offer a palette. The owner's ruling on #150: ONE Theme
 # disclosure at every width, and the sign-in page carries it too - so
 # this crosses both shells and cannot be stated by the table above.
@@ -2079,14 +2253,22 @@ def css_role_problems(css):
 # the half a rail-parity rule cannot reach: three rails agreeing with
 # each other and disagreeing with the page they open is exactly the
 # drift that issue inventoried.
-SITE_TITLE = "HangGang"
+#
+# The site's own name reaches a reader by two routes - the tab strip,
+# through this constant, and the wordmark over the door - and #191 rules
+# them to one string, because a site whose tab and whose masthead
+# disagree is #127's complaint one level up. This constant holds the
+# five titles to it; the wordmark arm on check 10 holds the four
+# hand-kept copies of the masthead to each other. Neither reads the
+# other, and the pair of them is what the words below are worth.
+SITE_TITLE = "Hang Gang Binder"
 
 DESTINATIONS = {
     "404.html": "Not found",
     "admin.html": "Admin",
-    "dashboard.html": "Progress",
+    "dashboard.html": "Muse's charts",
     "index.html": "Sign in",
-    "submit.html": "Your binder",
+    "submit.html": "Your page",
 }
 
 HEADING = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
@@ -3118,7 +3300,7 @@ def page_chips(text):
     whoever reads the failure to look at different things.
 
     Takes comment-stripped markup, for the reason page_text() gives:
-    submit.html's note on the "Parchment Daylight" ruling names this
+    submit.html's note on the "Daylight" ruling names this
     attribute repeatedly, and a rule reading a page's comments is
     describing markup the page does not have.
     """
@@ -3322,6 +3504,9 @@ def main():
         problems.append("%s %s." % (STYLESHEET, problem))
 
     for page, problem in shell_problems():
+        problems.append("%s %s." % (page, problem))
+
+    for page, problem in wordmark_problems():
         problems.append("%s %s." % (page, problem))
 
     for page, problem in theme_control_page_problems():

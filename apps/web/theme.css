@@ -7,9 +7,8 @@
  * How a palette is chosen (theme-init.js writes the attribute before
  * first paint, theme.js maintains it):
  *   no data-theme  -> Midnight; a system preferring light gets
- *                     Parchment Daylight, and a system asking for more
- *                     contrast gets High contrast, which wins when both
- *                     apply
+ *                     Daylight, and a system asking for more contrast
+ *                     gets High contrast, which wins when both apply
  *   data-theme=... -> that palette, in both directions
  *
  * Midnight is the default rather than Pink: the portal opens on
@@ -214,8 +213,8 @@
   --color-series-5: #e66767;
 }
 
-/* With no saved choice, a light-preferring system gets Parchment
-   Daylight. Once a theme is picked, the data-theme attribute wins in
+/* With no saved choice, a light-preferring system gets Daylight.
+   Once a theme is picked, the data-theme attribute wins in
    both directions. Same values as [data-theme="daylight"] below. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
@@ -244,11 +243,11 @@
   }
 }
 
-/* "Parchment Daylight": cream paper, plum ink, the same crimson doing
-   the talking. Daylight rather than a generic light mode - it is the
-   same book in the morning, which is the whole reason it replaced the
-   linen-and-sage palette that shared nothing with the dark ones but a
-   token list.
+/* "Daylight": cream paper, plum ink, the same crimson doing the
+   talking. Daylight rather than a generic light mode - it is the same
+   book in the morning, which is what a light palette on this site has
+   to be: the dark ones' own paper stock at another hour, rather than a
+   second design sharing a token list with them.
 
    The pale surfaces are still what make this the palette that fails
    hardest. A hue legible on near-black is a hue that disappears here,
@@ -825,15 +824,6 @@ body.railed {
   color: var(--color-text);
 }
 
-/* One line under a link, for the page whose name does not say what it
-   wants from you. */
-.rail-note {
-  display: block;
-  padding: 0 var(--space-3) var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-
 /*
  * The session's one home, at the foot of the rail on every page that
  * has one - the owner's decision on #73. `margin-top: auto` is what
@@ -1374,7 +1364,7 @@ code {
  * and inherits the palette for free.
  */
 /*
- * The hero on Progress, and only there.
+ * The hero on Muse's charts, and only there.
  *
  * One number - what the whole group weighs, added up - and how far it
  * has moved since the last publish. It is the page's headline, so it is
@@ -1523,11 +1513,11 @@ polyline.chart-series { fill: none; }
    which orderings those are is not guessable. Midnight leads with gold
    rather than with the rose the mockup drew first, because every
    ordering starting rose puts orange beside green, and that pair
-   collapses to 2.7 ΔE under protan simulation. Parchment Daylight puts
+   collapses to 2.7 ΔE under protan simulation. Daylight puts
    blue between amber and magenta for the same kind of reason.
 
    Slot 0 is --color-accent, which answers to the palette rather than
-   to the chart, and in Midnight and Parchment Daylight the enumeration
+   to the chart, and in Midnight and Daylight the enumeration
    was run WITH it in place - both sets clear every gate as a full six,
    worst adjacent 9.4 ΔE (deutan) and 12.2 ΔE (deutan) respectively, on
    both of the surfaces each is drawn on. Pink cannot: its accent is
@@ -1775,11 +1765,6 @@ body.instrument main { gap: var(--space-3); }
     border-left: 0;
     box-shadow: inset 0 -2px var(--color-accent-text);
   }
-
-  /* The keyholder note is the first thing to go: on a strip it doubles
-     the height of one link to say something the page it leads to says
-     again immediately. */
-  .rail-note { display: none; }
 
   .wordmark-name { font-size: 1.25rem; }
 

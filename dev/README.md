@@ -20,7 +20,7 @@ two ways a check may be written and why both are still accepted.
 | --- | --- |
 | `crypto.test.mjs` | round trips for both stored formats, and the **committed fixtures still decrypt** — the one check standing between a format change and an unreadable database. The v2 fixture is asserted twice, once per recipient, because a change that locks one of the two out passes every round trip |
 | `form.test.mjs` | conversions, validation, the record — a wrong factor writes a plausible number into a blob with no original to compare against |
-| `form-wiring.test.mjs` | the DOM half of `form.js`, including New entry restoring the form after a submission (#64 lived in this gap) |
+| `form-wiring.test.mjs` | the DOM half of `form.js`, including Weigh in restoring the form after a submission (#64 lived in this gap) |
 | `submit.test.mjs` | panel counts come from `GET /me` and nowhere else; a refused send stores and claims nothing; prefill scoping (#56) |
 | `admin.test.mjs` | CSV quoting and the spreadsheet-formula guard — a quoting bug opens cleanly and is quietly wrong |
 | `admin-session.test.mjs` | the admin page runs on a session, no token box; deletion proved against a published snapshot, not the DOM |

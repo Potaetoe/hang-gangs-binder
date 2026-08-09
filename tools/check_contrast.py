@@ -35,8 +35,8 @@ standing on the line.
 THE LEVEL BELONGS TO THE SCOPE
 ------------------------------
 SCOPES pins which palette each :root block is, and which level it
-answers to. Midnight, Pink and Parchment Daylight are held to AA - 4.5
-text, 3 non-text.
+answers to. Midnight, Pink and Daylight are held to AA - 4.5 text, 3
+non-text.
 The high-contrast palette is held to AAA - 7 text, 4 non-text - because
 a palette whose entire purpose is contrast is not finished when it
 merely matches the palette a visitor turned away from.
@@ -129,10 +129,10 @@ THRESHOLDS = {
 SCOPES = {
     (None, ':root,:root[data-theme="midnight"]'): ("Midnight", "AA"),
     (None, ':root[data-theme="pink"]'): ("Pink", "AA"),
-    (None, ':root[data-theme="daylight"]'): ("Parchment Daylight", "AA"),
+    (None, ':root[data-theme="daylight"]'): ("Daylight", "AA"),
     (None, ':root[data-theme="contrast"]'): ("High contrast", "AAA"),
     ("(prefers-color-scheme: light)", ":root:not([data-theme])"):
-        ("Parchment Daylight (prefers-color-scheme)", "AA"),
+        ("Daylight (prefers-color-scheme)", "AA"),
     ("(prefers-contrast: more)", ":root:not([data-theme])"):
         ("High contrast (prefers-contrast)", "AAA"),
 }

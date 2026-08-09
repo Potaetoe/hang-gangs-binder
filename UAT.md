@@ -10,7 +10,7 @@ signed-in pages, a plain sign-in page and a plain error page, the cover
 that opens once, a palette set switched from one **Theme** control at
 every width on every page but the error page — a dark default, a light
 one, a pink-leaning one and a high-contrast one — the wordmark
-**Muse's Binder** under the site title **HangGang**, and sign out
+**Hang Gang Binder** matching the site title it shares, and sign out
 reachable from every railed page.
 
 **Palettes are described by character here and never by chip label.**
@@ -117,7 +117,7 @@ invisible anywhere else.
 
 **Names.** Each destination is addressed by file name, with the label
 it carries beside it: `index.html` (**Sign in**), `submit.html` (**Your
-binder**), `dashboard.html` (**Progress**), `admin.html` (**Admin**).
+page**), `dashboard.html` (**Muse's charts**), `admin.html` (**Admin**).
 The file name is the anchor because it is the part that does not move.
 
 ### A1 · The shell and the identity — scenarios `signed-out`, `member`
@@ -127,7 +127,7 @@ request, so it is the cheapest section and the one that fails first.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A1.1 | On `signed-out`, open `index.html` | The cover leaf paints closed and swings open once, revealing **Muse's Binder** | The one animation in the product; it is the first thing anyone sees |
+| A1.1 | On `signed-out`, open `index.html` | The cover leaf paints closed and swings open once, revealing **Hang Gang Binder** | The one animation in the product; it is the first thing anyone sees |
 | A1.2 | Reload with the browser window narrowed and widened | The cover opens once per load and never traps the page behind it | Its resting state is *open*, so every way the animation can fail leaves the sign-in reachable |
 | A1.3 | Turn on the operating system's reduced-motion setting and reload | The binder is **already open** — no frame of the closed cover at all | At a shortened duration the first frame still paints, and a full-screen flash is the exact thing that setting asks not to be given |
 | A1.4 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
@@ -139,7 +139,7 @@ request, so it is the cheapest section and the one that fails first.
 | A1.10 | **On `admin.html`** — narrow to a phone width, then widen back up through a tablet width until the rail returns | The rail becomes a strip **that reaches both edges** at every one of those widths, all three destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays. Driven on any other page this step passes without asking the question: `admin.html` is the only one carrying a control whose intrinsic width refuses to shrink — the key file picker — so a shell rule that sizes the column to its content instead of to the screen shows up there and nowhere else (#148). The widths between the phone and the rail belong to the same rule, and are where a strip narrower than the page under it is visible |
 | A1.11 | **At every width, on each of the four pages that offer one** — open the **Theme** disclosure, then press Escape | The chips appear in place and push what is below them down, nothing floats over the page, and Escape closes them and returns focus to the button | Focus left inside something no longer on screen restarts the next Tab from the top. It is one control with one behavior at every width (#150), so a pass at one width is not a pass |
 | A1.12 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
-| A1.13 | Read the browser tab on every page | Every title ends **— HangGang**, and the page's own name is the same word the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint |
+| A1.13 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint |
 
 ### A2 · Signed out, nothing is reachable — scenario `signed-out`
 
@@ -151,18 +151,18 @@ request, so it is the cheapest section and the one that fails first.
 | A2.4 | Watch the network panel on all three | **No request** went out at all | Refusing before asking is the property; a request that earns a 401 has still announced you |
 | A2.5 | Open `404.html` | An error page that says so plainly and offers one way back | Reached by strangers and by mistyped links, so it must not look broken |
 
-### A3 · Your binder — the member panel — scenario `member`
+### A3 · Your page — the member panel — scenario `member`
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A3.1 | Land on `submit.html` | Two tabs, **Entries** showing, and the rail carrying your name and a **Sign out** | The session has one home on every page rather than one page |
+| A3.1 | Land on `submit.html` | Two tabs, **On record** showing, and the rail carrying your name and a **Sign out** | The session has one home on every page rather than one page |
 | A3.2 | Read the entry count | It matches what is actually stored for you | The count comes from `GET /me` and nothing else; this is the acceptance criterion |
 | A3.3 | On a member with nothing stored, read the "last submitted" line | Something honest — "No entries yet" — never "Invalid Date" | A brand-new member is the most common first view of this page |
-| A3.4 | Switch between **Entries** and **New entry**, repeatedly | **Exactly one** pane visible at a time, never both, never neither | `[hidden]` losing to `display: flex` has shipped here before |
+| A3.4 | Switch between **On record** and **Weigh in**, repeatedly | **Exactly one** pane visible at a time, never both, never neither | `[hidden]` losing to `display: flex` has shipped here before |
 | A3.5 | Fill the form and submit | Success, and the count **moves on its own** | The panel re-reads `/me` after a stored submission rather than incrementing a guess |
-| A3.6 | Return to **New entry** after a submission | The form is back, with a note saying the earlier entry is kept | #64: before it, the received card replaced the form and never gave it back |
+| A3.6 | Return to **Weigh in** after a submission | The form is back, with a note saying the earlier entry is kept | #64: before it, the received card replaced the form and never gave it back |
 | A3.7 | Look for a handle field | **There is none.** The handle comes from the session | While it was typed, a member could store somebody else's handle beside their own account id |
-| A3.8 | Read your numeric Telegram id under **Entries** | It is shown | #58. Being made an admin needs that number, and a page that does not show it sends people to a third-party bot to ask for it |
+| A3.8 | Read your numeric Telegram id under **On record** | It is shown | #58. Being made an admin needs that number, and a page that does not show it sends people to a third-party bot to ask for it |
 | A3.9 | Read the key fingerprint on the page | 32 characters, matching the **development** public key in `config.js` | On anything but production it will not match the pinned group message, and that is expected |
 
 ### A4 · The device-local prefill — scenario `member-prefilled`
@@ -239,7 +239,7 @@ accept.
 | A9.3 | Drive the site with the configuration unreachable | Every page still reads correctly, on the shipped copy | The site must not depend on a route answering to be readable |
 | A9.4 | Check that no edited copy has become a second home for a fact | Content is wording, never a claim stated in full only here | One home per fact, and an admin-editable second copy is the one nobody corrects |
 
-### A10 · Progress — the dashboard payoff — scenario `member`
+### A10 · Muse's charts — the dashboard payoff — scenario `member`
 
 > `member` is the scenario that stages a **rich** published snapshot:
 > several repeat submitters above the five-person floor, and series with
@@ -328,7 +328,7 @@ Run in order; B1 gates the rest.
 | B1.1 | Open the live `index.html` | The cover opens and the Telegram widget **renders** | It cannot be tested anywhere else. If it does not, suspect the policy first |
 | B1.2 | Watch the console while it loads | No `securitypolicyviolation` | The sign-in page's policy is in `DESIGN.md`, "The sign-in page and the CSP" |
 | B1.3 | Sign in as yourself | A session is minted and you reach `submit.html` | |
-| B1.4 | Read your numeric id on the page | It is shown, under **Entries** | #58 replaced digging it out of session storage by hand |
+| B1.4 | Read your numeric id on the page | It is shown, under **On record** | #58 replaced digging it out of session storage by hand |
 | B1.5 | If `TELEGRAM_GROUP_CHAT_ID` is set: have someone outside the group try | Refused | Otherwise anyone with a Telegram account can sign in |
 
 ### B2 · A real submission and a real export

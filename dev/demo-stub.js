@@ -28,8 +28,8 @@
    */
   const DESTINATIONS = [
     { file: "index.html", label: "Sign in" },
-    { file: "submit.html", label: "Your binder" },
-    { file: "dashboard.html", label: "Progress" },
+    { file: "submit.html", label: "Your page" },
+    { file: "dashboard.html", label: "Muse's charts" },
     { file: "admin.html", label: "Admin" },
   ];
 
@@ -722,7 +722,7 @@
         "Press the Telegram button - the demo's local stand-in for the " +
           "real widget. Everything that happens after the press is the " +
           "shipped code.",
-        "You land on Your binder, and the panel prints your own " +
+        "You land on Your page, and the panel prints your own " +
           "Telegram number (#58).",
       ],
     },
@@ -733,7 +733,7 @@
       session: MEMBER_SESSION,
       boxes: ["shell", "signin-id", "panel", "dashboard"],
       steps: [
-        "Your binder opens on Entries: what this account claims so " +
+        "Your page opens on On record: what this account claims so " +
           "far, with your Telegram number printed under it.",
         // The chips are named by the page, not here: a walk-through
         // that spells out a label needs correcting every time one
@@ -756,9 +756,11 @@
         // reading.
         "Switch every palette chip in turn and watch the page repaint " +
           "under each one.",
-        "Open New entry, then take the rail to Progress and come back. " +
+        "Open Weigh in, then take the rail to Muse's charts and come " +
+          "back. " +
           "The tab you were on is still the tab you are on.",
-        "Progress is this scenario's payoff: the combined-weight hero, " +
+        "Muse's charts is this scenario's payoff: the combined-weight " +
+          "hero, " +
           "the deltas, and the weight-over-time chart.",
       ],
     },
@@ -770,11 +772,11 @@
       prefill: true,
       boxes: ["panel", "signout"],
       steps: [
-        "Open New entry. The form is already filled with this " +
+        "Open Weigh in. The form is already filled with this " +
           "member's last measurements - kept on this device, keyed to " +
           "this account, sent nowhere (#56).",
         "Press Sign out in the rail, then sign back in with the " +
-          "Telegram button and open New entry again. The form is " +
+          "Telegram button and open Weigh in again. The form is " +
           "empty: signing out erased the saved measurements along " +
           "with the session.",
       ],
@@ -786,7 +788,7 @@
       session: MEMBER_SESSION,
       boxes: ["panel", "supersede"],
       steps: [
-        "Entries says 4. Six rows exist for this member - two were " +
+        "On record says 4. Six rows exist for this member - two were " +
           "mistakes this member corrected, and a correction replaces " +
           "its row rather than adding one, so the count claims only " +
           "what stands.",
@@ -840,7 +842,8 @@
       steps: [
         "Read the page as one surface (#68): the instrument panel, " +
           "its measures, and the export controls.",
-        "Press Publish, then take the rail to Progress: the chart is " +
+        "Press Publish, then take the rail to Muse's charts: the " +
+          "chart is " +
           "drawing the snapshot you just published.",
         "Press Sign out and the session ends while the stored key " +
           "stays. Clear is the lever that removes the key - " +
@@ -871,7 +874,8 @@
       session: MEMBER_SESSION,
       boxes: ["dashboard", "privacy"],
       steps: [
-        "This is Progress drawn from three people, where the floor is " +
+        "This is Muse's charts drawn from three people, where the " +
+          "floor is " +
           "five.",
         "Look for what is missing: cells under the floor are held " +
           "back, and the weight-over-time chart is withheld whole - a " +
@@ -1545,7 +1549,7 @@
    * `rich` is six people with three submissions each. Both numbers are
    * deliberate: the published series needs at least MIN_CELL lines to be
    * published at all, and a line needs at least two points to exist, so
-   * anything smaller draws a Progress page with its centerpiece missing
+   * anything smaller draws a charts page with its centerpiece missing
    * and nothing to say why.
    *
    * `sparse` is three people, under the floor on purpose. It is the

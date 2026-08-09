@@ -839,7 +839,7 @@
      *
      * The swap above is one way, which was right for the pre-accounts page:
      * a one-shot public form where reloading was how you submitted again.
-     * With tabs, "New entry" leads back to a confirmation card and no
+     * With tabs, "Weigh in" leads back to a confirmation card and no
      * form unless something puts the form back, and only a reload
      * recovers it - while that card's own text promises "just fill the
      * form again". The copy is right, so the code has to be.
