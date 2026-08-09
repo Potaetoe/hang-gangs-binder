@@ -2010,6 +2010,7 @@ MODULE_EXPORTS = {
     "crypto.js": "BinderCrypto",
     "dashboard.js": "BinderDashboard",
     "form.js": "BinderForm",
+    "query.js": "BinderQuery",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
     "ui.js": "BinderUI",

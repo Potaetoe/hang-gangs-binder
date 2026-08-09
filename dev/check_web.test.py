@@ -459,7 +459,7 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 9 and all(frozen_in_place))
+      len(frozen_in_place) == 10 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
