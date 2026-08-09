@@ -1131,8 +1131,23 @@ check("the published snapshot reads back inside its envelope",
 
 await call("POST", "/snapshot", { headers: bearer(A),
   body: JSON.stringify({ snapshot: 1, counts: { entries: 9 } }) });
+/*
+ * The null branch is about what this file can REPORT, not about a state
+ * the Worker reaches. Nothing here publishes without an admin session,
+ * so a null snapshot means adminness itself broke - and dereferencing it
+ * throws at file scope, which takes the process down and silences every
+ * arm below this line rather than adding one failing row. The arms below
+ * this point are most of the suite, so a mutation anywhere near
+ * adminness stopped being reportable and started being an abort with one
+ * candidate cause and three hundred candidate victims.
+ *
+ * It must still FAIL rather than pass: `snapshot !== null` guards the
+ * dereference and is part of the condition, so a suite that published
+ * nothing says so on this row instead of skipping it.
+ */
 check("publishing replaces rather than appends",
-  JSON.parse(snapshot.body).counts.entries === 9);
+  snapshot !== null && JSON.parse(snapshot.body).counts.entries === 9,
+  snapshot === null ? "nothing was published" : "");
 
 await statusOf("a snapshot that is not JSON is refused",
   call("POST", "/snapshot", { headers: bearer(A), body: "{{{" }), 400);
@@ -1828,9 +1843,15 @@ check("a chain of corrections leaves one current entry, not a pile",
  */
 const exported = await (await call("GET", "/export",
   { headers: bearer(CURATOR) })).json();
-const exportedCorrection = exported.submissions.find(
+// Empty rather than absent for the reason the snapshot block above
+// states: an export refused for want of an admin session hands back no
+// `submissions` at all, and reaching into it throws at file scope and
+// silences the rest of the file. The arm below still fails, because a
+// row it cannot find is a row that is not there.
+const exportedRows = exported.submissions || [];
+const exportedCorrection = exportedRows.find(
   (r) => r.id === correctionRow.id);
-const exportedPlain = exported.submissions.find(
+const exportedPlain = exportedRows.find(
   (r) => r.id === secondEntry.id);
 check("the export carries the pointer the keyholder's browser resolves",
   exportedCorrection !== undefined &&
