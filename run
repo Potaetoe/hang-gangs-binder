@@ -48,6 +48,16 @@ case "${1:-}" in
     # preview blocks must not take the port the owner's demo answers on.
     shift
     exec node dev/demo-server.mjs "$@" ;;
+  bake)
+    # The same demo as static files, for hosting it off this machine
+    # (#143). Node for the same reason as demo: it applies the mirror's
+    # edits, which nothing static can do.
+    #
+    # This WRITES A DIRECTORY AND NOTHING ELSE - no upload, no wrangler,
+    # no deploy. Putting the output somewhere is a separate act with a
+    # separate approval, and dev/README.md carries the steps.
+    shift
+    exec node dev/demo-bake.mjs "$@" ;;
   bootstrap)
     # A fresh checkout or worktree has no node_modules, and the gate's
     # eslint stage reports that absence as FAILED - which reads as a
@@ -83,6 +93,8 @@ usage: ./run <command>          (PowerShell: .\run <command>)
   keygen      serve the key generator at http://127.0.0.1:8125
   demo        drive every enhancement offline on http://127.0.0.1:8126
               (--port N to move it)
+  bake        write that same demo to _demo/ as static files, for
+              hosting it elsewhere (--out PATH; deploys nothing)
 EOF
     exit 2 ;;
 esac

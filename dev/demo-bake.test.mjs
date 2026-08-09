@@ -54,11 +54,10 @@ await load("./demo-stub.js");
 const Demo = globalThis.BinderDemo;
 
 const {
-  DEMO_ASSETS, IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty,
-  stampFor, bake,
+  IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty, stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 34);
+const { check, mustReject, report } = suite("demo bake", 39);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -182,10 +181,23 @@ await check("the console carries the region a stamp replaces", async () => {
 });
 
 await check("stamping replaces the region and names the commit", () => {
-  const html = "<a><!-- BAKED-AT -->live<!-- /BAKED-AT --></a>";
+  const html = "<a><!-- BAKED-AT -->UNSTAMPED<!-- /BAKED-AT --></a>";
   const out = Demo.stampInto(html, stampFor("abc1234", "2026-08-09T00:00:00Z"));
   return typeof out === "string" && out.includes("abc1234") &&
-    !out.includes("live") && out.indexOf("<a>") === 0;
+    !out.includes("UNSTAMPED") && out.indexOf("<a>") === 0;
+});
+
+/*
+ * And stamping is repeatable. A bake over a tree that already holds a
+ * baked console must not fail for the reason that means "somebody
+ * removed the region" - the two would be one error message.
+ */
+await check("a stamped console can be stamped again", () => {
+  const html = "<a><!-- BAKED-AT -->UNSTAMPED<!-- /BAKED-AT --></a>";
+  const once = Demo.stampInto(html, stampFor("abc1234", "t"));
+  const twice = Demo.stampInto(once, stampFor("def5678", "t"));
+  return typeof twice === "string" && twice.includes("def5678") &&
+    !twice.includes("abc1234");
 });
 
 /*

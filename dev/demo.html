@@ -31,6 +31,21 @@
     stubbed, and the only keys involved are the throwaway pairs committed
     under <code>dev/</code>.
   </p>
+  <!--
+    Replaced by dev/demo-bake.mjs with the commit a hosted build was
+    taken at. Served live, this console reads apps/web off disk on every
+    request and cannot be stale, so it says so; a baked copy is stale the
+    moment the next slice merges and has to admit which one it is. The
+    markers are what the bake looks for - remove them and it refuses to
+    write rather than shipping a snapshot with no date on it.
+  -->
+  <!-- BAKED-AT -->
+  <p class="small" id="stamp">
+    Live from this checkout — every page in the frame is read out of
+    <code>apps/web</code> as you ask for it, so this is whatever is on
+    disk right now.
+  </p>
+  <!-- /BAKED-AT -->
 </header>
 
 <main>

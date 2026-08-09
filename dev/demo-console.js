@@ -283,10 +283,20 @@
       row.appendChild(where);
       body.appendChild(row);
 
+      /*
+       * Where to read it from is demo-stub.js's, not a path built here.
+       * A page probe comes back through the mirror and is undone, which
+       * is what lets a baked build emit no apps/web page outside
+       * /demo/ - a page at any other path has no fetch replacement on
+       * it. Two spellings of that rule would be two chances for the
+       * console and the bake to disagree about which files exist.
+       */
       let source = null;
       try {
-        const response = await fetch("/" + box.probe.file);
-        source = response.ok ? await response.text() : null;
+        const response = await fetch(Demo.probeUrlFor(box.probe.file));
+        source = response.ok
+          ? Demo.probeSourceOf(box.probe.file, await response.text())
+          : null;
       } catch (error) {
         source = null;
       }
