@@ -878,7 +878,11 @@ const SERIES_WITHHELD = "Too few people have more than one entry to " +
 const ONE_BAND =
   "Everybody here falls in a single band, so there is no shape to show.";
 
-await check("no suppression sentence carries a digit", () =>
+/* The literals above hold no digit, which on its own is a statement
+   about this file. What makes it a statement about the module is that
+   every panel below is compared against them for equality, and the
+   rendered sweep at the end of this section reads the drawn text. */
+await check("the sentences these arms pin carry no digit", () =>
   [WITHHELD, SERIES_WITHHELD, ONE_BAND].every((line) => !/\d/.test(line)));
 
 /* Fewer repeat submitters than MIN_CELL, from otherwise identical rows.
@@ -997,7 +1001,10 @@ const THIN = scene(() => draw(
   D.snapshotOf(THIN_ROWS, { identify: false }), "people", "imperial"));
 
 await check("a distribution suppressed to nothing is not called unrecorded",
-  () => emptyNotesOf(figureNamed(THIN, "Weight"))[0] === WITHHELD);
+  () => emptyNotesOf(figureNamed(THIN, "Weight"))[0] === WITHHELD &&
+    // And its band caption goes too, for the same reason the collapsed
+    // one's does - plus the caption is where the digit would be.
+    hintOf(figureNamed(THIN, "Weight")) === null);
 
 await check("the keyholder still sees the two weights that were recorded",
   () => {
@@ -1022,6 +1029,28 @@ await check("the keyholder still sees the two weights that were recorded",
  * rather than passing because two functions happened to be called in
  * the right places.
  */
+/*
+ * THE WALL, READ OFF WHAT WAS DRAWN. Every panel a floored document
+ * replaced with a sentence is swept for a digit, in the rendered text
+ * rather than in the constant - so a sentence rewritten to name the
+ * count, the cell size or how close it came to the floor reddens here
+ * even if the arms above were updated to match it. That is the whole
+ * reason these panels exist: publishing the number in prose would undo
+ * the floor that removed it from the figures.
+ */
+const REPLACED_PANELS = [
+  figureNamed(FEW, "Weight over time"),
+  figureNamed(SUPPRESSED, "Country"),
+  figureNamed(COLLAPSED, "Weight"),
+  figureNamed(COLLAPSED, "Height"),
+  figureNamed(THIN, "Weight"),
+];
+
+await check("nothing a suppression sentence replaced carries a digit", () =>
+  REPLACED_PANELS.length === 5 &&
+  REPLACED_PANELS.every((panel) => panel !== null &&
+    emptyNotesOf(panel).length === 1 && !/\d/.test(panel.textContent)));
+
 const IDENTIFIED_VIEWS = [KEY_PEOPLE, EMPTY, WIDE, CROWDED, FLAT, EDGES]
   .concat([FEW_ROWS, ONE_BIN_ROWS, THIN_ROWS, BASE.slice(0, 3)].map((rows) =>
     scene(() => draw(

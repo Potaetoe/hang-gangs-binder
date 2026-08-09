@@ -1412,15 +1412,17 @@
    * one person - not the same claim as nothing having been recorded. One
    * bin is every band merged into a single bar filling the chart: no
    * information, and indistinguishable from a fault. THE BAND CAPTION
-   * GOES WITH THE BAR, because "in 20 lb bands" over a picture with no
-   * bands describes what was not drawn.
+   * GOES WITH THE BAR in both: "in 20 lb bands" over a picture with no
+   * bands describes what was not drawn, and it is a digit the sentence
+   * beside it is careful not to carry.
    *
    * The instrument draws whatever it has, one band included: it has no
    * floor, so nothing there merged.
    */
   function distribution(title, note, bins, unit, tick, absent, floored) {
     const flat = floored && bins.length === 1;
-    const wrap = figure(title, flat ? null : note);
+    const drawn = bins.length > 0 && !flat;
+    const wrap = figure(title, drawn || !floored ? note : null);
     if (!bins.length) emptyNote(wrap, floored ? WITHHELD : absent);
     else if (flat) emptyNote(wrap, ONE_BAND);
     else wrap.appendChild(histogramChart(bins, unit, tick));
