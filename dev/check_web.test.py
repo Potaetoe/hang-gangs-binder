@@ -35,7 +35,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 148
+EXPECTED = 156
 
 
 def check(label, condition):
@@ -529,9 +529,88 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 10 and all(frozen_in_place))
+      len(frozen_in_place) == 11 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# The config.js freeze and lock (check 5 resolution + lock,           #
+# check 15 roster). BINDER_CONFIG carries the key every submission    #
+# encrypts to, so both swap vectors have to be undroppable.           #
+
+# config_environments takes source now, so its pins run on strings the
+# way export_problems does. This one guards the assignment that carries
+# the key, so its reassignment lock must be falsifiable without editing
+# the shipped config.
+CONFIG_ENV_OK = """
+const ENVIRONMENTS = {
+  "potaetoe.github.io": {
+    name: "production",
+    endpoint: "https://prod.example.workers.dev",
+    publicKey: "PRODKEYPRODKEYPRODKEY",
+  },
+  "localhost": {
+    name: "development",
+    endpoint: "https://dev.example.workers.dev",
+    publicKey: "DEVKEYDEVKEYDEVKEY",
+  },
+};
+ENVIRONMENTS["127.0.0.1"] = ENVIRONMENTS.localhost;
+globalThis.BINDER_CONFIG = Object.freeze(
+  ENVIRONMENTS[location.hostname] || { name: "unknown", publicKey: null }
+);
+Object.defineProperty(globalThis, "BINDER_CONFIG", {
+  writable: false,
+  configurable: false,
+});
+"""
+
+check("a well-formed config resolves with no problem",
+      check_web.config_environments(CONFIG_ENV_OK)[1] == [])
+
+# The resolution arm, unchanged in intent by the freeze wrapper: an
+# unknown host must fall through to the closed, keyless object.
+NO_FALLBACK = CONFIG_ENV_OK.replace(
+    ' || { name: "unknown", publicKey: null }', "")
+check("a config with no keyless fallback is refused",
+      any("closed, keyless arm" in p
+          for p in check_web.config_environments(NO_FALLBACK)[1]))
+
+# The reassignment lock, three ways it can be dropped. Each leaves the
+# frozen object sitting behind a global a script can still overwrite.
+NO_LOCK = CONFIG_ENV_OK[:CONFIG_ENV_OK.index("Object.defineProperty")]
+check("a config that never locks the global is refused",
+      any("reassigned before form.js reads" in p
+          for p in check_web.config_environments(NO_LOCK)[1]))
+check("a lock left writable is refused",
+      any("writable: false" in p for p in check_web.config_environments(
+          CONFIG_ENV_OK.replace("writable: false", "writable: true"))[1]))
+check("a lock left configurable is refused",
+      any("configurable: false" in p for p in check_web.config_environments(
+          CONFIG_ENV_OK.replace(
+              "configurable: false", "configurable: true"))[1]))
+
+# REACHES REAL CONTENT. The string arms above prove the pins fire; this
+# proves the shipped config.js actually satisfies them - the lock is in
+# the bytes, not only in a crafted fixture.
+check("the shipped config.js resolves closed and locked",
+      check_web.config_environments()[1] == [])
+
+# The hole this issue names: export_problems continued on BINDER_CONFIG
+# in NON_NAMESPACE_GLOBALS before any freeze test, so deleting the freeze
+# raised nothing. config.js is on the roster now, so the export freeze
+# rule reaches it - stripping Object.freeze from the shipped bytes is
+# refused where it once passed in silence.
+STRIPPED_FREEZE = check_web.strip_js_comments(CONFIG_TEXT).replace(
+    "Object.freeze(", "(", 1)
+stripped = check_web.export_problems(
+    check_web.CONFIG_FILE, STRIPPED_FREEZE, "BINDER_CONFIG")
+check("config.js with its freeze stripped is refused by the roster",
+      len(stripped) == 1 and "without Object.freeze" in stripped[0])
+check("config.js is held to the freeze rule, not exempted from it",
+      check_web.MODULE_EXPORTS.get("config.js") == "BINDER_CONFIG" and
+      ("config.js", "BINDER_CONFIG") not in check_web.NON_NAMESPACE_GLOBALS)
 
 
 # ------------------------------------------------------------------ #

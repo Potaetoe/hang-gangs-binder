@@ -72,6 +72,14 @@ Nineteen checks:
    kind that catches a swap - the same reason dev/fixture.json is a
    committed constant rather than something the suite regenerates.
 
+   Check 5 also holds the shape of the assignment, because the object it
+   resolves carries that key at runtime. BINDER_CONFIG is locked
+   non-writable and non-configurable, so a script cannot point the global
+   at its own object between the moment form.js captures it and the moment
+   it reads the key. The freeze that stops the resolved arm's own members
+   from being mutated is the export roster's to enforce (check 15); this
+   pin is the half a freeze rule reading assignments cannot see.
+
 6. Nothing *sends a submission* to the network except through crypto.js.
    This is the design's one rule restated as something a machine can check:
    submission plaintext never leaves the browser. A named exemption records
@@ -530,18 +538,28 @@ def literal_field(body, name):
     return found.group(1) if found else None
 
 
-def config_environments():
-    """([environment], [problem]) parsed from the shipped config.js.
+def config_environments(text=None):
+    """([environment], [problem]) parsed from config.js source.
 
     This is deliberately a narrow parser for the literal object this project
     ships, not a JavaScript interpreter. A computed endpoint or key would make
     the publish-time invariant unknowable, which is itself a build failure.
-    """
-    path = os.path.join(WEB, CONFIG_FILE)
-    if not os.path.exists(path):
-        return [], ["does not exist"]
 
-    text = strip_js_comments(open(path, encoding="utf-8").read())
+    Takes the source rather than only a path so the pins below can be
+    exercised on strings, the way export_problems and the CSP parser are.
+    A check that can only run against the one file it guards is a check a
+    mutation reaches only by editing that file - and this one guards the
+    assignment that carries the key every submission encrypts to, so the
+    reassignment lock has to be falsifiable without touching the shipped
+    config.
+    """
+    if text is None:
+        path = os.path.join(WEB, CONFIG_FILE)
+        if not os.path.exists(path):
+            return [], ["does not exist"]
+        text = open(path, encoding="utf-8").read()
+
+    text = strip_js_comments(text)
     block = re.search(
         r"\bconst\s+ENVIRONMENTS\s*=\s*\{(.*?)\n\s*\};", text, re.S)
     if not block:
@@ -599,13 +617,41 @@ def config_environments():
         problems.append("127.0.0.1 is not aliased to the localhost arm")
 
     no_default = re.search(
-        r'globalThis\.BINDER_CONFIG\s*=\s*'
+        r'globalThis\.BINDER_CONFIG\s*=\s*(?:Object\.freeze\s*\(\s*)?'
         r'ENVIRONMENTS\s*\[\s*location\.hostname\s*\]\s*\|\|\s*\{'
         r'\s*name\s*:\s*["\']unknown["\']\s*,\s*'
         r'publicKey\s*:\s*null\s*,?\s*\}', text, re.S)
     if not no_default:
         problems.append(
             "an unknown hostname does not resolve to the closed, keyless arm")
+
+    # The reassignment lock. Freezing the resolved arm (enforced as a freeze
+    # through MODULE_EXPORTS) stops config.publicKey being mutated, but a
+    # frozen object still sits behind a writable global: a script could point
+    # BINDER_CONFIG at its own object before form.js reads the key. A
+    # non-writable, non-configurable defineProperty closes that, and pinning
+    # it here is what makes it undroppable - the freeze rule reads assignments
+    # and never a property descriptor. The Object.freeze wrapper the pattern
+    # above tolerates is not required here: the freeze is the export roster's
+    # to enforce, so a stripped freeze fails there rather than being reported
+    # as a resolution problem it does not have.
+    lock = re.search(
+        r'Object\.defineProperty\s*\(\s*globalThis\s*,\s*'
+        r'["\']BINDER_CONFIG["\']\s*,\s*\{([^}]*)\}', text, re.S)
+    if not lock:
+        problems.append(
+            "BINDER_CONFIG is never redefined non-writable, so the global "
+            "can be reassigned before form.js reads the key it encrypts to")
+    else:
+        descriptor = lock.group(1)
+        if not re.search(r'\bwritable\s*:\s*false\b', descriptor):
+            problems.append(
+                "BINDER_CONFIG is redefined without writable: false, so the "
+                "global can still be reassigned before the key is read")
+        if not re.search(r'\bconfigurable\s*:\s*false\b', descriptor):
+            problems.append(
+                "BINDER_CONFIG is redefined without configurable: false, so "
+                "the lock can be redefined away before the key is read")
 
     for field_name in ("endpoint", "publicKey"):
         values = [environment[field_name] for environment in environments
@@ -2103,6 +2149,7 @@ def hard_coded_key_hits():
 MODULE_EXPORTS = {
     "admin.js": "BinderAdmin",
     "auth.js": "BinderAuth",
+    "config.js": "BINDER_CONFIG",
     "crypto.js": "BinderCrypto",
     "dashboard.js": "BinderDashboard",
     "form.js": "BinderForm",
@@ -2119,7 +2166,6 @@ MODULE_EXPORTS = {
 # standards": `(function () { ... })()` assigns no global, and that shape
 # is a decision these files have already made.
 NO_MODULE_EXPORT = {
-    "config.js": "resolves the environment arm; it exports no helpers",
     "countries.js": "is two data tables the form reads",
     "nav.js": "wires the current-destination mark and the Theme "
               "disclosure in place and returns",
@@ -2134,17 +2180,15 @@ NO_MODULE_EXPORT = {
 # and for the same argument: an exemption list stays reviewable, while
 # relaxing the rule for every global would not.
 #
-# Note what these are NOT: an assertion that freezing them would be
-# wrong. BINDER_CONFIG carries the publicKey form.js encrypts to, so a
-# script that can rewrite it can redirect every submission to a key the
-# keyholder does not hold - a worse outcome than any helper swap this
-# check exists to prevent. Freezing it is not done here because
-# config_environments() pins the exact text of that assignment, so the
-# change is a change to check 5's parser, and check 5 is not something to
-# edit as a side effect of a freeze pass. Raised on #114 instead.
+# Note what these are NOT: an assertion that freezing them would be wrong,
+# only that they are data or a callback rather than a namespace of helpers
+# the freeze rule was written for. BINDER_CONFIG is deliberately absent from
+# this list: it carries the publicKey form.js encrypts to, so a script that
+# rewrites it redirects every submission to a key the keyholder does not
+# hold. It is held to the freeze rule through MODULE_EXPORTS and locked
+# non-writable by config_environments, not exempted here - do not move it
+# back.
 NON_NAMESPACE_GLOBALS = {
-    ("config.js", "BINDER_CONFIG"):
-        "the resolved environment arm, whose contents check 5 pins",
     ("countries.js", "BINDER_COUNTRIES"):
         "the country name table the form reads",
     ("countries.js", "BINDER_COUNTRIES_PROMOTED"):
