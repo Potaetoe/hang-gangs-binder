@@ -1419,8 +1419,13 @@
       : "What we weigh, together";
     wrap.appendChild(label);
 
+    /* Not `tabular`, which every other number on these pages takes. That
+     * class is the mono face, for figures that have to line up in a
+     * column; this one stands alone and is set in the display face the
+     * wordmark uses, which is what makes it read as the page's headline
+     * rather than as the loudest of ten equal figures. */
     const value = document.createElement("p");
-    value.className = "hero-value tabular";
+    value.className = "hero-value";
     value.textContent = statText(total, spec.weight);
     wrap.appendChild(value);
 
