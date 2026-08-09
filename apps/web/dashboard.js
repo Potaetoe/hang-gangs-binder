@@ -1397,11 +1397,16 @@
    * nothing publishable without describing individuals; unfloored, the
    * group has no rows at all. Only the first is a withholding.
    *
+   * The caption goes with the chart, for the reason the band caption
+   * does below: "Multi-select, so these do not add up" over a panel with
+   * nothing in it describes a drawing that is not there.
+   *
    * A null `total` is how a panel says it has no denominator (#182).
    */
   function breakdown(title, note, rows, total, floored) {
-    const wrap = figure(title, note);
-    if (rows.length || !floored) wrap.appendChild(barChart(rows, total));
+    const drawn = rows.length > 0 || !floored;
+    const wrap = figure(title, drawn ? note : null);
+    if (drawn) wrap.appendChild(barChart(rows, total));
     else emptyNote(wrap, WITHHELD);
     return wrap;
   }

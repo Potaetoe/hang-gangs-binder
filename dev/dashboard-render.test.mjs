@@ -930,12 +930,17 @@ await check("the published histogram is coarser than the keyholder's own",
     === 2 &&
     withClass(figureNamed(KEY_PEOPLE, "Weight"), "chart-bar").length === 5);
 
-/* Six people in six countries. Every cell is one person, the pooled
-   bucket cannot save it, and suppressCounts publishes nothing. */
+/* Six people in six countries, spread across all four roles. Every cell
+   is one or two people, the pooled bucket cannot save either breakdown,
+   and suppressCounts publishes nothing for them. Gender is left uniform
+   on purpose: one cell of six clears the floor, so the same scenario
+   shows a breakdown that survives beside two that do not. */
 const SCATTERED = D.snapshotOf(BODIES.slice(0, 6).map((body, index) =>
   entry(Object.assign({
     id: 40 + index, telegram: "far" + index, accountId: "acct-far" + index,
     country: ["US", "GB", "CA", "DE", "JP", "AU"][index],
+    roles: [["feedee"], ["feedee"], ["feeder"], ["feeder"], ["gainer"],
+      ["admirer"]][index],
   }, body))), { identify: false });
 const SUPPRESSED = scene(() => draw(SCATTERED, "people", "imperial"));
 
@@ -949,6 +954,16 @@ await check("a breakdown suppressed to nothing says so instead of drawing",
       emptyNotesOf(country)[0] === WITHHELD &&
       withClass(figureNamed(SUPPRESSED, "Gender"), "chart-bar").length === 1;
   });
+
+await check("a suppressed breakdown's caption goes with its chart", () => {
+  // "Multi-select, so these do not add up" over a panel holding nothing
+  // describes a drawing that is not there - the same rule the band
+  // caption obeys, and the roles panel is where it shows, because it is
+  // the only breakdown carrying a caption on every corpus.
+  const roles = figureNamed(SUPPRESSED, "Feedism affiliations");
+  return hintOf(roles) === null && emptyNotesOf(roles)[0] === WITHHELD &&
+    hintOf(figureNamed(KEY_PEOPLE, "Feedism affiliations")) !== null;
+});
 
 /*
  * Five people spread over three 20 lb bands, none of which holds five.
