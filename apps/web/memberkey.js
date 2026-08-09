@@ -40,12 +40,24 @@
  * property this design exists to avoid. What ends this key is Sign out,
  * and clearing site data.
  *
- * ERASE, NEVER SKIP. A record belonging to another account is destroyed
- * rather than ignored, and so is one this file cannot fully vouch for.
- * That is #56's and #65's rule about the prefill on a shared browser,
- * applied where the stakes are higher: the prefill is one measurement
- * and this key opens a history. A check somebody can forget is not a
- * boundary; an erased record is.
+ * TWO DIFFERENT MECHANISMS KEEP TWO DIFFERENT PROMISES, and conflating
+ * them is how one of them quietly stops being kept.
+ *
+ * The KEY PATH is what stops a shared browser handing the next member
+ * the previous member's key. The store reads the key out of the record
+ * it files, so a lookup for one account cannot return another's - that
+ * is structural, and it is the #56 property. Two members using one
+ * browser end up with a key each, and each one's own sign-out deletes
+ * the database that holds both.
+ *
+ * ERASE, NEVER SKIP is the narrower second line, and it is about a
+ * record filed under THIS account that does not vouch for itself: an
+ * account id that does not match, a private key something could export,
+ * a public half of the wrong length. Those cannot arrive from this file,
+ * so whatever put them there is not this file, and the answer is to
+ * destroy and regenerate rather than adopt. Adopting one means a
+ * member's entries sealed to a key of unknown provenance - a row nobody
+ * can open, discovered on export day.
  *
  * THE MISSING KEY IS NEVER AN ERROR. Storage blocked, private browsing,
  * a browser with no IndexedDB: `ensure` answers null and the caller
@@ -63,11 +75,14 @@
   const STORE_NAME = "keys";
 
   /*
-   * The store is keyed by account id rather than by one fixed row, which
-   * is the difference between a browser that can hold two members'
-   * histories and one that hands the second member the first one's key.
-   * ROW_KEY names the key PATH for readers and for the suite; it is not
-   * a row name.
+   * The key PATH, not a row name - the store reads its key out of the
+   * record it files, so a record cannot be filed under an account it
+   * does not claim to belong to.
+   *
+   * This is the #56 property and it is structural rather than checked: a
+   * lookup for one account cannot return another's, so a shared browser
+   * never hands the second member the first one's key. A single fixed
+   * row would mean one key per browser, given to whoever signed in next.
    */
   const ROW_KEY = "accountId";
 
@@ -123,10 +138,14 @@
    * Pure, and separate from the storage for one reason: it is the whole
    * of the custody rule, and a rule that only exists inside an
    * IndexedDB callback is a rule that can only be tested by faking
-   * IndexedDB. Everything here fails toward "erase" - a record this file
-   * cannot fully vouch for is destroyed and replaced, never adopted.
-   * The cost of adopting one is a member's entries sealed to a key of
-   * unknown provenance, discovered on export day.
+   * IndexedDB.
+   *
+   * The record arrives from a lookup on this account's own key, so the
+   * account clause below is NOT what separates two members sharing a
+   * browser - the key path above is, and it does it structurally. What
+   * this asks is whether a record filed under this account vouches for
+   * itself, and everything unvouchable fails toward "erase". A record
+   * this file could not have written is one something else wrote.
    */
   function custodyVerdict(record, accountId) {
     if (record === null || record === undefined) return "generate";

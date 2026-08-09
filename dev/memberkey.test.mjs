@@ -195,18 +195,20 @@ await check("and a different device key opens nothing of the first one's",
 /* Custody: whose key is this, and what happens when it is not yours.  */
 
 /*
- * THE RULE IS ERASE, NOT SKIP, and it is #56 and #65's rule rather than
- * a new one. A shared browser must not hand the next member the previous
- * member's key - and the difference between ignoring a foreign record
- * and destroying it is the difference between a check somebody can
- * forget and a record that is not there. The key opens a whole history
- * rather than one measurement, so the reasoning applies with more at
- * stake, not less.
+ * WHAT THIS SECTION IS AND IS NOT ABOUT, because the two properties
+ * that sound alike are kept by different mechanisms.
  *
- * Everything malformed lands on the same verdict, which is the fail-
- * closed half: a record this file cannot fully vouch for is destroyed
- * and replaced, never reused. A key of unknown provenance sealing a
- * member's entries is a row nobody can open, discovered on export day.
+ * A shared browser not handing the next member the previous member's
+ * key is the KEY PATH's doing, and it is structural - the store reads
+ * its key out of the record, so a lookup for one account cannot return
+ * another's. That is asserted above, off the source, and confirmed in a
+ * real IndexedDB rather than here.
+ *
+ * These arms are the narrower rule: a record filed under THIS account
+ * that does not vouch for itself is destroyed and replaced, never
+ * adopted. Everything unvouchable lands on one verdict, which is the
+ * fail-closed half - a key of unknown provenance sealing a member's
+ * entries is a row nobody can open, discovered on export day.
  */
 const good = () => ({
   accountId: "a".repeat(64),
