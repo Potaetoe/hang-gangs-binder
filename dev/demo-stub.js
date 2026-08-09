@@ -360,6 +360,7 @@
     { path: "/auth/dev", methods: ["POST"] },
     { path: "/session", methods: ["DELETE"] },
     { path: "/me", methods: ["GET"] },
+    { path: "/my-entries", methods: ["GET"] },
     { path: "/submit", methods: ["POST"] },
     { path: "/export", methods: ["GET"] },
     { path: "/snapshot", methods: ["GET", "POST", "DELETE"] },
@@ -1304,6 +1305,36 @@
       return { status: 200, body: meFor(scenario), next: next };
     }
 
+    /*
+     * The listing carries ciphertext, and the demo's is deliberately
+     * unopenable: these are placeholder bytes, not rows sealed to
+     * anybody's key. That is the honest demonstration rather than a
+     * shortcut - a member on a device with no key of its own sees
+     * exactly this, every row listed and named as sealed elsewhere,
+     * which is the state the re-seal procedure exists for. Sealing
+     * demo rows to a demo key would instead demonstrate a key custody
+     * story the driver never walked.
+     */
+    if (route === "/my-entries") {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          entries: (meFor(scenario).entries
+            ? Array.from({ length: meFor(scenario).entries }, function (_, i) {
+              return {
+                id: 100 + i,
+                receivedAt: new Date(Date.UTC(2026, 6, 1 + i)).toISOString(),
+                superseded: false,
+                ciphertext: "AmRlbW8tcm93LW5vdC1zZWFsZWQtdG8tYW55LWtleQ==",
+              };
+            })
+            : []),
+        },
+        next: next,
+      };
+    }
+
     if (route === "/submit") {
       return {
         status: 200,
@@ -1620,6 +1651,14 @@
         ? line + ", with " + body.superseded +
           " corrections resting behind them."
         : line + ".";
+    }
+
+    if (path === "/my-entries" && method === "GET") {
+      const listed = (body.entries || []).length;
+      return "Your own rows came back, still sealed: " + listed +
+        " of them, ciphertext the Worker cannot read and this demo has " +
+        "no key for. On a real device the page opens the ones that " +
+        "browser sealed and names the rest.";
     }
 
     if (path === "/session" && method === "DELETE") {

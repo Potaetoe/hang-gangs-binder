@@ -171,12 +171,13 @@
    * means it, which is why this file re-implements none of the
    * suppression it depends on.
    *
-   * THE PERSONAL ARM IS ABSENT BECAUSE ITS DATA IS. Reading a member's
-   * own history needs the member-held keys of #85's slice 2 and the
-   * /my-entries route of slice 3, and neither is shipped. When they are,
-   * the personal source belongs beside the entries it decrypts on
-   * submit.html - not here, where the only document in the tab is the
-   * published one and this page loads no crypto to open anything else.
+   * THE PERSONAL ARM IS ON submit.html, AND ITS ABSENCE HERE IS NOT
+   * WAITING ON ANYTHING. It ships: the device key is apps/web/
+   * memberkey.js and the rows come from GET /my-entries. It is there
+   * rather than here because that is the page holding a key, and this
+   * page holds none - the only document in this tab is the published
+   * one, and opening anything else would mean loading crypto onto a
+   * page DESIGN.md's per-page table records as holding no plaintext.
    */
   function askable(snapshot) {
     const Query = root.BinderQuery;

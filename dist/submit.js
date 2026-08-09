@@ -321,6 +321,189 @@
     }
   }
 
+   
+   
+
+  
+
+  function historyStatus(message, bad) {
+    const line = $("history-status");
+    if (!line) return;
+    line.textContent = message || "";
+    line.className = bad ? "status bad" : "status";
+    show(line, Boolean(message));
+  }
+
+  
+
+  function historyEntry(row, record) {
+    const weight = record.weight || {};
+    const height = record.height || {};
+    const entered = record.entered || {};
+    return {
+      id: row.id,
+      accountId: account,
+      receivedAt: row.receivedAt,
+      submittedAt: record.submittedAt,
+      telegram: record.telegram,
+      kg: weight.kg, lb: weight.lb,
+      cm: height.cm, totalInches: height.totalInches,
+      feet: height.feet, inches: height.inches,
+      enteredUnits: entered.units,
+      enteredWeight: entered.weight,
+      enteredHeight: entered.height,
+      gender: record.gender,
+      roles: Array.isArray(record.roles) ? record.roles.slice() : [],
+      country: record.country,
+      over18: record.over18 === true,
+      recordVersion: record.record,
+    };
+  }
+
+  
+
+  function askHistory(source) {
+    const Query = root.BinderQuery;
+    const answerAt = $("history-answer");
+    const split = $("h-split").value;
+    const shape = Query.SPLITS[split];
+    if (!shape || !answerAt) return;
+
+    const bins = shape.kind === "bins";
+    
+
+    const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
+    show($("h-measure-field"), bins);
+
+    let answer;
+    try {
+      answer = Query.run(source, {
+         
+         
+         
+         
+        basis: "entries",
+        split: split,
+        measure: measure,
+         
+         
+         
+        units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+      });
+    } catch (error) {
+      historyStatus("That question could not be asked. " +
+        (error && error.message ? error.message : ""), true);
+      return;
+    }
+    historyStatus("", false);
+    root.BinderDashboard.renderAnswer(answerAt, answer,
+      Query.describe({ basis: "entries", split: split, measure: measure }));
+  }
+
+  async function openHistory() {
+    const config = root.BINDER_CONFIG || {};
+    const Keys = root.BinderMemberKey;
+    const Crypto = root.BinderCrypto;
+    const Query = root.BinderQuery;
+    const card = $("your-history");
+
+    
+
+    if (!card || !Keys || !Crypto || !Query || !root.BinderDashboard ||
+        !config.endpoint || !account) {
+      return;
+    }
+    show(card, true);
+
+    const key = await Keys.ensure(account);
+    if (!key) {
+      historyStatus("This browser cannot keep a key of your own, so your " +
+        "entries stay sealed here. " + (Keys.unavailableReason() || ""), false);
+      return;
+    }
+
+    let rows;
+    try {
+      const response = await fetch(config.endpoint + "/my-entries", {
+        headers: Session.authorization(),
+      });
+      if (response.status === 401) {
+         
+         
+         
+        Session.clear();
+        if (root.location && typeof root.location.replace === "function") {
+          root.location.replace("index.html");
+        }
+        return;
+      }
+      if (!response.ok) throw new Error("The server answered " +
+        response.status + ".");
+      const payload = await response.json();
+      rows = payload && payload.ok === true && Array.isArray(payload.entries)
+        ? payload.entries : null;
+      if (!rows) throw new Error("The server returned an invalid listing.");
+    } catch (error) {
+      historyStatus("Your entries could not be fetched. " +
+        (error && error.message ? error.message : "The connection failed."),
+      true);
+      return;
+    }
+
+    if (!rows.length) {
+      historyStatus("You have no entries yet. Weigh in and this fills up.",
+        false);
+      return;
+    }
+
+    
+
+    const entries = [];
+    let sealed = 0;
+    for (const row of rows) {
+      try {
+        entries.push(historyEntry(row,
+          await Crypto.decrypt(row.ciphertext, key.privateKey)));
+      } catch (error) {
+        sealed += 1;
+      }
+    }
+
+    const sealedCount = $("history-sealed-count");
+    if (sealedCount) sealedCount.textContent = String(sealed);
+    show($("history-sealed"), sealed > 0);
+
+    if (!entries.length) {
+      historyStatus("None of your entries were sealed to this browser. " +
+        "They were stored before this browser had a key of its own, or on " +
+        "a device it is not.", false);
+      return;
+    }
+
+    let source;
+    try {
+      source = Query.personalSource(entries, Date.now());
+    } catch (error) {
+      historyStatus("Your entries could not be read as a history. " +
+        (error && error.message ? error.message : ""), true);
+      return;
+    }
+
+    show($("history-controls"), true);
+    $("h-split").addEventListener("change", function () { askHistory(source); });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="h-measure"]'),
+      function (input) {
+        input.addEventListener("change", function () { askHistory(source); });
+      });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) {
+        input.addEventListener("change", function () { askHistory(source); });
+      });
+    askHistory(source);
+  }
+
   
 
   function rememberHeight(event) {
@@ -375,5 +558,12 @@
      
     await refreshPanel();
     restorePrefill();
+     
+     
+     
+     
+     
+     
+    await openHistory();
   }
 })(globalThis);

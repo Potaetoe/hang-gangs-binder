@@ -455,6 +455,242 @@
     }
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Your own history, opened in this browser - #85's personal arm.    */
+
+  /*
+   * The member's own rows, fetched sealed and opened here.
+   *
+   * THE WHOLE SHAPE IN ONE PARAGRAPH. GET /my-entries answers with this
+   * account's rows and their ciphertext; memberkey.js holds a P-256 key
+   * this browser generated and cannot export; crypto.js tries that key
+   * against each row and opens the ones it was a recipient of;
+   * query.js's `personalSource` turns what opened into a source with no
+   * floor; `BinderDashboard.renderAnswer` draws the answer. Nothing
+   * decrypted leaves this function's own frame, nothing decrypted is
+   * stored anywhere, and the service saw none of it.
+   *
+   * WHY THE FLOOR IS ZERO HERE AND IS NOT ON dashboard.html. The
+   * published document is other people, so every cell of it was reduced
+   * to at least MIN_CELL before it was published. These rows are one
+   * person's own, and suppressing a member's own March because March
+   * held one entry would be hiding somebody's data from themselves. The
+   * difference is structural rather than a flag: two different builder
+   * functions, and `run` takes the floor from the source, so there is
+   * no sentence in the engine's language that asks for floor 0 over
+   * anybody else's data.
+   *
+   * EVERY WAY THIS CAN COME UP EMPTY HAS ITS OWN SENTENCE, because they
+   * are not the same event to the person reading them: a browser that
+   * cannot keep a key, a browser whose key is new, a history sealed
+   * before this feature existed, and a page that could not reach the
+   * service are four different things to do next. A single "nothing to
+   * show" would be one answer to four questions.
+   */
+  function historyStatus(message, bad) {
+    const line = $("history-status");
+    if (!line) return;
+    line.textContent = message || "";
+    line.className = bad ? "status bad" : "status";
+    show(line, Boolean(message));
+  }
+
+  /*
+   * A stored row and its opened record, in the shape the snapshot
+   * builder reads.
+   *
+   * The account id is the member's own and the handle comes out of the
+   * record, because `snapshotOf` is given `identify: true` - the same
+   * call admin.html makes over its own rows. That is not a leak of
+   * anything: the only rows here are this member's, the only reader is
+   * their own tab, and `personalSource` refuses a list belonging to
+   * more than one person by counting people through
+   * BinderDashboard.peopleCount rather than trusting the caller.
+   */
+  function historyEntry(row, record) {
+    const weight = record.weight || {};
+    const height = record.height || {};
+    const entered = record.entered || {};
+    return {
+      id: row.id,
+      accountId: account,
+      receivedAt: row.receivedAt,
+      submittedAt: record.submittedAt,
+      telegram: record.telegram,
+      kg: weight.kg, lb: weight.lb,
+      cm: height.cm, totalInches: height.totalInches,
+      feet: height.feet, inches: height.inches,
+      enteredUnits: entered.units,
+      enteredWeight: entered.weight,
+      enteredHeight: entered.height,
+      gender: record.gender,
+      roles: Array.isArray(record.roles) ? record.roles.slice() : [],
+      country: record.country,
+      over18: record.over18 === true,
+      recordVersion: record.record,
+    };
+  }
+
+  /*
+   * Ask the engine, draw the answer.
+   *
+   * The source is built ONCE and kept, because rebuilding it per
+   * question would decrypt the rows again for every keystroke - and
+   * because the plaintext that built it is already gone by then. What
+   * survives this function is a snapshot: counts, medians and bins over
+   * the member's own numbers, which is what they came to read.
+   */
+  function askHistory(source) {
+    const Query = root.BinderQuery;
+    const answerAt = $("history-answer");
+    const split = $("h-split").value;
+    const shape = Query.SPLITS[split];
+    if (!shape || !answerAt) return;
+
+    const bins = shape.kind === "bins";
+    /* A middle needs numbers to take the middle of, so the measure only
+     * offers itself for the binned splits - the same rule the published
+     * card follows, because it is the engine's rule and not a page's. */
+    const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
+    show($("h-measure-field"), bins);
+
+    let answer;
+    try {
+      answer = Query.run(source, {
+        // Entries, always. "How many people" over one person's own rows
+        // is one person, and their history is the thing being asked
+        // about - so the basis follows from what the source is rather
+        // than from a control offering a question with one answer.
+        basis: "entries",
+        split: split,
+        measure: measure,
+        // The form's own units choice, which is this page's only one. A
+        // second control here would let one page hold two answers to
+        // the same question.
+        units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+      });
+    } catch (error) {
+      historyStatus("That question could not be asked. " +
+        (error && error.message ? error.message : ""), true);
+      return;
+    }
+    historyStatus("", false);
+    root.BinderDashboard.renderAnswer(answerAt, answer,
+      Query.describe({ basis: "entries", split: split, measure: measure }));
+  }
+
+  async function openHistory() {
+    const config = root.BINDER_CONFIG || {};
+    const Keys = root.BinderMemberKey;
+    const Crypto = root.BinderCrypto;
+    const Query = root.BinderQuery;
+    const card = $("your-history");
+
+    /* Any of these missing is a page that did not fully load, not a
+     * member with nothing to read. The account card above still paints,
+     * because counts do not need a key. */
+    if (!card || !Keys || !Crypto || !Query || !root.BinderDashboard ||
+        !config.endpoint || !account) {
+      return;
+    }
+    show(card, true);
+
+    const key = await Keys.ensure(account);
+    if (!key) {
+      historyStatus("This browser cannot keep a key of your own, so your " +
+        "entries stay sealed here. " + (Keys.unavailableReason() || ""), false);
+      return;
+    }
+
+    let rows;
+    try {
+      const response = await fetch(config.endpoint + "/my-entries", {
+        headers: Session.authorization(),
+      });
+      if (response.status === 401) {
+        // The same handling the account summary above uses, and for the
+        // same reason: a credential the endpoint refuses is one this tab
+        // must stop holding.
+        Session.clear();
+        if (root.location && typeof root.location.replace === "function") {
+          root.location.replace("index.html");
+        }
+        return;
+      }
+      if (!response.ok) throw new Error("The server answered " +
+        response.status + ".");
+      const payload = await response.json();
+      rows = payload && payload.ok === true && Array.isArray(payload.entries)
+        ? payload.entries : null;
+      if (!rows) throw new Error("The server returned an invalid listing.");
+    } catch (error) {
+      historyStatus("Your entries could not be fetched. " +
+        (error && error.message ? error.message : "The connection failed."),
+      true);
+      return;
+    }
+
+    if (!rows.length) {
+      historyStatus("You have no entries yet. Weigh in and this fills up.",
+        false);
+      return;
+    }
+
+    /*
+     * One at a time, and a row that will not open is COUNTED rather than
+     * skipped. The ordinary cause is a row sealed before this browser
+     * had a key - every entry stored before #85, and every entry from a
+     * device that is gone - and those are exactly the rows an admin can
+     * unseal. Dropping them silently would leave a member reading an
+     * answer over fewer entries than they have, with nothing on the
+     * page saying so.
+     */
+    const entries = [];
+    let sealed = 0;
+    for (const row of rows) {
+      try {
+        entries.push(historyEntry(row,
+          await Crypto.decrypt(row.ciphertext, key.privateKey)));
+      } catch (error) {
+        sealed += 1;
+      }
+    }
+
+    const sealedCount = $("history-sealed-count");
+    if (sealedCount) sealedCount.textContent = String(sealed);
+    show($("history-sealed"), sealed > 0);
+
+    if (!entries.length) {
+      historyStatus("None of your entries were sealed to this browser. " +
+        "They were stored before this browser had a key of its own, or on " +
+        "a device it is not.", false);
+      return;
+    }
+
+    let source;
+    try {
+      source = Query.personalSource(entries, Date.now());
+    } catch (error) {
+      historyStatus("Your entries could not be read as a history. " +
+        (error && error.message ? error.message : ""), true);
+      return;
+    }
+
+    show($("history-controls"), true);
+    $("h-split").addEventListener("change", function () { askHistory(source); });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="h-measure"]'),
+      function (input) {
+        input.addEventListener("change", function () { askHistory(source); });
+      });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) {
+        input.addEventListener("change", function () { askHistory(source); });
+      });
+    askHistory(source);
+  }
+
   /*
    * The one path that moves the baseline: a row the Worker accepted.
    *
@@ -517,5 +753,12 @@
     // at.
     await refreshPanel();
     restorePrefill();
+    // After refreshPanel(), because the account id it validates is what
+    // says whose key this is - and #56's rule is that a key or a value
+    // scoped to nobody is a key or a value shown to the wrong member.
+    // Not awaited by setUp's own callers: opening a history is a read
+    // that can take as long as it takes, and the form above it must not
+    // wait on it to become usable.
+    await openHistory();
   }
 })(globalThis);
