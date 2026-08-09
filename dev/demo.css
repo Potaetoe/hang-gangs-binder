@@ -162,7 +162,13 @@ iframe {
   min-height: 34rem;
   border: 0;
   border-radius: 0.35rem;
-  background: #fff;
+  /* The console's own panel dark, not white (#196): every scenario
+   * pick reloads the frame, and this backdrop is what shows until the
+   * page inside paints its own background. White here was a flashbulb
+   * against a dark console on every pick. A light-palette page still
+   * covers the whole viewport the moment it renders, so the backdrop
+   * only ever owns the unpainted gap. */
+  background: var(--panel);
 }
 
 .boxes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
