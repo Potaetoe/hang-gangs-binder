@@ -11,8 +11,9 @@
  * it into something that opens submissions.
  *
  * All wiring, no pure half. Everything worth testing about a snapshot
- * lives in dashboard.js and is tested there; what is left is fetching
- * one file and reporting when that fails.
+ * lives in dashboard.js and query.js and is tested there; what is left
+ * here is fetching one file, reporting when that fails, and turning the
+ * question card's controls into queries the engine already validates.
  */
 (function (root) {
   "use strict";
@@ -147,5 +148,212 @@
 
     show($("tool"), true);
     draw();
+    askable(snapshot);
+  }
+
+  /*
+   * The question card - #85's member-shaped dashboard, wired to
+   * apps/web/query.js.
+   *
+   * WHICH SOURCE THIS PAGE BUILDS, AND WHY IT IS THE ONLY ONE IT CAN.
+   * query.js has two. `publishedSource` reads the members-only published
+   * document, every cell of which the keyholder's browser already reduced
+   * to at least MIN_CELL people. `personalSource` reads ONE member's own
+   * rows and applies no floor at all, because their own data is theirs.
+   * This page holds a published document and nothing else, so it builds
+   * exactly one source - and there is no source control, no floor
+   * control, and no second call anywhere below.
+   *
+   * That is not a rule this file enforces. It is what the engine's shape
+   * makes true: `run` takes the floor off the SOURCE, and a query has no
+   * member that names a floor. A caller cannot ask for floor 0 over a
+   * published document because there is no sentence in the language that
+   * means it, which is why this file re-implements none of the
+   * suppression it depends on.
+   *
+   * THE PERSONAL ARM IS ABSENT BECAUSE ITS DATA IS. Reading a member's
+   * own history needs the member-held keys of #85's slice 2 and the
+   * /my-entries route of slice 3, and neither is shipped. When they are,
+   * the personal source belongs beside the entries it decrypts on
+   * submit.html - not here, where the only document in the tab is the
+   * published one and this page loads no crypto to open anything else.
+   */
+  function askable(snapshot) {
+    const Query = root.BinderQuery;
+    const card = $("question");
+
+    /* No engine, no card, and the page carries on. The panels are what
+     * this page is for and they do not need query.js; a member reading
+     * correct aggregates beats a page that refuses to start because an
+     * additive script did not arrive. */
+    if (!Query || !card) return;
+    show(card, true);
+
+    const status = $("q-status");
+    let source;
+    try {
+      source = Query.publishedSource(snapshot);
+    } catch (error) {
+      /* The engine refuses a document it does not read - a version it
+       * does not know, or a keyholder snapshot arriving where a published
+       * one belongs. Its own words are shown rather than a house
+       * paraphrase, because the refusal names which of those it was, and
+       * the controls go away rather than sitting there inert. */
+      show($("q-controls"), false);
+      status.className = "status bad";
+      status.textContent = "This document cannot be queried. " +
+        (error && error.message ? error.message : "");
+      return;
+    }
+
+    /*
+     * The cells now on offer, paired with the boxes that tick them.
+     *
+     * Kept here rather than read back out of the DOM so that redrawing an
+     * answer does not have to walk it, and rebuilt only when the
+     * document's own labels change - a member ticking a box must not have
+     * that box replaced underneath them, and every keystroke redraws.
+     */
+    let boxes = [];
+    let builtFor = null;
+
+    function choiceBox(label) {
+      const wrap = document.createElement("label");
+      wrap.className = "choice";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      const words = document.createElement("span");
+      words.textContent = label;
+      wrap.appendChild(box);
+      wrap.appendChild(words);
+      boxes.push({ label: label, box: box });
+      return wrap;
+    }
+
+    /*
+     * The combine list, rebuilt from the answer the document actually
+     * gave rather than from anything remembered.
+     *
+     * This is the union-only rule made visible. The only labels a member
+     * can name are labels the floor already let through, so every group
+     * they can build is a union of cells that each cleared it - and the
+     * engine refuses a merge naming a cell this document does not have,
+     * which is a refusal this list makes unreachable rather than one it
+     * works around.
+     */
+    function offerMerge(cells) {
+      const labels = cells.map(function (cell) { return cell.label; });
+      const key = labels.join(" ");
+      if (key === builtFor) return;
+      builtFor = key;
+      boxes = [];
+      const list = $("q-merge-labels");
+      list.textContent = "";
+      labels.forEach(function (label) {
+        list.appendChild(choiceBox(label));
+      });
+    }
+
+    function ticked() {
+      return boxes.filter(function (item) { return item.box.checked; })
+        .map(function (item) { return item.label; });
+    }
+
+    function ask() {
+      const split = $("q-split").value;
+      const shape = Query.SPLITS[split];
+      /* A split the engine does not know is a page and an engine that
+       * have drifted apart, and dev/public.test.mjs pins the two lists
+       * against each other in both directions so this is unreachable.
+       * It is still said out loud rather than thrown from inside
+       * normalize, because the person who reaches it is the one who
+       * added an option and not the one who will read a stack trace. */
+      if (!shape) {
+        status.className = "status bad";
+        status.textContent = "This page offers a question the engine does " +
+          "not answer: " + split + ".";
+        return;
+      }
+
+      const bins = shape.kind === "bins";
+      /* Only a histogram has numbers to take a middle of, and only a
+       * categorical split is coarsened by naming cells. Offering the
+       * other combinations would be offering a question the engine
+       * refuses by design - so they are not offered. */
+      const measure = bins
+        ? UI.checkedValue("q-measure", "count")
+        : "count";
+      show($("q-measure-field"), bins);
+      show($("q-widen-field"), bins && measure === "count");
+      show($("q-merge-field"), !bins && measure === "count");
+
+      const query = {
+        basis: UI.checkedValue("basis", "people"),
+        split: split,
+        measure: measure,
+        units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+      };
+      if (bins) query.widen = Number(UI.checkedValue("q-widen", "1"));
+
+      let answer;
+      try {
+        answer = Query.run(source, query);
+        if (!bins && measure === "count") {
+          /*
+           * Asked twice on purpose: once plain, to learn which cells the
+           * document published, and again naming only those. The first
+           * answer is what fills the combine list, so a member changing
+           * basis cannot carry a tick over to a split that has no such
+           * cell - and the merged answer is a coarsening of the same
+           * floored partition the plain one is, which is the property
+           * that makes two answers safe to lay over each other.
+           */
+          offerMerge(answer.cells);
+          const labels = ticked();
+          if (labels.length > 1) {
+            const named = $("q-merge-name").value.trim();
+            answer = Query.run(source, Object.assign({}, query, {
+              merge: [{ as: named || labels.join(" + "), labels: labels }],
+            }));
+          }
+        }
+        status.className = "status";
+        status.textContent = "";
+      } catch (error) {
+        /* The engine's refusals are written to be read - they name the
+         * question that is not a question, and the alternatives. Losing
+         * them for a house sentence would lose the only explanation the
+         * member gets. */
+        status.className = "status bad";
+        status.textContent = error && error.message
+          ? error.message
+          : "That question could not be answered.";
+        $("answer").textContent = "";
+        return;
+      }
+
+      root.BinderDashboard.renderAnswer($("answer"), answer,
+        Query.describe(query));
+    }
+
+    /*
+     * One listener for the whole card. `input` bubbles and fires for
+     * radios, selects, checkboxes and typing alike, so this covers the
+     * merge boxes too - and those are rebuilt from every answer, which
+     * per-control wiring would have to redo on each draw.
+     */
+    $("q-controls").addEventListener("input", ask);
+
+    /* The Count and Units choices belong to the page, not to the card:
+     * a question here is about the same people the panels are, which is
+     * what the card's own copy promises. setUp already has those two
+     * redrawing the panels, so this adds the answer to the same event
+     * rather than giving the card a second pair of controls that could
+     * disagree with the ones above it. */
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="basis"], input[name="units"]'),
+      function (input) { input.addEventListener("change", ask); });
+
+    ask();
   }
 })(globalThis);
