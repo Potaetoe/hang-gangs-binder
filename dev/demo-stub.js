@@ -38,9 +38,13 @@
    *
    * An iframe's width IS the viewport the page inside it lays out
    * against, so a shipped page in a 375-pixel frame takes its own phone
-   * rules - the rail as a strip, the theme chips behind the disclosure,
+   * rules - the rail as a strip, its four destinations still in flow,
    * no sideways scroll - with nothing changed in apps/web and nothing
    * recorded here. That is the whole feature: a width.
+   *
+   * The Theme control is deliberately not in that list. It is one
+   * disclosure at every width (#150), so it sits outside every media
+   * query and is not something narrowing the frame reveals.
    *
    * NOTHING HERE EMULATES A DEVICE. No touch, no user agent, no pixel
    * ratio. The demo is never driven on a phone (the owner's ruling on
@@ -619,10 +623,11 @@
           "see it snap open instead of animating.",
         "The wordmark is Playfair Display - if it renders as a plain " +
           "serif the font did not load, which is the thing to look for.",
-        "There is no rail on Sign in, by decision on #73, and no " +
-          "palette switch with it: theme-init.js paints whatever was " +
-          "saved and this page offers no way to change it. Switching " +
-          "is the member scenario's step, on a page that has the rail.",
+        "There is no rail on Sign in, by decision on #73 - but the " +
+          "Theme control is here, because it is one disclosure at " +
+          "every width and on every page that offers a palette (#150). " +
+          "Open it: the control works signed out, which is the point " +
+          "of it not living in the rail.",
         "Press the Telegram button. It is a local stand-in for the " +
           "widget and calls the page's own callback, so what happens " +
           "after the press is the shipped code.",
@@ -640,15 +645,30 @@
         "Entries shows what this account currently claims, and the " +
           "numeric id line is painted.",
         // The chips are named by the page, not here, and the driver is
-        // sent to read the rail rather than a list. Two reasons, both
-        // still live now that the owner has ruled the light palette's
-        // label on #127: a walk-through that spells out a label needs
-        // correcting every time one moves, and nothing in the gate
-        // compares these four buttons across the three pages that carry
-        // them, so counting them against the rail is what makes this
-        // step notice one going missing.
-        "Switch every palette chip in the rail in turn. This is the " +
-          "first scenario that starts on a page carrying them.",
+        // sent to read the control rather than a list. Two reasons, and
+        // the second one carries an expiry worth writing down.
+        //
+        // A walk-through that spells out a label needs correcting every
+        // time one moves, so this step names none.
+        //
+        // And this walk is the only thing that reads the labels side by
+        // side. check_web.py pins that a page offering a palette
+        // carries the disclosure and at least one data-set-theme chip -
+        // presence, per page, judged in isolation. It does not compare
+        // one page's chip labels against another's, so every page can
+        // satisfy it while disagreeing about what the palettes are
+        // called. A human switching each chip in turn across the walk
+        // is what sees that.
+        //
+        // THE TRIGGER, SO THE NEXT READER INHERITS IT RATHER THAN
+        // FINDING IT: if a parity arm ever pins the labels across
+        // pages, the second reason is spent and this step is
+        // re-justified or deleted. Do not leave it standing on a reason
+        // a check has taken over - that is exactly how this comment
+        // came to need rewriting.
+        "Switch every palette chip in turn, and read what they are " +
+          "called - this walk is what compares those labels across " +
+          "the pages that carry them.",
         "New entry opens the form; the rail carries you to Progress and " +
           "back without losing the tab you were on.",
         "Progress draws the full payoff for this scenario: the " +

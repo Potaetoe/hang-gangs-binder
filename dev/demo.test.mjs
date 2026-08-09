@@ -489,19 +489,27 @@ await check("every acceptance box is reachable from some scenario", () => {
  * A step must not send the driver to a control its own starting page
  * does not carry.
  *
- * #140's residue was exactly this and nothing here could see it: the
- * signed-out walk said to switch every palette chip in the rail, and
- * the next line of the same walk said there is no rail on Sign in.
- * index.html carries no `data-set-theme` element at all, so the step
- * was not merely misplaced - it could not be performed. The only check
- * over `steps` asserted the array was not empty, which is how the text
- * survived a nine-finding adversarial pass.
+ * #140's residue was a walk that told the driver to switch every
+ * palette chip in the rail on a page that had neither, and nothing here
+ * could see it: the only check over `steps` asserted the array was not
+ * empty, which is how that text survived a nine-finding adversarial
+ * pass. What breaks if this goes away is a walk-through that cannot be
+ * performed, read by somebody deciding the cutover.
  *
  * ASSERTED IN ONE DIRECTION ON PURPOSE: a walk that names the chips
- * must start on a page that has them. Not the converse - #150 is adding
- * the control to the sign-in page, and a check demanding that every
- * page with chips be walked for them would turn this suite red on a
- * neighboring slice's merge for no defect.
+ * must start on a page that has them, never the converse. A check
+ * demanding that every page with a palette be walked for it would go
+ * red whenever a slice adds the control somewhere, which is a merge
+ * rather than a defect - #150 spread the Theme disclosure to four pages
+ * including sign-in, and this arm was written to survive exactly that
+ * and did.
+ *
+ * What that costs, stated rather than glossed: this no longer catches a
+ * chip walk staged on the sign-in page, because that page now carries
+ * the control and such a walk is no longer a defect. What it still
+ * catches is a chip walk on a page that genuinely has none - 404.html
+ * today, which check_web.py's THEMED_PAGES pins as deliberately
+ * palette-free, or whatever ships next without a control.
  *
  * The page is read rather than remembered, so this follows the markup
  * wherever it goes.

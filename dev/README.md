@@ -131,9 +131,11 @@ those three by name.
 Over the frame is a **frame size**, and the phone one narrows the frame
 to the CSS pixel size `demo-stub.js` names. An iframe's width is the
 viewport the page inside it lays out against, so the shipped pages run
-their own phone rules in it — the rail as a strip, the theme chips behind
-the disclosure — which is what makes `UAT.md`'s phone-width steps
-drivable here rather than by narrowing the window. It is a width and
+their own phone rules in it — the rail as a strip, its destinations still
+in flow — which is what makes `UAT.md`'s phone-width steps
+drivable here rather than by narrowing the window. The Theme control is
+not one of those rules: it is one disclosure at every width, so it is
+there in both. It is a width and
 nothing else: the console stays a desktop tool, no touch, user agent or
 pixel ratio is emulated, and `apps/web` is not touched to make it work.
 
