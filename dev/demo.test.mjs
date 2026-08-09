@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 70);
+const { check, mustReject, report } = suite("demo", 75);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -539,6 +539,125 @@ await check("every probe runs against its real shipped file", async () => {
     if (typeof Demo.probeHit(src, box.probe) !== "boolean") return false;
   }
   return true;
+});
+
+/* ------------------------------------------------------------------ */
+/* #142. The frame's width is the viewport the page lays out against.   */
+
+/*
+ * The phone view is one number applied to one element, and both halves
+ * of that carry a way to lie.
+ *
+ * The NUMBER is spelled out here rather than read back off the table,
+ * for F1's reason one file over: a check asserting the frame is
+ * `viewportFor("phone").width` cannot fail when that width is the thing
+ * that changed. 375 x 812 is what the owner ruled on #142.
+ *
+ * The ELEMENT is pinned by making the size a pure function, so this
+ * suite can drive what the console assigns. The failure this control
+ * can have while still looking right is a phone-shaped box around a
+ * page laid out at desktop width - an iframe's own width is the
+ * viewport of the page inside it, and a width put on any wrapper
+ * produces exactly that screen, in front of the person deciding the
+ * cutover.
+ *
+ * Nothing here asserts a device, because nothing here emulates one: no
+ * touch, no user agent, no pixel ratio. The demo is never driven on a
+ * phone (owner ruling on #142), and a faked device would put a screen
+ * in front of the owner that no browser on the machine can be asked to
+ * reproduce.
+ */
+await check("the phone frame is the size #142 ruled, and desktop carries none", () => {
+  const phone = Demo.viewportFor("phone");
+  const desktop = Demo.viewportFor("desktop");
+  return phone !== null && phone.width === 375 && phone.height === 812 &&
+    desktop !== null && desktop.width === null && desktop.height === null;
+});
+
+/*
+ * The console starts the frame in the first viewport the table lists
+ * and paints no size for it, so the order here is a contract rather
+ * than a presentation detail: a table led by a sized viewport opens the
+ * console with a phone frame nobody chose.
+ */
+await check("the table leads with the viewport that carries no size", () =>
+  Demo.VIEWPORTS.length >= 2 &&
+  Demo.VIEWPORTS[0].id === "desktop" && Demo.VIEWPORTS[0].width === null &&
+  Demo.VIEWPORTS.every((one) =>
+    typeof one.id === "string" && one.id.length > 0 &&
+    typeof one.label === "string" && one.label.length > 0) &&
+  new Set(Demo.VIEWPORTS.map((one) => one.id)).size === Demo.VIEWPORTS.length);
+
+/*
+ * F8's lesson, one control over. A viewport id the table does not know
+ * has to refuse rather than fall back to desktop: falling back paints a
+ * desktop page under a control reading Phone, which is the
+ * false-confidence direction this suite's header names as the worse of
+ * the two lies.
+ */
+await check("an unknown viewport id is refused, not quietly made desktop", () =>
+  Demo.viewportFor("phone-xl") === null &&
+  Demo.frameStyleFor("phone-xl") === null);
+
+await check("the phone size is written in CSS pixels, and desktop clears it", () => {
+  const phone = Demo.frameStyleFor("phone");
+  const desktop = Demo.frameStyleFor("desktop");
+  return phone.width === "375px" && phone.height === "812px" &&
+    desktop.width === "" && desktop.height === "";
+});
+
+/*
+ * The cross-file arm, and the one that can go red without anybody
+ * touching dev/.
+ *
+ * 375 is a phone width only because apps/web says so. What UAT A1.10
+ * asks the owner to see - the rail as a strip, the theme chips behind a
+ * disclosure - is one media block in the shipped stylesheet, and the
+ * frame is only worth looking at if that block fires inside it. A later
+ * slice moving that breakpoint below 375 leaves this console framing a
+ * desktop rail at phone width: a screen the product does not have,
+ * shown as if it were the product.
+ *
+ * The breakpoint is READ out of theme.css rather than written down
+ * here, for the same reason the page list is read out of apps/web. It
+ * is found by the rule that folds the chips rather than by being the
+ * largest, because "the largest max-width in the file" is a fact about
+ * ordering that any unrelated block can change - a first attempt at
+ * this check compared the largest and the smallest breakpoints, and
+ * moving the rail-folding block from 64rem to 20rem left it green, with
+ * an unrelated 52rem block satisfying it.
+ */
+const themeCss = await readFile(HERE("../apps/web/theme.css"), "utf8");
+const ROOT_PX = 16;
+
+function widthBlocks(css) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const blocks = [];
+  const OPEN = /@media\s*\(max-width:\s*([\d.]+)rem\s*\)\s*\{/g;
+  let found;
+  while ((found = OPEN.exec(clean)) !== null) {
+    let depth = 1;
+    let index = OPEN.lastIndex;
+    while (index < clean.length && depth > 0) {
+      if (clean[index] === "{") depth++;
+      else if (clean[index] === "}") depth--;
+      index++;
+    }
+    blocks.push({
+      px: Number(found[1]) * ROOT_PX,
+      body: clean.slice(OPEN.lastIndex, index - 1),
+    });
+  }
+  return blocks;
+}
+
+const foldingBlocks = widthBlocks(themeCss)
+  .filter((one) => /\.theme-disclosure\s*\{/.test(one.body) &&
+    /\.rail-links\s*\{/.test(one.body));
+
+await check("the block that folds the rail and the chips fires in the phone frame", () => {
+  const phone = Demo.viewportFor("phone");
+  return foldingBlocks.length === 1 && foldingBlocks[0].px >= phone.width;
 });
 
 /* ------------------------------------------------------------------ */

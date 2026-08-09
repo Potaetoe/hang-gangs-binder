@@ -125,6 +125,15 @@ two dev scripts ahead of the page's own, and it points the Telegram
 widget at a local stand-in. `demo.test.mjs` fails if a mirrored page
 differs from the shipped one in any other way.
 
+Over the frame is a **frame size**, and the phone one narrows the frame
+to the CSS pixel size `demo-stub.js` names. An iframe's width is the
+viewport the page inside it lays out against, so the shipped pages run
+their own phone rules in it — the rail as a strip, the theme chips behind
+the disclosure — which is what makes `UAT.md`'s phone-width steps
+drivable here rather than by narrowing the window. It is a width and
+nothing else: the console stays a desktop tool, no touch, user agent or
+pixel ratio is emulated, and `apps/web` is not touched to make it work.
+
 Two things the console derives rather than states, because both would go
 stale the week they were written: which acceptance box is drivable yet
 (read out of the shipped bytes, so a box flips when its slice lands), and
