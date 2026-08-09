@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 46;
+const EXPECTED = 48;
 
 function check(label, condition) {
   performed++;
@@ -131,7 +131,13 @@ function makePage() {
     // The button starts hidden, as the markup does: signout.js reveals
     // it only once a session is confirmed, and a stub that began painted
     // would let that reveal stop happening without a check noticing.
+    //
+    // The door is the reverse of the exit (#187). The Sign in route
+    // ships visible - with scripts dead the rail must still carry the
+    // way back to the page that mints a session - so the stub starts
+    // painted, and it is the confirmed session that hides it.
     "session-who": makeElement("session-who"),
+    "sign-in": makeElement("sign-in"),
     "sign-out": makeElement("sign-out", true),
     "weight-lb": makeElement("weight-lb"),
     "height-ft": makeElement("height-ft"),
@@ -291,6 +297,7 @@ check("submit.html declares the panel controls and loads its shipped module",
  */
 check("submit.html carries the rail's session home and loads signout.js",
   submitHtml.includes('id="sign-out"') &&
+  submitHtml.includes('id="sign-in"') &&
   submitHtml.includes('id="session-who"') &&
   /src="signout\.js"/.test(submitHtml));
 
@@ -398,6 +405,24 @@ check("the panel renders the route's exact count and last-submitted time",
 check("a signed-in member can read their own numeric id off the panel",
   panel.elements["member-telegram-id"].textContent === "10" &&
   isPainted(panel.elements["member-telegram-id-line"]));
+
+/*
+ * The session home's two states, both directions (#187). The door and
+ * the exit trade places: markup ships the Sign in route visible and the
+ * Sign out button hidden, and a confirmed session is what swaps them.
+ * Asserting only the signed-in half would pass on a page that hides the
+ * door unconditionally - which strands the signed-out member the route
+ * exists for, exactly the failure the stranding arm in
+ * tools/check_web.py refuses at the markup level.
+ */
+check("a confirmed session hides the door and reveals the exit",
+  panel.elements["sign-in"].hidden === true &&
+  panel.elements["sign-out"].hidden === false);
+
+const doorless = await loadSubmit({ member: null });
+check("with no session the rail offers the door and no exit",
+  doorless.elements["sign-in"].hidden === false &&
+  doorless.elements["sign-out"].hidden === true);
 
 /*
  * And where it comes from. The account summary has no business carrying
