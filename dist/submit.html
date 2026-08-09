@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Everything this page is allowed to load, and nothing else. This is the
+  page that holds plaintext in memory before encrypting it: an injected
+  script that runs before the encryption step sees exactly what the
+  design exists to hide. The policy also enforces the rule DESIGN.md
+  states in prose - nothing third-party where plaintext is in reach.
+
+  connect-src names both Workers exactly, and nothing else - not the whole
+  of workers.dev, which would let an injected script post elsewhere on
+  the same host. Change it here and in config.js together; the build
+  fails if they disagree. form-action 'none' is here because this page
+  now has a <form>: the browser refuses a native submit, so a bug that
+  bypasses the submit handler cannot navigate the fields anywhere in the
+  clear. frame-ancestors and report-uri are ignored in a <meta> policy,
+  so they are not written here - a header would be needed, and GitHub
+  Pages does not serve one.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<title>Your binder — HangGang</title>
+<meta name="description" content="Your page in the Hang Gang's binder. Entries are encrypted in your browser before they are sent.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<!-- Dark's --bg, the default palette. theme.js rewrites this to match
+     whichever palette is actually applied; this is what the browser
+     chrome uses before that runs. -->
+<meta name="theme-color" content="#120d10">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<body class="railed">
+
+<!--
+  The rail, identical on every signed-in page and written out rather
+  than built by nav.js - a page whose navigation disappears when a
+  script fails is a page somebody can get stranded on. The cost is three
+  copies, and tools/check_web.py fails the build if they disagree, and
+  fails too if this markup appears on a page pinned plain.
+
+  Nothing in here is hidden by the `hidden` attribute except the Sign
+  out control, and that is deliberate. [hidden] is display:none
+  !important in theme.css, so anything hidden that way at one width
+  cannot be revealed at another; the four destinations stay in flow at
+  every width and the theme chips fold behind a data attribute instead.
+  Sign out is the one thing that genuinely has no state to be in until a
+  script confirms a session, so the attribute is right for it.
+-->
+<aside class="rail">
+  <a class="wordmark" href="index.html">
+    <span class="wordmark-owner">Muse's</span>
+    <span class="wordmark-name">Binder</span>
+  </a>
+
+  <nav aria-label="Site">
+    <ul class="rail-links">
+      <li><a href="index.html">Sign in</a></li>
+      <li><a href="submit.html">Your binder</a></li>
+      <li><a href="dashboard.html">Progress</a></li>
+      <li>
+        <a href="admin.html">Admin</a>
+        <span class="rail-note">Keyholder only — needs the key</span>
+      </li>
+    </ul>
+  </nav>
+
+  <div class="theme-picker">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
+      <button type="button" data-set-theme="midnight">Midnight</button>
+      <button type="button" data-set-theme="pink">Pink</button>
+      <!--
+        "Parchment Daylight" - the owner's ruling on #127, and the one
+        place in this control where the visible word and the code's name
+        for the same thing deliberately differ.
+
+        The id stays `daylight`: here in data-set-theme, in theme.js's
+        theme-color map and its light-preference answer, in two theme.css
+        selector blocks that must go on declaring identical colors, in
+        check_contrast.py's table keys, and - the one that cannot be
+        undone - in every member's stored preference. Renaming the id
+        would silently return everybody who has already chosen this
+        palette to the default.
+
+        The label is what moved, and it moves theme.css's own comments
+        and check_contrast.py's display names from aspiration to fact:
+        both already called this palette Parchment Daylight.
+
+        Nothing compares these four buttons across the four pages that
+        carry them. check_web.py's check 19 pins that each of those pages
+        HAS the control and that no other page does; the rail-parity rule
+        reads .rail-links and stops, and the name tables read titles,
+        headings and rail entries - so a rename reaching three of the
+        four copies still passes the whole gate. That gap is filed as
+        #152.
+      -->
+      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="contrast">Contrast</button>
+    </div>
+  </div>
+
+  <div class="rail-session">
+    <p class="runner"><span>Session</span></p>
+    <p class="rail-who" id="session-who">Not signed in</p>
+    <button type="button" class="secondary rail-signout" id="sign-out" hidden>
+      Sign out
+    </button>
+  </div>
+</aside>
+
+<div class="page">
+
+<!-- The running head names the section of the site, not the page: the
+     heading below already says which page this is, and a label that
+     restates the line under it is the redundancy #68 found on the
+     entries panel. -->
+<header class="stack-tight">
+  <p class="runner"><span>Members</span></p>
+  <h1>Your binder</h1>
+  <p class="muted">
+    Fill the form and you are in the binder. Your session lasts as long
+    as this tab.
+  </p>
+</header>
+
+<main class="stack">
+
+  <div class="card narrow" data-dev-session hidden>
+    <p class="caution">Development session</p>
+    <p class="muted small">
+      Signed in as <strong data-dev-identity></strong> through local
+      development auth. This is not a Telegram sign-in.
+    </p>
+  </div>
+
+  <!-- A tablist that contains only tabs. Sign out belongs in the rail,
+       where the session has one home on every page rather than only on
+       this one, and a control that is not a tab sitting inside
+       role="tablist" is announced as one.
+
+       The strip is not a card, and that is structural rather than
+       cosmetic. A bordered box holding two tabs, sitting on top of a
+       bordered box holding the pane they switch, is two containers for
+       one control - and the selected tab's mark takes the accent color,
+       which theme.css measures against the page rather than against a
+       card. -->
+  <div class="stack-tight" id="member-tabs" hidden>
+    <div role="tablist" aria-label="Your binder">
+      <button type="button" id="your-entries-tab" role="tab"
+              aria-controls="your-entries-pane" aria-selected="true">
+        Entries
+      </button>
+      <button type="button" id="add-entry-tab" role="tab"
+              aria-controls="add-entry-pane" aria-selected="false"
+              tabindex="-1">
+        New entry
+      </button>
+    </div>
+    <p class="status" id="member-panel-status" role="status"
+       aria-live="polite" hidden></p>
+  </div>
+
+  <!-- Both panes start hidden. submit.js reveals exactly one only after
+       BinderSession.require() confirms that this tab holds a member session. -->
+  <section class="stack" id="your-entries-pane" role="tabpanel"
+           aria-labelledby="your-entries-tab" hidden>
+    <!-- No heading. The tab that opened this pane is the heading, and
+         aria-labelledby already says so; restating its own label one
+         line below it orients nobody - #68's fourth candidate. -->
+    <div class="card">
+      <p class="runner"><span>Your account</span></p>
+      <p>
+        Entries stored: <strong id="member-entry-count">&mdash;</strong>
+      </p>
+      <p class="muted small">
+        Last submitted: <time id="member-last-at">Checking&hellip;</time>
+      </p>
+      <!--
+        Their own number, on a screen their own session opened, and it
+        is here because there is nowhere else it can be read. DESIGN.md's
+        membership-oracle argument is about ids sitting beside rows,
+        where anyone holding the database tests one against a guessed
+        handle; this is shown to one person, about themselves, and
+        stored nowhere new - session.js already keeps it for the tab.
+
+        `hidden` is the resting state and submit.js reveals it, because
+        a development session has no such id and a line reading "Your
+        Telegram id:" followed by nothing would send somebody off to
+        configure a blank.
+      -->
+      <p class="muted small" id="member-telegram-id-line" hidden>
+        Your Telegram id: <strong id="member-telegram-id"></strong> &mdash;
+        needed only if you are being made an admin.
+      </p>
+      <p class="muted small">
+        These are counts and receipt times from the service. Your encrypted
+        entries cannot be read back here because this page does not hold the
+        private key.
+      </p>
+    </div>
+  </section>
+
+  <section class="stack" id="add-entry-pane" role="tabpanel"
+           aria-labelledby="add-entry-tab" hidden>
+
+  <!--
+    Shown instead of the form when the browser cannot encrypt, or when
+    no key is published. Both are states a submitter can do nothing
+    about, so they are said plainly rather than left as a button that
+    does not work. form.js fills in which one it is.
+  -->
+  <div class="card" id="closed" hidden>
+    <p class="flag">Not open</p>
+    <p data-reason></p>
+  </div>
+
+  <!-- Shown in place of the form once a submission is stored. -->
+  <div class="card" id="done" hidden>
+    <p class="flag">Received</p>
+    <p><strong>That's it — you're in the binder.</strong></p>
+    <p class="muted small">
+      Your entry was encrypted in this browser before it was sent, so
+      only the keyholder can read it. Your session stays in this tab; close
+      it when you are finished. If your numbers change, just fill the form
+      again — a new entry is added rather than replacing the old one.
+    </p>
+  </div>
+
+  <!--
+    Shown when the form is reopened after a submission in this tab. It is a
+    reassurance, not a caution: a repeat entry is the weight history, and
+    wording it as a warning would talk members out of the data the published
+    series is made of. See #64.
+  -->
+  <p class="hint" id="repeat-note" hidden>
+    You already added an entry in this tab. Filling the form in again adds
+    another one — your earlier entry is kept, not replaced.
+  </p>
+
+  <!--
+    One card, because this is one act.
+
+    #68 counted this form arriving as five bordered boxes - the age
+    confirmation alone in one, the numbers in another, the optional
+    fields in a third, the button in a fourth - and named the cost: the
+    eye is asked to cross a border between "confirm your age" and "type
+    your weight", which are two halves of the same thing. The borders
+    were doing work that spacing and one section name do better, so the
+    boxes are gone and the running head below is the only division left.
+
+    Nothing is merged that was actually separate: #closed and #done stay
+    their own cards above, because they replace this form rather than
+    living inside it.
+  -->
+  <form class="card" id="submission" novalidate>
+
+      <!--
+        The verified session supplies the identifier now. This is the one
+        required assertion the member still makes in the form, so it stays
+        before the optional fields rather than being buried by the button.
+      -->
+      <div class="field">
+        <label class="choice">
+          <input type="checkbox" id="over18" data-field="over18"
+                 aria-describedby="error-over18">
+          <span>I confirm I am 18 or older.</span>
+        </label>
+        <p class="field-error" id="error-over18" hidden></p>
+      </div>
+
+      <!--
+        Imperial first and checked. It is what most of the people this
+        form is for will type, and a default is not a neutral choice -
+        it is what gets used.
+
+        Changing it is safe here in a way it would not be in most forms,
+        and the reason is worth knowing before anyone changes it back:
+        every row stores both systems plus the `entered` string, so the
+        default decides what someone types, not what is recorded. No
+        stored row means anything different because of this line.
+
+        The markup's own hidden attributes must agree with the checked
+        radio. applyUnits() fixes them at DOMContentLoaded, but the
+        browser paints before that runs, and a form that shows the wrong
+        pair of boxes for a frame is a form somebody starts typing into.
+      -->
+      <fieldset class="field">
+        <legend>Units</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="units" value="imperial" checked>
+            <span>Imperial</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="units" value="metric">
+            <span>Metric</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <!--
+        Two sets of inputs, not one pair that changes label. Switching
+        the toggle must not silently reinterpret 200 lb as 200 kg, and
+        the only way to be sure it cannot is for the other system's
+        numbers to live somewhere else. form.js hides one group.
+      -->
+      <div id="imperial-fields" class="pair">
+        <div class="field">
+          <label for="weight-lb">Weight</label>
+          <div class="row">
+            <input type="text" id="weight-lb" data-field="weight"
+                   inputmode="decimal" autocomplete="off" placeholder="200"
+                   aria-describedby="error-weight">
+            <span class="suffix">lb</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="height-ft">Height</label>
+          <div class="row">
+            <input type="text" id="height-ft" data-field="height"
+                   inputmode="numeric" autocomplete="off" placeholder="5"
+                   aria-label="Height, feet" aria-describedby="error-height">
+            <span class="suffix">ft</span>
+            <input type="text" id="height-in" data-field="height"
+                   inputmode="decimal" autocomplete="off" placeholder="10"
+                   aria-label="Height, inches" aria-describedby="error-height">
+            <span class="suffix">in</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="metric-fields" class="pair" hidden>
+        <div class="field">
+          <label for="weight-kg">Weight</label>
+          <div class="row">
+            <input type="text" id="weight-kg" data-field="weight"
+                   inputmode="decimal" autocomplete="off" placeholder="90"
+                   aria-describedby="error-weight">
+            <span class="suffix">kg</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="height-cm">Height</label>
+          <div class="row">
+            <input type="text" id="height-cm" data-field="height"
+                   inputmode="decimal" autocomplete="off" placeholder="178"
+                   aria-describedby="error-height">
+            <span class="suffix">cm</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="field-error" id="error-weight" hidden></p>
+      <p class="field-error" id="error-height" hidden></p>
+
+      <!-- The one division this form needs, and a section name with a
+           rule running off it is what draws it. Everything above is
+           required; everything below is not. -->
+      <p class="runner"><span>Optional</span></p>
+
+      <!--
+        The values are unchanged - "roles" in the record, and feeder /
+        feedee / gainer / admirer within it. Only the label a submitter
+        reads has changed, which is exactly the split countries.js was
+        built around: rename what is displayed without touching a single
+        stored row.
+      -->
+      <fieldset class="field">
+        <legend>Feedism Affiliation(s)</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="checkbox" name="roles" value="feeder"><span>Feeder</span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" name="roles" value="feedee"><span>Feedee</span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" name="roles" value="gainer"><span>Gainer</span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" name="roles" value="admirer"><span>Fat admirer</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="pair">
+        <div class="field">
+          <label for="gender">Gender</label>
+          <select id="gender">
+            <option value="">Prefer not to say</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="nonbinary">Non-binary</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="country">Country</label>
+          <!-- Options are added by form.js from countries.js. -->
+          <select id="country">
+            <option value="">Prefer not to say</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- The submit moment, and the one label on this page that is
+           worth a warm word: "Submit" names the mechanism, and this
+           names what actually happens - the entry joins the binder the
+           rail is called after. Nothing rewrites this label at runtime
+           and no name table pins it, so the words are this page's own
+           (#73). -->
+      <button type="submit" id="submit" class="primary">
+        Add to the binder
+      </button>
+
+      <p class="status" id="status" role="status" aria-live="polite" hidden></p>
+
+      <p class="hint">
+        Everything above is encrypted in this browser before it is sent.
+        The service storing it cannot read it.
+      </p>
+  </form>
+
+  <!-- Not a card. This explains the form rather than asking anything of
+       the reader, and a bordered box around it makes it look like one
+       more thing to fill in. The words are untouched: #68 says the
+       explanatory copy is carrying real weight and should survive
+       whatever happens to the structure around it. -->
+  <div class="stack-tight">
+    <p class="runner"><span>How your entry is handled</span></p>
+    <p class="muted small">
+      Your submission is encrypted in your browser before it is sent, so
+      the service storing it cannot read it. Only the person holding the
+      key can — and that key is not kept online. Your username is not
+      stored in the clear anywhere.
+    </p>
+    <!--
+      A page that was changed to use an attacker's key could change this
+      display too. The page is not the anchor: the pinned group message is.
+      Printing the live key exposes a mismatch, while check_web.py pins the
+      production key outside config.js so printing an old key while using a
+      replacement cannot pass the build.
+    -->
+    <p class="muted small">
+      Before submitting, compare the key fingerprint
+      <code id="key-fingerprint" hidden></code> with the one pinned in the
+      group. If they differ, do not submit and tell an administrator.
+    </p>
+  </div>
+  </section>
+</main>
+
+<!-- Progress is linked here as well as in the rail: this link is at
+     the end of the form, which is where somebody who has just submitted
+     actually is.
+
+     It says what that page is rather than naming it, which is the one
+     deliberate departure from the site's one-name-per-destination rule
+     (#127) on this page. The reason is that this is an invitation at
+     the end of an act, not a way of getting somewhere: somebody who has
+     just typed their weight in is being told what it joins.
+
+     admin.html is in the rail, on instruction, and it costs nothing:
+     the page is public and useless without both secrets - DESIGN.md has
+     said so since the beginning under "Key custody". What it gains is
+     the keyholder not having to remember a URL nothing links to. The
+     rail entry says what it needs, so nobody follows it expecting a
+     page they can use. -->
+<footer>
+  <p>
+    <a href="dashboard.html">See what everyone adds up to</a> ·
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+</div>
+
+<script src="config.js"></script>
+<script src="countries.js"></script>
+<script src="crypto.js"></script>
+<script src="ui.js"></script>
+<script src="session.js"></script>
+<!-- After config.js, and that order is load-bearing: signing out asks
+     the endpoint to end the session row, and the endpoint is
+     BINDER_CONFIG.endpoint. Before session.js it would also have no
+     credential store to clear. -->
+<script src="signout.js"></script>
+<script src="submit.js"></script>
+<script src="form.js"></script>
+<script src="nav.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

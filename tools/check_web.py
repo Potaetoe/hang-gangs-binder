@@ -2385,13 +2385,28 @@ def units_default_problem():
     return None
 
 
-def key_shaped_content():
-    """(file, description) for anything in apps/web resembling a key."""
+# The generated site (#181): apps/web with the comments taken out of the
+# CSS and the scripts. Everything else in this file reads apps/web, and
+# that is correct - it is the tree a person edits, and dist/ is proved to
+# say the same thing by tools/build_web.mjs's token arm, so a property
+# established on the source holds for the artifact.
+#
+# The key scan is the one exception, and it is the right one to make.
+# "Do not publish the private key" is the single failure here that cannot
+# be undone, and a check that reasons about the published tree instead of
+# reading it is a check with an assumption between it and the hazard.
+# This one reads both.
+PUBLISHED = os.path.join(REPO, "dist")
+
+
+def key_shaped_content(root_dir=None):
+    """(file, description) for anything in a tree resembling a key."""
     hits = []
-    for root, _dirs, names in os.walk(WEB):
+    root_dir = WEB if root_dir is None else root_dir
+    for root, _dirs, names in os.walk(root_dir):
         for name in sorted(names):
             full = os.path.join(root, name)
-            rel = os.path.relpath(full, WEB).replace(os.sep, "/")
+            rel = os.path.relpath(full, root_dir).replace(os.sep, "/")
             try:
                 text = open(full, encoding="utf-8").read()
             except (UnicodeDecodeError, OSError):
@@ -3319,10 +3334,19 @@ def main():
     for subject, problem in chip_problems():
         problems.append("%s %s." % (subject, problem))
 
-    for rel, description in key_shaped_content():
-        problems.append(
-            "apps/web/%s contains %s. apps/web is published verbatim to a "
-            "public site - this must not be committed." % (rel, description))
+    for where in ("apps/web", "dist"):
+        root_dir = WEB if where == "apps/web" else PUBLISHED
+        if not os.path.isdir(root_dir):
+            problems.append(
+                "%s is not there, so the key scan read nothing. A scan over "
+                "a missing tree finds no keys in exactly the way a clean one "
+                "does." % where)
+            continue
+        for rel, description in key_shaped_content(root_dir):
+            problems.append(
+                "%s/%s contains %s. dist/ is published to a public site and "
+                "apps/web is what builds it - this must not be committed."
+                % (where, rel, description))
 
     for rel, description in hard_coded_key_hits():
         problems.append(

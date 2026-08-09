@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The same policy as the other pages. This page has no key or plaintext,
+  but it does hold the member session that authorizes its snapshot read.
+
+  It is kept anyway because "this page has nothing to protect" is a
+  claim about today. A page that starts without a policy is a page
+  nobody adds one to later.
+
+  crypto.js is deliberately not loaded. There is nothing here to
+  decrypt, and a page that cannot decrypt cannot be talked into it.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
+<title>Progress — HangGang</title>
+<meta name="description" content="Aggregate submission numbers for signed-in members. No names, no individual entries.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#120d10">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="theme.css">
+<script src="theme-init.js"></script>
+</head>
+<!-- Not `wide` any more - #71. admin.html is the one page looking at
+     data rather than reading it; these charts are read one at a time,
+     and at 84rem this page's prose cards were the widest lines on the
+     site. One centered column, like everything except the export. -->
+<body class="railed">
+
+<!--
+  The rail, identical on every signed-in page. See the longer note in
+  submit.html for why it is written out rather than built, and what
+  tools/check_web.py holds it to.
+-->
+<aside class="rail">
+  <a class="wordmark" href="index.html">
+    <span class="wordmark-owner">Muse's</span>
+    <span class="wordmark-name">Binder</span>
+  </a>
+
+  <nav aria-label="Site">
+    <ul class="rail-links">
+      <li><a href="index.html">Sign in</a></li>
+      <li><a href="submit.html">Your binder</a></li>
+      <li><a href="dashboard.html">Progress</a></li>
+      <li>
+        <a href="admin.html">Admin</a>
+        <span class="rail-note">Keyholder only — needs the key</span>
+      </li>
+    </ul>
+  </nav>
+
+  <div class="theme-picker">
+    <button type="button" class="theme-disclosure" id="theme-toggle"
+            aria-expanded="false" aria-controls="theme-chips">Theme</button>
+    <div class="themes" id="theme-chips" role="group"
+         aria-label="Color theme">
+      <button type="button" data-set-theme="midnight">Midnight</button>
+      <button type="button" data-set-theme="pink">Pink</button>
+      <!-- The label is two words and the id is one. See the note in
+           submit.html; nothing here may be renamed on its own. -->
+      <button type="button" data-set-theme="daylight">Parchment Daylight</button>
+      <button type="button" data-set-theme="contrast">Contrast</button>
+    </div>
+  </div>
+
+  <div class="rail-session">
+    <p class="runner"><span>Session</span></p>
+    <p class="rail-who" id="session-who">Not signed in</p>
+    <button type="button" class="secondary rail-signout" id="sign-out" hidden>
+      Sign out
+    </button>
+  </div>
+</aside>
+
+<div class="page">
+
+<header class="stack-tight">
+  <p class="runner"><span>Members</span></p>
+  <h1>Progress</h1>
+  <!-- The warm half and the exact half, in that order and in one
+       sentence each. The second half is not softened: what this page
+       does not show is the thing a member is trusting it about, and #73
+       names "nothing that makes the serious parts less clear" as the
+       constraint the voice pass does not bend. -->
+  <p class="muted">
+    What all of us add up to. Counts, middles and distributions
+    — no names, and no individual entries.
+  </p>
+</header>
+
+<main class="stack">
+
+  <div class="card narrow" data-dev-session hidden>
+    <p class="caution">Development session</p>
+    <p class="muted small">
+      Signed in as <strong data-dev-identity></strong> through local
+      development auth. This is not a Telegram sign-in.
+    </p>
+  </div>
+
+  <!-- Shown instead of the charts when there is nothing to draw. -->
+  <div class="card narrow" id="closed" hidden>
+    <p class="flag">Nothing to show</p>
+    <p data-reason></p>
+  </div>
+
+  <div class="stack" id="tool" hidden>
+
+    <div class="card narrow">
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <!--
+        The age of the figures, always visible and never rounded to
+        "recently". A dashboard quietly showing last month's numbers is
+        worse than one that admits it is stale, and the ordinary
+        failure of whatever refreshes this is silence rather than an
+        error.
+      -->
+      <p class="hint" id="freshness"></p>
+    </div>
+
+    <div class="card" id="dashboard">
+      <fieldset class="field">
+        <legend>Count</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="basis" value="people" checked>
+            <span>One per person (latest)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="basis" value="entries">
+            <span>Every entry</span>
+          </label>
+        </div>
+        <p class="hint">
+          Anyone who resubmits adds a row rather than replacing one, so
+          these are different questions. Both are worked out before
+          publishing, which is why this still works on a page with no
+          data behind it.
+        </p>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Units</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="units" value="imperial" checked>
+            <span>Imperial</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="units" value="metric">
+            <span>Metric</span>
+          </label>
+        </div>
+        <p class="hint">
+          Both systems are published, so this picks one rather than
+          converting. BMI is metric by definition either way.
+        </p>
+      </fieldset>
+
+      <div id="charts"></div>
+    </div>
+
+    <div class="card narrow">
+      <p class="runner"><span>What this is</span></p>
+      <p class="muted small">
+        These figures are worked out from the submissions and published
+        as totals. Nothing on this page identifies anybody: there are no
+        Telegram handles in it, and no individual entries — only how
+        many, how much on average, and how the answers are spread. Where
+        a weight history is shown, the people in it are numbered rather
+        than named, and renumbered every time this is republished.
+      </p>
+      <p class="muted small">
+        <a href="index.html">Add yours</a>, if you have not.
+      </p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <p>
+    <a href="index.html">Sign in</a> ·
+    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
+    GitHub</a>
+  </p>
+</footer>
+
+</div>
+
+<script src="config.js"></script>
+<script src="dashboard.js"></script>
+<script src="ui.js"></script>
+<script src="session.js"></script>
+<!-- After config.js: the revoke reads BINDER_CONFIG.endpoint. See the
+     note in submit.html. -->
+<script src="signout.js"></script>
+<script src="public.js"></script>
+<script src="nav.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

@@ -17,6 +17,9 @@ if not defined PY (
 
 if "%~1"=="check" ( %PY% tools\check.py & exit /b )
 if "%~1"=="docs" ( %PY% tools\check_docs.py & exit /b )
+rem Mirrors ./run build - see the reasoning there, including why this one
+rem is node rather than %PY% and why dist/ is committed.
+if "%~1"=="build" ( node tools\build_web.mjs & exit /b )
 rem Mirrors ./run live - read-only, offline, and it contacts nothing.
 if "%~1"=="live" ( %PY% tools\check_live.py --report & exit /b )
 if "%~1"=="serve" (
@@ -66,6 +69,6 @@ if "%~1"=="bootstrap" (
 )
 
 echo usage: .\run ^<command^>
-echo   bootstrap ^| check ^| docs ^| live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
+echo   bootstrap ^| build ^| check ^| docs ^| live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2

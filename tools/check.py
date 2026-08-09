@@ -40,10 +40,17 @@ the two directories are dangerous for opposite reasons: apps/web is
 copied verbatim to a public site, and server/ is the directory that gets
 run. See the docstring in tools/check_server.py.
 
-The linters are a gate, not a build. Nothing they run rewrites a file
-and apps/web is still copied verbatim to the published site; they refuse
-a release rather than producing one. See DESIGN.md, "What is
-deliberately not here".
+The linters are a gate, not a build: nothing they run rewrites a file,
+and they refuse a release rather than producing one.
+
+There IS one thing here that writes a file - tools/build_web.mjs, which
+generates dist/ from apps/web by removing comments (#181) - and this
+gate never runs it. The "dist is the build of apps/web" stage below asks
+whether the committed artifact is what the source builds to, in both
+directions, and reports; it does not fix. That is the same shape as
+every other check here, and it is what keeps DESIGN.md's test satisfied:
+a release is refused rather than quietly produced. See DESIGN.md, "What
+is deliberately not here".
 
 What none of it can see is the Cloudflare dashboard. A Worker with no
 D1 binding, or no EXPORT_TOKEN, passes every check here and fails on
@@ -106,6 +113,12 @@ NODE_SUITES = [
     # swept dev/ onto a public host, a snapshot with no commit on it.
     # Reading which of those broke off one label is worth the line.
     ("baked static demo + its manifest", "dev/demo-bake.test.mjs"),
+    # The generator behind the "dist is the build of apps/web" stage
+    # above. That stage asks whether the artifact is current; this one
+    # asks whether the thing answering is right - including that it
+    # removes comments and NOTHING else, which no byte-comparison
+    # against a fresh build can see. #181.
+    ("build_web strippers + staleness", "dev/build_web.test.mjs"),
 ]
 
 
@@ -152,9 +165,10 @@ def run_linters(node):
     the failure this repository has hit twice - a suite registered
     locally but not in CI, and a check that could not fail.
 
-    Neither of these is a build step. apps/web is still copied verbatim
-    and nothing here rewrites a file; they refuse a release rather than
-    producing one. See DESIGN.md, "What is deliberately not here".
+    Neither of these rewrites a file; they refuse a release rather than
+    producing one. The one generator this repository has is not run from
+    here either - see this module's docstring. DESIGN.md, "What is
+    deliberately not here".
     """
     results = []
 
@@ -189,10 +203,26 @@ def run_linters(node):
 
 def main():
     results = []
+    node = find_node()
 
     results.append(("apps/web publishable", run(
         "apps/web publishable", [sys.executable, "tools/check_web.py"]
     )))
+
+    # dist/ is what the deploy job publishes and apps/web is what a person
+    # edits; this is the stage that says the two have not come apart. It
+    # runs before the budget below because the budget measures dist/, and
+    # measuring a stale artifact is a number about a site nobody is
+    # shipping. #181.
+    if node:
+        results.append(("dist is the build of apps/web", run(
+            "dist is the build of apps/web",
+            [node, "tools/build_web.mjs", "--check"]
+        )))
+    else:
+        print("\n=== dist is the build of apps/web ===")
+        print("FAILED - node was not found, and the generator needs it.")
+        results.append(("dist is the build of apps/web", False))
 
     # The gate checking itself. It runs on the same interpreter and needs
     # no node, so it is here rather than in NODE_SUITES - and it runs
@@ -292,7 +322,6 @@ def main():
         [sys.executable, "dev/check_live.test.py"]
     )))
 
-    node = find_node()
     results.extend(run_linters(node))
     if node:
         for label, script in NODE_SUITES:

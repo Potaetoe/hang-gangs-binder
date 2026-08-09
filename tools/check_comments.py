@@ -87,6 +87,25 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # node_modules, _site and .wrangler are all somebody else's code, and a
 # walk that has to exclude them grows an exclusion list instead of a
 # scan list.
+#
+# THIS SCANS SOURCE, AND dist/ MUST NEVER JOIN IT (#181). dist/ is the
+# published site: apps/web with every comment deliberately removed. This
+# check exists to make comments mandatory, so pointed at that tree it
+# would be enforcing a rule about comments against files designed to have
+# none - and it would go GREEN doing it, because a file with no comments
+# has no comment that narrates a change. That is the worst failure shape
+# this repository knows: a check that reports success for a run that
+# verified nothing.
+#
+# It would not stay green, as it happens - every ALLOWLIST pin below
+# would stop matching, and a pin that stops matching fails. But that is
+# a second line of defense that happens to hold, not the reason. The
+# reason is that source is the only tree where this question means
+# anything, and dev/check_comments.test.py pins the scan set so adding
+# the artifact is a failing check rather than an edit somebody makes on
+# a tidy-up afternoon.
+GENERATED = "dist"
+
 SCAN = [
     ("apps/web", (".js", ".css", ".html")),
     ("server", (".js",)),
@@ -424,13 +443,32 @@ def ratchet_problems(found, allowlist, scanned):
     return problems
 
 
+def generated_tree_problems(scan=None):
+    """A problem if the scan set has been pointed at the built site.
+
+    Pure, over the scan set, so the rule can be exercised without moving
+    a directory. See GENERATED above for why this is worth a check of
+    its own rather than a comment: the failure it refuses is silent.
+    """
+    scan = SCAN if scan is None else scan
+    return [
+        "SCAN names %s, which is generated - it is apps/web with every "
+        "comment removed on purpose (#181). This check makes comments "
+        "mandatory, so reading that tree asks a question the tree was "
+        "built to answer trivially. Scan the source" % dirname
+        for dirname, _extensions in scan
+        if dirname == GENERATED or dirname.startswith(GENERATED + "/")
+    ]
+
+
 def problems():
     found, scanned = scan_tree()
-    out = [
+    out = generated_tree_problems()
+    out.extend(
         "SCAN names %s, which does not exist. The check would pass "
         "while reading nothing" % name
         for name in missing_directories()
-    ]
+    )
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 

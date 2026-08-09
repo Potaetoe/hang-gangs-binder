@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Hang Gang's Binder">
+  <!--
+    A closed binder: a cover with three rings down the spine. Drawn once
+    and re-coloured by the tab's own theme, because a favicon cannot see
+    the page's data-theme attribute - only the browser's.
+  -->
+  <style>
+    .cover { fill: #322730; }
+    .edge  { fill: #473942; }
+    .ring  { fill: #e87fa8; }
+    @media (prefers-color-scheme: light) {
+      .cover { fill: #faf8f4; }
+      .edge  { fill: #ddd8cb; }
+      .ring  { fill: #5f7d59; }
+    }
+  </style>
+  <rect class="edge" x="3" y="3" width="26" height="26" rx="5"/>
+  <rect class="cover" x="11" y="5" width="16" height="22" rx="3"/>
+  <circle class="ring" cx="8" cy="10" r="2.4"/>
+  <circle class="ring" cx="8" cy="16" r="2.4"/>
+  <circle class="ring" cx="8" cy="22" r="2.4"/>
+</svg>

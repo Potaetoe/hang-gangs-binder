@@ -97,9 +97,13 @@ dev/        test harness; never published
 archive/    the pre-2026-08-08 documentation system, frozen
 ```
 
-`apps/web` is copied verbatim to GitHub Pages. Nothing is stripped, so
-nothing can fail to be stripped — anything that should not be public
-simply does not live in that directory.
+`dist/` is copied verbatim to GitHub Pages, and it is committed rather
+than produced during the release — so what ships is in a diff somebody
+read, and nothing can fail to be stripped at a moment nobody is
+watching. It is `apps/web` with the comments taken out of the CSS and
+the scripts (`./run build`, #181); the gate refuses a `dist/` that is
+not what `apps/web` builds to, in either direction. Anything that
+should not be public simply does not live in either directory.
 
 [apps/web/config.js](apps/web/config.js) is the one file a fork or new
 owner changes: the endpoint and the public key, both public by design.

@@ -177,9 +177,14 @@ implemented it. Say which it is.
   reaches). Every `owner-only` issue carries numbered steps; if writing
   the steps shows an agent could do it, the label is wrong — take it
   off, ask in chat, do the work.
-- **`apps/web/` is copied verbatim to the published site.** No test
-  hooks, no fixtures, no development-only globals, deliberately no
-  `?sample=` hook.
+- **`apps/web/` is the site you edit; `dist/` is the site that is
+  published.** `dist/` is `apps/web` with the comments removed from the
+  CSS and the scripts — `./run build` writes it, it is committed, and
+  the gate refuses one that is not what `apps/web` builds to in either
+  direction (#181). **Never edit `dist/` by hand**: the fix always
+  belongs in `apps/web`, and a hand edit fails the same check a stale
+  build does. Neither directory takes a test hook, a fixture, a
+  development-only global, or a `?sample=` hook.
 - **A push to `main` is a release**; work goes to `accounts` until the
   cutover. The hotfix procedure is in `README.md`, which is on `main`
   when you need it.

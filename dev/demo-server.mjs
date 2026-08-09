@@ -21,6 +21,20 @@
  * and nothing is copied into dev/, so a page PR 4 or PR 5 changes is a
  * page this demo shows changed with no work here - which is the whole
  * reason the demo is a wrapper rather than a snapshot.
+ *
+ * APPS/WEB, NOT DIST/, AND THAT IS A CHOICE (#181). There are two trees
+ * now: apps/web, which a person edits, and dist/, which is the same code
+ * with the comments taken out and is what the deploy job publishes. This
+ * mirror serves the source, for the same reason it reads off disk rather
+ * than caching - the demo exists to exercise behavior while somebody is
+ * working, and a mirror pointed at the built tree would show the last
+ * build instead of the current edit. A demo that lags the code is the
+ * exact drift dev/demo.test.mjs is registered to catch.
+ *
+ * Nothing behavioral is given up by that: tools/build_web.mjs's token
+ * arm holds the two trees to the same token stream, so the only
+ * difference between what this serves and what a visitor gets is the
+ * comments, which no browser executes.
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
