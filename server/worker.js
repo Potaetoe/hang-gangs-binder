@@ -7,6 +7,10 @@
  *   POST   /auth/dev         development only; 404 everywhere else.
  *   DELETE /session          end the session presented, now.
  *   GET    /me               what this account has on record.
+ *   GET    /my-entries       this account's own rows, as handles: an
+ *                            id, a receipt time, and whether something
+ *                            supersedes it. No contents. Needs a member
+ *                            session, because it needs an account.
  *   POST   /submit           append one row, optionally naming the row
  *                            it supersedes. Needs a member session.
  *   GET    /export           return every row. Admin.
@@ -1056,6 +1060,86 @@ async function handleMe(request, env, origin, caller) {
 }
 
 /*
+ * The rows this account has written, as handles rather than as
+ * contents.
+ *
+ * WHY IT EXISTS. A correction names the row it replaces, and until this
+ * route a member could name none: POST /submit answers `{ok:true}`, GET
+ * /me answers counts and a date, and GET /export is admin. So the
+ * member-facing half of the correction path had nothing to point at,
+ * and this is the smallest thing that gives it one - an id per row, the
+ * receipt time this side attested to, and whether something supersedes
+ * it.
+ *
+ * WHAT IT DOES NOT CARRY, and why that is a decision rather than an
+ * omission:
+ *
+ *   - No ciphertext. The Worker holds no key and the member holds none
+ *     either - the device key that would open one of these rows is not
+ *     in this repository - so the bytes would be inert to the only
+ *     caller allowed to ask for them, while a stolen member session,
+ *     which can append rows and read counts, would additionally be able
+ *     to download that member's whole sealed history. A field can be
+ *     added the day something can read it; a field that has shipped
+ *     cannot be taken back.
+ *   - No account id. GET /me answers that question, and a fact stated
+ *     in two responses is a fact two routes can disagree about.
+ *   - No handle and no Telegram id. Neither is reachable from here:
+ *     nothing outside handleTelegramAuth in this file ever holds one,
+ *     and a row carries the HMAC account id and nothing else.
+ *
+ * THE SCOPE IS IN THE STATEMENT, not applied to what comes back. That
+ * is the lesson this route inherits from the one below it, where a
+ * read-back keyed on a value the caller had SENT answered 200 about
+ * somebody else's row. A clause in the SQL cannot be forgotten by a
+ * later map, and there is no parameter on this route at all - the
+ * account comes from the session, so there is nothing on the wire for a
+ * caller to point somewhere else.
+ *
+ * THE SUPERSEDE FLAG IS THE SAME PREDICATE GET /me COUNTS WITH, reused
+ * rather than restated, so the two member-facing surfaces cannot come to
+ * disagree about one corpus. Its account clause is load-bearing for the
+ * same reason it is there: a row written through another door - and
+ * `wrangler d1 execute` validates nothing - naming this member's entry
+ * must not make that entry vanish from their own listing.
+ *
+ * The flag is advisory and the enforcement stays at POST /submit, which
+ * is what bounds the cost of getting it wrong: a page that offered a
+ * tombstone as correctable is answered 409 there rather than storing a
+ * second current row.
+ *
+ * ORDER BY is not decoration. Without it the order is D1's to choose,
+ * and a listing that reshuffles between loads is one a member cannot
+ * read. Nothing in dev/worker.test.mjs can falsify the clause - the stub
+ * answers out of an array already in id order - so the claim is a live
+ * one and tools/check_live.py carries the row that says it is unmade.
+ */
+async function handleMyEntries(env, origin, caller) {
+  const rows = await env.DB.prepare(
+    "SELECT mine.id AS id, mine.received_at AS received_at, " +
+    "CASE WHEN " + SUPERSEDED + " THEN 1 ELSE 0 END AS superseded " +
+    "FROM submissions AS mine WHERE mine.account_id = ? " +
+    "ORDER BY mine.id"
+  ).bind(caller.accountId).all();
+
+  return json({
+    ok: true,
+    entries: rows.results.map((row) => ({
+      id: row.id,
+      receivedAt: row.received_at,
+      // SQLite answers a CASE with an integer and the page wants a
+      // boolean. The comparison is strict, so anything else this column
+      // could ever arrive as reads as NOT superseded - which is the
+      // direction whose failure something else still catches. A page
+      // that offers a tombstone is answered 409 by POST /submit; a page
+      // wrongly told an entry is already corrected offers the member
+      // nothing to press and no refusal to explain why.
+      superseded: row.superseded === 1,
+    })),
+  }, 200, origin);
+}
+
+/*
  * The two rules a correction is checked against, each written once.
  *
  * Both statements below are built from these fragments - one reports why
@@ -1954,6 +2038,16 @@ async function route(request, env, url, allowed) {
   if (method === "GET" && path === "/me") {
     if (!caller) return unauthorized(allowed);
     return handleMe(request, env, allowed, caller);
+  }
+  // A break-glass EXPORT_TOKEN caller has no account whose rows these
+  // would be, so it is refused here exactly as it is at POST /submit -
+  // and the gate is in this router rather than in the handler, so that
+  // the read is never sent scoped to an account id of null. Nothing is
+  // withheld: the break-glass caller is an admin and GET /export is the
+  // whole corpus. What has no answer is which member it is.
+  if (method === "GET" && path === "/my-entries") {
+    if (!caller || !caller.accountId) return unauthorized(allowed);
+    return handleMyEntries(env, allowed, caller);
   }
   if (method === "POST" && path === "/submit") {
     // A break-glass EXPORT_TOKEN caller has no account to write to.

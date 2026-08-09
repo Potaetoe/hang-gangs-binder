@@ -234,6 +234,17 @@ LEDGER = [
         "status": "never",
     },
     {
+        "id": "GET /my-entries",
+        "surface": "route",
+        "claim": "a member's listing carries their own rows in id "
+                 "order and nobody else's, and the order is the half "
+                 "no suite here can falsify - the stub answers out of "
+                 "an array already in that order, so ORDER BY is "
+                 "unexercised until something reads a real result set",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
         "id": "POST /submit",
         "surface": "route",
         "claim": "a sealed row reaches D1, and a correction supersedes "
