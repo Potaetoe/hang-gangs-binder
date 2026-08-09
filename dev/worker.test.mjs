@@ -26,6 +26,34 @@ const { default: worker } = await import(
 );
 
 /*
+ * The schema is read for exactly one fact: whether `supersedes` carries a
+ * UNIQUE index. The stub below enforces that constraint only if this file
+ * says the database has it, which puts the index itself under test rather
+ * than assuming it - delete the word UNIQUE in server/schema.sql and the
+ * race check goes red instead of passing against a database carrying no
+ * such rule. Nothing else here reads SQL off disk and nothing needs to:
+ * every other statement under test arrives from the Worker.
+ *
+ * THE COMMENTS COME OUT FIRST, and that is the whole of what makes this
+ * read a fact rather than a mood. server/schema.sql explains its own
+ * index by quoting the statement - `CREATE UNIQUE INDEX IF NOT EXISTS`
+ * appears in the prose above it - and a regex over the raw file cannot
+ * tell the explanation from the rule. It is worse than a false positive
+ * on the file as it stands: `[^;]*` stops at the first semicolon, so
+ * whether the prose matches depends on which statements sit between it
+ * and the index, and removing the DROP is what lets the match run out of
+ * the comment and into a reverted, NON-unique `ON submissions(supersedes)`
+ * below it. The arm therefore stayed green against exactly the schema it
+ * exists to refuse. Strip `--` to end of line and the question is asked
+ * of SQL only.
+ */
+const SCHEMA = await readFile(
+  fileURLToPath(new URL("../server/schema.sql", import.meta.url)), "utf8");
+const SUPERSEDES_IS_UNIQUE =
+  /CREATE\s+UNIQUE\s+INDEX[^;]*\bON\s+submissions\s*\(\s*supersedes\s*\)/i
+    .test(SCHEMA.replace(/--[^\n]*/g, ""));
+
+/*
  * A D1 binding that remembers what it was asked to store.
  *
  * It reads just enough of the SQL to tell the tables apart, because
@@ -60,6 +88,40 @@ let nextId = 1;
 let executed = [];
 let batches = [];
 
+/*
+ * Simultaneity, which a single-threaded stub cannot produce on its own.
+ *
+ * With a guard reading the table as it stands, the guard always wins the
+ * race: whichever correction runs second sees the first one's row and
+ * refuses, so the UNIQUE index never fires and an index that had silently
+ * gone missing would look exactly like one that was there. Set this and a
+ * batch's guard reads the table as it was when that batch BEGAN - which
+ * is what either of two overlapping transactions sees from inside itself
+ * - so both guards pass and the constraint is the only thing left that
+ * can refuse. It is the difference between testing the belt and testing
+ * the braces, and both are load-bearing here for different failures.
+ */
+let overlappingBatches = false;
+let batchViews = [];
+
+/*
+ * A gap held open on purpose, which is the other half of the same
+ * problem.
+ *
+ * Every statement here settles in one microtask, and a round trip to D1
+ * does not. That difference decides the race by itself: two requests
+ * driven through this stub advance in lockstep and the second one's
+ * question lands after the first one's answer, so a check-then-write
+ * implementation looks atomic here while being nothing of the kind in
+ * front of a real database. Set this to a promise and the next INSERT
+ * into `submissions` waits on it - which lets a check park one request
+ * in the gap between its own question and its own write, run another
+ * request all the way through, and then let the first one finish. That
+ * is the interleaving the defect needs, stated deterministically rather
+ * than hoped for from task ordering.
+ */
+let holdInsert = null;
+
 function reset() {
   stored = [];
   sessions = [];
@@ -69,6 +131,48 @@ function reset() {
   nextId = 1;
   executed = [];
   batches = [];
+  overlappingBatches = false;
+  batchViews = [];
+  holdInsert = null;
+}
+
+/*
+ * The EXISTS predicates a correction is checked against, read off the
+ * statement in the order they appear rather than mapped by hand.
+ *
+ * Both statements POST /submit sends for a correction are built from the
+ * same two SQL fragments in server/worker.js - one asks whether the
+ * target is the caller's, the other whether something already corrects it
+ * - so a stub that hand-modelled either rule would agree with whatever
+ * this file expected rather than with what the Worker actually sent.
+ * Reading them is what keeps the mutations visible: dropping
+ * `AND account_id = ?` and its binding makes the ownership clause find
+ * somebody else's row here exactly as it would in D1, and removing a
+ * clause outright lets the write through.
+ *
+ * Parameters are consumed in textual order from `offset`, which is how
+ * SQLite binds them - so a clause that loses a column takes one fewer and
+ * every clause after it shifts, the same misalignment a real database
+ * would report rather than a discrepancy this file papers over.
+ */
+function existsClauses(text) {
+  return Array.from(text.matchAll(
+    /(NOT\s+)?EXISTS\s*\(\s*SELECT 1 FROM submissions WHERE ([^)]+)\)/gi))
+    .map((m) => ({
+      negated: Boolean(m[1]),
+      columns: Array.from(m[2].matchAll(/(\w+)\s*=\s*\?/g)).map((c) => c[1]),
+    }));
+}
+
+function evaluateClauses(clauses, args, offset, rows) {
+  let at = offset;
+  return clauses.map((clause) => {
+    const wanted = args.slice(at, at + clause.columns.length);
+    at += clause.columns.length;
+    const found = rows.some((row) =>
+      clause.columns.every((column, index) => row[column] === wanted[index]));
+    return clause.negated ? !found : found;
+  });
 }
 
 const DB = {
@@ -133,6 +237,25 @@ const DB = {
       /AND \(SELECT COUNT\(\*\) FROM membership WHERE role = '(\w+)'\) > (\d+)/i
         .exec(sql);
 
+    /*
+     * A correction's two statements, neither of which looks like anything
+     * else this stub is asked to run.
+     *
+     * The guarded INSERT carries its rules in its own WHERE, which is
+     * what makes a refused correction store nothing even if the
+     * diagnosis beside it were read wrong. The diagnosis is a SELECT
+     * with no table at all - every FROM in it belongs to a subquery -
+     * and that is how it is told apart here, rather than by keying on a
+     * column alias that a rename would silently take away.
+     */
+    const clauses = existsClauses(sql);
+    const guardedInsert = verb === "INSERT" && /\)\s*SELECT\s/i.test(sql);
+    const diagnosis = verb === "SELECT" && clauses.length > 0 &&
+      !/\bFROM\b/i.test(sql.replace(/\([^()]*\)/g, ""));
+    const aliases = Array.from(sql.matchAll(/\bAS (\w+)/gi)).map((m) => m[1]);
+    const viewFor = (batch) =>
+      (batch && batchViews[batch - 1]) || stored;
+
     const upsert = (rows, key, a) => {
       const row = {};
       insertColumns.forEach((column, index) => { row[column] = a[index]; });
@@ -144,7 +267,7 @@ const DB = {
       for (const column of conflictColumns) existing[column] = row[column];
     };
 
-    const exec = async (a) => {
+    const exec = async (a, batch) => {
       if (table === "snapshots") {
         if (verb === "DELETE") snapshot = null;
         else snapshot = { body: a[0], updated_at: a[1] };
@@ -190,22 +313,65 @@ const DB = {
       } else if (verb === "DELETE") {
         stored = stored.filter((r) => r.id !== a[0]);
       } else {
+        // Parked in the gap, if a check asked for that. Before the guard
+        // rather than after it, because a statement waiting its turn at a
+        // real database evaluates when it RUNS - so whatever landed while
+        // it waited is what it sees, and that is the whole question.
+        if (holdInsert) {
+          const waiting = holdInsert;
+          holdInsert = null;
+          await waiting;
+        }
+
+        // A correction's insert refuses itself when its own WHERE does
+        // not hold, writing nothing and reporting no rows changed - which
+        // is what a conditional INSERT ... SELECT does in SQLite.
+        if (guardedInsert &&
+          !evaluateClauses(clauses, a, insertColumns.length, viewFor(batch))
+            .every(Boolean)) {
+          return { changes: 0 };
+        }
+
+        // A row with no pointer holds null rather than leaving the key
+        // off, so a stub row answers `"supersedes" in row` the way a
+        // D1 row does - the export assertion reads exactly that.
+        const pointer = a[3] === undefined ? null : a[3];
+
+        /*
+         * The UNIQUE index, enforced only where server/schema.sql says
+         * the database carries one. NULLs are DISTINCT in a SQLite
+         * UNIQUE index, so every ordinary submission - each of which
+         * stores NULL here - sits beside every other one untouched;
+         * modelling that is the difference between a stub that
+         * reproduces the constraint and one that would refuse the second
+         * plain submission anybody ever made.
+         */
+        if (SUPERSEDES_IS_UNIQUE && pointer !== null &&
+          stored.some((r) => r.supersedes === pointer)) {
+          throw new Error(
+            "D1_ERROR: UNIQUE constraint failed: submissions.supersedes");
+        }
+
         stored.push({
           id: nextId++, account_id: a[0], ciphertext: a[1], received_at: a[2],
-          // A row with no pointer holds null rather than leaving the key
-          // off, so a stub row answers `"supersedes" in row` the way a
-          // D1 row does - the export assertion reads exactly that.
-          supersedes: a[3] === undefined ? null : a[3],
+          supersedes: pointer,
         });
+        return { changes: 1 };
       }
       return {};
     };
 
-    // Which rows a correction hides. `stored` rather than the account's
-    // own rows because that is what the Worker's predicate says, and a
-    // stub that quietly narrowed it would hide the difference.
+    // Which rows a correction hides. Whether a superseding row has to
+    // belong to the same account is READ OFF the predicate rather than
+    // decided here, because that is the whole of what makes scoping it
+    // testable: with the rule hand-modelled, a Worker that stopped
+    // scoping would still be counted the way this file expected, and the
+    // mutation would be invisible in the only direction that matters.
+    const sameAccountOnly =
+      /newer\.account_id\s*=\s*mine\.account_id/i.test(sql);
     const namedByAnother = (row) =>
-      stored.some((r) => r.supersedes === row.id);
+      stored.some((r) => r.supersedes === row.id &&
+        (!sameAccountOnly || r.account_id === row.account_id));
 
     const read = (a) => {
       if (table === "snapshots") return snapshot;
@@ -308,8 +474,22 @@ const DB = {
         all: async (batch) => {
           note(batch);
           if (verb !== "SELECT") {
-            await exec(a);
-            return { results: [] };
+            // `meta.changes` is how D1 reports whether a conditional
+            // write did anything, and it is the only honest answer to
+            // "did my row land" for a statement that may refuse itself.
+            return { results: [], meta: await exec(a, batch) };
+          }
+          if (diagnosis) {
+            // Each predicate answers 1 or 0 under the alias the
+            // statement gave it, which is what SQLite returns for a bare
+            // SELECT of an EXISTS.
+            const values =
+              evaluateClauses(clauses, a, 0, viewFor(batch));
+            const row = {};
+            aliases.forEach((name, index) => {
+              row[name] = values[index] ? 1 : 0;
+            });
+            return { results: [row] };
           }
           return { results: rowsOf().filter((r) => matches(r, a)).map(project) };
         },
@@ -346,6 +526,10 @@ const DB = {
   batch: async (statements) => {
     batches.push([]);
     const id = batches.length;
+    // The table as this batch found it, kept only while two batches are
+    // being made to overlap on purpose. Null the rest of the time, so
+    // every other check in this file reads the table as it stands.
+    batchViews[id - 1] = overlappingBatches ? stored.slice() : null;
     const out = [];
     for (const statement of statements) out.push(await statement.all(id));
     return out;
@@ -417,7 +601,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 277);
+const { check, report } = suite("worker.js", 290);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1365,6 +1549,308 @@ check("deleting a correction puts the row it corrected back in the count",
 
 await statusOf("and that row can be corrected again",
   submit(OWNER, { ciphertext: "QWdhaW4=", supersedes: firstEntry.id }), 200);
+
+/* ------------------------------------------------------------------ */
+/* Corrections under contention - the chain shape as a rule (#84).     */
+
+/*
+ * Every check above drives one correction at a time, and one at a time is
+ * not how a member behaves. Two tabs open on the same entry, or one tab
+ * on a connection that retried, sends two corrections of one row at once
+ * - and the shape the design depends on is that a row may be superseded
+ * ONCE. Two rows naming one target are both current, because current
+ * means "the rows nobody names"; the member holds two claims where they
+ * meant one, and the resolver in the keyholder's browser has no tie-break
+ * rule to reach for because the whole point of that definition is that it
+ * needs none.
+ *
+ * A check the endpoint runs and then an insert it sends afterwards cannot
+ * produce that shape on its own, whatever the checks say: between the two
+ * there is a gap, and the other correction lands in it. So the rule is
+ * enforced twice on purpose, and the two arms below fail for different
+ * reasons - the guarded insert closes the gap, and the UNIQUE index is
+ * what remains true if the gap ever reopens.
+ */
+
+reset();
+
+const RACER = (await (await signIn({})).clone().json()).session;
+
+await submit(RACER, { ciphertext: "cmFjZQ==" });
+const contested = stored.find((r) => r.account_id === FIXTURE_4242);
+
+/*
+ * One request parked between its own question and its own write, and
+ * another run all the way through while it waits. Driving both with
+ * Promise.all instead proves nothing: they advance in lockstep through
+ * this stub and serialize themselves, which is the ordering a real
+ * database is under no obligation to produce.
+ */
+let release;
+holdInsert = new Promise((resolve) => { release = resolve; });
+const held = submit(RACER, { ciphertext: "bGVmdA==", supersedes: contested.id });
+await new Promise((resolve) => setTimeout(resolve, 0));
+const overtaking =
+  await submit(RACER, { ciphertext: "cmlnaHQ=", supersedes: contested.id });
+release();
+const left = await held;
+const right = overtaking;
+
+const namingContested = stored.filter((r) => r.supersedes === contested.id);
+const raced = [left.status, right.status].sort();
+
+check("two corrections racing for one entry leave one claim, not two",
+  namingContested.length === 1, `${namingContested.length} rows name it`);
+
+/* The one that lost has to be TOLD it lost. A correction that answers 200
+ * having written nothing is the worst outcome available here: the member
+ * reads success, and the row they meant to replace is still current. */
+check("and the correction that lost is refused rather than dropped",
+  raced[0] === 200 && raced[1] === 409, raced.join(" and "));
+
+/*
+ * The mechanism, not just the outcome. Two implementations can leave
+ * `stored` identical and differ entirely in whether the question and the
+ * write arrived together - which is the whole of what closes the gap, so
+ * it cannot be the thing no check can see. This is the same assertion
+ * shape the last-admin guard needed, for the same reason.
+ */
+const correctionBatches = batches.filter((b) =>
+  b.some((s) => /INSERT INTO submissions/i.test(s.sql)));
+check("a correction's check and its insert travel in one batch",
+  correctionBatches.length === 2 &&
+  correctionBatches.every((b) =>
+    b.some((s) => /EXISTS/i.test(s.sql)) &&
+    b.some((s) => /INSERT INTO submissions/i.test(s.sql))),
+  `${correctionBatches.length} batch(es) carrying an insert`);
+
+check("and nothing asks whether that row is the caller's outside one",
+  executed.every((s) =>
+    s.batch !== 0 || !/WHERE id = \? AND account_id = \?/i.test(s.sql)));
+
+/*
+ * The index, asked for on its own.
+ *
+ * With both guards reading the table as it stands, the guard always wins
+ * and the constraint is never reached - so an index that had silently
+ * gone missing would pass every check above. Blinding each batch to the
+ * other is what two overlapping transactions look like from inside
+ * either one, and it leaves the database itself as the only thing that
+ * can still refuse.
+ */
+await submit(RACER, { ciphertext: "c2Vjb25k" });
+const second = stored.find((r) => r.ciphertext === "c2Vjb25k");
+
+/*
+ * Blinding the guards is not enough on its own: two batches driven with
+ * Promise.all still start one after the other here, so the second one
+ * snapshots a table that already holds the first one's row and its guard
+ * refuses in the ordinary way. Dropping UNIQUE left that arm green, which
+ * is how this was found. The gap has to be held open as well - one batch
+ * parked at its write, the other run all the way through - so that both
+ * guards pass against a table neither of them can see the other in, and
+ * the index is the only thing left standing between them.
+ */
+overlappingBatches = true;
+let releaseBlind;
+holdInsert = new Promise((resolve) => { releaseBlind = resolve; });
+const blindHeld =
+  submit(RACER, { ciphertext: "YmxpbmRB", supersedes: second.id });
+await new Promise((resolve) => setTimeout(resolve, 0));
+const blindB =
+  await submit(RACER, { ciphertext: "YmxpbmRC", supersedes: second.id });
+releaseBlind();
+const blindA = await blindHeld;
+overlappingBatches = false;
+
+const namingSecond = stored.filter((r) => r.supersedes === second.id);
+const blind = [blindA.status, blindB.status].sort();
+check("with both guards blind to each other the index is what refuses",
+  namingSecond.length === 1 && blind[0] === 200 && blind[1] === 409,
+  `${namingSecond.length} row(s), ${blind.join(" and ")}`);
+
+/* And it refuses in the same words. A member who lost a race and a member
+ * who corrected twice have the same thing to do next, so telling the two
+ * apart would publish which of them the database happened to serve first
+ * and change nobody's next action. */
+const byConstraint = await (blindA.status === 409 ? blindA : blindB)
+  .clone().json();
+const byCheck = await (left.status === 409 ? left : right).clone().json();
+check("and the constraint's refusal reads exactly like the check's",
+  JSON.stringify(byConstraint) === JSON.stringify(byCheck),
+  JSON.stringify(byConstraint));
+
+/*
+ * Depth: a superseding row that is not the member's own.
+ *
+ * POST /submit refuses a pointer at somebody else's row, so this state
+ * does not arrive through that door - it arrives through the other one.
+ * `wrangler d1 execute` validates nothing and is how the schema, every
+ * backup and every restore are applied (OPERATIONS.md); the Worker
+ * already reasons this way about the membership table, where a row
+ * pasted in by hand is the case the collation exists for. An
+ * ACCOUNT_SECRET rotation is the same shape from a different direction:
+ * it renames every account in the clear column and leaves the pointers
+ * untouched.
+ *
+ * So a member's own count must be computed from their own rows rather
+ * than resting on the only writer that exists today being careful. The
+ * failure it prevents is a member's entry disappearing from their own
+ * panel because of a row they cannot see and did not write.
+ */
+reset();
+
+const SCOPED = (await (await signIn({})).clone().json()).session;
+await submit(SCOPED, { ciphertext: "bWluZQ==" });
+const mineRow = stored[0];
+stored.push({
+  id: nextId++, account_id: "0".repeat(64), ciphertext: "Zm9yZWlnbg==",
+  received_at: new Date().toISOString(), supersedes: mineRow.id,
+});
+
+const shadowed = await (await call("GET", "/me",
+  { headers: bearer(SCOPED) })).json();
+check("a row somebody else wrote cannot hide a member's entry from /me",
+  shadowed.entries === 1 && shadowed.superseded === 0,
+  `entries=${shadowed.entries} superseded=${shadowed.superseded}`);
+
+/*
+ * The refusal shapes, all three of them at once.
+ *
+ * Absent, foreign and deleted are one answer to the byte. Telling any of
+ * them apart makes this route a probe for which ids are live across the
+ * whole corpus, reachable with any member session - and "deleted" is the
+ * arm worth adding, because a row that WAS there is exactly the one an
+ * implementation is most tempted to answer differently about.
+ */
+reset();
+
+const SHAPES = (await (await signIn({})).clone().json()).session;
+const SHAPES_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
+const SHAPES_OTHER = (await (await signIn({ id: 7777 })).clone().json()).session;
+
+await submit(SHAPES, { ciphertext: "a2VwdA==" });
+await submit(SHAPES, { ciphertext: "ZG9vbWVk" });
+await submit(SHAPES_OTHER, { ciphertext: "b3RoZXI=" });
+const doomed = stored.find((r) => r.ciphertext === "ZG9vbWVk");
+const othersRow = stored.find((r) => r.account_id !== FIXTURE_4242);
+await call("DELETE", "/submission/" + doomed.id,
+  { headers: bearer(SHAPES_ADMIN) });
+
+const beforeRefusals = await (await call("GET", "/me",
+  { headers: bearer(SHAPES) })).json();
+
+const deleted = await submit(SHAPES,
+  { ciphertext: "QUJDRA==", supersedes: doomed.id });
+const deletedBody = await deleted.clone().json();
+const missing = await submit(SHAPES,
+  { ciphertext: "QUJDRA==", supersedes: 99999 });
+const missingBody = await missing.clone().json();
+const stranger = await submit(SHAPES,
+  { ciphertext: "QUJDRA==", supersedes: othersRow.id });
+const strangerBody = await stranger.clone().json();
+
+check("a deleted target refuses exactly as an absent and a foreign one do",
+  deleted.status === 404 && missing.status === 404 && stranger.status === 404 &&
+  JSON.stringify(deletedBody) === JSON.stringify(missingBody) &&
+  JSON.stringify(deletedBody) === JSON.stringify(strangerBody),
+  `${deleted.status}/${missing.status}/${stranger.status} ` +
+  JSON.stringify(deletedBody.error));
+
+/* No 500 may separate them either. A throw that escapes on one of these
+ * paths and not the others tells the caller which one they hit, however
+ * carefully the three deliberate answers were made to match. */
+check("and no refusal on this path answers with a server error",
+  [deleted, missing, stranger].every((r) => r.status < 500),
+  [deleted, missing, stranger].map((r) => r.status).join("/"));
+
+/*
+ * Size is settled before the pointer is looked at, and the order is the
+ * assertion. A body over the ceiling that carried a pointer at somebody
+ * else's row must be refused for being too large - answering 404 there
+ * would mean the database was asked about a row on behalf of a request
+ * this Worker had already decided not to store.
+ */
+const oversized = await submit(SHAPES,
+  { ciphertext: "A".repeat(17000), supersedes: othersRow.id });
+check("an oversized ciphertext is refused for its size, not for its pointer",
+  oversized.status === 413, `${oversized.status}`);
+
+/*
+ * The arithmetic /me promises, stated as the invariant rather than as
+ * two numbers that happened to be right once. `entries + superseded` is
+ * every row this account has written, which is what makes the tombstone
+ * count worth reporting beside the entry count instead of subtracting it
+ * in silence.
+ */
+const afterRefusals = await (await call("GET", "/me",
+  { headers: bearer(SHAPES) })).json();
+const rowsWritten = stored.filter((r) => r.account_id === FIXTURE_4242).length;
+check("entries plus superseded is every row this account has written",
+  afterRefusals.entries + afterRefusals.superseded === rowsWritten,
+  `${afterRefusals.entries} + ${afterRefusals.superseded} vs ${rowsWritten}`);
+
+check("and a refused correction moves neither of them",
+  afterRefusals.entries === beforeRefusals.entries &&
+  afterRefusals.superseded === beforeRefusals.superseded,
+  `${beforeRefusals.entries}/${beforeRefusals.superseded} -> ` +
+  `${afterRefusals.entries}/${afterRefusals.superseded}`);
+
+/* ------------------------------------------------------------------ */
+/* The read-back answers about the caller's own row (#84).             */
+
+/*
+ * POST /submit reports success by reading its own row back inside the
+ * batch, and the only handle it has on that row is the ciphertext the
+ * caller sent. A ciphertext is not a secret and it is not proof of
+ * authorship: every one of them travels to the keyholder in the export,
+ * and a caller can put whatever bytes they like in the field. So the
+ * read-back has to be scoped to the caller's account as well as to the
+ * pointer.
+ *
+ * Unscoped, this is the one refusal on this route that fails open. A
+ * member naming somebody else's entry, carrying the ciphertext of the
+ * correction that already supersedes it, finds that row, matches it, and
+ * is answered 200 while nothing at all was written - the
+ * success-with-no-row the comment on this path calls the worst outcome
+ * available here, handed to precisely the caller who should have been
+ * refused. The guarded insert is not what is wrong: it correctly stores
+ * nothing. What is wrong is the sentence the endpoint then speaks.
+ *
+ * Nothing legitimate is lost by scoping it, and that is why the fix is
+ * this and not a second lookup: the row the insert would have written
+ * always carries the caller's own account id, so a clause naming that
+ * account can never hide the row the caller is asking about.
+ */
+reset();
+
+const REPLAY = (await (await signIn({})).clone().json()).session;
+const REPLAY_OTHER = (await (await signIn({ id: 7777 })).clone().json()).session;
+
+await submit(REPLAY, { ciphertext: "dGFyZ2V0" });
+const replayTarget = stored.find((r) => r.account_id === FIXTURE_4242);
+const REPLAYED = "c3VwZXJzZWRpbmc=";
+await submit(REPLAY, { ciphertext: REPLAYED, supersedes: replayTarget.id });
+
+const rowsBeforeReplay = stored.length;
+const replayed = await submit(REPLAY_OTHER,
+  { ciphertext: REPLAYED, supersedes: replayTarget.id });
+const replayedBody = await replayed.clone().json();
+
+/* The refusal a foreign target gets when the caller invents its own
+ * ciphertext, which is the answer the replay must be indistinguishable
+ * from. Both are 404 rather than 409: the caller has not proved the row
+ * is theirs, so the chain rule is never reached and never spoken about. */
+const invented = await submit(REPLAY_OTHER,
+  { ciphertext: "QUJDRA==", supersedes: replayTarget.id });
+const inventedBody = await invented.clone().json();
+
+check("replaying somebody else's ciphertext is refused, not answered 200",
+  replayed.status === 404 && stored.length === rowsBeforeReplay &&
+  replayed.status === invented.status &&
+  JSON.stringify(replayedBody) === JSON.stringify(inventedBody),
+  `${replayed.status}, ${stored.length - rowsBeforeReplay} row(s) written, ` +
+  JSON.stringify(replayedBody.error));
 
 /* ------------------------------------------------------------------ */
 /* Site content - the one document served without a credential (#87).  */

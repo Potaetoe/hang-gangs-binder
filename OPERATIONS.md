@@ -137,6 +137,62 @@ may fail once with error 10000 and succeed on retry (`wrangler whoami`
 misdescribes the state — diagnose with a real subcommand). `deploy`
 preserves Secrets and applies `[vars]` over the dashboard's.
 
+**Applying the file is no longer purely additive, and one statement in
+it can fail.** `schema.sql` drops the old `supersedes` index and
+recreates it as UNIQUE under a new name, so it has a pre-flight. Take a
+backup first — "Backing up the submissions" below says always, and this
+is the case it means — then ask the database whether the rule can be
+true of the rows it already holds:
+
+```bash
+npx wrangler d1 execute hg_binder_db_dev --remote --env dev \
+  --command "SELECT supersedes, COUNT(*) FROM submissions WHERE supersedes IS NOT NULL GROUP BY supersedes HAVING COUNT(*) > 1;"
+```
+
+**Zero rows is the only answer that may proceed.** Anything it returns
+is a submission corrected twice — two rows claiming to replace one
+entry, which the design allows exactly one of. Resolve those before
+applying the file: open `admin.html`, decrypt, decide which correction
+is the member's real one, and remove the other with
+`DELETE /submission/:id`. Ask the member if it is not obvious from the
+plaintext; guessing here deletes a measurement.
+
+**Which databases need the pre-flight is a question about the table, not
+about the environment.** Run it wherever `submissions` already carries a
+`supersedes` column with rows under it. A database predating the column
+has nothing to check, and the query answers with an error rather than
+with zero rows: there the column and its unique index arrive together in
+the first application of this file, and no row is old enough to have
+broken a rule that did not exist. `CUTOVER.md` is where that first
+application happens for production, and the pre-flight belongs to every
+run of the file after it.
+
+**Skipping it costs more than a failed command, because the failure is
+not clean.** The `DROP` is a separate statement and it commits; the
+`CREATE UNIQUE INDEX` after it is what refuses. A run that hits
+duplicates therefore leaves the table with **no index on `supersedes`
+at all** — not the old one, not the new one. Nothing breaks visibly:
+`GET /me` still answers, more slowly, and the chain rule is enforced
+only by the endpoint's own check with nothing underneath it. The
+recovery is to resolve the duplicates and run the file again; `DROP
+INDEX IF EXISTS` makes the second run safe from either state. Check
+which indexes are actually there rather than assuming, before and
+after:
+
+```bash
+npx wrangler d1 execute hg_binder_db_dev --remote --env dev \
+  --command "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='submissions';"
+```
+
+*Verification label:* the failure mode above was reproduced against
+SQLite 3.50.4 through Python's `sqlite3.executescript`, which is the
+same engine D1 runs. **It has not been run through `wrangler d1
+execute`** — no wrangler command was issued — so whether D1 wraps a
+`--file` run in one transaction of its own is untested here. The
+pre-flight and the recovery are written to be correct either way: if D1
+does wrap it, the run rolls back and the old index survives, which is a
+better outcome than the one described and needs no different action.
+
 `[pre-cutover]` Production's live script was hand-pasted, which leaves
 the Worker in version-upload state: `wrangler secret put` fails there
 with error 10220 for anyone, and the dashboard is the tool for secrets
@@ -265,6 +321,18 @@ replaying one over a populated table is a collision rather than a
 merge. Whether the answer is to empty the target first or to keep a
 `--no-schema` export beside the full one is a decision to make in the
 rehearsal, once — not on the day it is needed.
+
+**Re-apply `server/schema.sql` after any restore, and read the index
+list back.** An export writes the indexes the database had on the day it
+was taken, so one taken before `supersedes` became unique restores the
+*old*, non-unique index — quietly, as part of a command that reports
+success. The chain rule then rests on the endpoint's own check with
+nothing under it, which is the state "Deploying the Worker" above
+describes and the same state a half-finished migration leaves. The
+restore is not finished until the file has been applied over it and the
+index list says `submissions_supersedes_unique`; the pre-flight there
+applies to this run too, because a restore is exactly how a corpus with
+duplicate pointers comes back.
 
 **Rehearse the restore against the development arm before it is ever
 needed.** An untested restore is a file, not a backup: this document
