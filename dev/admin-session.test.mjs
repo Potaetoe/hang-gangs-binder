@@ -1484,7 +1484,7 @@ check("no authenticated call site decides for itself what a refusal means",
 const Admin = globalThis.BinderAdmin;
 const WINDOW = Admin.IDLE_WINDOW || {};
 const verdictAt = (last, now) =>
-  (Admin.idleVerdict ? verdictAt(last, now) : {});
+  (Admin.idleVerdict ? Admin.idleVerdict(last, now) : {});
 const noticeAt = (last, now) =>
   (Admin.idleNotice ? Admin.idleNotice(verdictAt(last, now)) : null);
 
