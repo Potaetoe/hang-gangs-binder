@@ -47,14 +47,14 @@
    * THE ANNOUNCEMENT BELONGS HERE AND NOT AT THE CALL SITES. A page acting
    * on a 401 is not the only caller: read() lands here too, whenever a
    * stored value is malformed or past its expiry, and nothing calls that
-   * on purpose. An announcement written into the pages that know they are
-   * ending a session would leave that second path describing a credential
-   * this function had already thrown away, for the rest of the tab's life,
-   * on the path with no author to remember it.
+   * on purpose. Announcing from the pages that know they are ending a
+   * session covers the deliberate path and leaves that second one
+   * describing a credential this function has already thrown away, for
+   * the rest of the tab's life, with no author to remember it (#166).
    *
-   * The trap it closes is a page contradicting itself rather than a page
-   * looking untidy: with the credential gone and the announcement stale,
-   * "your sign-in is no longer valid" and "Signed in as <name>" sit on one
+   * The trap is a page contradicting itself rather than a page looking
+   * untidy: with the credential gone and the announcement stale, "your
+   * sign-in is no longer valid" and "Signed in as <name>" sit on one
    * screen, and the reader has no way to tell which half is true.
    */
   function clear() {

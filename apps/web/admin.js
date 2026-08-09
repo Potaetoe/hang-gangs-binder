@@ -428,8 +428,8 @@
 
   /*
    * The status that means the session is over, named once so that no call
-   * site has to know the number. Five of them did, and having the number
-   * in hand is what let each of them answer it in its own way (#166).
+   * site has to hold the number. A call site holding it is a call site
+   * entitled to its own answer, which is the whole of #166.
    */
   const REFUSED = 401;
 
@@ -751,19 +751,18 @@
      * session. One function, and the caller only chooses where the
      * sentence goes.
      *
-     * THE RULE IS ALREADY WRITTEN DOWN TWICE ABOVE - a 401 ends the tab,
-     * because this page holds every submission in the clear and keeps the
-     * private key on the device. It was obeyed by the membership calls and
-     * by nothing else: four other calls printed a sentence and stayed, and
-     * the published-status read had no answer for a 401 at all, so an
-     * admin whose session had died was met by "The server answered 401."
-     * before touching anything (#166, F8).
+     * THE RULE IT ENFORCES IS THE ONE STATED TWICE ABOVE - a 401 ends the
+     * tab, because this page holds every submission in the clear and keeps
+     * the private key on the device. A rule written only in comments is
+     * not reachable by a caller, and #166 is what that costs: a call site
+     * free to write its own 401 branch is free to keep the tab open on the
+     * corpus, and one free to write none at all answers with a bare status
+     * number.
      *
-     * Passing the status line in is what makes one function serve six
-     * calls that each report somewhere different - the export card, the
-     * publish card, the unpublish card, the membership pane. The
-     * alternative, a shared line, would move every refusal away from the
-     * control that provoked it.
+     * Passing the status line in is what lets one function serve calls
+     * that each report somewhere different - the export card, the publish
+     * card, the unpublish card, the membership pane. A single shared line
+     * would move every refusal away from the control that provoked it.
      *
      * The wording is refusalFor's, not a second copy: that function is
      * where this page says what a status means, and two sentences about
@@ -781,13 +780,13 @@
      * The same act, asked as a question, for the calls that hold a
      * response rather than a decoded refusal.
      *
-     * It exists so that NO CALL SITE NAMES THE NUMBER. Comparing against
-     * 401 at the call site is what the five broken ones did, and four of
-     * them then answered it differently while the fifth forgot to compare
-     * at all - a page cannot be held to one answer while six places are
-     * still entitled to ask the question. Here the caller asks whether the
-     * session was refused and stops if it was; what "refused" means, and
-     * what happens next, are both somewhere else.
+     * It exists so that NO CALL SITE NAMES THE NUMBER. A page cannot be
+     * held to one answer while every call site is still entitled to ask
+     * the question its own way - and the one that forgets to ask does not
+     * announce itself, it just falls through to whatever the generic
+     * branch says about a status it was never written for. Here the caller
+     * asks whether the session was refused and stops if it was; what
+     * "refused" means, and what happens next, are both somewhere else.
      */
     function sessionRefused(response, where) {
       if (response.status !== REFUSED) return false;
@@ -1160,8 +1159,8 @@
         /*
          * Before the 404 branch, and before the catch below can turn it
          * into a sentence about the network. This read fires on load, so
-         * it is the first thing a dead session meets on this page - and
-         * the one that used to answer it with a bare status number.
+         * it is the first thing a dead session meets on this page: an
+         * admin who has clicked nothing reads whatever this line says.
          *
          * It reports into its own prose line rather than through a say()
          * helper because this line is not a status control: it is the
@@ -1394,16 +1393,15 @@
     }
 
     /*
-     * One refusal handler for the three membership calls, which is a
-     * narrower job than it once was.
+     * One refusal handler for the three membership calls, and only for
+     * what is particular to them.
      *
-     * The 401 arm used to be written out here, and that is how it became
-     * the only one of the page's six authenticated calls that honored the
-     * rule it states - a rule in the page's own comments cannot be reached
-     * by a caller. It now defers to sessionEnded, so this function is left
-     * with what is genuinely particular to the membership pane: everything
-     * that is NOT a dead session leaves the page standing, says what the
-     * Worker said, and returns false so the caller re-reads.
+     * A dead session is not particular to them, so it is not decided here
+     * - sessionEnded owns that for every call on the page. What is left is
+     * the refusal that leaves the page standing: say what the Worker said,
+     * return false, and the caller re-reads. Writing the dead-session arm
+     * out again here would make this pane the one place the page's rule
+     * happens to hold, which is the shape #166 was.
      */
     function handleRefusal(status, payload) {
       const refusal = refusalFor(status, payload);

@@ -767,12 +767,11 @@
         /*
          * A dead session, which is not a refused entry - #166.
          *
-         * Ahead of the branch below because that one is written for a
-         * Worker objecting to the submission, and it answered this with
-         * "The server refused it (401) ... try again": a status number,
-         * and advice that fails identically for as long as the tab is
-         * open. Nothing about the entry is wrong, so nothing about the
-         * entry is said.
+         * Ahead of the branch below, because that one is written for a
+         * Worker objecting to the submission: it quotes a status number
+         * and tells the member to try again, which for a dead credential
+         * fails identically for as long as the tab is open. Nothing about
+         * the entry is wrong here, so nothing about the entry is said.
          *
          * The credential goes, because the Worker has just refused it and
          * session.js does not keep values that cannot work - and dropping
