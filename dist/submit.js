@@ -16,9 +16,23 @@
    
    
   const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
+
+   
+   
+   
+   
+  const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
+
+   
   const FIELD_IDS = [
     "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
   ];
+
+   
+   
+   
+   
+  const CHOICE_IDS = ["gender", "country", "over18"];
   const UI = root.BinderUI;
   const Session = root.BinderSession;
   const $ = UI.byId;
@@ -79,6 +93,35 @@
     return chosen ? chosen.value : "imperial";
   }
 
+  function checkedRoles() {
+    return Array.prototype.map.call(
+      document.querySelectorAll('input[name="roles"]:checked'),
+      function (input) { return input.value; });
+  }
+
+  function isChecked(id) {
+    const field = $(id);
+    return Boolean(field && field.checked);
+  }
+
+  
+
+  let lastHeightCm = null;
+
+  function usableHeight(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+   
+   
+   
+   
+  function announceBaseline() {
+    document.dispatchEvent(new CustomEvent(HEIGHT_BASELINE_EVENT, {
+      detail: { lastHeightCm: lastHeightCm },
+    }));
+  }
+
   
 
   let account = null;
@@ -94,6 +137,11 @@
       heightInches: fieldValue("height-in"),
       weightKg: fieldValue("weight-kg"),
       heightCm: fieldValue("height-cm"),
+      gender: fieldValue("gender"),
+      country: fieldValue("country"),
+      roles: checkedRoles(),
+      over18: isChecked("over18"),
+      lastHeightCm: lastHeightCm,
     };
     try { store.setItem(PREFILL_KEY, JSON.stringify(value)); }
     catch (error) {   }
@@ -102,6 +150,10 @@
   function restorePrefill() {
     const value = readPrefill(account);
     if (!value) return;
+
+    
+
+    lastHeightCm = usableHeight(value.lastHeightCm);
 
     const fields = {
       "weight-lb": value.weightLb,
@@ -120,8 +172,37 @@
     unitInputs.forEach(function (input) {
       input.checked = input.value === value.units;
     });
+
+    const gender = $("gender");
+    if (gender && typeof value.gender === "string") gender.value = value.gender;
+    const country = $("country");
+    if (country && typeof value.country === "string") {
+      country.value = value.country;
+    }
+    const roles = Array.isArray(value.roles) ? value.roles : [];
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="roles"]'),
+      function (input) { input.checked = roles.indexOf(input.value) !== -1; });
+
+    
+
+    const over18 = value.over18 === true;
+    if (over18) {
+      const box = $("over18");
+      if (box) box.checked = true;
+    }
+
+    
+
+    show($("over18-remembered"), over18);
+    show($("prefill-note"), true);
+
+    
+
     const selected = unitInputs.find(function (input) { return input.checked; });
     if (selected) selected.dispatchEvent(new Event("change", { bubbles: true }));
+
+    announceBaseline();
   }
 
   function setStatus(message, bad) {
@@ -224,6 +305,17 @@
     }
   }
 
+  
+
+  function rememberHeight(event) {
+    const cm = usableHeight(event && event.detail
+      ? event.detail.heightCm : null);
+    if (cm === null) return;
+    lastHeightCm = cm;
+    savePrefill();
+    announceBaseline();
+  }
+
   async function setUp() {
     if (!Session) throw new Error("This page did not load session handling.");
     const session = Session.require();
@@ -236,6 +328,13 @@
     Array.prototype.forEach.call(
       document.querySelectorAll('input[name="units"]'),
       function (input) { input.addEventListener("change", savePrefill); });
+    CHOICE_IDS.forEach(function (id) {
+      const field = $(id);
+      if (field) field.addEventListener("change", savePrefill);
+    });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="roles"]'),
+      function (input) { input.addEventListener("change", savePrefill); });
 
     const entriesTab = $("your-entries-tab");
     const addTab = $("add-entry-tab");
@@ -246,6 +345,7 @@
       addTab.addEventListener("click", function () { chooseTab("add"); });
     }
     document.addEventListener(SUBMITTED_EVENT, refreshPanel);
+    document.addEventListener(SUBMITTED_EVENT, rememberHeight);
 
     show($("member-tabs"), true);
     chooseTab("entries");

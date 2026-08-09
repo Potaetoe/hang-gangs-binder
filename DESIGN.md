@@ -187,14 +187,27 @@ the form page bouncing signed-out visitors is a courtesy. The gate is
 the Worker refusing `POST /submit` without a valid session — the one
 place enforcement is possible.
 
-**The prefill is scoped to the account.** `submit.html` keeps last
-weight/height in `localStorage`; the stored value carries the account
-id, and any stored value the page will not read — wrong account, wrong
-shape, unreadable units — is *erased* rather than skipped, because on a
-shared browser the next member would otherwise see the previous
-member's measurements (#56, #65). The id is safe to store precisely
-because it is the HMAC — it cannot be tested against a guessed handle
-and authorizes nothing.
+**The prefill is scoped to the account.** `submit.html` keeps the last
+entry in `localStorage` — measurements, gender, country, affiliations,
+the 18+ confirmation, and the height the last stored row carried; the
+stored value carries the account id, and any stored value the page will
+not read — wrong account, wrong shape, unreadable units — is *erased*
+rather than skipped, because on a shared browser the next member would
+otherwise see the previous member's entry (#56, #65, #172). The id is
+safe to store precisely because it is the HMAC — it cannot be tested
+against a guessed handle and authorizes nothing.
+
+**A member cannot read their own previous entry**, which is why that
+store exists at all. Every submission is sealed to the keyholder before
+it leaves the browser, so no route can answer "what did I say last
+time"; `GET /me` returns counts and `lastAt` and no values. The prefill
+is therefore the *only* memory a member has, and it is a device's
+memory rather than an account's: a new phone opens a blank form, and the
+implausible-height guard that compares against the remembered height
+does not exist there rather than being lenient there. Every sentence on
+the page says "this browser" for that reason. The durable version — a
+member who can open their own history — needs key material a member
+holds, and is #173 rather than a thing this store grows into.
 
 ### Admin accounts and deletion
 
@@ -371,6 +384,19 @@ the site without inheriting the data.
   twelve times, never who. Both accepted knowingly as the price of
   accounts.
 - **Traffic analysis** — when submissions arrive, not what they say.
+- **Somebody at a signed-in member's own browser**, for the prefill
+  described above. It holds gender, country, affiliations and an age
+  confirmation in the clear in that origin's `localStorage` — precisely
+  the fields the encryption exists to protect — so a shared or seized
+  device exposes one member's last entry without touching the sealed
+  rows. Recorded rather than assumed harmless, on the owner's ruling for
+  #172, and bounded three ways: the account id in the value means the
+  next member to sign in gets it erased rather than shown, Sign out
+  erases it, and it is one key so the erase cannot miss a field. What
+  remains is the member who closes the tab instead of signing out and
+  hands the laptop over — accepted as the price of a form that does not
+  ask the same six questions every week, and the reason the page says
+  out loud that signing out erases it.
 
 ## What is deliberately not here
 

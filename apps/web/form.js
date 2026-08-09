@@ -256,6 +256,90 @@
   }
 
   /*
+   * The entered height in cm, or null when there is nothing readable to
+   * convert. Separate from validate() because two callers need the
+   * number rather than the complaint: the guard below, and the wiring
+   * that has to say what height a stored row actually carried.
+   */
+  function enteredHeightCm(input) {
+    if (input.units === "imperial") {
+      const feet = parseNumber(input.heightFeet);
+      const inches = isBlank(input.heightInches)
+        ? 0 : parseNumber(input.heightInches);
+      if (feet === null || inches === null) return null;
+      return heightFromFeetInches(feet, inches).cm;
+    }
+    const cm = parseNumber(input.heightCm);
+    return cm === null ? null : heightFromCm(cm).cm;
+  }
+
+  function spellHeight(height, imperial) {
+    return imperial
+      ? height.feet + " ft " + height.inches + " in"
+      : height.cm + " cm";
+  }
+
+  /*
+   * Is this height a big enough departure from the last one to be worth
+   * asking about? A notice as { field, message }, or null for silence.
+   *
+   * A person's height does not move, so a large jump between entries is
+   * a typo - and nothing in LIMITS can see it, because LIMITS asks
+   * whether one number is a possible height and 3 ft is one. That is how
+   * 91.4cm and 162.1cm reached the published document from a submitter
+   * who is 175.3cm.
+   *
+   * Three properties this function must keep, each of which is a way for
+   * a guard like this to become worthless:
+   *
+   *   - It is silent when it does not know. `previousCm` comes from this
+   *     browser's own storage, so a device that has never submitted has
+   *     nothing to compare and gets no guard at all. That is a real hole
+   *     and the copy on the page says so rather than implying a standing
+   *     protection; inventing a comparison here would be worse than the
+   *     hole.
+   *   - It is silent under HEIGHT_CHANGE_CM. Shoes, a different tape, a
+   *     different time of day. A guard that fires on those is a guard
+   *     people learn to press through, and then it is not there for the
+   *     91.4cm case either.
+   *   - It is a prompt, never a verdict. The remembered number may
+   *     itself be the typo, so a hard refusal traps a member whose real
+   *     height the form will not take - and being told they are wrong
+   *     about their own height is how somebody stops trusting the form.
+   *
+   * Both heights are spoken in the units on screen. Someone looking at a
+   * feet box, told their last entry was 175.3cm, has to do arithmetic
+   * before they can judge the one thing being asked of them.
+   */
+  const HEIGHT_CHANGE_CM = 5;
+
+  function heightChangeNotice(input, previousCm) {
+    // Not a number is not a memory. This value crosses a document event
+    // from a JSON store, so "175.3" and NaN both turn up here, and both
+    // would compare in a way that silently never fires: "175.3" - 178
+    // is arithmetic that works, and every comparison against NaN is
+    // false.
+    if (typeof previousCm !== "number" || !Number.isFinite(previousCm)) {
+      return null;
+    }
+    const entered = enteredHeightCm(input);
+    // An unreadable height is validate()'s complaint to make. A sentence
+    // here about a number nobody typed would arrive alongside it.
+    if (entered === null) return null;
+    if (Math.abs(entered - previousCm) <= HEIGHT_CHANGE_CM) return null;
+
+    const imperial = input.units === "imperial";
+    return {
+      field: "height",
+      message: "This browser remembers your last height here as " +
+        spellHeight(heightFromCm(previousCm), imperial) +
+        ", and this entry says " +
+        spellHeight(heightFromCm(entered), imperial) +
+        ". If that is right, add it again to confirm.",
+    };
+  }
+
+  /*
    * A valid input to the record that gets encrypted. Assumes validate()
    * came back empty; callers that skip it get whatever they deserve.
    * The session username is mandatory even then: without it the record
@@ -347,6 +431,7 @@
     heightFromCm: heightFromCm,
     heightFromFeetInches: heightFromFeetInches,
     validate: validate,
+    heightChangeNotice: heightChangeNotice,
     buildRecord: buildRecord,
   });
 
@@ -591,6 +676,32 @@
       UI.setStatus(status, message, tone);
     }
 
+    /*
+     * The height guard's memory, and it is not this file's - #172.
+     *
+     * submit.js owns the device-local store and announces what is in it;
+     * this file owns the form's boxes and announces what was accepted.
+     * Neither reaches into the other, which is the same arrangement the
+     * two events above already use, and it is what keeps the store's
+     * account scoping in one file instead of two.
+     *
+     * Whatever arrives is held as it arrives. heightChangeNotice() is
+     * where a baseline is judged usable, so a "175.3" that crossed a
+     * JSON store is rejected in one place rather than in every reader.
+     */
+    let baselineCm = null;
+    document.addEventListener("binder:height-baseline", function (event) {
+      baselineCm = event && event.detail ? event.detail.lastHeightCm : null;
+    });
+
+    /*
+     * The height this member has already been asked about and stood by.
+     * Held as the number rather than as a flag: a flag would let one
+     * confirmation license every later typo in the same sitting, so
+     * editing the height to a different implausible value asks again.
+     */
+    let confirmedHeightCm = null;
+
     form.addEventListener("submit", async function (event) {
       // The page never does a native submit - the CSP's form-action
       // 'none' would block it anyway - but preventing it first means a
@@ -611,12 +722,29 @@
       }
       clearProblems();
 
+      /*
+       * The one question this form asks twice, and the reason it is here
+       * rather than inside validate(): it is not a rule about the entry.
+       * validate() judges the entry alone and its answer cannot change
+       * between two identical presses, while this compares against a
+       * number only this browser knows - and the answer to "are you
+       * sure" is a second press.
+       */
+      const notice = heightChangeNotice(input, baselineCm);
+      const enteredCm = enteredHeightCm(input);
+      if (notice && enteredCm !== confirmedHeightCm) {
+        confirmedHeightCm = enteredCm;
+        showProblems([notice]);
+        return;
+      }
+
       submit.disabled = true;
       say("Encrypting…", null);
 
+      let record = null;
       let blob;
       try {
-        const record = buildRecord(input, Date.now(), input.sessionUsername);
+        record = buildRecord(input, Date.now(), input.sessionUsername);
         blob = await root.BinderCrypto.encrypt(record, config.publicKey);
       } catch (error) {
         submit.disabled = false;
@@ -653,10 +781,21 @@
         return;
       }
 
-      // The panel owns the account summary and responds by re-reading /me.
-      // Dispatching only after the Worker accepts the row means a refused or
-      // failed request can never make the panel claim something was stored.
-      document.dispatchEvent(new CustomEvent("binder:submitted"));
+      /*
+       * The panel owns the account summary and responds by re-reading /me.
+       * Dispatching only after the Worker accepts the row means a refused or
+       * failed request can never make the panel claim something was stored.
+       *
+       * The height rides along because the next entry is measured against
+       * it - #172. It is the record's own number rather than a second
+       * reading of the boxes, so what the guard remembers is exactly what
+       * was sealed; and it moves here, on the one path where a row exists,
+       * rather than while the member types, because a baseline written on
+       * every keystroke is one the entry is compared against itself.
+       */
+      document.dispatchEvent(new CustomEvent("binder:submitted", {
+        detail: { heightCm: record.height.cm },
+      }));
 
       show(form, false);
       say("", null);

@@ -201,6 +201,56 @@
 
   
 
+  function enteredHeightCm(input) {
+    if (input.units === "imperial") {
+      const feet = parseNumber(input.heightFeet);
+      const inches = isBlank(input.heightInches)
+        ? 0 : parseNumber(input.heightInches);
+      if (feet === null || inches === null) return null;
+      return heightFromFeetInches(feet, inches).cm;
+    }
+    const cm = parseNumber(input.heightCm);
+    return cm === null ? null : heightFromCm(cm).cm;
+  }
+
+  function spellHeight(height, imperial) {
+    return imperial
+      ? height.feet + " ft " + height.inches + " in"
+      : height.cm + " cm";
+  }
+
+  
+
+  const HEIGHT_CHANGE_CM = 5;
+
+  function heightChangeNotice(input, previousCm) {
+     
+     
+     
+     
+     
+    if (typeof previousCm !== "number" || !Number.isFinite(previousCm)) {
+      return null;
+    }
+    const entered = enteredHeightCm(input);
+     
+     
+    if (entered === null) return null;
+    if (Math.abs(entered - previousCm) <= HEIGHT_CHANGE_CM) return null;
+
+    const imperial = input.units === "imperial";
+    return {
+      field: "height",
+      message: "This browser remembers your last height here as " +
+        spellHeight(heightFromCm(previousCm), imperial) +
+        ", and this entry says " +
+        spellHeight(heightFromCm(entered), imperial) +
+        ". If that is right, add it again to confirm.",
+    };
+  }
+
+  
+
   function buildRecord(input, now, sessionUsername) {
     const telegram = normalizeTelegram(sessionUsername);
     if (!telegram) {
@@ -281,6 +331,7 @@
     heightFromCm: heightFromCm,
     heightFromFeetInches: heightFromFeetInches,
     validate: validate,
+    heightChangeNotice: heightChangeNotice,
     buildRecord: buildRecord,
   });
 
@@ -482,6 +533,17 @@
       UI.setStatus(status, message, tone);
     }
 
+    
+
+    let baselineCm = null;
+    document.addEventListener("binder:height-baseline", function (event) {
+      baselineCm = event && event.detail ? event.detail.lastHeightCm : null;
+    });
+
+    
+
+    let confirmedHeightCm = null;
+
     form.addEventListener("submit", async function (event) {
        
        
@@ -502,12 +564,23 @@
       }
       clearProblems();
 
+      
+
+      const notice = heightChangeNotice(input, baselineCm);
+      const enteredCm = enteredHeightCm(input);
+      if (notice && enteredCm !== confirmedHeightCm) {
+        confirmedHeightCm = enteredCm;
+        showProblems([notice]);
+        return;
+      }
+
       submit.disabled = true;
       say("Encrypting…", null);
 
+      let record = null;
       let blob;
       try {
-        const record = buildRecord(input, Date.now(), input.sessionUsername);
+        record = buildRecord(input, Date.now(), input.sessionUsername);
         blob = await root.BinderCrypto.encrypt(record, config.publicKey);
       } catch (error) {
         submit.disabled = false;
@@ -544,10 +617,11 @@
         return;
       }
 
-       
-       
-       
-      document.dispatchEvent(new CustomEvent("binder:submitted"));
+      
+
+      document.dispatchEvent(new CustomEvent("binder:submitted", {
+        detail: { heightCm: record.height.cm },
+      }));
 
       show(form, false);
       say("", null);

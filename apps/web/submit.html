@@ -244,6 +244,26 @@
   </p>
 
   <!--
+    Shown by submit.js only when something was actually carried forward.
+
+    The words have one job beyond politeness, and #172's ruling turns on
+    it: a prefilled form looks like an account that followed the member
+    here, and it is not one. What filled these boxes is this browser's
+    own storage, so a new phone opens a blank form and the height guard
+    on it does not exist. A member who believes their account remembers
+    them is a member who will not notice either.
+
+    Hidden in the markup rather than revealed by default, because a
+    device with nothing stored has nothing to say and a note claiming a
+    memory that is not there is the same lie in the other direction.
+  -->
+  <p class="hint" id="prefill-note" hidden>
+    Some of this is filled in from your last entry. This browser
+    remembers it — not your account — so another phone or browser starts
+    you blank, and signing out erases it here.
+  </p>
+
+  <!--
     One card, because this is one act.
 
     #68 counted this form arriving as five bordered boxes - the age
@@ -271,6 +291,20 @@
                  aria-describedby="error-over18">
           <span>I confirm I am 18 or older.</span>
         </label>
+        <!--
+          Why the box above is already ticked, shown by submit.js only
+          when it ticked it. The confirmation is a fact about a person
+          rather than about a measurement, so asking every week is asking
+          the same question of somebody who has answered it - but a box
+          that arrives ticked with no explanation is a box a member did
+          not tick, on the one assertion this form still asks them to
+          make. It says where the answer came from, and the box stays
+          editable rather than locked.
+        -->
+        <p class="hint" id="over18-remembered" hidden>
+          Remembered from your last entry on this browser. Untick it if
+          that is wrong.
+        </p>
         <p class="field-error" id="error-over18" hidden></p>
       </div>
 

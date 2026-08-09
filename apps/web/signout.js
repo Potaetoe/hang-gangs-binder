@@ -23,8 +23,8 @@
   "use strict";
 
   /*
-   * The device-local measurement prefill, and its key lives here rather
-   * than in submit.js - which reads it back from this object.
+   * The device-local entry prefill, and its key lives here rather than
+   * in submit.js - which reads it back from this object.
    *
    * That is the wrong way round until you ask what the key is FOR. The
    * prefill is localStorage, so unlike the session it outlives the tab:
@@ -35,6 +35,14 @@
    * submit.js is loaded on exactly one of the three. So the module that
    * always runs owns the name, and the module that reads the value
    * borrows it.
+   *
+   * What sits under that one key is the whole of an entry - the
+   * measurements, gender, country, affiliations, an age confirmation,
+   * and the height the last stored row carried (#172). One key is a
+   * deliberate constraint rather than a convenience: this erase is a
+   * single removeItem, so it stays correct as fields are added, and a
+   * second store for a field somebody judges harmless is how Sign out
+   * quietly stops meaning what AGENTS.md says it means.
    */
   const PREFILL_KEY = "hgb-submit-prefill";
 
