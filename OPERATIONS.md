@@ -31,6 +31,7 @@ Worker is actually answering, from fact rather than memory.
 | `POST /auth/dev` | `DEV_LOGIN_SECRET` **and** loopback origin | development sign-in; `404` everywhere else |
 | `DELETE /session` | any session, its own | deletes that session's row; the pages send it on sign out |
 | `GET /me` | any session | entry count, last submission, admin flag, own account id |
+| `GET /my-entries` | member session | this account's own rows as handles — id, receipt time, whether superseded. No contents |
 | `POST /submit` | member session | appends one ciphertext row, tagged with the account id |
 | `GET /export` | admin | returns every row |
 | `POST /snapshot` | admin | replaces the published aggregate |
@@ -54,7 +55,11 @@ of people are `membership`, on their own routes, admin in every
 direction.
 
 `EXPORT_TOKEN` opens every admin route as break-glass. It is not a
-member, so it cannot submit — there is no account for it to write to.
+member, so the two routes that need an account refuse it: it cannot
+submit — there is no account to write to — and it cannot read
+`GET /my-entries`, because that answer is one member's and the token is
+nobody. Neither withholds anything from it; `GET /export` is the whole
+corpus.
 Session lifetimes are constants in `server/worker.js` (member seven
 days, admin two hours — the admin session opens the whole corpus's
 ciphertext), and an admin session nobody is using stops working well
