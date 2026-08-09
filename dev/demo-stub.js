@@ -726,31 +726,29 @@
       steps: [
         "Entries shows what this account currently claims, and the " +
           "numeric id line is painted.",
-        // The chips are named by the page, not here, and the driver is
-        // sent to read the control rather than a list. Two reasons, and
-        // the second one carries an expiry worth writing down.
+        // The chips are named by the page, not here: a walk-through
+        // that spells out a label needs correcting every time one
+        // moves, so this step names none.
         //
-        // A walk-through that spells out a label needs correcting every
-        // time one moves, so this step names none.
+        // What this step is FOR is the half no gate here reaches, and
+        // it is worth stating because the obvious reading is wrong.
+        // Comparing the labels is NOT this step's job: check_web.py's
+        // check 23 reads the four rosters side by side and refuses a
+        // rename that reaches some of the copies. Do not write that
+        // claim back into this walk - two places making one claim is
+        // how the weaker one survives.
         //
-        // And this walk is the only thing that reads the labels side by
-        // side. check_web.py pins that a page offering a palette
-        // carries the disclosure and at least one data-set-theme chip -
-        // presence, per page, judged in isolation. It does not compare
-        // one page's chip labels against another's, so every page can
-        // satisfy it while disagreeing about what the palettes are
-        // called. A human switching each chip in turn across the walk
-        // is what sees that.
-        //
-        // THE TRIGGER, SO THE NEXT READER INHERITS IT RATHER THAN
-        // FINDING IT: if a parity arm ever pins the labels across
-        // pages, the second reason is spent and this step is
-        // re-justified or deleted. Do not leave it standing on a reason
-        // a check has taken over - that is exactly how this comment
-        // came to need rewriting.
-        "Switch every palette chip in turn, and read what they are " +
-          "called - this walk is what compares those labels across " +
-          "the pages that carry them.",
+        // What check 23 cannot do is press a chip. It reads markup,
+        // and this gate has no layout engine (#75), so nothing in it
+        // establishes that a chip repaints the page, marks itself
+        // active, or holds after a reload. A person switching each one
+        // in turn is the only thing that sees that, which is why the
+        // step stays and why it is worded as a render rather than a
+        // reading.
+        "Switch every palette chip in turn and watch the page repaint " +
+          "under each one - the labels themselves are compared across " +
+          "pages by the gate, so what is being driven here is whether " +
+          "the palette actually applies.",
         "New entry opens the form; the rail carries you to Progress and " +
           "back without losing the tab you were on.",
         "Progress draws the full payoff for this scenario: the " +

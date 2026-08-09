@@ -14,12 +14,13 @@ one, a pink-leaning one and a high-contrast one — the wordmark
 reachable from every railed page.
 
 **Palettes are described by character here and never by chip label.**
-Nothing compares the chip labels across the four pages that carry them,
-so a rename reaching three copies of four passes the whole gate — a step
-naming a chip would send a driver looking for one that is not there and
-let them record a pass for a palette they never opened. The **Theme**
-control in front of you is the list, and counting the chips against it
-is what catches one going missing.
+The **Theme** control in front of you is the list, and counting the
+chips against it is what catches one going missing — a step naming a
+chip works from a list written down elsewhere, which lets a driver
+record a pass for a palette they never opened and goes stale the day a
+fifth palette ships. What the gate settles is that the four pages agree
+about the labels; what it cannot settle is that a chip repaints the
+page, so pressing every one of them is the part worth driving.
 
 **It is in two parts because the split is forced, not a convenience.**
 
