@@ -600,6 +600,15 @@
             root.BinderSession.authorization()),
           body: JSON.stringify({ ciphertext: blob }),
         });
+        
+
+        if (response.status === 401) {
+          root.BinderSession.clear();
+          submit.disabled = false;
+          say("Your sign-in is no longer valid, so nothing was stored. " +
+            "Sign in again.", "bad");
+          return;
+        }
         if (!response.ok) {
           let detail = "";
           try {

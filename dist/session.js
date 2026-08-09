@@ -35,10 +35,14 @@
     });
   }
 
+  
+
   function clear() {
     const storage = store();
-    if (!storage) return;
-    try { storage.removeItem(STORAGE_KEY); } catch (error) {}
+    if (storage) {
+      try { storage.removeItem(STORAGE_KEY); } catch (error) {}
+    }
+    announce(null);
   }
 
   function read() {
