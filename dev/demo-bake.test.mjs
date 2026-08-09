@@ -57,7 +57,7 @@ const {
   IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty, stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 39);
+const { check, mustReject, report } = suite("demo bake", 40);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -336,6 +336,17 @@ await check("the landing page says the data is fabricated and refuses crawlers",
 await check("the landing page names the commit this build was taken at",
   async () => (await read("index.html"))
     .includes("0123456789abcdef0123456789abcdef01234567"));
+
+/*
+ * #209: the landing page addresses the person judging the product, so
+ * it sells the cards, not the staging. "Scenario" is the harness's
+ * word; the day it comes back is the day the page started talking to
+ * the auditor again.
+ */
+await check("the landing page speaks in cards, not in scenarios", async () => {
+  const html = await read("index.html");
+  return /card/i.test(html) && !/scenario/i.test(html);
+});
 
 await check("the root robots.txt refuses every crawler", async () =>
   /Disallow:\s*\/\s*$/m.test(await read("robots.txt")));

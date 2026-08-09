@@ -63,7 +63,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 104);
+const { check, mustReject, report } = suite("demo", 111);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -565,13 +565,26 @@ await check("a poisoned published snapshot is a stated error, not a throw", () =
 });
 
 /* ------------------------------------------------------------------ */
-/* The scenarios and the boxes are a contract two documents cite.      */
+/* The cards, the scenarios and the boxes are one contract (#209).     */
 
-await check("every scenario has an id, steps and a real starting page", () =>
+/*
+ * The console addresses the person deciding whether the product is
+ * good, not the person auditing the demo (#209). What that person gets
+ * is a table of FEATURE CARDS: a title and a blurb in their own terms,
+ * and actions that stage a world and open a shipped page. The
+ * scenarios stay - they are the staging - but they are plumbing now,
+ * and the walk-through steps are gone outright: UAT.md is where a
+ * scripted walk lives, and two homes for one script is how the weaker
+ * one survives (#192 fell to exactly that).
+ */
+
+await check("every scenario has an id and a real starting page", () =>
   Demo.SCENARIOS.every((one) =>
     typeof one.id === "string" && one.id.length > 0 &&
-    Array.isArray(one.steps) && one.steps.length > 0 &&
     Demo.DESTINATIONS.some((d) => d.file === one.start)));
+
+await check("no scenario carries a walk-through: the script lives in UAT.md", () =>
+  Demo.SCENARIOS.every((one) => one.steps === undefined));
 
 await check("no two scenarios share an id", () =>
   new Set(Demo.SCENARIOS.map((one) => one.id)).size ===
@@ -591,80 +604,119 @@ await check("every acceptance box is reachable from some scenario", () => {
 });
 
 /*
- * A step must not send the driver to a control its own starting page
- * does not carry.
- *
- * #140's residue was a walk that told the driver to switch every
- * palette chip in the rail on a page that had neither, and nothing here
- * could see it: the only check over `steps` asserted the array was not
- * empty, which is how that text survived a nine-finding adversarial
- * pass. What breaks if this goes away is a walk-through that cannot be
- * performed, read by somebody deciding the cutover.
- *
- * ASSERTED IN ONE DIRECTION ON PURPOSE: a walk that names the chips
- * must start on a page that has them, never the converse. A check
- * demanding that every page with a palette be walked for it would go
- * red whenever a slice adds the control somewhere, which is a merge
- * rather than a defect - #150 spread the Theme disclosure to four pages
- * including sign-in, and this arm was written to survive exactly that
- * and did.
- *
- * What that costs, stated rather than glossed: this no longer catches a
- * chip walk staged on the sign-in page, because that page now carries
- * the control and such a walk is no longer a defect. What it still
- * catches is a chip walk on a page that genuinely has none - 404.html
- * today, which check_web.py's THEMED_PAGES pins as deliberately
- * palette-free, or whatever ships next without a control.
- *
- * The page is read rather than remembered, so this follows the markup
- * wherever it goes.
+ * The chip walk that used to be pinned here (a step naming the palette
+ * chips had to start on a page carrying them, #140) died with the
+ * steps: the demo no longer scripts anybody's hands. The duty did not
+ * die - the walk lives in UAT.md's shell section, which every card
+ * sends the reader through, and check_web.py's THEMED_PAGES still pins
+ * which pages carry the control at all.
  */
-const CHIP_MARKUP = "data-set-theme";
-
-await check("a walk naming the palette chips starts on a page that has them", () =>
-  Demo.SCENARIOS.every((one) => {
-    const namesChips = (one.steps || []).some((step) =>
-      /palette chip|theme chip/i.test(step));
-    if (!namesChips) return true;
-    return String(shipped[one.start] || "").includes(CHIP_MARKUP);
-  }));
 
 /*
- * The pair, so the check above cannot pass by matching nothing. Some
- * scenario has to be walking the chips somewhere, or the demo has
- * quietly stopped showing the palette at all.
+ * The cards themselves. Pure data in demo-stub.js so this suite can
+ * hold them without a browser; demo-console.js only paints them.
  */
-await check("some scenario does walk the chips, on a page that carries them", () =>
-  Demo.SCENARIOS.some((one) =>
-    (one.steps || []).some((step) => /palette chip/i.test(step)) &&
-    String(shipped[one.start] || "").includes(CHIP_MARKUP)));
+await check("every card has a title, a blurb and at least one action", () =>
+  Array.isArray(Demo.FEATURES) && Demo.FEATURES.length > 0 &&
+  Demo.FEATURES.every((card) =>
+    typeof card.title === "string" && card.title.length > 0 &&
+    typeof card.blurb === "string" && card.blurb.length > 0 &&
+    Array.isArray(card.actions) && card.actions.length > 0));
+
+await check("no two cards share a title", () =>
+  new Set(Demo.FEATURES.map((card) => card.title)).size ===
+    Demo.FEATURES.length);
+
+await check("every card action stages a scenario that exists and opens a shipped page", () =>
+  Demo.FEATURES.every((card) => card.actions.every((action) =>
+    typeof action.label === "string" && action.label.length > 0 &&
+    Demo.SCENARIOS.some((one) => one.id === action.scenario) &&
+    (action.open === undefined ||
+      Demo.DESTINATIONS.some((d) => d.file === action.open)))));
 
 /*
- * F9. The stub's comment calls the scenario ids a contract with UAT.md,
- * and until now nothing read UAT.md. A contract enforced by nobody is a
- * comment; this is what makes it a contract. The ids are pulled out of
- * the section headings, which is where UAT.md names the scenario each
- * section is walked in.
+ * Two directions on purpose. An action naming a scenario that does not
+ * exist is the check above; a scenario no card reaches is staging
+ * nobody can reach from the page, which is drift's favorite shape -
+ * it still answers, so nothing looks broken.
  */
-const uat = await readFile(HERE("../UAT.md"), "utf8");
-const uatIds = new Set();
-uat.split("\n").forEach((line) => {
-  if (!/^###\s/.test(line)) return;
-  const tail = /scenarios?\s+(.*)$/.exec(line);
-  if (!tail) return;
-  (tail[1].match(/`([a-z][a-z-]*)`/g) || []).forEach((raw) => {
-    uatIds.add(raw.slice(1, -1));
-  });
+await check("every scenario is reachable from some card", () => {
+  const reached = new Set();
+  Demo.FEATURES.forEach((card) =>
+    card.actions.forEach((action) => reached.add(action.scenario)));
+  return Demo.SCENARIOS.every((one) => reached.has(one.id));
 });
 
-await check("UAT.md's scenario headings are readable at all", () =>
-  uatIds.size > 0 && uatIds.has("signed-out"));
+/*
+ * The register is the ruling (#209): the cards speak to the person
+ * judging the product. Harness words on a card mean the console has
+ * started addressing the auditor again, which is the exact failure the
+ * redesign removed - so the words are refused by name. The list is a
+ * blocklist rather than a grammar because the failure is specific:
+ * these are the words this repository uses for its own machinery.
+ */
+const CARD_JARGON = /\b(scenario|stub|mirror|probe|corpus|storage|harness)\b/i;
+await check("a card speaks the driver's language, not the harness's", () =>
+  Demo.FEATURES.every((card) =>
+    [card.title, card.blurb].concat(card.actions.map((a) => a.label))
+      .every((text) => !CARD_JARGON.test(text) && !text.includes("`"))));
 
-await check("UAT.md and the stub name exactly the same scenarios", () => {
-  const mine = new Set(Demo.SCENARIOS.map((one) => one.id));
-  return uatIds.size === mine.size &&
-    [...mine].every((id) => uatIds.has(id)) &&
-    [...uatIds].every((id) => mine.has(id));
+/*
+ * The page itself. The audit bench - numbered walk steps, the
+ * acceptance table, the mirror-edit table - left the console (#209):
+ * what those proved lives in this suite and in the issues, where the
+ * auditor already reads. What the page carries is the cards and the
+ * rail of destinations, because its reader is deciding whether the
+ * product is good, not whether the demo is honest.
+ */
+const consoleHtml = await readFile(HERE("./demo.html"), "utf8");
+const consoleJs = await readFile(HERE("./demo-console.js"), "utf8");
+
+await check("the console page carries the cards and the destinations", () =>
+  consoleHtml.includes('id="features"') &&
+  consoleHtml.includes('id="destinations"') &&
+  consoleHtml.includes('id="stage"') &&
+  consoleHtml.includes('id="viewports"'));
+
+await check("the audit bench is off the console page", () =>
+  !consoleHtml.includes('id="steps"') &&
+  !consoleHtml.includes('id="scenarios"') &&
+  !consoleHtml.includes('id="boxes"') &&
+  !consoleHtml.includes('id="edits"'));
+
+await check("the console script paints the cards and none of the bench", () =>
+  consoleJs.includes('$("features")') &&
+  !consoleJs.includes('$("steps")') &&
+  !consoleJs.includes('$("scenarios")') &&
+  !consoleJs.includes('$("boxes")') &&
+  !consoleJs.includes('$("edits")'));
+
+/*
+ * F9, re-keyed by #209. The coupling used to run on scenario ids in
+ * UAT.md's section headings; the ids are plumbing now and UAT.md walks
+ * the cards instead. Each card owns one section, marked in its heading
+ * as `card "Title"`, and the two documents must name exactly the same
+ * cards - the contract is the same strength it was, spelled in the
+ * words the reader actually sees. Until this check existed in its id
+ * form, "contract" was a word in a comment and nothing else; keeping
+ * it two-way is what keeps it a contract through the rename.
+ */
+const uat = await readFile(HERE("../UAT.md"), "utf8");
+const uatCards = new Set();
+uat.split("\n").forEach((line) => {
+  if (!/^##/.test(line)) return;
+  const named = /card "([^"]+)"/.exec(line);
+  if (named) uatCards.add(named[1]);
+});
+
+await check("UAT.md's card headings are readable at all", () =>
+  uatCards.size > 0);
+
+await check("UAT.md and the console name exactly the same cards", () => {
+  const mine = new Set(Demo.FEATURES.map((card) => card.title));
+  return uatCards.size === mine.size &&
+    [...mine].every((title) => uatCards.has(title)) &&
+    [...uatCards].every((title) => mine.has(title));
 });
 
 /* ------------------------------------------------------------------ */
