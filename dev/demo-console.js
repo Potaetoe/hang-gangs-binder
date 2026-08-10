@@ -31,11 +31,42 @@
 
   let active = null;
   let destination = null;
+  // The address the frame last reported, kept because a control that
+  // cannot act on it still has to be able to name it.
+  let shownAt = "";
 
   // The errand waiting on the next arrival of the frame, and the key
   // text once it has been read.
   let errand = null;
   let devKey = null;
+
+  /*
+   * WHICH NAVIGATION AN ERRAND BELONGS TO, AND WHY A COUNTER RATHER
+   * THAN A FLAG.
+   *
+   * An errand waits up to five seconds for what it is about to touch,
+   * and until this existed nothing could stop that wait: the walk moved
+   * on, the wait ended on a page nobody was looking at any more, and the
+   * errand's give-up sentence landed in the status line ON TOP of the
+   * stop now on screen. Reproduced on the baked build - an admin walk
+   * left at t=1.2s narrated "presses the page's run control..." over the
+   * member journey's sign-in stop at t=6.2s and again at t=12.4s. The
+   * status line is the one surface built to say what really happened, so
+   * a report about a page that is not on screen is the worst thing it
+   * can carry.
+   *
+   * Bumped in open() rather than in goTo(), so a viewer pressing a
+   * destination cancels the running errand too - goTo() is only the
+   * console's own arming path, and the rail button beside the frame is
+   * how a viewer walks away without touching the journey at all.
+   *
+   * NOT bumped on the frame's own arrivals, which is the half that has
+   * to stay: a shipped page that redirects itself fires `load` twice
+   * without anybody asking for a navigation, and an errand cancelled by
+   * that is an errand that never runs on the two journeys opening on the
+   * sign-in page.
+   */
+  let era = 0;
 
   // The journey being walked, and how far along it. Null is the free
   // drive: the table of contents on screen, the glass away, the cards
@@ -157,14 +188,26 @@
   /*
    * A card press: the world, the pointer, and the page it opens. The
    * cards are the free drive now (#238) - a tester who wants one
-   * feature rather than a story - and they keep the behavior they had.
+   * feature rather than a story.
+   *
+   * AND THE SAME ERRAND A STOP GETS, BUILT THE SAME WAY. A card can
+   * land on the wrong tab or in front of a locked box exactly as a stop
+   * can, and the card that opens the keyholder's desk is the case: with
+   * no errand it lands with the page's key box empty, and the pointer
+   * telling a viewer to unlock the rows is a pointer at a dead end.
+   * The two lines are deliberately identical to goToStop's - a free
+   * drive with a staging path of its own is the drift the journeys'
+   * own header warns about, one surface down.
    */
   function stage(action) {
     active = action;
     const chosen = stageWorld(action.scenario);
     $("try-next").textContent = action.try;
     paintFeatures();
-    goTo(action.open || chosen.start, null);
+    const todo = action.press || action.key || action.scroll
+      ? { press: action.press, key: action.key, scroll: action.scroll }
+      : null;
+    goTo(action.open || chosen.start, todo);
   }
 
   /*
@@ -188,6 +231,7 @@
   function open(file) {
     const path = MIRROR + file;
     const frame = $("stage");
+    era += 1;
     if (frame.getAttribute("src") === path) {
       frame.contentWindow.location.replace(path);
     } else {
@@ -215,6 +259,7 @@
   function resync() {
     const there = Demo.frameAddressOf(frameHref());
     destination = there.file;
+    shownAt = there.shown;
     $("frame-path").textContent = there.shown;
     paintDestinations();
     if (!there.inside) {
@@ -309,10 +354,18 @@
    * budget runs out - which the caller reads for itself, because absent
    * and not-yet-ready are two different sentences to a viewer.
    */
-  function waitFor(doc, id, ready) {
+  function waitFor(doc, id, ready, live) {
     return new Promise(function (resolve) {
       let left = READY_TRIES;
       const look = function () {
+        // An abandoned errand stops WAITING as well as stops talking.
+        // Five seconds of polling a document nobody is looking at costs
+        // the walk nothing visible, which is exactly why it would be
+        // left in place - and the caller checks again on the way out.
+        if (!live()) {
+          resolve(null);
+          return;
+        }
         const found = doc.getElementById(id);
         if (found && ready(found)) {
           resolve(found);
@@ -343,6 +396,38 @@
     if (doc === null) return;
 
     /*
+     * The navigation this errand belongs to. Everything below is
+     * suspended at least once, and each resumption asks whether the
+     * viewer is still on the stop that armed it - because the answer
+     * decides between reporting and interrupting.
+     */
+    const mine = era;
+    const live = function () { return mine === era; };
+
+    /*
+     * WHAT THE ERRAND COULD NOT DO, KEPT RATHER THAN REPLACED.
+     *
+     * Each act said its own failure straight into the status line, and
+     * the next act's sentence replaced it: a stop whose press found a
+     * control the page never enabled and whose move then found a section
+     * the page was not showing left the viewer reading "the page is not
+     * showing that section" with the press that never happened already
+     * gone. The cause is the half that explains why the screen does not
+     * match the words, and the symptom without it reads as a different
+     * defect.
+     *
+     * So the complaints accumulate and the line is rewritten from all of
+     * them. Said as each one happens rather than gathered up and said at
+     * the end, because a viewer watching the page do nothing deserves
+     * the first sentence at the moment it is true.
+     */
+    const trouble = [];
+    const complain = function (text) {
+      trouble.push(text);
+      say(trouble.join(" "));
+    };
+
+    /*
      * THE KEY GOES IN BEFORE ANYTHING IS PRESSED, and that ordering is
      * the errand rather than a coincidence of how this function is
      * written. The stop that reaches the publishing card gets there by
@@ -351,7 +436,11 @@
      * file first" - a dead end reached by doing all three of the right
      * things in the wrong order.
      */
-    if (todo.key) await stageKey(doc);
+    if (todo.key) {
+      const why = await stageKey(doc, live);
+      if (!live()) return;
+      if (why !== null) complain(why);
+    }
 
     /*
      * A control that is not there is SAID, not skipped.
@@ -374,19 +463,20 @@
      * `load`.
      */
     if (todo.press) {
-      const control = await waitFor(doc, todo.press, PRESSABLE);
+      const control = await waitFor(doc, todo.press, PRESSABLE, live);
+      if (!live()) return;
       if (control && PRESSABLE(control)) {
         control.click();
       } else if (control) {
-        say("This stop presses the page's " + todo.press + " control, and " +
-          "the page has not made it pressable in this staging - so " +
-          "nothing was pressed, and what is on screen is whatever the " +
-          "page opened on.");
+        complain("This stop presses the page's " + todo.press +
+          " control, and the page has not made it pressable in this " +
+          "staging - so nothing was pressed, and what is on screen is " +
+          "whatever the page opened on.");
       } else {
-        say("This stop opens the page's " + todo.press + " control, and " +
-          "the page in the frame has no such control - so what is on " +
-          "screen is whatever the page opened on, not what this stop " +
-          "describes.");
+        complain("This stop opens the page's " + todo.press +
+          " control, and the page in the frame has no such control - so " +
+          "what is on screen is whatever the page opened on, not what " +
+          "this stop describes.");
       }
     }
 
@@ -417,18 +507,19 @@
        * WAITED FOR rather than looked at once, because the press above
        * is what reveals it and the page's own work happens in between.
        */
-      const section = await waitFor(doc, todo.scroll, PAINTS);
+      const section = await waitFor(doc, todo.scroll, PAINTS, live);
+      if (!live()) return;
       if (section && PAINTS(section)) {
         section.scrollIntoView({ block: "start" });
       } else if (section) {
-        say("This stop moves the page to its " + todo.scroll + " section, " +
-          "and the page is not showing that section in this staging - so " +
-          "what is on screen is wherever the page opened.");
+        complain("This stop moves the page to its " + todo.scroll +
+          " section, and the page is not showing that section in this " +
+          "staging - so what is on screen is wherever the page opened.");
       } else {
-        say("This stop moves the page to its " + todo.scroll + " section, " +
-          "and the page in the frame has no such section - so what is on " +
-          "screen is wherever the page opened, not what this stop " +
-          "describes.");
+        complain("This stop moves the page to its " + todo.scroll +
+          " section, and the page in the frame has no such section - so " +
+          "what is on screen is wherever the page opened, not what this " +
+          "stop describes.");
       }
     }
 
@@ -438,37 +529,47 @@
    * The key text, read once and kept, so a journey walked twice reads
    * the file once.
    *
-   * A failure is SAID rather than swallowed. The stop's whole promise
-   * is that the box is already filled, so a viewer who presses Fetch
-   * and decrypt against an empty box would be told by the product to
-   * paste a key file they have no way to obtain - which is the exact
-   * dead end this stop exists to remove, arriving with an extra step in
-   * front of it.
+   * A failure is REPORTED rather than swallowed, and returned rather
+   * than said: the errand owns the status line, because it is the errand
+   * that knows whether the viewer is still on the stop this belongs to
+   * and what else has already gone wrong on it. The staging's whole
+   * promise is that the box is already filled, so a viewer who presses
+   * Fetch and decrypt against an empty box would be told by the product
+   * to paste a key file they have no way to obtain - the exact dead end
+   * this exists to remove, arriving with an extra step in front of it.
+   *
+   * THE WRITE IS GUARDED, NOT ONLY THE SENTENCE. The read suspends, so
+   * an abandoned errand resumes holding a document the frame has already
+   * replaced - and writing a key into a page the viewer walked away from
+   * puts key material where nothing asked for it and posts the
+   * disclosure line into the feed of a staging that staged no key.
    */
-  async function stageKey(doc) {
+  async function stageKey(doc, live) {
     const box = doc.getElementById("keyfile");
-    if (!box) return;
+    if (!box) return null;
     try {
       if (devKey === null) {
         const answer = await root.fetch(Demo.DEV_KEY_FILE);
         devKey = await answer.text();
       }
-      box.value = devKey;
-      /*
-       * Said the moment it happens, and to the feed rather than the
-       * status line, because the feed is the column a viewer is already
-       * reading and this line has to be beside the key rather than
-       * instead of the last thing that happened. The words are
-       * demo-stub.js's: a key going into a box in front of the person
-       * judging this design needs the sentence about what kind of key it
-       * is to travel with the ACT, not with one stop's narration.
-       */
-      feedLine(Demo.KEY_STAGED_LINE);
     } catch (error) {
-      say("The demo's throwaway key could not be read (" +
+      return "The demo's throwaway key could not be read (" +
         ((error && error.message) || error) + "), so this stop could not " +
-        "fill the key box for you.");
+        "fill the key box for you.";
     }
+    if (!live()) return null;
+    box.value = devKey;
+    /*
+     * Said the moment it happens, and to the feed rather than the
+     * status line, because the feed is the column a viewer is already
+     * reading and this line has to be beside the key rather than
+     * instead of the last thing that happened. The words are
+     * demo-stub.js's: a key going into a box in front of the person
+     * judging this design needs the sentence about what kind of key it
+     * is to travel with the ACT, not with one stop's narration.
+     */
+    feedLine(Demo.KEY_STAGED_LINE);
+    return null;
   }
 
   /*
@@ -746,6 +847,11 @@
   function leaveTour() {
     walk = null;
     errand = null;
+    // Leaving is the one abandonment that moves no frame, so the era has
+    // to be bumped here by hand: an errand already waiting would
+    // otherwise finish and report about a stop the viewer has just left,
+    // over the sentence this function ends on.
+    era += 1;
     keepAwake(false);
     lock(false);
     $("tour-run").setAttribute("hidden", "");
@@ -854,8 +960,32 @@
         "start.");
     }
 
+    /*
+     * A PRESS THAT CANNOT ACT STILL SAYS SO.
+     *
+     * This was the destination being non-null with no else at all. The
+     * frame reaches pages that are none of the four - 404.html is a real
+     * page of the product, reachable and deliberately no destination -
+     * and there the press did nothing and reported nothing, which is the
+     * same silent class the address readout above the frame exists to
+     * end, on the one control UAT sends a driver through for every page
+     * it holds against the mockup.
+     *
+     * The sentence names the address rather than the page, because the
+     * address is what a viewer does next: asking for it by hand is the
+     * only way to read that page at the window's own width, and naming
+     * the page here would be this file keeping a second list of which
+     * pages are destinations.
+     */
     $("open-tab").addEventListener("click", function () {
-      if (destination) root.open(MIRROR + destination, "_blank");
+      if (destination) {
+        root.open(MIRROR + destination, "_blank");
+        return;
+      }
+      say("This opens whichever of the four destinations the frame is " +
+        "showing in a tab of its own, and " + shownAt + " is none of " +
+        "them - so nothing was opened. Ask for that address by hand to " +
+        "read the page at this window's own width.");
     });
 
     /*

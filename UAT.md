@@ -121,8 +121,9 @@ the column beside it stays live at every stop. Where a section below
 asks you to *do* something **in the frame**, it names the stop that
 hands it over; where it needs a state no stop leaves live, it sends you
 to **Free drive — every feature on its own card**, the disclosure under
-the walk panel, whose cards stage one state at a time and never put the
-glass on.
+the walk panel, whose cards stage one state at a time — including the
+throwaway key, where the page a card opens asks for one — and never put
+the glass on.
 
 **What just happened**, the card under the journeys, is the console
 saying what a press really did — the staging first, then a line for
@@ -133,9 +134,11 @@ redirects itself, so a readout disagreeing with what you can see is a
 defect rather than the console lagging. **Go anywhere** keeps every
 page reachable regardless of what you pressed last — including from
 behind the glass — and marks which of the four the frame is on.
-**Open this page in its own tab** takes whatever the frame is showing
-out of the frame, which is the way to read a page at the window's own
-width. **Reset the demo state** puts the published snapshot and any
+**Open this page in its own tab** takes whichever of the four
+destinations the frame is showing out of the frame, which is the way to
+read a page at the window's own width; on a page that is none of them it
+says so and names the address to ask for by hand instead of opening
+nothing. **Reset the demo state** puts the published snapshot and any
 revocation back and stages the current stop again, so the frame is
 showing the world the console has just claimed. **Desktop** and
 **Phone** size the frame, which is a width and not a device.
@@ -228,7 +231,7 @@ card gives you the sign-in page live, and **Open Your page** on the
 | A1.16 | **Block the page's scripts** and reload a signed-in page, then `index.html` | **Theme** still opens and closes, and the four dots are still on the sign-in page. Nothing repaints when pressed, which is expected — what matters is that the control is still there and still operable | The disclosure is an element, not a script, and the swatches are simply in the page. A palette control that vanishes with its script is one nobody can reach on the day it is needed most |
 | A1.17 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
 | A1.18 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint, and #191 settled the set |
-| A1.19 | Put the mockup beside each of the five pages and read them together — **Open this page in its own tab** takes each one out of the frame first | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste. Read in the frame it is a page at somebody else's width, which is the one comparison that finds differences that are not there |
+| A1.19 | Put the mockup beside each of the five pages and read them together — **Open this page in its own tab** takes the four destinations out of the frame; `404.html` is none of them, so the button says so and names the address, which you then ask for by hand | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste. Read in the frame it is a page at somebody else's width, which is the one comparison that finds differences that are not there |
 
 ### A2 · Signed out, nothing is reachable — journey "Your first weigh-in", stop 1
 
@@ -369,11 +372,13 @@ try**, hands the frame over — it is the only stop of this journey that
 does — so A8.6 is pressed there. That hand-over also matters for the
 clock: the console holds this page awake at every reading stop and
 lets go at the last one, which is what makes the idle rows measure the
-real thing rather than a page nobody is touching. **This journey
-stages no key**, and the rows table, what Publish sends and the idle
-warning all wait on a decrypt, so A8.3, A8.4 and A8.7 to A8.10 are
-driven on **The keyholder's desk**, last stop, after **Fetch and
-decrypt**. A8.2 needs a member session on the admin page: press **Open
+real thing rather than a page nobody is touching. The rows table, what
+Publish sends and the idle warning all wait on a decrypt; two journeys
+reach one, since this one's stops 1 and 5 stage the throwaway key and
+press the page's own **Fetch and decrypt** for you as well. Drive A8.3,
+A8.4 and A8.7 to A8.10 on **The keyholder's desk**, last stop, so those
+five are read off one open surface rather than two. A8.2 needs a member
+session on the admin page: press **Open
 Your page** on the **Weigh in** card in the free drive, then **Admin**
 under **Go anywhere**.
 
@@ -384,7 +389,7 @@ under **Go anywhere**.
 | A8.3 | Delete a row from the decrypted table | It disappears from the table | Step 7's behavior |
 | A8.4 | **Immediately press Publish, then press Show what would be sent and read it** | The deleted row's data is **not** in it | The sharp hazard: a deleted row surviving in derived state is resurrected by the next Publish |
 | A8.5 | Read the member's own count afterwards | **Not drivable on this arm** — the stubbed Worker answers `/me` with a fixed corpus, so the count cannot move whatever the table does, and a driver reading "they agree" here has compared two constants. **AL8 is the row that accepts it.** Record A8.5 as not performed | Counts and the table disagreeing is what the member panel is measured on, and a staged agreement is not evidence of it |
-| A8.6 | Press **Unpublish** with the key field empty | It works, and **What just happened** says the snapshot is taken down | It needs the session, not the key — and submissions are left untouched |
+| A8.6 | Press **Unpublish** with the key field empty | It works, and **What just happened** says the snapshot is taken down. What the charts then show is A10.1 | It needs the session, not the key — and submissions are left untouched |
 | A8.7 | With the page decrypted, stop touching it. In the console: `let skip = 8*60*1000; const real = Date.now; Date.now = () => real.call(Date) + skip;` and wait a second | The warning card appears, counting **down from 2:00** to the second, and focus moves to **Stay on this page** | Ten minutes idle, two of them warning — the owner's numbers, ratified on #91. The page measures the clock rather than counting its own ticks, which is what makes this drivable in seconds and what makes a sleeping laptop wake up expired instead of rested |
 | A8.8 | Press **Stay on this page**. **Leave the offset in place** — winding the clock back is read as expired, deliberately, so restoring `Date.now` now would end the session rather than the test | The warning goes at once, not at the next tick, and the page is still decrypted | A card that lingered after the press reads as a control that did not work. And a last-interaction time that is somehow ahead of now is not evidence somebody is here; it is the absence of it, which the page treats as expired on purpose |
 | A8.9 | Push the offset past ten minutes from that press — `skip += 11*60*1000` — and watch both the page and **What just happened** | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on the sign-in page signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
@@ -415,13 +420,14 @@ have nothing to press. #87 is post-cutover.
 > charts page that looks like a failure and is not.
 
 The stop is the charts drawn on that corpus, and the rows that only
-read them are driven there. A10.2 and A10.5 press something, so drive
-those from **See the charts** on the **Muse's charts** card in the free
-drive, which stages the same corpus and leaves the frame live.
+read them are driven there. A10.1, A10.2 and A10.5 press something, so
+drive those from the free drive: A10.2 and A10.5 from **See the charts**
+on the **Muse's charts** card, which stages the same corpus and leaves
+the frame live, and A10.1 from the card its own row names.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A10.1 | Open `charts.html` with nothing published | **Not drivable on this arm.** Every staging carries a published snapshot, and taking one down with **Unpublish** does not reach this: the charts draw again from the staged corpus. Record A10.1 as not performed | This must be **distinguishable** from being signed out |
+| A10.1 | Take the figures down and then open the charts — in the free drive press **Run the panel** on **The admin's panel** card, press **Unpublish** in the frame, then press **Muse's charts** under **Go anywhere** | The page reports that **nothing has been published** and draws no figures at all — not the staged corpus over again. **What just happened** carries the takedown and then the charts' own refusal. **Reset the demo state** puts the snapshot back | This must be **distinguishable** from being signed out |
 | A10.2 | Press **Sign out**, then press **Muse's charts** under **Go anywhere** | Sent to sign-in, **not** a "nothing published" message | A member told "nothing published" because their session expired learns something false |
 | A10.3 | With figures published, open it again | The combined-weight hero reads first, before any chart | It is the number the group actually came for |
 | A10.4 | Read the movement under the hero | Either a signed figure against a stated earlier date, or a line saying too few entries have moved since that date to say by how much. **A blank is a failure** | A delta with no baseline named is decoration, and a blank where a group has plainly changed reads as "nothing moved" |
