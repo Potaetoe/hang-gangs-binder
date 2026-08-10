@@ -37,7 +37,16 @@ code { font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
        font-size: 0.92em; }
 a { color: #9ec5ff; }
 
-.top { max-width: 60rem; margin-bottom: 1.2rem; }
+/* The explanation, under the working surface rather than over it. It
+ * spans both columns instead of sitting in one, because a paragraph
+ * measured to a 26rem column beside an empty half-page reads as a
+ * leftover rather than as the page's own closing note. */
+.about {
+  grid-column: 1 / -1;
+  max-width: 60rem;
+  margin-top: 0.4rem;
+}
+.about h1 { margin-top: 0; }
 .lede { margin: 0 0 0.5rem; color: var(--dim); }
 .warn {
   margin: 0;
@@ -222,11 +231,18 @@ main {
   color: var(--dim);
 }
 
-/* The feed is capped and scrolls inside itself, so a page that asks
- * for many things never pushes the frame down the stage - the frame
- * is the thing being judged and the feed is its caption. The empty
- * list paints its own placeholder, so there is no separate empty
- * state for the script to keep in step. */
+/* The narration card, under the journeys in the driver column. */
+.feed-card { margin: 1rem 0 1.2rem; }
+.feed-card h2 { margin-bottom: 0.4rem; }
+
+/* The feed is capped and scrolls inside itself, so a walk that narrates
+ * many steps never pushes "Go anywhere" off the bottom of this column -
+ * and on a phone-width window the column is the whole page, where an
+ * uncapped list would bury every control under it. The console scrolls
+ * this box to its end as each line lands, so the cap costs the oldest
+ * step rather than the newest. The empty list paints its own
+ * placeholder, so there is no separate empty state for the script to
+ * keep in step. */
 #feed {
   margin: 0 0 0.4rem;
   padding: 0.45rem 0.7rem 0.45rem 2.2rem;

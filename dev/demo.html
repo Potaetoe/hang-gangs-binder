@@ -19,36 +19,6 @@
 </head>
 <body>
 
-<header class="top">
-  <h1>Demo console</h1>
-  <p class="lede">
-    Four walks through the Binder. Pick one and press Next — each stop
-    stages what it needs and puts the page in the frame, and the last
-    stop of every walk hands the frame over to you. The pages in the
-    frame are the shipped files, not a recording of them.
-  </p>
-  <p class="warn" id="offline-note">
-    Nothing here reaches a real endpoint. The Worker's answers are
-    stubbed, and the only keys involved are the throwaway pairs committed
-    under <code>dev/</code>.
-  </p>
-  <!--
-    Replaced by dev/demo-bake.mjs with the commit a hosted build was
-    taken at. Served live, this console reads apps/web off disk on every
-    request and cannot be stale, so it says so; a baked copy is stale the
-    moment the next slice merges and has to admit which one it is. The
-    markers are what the bake looks for - remove them and it refuses to
-    write rather than shipping a snapshot with no date on it.
-  -->
-  <!-- BAKED-AT -->
-  <p class="small" id="stamp">
-    Live from this checkout — every page in the frame is read out of
-    <code>apps/web</code> as you ask for it, so this is whatever is on
-    disk right now.
-  </p>
-  <!-- /BAKED-AT -->
-</header>
-
 <main>
   <section class="driver">
     <!--
@@ -85,6 +55,26 @@
       <div class="features" id="features"></div>
     </details>
 
+    <!--
+      The feed. A press that works can look like nothing happening - a
+      proof that "signed out means signed out" is just the sign-in page
+      appearing - so the console says what a press really did. Every
+      line is computed from an event that occurred: the staging the
+      press wrote, or an answer the stubbed Worker gave. The pointer
+      under it names the one thing to try in the frame next.
+
+      It reads beside the narration rather than over the frame: this
+      column is where a viewer is already looking, and the stage column
+      is for the product. Its own scrollbox, because a walk's steps
+      accumulate and this card must not push "Go anywhere" off the
+      bottom of a phone-width column.
+    -->
+    <div class="feed-card">
+      <h2>What just happened</h2>
+      <ol id="feed" aria-live="polite"></ol>
+      <p id="try-next"></p>
+    </div>
+
     <h2>Go anywhere</h2>
     <p class="muted small">
       The site's own navigation is part of the product, so every page
@@ -112,17 +102,6 @@
            aria-label="Frame size"></div>
     </div>
     <!--
-      The feed. A press that works can look like nothing happening - a
-      proof that "signed out means signed out" is just the sign-in page
-      appearing - so the console says what a press really did. Every
-      line is computed from an event that occurred: the staging the
-      press wrote, or an answer the stubbed Worker gave. The pointer
-      under it names the one thing to try in the frame next.
-    -->
-    <h2>What just happened</h2>
-    <ol id="feed" aria-live="polite"></ol>
-    <p id="try-next"></p>
-    <!--
       The frame, and the glass over it.
 
       A journey is read, not driven, until its last stop: a walk whose
@@ -138,6 +117,51 @@
            title="This stop is for reading. The last stop of a journey
                   hands the frame over." hidden></div>
     </div>
+  </section>
+
+  <!--
+    What this console IS, below the thing it is (owner, 2026-08-10).
+
+    The title, the four-walks explanation and the honesty banner opened
+    the page and pushed the journeys and the frame under a wall of
+    words, so a viewer met the explanation before the working surface.
+    They read after it now, spanning both columns, with the frame-size
+    controls and everything else above - the page opens on what somebody
+    came here to do.
+
+    The banner stays in ordinary flow and full width rather than being
+    tucked into a column: it is the demo's honesty pledge and below the
+    fold is acceptable where hidden is not.
+  -->
+  <section class="about">
+    <h1>Demo console</h1>
+    <p class="lede">
+      Four walks through the Binder. Pick one and press Next — each stop
+      stages what it needs and puts the page in the frame, and the last
+      stop of every walk hands the frame over to you. The pages in the
+      frame are the shipped files, not a recording of them.
+    </p>
+    <p class="warn" id="offline-note">
+      Nothing here reaches a real endpoint. The Worker's answers are
+      stubbed, and the only keys involved are the throwaway pairs
+      committed under <code>dev/</code>.
+    </p>
+    <!--
+      Replaced by dev/demo-bake.mjs with the commit a hosted build was
+      taken at. Served live, this console reads apps/web off disk on
+      every request and cannot be stale, so it says so; a baked copy is
+      stale the moment the next slice merges and has to admit which one
+      it is. The markers are what the bake looks for - remove them and
+      it refuses to write rather than shipping a snapshot with no date
+      on it.
+    -->
+    <!-- BAKED-AT -->
+    <p class="small" id="stamp">
+      Live from this checkout — every page in the frame is read out of
+      <code>apps/web</code> as you ask for it, so this is whatever is on
+      disk right now.
+    </p>
+    <!-- /BAKED-AT -->
   </section>
 </main>
 
