@@ -138,11 +138,13 @@ check("the vendored faces are copied rather than read as text",
 
 /*
  * The line-ending arm, and it is here because a rebase produced it
- * rather than because somebody imagined it. .gitattributes stores this
- * repository as LF and hands Windows CRLF, and git only rewrites a
- * working file whose blob changed - so a source can sit in CRLF beside
- * a freshly checked-out artifact in LF, on a machine where nothing is
- * wrong. A build that copied those bytes would fail its own
+ * rather than because somebody imagined it. .gitattributes pins these
+ * extensions to `eol=lf`, so a checkout made under the pins is LF on
+ * every platform - but an attribute takes effect only when git writes
+ * the file, and a rebase writes only the blobs it moved. A source can
+ * therefore sit in CRLF, left over from a checkout that predates its
+ * pin, beside a freshly written artifact in LF, on a machine where
+ * nothing is wrong. A build that copied those bytes would fail its own
  * byte-compare and commit identically anyway.
  */
 check("a CRLF source builds to the same bytes as an LF one",

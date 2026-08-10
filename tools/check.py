@@ -35,9 +35,13 @@ drift.) In outline:
       table; a palette that table does not name fails)
     - eslint and ruff pass
     - every dev/ suite passes, from the crypto fixture to the Worker's
-      gating matrix - NODE_SUITES below is the roster, and it is held
-      against dev/ in both directions, so a suite that arrives without
-      a line is a failure rather than a file nobody runs (#204)
+      gating matrix - NODE_SUITES below is the roster for the Node
+      suites and PYTHON_SUITES for the ones that check a checker, and
+      both are held against dev/ in both directions, so a suite that
+      arrives without a line is a failure rather than a file nobody
+      runs (#204, and #227 for the second suffix). PYTHON_SUITES is
+      held against main() as well, because those stages are written by
+      hand rather than iterated
 
 Checks 1 and 3 are siblings and not one check with two scopes, because
 the two directories are dangerous for opposite reasons: apps/web is what
@@ -67,6 +71,7 @@ that cannot be undone is publishing a private key, and there is no
 reason to spend thirty seconds on Node suites before hearing about it.
 """
 
+import inspect
 import os
 import shutil
 import subprocess
@@ -81,6 +86,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # bar").
 SUITE_DIR = "dev"
 SUITE_SUFFIX = ".test.mjs"
+
+# The other language in the same directory. #227: the walk below read
+# .mjs and nothing else, so a stray dev/*.test.py landed unnoticed while
+# the .mjs control was caught immediately - the arm was written once and
+# the second suffix was left with the hand list #204 is about.
+PYTHON_SUITE_SUFFIX = ".test.py"
 
 # (label, path relative to the repo root). The dev/ suites are listed
 # here rather than discovered by globbing dev/*.test.mjs, because a
@@ -149,8 +160,30 @@ NODE_SUITES = [
 # stale.
 NODE_SUITES_EXCLUDED = {}
 
+# (label, path) for every Python suite main() runs. This list is NOT
+# what main() iterates, and that is deliberate rather than an oversight:
+# each Python suite is a stage written beside the checker it guards, so
+# the reader of main() meets check_docs.py's suite next to check_docs.py
+# instead of in a block at the end. The cost of that ordering is a list
+# that could name a stage nobody runs, which registration_problems()
+# below is what pays.
+PYTHON_SUITES = [
+    ("check_web CSP parser + pin", "dev/check_web.test.py"),
+    ("check_server vars parser + rules", "dev/check_server.test.py"),
+    ("check_docs registries + rules", "dev/check_docs.test.py"),
+    ("check_comments extractor + ratchet", "dev/check_comments.test.py"),
+    ("check_budget extractor + budgets", "dev/check_budget.test.py"),
+    ("check_fonts extractor + coverage", "dev/check_fonts.test.py"),
+    ("check_contrast parser + pairings", "dev/check_contrast.test.py"),
+    ("check_live parser + ledger rules", "dev/check_live.test.py"),
+    ("check.py roster rules", "dev/check.test.py"),
+]
 
-def roster_problems(listed=None, excluded=None, repo=None):
+# {path: why it is not run}. Empty for NODE_SUITES_EXCLUDED's reason.
+PYTHON_SUITES_EXCLUDED = {}
+
+
+def roster_problems(listed=None, excluded=None, repo=None, suffix=None):
     """Every way the hand roster and dev/ can disagree, as readable lines.
 
     Both directions in one walk, which is the point rather than a
@@ -164,6 +197,11 @@ def roster_problems(listed=None, excluded=None, repo=None):
     required to exist, because that is the whole of what this can say
     about one without walking a directory it has no business walking.
 
+    One walk serves both suffixes, and `suffix` is a parameter rather
+    than a second function because two functions would be two places for
+    the arrival direction to be forgotten in - which is the whole
+    ticket, twice over (#204, then #227).
+
     The parameters exist so dev/check.test.py can drive this over a
     directory it builds. Reading the real tree is the stage's job in
     main(), and a rule exercised only against the tree it guards cannot
@@ -172,6 +210,7 @@ def roster_problems(listed=None, excluded=None, repo=None):
     listed = NODE_SUITES if listed is None else listed
     excluded = NODE_SUITES_EXCLUDED if excluded is None else excluded
     repo = REPO if repo is None else repo
+    suffix = SUITE_SUFFIX if suffix is None else suffix
 
     directory = os.path.join(repo, SUITE_DIR)
     if not os.path.isdir(directory):
@@ -181,7 +220,7 @@ def roster_problems(listed=None, excluded=None, repo=None):
                 "silence as a roster that agrees." % SUITE_DIR]
 
     found = {SUITE_DIR + "/" + name for name in os.listdir(directory)
-             if name.endswith(SUITE_SUFFIX)}
+             if name.endswith(suffix)}
     registered = {path for _, path in listed}
     problems = []
 
@@ -214,6 +253,40 @@ def roster_problems(listed=None, excluded=None, repo=None):
                 "so the exclusion is a false sentence about this gate - "
                 "delete whichever of the two is wrong." % path)
 
+    return problems
+
+
+def registration_problems(listed=None, source=None):
+    """Every PYTHON_SUITES row main() does not actually run.
+
+    The link the Node side does not need. main() iterates NODE_SUITES,
+    so a line there IS a stage and there is nothing between the two to
+    drift; the Python stages are hand-written, so the roster above is a
+    claim about main() rather than a description of it - and a roster
+    that claims something nothing reads is exactly what #204 and #227
+    are both about.
+
+    main()'s own source is the evidence because the stage list only
+    exists while main() is running, and a check that imported and ran
+    the gate to find out would run the gate twice.
+    """
+    listed = PYTHON_SUITES if listed is None else listed
+    source = inspect.getsource(main) if source is None else source
+
+    problems = []
+    for label, path in listed:
+        if path not in source:
+            problems.append(
+                "%s is in PYTHON_SUITES and main() does not run it, so a "
+                "suite this file says is a stage is a file nobody "
+                "executes. Register it as a stage, or take the line out."
+                % path)
+        elif label not in source:
+            problems.append(
+                "PYTHON_SUITES calls %s \"%s\" and main() runs it under "
+                "another name. The label is what the stage table prints, "
+                "so the two disagreeing means the roster describes a run "
+                "nobody sees." % (path, label))
     return problems
 
 
@@ -300,8 +373,15 @@ def main():
     results = []
     node = find_node()
 
-    results.append(("apps/web publishable", run(
-        "apps/web publishable", [sys.executable, "tools/check_web.py"]
+    # The label names the design gate as well as publishability because
+    # checks 24 and 25 live in this same file, and a stage prints one
+    # name for everything under it: a mockup-token failure was surfacing
+    # under "apps/web publishable", which says neither what broke nor
+    # which ruling it broke (P3 F8). dev/check.test.py reads this label
+    # rather than the argv beside it, so it cannot quietly shorten again.
+    results.append(("apps/web publishable + the mockup's design gate", run(
+        "apps/web publishable + the mockup's design gate",
+        [sys.executable, "tools/check_web.py"]
     )))
 
     # dist/ is what the deploy job publishes and apps/web is what a person
@@ -439,18 +519,25 @@ def main():
         [sys.executable, "dev/check_live.test.py"]
     )))
 
-    # NODE_SUITES against dev/, in both directions, before the suites it
-    # governs run below. In-process rather than a subprocess like its
-    # neighbors, because the thing being checked IS NODE_SUITES thirty
-    # lines up: a second interpreter would import this file only to read
-    # the list back out of it. #204.
-    roster = roster_problems()
+    # The two rosters against dev/, in both directions, before the
+    # suites they govern run below. In-process rather than a subprocess
+    # like its neighbors, because the thing being checked IS the two
+    # lists thirty lines up: a second interpreter would import this file
+    # only to read them back out of it. #204, then #227 for the Python
+    # half - which needs the third call as well, because its stages are
+    # written by hand rather than iterated.
+    roster = (roster_problems()
+              + roster_problems(PYTHON_SUITES, PYTHON_SUITES_EXCLUDED, None,
+                                PYTHON_SUITE_SUFFIX)
+              + registration_problems())
     print("\n=== dev/ suite roster ===", flush=True)
     for problem in roster:
         print(problem)
     if not roster:
-        print("ok - NODE_SUITES and %s/*%s name the same set, and every "
-              "exclusion still names a file." % (SUITE_DIR, SUITE_SUFFIX))
+        print("ok - NODE_SUITES and %s/*%s name the same set, PYTHON_SUITES "
+              "and %s/*%s do too, every exclusion still names a file, and "
+              "main() runs every Python suite the roster claims."
+              % (SUITE_DIR, SUITE_SUFFIX, SUITE_DIR, PYTHON_SUITE_SUFFIX))
     results.append(("dev/ suite roster", not roster))
 
     # This gate's own roster rules. Every other checker in tools/ has a
