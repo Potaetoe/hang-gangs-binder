@@ -138,9 +138,9 @@ export default [
      * dev/crypto-browser-check.js runs the crypto suite in a real browser
      * under the published CSP, which is the half dev/crypto.test.mjs
      * cannot reach from Node. It is a classic script like everything in
-     * apps/web, and it is here rather than there because apps/web is
-     * copied verbatim to the live site and a test page is not something
-     * to publish.
+     * apps/web, and it is here rather than there because ./run build
+     * takes apps/web whole into the published dist/ - it strips comments
+     * and nothing else - and a test page is not something to publish.
      */
     files: ["dev/crypto-browser-check.js"],
     languageOptions: {
@@ -166,8 +166,8 @@ export default [
      * The demo's browser files.
      *
      * Classic scripts like everything in apps/web, and in dev/ for the
-     * same reason crypto-browser-check.js is: apps/web is copied verbatim
-     * to the live site and a demo harness is not something to publish.
+     * same reason crypto-browser-check.js is: apps/web goes whole into
+     * the published dist/ and a demo harness is not something to publish.
      *
      * The worker globals are not decoration. dev/demo-corpus.js runs in a
      * Web Worker precisely because a worker has no `document`, which is

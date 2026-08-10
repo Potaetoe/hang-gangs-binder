@@ -40,9 +40,10 @@ drift.) In outline:
       a line is a failure rather than a file nobody runs (#204)
 
 Checks 1 and 3 are siblings and not one check with two scopes, because
-the two directories are dangerous for opposite reasons: apps/web is
-copied verbatim to a public site, and server/ is the directory that gets
-run. See the docstring in tools/check_server.py.
+the two directories are dangerous for opposite reasons: apps/web is what
+dist/ is built from, so anything landing in it is published, and server/
+is the directory that gets run. See the docstring in
+tools/check_server.py.
 
 The linters are a gate, not a build: nothing they run rewrites a file,
 and they refuse a release rather than producing one.

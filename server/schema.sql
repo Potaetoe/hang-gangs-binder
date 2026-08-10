@@ -223,8 +223,8 @@ CREATE TABLE IF NOT EXISTS snapshots (
 --
 -- That is not a relaxation of the rule above it. Each page ships the
 -- copy it needs in its own HTML and reads this table to override it,
--- and apps/web is copied verbatim to a public site - so these values
--- stand in for bytes anybody can already fetch. A gate here would
+-- and that HTML is published in dist/ - so these values stand in for
+-- bytes anybody can already fetch. A gate here would
 -- promise a confidentiality the fallback does not have, and the cost of
 -- promising it is that somebody eventually puts something private in a
 -- table meant for site copy. Nothing about a person goes here; the

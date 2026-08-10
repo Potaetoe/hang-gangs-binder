@@ -76,20 +76,33 @@ and five pins hundreds of percent above them. A growth-only budget
 would have reported that as a very light site.
 
 Ten percent of headroom against a twenty-five percent stale limit
-leaves a fifteen-point band for ordinary drift. Most of that band is
-spent on something measured rather than assumed: THE SAME BYTES DO NOT
-GZIP TO THE SAME SIZE ON EVERY MACHINE. Python 3.14 on Windows links
-zlib-ng, the Ubuntu runner links stock zlib, and at level 9 zlib-ng
-compresses this tree 0.8% to 4.3% smaller - 404.html is 12,979 B on the
-owner's machine and 13,543 B in CI (run 31255416749).
+leaves a fifteen-point band for ordinary drift. Part of that band pays
+for something measured rather than assumed: THE SAME BYTES DO NOT GZIP
+TO THE SAME SIZE ON EVERY MACHINE. Python 3.14 on Windows links
+zlib-ng, the Ubuntu runner links stock zlib, and level 9 does not agree
+between them.
 
-So a byte-exact budget is not available across the two machines that
-run this gate, and the ceilings below are pinned against the LARGER of
-the two figures. Pin a new one the same way: take the number CI prints
-if the two disagree, or the gate passes locally and fails on the
-runner. The 25% stale limit is what leaves room in the other
-direction - the machine that measures ~4% lower still sits well inside
-it.
+HOW BIG THE GAP IS, AND WHY THE NUMBER IS NOT WRITTEN DOWN. It has
+already moved once, by a lot, and in both senses. When these totals were
+mostly text the two machines differed by whole percents; the vendored
+woff2 faces then made nearly all of every total here already-compressed
+bytes that gzip cannot move, and #181 took the comments out of what is
+left, so the disagreement now lives in a small text share and the last
+measurement put it under a tenth of a percent - with the local figure
+coming out LARGER than CI's, which is the opposite of the direction this
+file recorded when the totals were text. A number pinned in this prose
+would be wrong again after the next payload change, so read the spread
+instead of trusting a figure: run this check locally and read the same
+table out of the gate log of CI's run for the same commit.
+
+So a byte-exact budget is not available across the two machines that run
+this gate, and the ceilings below are pinned against the LARGER of the
+two figures - larger by comparison, never by which machine printed it.
+That distinction is the whole of the instruction: "take the number CI
+prints" was right when it was written, and the direction flip made it
+silently wrong, which is how a pinning rule pins against the wrong side.
+Measure both, pin the bigger. The 25% stale limit is what leaves room on
+the other side.
 
 WHAT THIS CHECK DOES NOT DO
 ---------------------------
@@ -178,9 +191,10 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(REPO, "dist")
 
 # Gzipped bytes per page: the page plus everything it pulls in. Pinned
-# at roughly HEADROOM above what each measures, taking the CI runner's
-# figure wherever it and the owner's machine disagree - see the
-# docstring on zlib-ng.
+# at roughly HEADROOM above what each measures, taking the LARGER figure
+# wherever the owner's machine and the CI runner disagree - whichever of
+# them printed it. See the docstring on zlib-ng for why naming a machine
+# there is the part that goes wrong.
 #
 # These live here, outside apps/web, and that is the point rather than
 # an accident of layout. AGENTS.md, "The review bar": a check computed
@@ -257,11 +271,13 @@ WEB = os.path.join(REPO, "dist")
 # ceiling that has stopped tracking its page has stopped being a budget.
 #
 # admin.html is the one to watch. It sat at 98% of its old ceiling on
-# this machine BEFORE that re-pin, and the docstring's zlib-ng-versus-
-# stock-zlib gap runs to 4.3% in the direction that matters - so the
-# number was one CI run away from failing on bytes nobody had added
-# since. That is the case for re-pinning against the measurement rather
-# than against whichever pin happens to still be clear.
+# this machine BEFORE that re-pin, against a machine-to-machine gap the
+# docstring then measured in whole percents - so the number was one CI
+# run away from failing on bytes nobody had added since. That is the
+# case for re-pinning against the measurement rather than against
+# whichever pin happens to still be clear, and it survives the gap
+# having shrunk: the argument is about tracking the page, not about how
+# wide the noise band happened to be that week.
 #
 # The per-page structural pass (#68/#127) moves all five again, and by
 # less than the shell did - gzipped, on this machine:
@@ -282,10 +298,9 @@ WEB = os.path.join(REPO, "dist")
 # did, and that is the shape to expect from any component work here.
 #
 # Re-pinned at HEADROOM against the new measurement, all five again and
-# for the reason above: 93% of a pin is not a failure, but it is 4.3%
-# from being one on a runner whose zlib compresses this tree larger than
-# the one that measured it, and a ceiling nobody re-pinned is a ceiling
-# that stopped tracking its page.
+# for the reason above: 93% of a pin is not a failure, but at the time
+# it was within the machine-to-machine gap of being one, and a ceiling
+# nobody re-pinned is a ceiling that stopped tracking its page.
 #
 # And then all five fall, which is the first time these numbers have
 # moved DOWN. #181 ships the site from dist/ - apps/web with the comments
@@ -337,22 +352,29 @@ CEILINGS = {
     # member-held keys), so the budget for what the page does moved with
     # what the page does. It is not a page that grew by drift.
     #
-    # The number is chosen against the one hazard a local measurement
-    # cannot see. At 138200 the page measured 1.47% clear, and this file
-    # documents CI gzip variance of up to 4.3% - so the margin was
-    # inside the noise of the two machines that run this gate, and a
-    # green local run would not have predicted the runner. +4000 B
-    # restores 4.25%, which sits just under that documented worst case
-    # rather than comfortably above it; that is the honest description
-    # of what was bought.
+    # The number was chosen against the one hazard a local measurement
+    # cannot see. At 138200 the page measured 1.47% clear, against the
+    # whole-percent machine-to-machine variance this file documented at
+    # the time - so the margin read as inside the noise of the two
+    # machines that run this gate, and a green local run would not have
+    # predicted the runner.
+    #
+    # That variance has since been re-measured far smaller (see the
+    # docstring), which means the headroom bought here is wider than the
+    # hazard it was bought against. THE CEILING IS NOT REVISITED ON THAT
+    # BASIS. It is the owner's reviewed act on a decision question, not a
+    # figure derived from the variance, and STALE_ABOVE is what polices
+    # it from the other direction if the page ever stops earning it.
     #
     # Rejected in the same decision, and recorded so they are not
     # re-proposed as savings nobody considered: stripping the wordmark
-    # face's OpenType layout would free 3532 B and leave 404.html 42 B
-    # above the stale-headroom floor below - a 0.046% margin on the
-    # other arm of this same check, which relocates the risk rather than
-    # removing it. Subsetting the mono face is real and larger, and is a
-    # slice of its own rather than a thing to fold into a feature.
+    # face's OpenType layout would free about 3.5 KB and land 404.html
+    # within a few dozen bytes of the stale-headroom floor below - run
+    # this check and take 3532 off 404.html's total to see the margin
+    # today, because it moves with every change to that page. It
+    # relocates the risk onto the other arm of this same check rather
+    # than removing it. Subsetting the mono face is real and larger, and
+    # is a slice of its own rather than a thing to fold into a feature.
     #
     # The standing no-ceiling-moves ruling on #85 is superseded FOR THIS
     # ONE CEILING by the owner personally. Every other pin here stands,
@@ -581,7 +603,8 @@ def budget_problems(measured, ceilings):
     """[problem] for measured pages held against pinned ceilings.
 
     Pure, over a found-set, so both arms can be exercised without
-    editing a file that is copied verbatim to the published site.
+    editing the published tree this check measures - which since #181
+    is dist/, and editing that by hand fails the build stage above.
     """
     problems = []
 

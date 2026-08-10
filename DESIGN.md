@@ -177,9 +177,10 @@ window, that timer needs no route of its own to hold one open. That
 timer is `IDLE_WINDOW` in `apps/web/admin.js`, described next.
 
 **`admin.html` also ends itself when nobody is there**, and that half is
-the page's rather than the Worker's — *the two numbers in this paragraph
-await owner ratification on #91.* Ten minutes of no interaction ends the
-tab; the last two of them are spent warning, visibly and counting down.
+the page's rather than the Worker's. Ten minutes of no interaction ends
+the tab; the last two of them are spent warning, visibly and counting
+down. Both numbers are the owner's own, ratified on #91 rather than
+settled here.
 Ten is the ASD STIG's own figure for a privileged session (V-222390),
 adopted verbatim rather than argued from this site, because a number
 nobody here invented is a number nobody here has to defend. The warning

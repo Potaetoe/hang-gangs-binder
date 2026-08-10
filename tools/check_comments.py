@@ -34,8 +34,9 @@ A RATCHET, not a sweep
 Every offender already in the tree is pinned in ALLOWLIST below, and
 cleanup rides the pull requests that next touch those files - a mass
 rewrite of comments across apps/web would be a large diff over the
-directory that is copied verbatim to the published site, for no change
-in behavior. So:
+directory the published site is built from, and can move dist/ with it
+- a comment that spanned lines leaves its newline behind - for no
+change in behavior. So:
 
  - a new occurrence anywhere in the scan set fails, naming file, line
    and phrase;

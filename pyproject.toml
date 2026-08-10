@@ -6,7 +6,7 @@
 # directly; nothing is installed, imported as a library, or published.
 #
 # Same standing as eslint.config.js: a gate, not a build. Nothing under
-# tools/ reaches the published site - the deploy job copies apps/web and
+# tools/ reaches the published site - the deploy job copies dist/ and
 # never looks at a sibling directory.
 
 [tool.ruff]
