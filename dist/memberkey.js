@@ -63,8 +63,12 @@
      
      
     if (key.extractable !== false) return "erase";
+    
+
     const raw = record.publicKeyRaw;
-    if (!raw || typeof raw !== "object") return "erase";
+    if (Object.prototype.toString.call(raw) !== "[object Uint8Array]") {
+      return "erase";
+    }
     if (raw.byteLength !== RAW_POINT_BYTES) return "erase";
     return "use";
   }

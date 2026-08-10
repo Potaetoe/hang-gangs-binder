@@ -162,8 +162,28 @@
     // This file cannot produce an extractable private key, so whatever
     // put one here could read it out again.
     if (key.extractable !== false) return "erase";
+    /*
+     * The TYPE and then the length, and the order is not cosmetic.
+     *
+     * `usable` below turns these bytes into base64 with
+     * `String.fromCharCode.apply(null, raw)`, which walks an indexed
+     * list. An ArrayBuffer of 65 bytes, a DataView over one, and a bare
+     * `{ byteLength: 65 }` all satisfy a length test and all walk to
+     * NOTHING - so the record is adopted and the member's public half
+     * comes back as the empty string. That is worse than erasing:
+     * form.js reads a falsy key as "this browser has none" and seals to
+     * the keyholder alone forever, on a browser that is holding a
+     * perfectly good private key it will never be able to use.
+     *
+     * None of the three can come from this file, which is the whole
+     * test the rule applies. Compared through Object.prototype.toString
+     * rather than `instanceof` so a value that arrived from another
+     * realm is judged by what it is rather than by which window made it.
+     */
     const raw = record.publicKeyRaw;
-    if (!raw || typeof raw !== "object") return "erase";
+    if (Object.prototype.toString.call(raw) !== "[object Uint8Array]") {
+      return "erase";
+    }
     if (raw.byteLength !== RAW_POINT_BYTES) return "erase";
     return "use";
   }
