@@ -628,9 +628,15 @@ check("a citation wrapped across two SQL comment lines is read",
 # The other side of that, and the reason the marker is two hyphens
 # rather than one or more. A leading "-" is a prose bullet, and eating
 # it reshapes the sentence a quotation is measured against.
+#
+# The block carries no asterisks on purpose. Only ONE marker comes off a
+# line, so a " * - " line has its hyphen saved by the asterisk in front
+# of it and proves nothing about the hyphen rule - which is what the
+# first version of this arm did, and a mutation to "-+" walked straight
+# past it.
 check("a leading bullet is not mistaken for a comment marker",
-      cited('/*\n * DESIGN.md, "a rule\n * - and its exception", holds.\n'
-            ' */\n', "js")
+      cited('/*\nDESIGN.md, "a rule\n- and its exception", holds.\n*/\n',
+            "js")
       == [("DESIGN.md", "a rule - and its exception")])
 
 check("a citation-shaped string literal is not read",
