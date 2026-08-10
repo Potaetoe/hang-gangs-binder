@@ -1541,8 +1541,16 @@ await check("the control those stops press is the page's own decrypt button", ()
  */
 const publishLabel = /<button[^>]*id="publish"[^>]*>\s*([^<]+?)\s*</
   .exec(shipped[ADMIN_PAGE]);
-const PROMISES_PUBLISHING = new RegExp(
-  "\\b" + publishLabel[1].split(/\s+/)[0] + "\\w*", "i");
+/*
+ * A page with no such button falls back to the word rather than throwing
+ * here. Not a softening: the arm above already fails in that case, and
+ * it fails as a reported check - where a throw at file scope takes the
+ * hundred checks after it down with it and leaves a gate that says which
+ * line died rather than which invariant broke. Found by mutation (M20).
+ */
+const PROMISES_PUBLISHING = new RegExp("\\b" +
+  (publishLabel === null ? "publish" : publishLabel[1].split(/\s+/)[0]) +
+  "\\w*", "i");
 
 const onAdminPage = (stop) =>
   (stop.open || Demo.SCENARIOS.find((one) => one.id === stop.scenario).start)
