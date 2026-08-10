@@ -53,11 +53,18 @@
  * ERASE, NEVER SKIP is the narrower second line, and it is about a
  * record filed under THIS account that does not vouch for itself: an
  * account id that does not match, a private key something could export,
- * a public half of the wrong length. Those cannot arrive from this file,
- * so whatever put them there is not this file, and the answer is to
- * destroy and regenerate rather than adopt. Adopting one means a
- * member's entries sealed to a key of unknown provenance - a row nobody
- * can open, discovered on export day.
+ * a public half of the wrong length, or a public half that is not that
+ * private key's at all. Those cannot arrive from this file, so whatever
+ * put them there is not this file, and the answer is to destroy and
+ * regenerate rather than adopt. Adopting one means a member's entries
+ * sealed to a key of unknown provenance - a row nobody can open,
+ * discovered on export day.
+ *
+ * The last of those four is the only one shape cannot settle, and it is
+ * the one an attacker who knows the format would write: sixty-five
+ * genuine bytes of somebody else's public key beside the member's own
+ * private key. `custodyRuling` asks the curve instead of the shape, and
+ * the two halves of the custody rule are split at exactly that line.
  *
  * THE MISSING KEY IS NEVER AN ERROR. Storage blocked, private browsing,
  * a browser with no IndexedDB: `ensure` answers null and the caller
@@ -88,6 +95,17 @@
 
   const CURVE = "P-256";
   const RAW_POINT_BYTES = 65;
+
+  /*
+   * A P-256 ECDH agreement is the x-coordinate of the shared point: 256
+   * bits, 32 bytes, the same figure crypto.js derives before its HKDF.
+   * Both are written out because one is what `deriveBits` is asked for
+   * and the other is how many bytes the comparison below must walk, and
+   * a comparison that measured what it was handed would be a comparison
+   * a short answer could end early.
+   */
+  const SECRET_BITS = 256;
+  const SECRET_BYTES = 32;
 
   /*
    * An account id is 64 lower-case hex characters - an HMAC-SHA-256
@@ -132,13 +150,19 @@
   }
 
   /*
-   * What to do with what the store handed back: use it, erase it, or
-   * there is nothing there.
+   * What to do with what the store handed back, judged by SHAPE alone:
+   * use it, erase it, or there is nothing there.
    *
-   * Pure, and separate from the storage for one reason: it is the whole
-   * of the custody rule, and a rule that only exists inside an
-   * IndexedDB callback is a rule that can only be tested by faking
-   * IndexedDB.
+   * Pure, synchronous, and separate from the storage for one reason: a
+   * rule that only exists inside an IndexedDB callback is a rule that
+   * can only be tested by faking IndexedDB.
+   *
+   * Shape is everything settled without a key operation, which is most
+   * of the custody rule and all of the cheap part of it. The one
+   * question it cannot reach - whether that public half is the stored
+   * private key's - is `custodyRuling` below, and a record has to pass
+   * both. Keeping this half free of promises is also what keeps it
+   * FIRST: a record filed under a foreign account never reaches a curve.
    *
    * The record arrives from a lookup on this account's own key, so the
    * account clause below is NOT what separates two members sharing a
@@ -200,6 +224,8 @@
     for (let i = 0; i < RAW_POINT_BYTES; i++) {
       if (typeof raw[i] !== "number") return "erase";
     }
+    // Sixty-five real bytes, and that is all this can say. Whether they
+    // are the stored key's sixty-five bytes is `custodyRuling`'s.
     return "use";
   }
 
@@ -288,6 +314,105 @@
     };
   }
 
+  /*
+   * IS THAT PUBLIC HALF THIS PRIVATE KEY'S? The shape rule cannot ask,
+   * and a poisoned row turns on the answer.
+   *
+   * A genuine 65-byte Uint8Array of an attacker's choosing passes every
+   * shape arm there is, survives the structured clone into IndexedDB,
+   * and carries no mark of who wrote it. Adopting one costs more than
+   * any other failure here: the member keeps a good private key, `usable`
+   * hands form.js a well-formed public half, and every entry from then
+   * on seals to a key the member cannot open - with the page showing
+   * nothing wrong, because nothing visible is wrong. It surfaces on
+   * export day, over rows already written.
+   *
+   * AGREEMENT, NOT A SIGNATURE. The stored private key is
+   * `deriveBits`-only by construction and could not sign a challenge if
+   * this file asked it to. What the curve does allow is ECDH from both
+   * ends: derive against the record's public half with a throwaway
+   * private key, derive against the record's private key with that
+   * throwaway's public half. The two secrets are equal exactly when the
+   * halves are two ends of one pair, and nothing but the real private
+   * key produces the second one.
+   *
+   * THE IMPORT IS HALF THE TEST. `importKey` refuses bytes that are not
+   * a point on P-256, so a throw there is a failed on-curve check rather
+   * than a fault to report - and it lands on the same answer as a
+   * mismatch, because both say the same thing about the row. No usage is
+   * asked for: an ECDH public key may not carry one, and this import is
+   * a validity question rather than a key being put to work.
+   *
+   * FALSE IS THE ONLY FAILURE. A mismatch, a throw, a private key whose
+   * usages cannot derive at all: every one of them is a record this file
+   * cannot vouch for, and all three land on the erase above. Not being
+   * able to perform the test is not permission to skip it.
+   *
+   * The throwaway pair is non-extractable, lives in this frame, and is
+   * never stored, returned or written down; the secrets die with the
+   * frame too, and are compared by a counted XOR over a fixed thirty-two
+   * bytes - no early return, and no base64 of a shared secret ever
+   * built, since a string would outlive the comparison and be compared
+   * by a path nobody here controls.
+   */
+  async function halvesAgree(record) {
+    try {
+      const stored = await subtle().importKey(
+        "raw", record.publicKeyRaw,
+        { name: "ECDH", namedCurve: CURVE }, false, []);
+      const ephemeral = await subtle().generateKey(
+        { name: "ECDH", namedCurve: CURVE }, false, ["deriveBits"]);
+      const theirs = new Uint8Array(await subtle().deriveBits(
+        { name: "ECDH", public: stored }, ephemeral.privateKey, SECRET_BITS));
+      const ours = new Uint8Array(await subtle().deriveBits(
+        { name: "ECDH", public: ephemeral.publicKey }, record.privateKey,
+        SECRET_BITS));
+      // The lengths ride in the accumulator rather than in a guard above
+      // it, so there is no branch at all between here and the answer. A
+      // short secret would otherwise leave the walk reading undefined
+      // past its end, which is zero on both sides and would agree.
+      let difference = (theirs.length ^ SECRET_BYTES) |
+        (ours.length ^ SECRET_BYTES);
+      for (let i = 0; i < SECRET_BYTES; i++) {
+        difference |= theirs[i] ^ ours[i];
+      }
+      return difference === 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /*
+   * The verdict `ensure` acts on: the shape rule, and then - only for a
+   * record the shape rule would adopt - the proof that its two halves
+   * are two halves of one key.
+   *
+   * SPLIT IN TWO BECAUSE THE HALVES ANSWER DIFFERENTLY, and the split is
+   * where the promises are. Everything above is provable without a
+   * browser, a database or a key; this needs WebCrypto and therefore a
+   * promise, and putting a promise into `custodyVerdict` would make the
+   * cheapest rule in the file the most expensive one to test.
+   *
+   * NOTHING IS REMEMBERED - not on this module, not on the record. A
+   * cached answer would be an answer that outlives the row it judged,
+   * and the row is the thing an attacker replaces: a poisoned row would
+   * inherit a clean row's verdict, and one poisoned row would condemn
+   * every clean one after it. The whole test is a handful of
+   * milliseconds against a page load.
+   *
+   * NOTHING NEW IS STORED either, which is what lets a key a member's
+   * browser already holds be adopted with no migration: the proof is
+   * computed from the two halves the record carries. A stored proof
+   * field would make every record in the field unvouchable at once, and
+   * "erase, never skip" would then destroy every legitimate key there
+   * is - the fix costing more than the defect.
+   */
+  async function custodyRuling(record, accountId) {
+    const verdict = custodyVerdict(record, accountId);
+    if (verdict !== "use") return verdict;
+    return (await halvesAgree(record)) ? "use" : "erase";
+  }
+
   function usable(record) {
     return Object.freeze({
       accountId: record.accountId,
@@ -329,7 +454,7 @@
       return null;
     }
 
-    const verdict = custodyVerdict(record, accountId);
+    const verdict = await custodyRuling(record, accountId);
     if (verdict === "use") return usable(record);
 
     try {
@@ -405,6 +530,12 @@
     ROW_KEY: ROW_KEY,
     unavailableReason: unavailableReason,
     custodyVerdict: custodyVerdict,
+    // The async half of the same rule, exported for the same reason the
+    // shape half is: a custody rule reachable only through `ensure` is a
+    // custody rule testable only against a real IndexedDB. It answers
+    // with a verdict string and hands back neither a key nor a byte of
+    // any secret, so exporting it widens nothing a page could abuse.
+    custodyRuling: custodyRuling,
     ensure: ensure,
     forget: forget,
   });

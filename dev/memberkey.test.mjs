@@ -41,7 +41,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 66);
+const { check, report } = suite("memberkey.js", 67);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -513,6 +513,25 @@ await check("a private key that cannot derive is erased, not adopted",
       { name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey"]);
     return (await Keys.custodyRuling(await filed(mute.privateKey,
       mute.publicKey), "a".repeat(64))) === "erase";
+  });
+
+/*
+ * AND THE SHAPE A WHOLLY PLAIN RECORD MAKES, which is the same defect
+ * one field over. `{ type: "private", extractable: false }` satisfies
+ * every clause the shape rule has about a private key, and a record
+ * built entirely of plain values and one real `Uint8Array` clones into
+ * IndexedDB without complaint - so it is reachable through a real store
+ * rather than only through a probe. There is no key in it at all, and
+ * the agreement is what notices: nothing that is not a CryptoKey can
+ * derive.
+ */
+await check("a record whose private key is only an object is erased",
+  async () => {
+    const record = await filed(pair.privateKey, pair.publicKey);
+    record.privateKey = { type: "private", extractable: false };
+    return structuredClone(record) &&
+      Keys.custodyVerdict(record, "a".repeat(64)) === "use" &&
+      (await Keys.custodyRuling(record, "a".repeat(64))) === "erase";
   });
 
 await check("what the shape rule refuses, the ruling refuses too", async () =>
