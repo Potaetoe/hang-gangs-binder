@@ -28,10 +28,12 @@
 <script src="theme-init.js"></script>
 </head>
 <!-- The one page that reads as data rather than prose: an eighteen-column
-     table and a grid of charts. `wide` widens the measure for those; the
-     cards that are still prose or inputs opt back out with `narrow`,
-     which centers them like everything else on the site rather than
-     flushing them left - #71.
+     table and a grid of charts. `wide` widens the measure for those.
+     Everything else keeps the reading column and stays centered - #71 -
+     by two routes now: inside a `.tool` section theme.css pulls the
+     prose and the inputs back by default and lets only the table and
+     the charts out, and the warning boxes that are left say `narrow`
+     for themselves.
 
      `instrument` is the owner's decision on #73: this is a panel to be
      operated rather than a page to be read, so it gives up the gold
@@ -103,20 +105,21 @@
     the card once, reads the countdown through aria-describedby, and puts
     the way out under the keyboard of whoever was not using a mouse.
 
-    NO LABEL CHIP EITHER, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.
-    A `caution` chip is the component this card would otherwise wear, but
-    every chip's words are registered in LABELS in tools/check_web.py, and
-    an unregistered one fails the gate by design. The sentence below is
-    the warning in full - it names what this page holds and what is about
-    to happen to it - so the chip would repeat in two words what the card
-    already says at length, and the card arrives from nothing at the top
-    of the page and takes the keyboard, which is louder than a chip.
+    THE CHIP IS LOAD-BEARING NOW, which it was not when this card was
+    written. #91 left it off deliberately - the sentence below is the
+    warning in full, so a two-word chip repeated it - and the rule #178
+    pinned changes what the chip is FOR. On this surface a box IS the
+    warning (check 25), so the chip is how this box says out loud that
+    it is one, to the reader and to the gate alike; without it this card
+    is indistinguishable from a tool that kept its box. The words are
+    registered in LABELS in tools/check_web.py like every other chip's.
 
     The button is `primary` because staying is what the reader almost
     always wants, and the alternative is not a control at all - it is
     doing nothing, which is what this card exists to describe.
   -->
   <div class="card narrow" id="idle-warning" hidden>
+    <p class="caution">About to clear itself</p>
     <p id="idle-countdown"></p>
     <div class="row">
       <button type="button" id="idle-stay" class="primary"
@@ -138,9 +141,20 @@
     <p data-reason></p>
   </div>
 
+  <!-- Everything the key gates. The id is this container's and the
+       `tool` CLASS below is each section's - they are two different
+       things with one word, which is worth knowing before reading
+       either: this element is the whole instrument, and each `.tool`
+       inside it is one bench on it. -->
   <div class="stack" id="tool" hidden>
 
-    <div class="card narrow">
+    <!-- The runner is here because every other tool on this page has
+         one, and a section with no name among five named ones reads as
+         page furniture rather than as the first step. It is also the
+         first step: nothing below opens without this field. -->
+    <div class="tool">
+      <p class="runner"><span>Key</span></p>
+
       <div class="field">
         <label for="keyfile">Private key</label>
         <textarea id="keyfile" rows="5" autocomplete="off" spellcheck="false"
@@ -170,7 +184,7 @@
       taking one down needs admin authority. Neither needs the key, because
       retraction should not require decrypting two hundred rows first.
     -->
-    <div class="card narrow">
+    <div class="tool">
       <!-- Named for the state it reports rather than for the page it
            points at: no destination is called "the public dashboard"
            any more, and the link inside says where it goes (#127). -->
@@ -220,7 +234,7 @@
       puts it in the address bar and in browser history. That is the
       membership oracle DESIGN.md exists to prevent, arriving by URL.
     -->
-    <div class="card narrow" id="membership-card">
+    <div class="tool" id="membership-card">
       <p class="runner"><span>Membership</span></p>
       <p class="muted">
         Who administers this site, and who gets past the group check.
@@ -327,7 +341,7 @@
       </div>
     </div>
 
-    <div class="card" id="failures" hidden>
+    <div class="card narrow" id="failures" hidden>
       <p class="caution">Rows that would not open</p>
       <p class="muted small">
         Usually the key has been rotated and these predate it — the old
@@ -337,21 +351,32 @@
       <pre class="failure-list" id="failure-list"></pre>
     </div>
 
-    <div class="card" id="results" hidden>
-      <p class="flag">Result</p>
+    <div class="tool" id="results" hidden>
+      <p class="runner"><span>Result</span></p>
       <p id="summary"></p>
       <!--
-        Three downloads, three buttons, all the same kind of thing. The
-        trap to avoid here is making one of them small grey text beside
-        a filled button, which turns two equal choices into a control
-        and an afterthought. Excel and JSON are outlined rather than
-        filled only because the CSV is the one most people want.
+        Three downloads, three buttons, ONE ROLE - #174. They do the
+        same kind of thing to the same data, so ranking one of them
+        makes the eye invent a difference that is not there. That the
+        CSV is the one most people want is a fact about people, not a
+        fact about the control, and it is not worth a colour: whoever
+        wants CSV can read.
+
+        They are `secondary` rather than three filled buttons because
+        `primary` still means something on this page - Fetch and
+        decrypt, Add, Publish snapshot, each of which changes the world
+        - and three filled buttons in a row would say the export is
+        three consequential acts instead of one act with three formats.
+        The acknowledgement on press is admin.js's, and theme.css's
+        `.pressed` says what it may and may not claim.
       -->
       <div class="row buttons">
-        <a id="download" class="primary" download>Download CSV</a>
+        <a id="download" class="secondary" download>Download CSV</a>
         <a id="download-xlsx" class="secondary" download>Download Excel</a>
         <a id="download-json" class="secondary" download>Download JSON</a>
       </div>
+      <p class="status" id="download-status" role="status" aria-live="polite"
+         hidden></p>
       <p class="hint">
         Excel keeps the numbers as numbers, so a weight sorts as a weight
         and a handle of digits stays a handle. CSV is plain text that
@@ -374,7 +399,7 @@
       classes in theme.css rather than style attributes, because
       style-src has no 'unsafe-inline' either.
     -->
-    <div class="card" id="dashboard" hidden>
+    <div class="tool" id="dashboard" hidden>
       <!-- Named for what it holds rather than for a destination. No page
            on this site is called Dashboard any more (#127), and a panel
            borrowing a page's name is how the vocabulary drifted in the
@@ -428,7 +453,7 @@
         </p>
       </fieldset>
 
-      <div id="charts"></div>
+      <div id="charts" class="charts"></div>
     </div>
 
     <!--
@@ -441,7 +466,7 @@
       per-person except the pseudonymous weight history, and only if it
       is ticked. See DESIGN.md, "The dashboard and the snapshot".
     -->
-    <div class="card narrow" id="publish-card" hidden>
+    <div class="tool" id="publish-card" hidden>
       <p class="runner"><span>Publish</span></p>
       <p>
         Sends the charts above — as counts and medians, with no handles

@@ -519,7 +519,16 @@ body:not(.railed) > *,
 body.wide:not(.railed) > *,
 body.wide .page > * { max-width: var(--measure-wide); }
 
+/* `width: 100%` is the third declaration and the one that makes this
+   the same rule as the two above and the `.tool` rule below, rather
+   than a near-copy of them. Without it a box in a flex column with auto
+   inline margins is not stretched - auto margins in the cross axis
+   suppress that - so it takes its own content's width and stops. Five
+   boxes then sit at five widths on the one page whose ruling opens
+   "cards to all be the same width" (#178), each of them correct on its
+   own and none of them agreeing. */
 body.wide .narrow {
+  width: 100%;
   max-width: var(--measure);
   margin-inline: auto;
 }
@@ -1254,6 +1263,36 @@ button.primary:disabled {
 }
 
 /*
+ * "You pressed this", and nothing more than that - #174.
+ * -----------------------------------------------------
+ * A download is the one action on this site whose result appears
+ * somewhere other than the page: in a download shelf that may be
+ * collapsed, on another monitor, or silently in a folder. Press one,
+ * see nothing change, press it twice more, and now there are three
+ * files and no way to tell which is which. So the general rule the
+ * owner's instinct is an instance of: an action whose effect is
+ * invisible on the page must acknowledge itself ON the page.
+ *
+ * It takes the filled family's colors for a few seconds rather than
+ * inventing a state color, which is worth two things. It is
+ * unmistakably not the hover treatment - the button under the cursor
+ * is exactly the one just pressed, so a press state that looked like
+ * hover would say nothing - and every pairing here is already
+ * measured, because it is the pairing `.primary` ships.
+ *
+ * WHAT IT MUST NOT SAY is that the file arrived. The page cannot know
+ * that; the browser never tells it. So this is spent on the press and
+ * admin.js clears it on a timer, and the sentence in the live region
+ * beside it says pressed rather than saved.
+ */
+.pressed,
+.pressed:hover {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/*
  * The tab strip.
  * --------------
  * Tabs are the one family that performs nothing: pressing one changes
@@ -1643,12 +1682,59 @@ body.instrument h2 { font-size: var(--text-base); }
 
 body.instrument .page { gap: var(--space-4); }
 
+/* The boxes that are left. Denser than a member page's card for the
+   reason above, and pinned as a scope in CARD_SCOPES in
+   tools/check_web.py rather than left to be discovered - a rule that
+   shapes a card on one surface and not another is how the pages came
+   apart in the first place (#178). */
 body.instrument .card {
   padding: var(--space-3) var(--space-4) var(--space-4);
   gap: var(--space-2);
 }
 
-body.instrument main { gap: var(--space-3); }
+/*
+ * The instrument has no cards, and that is #178.
+ * ----------------------------------------------
+ * The owner ruled the alternation out rather than tidying it: "Admin
+ * page needs it's cards to all be the same width. Or redesign away
+ * from cards as much as possible." This is the second branch, and it
+ * is what the mockup shows.
+ *
+ * A tool is a runner-headed SECTION, not a box. The runner's rule
+ * spans the wide column and IS the divider, so every section is the
+ * same width by construction - there are no per-box widths left to
+ * disagree with each other, which is a stronger answer than making
+ * nine boxes agree and hoping the tenth is copied from the right one.
+ *
+ * #71's rule survives inside: prose and inputs keep the reading
+ * measure and stay centered. Only the two things `wide` was ever for
+ * take the width the runner spans - the eighteen-column table and the
+ * grid of charts - and they are named as exceptions rather than opted
+ * in, so a section added later is narrow by default and a new wide
+ * thing is a decision somebody makes on purpose.
+ *
+ * The one box that stays is the caution. That is warn semantics
+ * rather than layout, and tools/check_web.py's check 25 holds the
+ * whole rule: on this surface a box carries an outcome or a warning,
+ * never a section name.
+ */
+body.instrument .tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+body.instrument .tool > :not(.runner):not(.table-scroll):not(.charts) {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+/* Sections are further apart than the boxes were close, which is the
+   half of "denser" this ruling gives back: the runner is a thin line
+   and needs air above it to read as a division rather than as another
+   paragraph. */
+body.instrument main.stack { gap: var(--space-8); }
 
 /*
  * The nameplate. It says what surface this is before it says anything

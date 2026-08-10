@@ -702,6 +702,24 @@
    * to add a store, and the member device key (#85) is a separate
    * feature on a separate page with a separate lifetime.
    */
+  /*
+   * The three exports, and how long a press stays lit - #174.
+   *
+   * The ids are a list rather than three lookups because the
+   * acknowledgement has to clear the OTHER two: they are one set doing
+   * one job, which is the whole of what that issue is about, and two
+   * buttons lit at once would say two files are on their way.
+   *
+   * Four seconds is long enough to be seen by somebody whose eyes were
+   * on the download shelf rather than the button, and short enough that
+   * it has plainly gone by the time anybody wonders whether it means
+   * the file is still arriving. It is a press acknowledgement and never
+   * a progress indicator; the page cannot know about progress.
+   */
+  const DOWNLOAD_IDS = Object.freeze(
+    ["download", "download-xlsx", "download-json"]);
+  const PRESSED_MS = 4000;
+
   const KEY_DB = "hgb-keyholder-key";
   const KEY_STORE = "key";
   const KEY_ROW = "current";
@@ -815,6 +833,11 @@
     let xlsx = null;
     let urls = [];
 
+    // The download acknowledgement's timer, held here so a second press
+    // can cancel the first one's expiry rather than being darkened by
+    // it. See acknowledge() below.
+    let pressedTimer = 0;
+
     // The key this device kept, if it kept one, and what to tell the
     // keyholder about having kept it. Unlike everything above, the
     // first of these outlives the tab - see the note on KEY_DB.
@@ -897,9 +920,43 @@
       urls = [];
     }
 
+    /*
+     * "You pressed this" - #174, and the acknowledgement is deliberately
+     * the weakest true statement available.
+     *
+     * A download is the one act on this page whose result appears
+     * somewhere this page cannot see: a shelf that may be collapsed,
+     * another monitor, a folder. Press one, see nothing, press it twice
+     * more, and there are three files with no way to tell them apart -
+     * at the exact moment the data is decrypted and in the clear.
+     *
+     * WHAT IT MUST NOT SAY is that the file arrived, because the
+     * browser never tells this page that. Both halves are worded
+     * against that: the class is spent on the press and cleared on a
+     * timer, and the sentence says the export was handed over rather
+     * than saved. A timer that lies is worse than no acknowledgement,
+     * since the second one is at least honest about knowing nothing.
+     *
+     * The timer is cleared before it is set again so that pressing two
+     * downloads in a row leaves the second one lit rather than being
+     * darkened by the first one's expiry.
+     */
+    function acknowledge(link, what) {
+      link.classList.add("pressed");
+      clearTimeout(pressedTimer);
+      pressedTimer = setTimeout(function () {
+        for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
+      }, PRESSED_MS);
+      UI.setStatus($("download-status"),
+        what + " handed to the browser. Where it puts a download is the "
+        + "browser's to decide, so this page cannot say whether it "
+        + "arrived.", null);
+    }
+
     // `content` is a string for the text formats and a Uint8Array for
     // the spreadsheet. Blob takes either, which is the whole reason
     // this needed no other change to gain a binary download.
+    //
     function offer(id, content, type, extension) {
       const url = URL.createObjectURL(new Blob([content], { type: type }));
       urls.push(url);
@@ -1127,6 +1184,17 @@
     // pointer: Enter and Space on a focused button raise a click, and
     // the keydown that produced it may have gone to something else.
     $("idle-stay").addEventListener("click", markInteraction);
+
+    // Wired once here rather than inside offer(), which runs again on
+    // every decrypt: three exports in a session would otherwise leave
+    // three handlers on one link and print the acknowledgement three
+    // times for one press.
+    for (const id of DOWNLOAD_IDS) {
+      const link = $(id);
+      link.addEventListener("click", function () {
+        acknowledge(link, link.textContent.trim());
+      });
+    }
 
     /*
      * Keeping the key, and reporting honestly what keeping it is worth.

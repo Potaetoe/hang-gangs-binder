@@ -628,12 +628,76 @@ day a check is added:
     the decision in the commit message - deliberately the same
     two-place act as raising a ceiling in tools/check_budget.py. What
     it deliberately does NOT pin, and why, is written out above the
-    table: the de-carded admin instrument (the mockup shows #178's
-    second branch and says so itself, so pinning it would redden this
-    gate for a change nobody has made yet), rendered pixels, and
-    taste. check_contrast.py reads the same hexes to a different
+    table: rendered pixels, and taste. The instrument's de-carded
+    shape is check 25's rather than this table's, for the seam that
+    list gives. check_contrast.py reads the same hexes to a different
     question - legible, versus ruled - and neither reads the other's
     table.
+
+25. The signed-in pages share one card geometry, and the instrument
+    has no cards to share. #178, and #174 as its one control group.
+
+    The gap: the gate could see label roles, names, palettes and
+    contrast, and nothing at all compared the SHAPE of a box from one
+    page to the next - padding, radius, border treatment, header
+    shape, the gap between a box and the one above it. So they
+    drifted silently, which is how admin.html came to look like a
+    different product from the page beside it.
+
+    The owner's ruling on #178 is that the fix is not one geometry
+    for three pages but ONE GRAMMAR PER SHELL. The member pages are
+    leaves of a binder and read as cards; the instrument is a
+    workbench and reads as runner-headed sections, with a single box
+    left for the warning - "boxes are for warnings only", which is
+    the sentence this check exists to hold.
+
+    Which page gets which grammar is NOT a third roster. It falls out
+    of SHELLS and SURFACES, both already pinned outside the markup: a
+    signed-in page (SHELLS says rail) on the member surface carries
+    cards, and one on the instrument surface carries sections. A page
+    arriving without an entry in either table already fails checks 10
+    and 18, and #206 is this repository watching a third hand-kept
+    roster drift from the two it duplicates.
+
+    Two arms, and they fail for opposite reasons:
+
+    - AGREEMENT, across the card pages. The geometry each page
+      RESOLVES for the card components is computed per page from its
+      own body classes and compared page against page. This is the
+      shape that survives the design changing: an edit to `.card`
+      itself moves every page together and passes, which is the
+      point - a check that reddens when the design legitimately
+      evolves everywhere at once gets edited until it stops, and
+      #142 is where that was learned. What it catches is one page
+      moving alone.
+    - THE SCOPED OVERRIDE, which is how one page moves alone. Every
+      surface-qualified rule painting a card component -
+      `body.instrument .card` is the one that exists - is named in
+      CARD_SCOPES with the surface it is for, in both directions. An
+      override nobody wrote down fails; a pin whose block has gone
+      fails as stale. With two card pages the agreement arm alone
+      could be satisfied by a rule that moved both, and this is the
+      half that refuses it.
+
+    Then the markup, which is where a grammar is actually worn:
+
+    - On the instrument, inside <main>, every box carries an outcome
+      or a caution and never a section name, and every section name
+      stands on a `.tool`. A tool arriving as a box is the exact
+      regression this ticket removed, and it announces itself by
+      putting a runner inside a card.
+    - On the card pages, inside <main>, there are no `.tool`
+      sections at all. The instrument's grammar leaking outward is
+      the same defect pointing the other way, and it arrives by the
+      usual route - somebody copying the page they had open.
+
+    The limit, stated because the arm reads as though it had none:
+    these are declared values in one stylesheet, not rendered pixels.
+    There is no layout engine here and #75 rejected jsdom for exactly
+    this, so two different tokens holding the same length still read
+    as a difference, and a geometry set by something other than these
+    properties is outside it. What it buys is that a box cannot
+    change shape on one page without the change being written down.
 """
 
 import base64
@@ -1981,10 +2045,12 @@ LABEL_ROLES = {
 # carries fails too, so the list cannot rot into a description of a
 # site that no longer exists.
 LABELS = {
+    "About to clear itself": "caution",
     "Before you close this": "caution",
     "Charts": "runner",
     "Development session": "caution",
     "How your entry is handled": "runner",
+    "Key": "runner",
     "Members": "runner",
     "Membership": "runner",
     "Not open": "flag",
@@ -1993,7 +2059,11 @@ LABELS = {
     "Publish": "runner",
     "Published": "runner",
     "Received": "flag",
-    "Result": "flag",
+    # The one entry whose role has changed since it was written. It was
+    # a `flag` while Result was an outcome in a box of its own; #178
+    # made the instrument's tools into sections, so Result now names one
+    # of the six rather than reporting a verdict about the page.
+    "Result": "runner",
     "Rows that grant nothing": "caution",
     "Rows that would not open": "caution",
     "Session": "runner",
@@ -3644,11 +3714,13 @@ def chip_problems():
 #
 # WHAT IS DELIBERATELY NOT PINNED, because the next reader will ask:
 #
-#  - The de-carded admin instrument. The mockup shows #178's second
-#    branch and says in its own note that the branch does not - "the
-#    branch still shows the boxes; #178 is the ticket". Pinning it would
-#    redden this gate for a change nobody has made yet. It belongs in
-#    the diff that lands #178.
+#  - The de-carded admin instrument, which is check 25's rather than
+#    this table's. The seam is the one this list opens with: a token is
+#    a value to copy across, and a component's geometry is a comparison
+#    between pages - so pinning the instrument here would mean writing
+#    the mockup's component rules into this file, which is the second
+#    stylesheet the paragraph above refuses. Check 25 compares instead,
+#    and reads SHELLS and SURFACES for which page owes which grammar.
 #  - Rendered pixels. There is no layout engine here and #75 rejected
 #    jsdom for exactly this, so these are declared values, the same
 #    limit check_contrast.py states about itself. Which token paints
@@ -4172,6 +4244,498 @@ def refused_surface_problems():
     return sorted(problems)
 
 
+# ------------------------------------------------------------------
+# Check 25: one card geometry across the signed-in pages, and the
+# instrument's boxes are warnings.
+#
+# #178's finding is that nothing in this gate compared the SHAPE of a
+# box from one page to the next, so the shapes drifted and only a
+# person putting two pages side by side ever noticed. The owner's
+# ruling on that issue is one grammar PER SHELL - cards on the member
+# pages, runner-headed sections on the instrument - and the rule to
+# pin, in the ruling's own words, is that "on body.instrument, boxes
+# are for warnings only".
+
+# The components a card's shape is actually made of. `.card` is the
+# box, `.stack` is the rhythm between one box and the next, and h2 is
+# the header shape inside it - the five things #178 names, in the three
+# selectors that carry them.
+GEOMETRY_SUBJECTS = ("h2", ".card", ".stack")
+
+# What counts as geometry, as opposed to color or behavior. Written as
+# a pattern rather than a set because the longhands are the evasion:
+# `padding-top` on one page and `padding` on the other is a difference
+# a set of four names never sees, and neither is a shorthand somebody
+# splits in half while "tidying".
+GEOMETRY_PROPERTY = re.compile(
+    r"^(background|background-[\w-]+|border|border-[\w-]+"
+    r"|padding|padding-[\w-]+|gap|row-gap|column-gap"
+    r"|font-family|font-size)$")
+
+# The surface-qualified rules that may paint a card component, and what
+# each is for. THIS IS THE ARM WITH TEETH, and it is worth saying why
+# the agreement arm below is not enough on its own: there are two card
+# pages today, so a rule that moved BOTH of them satisfies a comparison
+# of one against the other perfectly. Drift arrives as a scope - a rule
+# that says "on this surface, a card is shaped differently" - and the
+# only way to notice one is to have written down which ones exist.
+#
+# Both directions, the DESTINATIONS way. An entry whose block has gone
+# is a pin that can no longer fail, and a block no entry names is the
+# override nobody declared.
+CARD_SCOPES = {
+    ("body.instrument", ".card"):
+        "the instrument's remaining warning boxes, tightened with the "
+        "rest of that surface by the owner's decision on #73. It is a "
+        "scope rather than drift because #178 took the instrument out "
+        "of the card grammar entirely - what is left inside these "
+        "boxes is a caution and a paragraph, never a tool",
+    ("body.instrument", "h2"):
+        "the instrument gives up the display serif (#73), and a card "
+        "heading is that decoration one level down. The sizes stay "
+        "ordered so the page title stays the largest thing on it",
+}
+
+BODY_CLASS_ATTR = re.compile(
+    r"<body[^>]*\bclass\s*=\s*[\"']([^\"']*)[\"']", re.I)
+
+# A selector's context, once its own compound has been taken off the
+# end. Only a body-qualified one can be resolved against a page, which
+# is the whole readable vocabulary here; anything else is REPORTED
+# rather than skipped, because a reader that quietly drops half its
+# input prints the same OK as one that found nothing wrong (#34).
+CONTEXT_COMPOUND = re.compile(r"^body((?:\.[\w-]+)*)$")
+
+DECLARATION = re.compile(r"([\w-]+)\s*:\s*([^;]+)")
+
+
+def body_classes(text):
+    """The class list on one page's <body>, as a set.
+
+    An empty set is a real answer - index.html carries no body class -
+    and is not the same as a page with no body at all, which cannot
+    happen here and would fail check 3 first if it did.
+    """
+    found = BODY_CLASS_ATTR.search(text)
+    return frozenset(found.group(1).split()) if found else frozenset()
+
+
+def geometry_subject(selector):
+    """(context, subject) for a selector painting a card component.
+
+    Read from the right-hand end, the way the cascade does: the
+    rightmost compound is what the rule paints, and everything left of
+    it is the condition under which it paints. `.stack-tight` is a
+    different component from `.stack` and must not match it, so the
+    compound is compared whole rather than by prefix.
+    """
+    compounds = " ".join(selector.split()).split()
+    if not compounds or compounds[-1] not in GEOMETRY_SUBJECTS:
+        return None
+    return " ".join(compounds[:-1]), compounds[-1]
+
+
+def geometry_declarations(css):
+    """[(media, context, subject, [(property, value)])] in source order.
+
+    Blocks declaring no geometry are left out entirely, so @font-face,
+    @keyframes and every color rule never appear here at all. Order
+    within one media scope is document order, which is what makes "the
+    last declaration wins" resolvable below.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    blocks = []
+
+    def read(text, media):
+        for rule in CSS_RULE.finditer(text):
+            declared = [
+                (name.lower(), " ".join(value.split()))
+                for name, value in DECLARATION.findall(rule.group(2))
+                if GEOMETRY_PROPERTY.match(name.lower())]
+            if not declared:
+                continue
+            for selector in rule.group(1).split(","):
+                found = geometry_subject(selector)
+                if found:
+                    blocks.append((media, found[0], found[1], declared))
+
+    outside = []
+    index = 0
+    for opener in re.finditer(r"@media([^{]*)\{", css):
+        if opener.start() < index:
+            continue  # nested, and already inside a body read below
+        outside.append(css[index:opener.start()])
+        depth, end = 1, opener.end()
+        while end < len(css) and depth:
+            if css[end] == "{":
+                depth += 1
+            elif css[end] == "}":
+                depth -= 1
+            end += 1
+        read(css[opener.end():end - 1], " ".join(opener.group(1).split()))
+        index = end
+    outside.append(css[index:])
+    read("".join(outside), "")
+
+    return blocks
+
+
+def context_applies(context, classes):
+    """Whether a selector's context matches a page, or None if unread.
+
+    None is not "no". It is "this file said something in a vocabulary
+    this reader does not have", and the caller reports it - the one
+    behavior that keeps an arm from failing open when the stylesheet
+    grows a shape nobody anticipated.
+    """
+    if not context:
+        return True
+    compounds = context.split()
+    if len(compounds) != 1:
+        return None
+    match = CONTEXT_COMPOUND.match(compounds[0])
+    if not match:
+        return None
+    wanted = {name for name in match.group(1).split(".") if name}
+    return wanted <= set(classes)
+
+
+def selector_weight(context, subject):
+    """(classes, elements) for one of the selectors this file accepts.
+
+    Specificity, restricted to the vocabulary context_applies() will
+    resolve at all: a component subject is one class, `h2` is one
+    element, and a context is `body` plus however many classes it names.
+    That is exact here rather than an approximation, because anything
+    outside the vocabulary is reported as unreadable instead of scored.
+
+    IT HAS TO BE MODELLED, and the first version of this check did not,
+    which is the whole reason this function exists. Ordering by source
+    position alone says a scoped rule written ABOVE the bare one loses -
+    and the browser says the opposite, because `body.x .card` outranks
+    `.card` wherever it sits. A stylesheet where a surface override sat
+    higher in the file than the component it overrides would then be a
+    real, rendered, per-page difference that this arm reported as
+    agreement. Caught by mutation: the scope was declared honestly, the
+    roster was satisfied, and the comparison stayed silent.
+    """
+    classes = 1 if subject.startswith(".") else 0
+    elements = 0 if subject.startswith(".") else 1
+    if context:
+        match = CONTEXT_COMPOUND.match(context)
+        classes += len([name for name in match.group(1).split(".") if name])
+        elements += 1  # the `body` in the context
+    return classes, elements
+
+
+def resolved_geometry(blocks, classes):
+    """({(media, subject, property): value}, [unreadable context]).
+
+    The cascade as a browser resolves it, within one media scope and
+    over the rules whose context the page satisfies: specificity first,
+    source position only to break a tie. See selector_weight() for why
+    the second half alone is not enough.
+
+    Media conditions are kept as part of the key rather than resolved
+    against a width, because there is no viewport here. Two pages have
+    to agree at every breakpoint the file declares, which is a stricter
+    claim than agreeing at one, and it is the claim #178 wants.
+    """
+    resolved = {}
+    unreadable = []
+    ordered = []
+    for index, (media, context, subject, declared) in enumerate(blocks):
+        applies = context_applies(context, classes)
+        if applies is None:
+            unreadable.append((context, subject))
+            continue
+        if not applies:
+            continue
+        ordered.append((selector_weight(context, subject), index,
+                        media, subject, declared))
+
+    for _, _, media, subject, declared in sorted(ordered,
+                                                 key=lambda row: row[:2]):
+        for name, value in declared:
+            resolved[(media, subject, name)] = value
+    return resolved, unreadable
+
+
+def card_pages():
+    """The signed-in pages that wear the card grammar, sorted."""
+    return sorted(name for name, shell in SHELLS.items()
+                  if shell == "rail" and SURFACES.get(name) == "member")
+
+
+def section_pages():
+    """The signed-in pages that wear the section grammar, sorted."""
+    return sorted(name for name, shell in SHELLS.items()
+                  if shell == "rail" and SURFACES.get(name) == "instrument")
+
+
+def geometry_agreement_problems(css, pages):
+    """[(subject, problem)] where one page's cards have moved alone.
+
+    `pages` is {page: markup}, so the body classes come from the page
+    rather than from a table: which surface a page declares is check
+    18's to pin, and reading it here rather than restating it is what
+    keeps one fact in one place.
+    """
+    problems = []
+    blocks = geometry_declarations(css)
+    wearers = [name for name in card_pages() if name in pages]
+
+    if len(wearers) < 2:
+        return [(STYLESHEET,
+                 "has fewer than two pages wearing the card grammar, so "
+                 "there is nothing to compare and this arm reported "
+                 "agreement it never established. SHELLS and SURFACES in "
+                 "tools/check_web.py are what say which pages those are")]
+
+    resolutions = {}
+    for name in wearers:
+        resolved, unreadable = resolved_geometry(blocks,
+                                                 body_classes(pages[name]))
+        resolutions[name] = resolved
+        for context, subject in unreadable:
+            problems.append((
+                STYLESHEET,
+                "paints %s under \"%s\", which this check cannot resolve "
+                "against a page. It reads a bare rule and a body-qualified "
+                "one and nothing else, so a scope in any other shape is "
+                "reported rather than passed over - an arm that drops what "
+                "it does not understand prints OK for a page it never "
+                "checked" % (subject, context)))
+
+    reference = wearers[0]
+    for name in wearers[1:]:
+        keys = set(resolutions[reference]) | set(resolutions[name])
+        for key in sorted(keys):
+            media, subject, prop = key
+            here = resolutions[name].get(key)
+            there = resolutions[reference].get(key)
+            if here == there:
+                continue
+            problems.append((
+                STYLESHEET,
+                "gives %s a different %s on %s (%s) than on %s (%s)%s. Both "
+                "are signed-in member pages and #178 is the owner asking "
+                "that they read as one thing - a card that changes shape "
+                "from one page to the next is the drift this arm exists to "
+                "catch"
+                % (subject, prop, name, here or "unset", reference,
+                   there or "unset",
+                   " inside @media %s" % media if media else "")))
+
+    return problems
+
+
+def card_scope_problems(css):
+    """[(subject, problem)] for surface overrides nobody wrote down."""
+    problems = []
+    found = set()
+
+    for media, context, subject, _ in geometry_declarations(css):
+        if not context:
+            continue
+        found.add((context, subject))
+        if (context, subject) in CARD_SCOPES:
+            continue
+        problems.append((
+            STYLESHEET,
+            "paints %s under \"%s\"%s, and CARD_SCOPES in tools/check_web.py "
+            "does not name it. A rule that shapes a card on one surface and "
+            "not another is how the pages came apart in the first place "
+            "(#178): say there which surface it is for and why, or take the "
+            "scope off and move the design everywhere at once"
+            % (subject, context,
+               " inside @media %s" % media if media else "")))
+
+    for context, subject in sorted(set(CARD_SCOPES) - found):
+        problems.append((
+            STYLESHEET,
+            "declares no geometry for %s under \"%s\", and CARD_SCOPES in "
+            "tools/check_web.py still names it. Delete the entry, or restore "
+            "the rule - a pin with no block behind it is a check that cannot "
+            "fail" % (subject, context)))
+
+    return problems
+
+
+CONTAINER_TAGS = frozenset({
+    "article", "aside", "div", "fieldset", "footer", "form", "header",
+    "main", "nav", "section",
+})
+
+ELEMENT = re.compile(r"<(/?)([a-zA-Z][\w-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>")
+
+MAIN_SLICE = re.compile(r"<main\b.*?</main\s*>", re.S | re.I)
+
+
+def main_labels(text):
+    """[(role, words, parent, parent_classes)] and [(index, classes)].
+
+    Returns the labels inside <main> paired with the container each one
+    stands in, and every container that was opened - which together are
+    the whole of what "a section name inside a box" and "a box with no
+    warning in it" need to be answerable at all.
+
+    Only <main> is read. The rail carries a `Session` runner on every
+    signed-in page and is not a section of the document, so a rule
+    written over the whole page would have to carve it out by name -
+    and a carve-out is the thing that stops applying the day the rail
+    grows a second one.
+
+    The scanner tracks containers rather than every element because
+    that is what the rules below are about, and because a general HTML
+    reader is a liability in a file whose job is to refuse: <p> cannot
+    nest, <input> and <br> never close, and a stack that tried to model
+    both would go wrong silently on markup a browser renders fine.
+    """
+    slice_ = MAIN_SLICE.search(text)
+    if not slice_:
+        return [], []
+
+    inside = slice_.group(0)
+    labels = []
+    containers = []
+    stack = []
+
+    for element in ELEMENT.finditer(inside):
+        closing = bool(element.group(1))
+        tag = element.group(2).lower()
+        attributes = element.group(3)
+
+        if tag == "p" and not closing:
+            found = LABEL_MARKUP.match(inside, element.start())
+            if found:
+                classes, body = found.group(1), found.group(2)
+                parent = stack[-1] if stack else None
+                for role in [r for r in classes.split() if r in LABEL_ROLES]:
+                    labels.append((
+                        role, label_text(body), parent,
+                        containers[parent][1] if parent is not None
+                        else frozenset()))
+            continue
+
+        if tag not in CONTAINER_TAGS:
+            continue
+        if closing:
+            if stack:
+                stack.pop()
+            continue
+        if attributes.rstrip().endswith("/"):
+            continue  # self-closed, so it opens nothing
+        index = len(containers)
+        containers.append((index, frozenset(
+            " ".join(re.findall(CLASS_ATTR, attributes)).split())))
+        stack.append(index)
+
+    return labels, containers
+
+
+def grammar_markup_problems(text, grammar):
+    """[problem] for one page's <main> wearing the wrong grammar.
+
+    Takes markup and the grammar the page is pinned to rather than a
+    filename, for the reason plain_page_problems() gives: a rule
+    exercised only against the pages that ship today is a rule tested
+    against today's markup, and the shape of the failure is what has to
+    hold.
+    """
+    problems = []
+    labels, containers = main_labels(text)
+
+    if grammar == "cards":
+        for _, classes in containers:
+            if "tool" in classes:
+                problems.append(
+                    "carries a .tool section inside <main>, and this is a "
+                    "card page. The instrument's grammar arriving here is "
+                    "#178's drift pointing outward, and it arrives the way "
+                    "every copy does - from whichever page was open")
+            # `.narrow` is declared only under `body.wide`, and a card
+            # page is not wide. So it paints nothing here while saying,
+            # in the markup, that this box is narrower than the ones
+            # beside it - and four of them said it. That is #178's
+            # disease one layer up from the stylesheet: boxes written
+            # differently and rendered identically, until the day the
+            # page becomes wide and the difference is suddenly real.
+            if "narrow" in classes:
+                problems.append(
+                    "carries .narrow inside <main>, and .narrow only means "
+                    "something on a `wide` page. A card page IS the reading "
+                    "measure, so this says a box is narrower than its "
+                    "neighbours and then paints it the same - take the class "
+                    "off rather than leaving the next reader to copy it")
+        return problems
+
+    boxed = {index for index, classes in containers if "card" in classes}
+    warned = set()
+    for role, words, parent, _ in labels:
+        if parent is None or parent not in boxed:
+            continue
+        if role == "runner":
+            problems.append(
+                "puts the section name \"%s\" inside a box. On this surface "
+                "boxes are for warnings only - the owner's ruling on #178 - "
+                "so a tool is a runner-headed .tool section and never a "
+                "card" % words)
+        else:
+            warned.add(parent)
+
+    for _ in sorted(boxed - warned):
+        problems.append(
+            "carries a box inside <main> with no outcome and no caution in "
+            "it. On this surface a box IS the warning (#178), so one that "
+            "says nothing to act on is a tool that kept its card")
+
+    tools = {index for index, classes in containers if "tool" in classes}
+    headed = {parent for role, _, parent, _ in labels if role == "runner"}
+    for _ in sorted(tools - headed):
+        problems.append(
+            "carries a .tool section with no runner standing on it. The "
+            "runner's rule IS the section divider here, so a section "
+            "without one is a block of controls with nothing saying where "
+            "one tool ends and the next begins")
+
+    for role, words, parent, classes in labels:
+        if role != "runner" or parent is None:
+            continue
+        if "tool" not in classes:
+            problems.append(
+                "stands the section name \"%s\" on something that is not a "
+                ".tool. Every section on this surface is the same width by "
+                "construction because .tool is what gives it that width - a "
+                "runner outside one is a section that will not line up "
+                "with the ones above it" % words)
+
+    return problems
+
+
+def grammar_problems():
+    """(subject, problem) for the signed-in pages' shared card grammar."""
+    problems = []
+    pages = {name: page_text(name) for name in html_pages()}
+
+    for name in card_pages():
+        if name in pages:
+            for problem in grammar_markup_problems(pages[name], "cards"):
+                problems.append((name, problem))
+
+    for name in section_pages():
+        if name in pages:
+            for problem in grammar_markup_problems(pages[name], "sections"):
+                problems.append((name, problem))
+
+    css = stylesheet_text()
+    if css is not None:
+        problems.extend(geometry_agreement_problems(css, pages))
+        problems.extend(card_scope_problems(css))
+
+    return problems
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -4285,6 +4849,9 @@ def main():
         problems.append("%s %s." % (subject, problem))
 
     for subject, problem in refused_surface_problems():
+        problems.append("%s %s." % (subject, problem))
+
+    for subject, problem in grammar_problems():
         problems.append("%s %s." % (subject, problem))
 
     for where in ("apps/web", "dist"):

@@ -398,6 +398,12 @@
 
   
 
+  
+
+  const DOWNLOAD_IDS = Object.freeze(
+    ["download", "download-xlsx", "download-json"]);
+  const PRESSED_MS = 4000;
+
   const KEY_DB = "hgb-keyholder-key";
   const KEY_STORE = "key";
   const KEY_ROW = "current";
@@ -514,6 +520,11 @@
      
      
      
+    let pressedTimer = 0;
+
+     
+     
+     
     let storedKey = null;
     let kept = "";
 
@@ -563,6 +574,21 @@
       urls = [];
     }
 
+    
+
+    function acknowledge(link, what) {
+      link.classList.add("pressed");
+      clearTimeout(pressedTimer);
+      pressedTimer = setTimeout(function () {
+        for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
+      }, PRESSED_MS);
+      UI.setStatus($("download-status"),
+        what + " handed to the browser. Where it puts a download is the "
+        + "browser's to decide, so this page cannot say whether it "
+        + "arrived.", null);
+    }
+
+     
      
      
      
@@ -734,6 +760,17 @@
      
      
     $("idle-stay").addEventListener("click", markInteraction);
+
+     
+     
+     
+     
+    for (const id of DOWNLOAD_IDS) {
+      const link = $(id);
+      link.addEventListener("click", function () {
+        acknowledge(link, link.textContent.trim());
+      });
+    }
 
     
 
