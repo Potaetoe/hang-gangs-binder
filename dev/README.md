@@ -95,8 +95,8 @@ then load `test-key.json` in the key picker. Expect 17 of 18 rows to
 decrypt and row 16 listed as unopenable — the rotated-key case. The
 stub catches the Publish request too, so nothing can leave the page;
 **there is deliberately no `?sample=` hook and there must not be one**,
-because `apps/web` ships verbatim and a console cannot be deployed by
-accident.
+because `./run build` takes `apps/web` whole into the published `dist/`
+and a console cannot be deployed by accident (#181).
 
 ## The drivable demo
 

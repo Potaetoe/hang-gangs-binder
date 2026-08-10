@@ -376,7 +376,8 @@ its two factors.
    has. `DESIGN.md`, "Key custody", carries what that costs and why the
    offline copy is still the one that matters.
 3. **Fetch and decrypt**, then download CSV, Excel or JSON. Below them:
-   the keyholder dashboard.
+   the keyholder's charts, drawn from the rows just decrypted and the
+   same drawing this page publishes.
 
 `[pre-cutover]` Today the page takes the export token in a box instead
 of a session, and the dashboard is public. Everything else matches.
@@ -395,7 +396,7 @@ close with it.** Press **Clear** to remove it from this browser — that
 is the step that matters on a machine anyone else can reach, and the
 same button the departure and compromise procedures below name.
 
-## Publishing and retracting the dashboard
+## Publishing and retracting the snapshot
 
 At the bottom of the export page, after decrypting: decide about
 **weight over time** (off by default — `DESIGN.md` carries what the
@@ -450,9 +451,13 @@ which is the failure mode that comes with having two — check the row and
 the secret in the same sitting. What it does not do is end the session —
 demotion is not revocation, the person is still in the group, and the
 session goes on working as the ordinary member session it also is.
-Ending one outright is `DELETE /session`, which a page sends when
-somebody presses **Sign out**; `your-page.html` has that control, and
-`admin.html` and `charts.html` do not yet (#81).
+Ending one outright is `DELETE /session`, which `apps/web/signout.js`
+sends when somebody presses **Sign out**. That control is in the rail's
+session block, and the rail is on every signed-in page, so it is reached
+from wherever the person happens to be standing. The request is what
+makes it a revocation rather than a local clear: the row is deleted at
+the Worker, so a token captured beforehand stops opening anything
+instead of running to its natural expiry (#90).
 
 **The last `admin` row will not come off, and that is not a bug to work
 around.** The endpoint refuses it rather than emptying the table, so add
@@ -474,10 +479,13 @@ this table exists to remove, arriving by the one door `POST` cannot
 guard. `DELETE /membership/:role/:accountId` takes the id exactly as
 that list gives it and removes it.
 
-Both of those are endpoint behavior, so both arrive with the next
-`server/` deploy and not with a merge — see the `[pre-cutover]` note
-under "Routes and who may call them" for what the deployed Worker is
-still running. Production takes them at `CUTOVER.md` step 5.
+`[pre-cutover]` Both of those are endpoint behavior, so both arrive
+with the next `server/` deploy and not with a merge — see the
+`[pre-cutover]` note under "Routes and who may call them" for what the
+deployed Worker is still running. Production takes them at
+`CUTOVER.md` step 5. It is tagged because it points into a tagged
+paragraph — do not untag it and leave the pointer, which is how the
+aftercare step ends up deleting a paragraph something still cites.
 
 If everyone is locked out — no admin id works, the bot is gone from the
 group — `ALWAYS_ALLOW_TELEGRAM_IDS` and `EXPORT_TOKEN` are the two ways
@@ -659,10 +667,10 @@ failure "The keys" warns about from the other side.
    answers `Origin not allowed.` **Clearing it does not do this**; an
    empty value falls back to the defaults compiled into `worker.js`,
    and the live origin is one of them. This stops sign-in and the
-   members' dashboard too, which is the intended shape: a visible stop
+   members' charts page too, which is the intended shape: a visible stop
    beats a silent one. **Owner only** — an admin id does not reach the
    dashboard. Two consequences to expect: your own break-glass `curl`
-   in "Publishing and retracting the dashboard" must now send the new
+   in "Publishing and retracting the snapshot" must now send the new
    origin, and the next `wrangler deploy` puts the old value back,
    because `deploy` applies `[vars]` over the dashboard's.
 2. **Capture what you are looking at, before touching anything.** The
@@ -765,7 +773,7 @@ answers do not substitute for one another.
    above), so its copies are wherever that is; a rotation that does not
    reach them leaves the next real emergency holding a token that no
    longer works, which is the failure break-glass exists to prevent.
-   The `curl` under "Publishing and retracting the dashboard" is the
+   The `curl` under "Publishing and retracting the snapshot" is the
    other place it is used. **Owner.**
 5. **A suspected session is a different mechanism, and no rotation
    touches it.** Rotating `EXPORT_TOKEN` does nothing to an issued

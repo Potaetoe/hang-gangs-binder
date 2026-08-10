@@ -409,8 +409,8 @@ def pairing_problems(palettes, pairings=None, thresholds=None):
     """[problem] for every pinned pairing in every palette.
 
     Pure, over a palette set handed in, so both directions can be
-    exercised without editing a file that is copied verbatim to the
-    published site.
+    exercised without editing a file the published site is built from -
+    which since #181 would mean rebuilding dist/ to exercise a check.
     """
     pairings = PAIRINGS if pairings is None else pairings
     thresholds = THRESHOLDS if thresholds is None else thresholds

@@ -5,9 +5,10 @@ Check that server/ holds nothing that must not be committed.
     python tools/check_server.py
 
 A sibling of check_web.py rather than part of it, and the distinction is
-the point. check_web.py is about **publishability**: apps/web is copied
-verbatim to a public site, so anything secret landing there is public
-permanently. server/ is not published at all. It is dangerous for the
+the point. check_web.py is about **publishability**: apps/web is what
+dist/ is built from and dist/ is the public site, so anything secret
+landing there is public permanently - and it is public in two committed
+copies. server/ is not published at all. It is dangerous for the
 opposite reason - it is the directory that gets *run*, and wrangler.toml
 is the file a deploy reads. Bolting this onto a checker whose whole
 premise is "this directory becomes a public site" would make the premise

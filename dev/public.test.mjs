@@ -64,7 +64,8 @@ globalThis.location = {
  * document, sessionStorage and location, and it is the one the shipped
  * module can be held to: ageText takes the clock as an argument, and
  * setUp reads it once and hands it in, so nothing here needs a test-only
- * path in a file that is copied verbatim to the published site.
+ * path in a file the published site is built from - which would ship in
+ * dist/ as surely as in apps/web (#181).
  *
  * NOW is the instant the SNAPSHOT fixture below turns exactly 48 hours
  * old. That instant is also the one second in which the module's two

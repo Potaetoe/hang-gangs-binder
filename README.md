@@ -38,12 +38,12 @@ stored, along with exactly what was typed.
 
 ## What is public
 
-The dashboard shows totals only — counts, medians, distributions — with
-no handles and no individual entries, computed in the keyholder's
-browser before anything is published. Since the redesign it requires a
-member sign-in. Everything else stored is ciphertext that only the
-private key opens. The full privacy reasoning is in
-[DESIGN.md](DESIGN.md).
+The published snapshot holds totals only — counts, medians,
+distributions — with no handles and no individual entries, computed in
+the keyholder's browser before anything is published. The charts page
+that draws it requires a member sign-in since the redesign. Everything
+else stored is ciphertext that only the private key opens. The full
+privacy reasoning is in [DESIGN.md](DESIGN.md).
 
 ## Running it locally
 
@@ -90,7 +90,8 @@ its own list. Report the totals it prints; never a remembered count.
 ## Repository layout
 
 ```
-apps/web/   the published site - this directory IS the build
+apps/web/   the site you edit - the source every fix belongs in
+dist/       the site that is published - ./run build writes it (#181)
 server/     the Cloudflare Worker and its schema, deployed by hand
 tools/      checks and the key generator; never published
 dev/        test harness; never published
@@ -114,9 +115,11 @@ rather than letting that ship.
 
 ## Deploying
 
-**A push to `main` is a release.** CI runs the checks and publishes
-`apps/web` if they pass. While the redesign waits on its cutover, work
-goes to `accounts`, which publishes nothing.
+**A push to `main` is a release.** CI runs the checks and publishes the
+committed `dist/` if they pass — it copies that directory and builds
+nothing, which is why what ships is always something a reviewer read.
+While the redesign waits on its cutover, work goes to `accounts`, which
+publishes nothing.
 
 ### `main` is frozen, and how to fix production anyway
 
@@ -126,14 +129,25 @@ If something is wrong with the live site right now:
    hotfix-<what> origin/main`
 2. Make the **smallest change that fixes the thing** — not the correct
    change, not the tidy one.
-3. Run the gate, and read exactly what will change on the live site:
-   `git diff --stat origin/main -- apps/web` — short enough to read.
+3. **Read what will change on the live site, which is the directory the
+   release publishes and not the one you edited.** If the branch carries
+   a `dist/`, the fix still belongs in `apps/web` and `./run build` is
+   what carries it across — run the build, then the gate, then
+   `git diff --stat origin/main -- dist`. Skipping the build fails the
+   "dist is the build of apps/web" stage (#181) at the worst possible
+   moment. If the branch has no `dist/`, that release still publishes
+   `apps/web` and that is the diff to read; the `Build the site` step in
+   `.github/workflows/deploy.yml` on the branch you are fixing is what
+   settles which of the two you are looking at. Either way it is short
+   enough to read.
 4. Open a pull request against `main` so CI runs before the merge, then
    merge. Merging is the release.
 5. **Cherry-pick the fix to `accounts`.** This is the step that gets
    skipped, and its failure is silent: a fix that never reaches
    `accounts` disappears the day the redesign merges, with every check
-   green.
+   green. Run `./run build` there before pushing if the two branches
+   disagree about `dist/` — a cherry-picked `apps/web` change arrives
+   without its built twin, and that failure is loud rather than silent.
 6. Confirm the live site actually changed:
    `curl -sI https://potaetoe.github.io/hang-gangs-binder/ | grep -i last-modified`
 

@@ -58,5 +58,6 @@ _demo/
 secret*
 
 # Node tooling. devDependencies only - nothing here is bundled or
-# shipped, and apps/web is copied to the published site verbatim.
+# shipped, and the published site is dist/, which ./run build writes
+# from apps/web alone and never from a sibling directory (#181).
 node_modules/

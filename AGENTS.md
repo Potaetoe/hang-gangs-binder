@@ -305,8 +305,11 @@ Hard-won platform facts, one line each, dated. The full stories are in
   failures. Rebase first, then look for the run by full SHA.
 - 2026-08-08: the same bytes do not gzip to the same size on both
   machines — Python 3.14 here links zlib-ng, the runner links stock
-  zlib, and level 9 differs by up to 4%. Any size gate needs slack;
-  `tools/check_budget.py` has the measurements.
+  zlib, and level 9 differs. Any size gate needs slack, and **which
+  machine comes out larger is not fixed** — it has already flipped once
+  as the payload changed, so pin against the larger measurement rather
+  than against a named machine. `tools/check_budget.py` carries the
+  current figure and how to re-measure it.
 - 2026-08-08: `__pycache__` outlives `git checkout` — Python keeps
   serving the previous tree's bytecode, so a reverted mutation stays
   "applied" and the gate lies in both directions. Two slices hit it

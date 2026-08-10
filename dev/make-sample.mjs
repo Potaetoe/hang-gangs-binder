@@ -36,9 +36,10 @@
  * The output is shaped exactly like the Worker's GET /export reply, so
  * it drops into admin.html with no translation. dev/README.md has the
  * console snippet. There is deliberately no ?sample= hook or any other
- * dev branch in apps/web - that directory is published verbatim, and a
- * code path that loads fake data into the export page is not something
- * to ship to a live site.
+ * dev branch in apps/web - ./run build takes that directory whole into
+ * the published dist/, stripping comments and nothing else, so a code
+ * path that loads fake data into the export page would ship to a live
+ * site (#181).
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
