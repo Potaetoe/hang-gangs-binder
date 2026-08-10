@@ -382,6 +382,22 @@ def main():
         [sys.executable, "dev/check_budget.test.py"]
     )))
 
+    # Every subset face against the characters the pages ask it to draw.
+    # #85 cut the italic display face down to a wordmark's inventory to
+    # free the budget above, and that trade has a silent failure on the
+    # other side of it: a missing glyph is not an error, it is a fallback
+    # to the next family in the stack, so the wordmark would still render
+    # and nothing else here would notice it had gone serif.
+    results.append(("subset faces cover the wordmark", run(
+        "subset faces cover the wordmark",
+        [sys.executable, "tools/check_fonts.py"]
+    )))
+
+    results.append(("check_fonts extractor + coverage", run(
+        "check_fonts extractor + coverage",
+        [sys.executable, "dev/check_fonts.test.py"]
+    )))
+
     # Every palette against WCAG, with a written margin. #81 measured
     # nineteen failing pairings by hand and nothing in this gate would
     # have found the twentieth - or noticed a fifth palette shipping
