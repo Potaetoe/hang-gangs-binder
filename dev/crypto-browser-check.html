@@ -24,15 +24,22 @@
       python -m http.server 8124 --directory .
       # then http://localhost:8124/dev/crypto-browser-check.html
 
-  The policy below is a copy of the published pages', for the same
-  reason the whole check exists: crypto.js has to work under it. If a
-  future change to crypto.js needs the policy loosened here, that is
-  the finding, not the fix.
+  The policy below is apps/web/404.html's, byte for byte, for the same
+  reason the whole check exists: crypto.js has to work under it. The
+  five published pages do not share one policy, so there is no single
+  "published CSP" to copy: index.html admits Telegram's script and
+  frame, and the pages that call the Worker widen connect-src.
+  404.html's is the strictest of the five, and it differs from the
+  pages that load crypto.js in connect-src alone - which crypto.js
+  never uses - so passing here passes under all five. Widening this to
+  match your-page.html would test less, not more. If a future change to
+  crypto.js needs the policy loosened here, that is the finding, not
+  the fix.
 
   This directory is never published. It is safe for it to name the test
   key, which protects nothing and opens nothing real.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <title>crypto.js — browser check</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="../apps/web/theme.css">
@@ -45,7 +52,8 @@
     <h1>crypto.js in a browser</h1>
     <p class="muted">
       The same assertions <code>dev/crypto.test.mjs</code> makes, run
-      here under the published pages' content security policy.
+      here under <code>404.html</code>'s content security policy, the
+      strictest of the five the site publishes.
     </p>
   </div>
 </header>
