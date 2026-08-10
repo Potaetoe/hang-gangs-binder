@@ -1036,7 +1036,7 @@ const SUPERSEDED =
  *
  * A break-glass EXPORT_TOKEN caller has no account and gets null,
  * reported rather than special-cased. See DESIGN.md, "The prefill is
- * scoped to an account".
+ * scoped to the account".
  *
  * `entries` is what this account currently claims rather than how many
  * rows it has written. A correction supersedes a row, so a member who

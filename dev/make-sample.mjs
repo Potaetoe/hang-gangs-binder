@@ -181,8 +181,9 @@ const SAMPLE = [
 
   /*
    * Every optional field left alone. `Not stated` is a bar on the
-   * charts rather than a deletion - see DESIGN.md, "Two smaller
-   * judgements" - and this is the row that proves it.
+   * charts rather than a deletion - see archive/DESIGN.md, "Two smaller
+   * judgements", which is where that reasoning lives now - and this is
+   * the row that proves it.
    */
   {
     at: "2026-06-11T22:07:00.000Z",

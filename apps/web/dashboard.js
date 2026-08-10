@@ -5,9 +5,8 @@
  * every submission in the clear, and admin.html's policy is
  * `default-src 'none'; script-src 'self'` - a CDN script here would see
  * the whole decrypted corpus. That rule is the design (see DESIGN.md,
- * "Encryption, concretely"), so the charts are inline SVG built from
- * the DOM, which costs about a hundred lines of arithmetic and nothing
- * else.
+ * "Encryption"), so the charts are inline SVG built from the DOM, which
+ * costs about a hundred lines of arithmetic and nothing else.
  *
  * Two consequences worth knowing before editing:
  *
@@ -845,7 +844,8 @@
    * used to claim renumbering meant "two snapshots cannot be lined up
    * to follow one person across them", which was false: the points
    * themselves were the join key. See quantize() below, and DESIGN.md,
-   * "Renumbering does not prevent linkage - a correction".
+   * "The dashboard and the snapshot", which carries the corrected
+   * claim.
    *
    * The pseudonym is keyed on the line, not on the handle captioning
    * it. A series line is one person, because weightSeries groups by
