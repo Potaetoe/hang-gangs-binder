@@ -45,7 +45,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 69
+EXPECTED = 79
 
 
 def check(label, condition):
@@ -111,6 +111,37 @@ check("a phrase in a Python docstring is caught",
 
 check("a Python single-quoted string is not read",
       clean('MESSAGE = "used to be"\n', "py"))
+
+# SQL is the fourth language, and server/schema.sql is why. That file is
+# a page of operator-facing prose around six DDL statements - which
+# migration destroys rows, which index rename is half of an act, what a
+# re-run does to a database that already has data. A narrating sentence
+# there is read by somebody about to run the file against production.
+check("a phrase in a SQL -- comment is caught",
+      labels("-- the column used to be nullable\n", "sql")
+      == ["used to"])
+
+check("a phrase in a SQL /* */ comment is caught",
+      labels("/* carried over from the first schema */\n", "sql")
+      == ["carried over from"])
+
+# The literal below is the shape schema.sql's own seeds would take, and
+# a scanner reading DDL as prose would report the data instead of the
+# commentary.
+check("a SQL string literal is not read",
+      clean("INSERT INTO site_content VALUES ('used to be');\n", "sql"))
+
+# The continuation mark is the language's own: a comment block in SQL is
+# a run of -- lines, exactly as a run of # lines is in Python. Without
+# the leading hyphens counting as whitespace between the words, a phrase
+# that happens to reflow is a phrase this check cannot see - and every
+# comment in schema.sql is wrapped prose.
+check("a phrase split across two SQL line comments is caught",
+      labels("-- it is carried over\n-- from the first schema\n", "sql")
+      == ["carried over from"])
+
+check("and code between two SQL comments is still not bridged",
+      clean("-- it is carried over\nVACUUM;\n-- from here\n", "sql"))
 
 # A comment block is one comment however it is laid out. Both of these
 # straddle a line break, and both are real shapes in this tree. Three
@@ -316,6 +347,34 @@ check("a real page's user-facing string is not counted",
       ("apps/web/public.js", "no longer used") not in found
       and check_comments.hits(PUBLIC, "js") == [])
 
+# The outside-scan surface #154's sweep found (P3 F7 / S-5): the scan
+# read server/*.js and stopped there, so the one file in that directory
+# whose comments an operator acts on was outside the rule. It is in the
+# scan set by name here, from outside check_comments.py, for the reason
+# the generated-tree pin below is: an extension list is one edit away
+# from quietly dropping a file, and a scan that reads nothing reports a
+# clean tree.
+SERVER_EXTENSIONS = dict(check_comments.SCAN)["server"]
+check("the scan set reads the schema, not only the Worker",
+      ".sql" in SERVER_EXTENSIONS and ".js" in SERVER_EXTENSIONS)
+
+check("and the schema is a file it actually opened",
+      "server/schema.sql" in scanned)
+
+# The decisive pair for the new language, the same one theme.css gets
+# above. A syntax table that produced no comments at all would leave
+# every SQL check above passing on strings while the real file went
+# unread - and this file's comments are the ones an operator reads
+# before running a destructive migration.
+SCHEMA = open(os.path.join(check_comments.REPO, "server", "schema.sql"),
+              encoding="utf-8").read()
+check("the extractor reads real comments out of the schema",
+      "half a migration, quietly" in
+      check_comments.comments_only(SCHEMA, "sql"))
+
+check("and the schema's own DDL is not read as prose",
+      "CREATE TABLE" not in check_comments.comments_only(SCHEMA, "sql"))
+
 check("the real tree's occurrences are exactly what is pinned",
       {key: len(places) for key, places in found.items()}
       == check_comments.ALLOWLIST)
@@ -459,6 +518,15 @@ check("a file outside the scanned extensions is not opened",
 check("an exempt file is still read for control bytes",
       len(bytes_in("tools/check_comments.py", b'BLANK = "\x00"\n',
                    scan=[("tools", (".py",))])) == 1)
+
+# The general arm reads whatever the scan set names, so a language
+# joining the scan set joins this rule with it. Stated as a check rather
+# than left to inference: the two rules share one extension list, and
+# the day they stop sharing it is the day a file is text by one rule and
+# not by the other.
+check("a control byte in the newest scanned language is reported too",
+      len(bytes_in("server/schema.sql", b"-- a\x00b\n",
+                   scan=[("server", (".sql",))])) == 1)
 
 check("the real tree carries no control byte",
       check_comments.control_byte_problems() == [])

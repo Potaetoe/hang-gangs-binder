@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 453
+EXPECTED = 473
 
 
 def check(label, condition):
@@ -2686,6 +2686,141 @@ check("the two grammars name every signed-in page and no other",
                 if shell == "rail"))
 check("the shipped pages wear the grammar they are pinned to",
       check_web.grammar_problems() == [])
+
+
+# ------------------------------------------------------------------
+# Check 26: the styling routes checks 24 and 25 do not cover.
+#
+# #154's sweep, P2 F3 and P3 mutation J. Checks 24 and 25 read one
+# stylesheet and speak for the whole site's appearance, and the only
+# thing that makes that true is `style-src 'self'` in every page's CSP
+# - which nothing in either check named, so a policy edit could have
+# taken the design gate's teeth out while every arm above stayed green.
+# The second same-origin stylesheet is the route the CSP itself leaves
+# open, because a second file on this origin is exactly what 'self'
+# permits.
+
+check("the baseline every page inherits closes inline styling",
+      check_web.CSP_BASELINE["style-src"] == check_web.STYLE_SOURCE)
+check("and 'self' alone is what that means",
+      check_web.STYLE_SOURCE == ["'self'"])
+
+# The pin table is what this arm reads, because a widened pin is the
+# failure it exists for: a page and its pin widened together satisfy
+# check 13, which reconciles the two against each other and has no
+# opinion about what they agree on.
+BASE_PIN = {"style-src": ["'self'"]}
+check("a pin table that keeps styling on this origin is clean",
+      check_web.pinned_style_problems(
+          {"admin.html": BASE_PIN, "charts.html": BASE_PIN}) == [])
+
+INLINE = check_web.pinned_style_problems(
+    {"admin.html": BASE_PIN,
+     "charts.html": {"style-src": ["'self'", "'unsafe-inline'"]}})
+check("a pin that admits inline styling is reported",
+      [subject for subject, _p in INLINE] == ["charts.html"])
+check("and the report says which gate it disarms",
+      "check 24" in INLINE[0][1] and "check 25" in INLINE[0][1])
+
+check("a pin that admits another origin is reported too",
+      len(check_web.pinned_style_problems(
+          {"admin.html": {"style-src": ["'self'", "https://cdn.example"]}}))
+      == 1)
+
+# Absence is not silence here. A pin with no style-src at all leaves
+# default-src to govern styling, and the table then says nothing about
+# the directive this whole arm depends on.
+check("a pin with no style-src at all is reported",
+      len(check_web.pinned_style_problems(
+          {"admin.html": {"script-src": ["'self'"]}})) == 1)
+
+check("the shipped pin table is closed",
+      check_web.pinned_style_problems() == [])
+
+
+def links(*tags):
+    return "<html><head>%s</head><body></body></html>" % "".join(tags)
+
+
+THEME_LINK = '<link rel="stylesheet" href="theme.css">'
+
+check("the one stylesheet a page is allowed is clean",
+      check_web.page_stylesheet_problems(links(THEME_LINK)) == [])
+
+# Mutation J itself. Nothing else in this gate reads a second
+# stylesheet: check 1 only asks whether the file it names exists, and
+# checks 24 and 25 open theme.css by name.
+SECOND = check_web.page_stylesheet_problems(
+    links(THEME_LINK, '<link rel="stylesheet" href="extra.css">'))
+check("a second same-origin stylesheet is reported",
+      len(SECOND) == 1)
+check("and the report names the file that would paint",
+      "extra.css" in SECOND[0])
+
+check("an off-origin stylesheet is reported as well",
+      len(check_web.page_stylesheet_problems(links(
+          THEME_LINK,
+          '<link rel="stylesheet" href="https://cdn.example/x.css">'))) == 1)
+
+# An alternate stylesheet is a stylesheet a member can switch to, which
+# is the same route wearing a different rel.
+check("an alternate stylesheet is still a stylesheet",
+      len(check_web.page_stylesheet_problems(links(
+          THEME_LINK,
+          '<link rel="alternate stylesheet" href="extra.css">'))) == 1)
+
+check("a link that is not a stylesheet is not read",
+      check_web.page_stylesheet_problems(links(
+          THEME_LINK, '<link rel="icon" href="favicon.ico">')) == [])
+
+# The same file twice paints nothing new, and it is still reported: two
+# link elements are two places to re-point, and the second is the one
+# nobody re-reads.
+check("the one stylesheet linked twice is reported",
+      len(check_web.page_stylesheet_problems(
+          links(THEME_LINK, THEME_LINK))) == 1)
+
+check("a cache-busting query is the same file",
+      check_web.page_stylesheet_problems(
+          links('<link rel="stylesheet" href="theme.css?v=2">')) == [])
+
+# A page with no stylesheet at all is check 3's to report, and saying it
+# twice is how one of the two gets weakened.
+check("a page linking nothing is left to check 3",
+      check_web.page_stylesheet_problems(links()) == [])
+
+
+def styling_over(pages):
+    """styling_exclusivity_problems() against a directory of `pages`."""
+    with tempfile.TemporaryDirectory() as folder:
+        for name, head in pages.items():
+            with open(os.path.join(folder, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write("<!doctype html>" + links(head))
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.styling_exclusivity_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+check("the wrapper reads the pages on disk rather than answering from "
+      "nowhere",
+      [subject for subject, _p in styling_over({
+          "your-page.html": THEME_LINK + '<link rel="stylesheet" '
+                                         'href="extra.css">',
+          "charts.html": THEME_LINK,
+      })] == ["your-page.html"])
+
+# Every page here quotes markup in its comments, theme.css included.
+check("a stylesheet named only in a comment is not linked",
+      styling_over({"your-page.html":
+                    THEME_LINK + "<!-- %s -->" %
+                    '<link rel="stylesheet" href="extra.css">'}) == [])
+
+check("nothing shipped is styled by anything but the one stylesheet",
+      check_web.styling_exclusivity_problems() == [])
 
 
 if failures:
