@@ -1312,9 +1312,21 @@ function consoleInRecordedBrowser() {
   // lands between the page and the tour. Everything else is made on
   // demand, so the default page has whatever it is asked for.
   const absent = new Set();
+  /*
+   * Listeners the console puts on the page in the frame, and the real
+   * DOM's registration rule with them: one listener per (type, function)
+   * pair, so re-arming on every arrival adds nothing. A recording that
+   * stacked them would answer one press as several, which is the shape
+   * of fixture that makes a console counting arrivals look correct.
+   */
+  const frameWatchers = {};
   nodes.stage.contentDocument = {
     getElementById: (id) => (absent.has(id) ? null : inFrame(id)),
     dispatchEvent: (event) => { poked.push(event.type); },
+    addEventListener(type, fn) {
+      const kept = (frameWatchers[type] = frameWatchers[type] || []);
+      if (!kept.includes(fn)) kept.push(fn);
+    },
   };
 
   const context = {
@@ -1395,6 +1407,22 @@ function consoleInRecordedBrowser() {
     nodes.stage.contentWindow.location.href =
       CONSOLE_ORIGIN + Demo.MIRROR_PATH + file;
     nodes.stage.fire("load");
+  };
+  /*
+   * A press landing on the page INSIDE the frame, and the one field that
+   * says whose press it was.
+   *
+   * `isTrusted` is the browser's own answer to "did a person do this",
+   * and it is the only thing separating the viewer clicking the
+   * product's nav rail from the console's own control.click() or a
+   * page's script clicking something for itself. Recorded with the flag
+   * settable so an arm can stand up either, because the console's whole
+   * new distinction is between them and a fixture that could only
+   * produce one of the two could not test it.
+   */
+  const pressInFrame = (trusted) => {
+    (frameWatchers.click || []).slice().forEach((fn) =>
+      fn({ type: "click", isTrusted: trusted }));
   };
   const pressed = () => nodes.destinations.children
     .filter((one) => one.getAttribute("aria-pressed") === "true")
@@ -1500,9 +1528,9 @@ function consoleInRecordedBrowser() {
   };
 
   return {
-    nodes, replaced, arrive, pressed, destination, journey, cardAction,
-    locked, staged, waking, frameField, framePressed, poked, fetched,
-    opened, settled,
+    nodes, replaced, arrive, pressInFrame, pressed, destination, journey,
+    cardAction, locked, staged, waking, frameField, framePressed, poked,
+    fetched, opened, settled,
     missingInFrame, frameScrolled, frameActs, unpaintedInFrame,
     paintedAfterPressing, pressableAfter, neverPressable,
   };
@@ -1859,6 +1887,51 @@ await check("the admin page carries stops on both sides of that line", () => {
 });
 
 /*
+ * THE SAME PARTITION OVER THE FREE DRIVE, BECAUSE THE DEAD END CAME
+ * BACK THROUGH THE CARDS AGAIN (#254 F5).
+ *
+ * The partition above was written over journey stops, and the card that
+ * says "Publish a fresh snapshot, then open Muse's charts and see it
+ * drawn" staged none of it. So the button that promises publishing
+ * opened the admin page on its key box, with the publishing card still
+ * hidden: `#publish` reported `disabled: false` and rendered nothing at
+ * all, the press did nothing, and nothing said so. It is the neighbour
+ * of the desk card whose key dead end this slice already removed, and it
+ * is the card UAT sends a driver to by name for A10.1.
+ *
+ * The rule is extended rather than the card exempted. A card promising
+ * an act is the same promise a stop makes - same page, same hidden
+ * section, same viewer - and the day a card is allowed to promise what
+ * the screen does not show is the day this partition stops meaning
+ * anything.
+ *
+ * The words read are everything a viewer has in front of them before
+ * pressing: the card's title and blurb, and the button's own label and
+ * pointer. A trigger read off the button alone would miss a card whose
+ * promise is in its blurb, which is where this one's is.
+ */
+const cardActionsOnAdmin = Demo.FEATURES.flatMap((card) =>
+  card.actions
+    .filter((action) =>
+      (action.open || Demo.scenarioFor(action.scenario).start) === ADMIN_PAGE)
+    .map((action) => ({
+      action: action,
+      words: [card.title, card.blurb, action.label, action.try].join(" "),
+    })));
+
+await check("a card action that promises publishing stages its way to the card, and only those do",
+  () => cardActionsOnAdmin.length > 0 && cardActionsOnAdmin.every((one) => {
+    const about = PROMISES_PUBLISHING.test(one.words);
+    const staged = one.action.key === true && one.action.press === DECRYPT &&
+      one.action.scroll === publishSection;
+    return about === staged;
+  }));
+
+await check("the free drive carries admin-page cards on both sides of that line", () =>
+  cardActionsOnAdmin.some((one) => PROMISES_PUBLISHING.test(one.words)) &&
+  cardActionsOnAdmin.some((one) => !PROMISES_PUBLISHING.test(one.words)));
+
+/*
  * WHICH stops have to declare one - the half the arm above cannot see.
  *
  * "Names a control the page really has" is satisfied by declaring
@@ -2004,6 +2077,62 @@ await check("every journey is walked by some UAT section", () => {
  */
 await check("no UAT section still points at a card", () =>
   !/^##.*card "/m.test(uat));
+
+/*
+ * A POINTER CAN RESOLVE AND STILL SEND A DRIVER NOWHERE (#254 F1).
+ *
+ * The arms above ask whether a section names a journey that exists and a
+ * stop it really has. A8's routing note did exactly that and was still
+ * undrivable: it sent six rows about a decrypted table, a publishing
+ * card and an idle timer hanging off a decrypt to a stop that stages the
+ * key and never presses anything - key box filled, zero rows, no card on
+ * screen. Every pointer arm was green while five acceptance rows could
+ * not be performed as written, by the owner, on the build being
+ * accepted. Existing is not the same as being in the state the rows
+ * need, and nothing asked the second question.
+ *
+ * So a section that wants the corpus ALREADY OPEN when the frame reaches
+ * the driver says so in the pointer, and the phrase is the contract: the
+ * stop it names has to stage the key, press the page's own decrypt, and
+ * hand the frame over. All three, because any two of them leave a row
+ * undrivable - the key without the press is F1 itself, the press without
+ * the hand-over leaves the glass on, and either without the key leaves
+ * the product asking for a key file.
+ *
+ * A7 deliberately carries no such pointer and must not: its rows tell
+ * the driver to press Fetch and decrypt themselves, and A7.6 replaces
+ * the key first, so a stop that had already decrypted would be the wrong
+ * surface for it. The marker is opt-in for exactly that reason.
+ */
+const uatSections = [];
+uat.split("\n").forEach((line) => {
+  if (/^###\s/.test(line)) {
+    uatSections.push({ heading: line, lines: [] });
+  } else if (uatSections.length > 0) {
+    uatSections[uatSections.length - 1].lines.push(line);
+  }
+});
+
+const CORPUS_OPEN =
+  /driven with the corpus already open at journey "([^"]+)", stop ([0-9]+)/;
+const drivenOpen = [];
+uatSections.forEach((section) => {
+  const named = CORPUS_OPEN.exec(section.lines.join("\n"));
+  if (named === null) return;
+  const walk = Demo.TOURS.find((one) => one.title === named[1]);
+  drivenOpen.push({
+    heading: section.heading,
+    at: walk === undefined ? undefined : walk.stops[Number(named[2]) - 1],
+  });
+});
+
+await check("UAT.md says where its corpus-open rows are driven", () =>
+  drivenOpen.length > 0);
+
+await check("a UAT row driven with the corpus open names a stop that opens it", () =>
+  drivenOpen.length > 0 && drivenOpen.every((one) =>
+    one.at !== undefined && one.at.key === true &&
+    one.at.press === DECRYPT && one.at.free === true));
 
 /* ------------------------------------------------------------------ */
 /* The walk, and the glass over it, driven for real.                   */
@@ -2338,6 +2467,42 @@ await check("a stop that promises publishing lands with that card on screen",
   });
 
 /*
+ * AND THE CARD, DRIVEN THE SAME WAY - WHICH IS ALSO WHAT ARMS THE
+ * PASS-THROUGH (#254 F4 and F5, one arm).
+ *
+ * stage() builds an errand out of a card action's `press`, `key` and
+ * `scroll` with two lines deliberately identical to goToStop's, and
+ * until this card carried a press and a scroll no card carried either:
+ * dropping both from that object left this whole file green. An
+ * unfalsifiable pass-through is the same class of hole as an
+ * unfalsifiable branch, so it is armed here rather than deleted -
+ * deleting it would have taken the fix for F5 with it, because staging
+ * this card's way to a rendered Publish is exactly what the two fields
+ * are for.
+ *
+ * The ORDER is the assertion, as it is for the stops: a key written
+ * after the press leaves the product asking for a key file, and a move
+ * made before the page has revealed the card scrolls to nothing.
+ */
+await check("a card action that promises publishing lands with that card on screen",
+  async () => {
+    const want = ["filled keyfile", "pressed " + DECRYPT,
+      "scrolled " + publishSection].join(" | ");
+    let driven = 0;
+    for (const one of cardActionsOnAdmin) {
+      if (!PROMISES_PUBLISHING.test(one.words)) continue;
+      const browser = consoleInRecordedBrowser();
+      await browser.settled();
+      browser.cardAction(one.action.label).fire("click");
+      browser.arrive(ADMIN_PAGE);
+      await browser.settled();
+      if (browser.frameActs().join(" | ") !== want) return false;
+      driven += 1;
+    }
+    return driven > 0;
+  });
+
+/*
  * A CONTROL THE PAGE HAS NOT ENABLED YET, WHICH IS THE QUIETEST FAILURE
  * IN THIS WHOLE FILE.
  *
@@ -2614,6 +2779,137 @@ await check("a give-up sentence survives the errand's remaining acts",
     const said = browser.nodes.status.textContent;
     return said.includes(twoAct.stop.press) &&
       said.includes(twoAct.stop.scroll);
+  });
+
+/* ------------------------------------------------------------------ */
+/* Who moved the frame: the viewer, or the page moving itself (#254).   */
+
+/*
+ * THE THIRD PATH INTO THE FRAME, AND WHY THE OBVIOUS FIX FOR IT IS
+ * WRONG.
+ *
+ * The era is bumped when the CONSOLE navigates and when a walk is left,
+ * so pressing Next or a destination or Leave cancels the errand it walks
+ * away from. Neither covers the page inside the frame navigating itself
+ * because the viewer clicked one of ITS links - and the product's own
+ * nav rail is inside the frame, which the console's own copy invites a
+ * viewer to use. So the original defect came back through that door: an
+ * admin walk abandoned by a real click on the product's rail still put
+ * the key-disclosure line into the feed while the CHARTS page - a page
+ * with no key box at all - was on screen, and still landed its give-up
+ * sentence over the stop the viewer had moved to.
+ *
+ * And bumping the era on every arrival, which is the one-line repair
+ * that looks right, breaks the half the design insists on: a shipped
+ * page that redirects itself fires `load` again with nobody having asked
+ * for anything, and an errand cancelled by that is an errand that never
+ * finishes on a self-redirecting page.
+ *
+ * So the discriminator is neither the navigation nor the arrival - it is
+ * WHOSE PRESS caused it, which the browser answers with `isTrusted`. The
+ * four arms below are that distinction from all four sides, because
+ * three of them pass under at least one wrong implementation:
+ *
+ *   1. the page redirecting itself does NOT cancel  (era bumped on
+ *      arrival fails here - the reviewer's non-equivalence probe)
+ *   2. the viewer's own press DOES cancel           (the shipped-at-9d8f16c
+ *      behavior fails here - this is the finding)
+ *   3. a press that is not the viewer's does NOT    (an implementation
+ *      counting any event fails here)
+ *   4. a press on the page BEFORE the console moves the frame does not
+ *      cancel what the console then arms  (an implementation that never
+ *      forgets the press fails here)
+ */
+const elsewhereInProduct = Demo.DESTINATIONS.map((one) => one.file)
+  .find((file) => file !== pageOfStop(abandonedKey.stop));
+
+const keyStopWalked = (browser) => {
+  browser.journey(abandonedKey.walk.id).fire("click");
+  for (let i = 0; i < abandonedKey.index; i += 1) {
+    browser.nodes["tour-next"].fire("click");
+  }
+  browser.arrive(pageOfStop(abandonedKey.stop));
+};
+const keyReached = (browser) =>
+  browser.frameField("keyfile") === devKeyFile &&
+  browser.nodes.feed.children.map((one) => one.textContent)
+    .includes(Demo.KEY_STAGED_LINE);
+
+await check("a page that redirects itself does not cancel the errand in flight",
+  async () => {
+    if (abandonedKey === null) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    keyStopWalked(browser);
+    // The same navigation arriving a second time, which is what a page
+    // that redirects itself on load really does to the frame. Nobody
+    // pressed anything between the two.
+    browser.arrive(pageOfStop(abandonedKey.stop));
+    await browser.settled();
+    return keyReached(browser);
+  });
+
+await check("a press the viewer made inside the frame ends the errand it leaves",
+  async () => {
+    if (abandonedKey === null || elsewhereInProduct === undefined) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    keyStopWalked(browser);
+    // The product's own nav rail is inside the frame, and this is a
+    // person pressing it - the act the console's own copy invites.
+    browser.pressInFrame(true);
+    browser.arrive(elsewhereInProduct);
+    await browser.settled();
+    return browser.frameField("keyfile") === "" &&
+      !browser.nodes.feed.children.map((one) => one.textContent)
+        .includes(Demo.KEY_STAGED_LINE);
+  });
+
+/*
+ * The console's own press is not a viewer, and neither is a page's
+ * script clicking something for itself: both dispatch an UNTRUSTED
+ * click, and both bubble to the same document this watches. An errand
+ * that counted them would cancel itself the moment its own press moved
+ * the page - which is the errand's whole job, undone by the guard added
+ * to protect it.
+ */
+await check("a press that is not the viewer's does not cancel the errand",
+  async () => {
+    if (abandonedKey === null) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    keyStopWalked(browser);
+    browser.pressInFrame(false);
+    browser.arrive(pageOfStop(abandonedKey.stop));
+    await browser.settled();
+    return keyReached(browser);
+  });
+
+/*
+ * And the press has to be FORGOTTEN when the console itself moves the
+ * frame. A viewer who touches the page without navigating it - a tab, a
+ * disclosure, anything the product does in place - and then presses Next
+ * would otherwise have that press cancel the errand of the stop they
+ * just asked for, on its very first arrival. The console's own
+ * navigation is the newer instruction, so it supersedes whatever was
+ * pressed on the page it is leaving.
+ */
+await check("a press on the page before the console moves the frame cancels nothing",
+  async () => {
+    // A stop BEFORE the key stop is what this arm presses on, so a walk
+    // that staged its key first would make it vacuous rather than green.
+    if (abandonedKey === null || abandonedKey.index < 1) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.journey(abandonedKey.walk.id).fire("click");
+    for (let i = 0; i < abandonedKey.index; i += 1) {
+      browser.arrive(pageOfStop(abandonedKey.walk.stops[i]));
+      browser.pressInFrame(true);
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(pageOfStop(abandonedKey.stop));
+    await browser.settled();
+    return keyReached(browser);
   });
 
 /*
