@@ -382,6 +382,16 @@ session on the admin page: press **Open
 Your page** on the **Weigh in** card in the free drive, then **Admin**
 under **Go anywhere**.
 
+**Which console the idle rows talk to.** A8.7 to A8.9 move the page's
+clock, and the clock that matters belongs to the admin page *inside
+the frame*. A browser console opens on the outer page, where that same
+paste runs without complaint and changes nothing — and nothing
+happening is exactly what a broken row looks like. Switch the
+console's context to the framed admin page first (the selector beside
+the prompt, naming the frame or its `/demo/admin` address) and stay
+there for all three rows. A8.7 failing is your console's aim before it
+is the page's behavior.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
 | A8.1 | Look at the page this stop opens beside `your-page.html` | It is unmistakably a different kind of surface — dense, instrument-like, obviously the place the site is operated from | #68. A member page and an admin page that read alike is how somebody operates the site by accident |
@@ -389,8 +399,8 @@ under **Go anywhere**.
 | A8.3 | Delete a row from the decrypted table | It disappears from the table | Step 7's behavior |
 | A8.4 | **Immediately press Publish, then press Show what would be sent and read it** | The deleted row's data is **not** in it | The sharp hazard: a deleted row surviving in derived state is resurrected by the next Publish |
 | A8.5 | Read the member's own count afterwards | **Not drivable on this arm** — the stubbed Worker answers `/me` with a fixed corpus, so the count cannot move whatever the table does, and a driver reading "they agree" here has compared two constants. **AL8 is the row that accepts it.** Record A8.5 as not performed | Counts and the table disagreeing is what the member panel is measured on, and a staged agreement is not evidence of it |
-| A8.6 | Press **Unpublish** with the key field empty | It works, and **What just happened** says the snapshot is taken down. What the charts then show is A10.1 | It needs the session, not the key — and submissions are left untouched |
-| A8.7 | With the page decrypted, stop touching it. In the console: `let skip = 8*60*1000; const real = Date.now; Date.now = () => real.call(Date) + skip;` and wait a second | The warning card appears, counting **down from 2:00** to the second, and focus moves to **Stay on this page** | Ten minutes idle, two of them warning — the owner's numbers, ratified on #91. The page measures the clock rather than counting its own ticks, which is what makes this drivable in seconds and what makes a sleeping laptop wake up expired instead of rested |
+| A8.6 | Press **Unpublish** | It works, and **What just happened** says the snapshot is taken down. What the charts then show is A10.1 | It needs the session, not the key — the key box is full at this stop and it makes no difference, which is the evidence. Submissions are left untouched |
+| A8.7 | With the page decrypted, stop touching it. In the console — **its context switched to the admin frame**, see above — `let skip = 8*60*1000; const real = Date.now; Date.now = () => real.call(Date) + skip;` and wait a second | The warning card appears, counting down from **just under 2:00** — two minutes less however long you took getting here — ticking to the second, and focus moves to **Stay on this page** | Ten minutes idle, two of them warning — the owner's numbers, ratified on #91. The page measures the clock rather than counting its own ticks, which is what makes this drivable in seconds and what makes a sleeping laptop wake up expired instead of rested |
 | A8.8 | Press **Stay on this page**. **Leave the offset in place** — winding the clock back is read as expired, deliberately, so restoring `Date.now` now would end the session rather than the test | The warning goes at once, not at the next tick, and the page is still decrypted | A card that lingered after the press reads as a control that did not work. And a last-interaction time that is somehow ahead of now is not evidence somebody is here; it is the absence of it, which the page treats as expired on purpose |
 | A8.9 | Push the offset past ten minutes from that press — `skip += 11*60*1000` — and watch both the page and **What just happened** | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on the sign-in page signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
 | A8.10 | Confirm what A8.9 did **not** do — arrive on the admin page with a session again, and fetch | **Not drivable on this arm**, for A7.3's reason: the demo's key is never kept, so there is no stored key for the timer to have spared. **B2.4 is where the key outliving a visit is accepted.** Record A8.10 as not performed | The key is not authority. Nothing issued it and nothing can revoke it, so an idle timer that destroyed it would make walking away cost the keyholder their key — **Clear** stays the one lever that removes it (A7.5) |
