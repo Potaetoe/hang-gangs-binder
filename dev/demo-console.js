@@ -32,8 +32,10 @@
   let active = null;
   let destination = null;
 
-  // The errand waiting on the next arrival of the frame.
+  // The errand waiting on the next arrival of the frame, and the key
+  // text once it has been read.
   let errand = null;
+  let devKey = null;
 
   // The journey being walked, and how far along it. Null is the free
   // drive: the table of contents on screen, the glass away, the cards
@@ -266,8 +268,16 @@
    * tab is exactly what the card's own pointer asked a person to do by
    * hand, done for them so the promise is true when the stop lands.
    *
-   * It writes into a page this console serves, and changes no byte of
-   * it.
+   * `key` puts the committed throwaway key into the page's own key box.
+   * The keyholder's headline act - sealed rows coming back and opening
+   * - was not performable by anybody who had not cloned this
+   * repository, because nothing anywhere surfaced the key the page asks
+   * for. The console reads the committed file and writes the text; the
+   * page's own code does every part that matters, exactly as it would
+   * for a paste.
+   *
+   * Both write into a page this console serves, and neither changes a
+   * byte of it.
    */
   function runErrand(todo) {
     const doc = frameDocument();
@@ -276,6 +286,35 @@
     if (todo.press) {
       const control = doc.getElementById(todo.press);
       if (control) control.click();
+    }
+
+    if (todo.key) stageKey(doc);
+  }
+
+  /*
+   * The key text, read once and kept, so a journey walked twice reads
+   * the file once.
+   *
+   * A failure is SAID rather than swallowed. The stop's whole promise
+   * is that the box is already filled, so a viewer who presses Fetch
+   * and decrypt against an empty box would be told by the product to
+   * paste a key file they have no way to obtain - which is the exact
+   * dead end this stop exists to remove, arriving with an extra step in
+   * front of it.
+   */
+  async function stageKey(doc) {
+    const box = doc.getElementById("keyfile");
+    if (!box) return;
+    try {
+      if (devKey === null) {
+        const answer = await root.fetch(Demo.DEV_KEY_FILE);
+        devKey = await answer.text();
+      }
+      box.value = devKey;
+    } catch (error) {
+      say("The demo's throwaway key could not be read (" +
+        ((error && error.message) || error) + "), so this stop could not " +
+        "fill the key box for you.");
     }
   }
 
@@ -523,7 +562,7 @@
     lock(stop.free !== true);
     keepAwake(stop.free !== true);
     goTo(stop.open || chosen.start,
-      stop.press ? { press: stop.press } : null);
+      stop.press || stop.key ? { press: stop.press, key: stop.key } : null);
   }
 
   function startTour(id) {

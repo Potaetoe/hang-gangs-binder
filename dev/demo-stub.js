@@ -537,6 +537,28 @@
    */
   const LOCAL_FILES = ["/dev/sample-submissions.json"];
 
+  /*
+   * The keyholder's half of the throwaway pair, by path.
+   *
+   * IT IS DELIBERATELY NOT IN LOCAL_FILES, and the difference is the
+   * whole care of it. That list is what a page INSIDE the frame may
+   * fetch for real, and no shipped page fetches a key - adding one
+   * there would widen what the product is permitted to read to include
+   * key material, which is the opposite of what this demo exists to
+   * show. This path is fetched by the CONSOLE, which runs outside the
+   * frame with its own real fetch, and the console writes the text into
+   * the page's key box exactly as a person pasting it would.
+   *
+   * The file is committed on purpose and says so in its own first
+   * field: it protects nothing, opens nothing real, and exists so the
+   * suites and this demo can perform a decrypt at all. The key the
+   * portal actually uses is held offline and has never been in this
+   * repository. dev/demo-bake.mjs already emits this file by name, so a
+   * hosted build performs the same act rather than dead-ending where
+   * the local one works.
+   */
+  const DEV_KEY_FILE = "/dev/test-key.json";
+
 
   /*
    * What a request IS: a call the stub answers, a file in this build the
@@ -1021,6 +1043,13 @@
    * instead. dev/demo.test.mjs holds every `press` to naming a control
    * the shipped page really carries.
    *
+   * `key` stages the committed throwaway key into the page's own key
+   * box, so the keyholder's headline act is performable by somebody who
+   * has never seen this repository. The stop's own words have to name
+   * it a throwaway, and that is checked rather than trusted: a key
+   * going into a box in front of the person judging this design teaches
+   * the wrong lesson unless the sentence beside it says what kind of
+   * key it is.
    */
   const TOURS = [
     {
@@ -1108,13 +1137,17 @@
         },
         {
           scenario: "keyholder",
-          title: "The key that opens them",
-          narration: "Only the key opens these rows, and the key never " +
-            "leaves the person holding it - it is not on the server and " +
-            "the server has no way to ask for it.",
+          key: true,
+          title: "The key goes in the box",
+          narration: "The key is in the box now, put there for you. It " +
+            "is a throwaway pair kept in this project on purpose - it " +
+            "protects nothing and opens nothing real, so it is safe to " +
+            "show. The one the club actually uses is held offline and " +
+            "has never been anywhere near here.",
         },
         {
           scenario: "keyholder",
+          key: true,
           free: true,
           title: "Now you try",
           narration: "Press Fetch and decrypt. The rows arrive sealed " +
@@ -2243,6 +2276,7 @@
     SCENARIOS: SCENARIOS,
     FEATURES: FEATURES,
     TOURS: TOURS,
+    DEV_KEY_FILE: DEV_KEY_FILE,
     BOXES: BOXES,
     ROUTES: ROUTES,
     PREFIX_ROUTES: PREFIX_ROUTES,
