@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 106
+EXPECTED = 108
 
 
 def check(label, condition):
@@ -613,6 +613,25 @@ check("and it is reported on the line the quotation starts",
 check("a citation in a Python docstring is read",
       cited('"""See AGENTS.md, "Code standards"."""\n', "py")
       == [("AGENTS.md", "Code standards")])
+
+# Found by rebasing onto the change that put server/schema.sql in the
+# scan set. Every comment in that file is wrapped prose opening with
+# "--", and its one citation spans two lines, so a flattener that does
+# not know SQL's marker measures DESIGN.md for 'Admin -- accounts and
+# deletion' and reports a correct comment. The false positive was real
+# and this is the arm that keeps it fixed.
+check("a citation wrapped across two SQL comment lines is read",
+      cited('-- DESIGN.md, "Admin\n-- accounts and deletion", rules it.\n',
+            "sql")
+      == [("DESIGN.md", "Admin accounts and deletion")])
+
+# The other side of that, and the reason the marker is two hyphens
+# rather than one or more. A leading "-" is a prose bullet, and eating
+# it reshapes the sentence a quotation is measured against.
+check("a leading bullet is not mistaken for a comment marker",
+      cited('/*\n * DESIGN.md, "a rule\n * - and its exception", holds.\n'
+            ' */\n', "js")
+      == [("DESIGN.md", "a rule - and its exception")])
 
 check("a citation-shaped string literal is not read",
       cited('const s = \'See DESIGN.md, "Key custody"\';\n', "js")

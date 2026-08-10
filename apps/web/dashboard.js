@@ -844,8 +844,7 @@
    * used to claim renumbering meant "two snapshots cannot be lined up
    * to follow one person across them", which was false: the points
    * themselves were the join key. See quantize() below, and DESIGN.md,
-   * "The dashboard and the snapshot", which carries the corrected
-   * claim.
+   * "The charts and the snapshot", which carries the corrected claim.
    *
    * The pseudonym is keyed on the line, not on the handle captioning
    * it. A series line is one person, because weightSeries groups by

@@ -230,11 +230,19 @@ REGEX_BEFORE = frozenset("(,=:[!&|?{};+-*%^~<>") | {""}
 LEAD = re.compile(r"""[\s*#/<!"'-]+$""")
 
 # What opens a continuation line, stripped when a comment is read as one
-# sentence. Only the LEADING marker: GAP above collapses every "/" it
-# meets, which is right for a phrase and wrong for a citation, because
-# it turns "server/README.md" into a bare "README.md" and resolves the
-# citation against a different file. That failure is silent.
-CONTINUATION = re.compile(r"^[ \t]*(?:\*+|\#+|//+|<!--)?[ \t]*")
+# sentence. Only the LEADING marker, and only these: GAP above collapses
+# every "/" and "-" it meets, which is right for a phrase and wrong for
+# a citation, because it turns "server/README.md" into a bare
+# "README.md" and resolves the citation against a different file. That
+# failure is silent.
+#
+# "--" is two or more, never one, and that is the whole reason SQL can
+# be read at all here: every comment in server/schema.sql is wrapped
+# prose opening with "--", so a citation that spans two of its lines
+# reads as 'Admin -- accounts and deletion' unless the marker comes off.
+# A single leading "-" is a prose bullet and stays - eating one would
+# silently reshape the sentence a quotation is measured against.
+CONTINUATION = re.compile(r"^[ \t]*(?:\*+|\#+|//+|<!--|--+)?[ \t]*")
 
 # A path this repository could hold. Extensions rather than "anything
 # with a dot" so that "e.g." and "t.me/handle" are not read as files.
