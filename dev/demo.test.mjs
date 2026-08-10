@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 223);
+const { check, mustReject, report } = suite("demo", 224);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -2469,6 +2469,32 @@ await check("an errand still on its own stop does say when it gives up",
     return browser.nodes.status.textContent
       .includes(abandonedPress.stop.press);
   });
+
+/*
+ * LEAVING A WALK IS THE ABANDONMENT THAT MOVES NO FRAME, which is why
+ * it is the one that needs saying separately: every other way out of a
+ * stop asks the frame to go somewhere, and this one only puts the table
+ * of contents back. An errand still waiting would finish afterwards and
+ * report about a stop the viewer has just left - over the farewell this
+ * button ends on, which is the sentence a viewer is reading when it
+ * lands.
+ */
+await check("leaving a walk ends the errand it abandons", async () => {
+  if (abandonedPress === null) return false;
+  const browser = consoleInRecordedBrowser();
+  await browser.settled();
+  browser.neverPressable(abandonedPress.stop.press);
+  browser.journey(abandonedPress.walk.id).fire("click");
+  for (let i = 0; i < abandonedPress.index; i += 1) {
+    browser.nodes["tour-next"].fire("click");
+  }
+  browser.arrive(pageOfStop(abandonedPress.stop));
+  browser.nodes["tour-leave"].fire("click");
+  const farewell = browser.nodes.status.textContent;
+  await browser.settled();
+  return farewell.length > 0 &&
+    browser.nodes.status.textContent === farewell;
+});
 
 /*
  * And the half that is not a sentence: an abandoned errand must not go
