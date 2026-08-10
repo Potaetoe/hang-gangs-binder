@@ -45,7 +45,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 55
+EXPECTED = 56
 
 
 def check(label, condition):

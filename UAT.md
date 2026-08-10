@@ -12,9 +12,10 @@ column beside the page on a desktop, a strip across it when narrow —
 with the session block under the destinations offering **Sign in**
 whenever this tab holds no live session (#187, #166); a plain sign-in
 page and a plain error page; the cover that opens once; a palette set
-switched from one **Theme** control in the footer of every page but the
-error page; and page titles that end **— Hang Gang Binder**, agreeing
-with the rail (#191).
+switched from the footer of every page but the error page — a **Theme**
+disclosure whose panel floats on the signed-in pages, and a row of
+always-visible swatches on the sign-in page; and page titles that end
+**— Hang Gang Binder**, agreeing with the rail (#191).
 
 **The mockup is the bar.** The "Binder — Site Mockup (post-cutover)"
 artifact, held by the owner, is what the shipped pages are accepted
@@ -44,13 +45,13 @@ other, which is why the check between them holds that the pointers
 resolve and never that the words agree.
 
 **Palettes are described by character here and never by chip label.**
-The **Theme** control in front of you is the list, and counting the
-chips against it is what catches one going missing — a step naming a
-chip works from a list written down elsewhere, which lets a driver
-record a pass for a palette they never opened and goes stale the day a
-fifth palette ships. What the gate settles is that the four pages agree
-about the labels; what it cannot settle is that a chip repaints the
-page, so pressing every one of them is the part worth driving.
+The palette control in front of you is the list, and counting its
+buttons against it is what catches one going missing — a step naming a
+palette works from a list written down elsewhere, which lets a driver
+record a pass for one they never opened and goes stale the day a fifth
+palette ships. What the gate settles is that the four pages agree about
+the names; what it cannot settle is that a button repaints the page, so
+pressing every one of them is the part worth driving.
 
 **It is in two parts because the split is forced, not a convenience.**
 
@@ -195,15 +196,18 @@ you would rather stage one state at a time than walk.
 | A1.5 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
 | A1.6 | Signed in, open `your-page.html`, `charts.html` and `admin.html` | All three carry the same rail — three destinations in the same order, and the session block under them: your name and **Sign out** while the session lives, **Sign in** when this tab holds none (#187) | Three hand-written copies; a rail that differs per page is how somebody gets stranded, and the door lives beside the words that say whether you need it |
 | A1.7 | On each, check which destination is marked current | The one you are on, and only it | The rail is also the answer to "where am I" |
-| A1.8 | Find the **Theme** control | In the **page footer**, on every page but `404.html` — including signed-out on `index.html` | #187 moved the picker out of the rail: the palette belongs to the reader, not to the session, and the footer is the one place every page shares |
-| A1.9 | Open **Theme** and press **every chip it offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the control rather than against a list written here is also what catches one going missing |
+| A1.8 | Find the palette control | In the **page footer** on every page but `404.html`. On the three signed-in pages it is a **Theme** button that opens a panel; on `index.html`, signed out, it is a row of colored dots with nothing to open | #187 moved the picker out of the rail: the palette belongs to the reader, not to the session, and the footer is the one place every page shares. The sign-in page shows its dots outright because nothing there may ever be open over the Telegram widget |
+| A1.9 | On each page, press **every palette the control offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload. On `index.html` each dot shows the palette it offers, so the row is four different pairs of colors and never four of the same | A preference that does not persist is not a preference. Counting the buttons against the control rather than against a list written here is also what catches one going missing, and a dot that stopped meaning its palette is the way this control goes quietly wrong |
 | A1.10 | On the **high-contrast** palette — the one the site applies when the operating system asks for increased contrast — read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test. Identified by what it does, because that is the part of it that will not be renamed |
-| A1.11 | With no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The site answers each system setting without a script running, and a chosen palette still beats all three afterwards | What answers a visitor who never opens the control is the pre-paint and the stylesheet's own media blocks, which is also all `404.html` has — it carries no chips at all |
+| A1.11 | With no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The site answers each system setting without a script running, and a chosen palette still beats all three afterwards | What answers a visitor who never opens the control is the pre-paint and the stylesheet's own media blocks, which is also all `404.html` has — it carries no palette control at all |
 | A1.12 | **On `admin.html`** — narrow to a phone width, then widen back up through a tablet width until the rail returns | The rail becomes a strip **that reaches both edges** at every one of those widths, all three destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays. Driven on any other page this step passes without asking the question: `admin.html` is the only one carrying a control whose intrinsic width refuses to shrink — the key file picker — so a shell rule that sizes the column to its content instead of to the screen shows up there and nowhere else (#148) |
-| A1.13 | **At every width, on each page that offers one** — open the **Theme** disclosure, then press Escape | The chips appear in place and push what is below them down, nothing floats over the page, and Escape closes them and returns focus to the button | Focus left inside something no longer on screen restarts the next Tab from the top. It is one control with one behavior at every width (#150), so a pass at one width is not a pass |
-| A1.14 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
-| A1.15 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint, and #191 settled the set |
-| A1.16 | Put the mockup beside each of the five pages and read them together | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste |
+| A1.13 | **At every width, on each signed-in page** — open **Theme**, and watch what is beside and below it while you do | The panel appears **over** the page and **nothing else moves**: no footer link shifts, no card reflows, the scroll position holds. It opens upward from the footer, and flips to open downward only where there is no room above | A control at the foot of a working page has to be free to reach for. A panel that displaced the layout would charge every reader for every glance at it, and the flip is what keeps it on screen when the footer is already near the top |
+| A1.14 | With the panel open: press **Escape**; open it again and click **anywhere outside it**; open it again and pick a palette | Each of the three closes it, and after Escape and after the pick the focus ring is back on the **Theme** button | Focus left inside something no longer on screen restarts the next Tab from the top. A floating panel is the one that owes a reader these: something IS covered while it is open |
+| A1.15 | Tab into the control with the keyboard alone — on a signed-in page and then on `index.html` | **Theme** takes focus with a visible ring, Enter or Space opens it, Tab walks the palettes inside; on `index.html` Tab walks the four dots directly and each shows a visible ring | The palette is a setting, and a setting only reachable with a mouse is one some readers do not have |
+| A1.16 | **Block the page's scripts** and reload a signed-in page, then `index.html` | **Theme** still opens and closes, and the four dots are still on the sign-in page. Nothing repaints when pressed, which is expected — what matters is that the control is still there and still operable | The disclosure is an element, not a script, and the swatches are simply in the page. A palette control that vanishes with its script is one nobody can reach on the day it is needed most |
+| A1.17 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
+| A1.18 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint, and #191 settled the set |
+| A1.19 | Put the mockup beside each of the five pages and read them together | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste |
 
 ### A2 · Signed out, nothing is reachable — journey "Your first weigh-in", stop 1
 

@@ -617,49 +617,44 @@
      page they can use. -->
 <footer>
   <!--
-    The same single Theme control every themed page carries, in the
-    place index.html has always kept its own - the owner's direction on
-    #187. In the rail it sat between the destinations and the session,
-    prime chrome for a set-once control, and at phone widths that put
-    it literally up top ahead of the content. Here the chips open IN
-    FLOW and downward, below everything somebody came to this page to
-    do, so every way the reveal can fail leaves the page above it
-    untouched. The palette a visitor already chose is painted before
-    any of this runs, by theme-init.js in the head.
+    The Theme control, at the foot of every signed-in page - the
+    owner's direction on #187 for where it sits, and the ruling of
+    2026-08-10 for what it is. The panel FLOATS: this element's own box
+    is the width of the word whether it is open or shut, so reaching
+    for a palette never pushes this page's form or its history pane
+    around. That is what a signed-in page can afford. index.html cannot
+    and does not - it offers the same four as swatches in flow, because
+    nothing there may ever be open over the Telegram widget.
+
+    <details> is what opens this with no script running, which is why
+    the element and not a class is what check 19 pins. theme.js only
+    adds the manners a floating panel owes: Escape, outside click,
+    close on pick, and the flip when the room above runs out. The
+    palette a visitor already chose is painted before any of it, by
+    theme-init.js in the head.
   -->
-  <div class="theme-picker">
-    <button type="button" class="theme-disclosure" id="theme-toggle"
-            aria-expanded="false" aria-controls="theme-chips">Theme</button>
-    <div class="themes" id="theme-chips" role="group"
-         aria-label="Color theme">
+  <details class="theme-picker">
+    <summary>Theme</summary>
+    <div class="theme-flyout" role="group" aria-label="Color theme">
       <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
       <!--
-        "Daylight" - the owner's ruling on #191, which reverses #127's
-        longer label by direction of the same owner. The word and the
-        id now agree, and nothing in this control asks a reader to hold
-        two names for one palette.
+        The word is "Daylight" and the id is `daylight`, and only one of
+        them is safe to change. The id is what gets stored, so renaming
+        it returns every member who has already chosen this palette to
+        the default without telling them - and the same string keys
+        theme.js's chrome map, two theme.css palette blocks that must go
+        on declaring identical colors, and check_contrast.py's table.
 
-        The id is `daylight` and stays that way whatever the label does:
-        here in data-set-theme, in theme.js's theme-color map and its
-        light-preference answer, in two theme.css selector blocks that
-        must go on declaring identical colors, in check_contrast.py's
-        table keys, and - the one that cannot be undone - in every
-        member's stored preference. Renaming the id would silently
-        return everybody who has already chosen this palette to the
-        default, which is why a label ruling is safe and an id ruling
-        would not be.
-
-        check_web.py's check 19 pins that each themed page HAS the
-        control and that no other page does, and check 23 holds the
-        four copies of these labels identical (#152) - so a rename must
-        reach all four in one slice, and this comment is the one that
-        says so.
+        The words answer to two checks and neither is optional: check 23
+        holds the copies on these pages identical (#152), and check 24
+        holds the word itself to the one the mockup rules (#203). A
+        rename reaches every copy in one slice or it fails.
       -->
       <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
-  </div>
+  </details>
 
   <p>
     <a href="charts.html">See what everyone adds up to</a> ·

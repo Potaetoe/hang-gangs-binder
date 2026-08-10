@@ -266,23 +266,22 @@
 </main>
 
 <footer>
-  <!-- The Theme control, at the foot of the page on every themed page
-       alike - the owner's direction on #187. See the longer note in
-       your-page.html's footer for the reasoning it shares with
-       index.html's. -->
-  <div class="theme-picker">
-    <button type="button" class="theme-disclosure" id="theme-toggle"
-            aria-expanded="false" aria-controls="theme-chips">Theme</button>
-    <div class="themes" id="theme-chips" role="group"
-         aria-label="Color theme">
+  <!-- The Theme control, at the foot of every signed-in page alike -
+       the owner's direction on #187. Its panel floats over the charts
+       rather than pushing them down; see the longer note in
+       your-page.html's footer, and index.html's for why the sign-in
+       page is the one page that may not have this. -->
+  <details class="theme-picker">
+    <summary>Theme</summary>
+    <div class="theme-flyout" role="group" aria-label="Color theme">
       <button type="button" data-set-theme="midnight">Midnight</button>
       <button type="button" data-set-theme="pink">Pink</button>
-      <!-- The label is two words and the id is one. See the note in
-           your-page.html; nothing here may be renamed on its own. -->
+      <!-- The word may be ruled and the id may not. See the note in
+           your-page.html; nothing here is renamed on its own. -->
       <button type="button" data-set-theme="daylight">Daylight</button>
       <button type="button" data-set-theme="contrast">Contrast</button>
     </div>
-  </div>
+  </details>
 
   <p>
     <a href="index.html">Sign in</a> ·

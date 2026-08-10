@@ -704,12 +704,13 @@ await check("every acceptance box is reachable from some scenario", () => {
 });
 
 /*
- * No chip-walk pin here, and that is deliberate. #140's rule - a walk
- * naming the palette chips must start on a page that carries them -
- * needs steps to hold, and the demo scripts nobody's hands. The duty
- * is alive elsewhere: the walk is UAT.md's shell section, which every
- * card sends the reader through, and check_web.py's THEMED_PAGES pins
- * which pages carry the control at all.
+ * No palette-walk pin here, and that is deliberate. #140's rule - a
+ * walk naming the palette buttons must start on a page that carries
+ * them - needs steps to hold, and the demo scripts nobody's hands. The
+ * duty is alive elsewhere: the walk is UAT.md's shell section, which
+ * every card sends the reader through, and check_web.py's FLYOUT_PAGES
+ * and SWATCH_PAGES pin which pages carry the control and in what
+ * shape.
  */
 
 /*
@@ -2095,7 +2096,7 @@ await check("the phone size is written in CSS pixels, and desktop clears it", ()
  * The cross-file arm, and the one that can go red without anybody
  * touching dev/.
  *
- * 375 is a phone width only because apps/web says so. What UAT A1.10
+ * 375 is a phone width only because apps/web says so. What UAT A1.12
  * asks the owner to see - the rail as a strip, its destinations still
  * in flow - is one media block in the shipped stylesheet, and the
  * frame is only worth looking at if that block fires inside it. A later
@@ -2112,12 +2113,12 @@ await check("the phone size is written in CSS pixels, and desktop clears it", ()
  * breakpoints, and moving the rail-folding block from 64rem to 20rem
  * left it green, with an unrelated 52rem block satisfying it.
  *
- * The chips are not one of those rules any more. #150 made the Theme
- * disclosure one control at every width, so it sits outside every media
- * query - and a marker that no width block contains would make this arm
- * match nothing and fail for a reason that has nothing to do with the
- * frame. What is left is the rail itself: the links becoming a row and
- * the session becoming the end of it.
+ * The palette control is not one of those rules. It is one control at
+ * every width (#150), so it sits outside every media query - and a
+ * marker that no width block contains would make this arm match nothing
+ * and fail for a reason that has nothing to do with the frame. What is
+ * left is the rail itself: the links becoming a row and the session
+ * becoming the end of it.
  */
 const themeCss = await readFile(HERE("../apps/web/theme.css"), "utf8");
 const ROOT_PX = 16;
