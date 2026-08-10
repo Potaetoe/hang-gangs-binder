@@ -15,6 +15,11 @@
 
   
 
+  const SECRET_BITS = 256;
+  const SECRET_BYTES = 32;
+
+  
+
   const ACCOUNT_ID = /^[0-9a-f]{64}$/;
 
   function subtle() {
@@ -73,6 +78,8 @@
     for (let i = 0; i < RAW_POINT_BYTES; i++) {
       if (typeof raw[i] !== "number") return "erase";
     }
+     
+     
     return "use";
   }
 
@@ -140,6 +147,43 @@
     };
   }
 
+  
+
+  async function halvesAgree(record) {
+    try {
+      const stored = await subtle().importKey(
+        "raw", record.publicKeyRaw,
+        { name: "ECDH", namedCurve: CURVE }, false, []);
+      const ephemeral = await subtle().generateKey(
+        { name: "ECDH", namedCurve: CURVE }, false, ["deriveBits"]);
+      const theirs = new Uint8Array(await subtle().deriveBits(
+        { name: "ECDH", public: stored }, ephemeral.privateKey, SECRET_BITS));
+      const ours = new Uint8Array(await subtle().deriveBits(
+        { name: "ECDH", public: ephemeral.publicKey }, record.privateKey,
+        SECRET_BITS));
+       
+       
+       
+       
+      let difference = (theirs.length ^ SECRET_BYTES) |
+        (ours.length ^ SECRET_BYTES);
+      for (let i = 0; i < SECRET_BYTES; i++) {
+        difference |= theirs[i] ^ ours[i];
+      }
+      return difference === 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  
+
+  async function custodyRuling(record, accountId) {
+    const verdict = custodyVerdict(record, accountId);
+    if (verdict !== "use") return verdict;
+    return (await halvesAgree(record)) ? "use" : "erase";
+  }
+
   function usable(record) {
     return Object.freeze({
       accountId: record.accountId,
@@ -168,7 +212,7 @@
       return null;
     }
 
-    const verdict = custodyVerdict(record, accountId);
+    const verdict = await custodyRuling(record, accountId);
     if (verdict === "use") return usable(record);
 
     try {
@@ -231,6 +275,12 @@
     ROW_KEY: ROW_KEY,
     unavailableReason: unavailableReason,
     custodyVerdict: custodyVerdict,
+     
+     
+     
+     
+     
+    custodyRuling: custodyRuling,
     ensure: ensure,
     forget: forget,
   });
