@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 192);
+const { check, mustReject, report } = suite("demo", 206);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -771,6 +771,7 @@ await check("a card speaks the driver's language, not the harness's", () =>
  * product is good, not whether the demo is honest.
  */
 const consoleHtml = await readFile(HERE("./demo.html"), "utf8");
+const consoleCss = await readFile(HERE("./demo.css"), "utf8");
 const consoleJs = await readFile(HERE("./demo-console.js"), "utf8");
 const bootSource = await readFile(HERE("./demo-boot.js"), "utf8");
 
@@ -785,6 +786,33 @@ await check("the audit bench is off the console page", () =>
   !consoleHtml.includes('id="scenarios"') &&
   !consoleHtml.includes('id="boxes"') &&
   !consoleHtml.includes('id="edits"'));
+
+/*
+ * AND SO IS THE NOTE ABOUT THE OTHER ARM (owner, 2026-08-10).
+ *
+ * The console's footer explained which of the two demos this was and how
+ * to run the other one against the dev Worker. Whoever can open this
+ * page already knows both, so it was a paragraph of setup instructions
+ * standing under the working surface for a reader who does not need
+ * them. The owner asked for it gone: "Those who have access to the demo
+ * know who it's for and what it's on."
+ *
+ * Checked rather than trusted because the console page has grown a block
+ * back before, and the sibling arm one file over asks the same question
+ * of the BAKED copy - the one a stranger is handed - which is a
+ * different set of bytes reached by a different transform.
+ */
+await check("the console page carries no footer under the working surface", () =>
+  !/<footer[\s>]/.test(consoleHtml) && !consoleHtml.includes("The other arm"));
+
+/*
+ * The rules that dressed it go with it. A stylesheet that keeps styling
+ * an element the page no longer has is dead weight nobody can tell is
+ * dead by reading it, and the next slice to add a footer here would
+ * inherit a look decided for a paragraph nobody kept.
+ */
+await check("the console stylesheet styles no footer either", () =>
+  !/(^|[\s,}])footer\s*(,|\{)/m.test(consoleCss));
 
 await check("the console script paints the cards and none of the bench", () =>
   consoleJs.includes('$("features")') &&
@@ -895,6 +923,36 @@ await check("a non-destination page the host tidied lights nothing", () => {
 });
 
 /*
+ * THE THIRD TIDYING, WHICH IS THE ONE THAT FIRES ON THE SIGN-IN PAGE.
+ *
+ * The two above are the host shortening a name. This one takes the name
+ * away entirely: a clean-URL host serves a directory's index page at the
+ * directory, so `/demo/index.html` answers 308 to `/demo/` and the frame
+ * reports an address with no file in it at all. The arms above never
+ * reached it because all four of them probe a name.
+ *
+ * Two of the four journeys open on the sign-in page, so on the hosted
+ * build they landed with no rail button lit and "Open this page in its
+ * own tab" pressing nothing - the same silent class the tidying arms
+ * were written for, arriving through the one tidying they did not cover.
+ */
+await check("the directory root is the index page the host serves there", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH);
+  return there.inside === true && there.file === "index.html";
+});
+
+/*
+ * And the strictness, which is what keeps that from becoming "every
+ * directory is the sign-in page". The mirror carries a fonts directory
+ * that is no page at all, and a fold that resolved it would light a rail
+ * button for a folder.
+ */
+await check("a directory inside the mirror that is no page lights nothing", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "fonts/");
+  return there.inside === true && there.file === null;
+});
+
+/*
  * And the escape, which the link containment above now prevents and this
  * refuses to paper over anyway. A frame that left the demo cannot be
  * read at all - the browser refuses the cross-origin location - and the
@@ -947,22 +1005,31 @@ const CONSOLE_IDS = ["features", "destinations", "viewports", "status",
  * for a reason next to the one under test. Found by mutation: M1 failed
  * an arm it was not supposed to reach.
  */
-function recordedNode(id) {
+/*
+ * `log`, when one is passed, records WHAT WAS DONE TO THIS NODE AND IN
+ * WHAT ORDER, which is a different question from what was done at all.
+ *
+ * A stop can fill the key box, press the page's decrypt button and move
+ * the page to the card that press reveals, and every one of those can
+ * be true while the sequence is useless: a key written after the press
+ * leaves the product answering "paste or choose your key file first",
+ * and a move made before the page has revealed the card scrolls to
+ * nothing. Sets that record membership cannot see either, so the frame's
+ * nodes share one ordered list.
+ */
+function recordedNode(id, log) {
+  const note = (what) => { if (log) log.push(what + " " + id); };
   const it = {
     id: id,
     className: "",
-    // A form control's own two: the console writes a key into `value`
-    // and presses a tab with `click`, and both are what the shipped
-    // page would see from a person doing it by hand.
-    value: "",
     pressed: false,
-    click() { it.pressed = true; it.fire("click"); },
+    click() { it.pressed = true; note("pressed"); it.fire("click"); },
     // What a stop's scroll asks of a section: the page brings itself
     // there. Recorded rather than run, because what is under test is
     // WHICH section was asked - a recording that measured a layout
     // would be measuring one this fixture invented.
     broughtIntoView: false,
-    scrollIntoView() { it.broughtIntoView = true; },
+    scrollIntoView() { it.broughtIntoView = true; note("scrolled"); },
     // Whether this node PAINTS, which is a different question from
     // whether it exists - several of the admin surface's sections are in
     // the markup and hidden until the page's own code reveals them.
@@ -997,6 +1064,17 @@ function recordedNode(id) {
     get: () => text,
     set: (value) => { text = String(value); it.children.length = 0; },
   });
+  // A form control's own field: the console writes a key into `value`,
+  // which is what the shipped page would see from a person pasting one.
+  // An accessor rather than a plain field so the write takes its place
+  // in the order above - the key going in AFTER the press reads
+  // identically to the key going in first, on the value alone.
+  let held = "";
+  Object.defineProperty(it, "value", {
+    enumerable: true,
+    get: () => held,
+    set: (value) => { held = String(value); note("filled"); },
+  });
   return it;
 }
 
@@ -1025,6 +1103,11 @@ function consoleInRecordedBrowser() {
    * arms above are trying to catch.
    */
   const frameNodes = {};
+  const acts = [];
+  const inFrame = (id) => {
+    if (!(id in frameNodes)) frameNodes[id] = recordedNode(id, acts);
+    return frameNodes[id];
+  };
   const poked = [];
   // Controls this recording answers for with null, so an arm can stand a
   // page up that does NOT carry what a stop asked for - the rename that
@@ -1032,11 +1115,7 @@ function consoleInRecordedBrowser() {
   // demand, so the default page has whatever it is asked for.
   const absent = new Set();
   nodes.stage.contentDocument = {
-    getElementById: (id) => {
-      if (absent.has(id)) return null;
-      if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
-      return frameNodes[id];
-    },
+    getElementById: (id) => (absent.has(id) ? null : inFrame(id)),
     dispatchEvent: (event) => { poked.push(event.type); },
   };
 
@@ -1078,6 +1157,18 @@ function consoleInRecordedBrowser() {
     clearInterval: (handle) => {
       if (handle >= 1 && handle <= timers.length) timers[handle - 1] = null;
     },
+    /*
+     * The console's wait for a section the page reveals by its own work,
+     * run at once rather than on a clock.
+     *
+     * The wait is spent in TRIES, not in milliseconds, precisely so a
+     * recording can spend all of them without waiting - a fixture that
+     * honored the delay would make the give-up arms below take the
+     * console's whole budget each, and one that swallowed the callback
+     * would prove the console gives up rather than that it waits. This
+     * spends the budget the console really has, immediately.
+     */
+    setTimeout: (fn) => { fn(); return 0; },
     Event: function (type) { this.type = type; },
     /*
      * The console's own fetch, which is NOT the one demo-boot.js
@@ -1133,17 +1224,40 @@ function consoleInRecordedBrowser() {
   const missingInFrame = (id) => { absent.add(id); };
   const frameScrolled = () =>
     Object.keys(frameNodes).filter((id) => frameNodes[id].broughtIntoView);
+  // Everything the console did to the page in the frame, in order.
+  const frameActs = () => acts.slice();
   // A section the page carries but is not showing - the hidden admin
   // tools, which is the case a present-or-absent test cannot see.
-  const unpaintedInFrame = (id) => {
-    if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
-    frameNodes[id].rendering = false;
+  const unpaintedInFrame = (id) => { inFrame(id).rendering = false; };
+
+  /*
+   * A section the page reveals BY ITS OWN WORK, some way after the press
+   * that starts it - which is what the admin surface really does with
+   * its publishing card, because the decrypt in between is a fetch and a
+   * few hundred unseals.
+   *
+   * Not painting at all until the control is pressed, and then not for
+   * `after` more looks. Both halves matter: a fixture that painted on
+   * the press would be satisfied by a console that looked exactly once
+   * and happened to be lucky, and one that never painted could not tell
+   * waiting from giving up.
+   */
+  const paintedAfterPressing = (id, controlId, after) => {
+    const section = inFrame(id);
+    let left = Infinity;
+    section.getClientRects = () => {
+      if (left <= 0) return [{}];
+      left -= 1;
+      return [];
+    };
+    inFrame(controlId).addEventListener("click", () => { left = after; });
   };
 
   return {
     nodes, replaced, arrive, pressed, destination, journey, locked, staged,
     waking, frameField, framePressed, poked, fetched, settled,
-    missingInFrame, frameScrolled, unpaintedInFrame,
+    missingInFrame, frameScrolled, frameActs, unpaintedInFrame,
+    paintedAfterPressing,
   };
 }
 
@@ -1324,6 +1438,125 @@ await check("at least one stop really does move the page", () =>
   Demo.TOURS.some((walk) =>
     walk.stops.some((stop) => typeof stop.scroll === "string")));
 
+/* ------------------------------------------------------------------ */
+/* A stop that promises a control the page has not revealed yet.        */
+
+/*
+ * THE DEFECT: THE NARRATION WAS TRUE ABOUT A CARD NOBODY COULD SEE.
+ *
+ * "Publishing a fresh set of figures is one press" was narrated over an
+ * admin page whose publishing card is `hidden` in the shipped markup and
+ * revealed only after a successful decrypt. So the stop opened on the
+ * key box, the one press it named was not on the screen at all, and the
+ * only visible control from that family was Unpublish - the opposite act
+ * - which is worse than a missing control because it reads as the one
+ * being described.
+ *
+ * The stop cannot be fixed by scrolling: scrollIntoView on a section
+ * that is not rendering moves nothing. What makes the sentence true is
+ * doing the work the page gates the card behind - the key in the box,
+ * the page's own decrypt pressed - and then moving to the card. So the
+ * arms below hold three things at once, and the third is the reviewer's
+ * sharpening: the card that gets scrolled to has to be the PUBLISH one.
+ *
+ * The card and the button are read out of apps/web rather than named
+ * here, per AGENTS.md's corollary: a check computed entirely from the
+ * tour cannot notice that the page was rearranged under it.
+ */
+const ADMIN_PAGE = "admin.html";
+
+/*
+ * The element the shipped page keeps a control inside, by id.
+ *
+ * The last `<div>` carrying an id opened before the control is its
+ * section - the wrappers in between (`field`, `row`) carry classes and
+ * no id. A page that nests two identified divs around a control breaks
+ * this reading, and it fails loudly here rather than quietly resolving
+ * to the outer one, because every arm below compares the answer to
+ * another answer from this same function.
+ */
+function sectionHolding(html, controlId) {
+  const at = html.indexOf('id="' + controlId + '"');
+  if (at === -1) return null;
+  const opened = Array.from(
+    html.slice(0, at).matchAll(/<div\b[^>]*\bid="([^"]+)"[^>]*>/g));
+  return opened.length === 0 ? null : opened[opened.length - 1][1];
+}
+
+const publishSection = sectionHolding(shipped[ADMIN_PAGE], "publish");
+const DECRYPT = "run";
+
+/*
+ * The hazard itself, as a fact about the shipped page: the card is in
+ * the markup and hidden, and the page's own code is what reveals it.
+ * Without this, every arm below is a set of promises about a card that
+ * might have been on screen all along - and the restage they hold would
+ * be ceremony rather than a fix.
+ */
+await check("the shipped page keeps its publishing card hidden until it decrypts", () =>
+  new RegExp('<div[^>]*id="' + publishSection + '"[^>]*\\shidden')
+    .test(shipped[ADMIN_PAGE]) &&
+  webSource["admin.js"].includes('show($("' + publishSection + '"), true)'));
+
+/*
+ * F0's sharpening, held to the page. Unpublish lives in its own section
+ * above the key gate, so it is visible in this staging from the start -
+ * which is exactly why "scroll to the publishing controls" is not
+ * satisfied by scrolling to it.
+ */
+await check("the card those stops move to holds Publish and not Unpublish", () =>
+  typeof publishSection === "string" && publishSection.length > 0 &&
+  sectionHolding(shipped[ADMIN_PAGE], "unpublish") !== publishSection);
+
+/*
+ * And the control they press is the page's own decrypt button, pinned by
+ * its id AND by the words on it. Either half alone rots: an id can be
+ * renamed under the tour, and a button can keep its id while becoming
+ * something else entirely.
+ */
+await check("the control those stops press is the page's own decrypt button", () =>
+  new RegExp('<button[^>]*id="' + DECRYPT + '"[^>]*>\\s*Fetch and decrypt\\s*<')
+    .test(shipped[ADMIN_PAGE]));
+
+/*
+ * WHICH stops have to declare all three, and which must declare none -
+ * the same both-directions shape the tab arm carries, for the same
+ * reason: "names a control the page has" is satisfied by declaring
+ * nothing, so an arm that only ran one way would go green the day
+ * somebody deleted the declaration.
+ *
+ * The trigger is the shipped button's own first word, so a stop is about
+ * publishing when it uses the page's word for it. Read rather than
+ * written down, because a trigger typed here is a trigger that stops
+ * matching the day the product renames the act and says nothing.
+ */
+const publishLabel = /<button[^>]*id="publish"[^>]*>\s*([^<]+?)\s*</
+  .exec(shipped[ADMIN_PAGE]);
+const PROMISES_PUBLISHING = new RegExp(
+  "\\b" + publishLabel[1].split(/\s+/)[0] + "\\w*", "i");
+
+const onAdminPage = (stop) =>
+  (stop.open || Demo.SCENARIOS.find((one) => one.id === stop.scenario).start)
+    === ADMIN_PAGE;
+
+await check("a stop that promises publishing stages its way to the card, and only those do",
+  () => Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (!onAdminPage(stop)) return true;
+    const about = PROMISES_PUBLISHING.test(stop.title + " " + stop.narration);
+    const staged = stop.key === true && stop.press === DECRYPT &&
+      stop.scroll === publishSection;
+    return about === staged;
+  })));
+
+// Non-vacuity in both directions: the partition is real, not one side.
+await check("the admin page carries stops on both sides of that line", () => {
+  const stops = Demo.TOURS.flatMap((walk) => walk.stops).filter(onAdminPage);
+  return stops.some((stop) =>
+    PROMISES_PUBLISHING.test(stop.title + " " + stop.narration)) &&
+    stops.some((stop) =>
+      !PROMISES_PUBLISHING.test(stop.title + " " + stop.narration));
+});
+
 /*
  * WHICH stops have to declare one - the half the arm above cannot see.
  *
@@ -1498,7 +1731,6 @@ await check("the cards are on the page, behind the free-drive disclosure", () =>
  * an overlay that does not cover anything is a promise of read-only
  * that the first click disproves - in front of the owner.
  */
-const consoleCss = await readFile(HERE("./demo.css"), "utf8");
 await check("the glass is laid over the frame by the stylesheet", () =>
   /#glass\s*\{[^}]*position:\s*absolute/.test(consoleCss) &&
   /#glass\s*\{[^}]*inset:/.test(consoleCss) &&
@@ -1768,6 +2000,80 @@ await check("a section the page is not showing is reported, not scrolled to",
   });
 
 /*
+ * F0, DRIVEN: the whole restage, in the order that makes it work.
+ *
+ * Every stop whose words promise publishing is walked to and the frame
+ * is asked what was done to it. The sequence is the assertion: a key
+ * written after the press leaves the product answering "paste or choose
+ * your key file first", and a move made before the page has revealed the
+ * card scrolls to a section that is not rendering - which is the
+ * original defect with an errand that believes it ran.
+ */
+await check("a stop that promises publishing lands with that card on screen",
+  async () => {
+    const want = ["filled keyfile", "pressed " + DECRYPT,
+      "scrolled " + publishSection].join(" | ");
+    let walked = 0;
+    for (const walk of Demo.TOURS) {
+      for (let index = 0; index < walk.stops.length; index += 1) {
+        const stop = walk.stops[index];
+        if (!onAdminPage(stop)) continue;
+        if (!PROMISES_PUBLISHING.test(stop.title + " " + stop.narration)) {
+          continue;
+        }
+        const browser = consoleInRecordedBrowser();
+        await browser.settled();
+        browser.journey(walk.id).fire("click");
+        for (let i = 0; i < index; i += 1) {
+          browser.nodes["tour-next"].fire("click");
+        }
+        browser.arrive(ADMIN_PAGE);
+        await browser.settled();
+        if (browser.frameActs().join(" | ") !== want) return false;
+        walked += 1;
+      }
+    }
+    return walked > 0;
+  });
+
+/*
+ * AND THE WAIT, WHICH IS THE PART A SINGLE LOOK CANNOT HAVE.
+ *
+ * The card appears when the page finishes a fetch and a few hundred
+ * unseals, so a console that pressed decrypt and looked once would find
+ * nothing rendering and report the card missing - a true statement made
+ * too early, which reads to a viewer exactly like the defect. The
+ * recording holds the card back for several looks after the press, and
+ * the console has to still be there when it arrives.
+ */
+await check("a card the page reveals only after its own work is waited for",
+  async () => {
+    let found = null;
+    for (const walk of Demo.TOURS) {
+      for (let index = 0; index < walk.stops.length; index += 1) {
+        const stop = walk.stops[index];
+        if (onAdminPage(stop) && stop.scroll === publishSection) {
+          found = { walk: walk, index: index };
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (found === null) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.paintedAfterPressing(publishSection, DECRYPT, 3);
+    browser.journey(found.walk.id).fire("click");
+    for (let i = 0; i < found.index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(ADMIN_PAGE);
+    await browser.settled();
+    return browser.frameScrolled().includes(publishSection) &&
+      !browser.nodes.status.textContent.includes(publishSection);
+  });
+
+/*
  * A DECLARATION THE PAGE CANNOT HONOR IS SAID OUT LOUD.
  *
  * The arm above holds every declared press to naming a control the
@@ -1967,6 +2273,57 @@ await check("a stop that does not ask for the key leaves the box empty",
       browser.frameField("keyfile") === "" &&
       browser.fetched.length === 0;
   });
+
+/*
+ * THE DISCLOSURE TRAVELS WITH THE ACT, NOT WITH ONE STOP'S NARRATION.
+ *
+ * The narration arm above asks that the stop built around the key says
+ * what kind of key it is. That was the whole story while one stop staged
+ * one; a second journey now stages the same key to reach the publishing
+ * card, and a viewer walking only that one would watch a private key
+ * appear in a box with nothing beside it saying what it protects - which
+ * is the lesson this demo cannot afford to teach, arriving through a
+ * stop nobody wrote a sentence for.
+ *
+ * So the console says it, in the feed, at the moment it does it. The
+ * feed is where "what just happened" is already read and this is a thing
+ * that just happened; the line lives in demo-stub.js so there is one
+ * home for it and this suite can hold its words rather than its shape.
+ */
+await check("the line the console says when it stages the key names it a throwaway", () =>
+  typeof Demo.KEY_STAGED_LINE === "string" &&
+  /throwaway/i.test(Demo.KEY_STAGED_LINE) &&
+  /offline|never|nothing real/i.test(Demo.KEY_STAGED_LINE));
+
+await check("staging the key really does say so in the feed", async () => {
+  const walk = Demo.TOURS.find((one) =>
+    one.stops.some((stop) => stop.key === true));
+  const index = walk.stops.findIndex((stop) => stop.key === true);
+  const browser = consoleInRecordedBrowser();
+  browser.journey(walk.id).fire("click");
+  for (let i = 0; i < index; i += 1) browser.nodes["tour-next"].fire("click");
+  browser.arrive(walk.stops[index].open || "admin.html");
+  await browser.settled();
+  return browser.nodes.feed.children.map((one) => one.textContent)
+    .includes(Demo.KEY_STAGED_LINE);
+});
+
+/*
+ * And the silence, which is what keeps the line meaning something: a
+ * console that said it on every stop would be a console saying a key was
+ * staged on stops where none was.
+ */
+await check("a stop that stages no key says nothing about one", async () => {
+  const walk = Demo.TOURS.find((one) =>
+    one.stops.some((stop) => stop.key === true));
+  const browser = consoleInRecordedBrowser();
+  browser.journey(walk.id).fire("click");
+  browser.arrive(walk.stops[0].open || "admin.html");
+  await browser.settled();
+  return walk.stops[0].key !== true &&
+    !browser.nodes.feed.children.map((one) => one.textContent)
+      .includes(Demo.KEY_STAGED_LINE);
+});
 
 /*
  * The contents are the LANDING screen and step aside while a walk runs.

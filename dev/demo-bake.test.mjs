@@ -57,7 +57,7 @@ const {
   IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty, stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 41);
+const { check, mustReject, report } = suite("demo bake", 42);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -350,6 +350,22 @@ await check("the baked console differs from the source only inside the stamp",
     const source = await readFile(HERE("./demo.html"), "utf8");
     return Demo.stampInto(baked, "X") === Demo.stampInto(source, "X");
   });
+
+/*
+ * The footer the owner took off the console is off THIS copy too, asked
+ * of the emitted bytes rather than inferred (owner, 2026-08-10).
+ *
+ * The hosted build is the arm a stranger is handed, and it is reached
+ * through a transform that rewrites part of this very page - so "the
+ * source has no footer" and "what got written has no footer" are two
+ * facts, and the stamp is proof that this file is not simply copied. The
+ * sibling arm in dev/demo.test.mjs asks the same question of the copy
+ * the local server reads off disk.
+ */
+await check("the baked console carries no footer either", async () => {
+  const html = await read("dev/demo.html");
+  return !/<footer[\s>]/.test(html) && !html.includes("The other arm");
+});
 
 await check("the landing page says the data is fabricated and refuses crawlers",
   async () => {
