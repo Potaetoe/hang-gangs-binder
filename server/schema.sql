@@ -202,7 +202,7 @@ CREATE INDEX IF NOT EXISTS sessions_expiry
 -- failure than losing one anywhere else and is still a failure. The one
 -- table served without a credential is `site_content`, and the
 -- difference is what each one holds - counts about people here, site
--- copy there. See DESIGN.md, "The dashboard and the snapshot".
+-- copy there. See DESIGN.md, "The charts and the snapshot".
 --
 -- Exactly one row, forced by the CHECK. A history of snapshots would be
 -- more published data about the same people kept for nobody's benefit;
