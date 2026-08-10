@@ -86,19 +86,30 @@ respect in which it is also strictly safer than what it replaces.
 departure and compromise procedures name it. Generation, checking and
 rotation procedures: [OPERATIONS.md](OPERATIONS.md).
 
-**Members hold a key too.** An entry seals to two recipients: the
-keyholder, and a keypair the submitting member's browser generates
-silently and cannot export, so a member can read their own history
-back. Frictionless was the constraint that chose the mechanism, and a
-key nobody types is bound to the device that made it — so durability
-comes from the keyholder, who can re-seal a member's rows to a new
-device key in the one session where the plaintext already exists.
-Recovery is "ask an admin", which is how deletion already works.
-Signing out destroys the device key, on the prefill's erasure reasoning
-below and with more at stake, since the key opens a history rather than
-one measurement; the price is that re-seal request. A member key opens only
-its own account's rows, and rows sealed before a member had a key stay
-keyholder-only until they are re-sealed (#85).
+**Members hold a key too.** An entry seals to the keyholder always, and
+to a second recipient wherever the browser can offer one: a keypair the
+submitting member's browser generates silently and cannot export, so a
+member can read their own history back. Frictionless was the constraint
+that chose the mechanism, and a key nobody types is bound to the device
+that made it — so durability comes from the keyholder, who can re-seal a
+member's rows to a new device key in the one session where the plaintext
+already exists. Recovery is "ask an admin", which is how deletion
+already works. Signing out destroys the device key, on the prefill's
+erasure reasoning below and with more at stake, since the key opens a
+history rather than one measurement; the price is that re-seal request.
+A member key opens only its own account's rows.
+
+**The second recipient fails open, deliberately.** A browser that cannot
+offer a device key — no IndexedDB, storage blocked, private browsing, a
+page that never loaded the key module, a script cache holding a
+`crypto.js` that cannot seal to two, or a page that has not yet been
+told which account it is — seals to the keyholder alone and stores the
+entry exactly as it did before member keys existed. Nobody is refused a
+measurement because a convenience key was unavailable, and that trade is
+the whole reason the key is frictionless in the first place. What those
+rows cost is the member's own copy of them, silently and for good: they
+stand where rows sealed before a member had a key stand, and the remedy
+is the same re-seal by the keyholder (#85).
 
 **Export is two-factor, and the factors are different in kind:** an
 admin session gets the ciphertext and can be revoked; the private key

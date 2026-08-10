@@ -162,9 +162,44 @@
     // This file cannot produce an extractable private key, so whatever
     // put one here could read it out again.
     if (key.extractable !== false) return "erase";
+    /*
+     * THE WALK THE CONSUMERS PERFORM IS THE TEST, and nothing weaker is.
+     *
+     * `usable` below turns these bytes into base64 with
+     * `String.fromCharCode.apply(null, raw)`, which reads an INDEXED
+     * list, and `generateFor` measures what it exported with `.length`.
+     * So `.length` is the length that matters here and the indices have
+     * to be read rather than assumed. An ArrayBuffer of 65 bytes, a
+     * DataView over one and a bare `{ byteLength: 65 }` all satisfy a
+     * byteLength test, carry no index at all, and walk to NOTHING - so
+     * the record is adopted and the member's public half comes back as
+     * the empty string. That is worse than erasing: form.js reads a
+     * falsy key as "this browser has none" and seals to the keyholder
+     * alone forever, on a browser that is holding a perfectly good
+     * private key it will never be able to use. An object claiming a
+     * `length` and no indices is worse again - it walks to sixty-five
+     * NUL characters, so the public half comes back TRUTHY and every
+     * entry seals to a key nothing ever generated.
+     *
+     * The tag is a filter, not the test. `Symbol.toStringTag` overrides
+     * what `Object.prototype.toString` answers, so any object at all can
+     * call itself a Uint8Array; what the comparison still buys over
+     * `instanceof` is that a genuine array from another realm is judged
+     * by what it is rather than by which window made it. Custody comes
+     * from the two rules under it.
+     *
+     * The indices are walked with a counted loop rather than with
+     * `Array.prototype.every.call`, which SKIPS absent indices and would
+     * answer true for the very object this is written to refuse.
+     */
     const raw = record.publicKeyRaw;
-    if (!raw || typeof raw !== "object") return "erase";
-    if (raw.byteLength !== RAW_POINT_BYTES) return "erase";
+    if (Object.prototype.toString.call(raw) !== "[object Uint8Array]") {
+      return "erase";
+    }
+    if (raw.length !== RAW_POINT_BYTES) return "erase";
+    for (let i = 0; i < RAW_POINT_BYTES; i++) {
+      if (typeof raw[i] !== "number") return "erase";
+    }
     return "use";
   }
 

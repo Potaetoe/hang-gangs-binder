@@ -704,11 +704,18 @@ LEDGER = [
         "covers": ["apps/web/index.html", "apps/web/theme.css"],
         "status": "never",
     },
+    # `form.js` stands under this row because form.js is the file that
+    # does the sealing the `how` describes. Left out, a change to what an
+    # entry seals to would leave this claim reading fresh against a page
+    # and a panel that had not moved - and #85 is the change that made
+    # form.js's seal variable at all, so the omission stopped being free
+    # on the day the branch landed.
     {
         "id": "your-page.html",
         "surface": "page",
         "claim": "the form round-trips to a live Worker",
-        "covers": ["apps/web/your-page.html", "apps/web/submit.js"],
+        "covers": ["apps/web/your-page.html", "apps/web/submit.js",
+                   "apps/web/form.js"],
         "status": "performed",
         "performed": dict(
             SITTING,
@@ -719,6 +726,28 @@ LEDGER = [
                 "POST, which is the most a page can tell on its own. "
                 "The account card on the same page read its count back "
                 "from the service"),
+    },
+    # #85's headline claim, and it is a `never` for a reason a suite can
+    # state about itself. dev/form-wiring.test.mjs drives the shipped
+    # form.js against real WebCrypto and a real non-extractable P-256
+    # pair, so the seal and the open are proven - but its IndexedDB is a
+    # stub that keeps the REFERENCE it was handed, where a real store
+    # structure-clones. A CryptoKey survives that clone and this suite
+    # never asks it to, so "the key a real browser filed away opens what
+    # an earlier visit sealed" is a browser claim and Node may not make
+    # it. Node-honest and browser-unperformed is exactly the shape #157
+    # says belongs here rather than in a pull request body, and the
+    # reduced-motion row above is the precedent.
+    {
+        "id": "your-page.html, the member's own seal",
+        "surface": "page",
+        "claim": "an entry a real browser sealed opens under the device "
+                 "key that browser generated - the private half filed "
+                 "into IndexedDB by one visit, read back by a later one, "
+                 "and never readable as bytes by anything",
+        "covers": ["apps/web/your-page.html", "apps/web/form.js",
+                   "apps/web/crypto.js", "apps/web/memberkey.js"],
+        "status": "never",
     },
     {
         "id": "your-page.html, a live 401",

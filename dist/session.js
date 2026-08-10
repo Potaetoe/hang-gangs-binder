@@ -37,12 +37,41 @@
 
   
 
+  let reportedStuck = false;
+
+  function reportStuck(error) {
+    if (reportedStuck) return;
+    reportedStuck = true;
+    if (root.console && typeof root.console.warn === "function") {
+      root.console.warn("This browser refused to remove the stored session, " +
+        "so a dead credential stays in sessionStorage until the tab closes. " +
+        "Nothing here will use it.", error);
+    }
+  }
+
+  
+
+  let announcing = false;
+
   function clear() {
     const storage = store();
     if (storage) {
-      try { storage.removeItem(STORAGE_KEY); } catch (error) {}
+      try {
+        storage.removeItem(STORAGE_KEY);
+      } catch (error) {
+         
+         
+         
+        reportStuck(error);
+      }
     }
-    announce(null);
+    if (announcing) return;
+    announcing = true;
+    try {
+      announce(null);
+    } finally {
+      announcing = false;
+    }
   }
 
   function read() {
@@ -58,6 +87,8 @@
       value = null;
     }
 
+     
+     
      
      
      

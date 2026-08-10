@@ -359,7 +359,14 @@
       "place the submissions exist in the clear, so it will clear itself " +
       "and sign you out in " + Math.floor(seconds / 60) + ":" +
       (rest < 10 ? "0" : "") + rest +
-      ". Any key, click or scroll keeps it open.";
+       
+       
+       
+       
+       
+       
+       
+      ". Any key, click, touch or wheel keeps it open.";
   }
 
    
@@ -576,8 +583,11 @@
 
     
 
-    function acknowledge(link, what) {
-      link.classList.add("pressed");
+    function acknowledge(pressed, what) {
+      
+
+      for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
+      $(pressed).classList.add("pressed");
       clearTimeout(pressedTimer);
       pressedTimer = setTimeout(function () {
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
@@ -767,8 +777,11 @@
      
     for (const id of DOWNLOAD_IDS) {
       const link = $(id);
+       
+       
+       
       link.addEventListener("click", function () {
-        acknowledge(link, link.textContent.trim());
+        acknowledge(id, link.textContent.trim());
       });
     }
 

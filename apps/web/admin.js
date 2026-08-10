@@ -638,7 +638,14 @@
       "place the submissions exist in the clear, so it will clear itself " +
       "and sign you out in " + Math.floor(seconds / 60) + ":" +
       (rest < 10 ? "0" : "") + rest +
-      ". Any key, click or scroll keeps it open.";
+      // The four device events INTERACTION registers, in the words a
+      // keyholder reads them as - and `scroll` is deliberately not
+      // among them. DESIGN.md excludes it by name because this page
+      // fires one itself when it moves focus to this very warning, so a
+      // scrollbar drag and a keyboard scroll keep nothing open. Naming
+      // it here would be a promise this page cannot keep, on the one
+      // page that holds every submission in the clear.
+      ". Any key, click, touch or wheel keeps it open.";
   }
 
   // Frozen because admin.html is where decrypt output becomes a CSV: an
@@ -941,8 +948,23 @@
      * downloads in a row leaves the second one lit rather than being
      * darkened by the first one's expiry.
      */
-    function acknowledge(link, what) {
-      link.classList.add("pressed");
+    function acknowledge(pressed, what) {
+      /*
+       * The other two go dark AT PRESS TIME, which is the half that was
+       * missing. Until this, only the timer above cleared them - so
+       * three presses inside four seconds left three buttons lit,
+       * telling a keyholder that three files are on their way at the
+       * exact moment the corpus is in the clear and they cannot tell
+       * one download from another. The rule stated where DOWNLOAD_IDS
+       * is declared - one set doing one job - is applied here or it is
+       * applied nowhere.
+       *
+       * Cleared for all three and then set for one, rather than cleared
+       * for the other two: the difference is that this one cannot go
+       * wrong as a fourth export is added.
+       */
+      for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
+      $(pressed).classList.add("pressed");
       clearTimeout(pressedTimer);
       pressedTimer = setTimeout(function () {
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
@@ -1191,8 +1213,11 @@
     // times for one press.
     for (const id of DOWNLOAD_IDS) {
       const link = $(id);
+      // The id rather than the element, because acknowledge decides the
+      // state of all three from it and comparing ids is what makes that
+      // decision independent of whether a link carries its own id.
       link.addEventListener("click", function () {
-        acknowledge(link, link.textContent.trim());
+        acknowledge(id, link.textContent.trim());
       });
     }
 

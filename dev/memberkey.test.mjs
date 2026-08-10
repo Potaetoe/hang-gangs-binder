@@ -39,7 +39,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 38);
+const { check, report } = suite("memberkey.js", 49);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -284,6 +284,95 @@ await check("a public half that is not bytes at all is erased", () => {
   return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
 });
 
+/*
+ * THE THREE SHAPES THAT MEASURE 65 AND ARE NOT BYTES - the #154 sweep's
+ * F-7, armed here because #85's seal half has just given the value a
+ * real consumer.
+ *
+ * Each of them passes a length test and each walks to nothing under
+ * `String.fromCharCode.apply(null, raw)`, so each would be ADOPTED and
+ * then hand form.js an empty public key. The failure that follows is
+ * silent and permanent: the browser holds a good private key, seals
+ * every entry to the keyholder alone because the public half is falsy,
+ * and the member's own pane stays empty forever with nothing anywhere
+ * saying why.
+ *
+ * The verdict is checked AND the consequence is checked, because the
+ * two are different claims: erasing is what the rule says, and an empty
+ * public half is what adopting would cost. An arm on the verdict alone
+ * would keep passing if `usable` later learned to accept these.
+ */
+for (const [what, value] of [
+  ["an ArrayBuffer", new ArrayBuffer(65)],
+  ["a DataView over one", new DataView(new ArrayBuffer(65))],
+  ["a bare object claiming the length", { byteLength: 65 }],
+]) {
+  await check("a public half that is " + what + " is erased, not adopted",
+    () => {
+      const record = good();
+      record.publicKeyRaw = value;
+      return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
+    });
+}
+
+await check("and the reason: none of those three carries any bytes to read",
+  () => [new ArrayBuffer(65), new DataView(new ArrayBuffer(65)),
+    { byteLength: 65 }].every((value) =>
+    String.fromCharCode.apply(null, value) === ""));
+
+/*
+ * THE FOURTH SHAPE, and it is why the three above are shapes somebody
+ * thought of rather than the class itself.
+ *
+ * `Object.prototype.toString` is not a brand check. `Symbol.toStringTag`
+ * overrides what it answers, so any object at all can call itself
+ * "[object Uint8Array]" - and there is no realm in which a genuine one
+ * behaves differently, so the tag buys the cross-realm tolerance it was
+ * chosen for and buys no custody at all.
+ *
+ * What closes the class is the walk the consumers really perform.
+ * `usable` turns the value into base64 by reading it BY INDEX, and
+ * `generateFor` measures the bytes it exported with `.length` - so
+ * `.length` is the length that matters. `byteLength` is a property all
+ * four of these carry and none of them has to walk to anything.
+ *
+ * Two spoofs, because they fail differently and the second is the worse
+ * one. The first claims the tag alone and walks to nothing, which is the
+ * empty-public-half failure the three arms above describe. The second
+ * claims the tag AND the length: it walks to sixty-five characters, so
+ * the public half comes back non-empty and TRUTHY, and form.js seals a
+ * member's entries to a key nothing ever generated.
+ */
+await check("a public half that only claims the Uint8Array tag is erased",
+  () => {
+    const record = good();
+    record.publicKeyRaw = {
+      byteLength: 65,
+      get [Symbol.toStringTag]() { return "Uint8Array"; },
+    };
+    return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
+  });
+
+await check("and one claiming the tag and the length, holding no bytes",
+  () => {
+    const record = good();
+    record.publicKeyRaw = {
+      length: 65,
+      byteLength: 65,
+      get [Symbol.toStringTag]() { return "Uint8Array"; },
+    };
+    return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
+  });
+
+await check("and the reason the tag cannot be the test: it is writable",
+  () => Object.prototype.toString.call({
+    get [Symbol.toStringTag]() { return "Uint8Array"; },
+  }) === "[object Uint8Array]");
+
+await check("and the reason the second is worse: it walks to a whole key",
+  () => String.fromCharCode.apply(null, { length: 65 }) ===
+    String.fromCharCode(0).repeat(65));
+
 await check("a record that is not an object is erased", () =>
   Keys.custodyVerdict("mine", "a".repeat(64)) === "erase" &&
   Keys.custodyVerdict(42, "a".repeat(64)) === "erase");
@@ -440,16 +529,61 @@ const checkWeb = await readFile(HERE("../tools/check_web.py"), "utf8");
  * in it, and a reader that finds the wrong rows is worse than one that
  * finds none - it would exercise pairs that are not exemptions and miss
  * the ones that are. */
-const table = /DEFERRED_CAPTURES = \{([\s\S]*?)^\}/m.exec(checkWeb);
-const declared = table ? [...table[1].matchAll(
-  /\(\s*"([\w.-]+)",\s*"(\w+)"\s*\)\s*:/g)].map((one) => ({
-  script: one[1], namespace: one[2],
-})) : [];
+/*
+ * A function rather than a one-off expression, because the reader
+ * itself turned out to be the weak link and a weak link has to be
+ * testable against text this file controls - see the arm two below.
+ *
+ * QUOTE-AGNOSTIC, and that is not tidiness. Python does not care which
+ * quote a string is written with and nothing in this repository's gate
+ * enforces one, so `('signout.js', 'BinderMemberKey'):` is the same row
+ * to check_web.py and was invisible to the double-quote-only pattern
+ * this replaced. The consequence is worse than a missing arm: every
+ * arm below iterates what this returns, so a row it cannot see is a row
+ * granted the exemption with NEITHER the load-time property nor the
+ * guarded one ever checked. An undiscovered row is silently trusted,
+ * where a missing one would at least be loud. Found by the #154 sweep's
+ * gate partition.
+ */
+function declaredCaptures(python) {
+  const block = /DEFERRED_CAPTURES = \{([\s\S]*?)^\}/m.exec(python);
+  if (!block) return null;
+  return [...block[1].matchAll(
+    /\(\s*(["'])([\w.-]+)\1\s*,\s*(["'])(\w+)\3\s*\)\s*:/g)].map((one) => ({
+    script: one[2], namespace: one[4],
+  }));
+}
+
+const declared = declaredCaptures(checkWeb) || [];
 
 await check("the deferred-capture table is readable, and it is not empty",
-  () => Boolean(table) && declared.length > 0 &&
+  () => declared.length > 0 &&
     declared.some((one) => one.script === "signout.js" &&
       one.namespace === "BinderMemberKey"));
+
+/*
+ * The same table written both legal ways, which is the fixture the
+ * reader above was rewritten for. Held here rather than by mutating
+ * check_web.py: a row's quote style is not this suite's to change, and
+ * the property under test is the reader's, so the reader is what gets
+ * given something to read.
+ */
+const SINGLE_QUOTED = [
+  "DEFERRED_CAPTURES = {",
+  "    ('signout.js', 'BinderMemberKey'):",
+  "        \"a reason, which this arm does not read\",",
+  "}",
+].join("\n");
+
+await check("a row is found whichever quote Python happened to write it with",
+  () => {
+    const single = declaredCaptures(SINGLE_QUOTED);
+    const double = declaredCaptures(SINGLE_QUOTED.replace(/'/g, "\""));
+    return single && double && single.length === 1 &&
+      single[0].script === "signout.js" &&
+      single[0].namespace === "BinderMemberKey" &&
+      JSON.stringify(single) === JSON.stringify(double);
+  });
 
 /*
  * One load, one recorded global.
@@ -505,48 +639,197 @@ await check("no declared namespace is touched while its script loads",
  * be USED, which is what a dead guard fails: `if (keys && false)` reads
  * the global and then does nothing, and only watching the far side of
  * the guard tells the two apart.
+ *
+ * DRIVEN OVER THE TABLE, NOT OVER A NAME WRITTEN HERE - the #154
+ * sweep's S-20. The load-time arm above loops `declared`, and a pair of
+ * string literals beside that loop is a split brain: a second row added
+ * to check_web.py takes the load-time property and slips past the
+ * guarded one entirely, and a row renamed there leaves these arms
+ * exercising a pair the table no longer declares while the loop moves
+ * on. Both stay green, and both are then about nothing.
+ *
+ * WHAT CANNOT COME OFF THE TABLE is the ACT: `(script, namespace)` says
+ * which global a script must not touch while it loads, and says nothing
+ * about what calling into it looks like. So the act is written here, per
+ * pair, and the coverage arm below is what keeps that from re-opening
+ * the same hole: every declared row must have one, so a row added to
+ * check_web.py with no act to drive it fails here rather than being
+ * granted the exemption unexercised.
  */
+const GUARD_ACTS = new Map([
+  ["signout.js|BinderMemberKey", () => {
+    let forgotten = 0;
+    return {
+      publish: { forget() { forgotten += 1; return Promise.resolve(true); } },
+      drive(context) { context.BinderSignOut.signOut(); },
+      used() { return forgotten === 1; },
+    };
+  }],
+]);
+
+const pairKey = (one) => one.script + "|" + one.namespace;
+
+await check("every declared row carries an act this file can drive", () =>
+  declared.length > 0 && declared.every((one) => GUARD_ACTS.has(pairKey(one))));
+
 await check("with the namespace absent the act completes rather than throwing",
   async () => {
-    const { context } = await loadRecording("signout.js", "BinderMemberKey",
-      undefined);
-    context.BinderSignOut.signOut();
+    for (const one of declared) {
+      const make = GUARD_ACTS.get(pairKey(one));
+      if (!make) return false;
+      const act = make();
+      const { context } = await loadRecording(one.script, one.namespace,
+        undefined);
+      act.drive(context);
+    }
     return true;
   });
 
 await check("with it present the act reaches through the guard and uses it",
   async () => {
-    let forgotten = 0;
-    const { context, reads } = await loadRecording("signout.js",
-      "BinderMemberKey",
-      { forget() { forgotten += 1; return Promise.resolve(true); } });
-    context.BinderSignOut.signOut();
-    return forgotten === 1 && reads.includes("call") &&
-      !reads.includes("load");
+    for (const one of declared) {
+      const make = GUARD_ACTS.get(pairKey(one));
+      if (!make) return false;
+      const act = make();
+      const { context, reads } = await loadRecording(one.script,
+        one.namespace, act.publish);
+      act.drive(context);
+      if (!act.used() || !reads.includes("call") || reads.includes("load")) {
+        return false;
+      }
+    }
+    return true;
   });
 
 /*
- * Order, which is the half a reader would not think to check. The revoke
- * needs the token, so it goes first; the three local destructions follow;
- * the navigation is last, because a page that has already left cannot
- * finish erasing anything. `location.replace` is what ends the turn, so
- * every erase has to be started before it.
+ * ORDER AND INDEPENDENCE, PERFORMED RATHER THAN READ - and the two arms
+ * this replaced are worth describing, because they were defeated.
+ *
+ * They compared string offsets inside signOut()'s source and grepped
+ * the file for two call spellings. Both are proxies, and the #154
+ * sweep's client partition walked through both with the suite green:
+ *
+ *   - `if (localStore()) forgetDeviceKey();` keeps every offset in
+ *     order and keeps `keys.forget();` in the file, while sign-out stops
+ *     destroying the key on exactly the browsers where storage is
+ *     blocked;
+ *   - folding both erasures into one `forgetLocalData()` helper behind
+ *     that same condition keeps the word "forget" inside signOut()'s
+ *     body, so even the offset comparison still passes.
+ *
+ * There was a latent third: with the word absent altogether,
+ * `indexOf("forget")` is -1, and -1 is less than every real offset, so
+ * "the key is destroyed before the page navigates away" was TRUE of a
+ * sign-out that destroyed no key at all.
+ *
+ * None of that is fixable with a better pattern, because the property
+ * is not textual. So signOut() is RUN, against the shipped bytes, with
+ * every act it can perform observed: the revoke, the prefill removal,
+ * the key destruction, the credential clear, and the navigation. What
+ * the arms below ask is what a member gets, in an order, on browsers
+ * that differ.
  */
-await check("the key is destroyed before the page navigates away", () => {
-  const body = /function signOut\(\)[\s\S]*?\n {2}\}/.exec(signOutSource)[0];
-  return body.indexOf("forget") < body.indexOf("location") &&
-    body.indexOf("revokeSession") < body.indexOf("forget");
-});
+async function performSignOut({ store = "working", keys = true } = {}) {
+  const acts = [];
+  const context = {
+    BINDER_CONFIG: { endpoint: "https://worker.example" },
+    BinderSession: {
+      authorization() { return { Authorization: "Bearer token" }; },
+      clear() { acts.push("session"); },
+    },
+    // The revoke is deliberately not awaited by the shipped file, so
+    // this answers something with a .catch and nothing else - matching
+    // what signout.js does with the return value rather than what a
+    // fetch really is.
+    fetch(url, options) {
+      acts.push("revoke:" + (options && options.method));
+      return { catch() {} };
+    },
+    location: { replace() { acts.push("navigate"); } },
+  };
+  vm.createContext(context);
+
+  /*
+   * The store is a GETTER so that "blocked" can throw the way a real
+   * hardened browser does - reading `localStorage` there is not a
+   * property that answers null, it is an exception - and so that
+   * "absent" is genuinely absent rather than an object that quietly
+   * accepts calls. These are the two browsers the defeated arms let a
+   * key survive on.
+   */
+  Object.defineProperty(context, "localStorage", {
+    configurable: true,
+    get() {
+      if (store === "absent") return null;
+      if (store === "blocked") throw new Error("storage is unavailable here");
+      return {
+        getItem() { return null; },
+        setItem() {},
+        removeItem() { acts.push("prefill"); },
+      };
+    },
+  });
+  Object.defineProperty(context, "BinderMemberKey", {
+    configurable: true,
+    get() {
+      return keys
+        ? { forget() { acts.push("forget"); return Promise.resolve(true); } }
+        : undefined;
+    },
+  });
+
+  vm.runInContext(signOutSource, context, { filename: "signout.js" });
+  context.BinderSignOut.signOut();
+  return acts;
+}
 
 /*
- * The one thing sign-out must NOT do, stated because it is the tempting
- * simplification: destroying the key is not the same act as clearing the
- * prefill, and a single helper doing both would put a key deletion
- * behind whatever future condition somebody attaches to prefill
- * clearing. They are separate calls in the same function.
+ * The order itself. The revoke needs the token the lines below destroy,
+ * so it goes first; the navigation is last, because `location.replace`
+ * ends the turn and a page that has already left finishes none of the
+ * erasures above it.
  */
-await check("destroying the key is its own call, not folded into another",
-  () => /clearPrefill\(\);/.test(signOutSource) &&
-    /forget\(\);/.test(signOutSource));
+await check("sign out revokes, then destroys, and only then leaves",
+  async () => {
+    const acts = await performSignOut();
+    return acts[0] === "revoke:DELETE" &&
+      acts.indexOf("forget") > 0 &&
+      acts.includes("prefill") && acts.includes("session") &&
+      acts[acts.length - 1] === "navigate";
+  });
+
+/*
+ * THE ARM THE MUTATIONS ABOVE DIE ON. Destroying the device key is a
+ * separate act from clearing the prefill, and the way to say that
+ * without saying it about spelling is to take the prefill's storage
+ * away: on a browser with no localStorage, and on one where reading it
+ * throws, the key must still go. Every version of "fold them together
+ * behind one condition" fails here, however it is named.
+ *
+ * The key is the graver of the two, which is why this is the direction
+ * that gets its own arm: the prefill is one measurement a member typed,
+ * and this key opens everything they have ever submitted.
+ */
+await check("the device key is destroyed even where the prefill cannot be",
+  async () => {
+    const absent = await performSignOut({ store: "absent" });
+    const blocked = await performSignOut({ store: "blocked" });
+    return [absent, blocked].every((acts) =>
+      acts.includes("forget") && !acts.includes("prefill") &&
+      acts.includes("session") && acts[acts.length - 1] === "navigate");
+  });
+
+/*
+ * And the same independence read the other way, so neither erasure can
+ * be made to depend on the other's module. Two of the three pages that
+ * offer Sign out do not load memberkey.js at all, and on those the
+ * prefill is the only local thing there is to erase.
+ */
+await check("and the prefill is erased even where there is no key module",
+  async () => {
+    const acts = await performSignOut({ keys: false });
+    return acts.includes("prefill") && !acts.includes("forget") &&
+      acts.includes("session") && acts[acts.length - 1] === "navigate";
+  });
 
 report();

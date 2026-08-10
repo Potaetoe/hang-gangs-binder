@@ -156,6 +156,27 @@ globalThis.clearInterval = (id) => {
   if (timer) timer.stopped = true;
 };
 
+/*
+ * The one-shot timers, recorded rather than left to Node - the download
+ * acknowledgement is the only user of these on this page.
+ *
+ * Two reasons, and the second is the one that matters. A real four-
+ * second timer would hold the process open for four seconds after the
+ * last check, on every gate run. And an acknowledgement that is
+ * supposed to expire cannot be shown to expire unless something can
+ * make it expire on demand; left real, the expiry would simply never
+ * be exercised.
+ */
+let pending = [];
+globalThis.setTimeout = (fn, ms) => {
+  pending.push({ fn, ms, stopped: false });
+  return pending.length;
+};
+globalThis.clearTimeout = (id) => {
+  const timer = pending[id - 1];
+  if (timer) timer.stopped = true;
+};
+
 globalThis.document = {
   readyState: "complete",
   querySelector() { return null; },
@@ -244,8 +265,21 @@ function descendants(element) {
 function makeElement(tagName = "div", id = "") {
   const listeners = new Map();
   let text = "";
+  /*
+   * A real class list rather than a string, because the page adds and
+   * removes one class among others and a stub that swallowed those
+   * calls would let the download acknowledgement light every button at
+   * once with every arm here green - which is what it did (#174, and
+   * the #154 sweep's client partition F-5).
+   */
+  const classes = new Set();
   const element = {
     id,
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      contains(name) { return classes.has(name); },
+    },
     tagName: tagName.toUpperCase(),
     hidden: false,
     disabled: false,
@@ -324,7 +358,8 @@ function makePage() {
     "tool", "closed", "token", "keyfile", "keyfile-picker", "run", "clear",
     "status", "results", "dashboard", "publish-card", "failures",
     "failure-list", "summary", "thead", "tbody", "charts", "download",
-    "download-xlsx", "download-json", "published-state", "unpublish",
+    "download-xlsx", "download-json", "download-status", "published-state",
+    "unpublish",
     "unpublish-status", "publish-series", "publish", "publish-preview",
     "publish-preview-body", "publish-status",
     // The membership pane. `membership-admin` and `membership-always_allow`
@@ -446,6 +481,7 @@ async function loadAdmin(session, options = {}) {
   const imported = [];
   const keysUsed = [];
   timers = [];
+  pending = [];
   fakeNow = START;
   Session.clear();
   if (session) Session.write(session);
@@ -650,6 +686,7 @@ async function loadAdmin(session, options = {}) {
   return {
     ...page, requests, snapshots, imported, keysUsed,
     timers: timers.slice(),
+    pending: () => pending,
     rows: storage ? storage.rows : null,
   };
 }
@@ -1556,6 +1593,43 @@ check("the warning says how long is left and how to keep the page",
   // And nothing to say while nobody needs telling.
   noticeAt(START, START) === "");
 
+/*
+ * WHAT THE SENTENCE PROMISES, AGAINST WHAT THE PAGE ACTUALLY LISTENS
+ * FOR - and the two had drifted apart.
+ *
+ * The notice told a keyholder that "any key, click or scroll" keeps the
+ * page open. `scroll` is not in INTERACTION and DESIGN.md excludes it BY
+ * NAME, because this page fires one itself when it moves focus to this
+ * very warning. So a scrollbar drag and a keyboard scroll kept nothing
+ * open, on the one page that holds every submission in the clear, and
+ * an admin who scrolled and looked away would return to a cleared page
+ * having done exactly what the page told them to do.
+ *
+ * The event list is READ OFF THE SHIPPED FILE rather than written here.
+ * A list restated in this suite would let the page's own set change
+ * underneath a sentence that stayed green, which is the drift this arm
+ * exists to end - and the word map is what turns four event names into
+ * the four things a person would say they did.
+ */
+const interactionTypes =
+  (/const INTERACTION = \[([^\]]*)\]/.exec(adminSource) || ["", ""])[1]
+    .replace(/["'\s]/g, "").split(",").filter(Boolean);
+
+const WORD_FOR = {
+  pointerdown: "click", keydown: "key", wheel: "wheel", touchstart: "touch",
+};
+
+check("the page's interaction set is the four device events, off the file",
+  interactionTypes.slice().sort().join(",") ===
+    ["keydown", "pointerdown", "touchstart", "wheel"].join(",") &&
+  interactionTypes.every((type) => WORD_FOR[type]));
+
+const promise = noticeAt(START, START + 9 * MINUTE);
+check("the notice names every event the page listens for",
+  interactionTypes.every((type) => promise.includes(WORD_FOR[type])));
+check("and promises no scroll, which the page produces itself and ignores",
+  !/\bscroll/i.test(promise));
+
 /* ------------------------------------------------------------------ */
 /* The same rules, wired to the page.                                 */
 
@@ -1683,6 +1757,71 @@ check("a member session that never reaches the tool starts no timer",
   member.timers.length === 0 && member.listeners.length === 0);
 check("and neither does a signed-out visitor",
   signedOut.timers.length === 0 && signedOut.listeners.length === 0);
+
+/* ------------------------------------------------------------------ */
+/* The download acknowledgement - #174, and the #154 sweep's F-5.      */
+
+/*
+ * ONE LIT AT A TIME, DRIVEN RATHER THAN DESCRIBED.
+ *
+ * A download is the one act on this page whose result appears where the
+ * page cannot see it: a shelf that may be collapsed, another monitor, a
+ * folder. Press one, see nothing, press two more, and there are three
+ * files with no way to tell them apart - at the exact moment the data is
+ * decrypted and in the clear. The acknowledgement exists for that, and
+ * the rule beside DOWNLOAD_IDS says the three are one set doing one job.
+ *
+ * It was broken and it had no coverage at all. The class was added on
+ * press and removed only when the four-second timer ran out, so three
+ * presses inside that window left three buttons lit - the page saying
+ * three files are on their way. The sweep could produce it by hand and
+ * nothing in this repository could.
+ *
+ * The reason nothing could is worth recording: `acknowledge` sits
+ * behind the `typeof document === "undefined"` guard and is not
+ * exported, so there is no pure half to call. Rather than invent an
+ * export whose body would BE the assertion - a function returning
+ * "exactly the pressed one" proves only that it returns what it
+ * returns - the presses are performed through the real handlers the
+ * page registered, and the classes are read off the real elements.
+ *
+ * The seam this needs is in the harness rather than in the product, and
+ * it is `classList` on makeElement. Without one every `add` and
+ * `remove` the page performs lands on nothing, so a stub that omits it
+ * cannot fail this section however wrong the page is - which is why it
+ * is a real Set there and not an ignored call.
+ */
+const exports_ = await loadAdmin(ADMIN);
+const DOWNLOADS = ["download", "download-xlsx", "download-json"];
+const lit = () => DOWNLOADS.filter((id) =>
+  exports_.elements[id].classList.contains("pressed"));
+
+check("no download is lit before anything is pressed", lit().length === 0);
+
+await exports_.elements.download.click();
+check("a press lights the button that was pressed, and only it",
+  lit().join(",") === "download");
+
+await exports_.elements["download-xlsx"].click();
+check("a second press inside the window moves the light rather than adding one",
+  lit().join(",") === "download-xlsx");
+
+await exports_.elements["download-json"].click();
+check("and a third leaves one lit, not three",
+  lit().join(",") === "download-json");
+
+/*
+ * The expiry, and the reason the timer is cleared before it is set
+ * again: pressing two downloads in a row must leave the second one lit
+ * for a full window rather than being darkened by the first one's
+ * expiry. So exactly one timer is live after three presses, and it is
+ * the last one.
+ */
+const live = exports_.pending().filter((timer) => !timer.stopped);
+check("three presses leave one live timer, not three", live.length === 1);
+
+await live[0].fn();
+check("and when it runs out nothing is lit at all", lit().length === 0);
 
 if (failures) {
   console.error(`\nadmin session/delete FAILED ${failures} of ${checks}`);

@@ -46,6 +46,13 @@
   // lives here - so the number crosses on an event like the other two.
   const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
 
+  // The fourth: whose account this is, told to the file that seals the
+  // entry - #85. GET /me is this file's request and the id is the only
+  // thing memberkey.js will file a key under, so form.js can neither
+  // fetch it nor derive it; it crosses the same way the height does,
+  // rather than either file reaching into the other.
+  const ACCOUNT_EVENT = "binder:account";
+
   // Typed into, so they save on `input`.
   const FIELD_IDS = [
     "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
@@ -191,6 +198,23 @@
    * body data to whoever is at this browser.
    */
   let account = null;
+
+  /*
+   * Announced rather than exposed, and announced on every /me that
+   * answers rather than once.
+   *
+   * form.js holds whatever arrives and asks memberkey.js for a key under
+   * it at seal time, so what has to be true is that the id is known
+   * before somebody presses Send - not that it was known at load. A
+   * refresh that comes back with no account announces null, which is the
+   * honest answer and the one that costs an entry its second recipient
+   * rather than sealing it to the wrong member.
+   */
+  function announceAccount() {
+    document.dispatchEvent(new CustomEvent(ACCOUNT_EVENT, {
+      detail: { accountId: account },
+    }));
+  }
 
   function savePrefill() {
     const store = localStore();
@@ -446,6 +470,7 @@
       account = typeof payload.accountId === "string" && payload.accountId
         ? payload.accountId
         : null;
+      announceAccount();
       renderAccount(payload);
       setStatus("", false);
     } catch (error) {
@@ -705,12 +730,14 @@
 
     /*
      * One at a time, and a row that will not open is COUNTED rather than
-     * skipped. The ordinary cause is a row sealed before this browser
-     * had a key - every entry stored before #85, and every entry from a
-     * device that is gone - and those are exactly the rows an admin can
-     * unseal. Dropping them silently would leave a member reading an
-     * answer over fewer entries than they have, with nothing on the
-     * page saying so.
+     * skipped. Three causes, and all three are ordinary: a row stored
+     * before this browser had a key, a row from a device that is gone,
+     * and a row from before a sign-out here destroyed the key that would
+     * have opened it - the last is a documented price rather than a
+     * fault, and it is the one a member is most likely to meet. All
+     * three are exactly the rows an admin can unseal. Dropping them
+     * silently would leave a member reading an answer over fewer entries
+     * than they have, with nothing on the page saying so.
      */
     const entries = [];
     let sealed = 0;
@@ -728,9 +755,34 @@
     show($("history-sealed"), sealed > 0);
 
     if (!entries.length) {
+      /*
+       * FOUR CAUSES, AND THE LAST TWO ARE THE ONES THIS PAGE OWES AN
+       * EXPLANATION FOR, because both happen on the very device the
+       * member is holding and both otherwise read as a fault.
+       *
+       * Signing out destroys the device key on purpose - the whole point
+       * is that a shared browser hands nobody the previous member's
+       * history - so a member who signs out and back in finds everything
+       * sealed where they are sitting.
+       *
+       * The fourth is this page's own timing. form.js can only widen a
+       * seal to an account it has been told about, and it is told on the
+       * event this module fires once /me answers; nothing gates Send on
+       * that answer, deliberately, because blocking a submission on a
+       * request that may never return is the worse failure. So a member
+       * on a slow connection who fills the form and presses Send
+       * immediately gets a keyholder-only row, permanently, on a browser
+       * that holds a perfectly good key.
+       *
+       * The remedy sentence is the one the partial-history line already
+       * uses, word for word: a member who reads either of them is in the
+       * same position and there is no reason for two answers.
+       */
       historyStatus("None of your entries were sealed to this browser. " +
-        "They were stored before this browser had a key of its own, or on " +
-        "a device it is not.", false);
+        "They were stored before this browser had a key of its own, on a " +
+        "device this is not, before signing out here destroyed the key " +
+        "that would have opened them, or before this page had finished " +
+        "loading your account. Ask an admin to unlock them.", false);
       return;
     }
 

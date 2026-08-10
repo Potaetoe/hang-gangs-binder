@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 96;
+const EXPECTED = 102;
 
 function check(label, condition) {
   performed++;
@@ -71,6 +71,21 @@ globalThis.location = {
   replace(target) { redirects.push(target); },
 };
 
+/*
+ * Everything ever written to any element's `dataset`, across the whole
+ * page - mandate 9's second sink, and it is collected globally rather
+ * than per element because the rule is about the PAGE retaining
+ * decrypted content, not about one node.
+ *
+ * A `data-` attribute is the tempting place to park an opened row:
+ * it survives the frame, it is one line, and it is invisible until
+ * somebody opens devtools on a screen that is showing a member's whole
+ * history in the clear. Nothing in apps/web uses `dataset` at all
+ * today, so an empty record is the honest resting state and any entry
+ * at all is worth reading.
+ */
+const datasetWrites = [];
+
 function makeElement(id, hidden = false) {
   const listeners = new Map();
   const attributes = new Map();
@@ -82,6 +97,15 @@ function makeElement(id, hidden = false) {
     checked: false,
     className: "",
     dateTime: "",
+    // A Proxy rather than a plain object, because a plain one would
+    // record nothing and read as clean however much was written to it.
+    dataset: new Proxy({}, {
+      set(target, name, value) {
+        datasetWrites.push({ id, name, value });
+        target[name] = value;
+        return true;
+      },
+    }),
     addEventListener(type, listener) {
       const handlers = listeners.get(type) || [];
       handlers.push(listener);
@@ -1155,6 +1179,34 @@ check("and the guard is told about it without waiting for a reload",
     event && event.type === "binder:height-baseline" &&
     event.detail && event.detail.lastHeightCm === 177.8));
 
+/*
+ * WHAT RIDES ON binder:account, asserted as the whole key set rather
+ * than as the absence of whichever field worries us today.
+ *
+ * A `document` CustomEvent is a WIDER surface than this module's own
+ * scope, and that is the reason the arm exists. An extension content
+ * script running in an isolated world cannot read a closure in this
+ * file, and it can listen on `document` - so every member added to this
+ * payload is published to whatever the member has installed. The id is
+ * the one thing form.js needs, because it is what memberkey.js files a
+ * key under; the handle and the Telegram id this module also holds are
+ * not, and nothing structural keeps them off the event.
+ *
+ * Compared as the sorted key set so a field cannot arrive quietly: the
+ * mutation this reddens on is `telegramId` riding along beside the id,
+ * which passed the whole gate when the #85 review tried it.
+ */
+const announced = baseline.document.eventsHere.filter((event) =>
+  event && event.type === "binder:account");
+
+check("form.js is told whose account this is, on every /me that answers",
+  announced.length === 2 &&
+  announced.every((event) => event.detail.accountId === ACCOUNT));
+
+check("and the announcement carries the account id and nothing else",
+  announced.length > 0 && announced.every((event) =>
+    Object.keys(event.detail).slice().sort().join(",") === "accountId"));
+
 /* Typing does not move it. This is the check that fails on the obvious
  * wrong implementation - saving the baseline beside the draft - and the
  * one that keeps the guard from comparing an entry against itself. */
@@ -1648,6 +1700,23 @@ check("a history sealed entirely elsewhere is explained, not left blank",
   /sealed to this browser/.test(
     noneOpen.elements["history-status"].textContent));
 
+/*
+ * THE CAUSE A MEMBER CANNOT POSSIBLY DEDUCE, pinned so the copy cannot
+ * fall back to blaming a device.
+ *
+ * #85's seal widens to an account this module announces once /me
+ * answers, and nothing gates Send on that answer - deliberately, since
+ * blocking a submission on a request that may never return is the worse
+ * failure. So an entry sent in the first moments of a slow load is
+ * keyholder-only for good, on a browser holding a perfectly good key.
+ * The other three causes all point at a device; this one happened here,
+ * and a sentence listing only the three is a sentence that blames the
+ * member's hardware for the page's own timing.
+ */
+check("and the timing this page causes is named, not only the devices",
+  /finished loading your account/.test(
+    noneOpen.elements["history-status"].textContent));
+
 const noKey = await loadSubmit({
   replies: [response(200, SUMMARY), listing([row(1, "one")])],
   history: { key: null, unavailable: "this browser keeps no database" },
@@ -1766,6 +1835,107 @@ check("no decrypted value is written to storage or hung on the global",
     .test(historyCode) &&
   !/root\.\w+\s*=/.test(historyCode) &&
   !/setItem\([^)]*(entry|record|history)/i.test(historyCode));
+
+/* ------------------------------------------------------------------ */
+/* Mandate 9's other two sinks, which the arm above cannot see.        */
+
+/*
+ * WHY THE ARM ABOVE IS NOT ENOUGH, said plainly because it looks like
+ * it is. It matches words near each other. The #154 sweep's client
+ * partition wrote two mutations that keep a member's whole decrypted
+ * history alive past the frame that opened it and match none of those
+ * words:
+ *
+ *   - a module-level `let opened = null;` assigned inside openHistory,
+ *     which outlives the sign-out meant to end it and answers for
+ *     whichever account asked first on a shared browser;
+ *   - `if (card) card.dataset.entries = JSON.stringify(entries);`,
+ *     which hangs the same content off the DOM behind a guard that
+ *     always passes.
+ *
+ * Neither names a storage API, neither assigns to `root.`, and neither
+ * calls setItem. A third regex per sink is the wrong answer - the sinks
+ * are unbounded and the words are not - so these two arms ask about the
+ * ACT instead: what was written to the page, and what openHistory
+ * leaves behind it.
+ */
+
+check("nothing decrypted is hung on the page's own elements",
+  datasetWrites.length === 0);
+
+/*
+ * And the module's own scope. This one is structural rather than
+ * executed, because a value cached inside a closure is not observable
+ * from outside it by any means - which is exactly what makes the sink
+ * attractive and what makes the rule worth stating as a rule.
+ *
+ * The question asked is narrow and total: does openHistory assign to
+ * ANY name that outlives it? Not "does it assign something that looks
+ * like a row" - a member's history reaches a cache under whatever name
+ * somebody picked, and the surviving-name list is knowable while the
+ * naming is not. `account` is assigned by refreshPanel and
+ * `lastHeightCm` by rememberHeight, and both are outside this function
+ * on purpose; the one frame that holds plaintext writes nothing that
+ * survives it.
+ *
+ * Comments and string literals are removed BEFORE any brace is
+ * counted. dev/memberkey.test.mjs records what an unbalanced brace
+ * inside a string does to a raw counter: it inflates it permanently, so
+ * everything after it reads as one level deeper and a rule about depth
+ * silently stops applying to the rest of the file.
+ */
+const stripped = submitSource
+  .replace(/\/\*[\s\S]*?\*\//g, " ")
+  .replace(/(^|[^:])\/\/.*$/gm, "$1")
+  .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+  .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+  .replace(/`(?:[^`\\]|\\.)*`/g, "``");
+
+// Every name the module declares at its own top level - the ones that
+// live for the tab. Depth is counted as the file is walked, so a name
+// declared inside any function is not one of these.
+function survivingNames(code) {
+  const names = new Set();
+  let depth = 0;
+  for (const line of code.split("\n")) {
+    if (depth === 1) {
+      const declared = /^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)/.exec(line);
+      if (declared) names.add(declared[1]);
+    }
+    for (const character of line) {
+      if (character === "{") depth += 1;
+      if (character === "}") depth -= 1;
+    }
+  }
+  return names;
+}
+
+// One function's body, by matching braces from its own opening one.
+function bodyOf(code, name) {
+  const at = code.indexOf("function " + name + "(");
+  if (at === -1) return null;
+  const start = code.indexOf("{", at);
+  let depth = 0;
+  for (let i = start; i < code.length; i++) {
+    if (code[i] === "{") depth += 1;
+    if (code[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return code.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+const surviving = survivingNames(stripped);
+const openHistoryBody = bodyOf(stripped, "openHistory");
+
+check("the module really was read - openHistory found, and names with it",
+  Boolean(openHistoryBody) && surviving.has("account") &&
+  surviving.has("lastHeightCm"));
+
+check("the frame that decrypts the rows assigns nothing that outlives it",
+  Boolean(openHistoryBody) && [...surviving].every((name) =>
+    !new RegExp("(^|[^.\\w$])" + name + "\\s*=(?!=)").test(openHistoryBody)));
 
 if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);
