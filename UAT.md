@@ -23,13 +23,16 @@ against: where the site and the mockup disagree, the site is wrong,
 consistent in the wrong typeface passes every self-comparison and still
 fails this pass. A1 is where that comparison is driven.
 
-**Sections are keyed to the demo console's feature cards.** Each
-section heading names the card it drives, exactly as the card titles
+**Sections are keyed to the demo console's feature cards.** A section
+that drives a card names it in the heading, exactly as the card titles
 itself — `dev/demo.test.mjs` holds the two documents to the same set,
 in both directions, so a renamed card and a stale section cannot
 coexist quietly. The staging that used to be named by scenario id in
 these headings is the console's plumbing now; press the card's button
-and it is done for you.
+and it is done for you. **A section with no card in its heading drives
+nothing**, and says in its own words why: the surface it was written
+for does not exist yet, and the rows are here so their absence is
+something a driver reads rather than something they have to notice.
 
 **Palettes are described by character here and never by chip label.**
 The **Theme** control in front of you is the list, and counting the
@@ -197,11 +200,13 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A3.2 | Read the entry count | It matches what is actually stored for you | The count comes from `GET /me` and nothing else; this is the acceptance criterion |
 | A3.3 | On a member with nothing stored, read the "last submitted" line | Something honest — "No entries yet" — never "Invalid Date" | A brand-new member is the most common first view of this page |
 | A3.4 | Switch between **On record** and **Weigh in**, repeatedly | **Exactly one** pane visible at a time, never both, never neither | `[hidden]` losing to `display: flex` has shipped here before |
-| A3.5 | Fill the form and submit | Success, and the count **moves on its own** | The panel re-reads `/me` after a stored submission rather than incrementing a guess |
+| A3.5 | Fill the form and submit | It is accepted, and the feed above the frame names the store. **The count does not move here, and that is not the failure** — the stubbed Worker answers `/me` with a fixed corpus, so this arm cannot show the re-read. **AL6 is where the count moving is accepted**; recording A3.5 as proof that it moves is the vacuous pass this document warns about | The staged arm proves the form seals and sends; only a real store can prove the panel re-reads `/me` rather than incrementing a guess |
 | A3.6 | Return to **Weigh in** after a submission | The form is back, with a note saying the earlier entry is kept | #64: before it, the received card replaced the form and never gave it back |
 | A3.7 | Look for a handle field | **There is none.** The handle comes from the session | While it was typed, a member could store somebody else's handle beside their own account id |
 | A3.8 | Read your numeric Telegram id under **On record** | It is shown | #58. Being made an admin needs that number, and a page that does not show it sends people to a third-party bot to ask for it |
 | A3.9 | Read the key fingerprint on the page | 32 characters, matching the **development** public key in `config.js` | On anything but production it will not match the pinned group message, and that is expected |
+| A3.10 | Under **On record**, find **Your entries, opened** and read what it says about the rows it could not open | Every row this browser cannot open is **counted and named** — "*n* sealed to a device this browser is not" — and the answer above it is not quietly computed over the rest. #85's personal pane. **The demo's rows are placeholder bytes sealed to nobody by design**, so what this arm accepts is that the pane reports its own blindness honestly; a pane that drew a confident answer over rows it never opened would pass a check written any other way | An answer computed over fewer rows than the member has is an answer they cannot tell from a correct one. Staged, this is the only half that can be driven — AL7 is the round trip |
+| A3.11 | Ask the pane two different questions — change **About**, then **Measure** | The answer changes with them, and there is **no counting choice and no combining control** | It asks over one member's own rows with no five-person floor, because their own data is theirs; the levers that exist to keep a coarsening above a floor would be ceremony over a safety property that is not in play, and offering them would teach the wrong model of what the floor is for |
 
 ### A4 · The device-local prefill — card "The form remembers you"
 
@@ -214,15 +219,27 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A4.5 | With the second member signed in, look at `localStorage` in devtools | The first member's prefill entry is **gone**, not merely ignored | Data already on the device had to be erased, not just stopped from growing |
 | A4.6 | Hand-edit the prefill entry to something malformed and reload | The page starts normally with empty fields and no error | Someone hand-editing storage, or an older format, must not produce a dead page |
 
-### A5 · A correction supersedes — card "Fix a mistake"
+### A5 · A correction, as the member reads it — card "Fix a mistake"
+
+> **This section accepts the DISPLAY of a correction, never the act of
+> making one.** No member-facing correction control ships: `form.js`
+> never sends `supersedes`, and #84 is post-cutover. The card's button
+> stages a member whose record was **already** corrected — four entries
+> standing, two rows resting behind them — so every row below is read
+> off a state the demo arrived in, and none of them can be recorded as
+> acceptance that a correction can be *made*. Those rows are A12, and
+> they are not drivable on either arm today. Recording A5 green while
+> reading it as coverage of the act is the exact vacuous pass A11's own
+> sidebar warns about, arriving through the one section built to look
+> like it covers the act.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A5.1 | Correct an existing entry rather than adding one | It is accepted as a correction | #84. Members mistype, and a product whose only remedy is "submit it again" turns one mistake into two rows |
-| A5.2 | Read the count on the panel afterwards | It counts **effective** entries — the correction replaced the row, it did not add one | The count is what a member trusts; a correction that inflates it teaches them not to |
-| A5.3 | Try to correct the same entry twice | The second attempt is refused | A row is superseded once, which is what keeps "current" meaning the current rows |
-| A5.4 | Try to correct an entry that is not yours | Refused | Otherwise a correction is a write into somebody else's history |
-| A5.5 | Look at what the keyholder sees for that member | Both rows are present, and which supersedes which is legible | Storage is append-only on purpose; the correction is a pointer, not an erasure |
+| A5.1 | Press **See a corrected record**, then read **On record** | Two numbers, not one: the entries standing, and a separate line naming the rows resting behind them | The whole of #193. Six rows written and four claimed is what a member who corrected twice has, and one number cannot say it |
+| A5.2 | Read the entry count itself | It counts **effective** entries — a correction replaced its row, it did not add one — **and the corrections line is beside it, accounting for the difference** | The count is what a member trusts. Without the second line the number simply shrinks, which reads as the correction having eaten an entry; a count that teaches a member their fix cost them a row teaches them not to fix things |
+| A5.3 | Read the corrections line's wording | It names them as kept rather than erased, and the noun agrees with the number — "1 correction", never "1 corrections" | Storage is append-only on purpose, and a member deserves to be told that in their own words rather than in the column's. A number pasted into a sentence is the tell that nobody read it back |
+| A5.4 | Press **Weigh in**'s button to reach a member who has corrected nothing, and look for the line | **It is absent**, not showing "0 corrections" | Most members on most days have corrected nothing, and a zero invites the question of what a correction is from the one person who has never made one |
+| A5.5 | Watch the feed above the frame as the card stages | It reports the two numbers it just staged, and they are the two the panel then shows | The feed is computed from the staging rather than scripted (#212), so this is the one place the demo can be caught disagreeing with itself |
 
 ### A6 · Sign out ends the session — card "Signed out means signed out"
 
@@ -258,6 +275,9 @@ on the Weigh in card first.
 | A7.5 | Press **Clear**, then reload | Both copies are gone — the decrypted rows and the stored key — and the page asks for the key again | "Press Clear before you leave this browser" is only true if Clear does that |
 | A7.6 | Decrypt with the **wrong** key | Rows are **listed with their ids**, not silently skipped | The ordinary cause is a rotated key, not damage, and hiding them looks like data loss |
 | A7.7 | Put a `=`-leading value in a text field, then export the CSV | The cell arrives with a **leading apostrophe** | Otherwise a spreadsheet runs it as a formula |
+| A7.8 | Read the three download controls without pressing any | Three buttons of **one rank**, none of them filled or singled out | #174. They do the same thing to the same data, so ranking one makes the eye invent a difference that is not there — and `primary` on this page is reserved for the acts that change the world |
+| A7.9 | Press one download, and read what the page says | It acknowledges **the press**, naming the format, and says it cannot know whether the file arrived. **Nothing claims the file was saved** | The one act on this page whose result lands somewhere the page cannot see. A timer that claimed arrival would be worse than no acknowledgement, which is at least honest about knowing nothing |
+| A7.10 | Press a second download while the first is still lit, then wait out the acknowledgement | **Exactly one is lit at a time** — the second press takes the light from the first — and the lit state clears on its own afterwards | Three lit buttons say three files are in flight and cannot say which press produced which; the acknowledgement's whole job is telling one press from another at the moment the data is in the clear |
 
 ### A8 · Admin — card "The admin's panel"
 
@@ -272,8 +292,12 @@ accept.
 | A8.2 | Reach it on a **member** session | Refused, **with a message saying an admin session is needed** | A member reaching the admin surface is the failure; a blank page is a bad way to say so |
 | A8.3 | Delete a row | It disappears from the table | Step 7's behavior |
 | A8.4 | **Immediately press Publish, then read the published document** | The deleted row's data is **not** in it | The sharp hazard: a deleted row surviving in derived state is resurrected by the next Publish |
-| A8.5 | Read the member's own count afterwards | It agrees with the table | Counts and the table disagreeing is what the member panel is measured on |
+| A8.5 | Read the member's own count afterwards | **Not drivable on this arm** — the stubbed Worker answers `/me` with a fixed corpus, so the count cannot move whatever the table does, and a driver reading "they agree" here has compared two constants. **AL8 is the row that accepts it.** Record A8.5 as not performed | Counts and the table disagreeing is what the member panel is measured on, and a staged agreement is not evidence of it |
 | A8.6 | Press **Unpublish** with the key field empty | It works | It needs the session, not the key — and submissions are left untouched |
+| A8.7 | With the page decrypted, stop touching it. In the console: `const t = Date.now; Date.now = () => t.call(Date) + 8*60*1000;` and wait a second | The warning card appears, counting **down from 2:00** to the second, and focus moves to **Stay on this page** | Ten minutes idle, two of them warning — the owner's numbers, ratified on #91. The page measures the clock rather than counting its own ticks, which is what makes this drivable in seconds and what makes a sleeping laptop wake up expired instead of rested |
+| A8.8 | Press **Stay on this page**, then undo the console line | The warning goes at once, not at the next tick, and the page is still decrypted | A card that lingered after the press reads as a control that did not work |
+| A8.9 | Re-arm it, push the offset past ten minutes, and watch both the page and the feed above the frame | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on `index.html` signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
+| A8.10 | Confirm what A8.9 did **not** do — return and provide the key path again | The **stored private key is still there**: the page decrypts without another paste or file | The key is not authority. Nothing issued it and nothing can revoke it, so an idle timer that destroyed it would make walking away cost the keyholder their key — **Clear** stays the one lever that removes it (A7.5) |
 
 ### A9 · Site content and its fallback — card "Before anything is written"
 
@@ -284,13 +308,13 @@ accept.
 | A9.3 | Drive the site with the configuration unreachable | Every page still reads correctly, on the shipped copy | The site must not depend on a route answering to be readable |
 | A9.4 | Check that no edited copy has become a second home for a fact | Content is wording, never a claim stated in full only here | One home per fact, and an admin-editable second copy is the one nobody corrects |
 
-### A10 · The dashboard payoff — card "Muse's charts"
+### A10 · The published figures — card "Muse's charts"
 
 > **See the charts** stages a full corpus: several repeat submitters
 > above the five-person floor, and series with enough points to draw.
 > **See a thin week**, on the "Too few to show" card, is its sparse
 > counterpart and is what A11 uses. Driving A10 on the thin week
-> produces an empty dashboard that looks like a failure and is not.
+> produces an empty charts page that looks like a failure and is not.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -315,8 +339,9 @@ people whose data it holds.
 | A11.3 | With fewer than five repeat submitters, tick the weight series and publish | **No series is published at all** | A chart of one line is a chart of one person (#19) |
 | A11.4 | With five or more, publish twice and compare | Points carry a **date**, not an instant, and weights sit on bin edges | Rounding is what makes following one person across snapshots an inference rather than a lookup |
 | A11.5 | Read the series labels | "Person 1", never a handle | A stable label across snapshots would rebuild the thing the rounding removed |
-| A11.6 | On every page: devtools → Application → both storages | The session is in `sessionStorage`, never `localStorage`; only the prefill is in `localStorage` | A credential outliving the tab is a different exposure |
-| A11.7 | Publish, have **one** member submit, publish again, and read the raw document | The movement figures are **absent from the JSON**, not merely undrawn — and the page says too few entries have moved | A combined weight is a group figure; its delta can be one person's gain, and the served body is readable by anybody holding a member session |
+| A11.6 | On every page: devtools → Application → **Session storage, Local storage, and IndexedDB** | The session is in `sessionStorage` and **never** in `localStorage`. `localStorage` holds two things and both belong there: `hgb-submit-prefill`, the device-local entry prefill, and `hgb-palette`, the chosen theme — A1.9 writes the second one, so a sweep that expects an empty `localStorage` is failing a step earlier in this pass rather than finding an exposure | A credential outliving the tab is a different exposure. A row that would be red for a reason the pass itself caused is a row nobody trusts the third time |
+| A11.7 | In the same panel, open **IndexedDB** and read what is there per page | Two databases, each on the one page that has any business holding it: `hgb-keyholder-key` on `admin.html` only, present **after** a key import and gone after **Clear** (A7.5); `hgb-member-key` on `your-page.html` only, and **gone after Sign out** (A4.3 already made you press it). Neither exists on `charts.html`, `index.html` or `404.html`; a key on any of those is a finding | Both key stores were added after this section was written and it never inspected them — a privacy sweep that reads two storages while the key material sits in a third is the sweep reporting on where it happened to look. The two lifetimes differ on purpose and the difference is the claim: the member's key dies with the session, the keyholder's outlives it and answers to **Clear** alone |
+| A11.8 | Publish, have **one** member submit, publish again, and read the raw document | The movement figures are **absent from the JSON**, not merely undrawn — and the page says too few entries have moved | A combined weight is a group figure; its delta can be one person's gain, and the served body is readable by anybody holding a member session |
 
 > **When a privacy check reads "absent", confirm the thing would
 > otherwise have been present.** A11.2's first run in the previous pass
@@ -325,6 +350,29 @@ people whose data it holds.
 > excluded, so the check could not have failed. Seed a real discrepancy
 > and repeat it. This is the trap that makes a whole privacy section
 > worthless while reading green.
+
+### A12 · Making a correction — nothing to drive yet (#84)
+
+**No card, deliberately.** Every other section names the demo card that
+stages it; this one has nothing to stage because the surface does not
+exist on either arm. It is a section rather than a line in the issue so
+that the rows are *written down where a driver looks for them* — A5 is
+the section a reader reaches for when they want this, and A5 accepts the
+display instead. A pass that simply omits these leaves the reader to
+notice an absence, which is the failure mode a document made of present
+rows cannot report.
+
+**Why nothing runs.** `form.js` never sends `supersedes`, so no member
+can make a correction: the field exists on the wire and in the Worker,
+and the control does not exist on the page. #84 is post-cutover, which
+is a scheduling fact and lives on the issue rather than here.
+
+| # | Do | Pass looks like | Why |
+| --- | --- | --- | --- |
+| A12.1 | Correct an existing entry rather than adding one | It is accepted as a correction | #84. Members mistype, and a product whose only remedy is "submit it again" turns one mistake into two rows |
+| A12.2 | Try to correct the same entry twice | The second attempt is refused | A row is superseded once, which is what keeps "current" meaning the current rows |
+| A12.3 | Try to correct an entry that is not yours | Refused | Otherwise a correction is a write into somebody else's history |
+| A12.4 | Look at what the keyholder sees for that member | Both rows are present, and which supersedes which is legible | Storage is append-only on purpose; the correction is a pointer, not an erasure. This surface exists on neither arm today — it is the keyholder half of the same missing feature |
 
 ---
 
@@ -341,6 +389,9 @@ separately so a staged result is never mistaken for a live one.
 | AL3 | Press **Sign out**, then confirm server-side that the session row is gone | It is | #90. The user-visible clear always succeeds; this is the half that closes the window a captured token would otherwise keep open |
 | AL4 | Reuse the revoked token by hand against the endpoint | Refused | Otherwise the row survived to its natural expiry and Sign out hardened nothing |
 | AL5 | Publish, then re-run A11.1 through A11.3 against what the Worker actually stored | Same answers | The staged document is built for the check; this one is not |
+| AL6 | Submit again and watch the entry count on `your-page.html` without reloading | It **moves on its own** | A3.5's other half, and it can only be driven here: the panel re-reads `/me` after a stored submission rather than incrementing a guess, and a stub answering with a fixed corpus cannot tell those two apart |
+| AL7 | With a device key of your own, submit an entry, then open **Your entries, opened** | The row you just submitted **opens** — the pane draws an answer over it, and it is not in the sealed-elsewhere count | A3.10's round trip: #85's personal arm is a seal to two recipients and an open by the member's own key, and the staged arm proves neither half because its rows are sealed to nobody. Rows submitted before this browser had a key stay in the sealed count, which is the honest result and not a failure |
+| AL8 | As an admin, delete one of `alice`'s rows, then read `alice`'s own count on `your-page.html` | It has moved, and it **agrees with the admin table** | A8.5's other half. Counts and the table disagreeing is what the member panel is measured on, and only a real store can make both numbers move from one act |
 
 ### What Part A cannot cover
 
@@ -359,6 +410,8 @@ State these as not performed rather than assuming them.
 - **A real numeric Telegram id**, and therefore the admin-bootstrap
   path end to end.
 - **Anything about production data or secrets.**
+- **Making a correction**, on either arm — A12 says why, and it is not a
+  gap in the pass but the absence of the surface.
 
 ---
 
@@ -414,8 +467,11 @@ differently with real data than with staged members.
 **The filled record goes on the issue, not into this file.** A result is
 what one run found on one date, which AGENTS.md sends to issues and pull
 requests; this document carries the script, which is corrected in place
-as the product changes. Post the completed template as a comment on the
-UAT issue and link it from the demo issue.
+as the product changes. Post the completed template as a comment on
+**issue #126** — that issue is the home for every record — and link it
+from the demo issue. The filled Part A in `archive/` is a record of a
+different product against a script that no longer exists; read it as
+history, never as a section already covered.
 
 **A check you did not run is recorded as not performed, never omitted.**
 That distinction is the whole value of the pass — and record which arm
@@ -428,13 +484,14 @@ Part A staged, run on:     <date>   commit <full 40-char SHA>
   A2  sign in with Telegram      …
   A3  weigh in                   …
   A4  the form remembers you     …
-  A5  fix a mistake              …
+  A5  fix a mistake (display)    …
   A6  signed out means it        …
   A7  the keyholder's desk       …
   A8  the admin's panel          …
   A9  before anything is written …
   A10 Muse's charts              …
   A11 too few to show            …
+  A12 making a correction        <expected: not performed, no surface>
   Console clean of policy violations throughout:  <yes / what fired>
 
 Part A live, run on:       <date>   against hgbinderworker-dev
@@ -443,6 +500,9 @@ Part A live, run on:       <date>   against hgbinderworker-dev
   AL3 revocation           …
   AL4 revoked token        …
   AL5 privacy on stored    …
+  AL6 the count moves      …
+  AL7 your own rows open   …
+  AL8 delete reaches /me   …
 
 Part B, run on:            <date>   live
   B1 widget and sign-in    …

@@ -58,8 +58,15 @@ completes. That is why the Worker deploys before the site.
       open the file to confirm it holds `INSERT` rows. Step 4 is only
       as reversible as this file (#92).
 - [ ] UAT Part A green on the current `accounts` head — the script is
-      `UAT.md`, both arms, and the filled record is a comment on the UAT
-      issue rather than a file. Re-run only what changed since.
+      `UAT.md`, **both arms**, and the filled record is a comment on
+      **issue #126** rather than a file. That issue is the home for every
+      record, so it is also where an earlier one would be read back from.
+      **Drive every section.** There is no partial re-run available here
+      and the reason is a trap rather than a policy: the only filled Part
+      A anywhere in this repository is in `archive/`, taken against the
+      pre-redesign product on a script that no longer exists, so it is
+      history and not a baseline — nothing in it can be cited as a
+      section already covered.
 
 ## The sequence
 
