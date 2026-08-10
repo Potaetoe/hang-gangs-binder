@@ -26,6 +26,7 @@ No framework, matching the suites beside it.
 
 import os
 import sys
+import tempfile
 
 # tools/ is not a package and check_comments.py is a script, so the
 # import has to be made reachable before it can be named. isort would
@@ -44,7 +45,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 58
+EXPECTED = 69
 
 
 def check(label, condition):
@@ -380,6 +381,87 @@ check("and it still names the source tree",
 check("a directory merely starting with the same letters is not refused",
       check_comments.generated_tree_problems(
           [("distributions", (".py",))]) == [])
+
+
+# ------------------------------------------------------------------ #
+# And the files it reads have to be text.                             #
+#
+# A raw 0x00 inside a string literal in dev/worker.test.mjs made grep
+# and ripgrep classify the most-read file in this tree as binary: every
+# search of it answered "Binary file ... matches" and nothing else, and
+# a search that reports nothing looks exactly like a search that found
+# nothing. It is a class this project has seen before, which is why it
+# is a gate arm rather than a habit.
+#
+# Driven over a tree this suite builds, for the same reason the whole
+# first half of it is: the real tree is clean, and a rule exercised only
+# against a clean tree can never be shown to fire.
+
+
+def bytes_in(relpath, raw, scan=None):
+    """control_byte_problems() over a temporary tree holding one file."""
+    root = tempfile.mkdtemp(prefix="check-comments-bytes-")
+    full = os.path.join(root, *relpath.split("/"))
+    os.makedirs(os.path.dirname(full))
+    with open(full, "wb") as handle:
+        handle.write(raw)
+    return check_comments.control_byte_problems(
+        scan=[("dev", (".mjs",))] if scan is None else scan, repo=root)
+
+
+check("a raw 0x00 in a scanned file is reported",
+      len(bytes_in("dev/suite.test.mjs", b'const G = "a\x00b";\n')) == 1)
+
+check("and the report names the file, the line and the byte",
+      all(part in bytes_in("dev/suite.test.mjs",
+                           b'const G = "a\x00b";\n')[0]
+          for part in ("dev/suite.test.mjs", ":1:", "0x00")))
+
+check("and it says to write the escape instead",
+      "escape" in bytes_in("dev/suite.test.mjs",
+                           b'const G = "a\x00b";\n')[0])
+
+# The fix the message asks for, spelled the way a file spells it. Two
+# source characters, one runtime byte, and nothing for grep to sniff.
+check("the escaped spelling of the same byte is clean",
+      bytes_in("dev/suite.test.mjs", b'const G = "a\\x00b";\n') == [])
+
+check("tab, newline and carriage return are text",
+      bytes_in("dev/suite.test.mjs", b"a\tb\r\nc\n") == [])
+
+# The band's own edge, in both directions. 0x08 is the last byte that is
+# not text and 0x09 is the first that is, so a rule written with the
+# comparison the wrong way round fails exactly one of these.
+check("0x08 is reported",
+      len(bytes_in("dev/suite.test.mjs", b"a\x08b\n")) == 1)
+
+check("and 0x09 beside it is not",
+      bytes_in("dev/suite.test.mjs", b"a\x09b\n") == [])
+
+# Reported per occurrence rather than per file. A rule that stopped at
+# the first byte would call a file with three of them fixed after one
+# edit.
+check("every occurrence is reported, on its own line",
+      [problem.split(":")[1] for problem in
+       bytes_in("dev/suite.test.mjs", b"one\n\x00two\nthree\x00\n")]
+      == ["2", "3"])
+
+# The scope wall. This rule reads the files this checker already opens,
+# and says so by not opening anything else - an extension list widened
+# here would be widened for the phrase scan too.
+check("a file outside the scanned extensions is not opened",
+      bytes_in("dev/notes.txt", b"a\x00b\n") == [])
+
+# The phrase exemption does not extend to bytes, and this is the arm
+# that keeps the two apart. tools/check_comments.py is excused from the
+# phrase scan because a file has to be able to name what it forbids;
+# nothing in that argument says its bytes may stop being text.
+check("an exempt file is still read for control bytes",
+      len(bytes_in("tools/check_comments.py", b'BLANK = "\x00"\n',
+                   scan=[("tools", (".py",))])) == 1)
+
+check("the real tree carries no control byte",
+      check_comments.control_byte_problems() == [])
 
 
 if failures:

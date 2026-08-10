@@ -2679,6 +2679,41 @@ check("the listing arrives in id order, not in an order the rows decide",
   stored[0].id === 9201,
   `${JSON.stringify(sequence)} against ${JSON.stringify(byIdAscending)}`);
 
+/*
+ * And the arm above means something only if the stub can answer any
+ * other way.
+ *
+ * The clause is MODELLED here rather than performed by a database, so
+ * the model's own fidelity is what that sequence rests on: a stub that
+ * sorted ascending whatever the statement said would answer the same
+ * ids for `ORDER BY mine.id DESC`, and the direction of a member's
+ * listing would be pinned by nothing at all. The direction is not
+ * cosmetic - server/worker.js's cap says the rows a full listing hands
+ * back are the OLDEST ones, and which end the sort starts from is the
+ * whole of that promise.
+ *
+ * Asked with the Worker's own statement and one keyword swapped in,
+ * rather than with a statement written here, so this cannot come to
+ * disagree with what the route actually sends. The first clause of the
+ * condition is what refuses a swap that silently matched nothing: a
+ * statement identical to the one it flipped would compare two readings
+ * of the same sort and pass whatever the stub does.
+ */
+const orderedSql = executed.filter((e) => e.table === "submissions")
+  .map((e) => e.sql).pop();
+const flipped = orderedSql
+  .replace(/\bORDER BY\s+mine\.(\w+)/i, "ORDER BY mine.$1 DESC");
+const descending = (await DB.prepare(flipped).bind(FIXTURE_4242).all())
+  .results.map((r) => r.id);
+
+check("the stub sorts the way the statement says, so a DESC would fail " +
+  "the arm above rather than pass it",
+  flipped !== orderedSql && descending.length > 1 &&
+  JSON.stringify(descending) ===
+    JSON.stringify(byIdAscending.slice().reverse()),
+  `${JSON.stringify(descending)} against ` +
+  `${JSON.stringify(byIdAscending.slice().reverse())}`);
+
 stored = stored.filter((r) => r.id !== 9200 && r.id !== 9201);
 
 /*

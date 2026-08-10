@@ -23,7 +23,9 @@ drift.) In outline:
       (tools/check_docs.py carries the registry)
     - code comments explain why, and no new one narrates a change
       (tools/check_comments.py carries the allowlist that pins the
-      offenders still here)
+      offenders still here); the same stage refuses a raw control byte
+      in any source file it reads, because a file grep classifies as
+      binary answers nothing to any search of it
     - each page stays inside its gzipped transfer budget, in both
       directions (tools/check_budget.py carries the ceilings; a change
       that adds weight raises them in its own diff)
@@ -359,8 +361,14 @@ def main():
     # comment says why, and what changed says it in the commit message.
     # A ratchet rather than a sweep - every offender already here is
     # pinned, a new one fails, and a pin that stops matching fails too.
-    results.append(("comments say why", run(
-        "comments say why",
+    #
+    # The label names two rules because the stage answers for two. The
+    # second is a floor under the first: a source file carrying a raw
+    # control byte reads as binary to grep and to this checker's own
+    # code mask, so the tree it scans has to be text before anything it
+    # says about that tree can be trusted.
+    results.append(("comments say why + source is text", run(
+        "comments say why + source is text",
         [sys.executable, "tools/check_comments.py"]
     )))
 

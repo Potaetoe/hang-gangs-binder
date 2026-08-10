@@ -20,6 +20,15 @@ who trusts it is worse off than one who had no comment at all. `git
 log` cannot go stale that way, because it is the record rather than a
 description of it.
 
+AND THE FILES STAY READABLE AS TEXT
+-----------------------------------
+A second rule over the same scan set: no raw control byte under 0x09.
+It sits here because this is the checker that reads those four
+directories, and because a 0x00 in one of them is the character this
+file masks code with - see control_byte_problems() for both halves of
+the argument, and for why the document rules in tools/check_docs.py
+could not have seen the file where this last happened.
+
 A RATCHET, not a sweep
 ----------------------
 Every offender already in the tree is pinned in ALLOWLIST below, and
@@ -461,6 +470,74 @@ def generated_tree_problems(scan=None):
     ]
 
 
+def control_byte_problems(scan=None, repo=None):
+    """A problem per raw control byte in the files this check reads.
+
+    THE SCAN SET IS THE REASON THIS RULE LIVES HERE rather than beside
+    the document rules in tools/check_docs.py. That checker reads the
+    registered documents and security/; this one reads the four source
+    directories, which is where the byte landed - inside a string
+    literal in a .mjs suite, a file no document rule would ever open.
+
+    Every file above is read as text by something. A byte under 0x09 is
+    not text, and the damage is not that it renders oddly:
+
+     - grep and ripgrep sniff the first buffer of a file, decide it is
+       binary and answer "Binary file X matches" instead of the line. A
+       search of the most-read file in the tree then reports nothing,
+       which is indistinguishable from a search that found nothing.
+     - it defeats THIS check in particular. Code is masked to a literal
+       0x00 - see BLANK above - so that two comments with code between
+       them cannot be joined into a phrase nobody wrote. A 0x00 the file
+       genuinely contains is the same character as that mask, so a
+       narrating phrase split by one is a phrase the ratchet cannot see.
+
+    Escapes cost nothing: "\\x00" in JavaScript or Python is the same
+    runtime byte and leaves the file text. So the rule is not a
+    restriction on what a suite may send, only on how it is spelled.
+
+    EXEMPT is not honored here, and that is deliberate. Those two files
+    are excused from the phrase scan because a file has to be able to
+    name the phrases it forbids; nothing about that argument extends to
+    bytes, and they are read as text like everything else.
+
+    The band stops below 0x09 because tab, newline and carriage return
+    are text and everything under them is not. 0x0B and up are left
+    alone rather than guessed at - a form feed is a formatting choice
+    somebody might defend, and no tool here treats one as binary.
+
+    The parameters exist so dev/check_comments.test.py can drive this
+    over a tree it builds. Reading the real directories is main()'s job,
+    and a rule exercised only against the tree it guards cannot be shown
+    to fail.
+    """
+    scan = SCAN if scan is None else scan
+    repo = REPO if repo is None else repo
+
+    out = []
+    for dirname, extensions in scan:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            full = os.path.join(base, name)
+            if not os.path.isfile(full) or not name.endswith(extensions):
+                continue
+            with open(full, "rb") as handle:
+                raw = handle.read()
+            for index, byte in enumerate(raw):
+                if byte >= 0x09:
+                    continue
+                out.append(
+                    "%s/%s:%d: a raw 0x%02x byte. grep and ripgrep read "
+                    "the whole file as binary and answer nothing out of "
+                    "it, and this check's own code mask is that same "
+                    "character. Write the escape instead - the runtime "
+                    "bytes are identical"
+                    % (dirname, name, raw.count(b"\n", 0, index) + 1, byte))
+    return out
+
+
 def problems():
     found, scanned = scan_tree()
     out = generated_tree_problems()
@@ -469,6 +546,7 @@ def problems():
         "while reading nothing" % name
         for name in missing_directories()
     )
+    out.extend(control_byte_problems())
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 
@@ -485,8 +563,9 @@ def main():
     # What was established, not the part that is easy to say: "no new
     # offenses" is true of a scan that read no files. The counts are
     # what make the line worth printing.
-    print("check_comments: comments explain why (%d files scanned, %d "
-          "pinned occurrence(s) left to clean up)."
+    print("check_comments: comments explain why and every scanned file "
+          "is text (%d files scanned, %d pinned occurrence(s) left to "
+          "clean up)."
           % (len(scanned), sum(ALLOWLIST.values())))
     return 0
 
