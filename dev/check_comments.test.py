@@ -372,8 +372,13 @@ check("the extractor reads real comments out of the schema",
       "half a migration, quietly" in
       check_comments.comments_only(SCHEMA, "sql"))
 
+# The needle is a column definition rather than a statement keyword:
+# this file's comments quote CREATE TABLE IF NOT EXISTS at length, and
+# rightly - that statement's skip-in-silence behavior is the trap the
+# whole header warns about. A needle a comment legitimately contains
+# would make this arm fail on correct prose.
 check("and the schema's own DDL is not read as prose",
-      "CREATE TABLE" not in check_comments.comments_only(SCHEMA, "sql"))
+      "AUTOINCREMENT" not in check_comments.comments_only(SCHEMA, "sql"))
 
 check("the real tree's occurrences are exactly what is pinned",
       {key: len(places) for key, places in found.items()}

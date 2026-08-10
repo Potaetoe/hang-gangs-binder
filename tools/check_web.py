@@ -625,6 +625,14 @@ day a check is added:
     today and nothing else here would notice it coming back on the
     next page written from an old tab.
 
+    WHAT THIS ARM RESTS ON, named because it is not a property of this
+    table or of the file it reads: the tokens govern the site's
+    appearance only while theme.css is the only thing painting it, and
+    what makes that true is style-src 'self' in every page's CSP. Check
+    26 is where that dependency is armed - widen the directive and this
+    table goes on comparing a stylesheet the site is no longer styled
+    by, with every arm here green.
+
     WHEN THE OWNER UPDATES THE ARTIFACT, this table is edited in the
     same change as the stylesheet, with the mockup's own words for
     the decision in the commit message - deliberately the same
@@ -714,6 +722,39 @@ day a check is added:
     as a difference, and a geometry set by something other than these
     properties is outside it. What it buys is that a box cannot
     change shape on one page without the change being written down.
+
+    And it is ONE stylesheet only while nothing else is allowed to
+    paint - the same dependency check 24 names, armed in check 26. A
+    second sheet linked from one page carries geometry this comparison
+    never opens.
+
+26. Nothing paints this site except theme.css. Checks 24 and 25 read
+    one file and answer for the whole site's appearance; this is what
+    makes that answer true, and #154's sweep found it written down
+    nowhere (P2 F3, and mutation J for the second half).
+
+    Two routes, and neither is check 13's:
+
+    - The CSP pin table itself. Check 13 reconciles each page's
+      shipped policy against its pin, which means it has no opinion
+      about what the two agree on: widen the page and the pin in one
+      edit - 'unsafe-inline' for a convenient rule, an origin for a
+      webfont - and check 13 is satisfied while the design gate is
+      speaking for a site it no longer governs. So this arm reads the
+      table check 13 takes as given, and every pinned style-src has to
+      be 'self' and nothing else.
+    - A second same-origin stylesheet. That is the one styling route
+      the CSP deliberately permits, because a second file on this
+      origin is exactly what 'self' means. Check 1 asks only whether
+      the file a link names exists, and checks 24 and 25 open
+      theme.css by name, so the sheet beside it is read by nothing.
+
+    What is NOT restated here: a page carrying no stylesheet at all is
+    check 3's missing-head report, and a shipped policy that has drifted
+    from its pin is check 13's. Inline <style> and style attributes are
+    refused by the policy rather than by a scan here - which is the
+    whole reason the first arm exists, since a scan of today's markup
+    would not notice the policy that refuses them being relaxed.
 """
 
 import base64
@@ -5228,6 +5269,127 @@ def grammar_problems():
     return problems
 
 
+# ------------------------------------------------------------------
+# Check 26: the two styling routes checks 24 and 25 leave open.
+#
+# #154's sweep, P2 F3 and P3 mutation J. Checks 24 and 25 read ONE
+# stylesheet and speak for the whole site's appearance, and the only
+# thing that makes that true is that no page may be painted from
+# anywhere else. That is a CSP property, not a property of theme.css,
+# and it was written down nowhere.
+#
+# Check 13 does not cover it and cannot: it reconciles each page's
+# shipped policy against its pin and has no opinion about what the two
+# agree on. A page and its pin widened in the same edit - 'unsafe-inline'
+# for one convenient rule, a CDN for one webfont - passes check 13, and
+# every design arm above goes on comparing a stylesheet that is no
+# longer the only thing painting the site.
+#
+# So this arm reads the pin TABLE, which is the one thing check 13 takes
+# as given. Widening style-src stays possible; it stops being quiet.
+
+# The only style-src any page may carry. Written out rather than read
+# off CSP_BASELINE, for the review bar's reason: a rule that asks the
+# table what the table says cannot notice the table moving.
+STYLE_SOURCE = ["'self'"]
+
+LINK_ELEMENT = re.compile(r"<link\b[^>]*>", re.I)
+
+
+def page_stylesheets(text):
+    """[href] for every stylesheet <link> in one page's markup, in order.
+
+    Read by the rel token rather than by the file's extension: an
+    alternate stylesheet is a stylesheet a member can switch to, and a
+    preload or an icon that happens to name a .css file paints nothing.
+    """
+    found = []
+    for tag in LINK_ELEMENT.findall(text):
+        relation = (tag_attribute(tag, "rel") or "").lower().split()
+        if "stylesheet" in relation:
+            found.append((tag_attribute(tag, "href") or "").strip())
+    return found
+
+
+def pinned_style_problems(expected=None):
+    """[(page, problem)] where the CSP pin stops confining styling.
+
+    Over the table rather than over the pages, and parameterized so the
+    suite can drive a widened pin without editing the shipped one.
+    """
+    expected = EXPECTED_CSP if expected is None else expected
+    problems = []
+    for name in sorted(expected):
+        sources = expected[name].get("style-src")
+        if sources == STYLE_SOURCE:
+            continue
+        if sources is None:
+            problems.append((name, (
+                "pins no style-src at all, so default-src decides how it "
+                "may be painted and this table says nothing about the "
+                "directive the design gate stands on. Check 24 rules the "
+                "tokens in %s and check 25 reads the card geometry out of "
+                "the same file; pin style-src %s"
+                % (STYLESHEET, " ".join(STYLE_SOURCE)))))
+            continue
+        problems.append((name, (
+            "is pinned with style-src \"%s\" rather than \"%s\". Check 24 "
+            "rules the design tokens in %s and check 25 reads the card "
+            "geometry out of that same file, and both speak for the site's "
+            "whole appearance only while nothing else may paint it. A "
+            "widened style-src takes their teeth out and every arm here "
+            "stays green doing it - so widening it is this line, in the "
+            "change that argues for it"
+            % (" ".join(sources), " ".join(STYLE_SOURCE), STYLESHEET))))
+    return problems
+
+
+def page_stylesheet_problems(text):
+    """[problem] for a page styled by anything but the one stylesheet.
+
+    A page linking no stylesheet at all is check 3's to report - it is
+    the shared head that is missing - and saying it twice is how one of
+    the two gets weakened.
+    """
+    problems = []
+    written = page_stylesheets(text)
+    linked = [href.split("?", 1)[0].split("#", 1)[0] for href in written]
+
+    for index, target in enumerate(linked):
+        if target == STYLESHEET:
+            continue
+        if not target:
+            problems.append(
+                "carries a stylesheet <link> with no href. A link this "
+                "reader cannot resolve is reported rather than skipped: "
+                "silence and a clean page print the same word")
+            continue
+        problems.append(
+            "links the stylesheet %s, and %s is the one this site has. "
+            "Check 24 pins the tokens in that file and check 25 reads the "
+            "card geometry out of it, so a second sheet paints past both "
+            "of them - and the CSP permits it, because a second file on "
+            "this origin is exactly what style-src 'self' allows"
+            % (written[index], STYLESHEET))
+
+    if linked.count(STYLESHEET) > 1:
+        problems.append(
+            "links %s %d times. The duplicate paints nothing today, and it "
+            "is a second place to re-point tomorrow - the one nobody "
+            "re-reads" % (STYLESHEET, linked.count(STYLESHEET)))
+
+    return problems
+
+
+def styling_exclusivity_problems():
+    """[(subject, problem)] for styling that reaches past the design gate."""
+    problems = list(pinned_style_problems())
+    for name in html_pages():
+        for problem in page_stylesheet_problems(page_text(name)):
+            problems.append((name, problem))
+    return sorted(problems)
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -5344,6 +5506,9 @@ def main():
         problems.append("%s %s." % (subject, problem))
 
     for subject, problem in grammar_problems():
+        problems.append("%s %s." % (subject, problem))
+
+    for subject, problem in styling_exclusivity_problems():
         problems.append("%s %s." % (subject, problem))
 
     for where in ("apps/web", "dist"):

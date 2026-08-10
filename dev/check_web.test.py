@@ -2720,7 +2720,8 @@ INLINE = check_web.pinned_style_problems(
 check("a pin that admits inline styling is reported",
       [subject for subject, _p in INLINE] == ["charts.html"])
 check("and the report says which gate it disarms",
-      "check 24" in INLINE[0][1] and "check 25" in INLINE[0][1])
+      "check 24" in INLINE[0][1].lower()
+      and "check 25" in INLINE[0][1].lower())
 
 check("a pin that admits another origin is reported too",
       len(check_web.pinned_style_problems(
