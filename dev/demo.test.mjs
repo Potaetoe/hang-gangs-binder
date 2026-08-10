@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 191);
+const { check, mustReject, report } = suite("demo", 192);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1704,6 +1704,32 @@ await check("a scroll the page cannot answer is reported, not swallowed",
     await browser.settled();
     return browser.nodes.status.textContent.includes(stop.scroll) &&
       browser.frameScrolled().length === 0;
+  });
+
+/*
+ * RESET MID-WALK RESTAGES THE STOP INSTEAD OF ONLY SAYING IT DID.
+ *
+ * Reset restaged the last card pressed, and during a walk there is no
+ * card - so it dropped the world key, announced that the state was
+ * reset, and left the frame standing in the world from before it with
+ * the walk card still on its stop. A console whose whole job is to say
+ * what really happened cannot have a button that reports an act it did
+ * not perform. Driven: the stop's world is staged again and the frame is
+ * asked to move.
+ */
+await check("reset during a walk stages the stop again, not just a message",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    const walk = Demo.TOURS[0];
+    browser.journey(walk.id).fire("click");
+    browser.nodes["tour-next"].fire("click");
+    const moved = browser.replaced.length + browser.nodes.stage.attrs.src;
+    browser.nodes.reset.fire("click");
+    await browser.settled();
+    return browser.staged() === walk.stops[1].scenario &&
+      moved !== browser.replaced.length + browser.nodes.stage.attrs.src &&
+      /stop/i.test(browser.nodes.status.textContent);
   });
 
 /*

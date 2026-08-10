@@ -764,11 +764,38 @@
       if (destination) root.open(MIRROR + destination, "_blank");
     });
 
+    /*
+     * Reset puts back the two things a press can change - the published
+     * snapshot and a revocation - and then RESTAGES whatever is being
+     * shown, so the frame is showing the world the console just claimed.
+     *
+     * A walk was the case that lied. Only a card press was restaged, and
+     * during a walk there is no card, so the button dropped the world
+     * key, said the state was reset, and left the frame standing in the
+     * world from before it - with the walk card still on its stop. The
+     * viewer is told something happened and can see that nothing did.
+     * Walking the stop again is the same three writes it arrived by, so
+     * the claim and the screen agree.
+     *
+     * The sentence names what was actually restaged rather than always
+     * naming a card, because "back to how the card's action starts" is
+     * a card the viewer never pressed on every stop of every journey.
+     */
     $("reset").addEventListener("click", function () {
       root.sessionStorage.removeItem(WORLD_KEY);
-      if (active) stage(active);
-      say("Demo state reset. The published snapshot and any revocation " +
-        "are back to how the card's action starts.");
+      if (walk !== null) {
+        goToStop(stopAt);
+        say("Demo state reset, and this stop staged again from the " +
+          "start. The published snapshot and any revocation are back to " +
+          "how the stop begins.");
+      } else if (active) {
+        stage(active);
+        say("Demo state reset. The published snapshot and any revocation " +
+          "are back to how the card's action starts.");
+      } else {
+        say("Demo state reset. The published snapshot and any revocation " +
+          "are back to how they start - pick a walk or a card to see it.");
+      }
     });
   }
 
