@@ -100,37 +100,49 @@ recorded from the wrong arm proves less than it claims.
 ```
 
 Then <http://127.0.0.1:8126/dev/demo.html> — the console. It opens on
-**Take a walk through the binder**: four journeys, each a numbered
-sequence of stops, and each section below names the journey and stop it
-drives. Walking a journey stages everything each stop needs — the
-session this tab should hold, the figures the charts draw, the
-throwaway key where a stop needs one — and opens the right page in the
-frame.
+**Take a walk through the binder**: four journeys, each offering
+**Walk this one**, with the number of stops on the button. Each section
+below names the journey and the stop it drives. Walking a journey
+stages everything each stop needs — the session this tab should hold,
+the figures the charts draw, the throwaway key where a stop needs one —
+opens the right page in the frame, and where the stop's words are about
+one tab or one section of that page, opens that too.
+
+While a walk is running the journey cards step aside for the walk
+panel: the journey's name and **stop *n* of *m***, the stop's title,
+its narration, and **Back**, **Next** and **Leave this walk**. Leaving
+brings the four journeys back.
 
 **The frame is behind glass while a journey is being read, and the last
 stop of every journey hands it over.** That is deliberate: a walk whose
 viewer has already clicked away is a walk being narrated over the wrong
-page. Where a section below asks you to *do* something in the frame,
-walk to the journey's last stop, or open **Free drive** and press the
-matching feature card — the cards stage one state at a time and leave
-the frame live throughout, which is the faster route for a driver who
-already knows what they are looking for.
+page. The glass is over the frame and nothing else — every control in
+the column beside it stays live at every stop. Where a section below
+asks you to *do* something **in the frame**, it names the stop that
+hands it over; where it needs a state no stop leaves live, it sends you
+to **Free drive — every feature on its own card**, the disclosure under
+the walk panel, whose cards stage one state at a time and never put the
+glass on.
 
-Above the frame, the feed narrates what actually happened — the
-staging first, then a line for each answer the stubbed Worker gives as
-the page asks. **The address above the frame is always the page the
-frame is really on**, including when a shipped page redirects itself,
-so a readout disagreeing with what you can see is a defect rather than
-the console lagging. **Go anywhere** keeps every page reachable
-regardless of what you pressed last, **Reset the demo state** puts the
-current world back how it starts, and the frame-size buttons show the
-narrow layout without pretending to be a phone.
+**What just happened**, the card under the journeys, is the console
+saying what a press really did — the staging first, then a line for
+each answer the stubbed Worker gives as the page asks. Under it is the
+one thing to try in the frame next. **The address above the frame is
+always the page the frame is really on**, including when a shipped page
+redirects itself, so a readout disagreeing with what you can see is a
+defect rather than the console lagging. **Go anywhere** keeps every
+page reachable regardless of what you pressed last — including from
+behind the glass — and marks which of the four the frame is on.
+**Open this page in its own tab** takes whatever the frame is showing
+out of the frame, which is the way to read a page at the window's own
+width. **Reset the demo state** puts the published snapshot and any
+revocation back and stages the current stop again, so the frame is
+showing the world the console has just claimed. **Desktop** and
+**Phone** size the frame, which is a width and not a device.
 
-**The pages in the frame are the shipped pages, mirrored off disk.**
-`apps/web/` takes no demo hook — AGENTS.md makes that a boundary, since
-a hook that ships is a hook a visitor can reach. So what you accept
-here is the same bytes the cutover publishes, which is the entire
-reason the demo is worth driving rather than reading.
+**The pages in the frame are the shipped pages, mirrored off disk**, so
+what you accept here is the same bytes the cutover publishes. That is
+the entire reason the demo is worth driving rather than reading.
 
 **The live arm.** Separately, and never at the same time:
 
@@ -175,22 +187,31 @@ The file name is the address because the label is part of what several
 of these steps are checking, and a step cannot be addressed by the thing
 it is testing. Since #179 the two agree, so a step that sends you to
 `charts.html` and finds a rail entry reading anything but **Muse's
-charts** has found a defect rather than a naming gap.
+charts** has found a defect rather than a naming gap. In the demo the
+label is what you press under **Go anywhere**, and the address above the
+frame reads the tidied form the site serves — `/demo/your-page` for
+`your-page.html`, the directory itself for `index.html`. `404.html` is
+mirrored beside the other four but is not one of the destinations,
+because nothing on a working site links to it: reach it by asking for
+it by name under the same path the address readout shows.
 
 ### A1 · The shell, held to the mockup — every journey
 
 The redesign's own surface, driven with the mockup open beside it.
 Everything here is visible without a request, so it is the cheapest
 section and the one that fails first. Every journey's every stop shows
-it, so nothing here needs a particular one; the shortest route to the
-two states this section needs is **Your first weigh-in** stop 1 for the
-signed-out rows and stop 2 for the railed ones. Use the free drive if
-you would rather stage one state at a time than walk.
+the shell, so no row here needs a particular one — it needs one of two
+states, signed out and railed, and most of these rows **press
+something**, which the glass does not allow. So drive the section from
+the free drive: **Arrive signed out** on the **Sign in with Telegram**
+card gives you the sign-in page live, and **Open Your page** on the
+**Weigh in** card gives you a railed one. **Your first weigh-in** stop
+1 and stop 2 are the same two states to read rather than to press.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
 | A1.1 | Arrive signed out on `index.html` | The cover leaf paints closed and swings open once, revealing the wordmark | The one animation in the product; it is the first thing anyone sees |
-| A1.2 | Reload with the browser window narrowed and widened | The cover opens once per load and never traps the page behind it | Its resting state is *open*, so every way the animation can fail leaves the sign-in reachable |
+| A1.2 | Load the sign-in page again at both frame widths — **Desktop**, then **Phone** | The cover opens once per load and never traps the page behind it | Its resting state is *open*, so every way the animation can fail leaves the sign-in reachable |
 | A1.3 | Turn on the operating system's reduced-motion setting and reload | The binder is **already open** — no frame of the closed cover at all | At a shortened duration the first frame still paints, and a full-screen flash is the exact thing that setting asks not to be given |
 | A1.4 | Read the wordmark against the mockup | Two lines: **Hang Gang** small, uppercase, letter-spaced, in the gold accent and the monospace face; **Binder** under it in the italic serif and the rose accent. A plain default serif or a single-line wordmark is a failure | The wordmark is the identity, and it is the first place a font that did not load shows |
 | A1.5 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
@@ -200,35 +221,44 @@ you would rather stage one state at a time than walk.
 | A1.9 | On each page, press **every palette the control offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload. On `index.html` each dot shows the palette it offers, so the row is four different pairs of colors and never four of the same | A preference that does not persist is not a preference. Counting the buttons against the control rather than against a list written here is also what catches one going missing, and a dot that stopped meaning its palette is the way this control goes quietly wrong |
 | A1.10 | On the **high-contrast** palette — the one the site applies when the operating system asks for increased contrast — read a card, a muted line and a link | All legible, nothing washed out | It exists for readers who need it, so "looks fine to me" is not the test. Identified by what it does, because that is the part of it that will not be renamed |
 | A1.11 | With no palette ever chosen, load the site with the operating system set to light, then to dark, then to increased contrast | The site answers each system setting without a script running, and a chosen palette still beats all three afterwards | What answers a visitor who never opens the control is the pre-paint and the stylesheet's own media blocks, which is also all `404.html` has — it carries no palette control at all |
-| A1.12 | **On `admin.html`** — narrow to a phone width, then widen back up through a tablet width until the rail returns | The rail becomes a strip **that reaches both edges** at every one of those widths, all three destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays. Driven on any other page this step passes without asking the question: `admin.html` is the only one carrying a control whose intrinsic width refuses to shrink — the key file picker — so a shell rule that sizes the column to its content instead of to the screen shows up there and nowhere else (#148) |
-| A1.13 | **At every width, on each signed-in page** — open **Theme**, and watch what is beside and below it while you do | The panel appears **over** the page and **nothing else moves**: no footer link shifts, no card reflows, the scroll position holds. It opens upward from the footer, and flips to open downward only where there is no room above | A control at the foot of a working page has to be free to reach for. A panel that displaced the layout would charge every reader for every glance at it, and the flip is what keeps it on screen when the footer is already near the top |
+| A1.12 | **On `admin.html`** — the frame offers two widths and this row needs the ones between, so **Open this page in its own tab** and drag the window narrow to a phone width, then wide again through a tablet width until the rail returns | The rail becomes a strip **that reaches both edges** at every one of those widths, all three destinations stay in flow, and the page never scrolls sideways | The destinations are what somebody needs, and they are what stays. Driven on any other page this step passes without asking the question: `admin.html` is the only one carrying a control whose intrinsic width refuses to shrink — the key file picker — so a shell rule that sizes the column to its content instead of to the screen shows up there and nowhere else (#148) |
+| A1.13 | **On each signed-in page, at a wide width and a narrow one** — open **Theme**, and watch what is beside and below it while you do | The panel appears **over** the page and **nothing else moves**: no footer link shifts, no card reflows, the scroll position holds. It opens upward from the footer, and flips to open downward only where there is no room above | A control at the foot of a working page has to be free to reach for. A panel that displaced the layout would charge every reader for every glance at it, and the flip is what keeps it on screen when the footer is already near the top |
 | A1.14 | With the panel open: press **Escape**; open it again and click **anywhere outside it**; open it again and pick a palette | Each of the three closes it, and after Escape and after the pick the focus ring is back on the **Theme** button | Focus left inside something no longer on screen restarts the next Tab from the top. A floating panel is the one that owes a reader these: something IS covered while it is open |
 | A1.15 | Tab into the control with the keyboard alone — on a signed-in page and then on `index.html` | **Theme** takes focus with a visible ring, Enter or Space opens it, Tab walks the palettes inside; on `index.html` Tab walks the four dots directly and each shows a visible ring | The palette is a setting, and a setting only reachable with a mouse is one some readers do not have |
 | A1.16 | **Block the page's scripts** and reload a signed-in page, then `index.html` | **Theme** still opens and closes, and the four dots are still on the sign-in page. Nothing repaints when pressed, which is expected — what matters is that the control is still there and still operable | The disclosure is an element, not a script, and the swatches are simply in the page. A palette control that vanishes with its script is one nobody can reach on the day it is needed most |
 | A1.17 | Prove the fonts **paint** rather than fall back — in the console, `await document.fonts.load('600 1rem "DM Sans"')`, then `document.fonts.check('600 1rem "DM Sans"')`; repeat for `Playfair Display` and `JetBrains Mono` | `true` for each | **`check()` alone is misleading.** A face the page has not needed yet reports `false` for being unloaded, not for being missing — loading it first is what makes the answer mean anything |
 | A1.18 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint, and #191 settled the set |
-| A1.19 | Put the mockup beside each of the five pages and read them together | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste |
+| A1.19 | Put the mockup beside each of the five pages and read them together — **Open this page in its own tab** takes each one out of the frame first | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste. Read in the frame it is a page at somebody else's width, which is the one comparison that finds differences that are not there |
 
 ### A2 · Signed out, nothing is reachable — journey "Your first weigh-in", stop 1
 
+The stop opens on `index.html` with no session. Rows A2.1 to A2.4 are
+driven from there with **Go anywhere**, which stays live behind the
+glass; A2.6 needs the frame, so it is driven from the **Sign in with
+Telegram** card in the free drive.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A2.1 | Open `your-page.html` | Sent to `index.html`; the form never paints | A usable-looking form whose request would be refused wastes a submitter's typing |
-| A2.2 | Open `charts.html` | Sent to sign-in; no figures | Members-only since 2026-08-05 |
-| A2.3 | Open `admin.html` | Sent to sign-in; no key box, no rows | The admin page has no typed-token path any more |
-| A2.4 | Watch the network panel on all three | **No request** went out at all | Refusing before asking is the property; a request that earns a 401 has still announced you |
+| A2.1 | Press **Your page** under **Go anywhere** | The frame lands back on the sign-in page; the form never paints | A usable-looking form whose request would be refused wastes a submitter's typing |
+| A2.2 | Press **Muse's charts** | Back to sign-in; no figures | Members-only since 2026-08-05 |
+| A2.3 | Press **Admin** | Back to sign-in; no key box, no rows | The admin page has no typed-token path any more |
+| A2.4 | Repeat all three with the network panel open | **No request** went out at all | Refusing before asking is the property; a request that earns a 401 has still announced you |
 | A2.5 | Open `404.html` | An error page that says so plainly and offers one way back | Reached by strangers and by mistyped links, so it must not look broken |
-| A2.6 | Press the Telegram button — in the demo it is a local stand-in; everything after the press is the shipped code | You land on **Your page**, signed in | The entrance is one press, and the press is where the demo's substitution ends |
+| A2.6 | In the free drive, press **Arrive signed out** on the **Sign in with Telegram** card, then press **Log in with Telegram** in the frame | You land on **Your page**, signed in | The entrance is one press. The button is the demo's local stand-in and everything after the press is the shipped code, so the press is where the substitution ends |
 
-### A3 · Your page — journey "Your first weigh-in", stop 3
+### A3 · Your page — journey "Your first weigh-in", stop 2
+
+Stop 2 opens the page on **On record**, which is what most of this
+section reads. Stop 3 is the same page with **Weigh in** opened for
+you, and stop 7 hands the frame over — A3.4 to A3.6 are driven there.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A3.1 | Land on `your-page.html` | Two tabs, **On record** showing, and the rail carrying your name and a **Sign out** | The session has one home on every page rather than one page |
+| A3.1 | Read the page the stop opens on | Two tabs, **On record** showing, and the rail carrying your name and a **Sign out** | The session has one home on every page rather than one page |
 | A3.2 | Read the entry count | It matches what is actually stored for you | The count comes from `GET /me` and nothing else; this is the acceptance criterion |
 | A3.3 | On a member with nothing stored, read the "last submitted" line | Something honest — "No entries yet" — never "Invalid Date" | A brand-new member is the most common first view of this page |
-| A3.4 | Switch between **On record** and **Weigh in**, repeatedly | **Exactly one** pane visible at a time, never both, never neither | `[hidden]` losing to `display: flex` has shipped here before |
-| A3.5 | Fill the form and submit | It is accepted, and the feed above the frame names the store. **The count does not move here, and that is not the failure** — the stubbed Worker answers `/me` with a fixed corpus, so this arm cannot show the re-read. **AL6 is where the count moving is accepted**; recording A3.5 as proof that it moves is the vacuous pass this document warns about | The staged arm proves the form seals and sends; only a real store can prove the panel re-reads `/me` rather than incrementing a guess |
+| A3.4 | At stop 7, switch between **On record** and **Weigh in**, repeatedly | **Exactly one** pane visible at a time, never both, never neither | `[hidden]` losing to `display: flex` has shipped here before |
+| A3.5 | Fill the form and submit | It is accepted, and **What just happened** names the store. **The count does not move here, and that is not the failure** — the stubbed Worker answers `/me` with a fixed corpus, so this arm cannot show the re-read. **AL6 is where the count moving is accepted**; recording A3.5 as proof that it moves is the vacuous pass this document warns about | The staged arm proves the form seals and sends; only a real store can prove the panel re-reads `/me` rather than incrementing a guess |
 | A3.6 | Return to **Weigh in** after a submission | The form is back, with a note saying the earlier entry is kept | #64: before it, the received card replaced the form and never gave it back |
 | A3.7 | Look for a handle field | **There is none.** The handle comes from the session | While it was typed, a member could store somebody else's handle beside their own account id |
 | A3.8 | Read your numeric Telegram id under **On record** | It is shown | #58. Being made an admin needs that number, and a page that does not show it sends people to a third-party bot to ask for it |
@@ -238,21 +268,27 @@ you would rather stage one state at a time than walk.
 
 ### A4 · The device-local prefill — journey "Your first weigh-in", stop 4
 
+The stop is the return visit: it arrives on **Weigh in** with the
+remembered values already in the fields. Every row after the first
+needs the frame, and no stop leaves this staging live — press **Return
+to a filled form** on the **The form remembers you** card in the free
+drive for those.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A4.1 | Reload the page | The form comes back filled — **every field it remembers**, not just weight | The point of the feature — mostly so a height that never changes is not retyped |
-| A4.2 | Read what the page says about the remembered values | It says they are kept **on this device only**, in words beside the form | #172. A member deserves to know where their measurements live before deciding to leave them there |
-| A4.3 | Press **Sign out**, then sign back in | The fields are **empty** | A sign-out leaving body measurements on the device would be a lie |
+| A4.1 | Read the form the stop opens | It is already filled — **every field it remembers**, not just weight | The point of the feature — mostly so a height that never changes is not retyped |
+| A4.2 | Read what the page says above the form | It says the values are kept **on this browser** rather than on the account, and that signing out erases them | #172. A member deserves to know where their measurements live before deciding to leave them there |
+| A4.3 | From the card, press **Sign out**, then arrive again | The fields are **empty** | A sign-out leaving body measurements on the device would be a lie |
 | A4.4 | Fill the fields as one member, close the tab without signing out, open a new tab as a **different** member | The second member's form is **empty** | This is #56. The session dies with the tab and `localStorage` does not, so before the fix the second member saw the first one's measurements |
-| A4.5 | With the second member signed in, look at `localStorage` in devtools | The first member's prefill entry is **gone**, not merely ignored | Data already on the device had to be erased, not just stopped from growing |
-| A4.6 | Hand-edit the prefill entry to something malformed and reload | The page starts normally with empty fields and no error | Someone hand-editing storage, or an older format, must not produce a dead page |
+| A4.5 | With the second member signed in, read `hgb-submit-prefill` in devtools | The first member's prefill entry is **gone**, not merely ignored | Data already on the device had to be erased, not just stopped from growing |
+| A4.6 | Hand-edit that entry to something malformed and reload | The page starts normally with empty fields and no error | Someone hand-editing storage, or an older format, must not produce a dead page |
 
 ### A5 · A correction, as the member reads it — journey "Your first weigh-in", stop 5
 
 > **This section accepts the DISPLAY of a correction, never the act of
 > making one.** No member-facing correction control ships: `form.js`
-> never sends `supersedes`, and #84 is post-cutover. The card's button
-> stages a member whose record was **already** corrected — four entries
+> never sends `supersedes`, and #84 is post-cutover. The stop stages a
+> member whose record was **already** corrected — four entries
 > standing, two rows resting behind them — so every row below is read
 > off a state the demo arrived in, and none of them can be recorded as
 > acceptance that a correction can be *made*. Those rows are A12, and
@@ -263,26 +299,28 @@ you would rather stage one state at a time than walk.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A5.1 | Press **See a corrected record**, then read **On record** | Two numbers, not one: the entries standing, and a separate line naming the rows resting behind them | The whole of #193. Six rows written and four claimed is what a member who corrected twice has, and one number cannot say it |
+| A5.1 | Read **On record**, which the stop opens on | Two numbers, not one: the entries standing, and a separate line naming the rows resting behind them | The whole of #193. Six rows written and four claimed is what a member who corrected twice has, and one number cannot say it |
 | A5.2 | Read the entry count itself | It counts **effective** entries — a correction replaced its row, it did not add one — **and the corrections line is beside it, accounting for the difference** | The count is what a member trusts. Without the second line the number simply shrinks, which reads as the correction having eaten an entry; a count that teaches a member their fix cost them a row teaches them not to fix things |
 | A5.3 | Read the corrections line's wording | It names them as kept rather than erased, and the noun agrees with the number — "1 correction", never "1 corrections" | Storage is append-only on purpose, and a member deserves to be told that in their own words rather than in the column's. A number pasted into a sentence is the tell that nobody read it back |
-| A5.4 | Press **Weigh in**'s button to reach a member who has corrected nothing, and look for the line | **It is absent**, not showing "0 corrections" | Most members on most days have corrected nothing, and a zero invites the question of what a correction is from the one person who has never made one |
-| A5.5 | Watch the feed above the frame as the card stages | It reports the two numbers it just staged, and they are the two the panel then shows | The feed is computed from the staging rather than scripted (#212), so this is the one place the demo can be caught disagreeing with itself |
+| A5.4 | In the free drive, press **Open Your page** on the **Weigh in** card to reach a member who has corrected nothing, and look for the line | **It is absent**, not showing "0 corrections" | Most members on most days have corrected nothing, and a zero invites the question of what a correction is from the one person who has never made one |
+| A5.5 | Read **What just happened** at this stop | It reports the two numbers the stop staged, and they are the two the panel then shows | Those lines are computed from the staging rather than scripted (#212), so this is the one place the demo can be caught disagreeing with itself |
 
 ### A6 · Sign out ends the session — journey "What the binder will not hand over", stop 1
 
-The card's button arrives one moment **after** a sign-out somewhere
-else: this tab still holds a session the server has already revoked.
-For the rows that begin from a live session, press **Open Your page**
-on the Weigh in card first.
+The stop arrives one moment **after** a sign-out somewhere else: this
+tab still holds a session the server has already revoked, and the page
+it was sent to asks for something before you can touch anything, so the
+refusal has already happened when the stop lands. For the rows that
+begin from a *live* session, press **Open Your page** on the **Weigh
+in** card in the free drive first.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A6.1 | From a live session, press **Sign out** on `your-page.html` | Returned to `index.html`, and the session is gone from `sessionStorage` | The user-visible half, and it must always succeed |
+| A6.1 | From a live session, press **Sign out** on `your-page.html` | Returned to the sign-in page, and the session is gone from `sessionStorage` | The user-visible half, and it must always succeed |
 | A6.2 | Repeat from `charts.html`, then from `admin.html` | Identical behavior from each | Sign out is on every railed page, so every page has to mean the same thing by it |
-| A6.3 | On the card's own arrival — a revoked session — make the page request anything: reload, or switch panel tabs | It is refused, this tab drops its copy, and you are sent to sign in **in words, not a spinner** | Dropping this tab's copy of the token is not the end of a session — the row is. A token captured before sign-out opens nothing (#90) |
-| A6.4 | Watch the rail as the session dies | The session block changes with it: your name goes, **Sign in** returns, without a reload | #166. A rail still offering Sign out for a session that no longer exists is a door painted on a wall |
-| A6.5 | Read what the page says while the revoke is in flight | Nothing about the revoke | The act you performed is the local clear; a message about the other half would describe a sign-out that did not happen |
+| A6.3 | At the stop, read the frame and **What just happened** together | The frame is on the sign-in page, and the feed carries the refusal that put it there — the request was refused, this tab dropped its copy, and you were sent to sign in **in words, not a spinner** | Dropping this tab's copy of the token is not the end of a session — the row is. A token captured before sign-out opens nothing (#90) |
+| A6.4 | From a live session, press **Sign out** and watch the rail as the session dies | The session block changes with it: your name goes, **Sign in** returns, without a reload | #166. A rail still offering Sign out for a session that no longer exists is a door painted on a wall |
+| A6.5 | Read what the page says while that revoke is in flight | Nothing about the revoke | The act you performed is the local clear; a message about the other half would describe a sign-out that did not happen |
 
 > **Sign out on `admin.html` ends the session and nothing else. The
 > stored private key stays on the device, and Clear is the one lever
@@ -294,16 +332,27 @@ on the Weigh in card first.
 
 ### A7 · The keyholder's key — journey "The keyholder's desk", stop 2
 
+Stop 2 puts the demo's throwaway key into the page's own key box, so
+the headline act is performable by somebody who has never seen this
+repository. The key is in the box at the last stop too, and that one
+hands the frame over, so every act below is driven there.
+
+**The demo's key is not the site's key, and the page says so.** It
+opens this export and nothing else, and the page refuses to keep a key
+that is not the private half of the one it encrypts to — so the two
+rows about a key that survives the visit cannot be driven on this arm
+and are marked accordingly.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A7.1 | Open `admin.html` | It opens on the session. **No export-token box** | The page runs on the session now |
-| A7.2 | Provide the private key and decrypt | Rows appear; CSV, Excel and JSON are all offered | The whole product |
-| A7.3 | Leave and come back to the page | It decrypts again **without another paste or file** | The point of #70: a keyholder retyping a key on every visit ends up storing it somewhere worse |
+| A7.1 | Read the page the stop opens | It opens on the session. **No export-token box** | The page runs on the session now |
+| A7.2 | At the last stop, press **Fetch and decrypt** — the key is already in the box | Rows appear, and **Download CSV**, **Download Excel** and **Download JSON** are all offered | The whole product |
+| A7.3 | Leave and come back to the page | **Not drivable on this arm.** The page reports that the demo's key is not the one this site encrypts to and is **not kept on this device**, so there is nothing stored to come back to and the store stays empty. **B2.2 imports a real key and B2.4 is where keeping it is accepted.** Record A7.3 as not performed | The point of #70: a keyholder retyping a key on every visit ends up storing it somewhere worse. Only the site's own key exercises it, and a throwaway that opened the same door would be a key kept on the strength of nobody checking |
 | A7.4 | Read the "Before you close this" card | It says the page is the only place the submissions exist in the clear, and names **Clear** | The warning whose reader's next action depends on it |
-| A7.5 | Press **Clear**, then reload | Both copies are gone — the decrypted rows and the stored key — and the page asks for the key again | "Press Clear before you leave this browser" is only true if Clear does that |
-| A7.6 | Decrypt with the **wrong** key | Rows are **listed with their ids**, not silently skipped | The ordinary cause is a rotated key, not damage, and hiding them looks like data loss |
-| A7.7 | Put a `=`-leading value in a text field, then export the CSV | The cell arrives with a **leading apostrophe** | Otherwise a spreadsheet runs it as a formula |
-| A7.8 | Read the three download controls without pressing any | Three buttons of **one rank**, none of them filled or singled out | #174. They do the same thing to the same data, so ranking one makes the eye invent a difference that is not there — and `primary` on this page is reserved for the acts that change the world |
+| A7.5 | Press **Clear** | The decrypted rows and the built files are gone and the page asks for a key again. The stored-key half of Clear rides on A7.3 and is accepted at B2.4 | "Press Clear before you leave this browser" is only true if Clear does that |
+| A7.6 | Replace the box's contents with a **wrong** key and decrypt | Rows are **listed with their ids**, not silently skipped | The ordinary cause is a rotated key, not damage, and hiding them looks like data loss |
+| A7.7 | Put a `=`-leading value in a text field, then export the CSV | **Not drivable on this arm.** The rows the stubbed export hands back are a fixed set, so a value submitted here never reaches them, and none of them leads with `=`. **AL1 puts a real value in and B2.2 is the export that carries it.** Record A7.7 as not performed. Live, the cell arrives with a **leading apostrophe** | Otherwise a spreadsheet runs it as a formula |
+| A7.8 | Read the three download controls without pressing any | Three buttons of **one rank**, none of them filled or singled out | #174. They do the same thing to the same data, so ranking one makes the eye invent a difference that is not there — and the filled treatment on this page is reserved for the acts that change the world |
 | A7.9 | Press one download, and read what the page says | It acknowledges **the press**, naming the format, and says it cannot know whether the file arrived. **Nothing claims the file was saved** | The one act on this page whose result lands somewhere the page cannot see. A timer that claimed arrival would be worse than no acknowledgement, which is at least honest about knowing nothing |
 | A7.10 | Press a second download while the first is still lit, then wait out the acknowledgement | **Exactly one is lit at a time** — the second press takes the light from the first — and the lit state clears on its own afterwards | Three lit buttons say three files are in flight and cannot say which press produced which; the acknowledgement's whole job is telling one press from another at the moment the data is in the clear |
 
@@ -314,43 +363,69 @@ the instrument-panel treatment is a slice of its own, and steps pinned
 to today's ornament would be falsified by the work they are meant to
 accept.
 
+**Where each row is driven.** Stop 1 opens the surface behind glass,
+publishing controls and all, and A8.1 is read there. Stop 5, **Now you
+try**, hands the frame over — it is the only stop of this journey that
+does — so A8.6 is pressed there. That hand-over also matters for the
+clock: the console holds this page awake at every reading stop and
+lets go at the last one, which is what makes the idle rows measure the
+real thing rather than a page nobody is touching. **This journey
+stages no key**, and the rows table, what Publish sends and the idle
+warning all wait on a decrypt, so A8.3, A8.4 and A8.7 to A8.10 are
+driven on **The keyholder's desk**, last stop, after **Fetch and
+decrypt**. A8.2 needs a member session on the admin page: press **Open
+Your page** on the **Weigh in** card in the free drive, then **Admin**
+under **Go anywhere**.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A8.1 | Open `admin.html` and look at it beside `your-page.html` | It is unmistakably a different kind of surface — dense, instrument-like, obviously the place the site is operated from | #68. A member page and an admin page that read alike is how somebody operates the site by accident |
+| A8.1 | Look at the page this stop opens beside `your-page.html` | It is unmistakably a different kind of surface — dense, instrument-like, obviously the place the site is operated from | #68. A member page and an admin page that read alike is how somebody operates the site by accident |
 | A8.2 | Reach it on a **member** session | Refused, **with a message saying an admin session is needed** | A member reaching the admin surface is the failure; a blank page is a bad way to say so |
-| A8.3 | Delete a row | It disappears from the table | Step 7's behavior |
-| A8.4 | **Immediately press Publish, then read the published document** | The deleted row's data is **not** in it | The sharp hazard: a deleted row surviving in derived state is resurrected by the next Publish |
+| A8.3 | Delete a row from the decrypted table | It disappears from the table | Step 7's behavior |
+| A8.4 | **Immediately press Publish, then press Show what would be sent and read it** | The deleted row's data is **not** in it | The sharp hazard: a deleted row surviving in derived state is resurrected by the next Publish |
 | A8.5 | Read the member's own count afterwards | **Not drivable on this arm** — the stubbed Worker answers `/me` with a fixed corpus, so the count cannot move whatever the table does, and a driver reading "they agree" here has compared two constants. **AL8 is the row that accepts it.** Record A8.5 as not performed | Counts and the table disagreeing is what the member panel is measured on, and a staged agreement is not evidence of it |
-| A8.6 | Press **Unpublish** with the key field empty | It works | It needs the session, not the key — and submissions are left untouched |
+| A8.6 | Press **Unpublish** with the key field empty | It works, and **What just happened** says the snapshot is taken down | It needs the session, not the key — and submissions are left untouched |
 | A8.7 | With the page decrypted, stop touching it. In the console: `let skip = 8*60*1000; const real = Date.now; Date.now = () => real.call(Date) + skip;` and wait a second | The warning card appears, counting **down from 2:00** to the second, and focus moves to **Stay on this page** | Ten minutes idle, two of them warning — the owner's numbers, ratified on #91. The page measures the clock rather than counting its own ticks, which is what makes this drivable in seconds and what makes a sleeping laptop wake up expired instead of rested |
 | A8.8 | Press **Stay on this page**. **Leave the offset in place** — winding the clock back is read as expired, deliberately, so restoring `Date.now` now would end the session rather than the test | The warning goes at once, not at the next tick, and the page is still decrypted | A card that lingered after the press reads as a control that did not work. And a last-interaction time that is somehow ahead of now is not evidence somebody is here; it is the absence of it, which the page treats as expired on purpose |
-| A8.9 | Push the offset past ten minutes from that press — `skip += 11*60*1000` — and watch both the page and the feed above the frame | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on `index.html` signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
-| A8.10 | Confirm what A8.9 did **not** do — press **The keyholder's desk**'s button to arrive with a session again, and fetch | The **stored private key is still there**: the page decrypts without another paste or file | The key is not authority. Nothing issued it and nothing can revoke it, so an idle timer that destroyed it would make walking away cost the keyholder their key — **Clear** stays the one lever that removes it (A7.5) |
+| A8.9 | Push the offset past ten minutes from that press — `skip += 11*60*1000` — and watch both the page and **What just happened** | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on the sign-in page signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
+| A8.10 | Confirm what A8.9 did **not** do — arrive on the admin page with a session again, and fetch | **Not drivable on this arm**, for A7.3's reason: the demo's key is never kept, so there is no stored key for the timer to have spared. **B2.4 is where the key outliving a visit is accepted.** Record A8.10 as not performed | The key is not authority. Nothing issued it and nothing can revoke it, so an idle timer that destroyed it would make walking away cost the keyholder their key — **Clear** stays the one lever that removes it (A7.5) |
 
 ### A9 · Site content and its fallback — journey "Running the gang", stop 3
 
+**Only the fallback half of this section exists.** The stop stages a
+binder nobody has written any copy into and opens **Muse's charts** on
+it, which is A9.3 and is the row worth driving. No editing surface
+ships — the admin page carries no content control, and the stop's own
+narration says editing them is still being built — so A9.1 and A9.2
+have nothing to press. #87 is post-cutover.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A9.1 | Edit a piece of site copy through the admin surface | The page reflects it | #87. Copy that only an agent can change is copy that never changes |
-| A9.2 | Remove the override again | The **shipped copy** comes back, intact | The fallback is what stops an empty configuration row from publishing a blank page |
-| A9.3 | Drive the site with the configuration unreachable | Every page still reads correctly, on the shipped copy | The site must not depend on a route answering to be readable |
-| A9.4 | Check that no edited copy has become a second home for a fact | Content is wording, never a claim stated in full only here | One home per fact, and an admin-editable second copy is the one nobody corrects |
+| A9.1 | Edit a piece of site copy through the admin surface | **No surface, on either arm.** Record A9.1 as not performed | #87. Copy that only an agent can change is copy that never changes |
+| A9.2 | Remove the override again | **No surface, on either arm** — there is nothing to override. Record A9.2 as not performed | The fallback is what stops an empty configuration row from publishing a blank page |
+| A9.3 | Read the page this stop opens, then walk the rest with **Go anywhere** | Every page reads correctly on the shipped copy, with nothing blank and nothing announcing a missing configuration | The site must not depend on a route answering to be readable, and the first run is an ordinary day rather than an error |
+| A9.4 | Read that shipped copy against the rest of this document | It is wording, never a claim stated in full only there | One home per fact, and copy that later becomes admin-editable is the second home nobody corrects |
 
 ### A10 · The published figures — journey "Your first weigh-in", stop 6
 
-> **See the charts** stages a full corpus: several repeat submitters
-> above the five-person floor, and series with enough points to draw.
-> **See a thin week**, on the "Too few to show" card, is its sparse
-> counterpart and is what A11 uses. Driving A10 on the thin week
-> produces an empty charts page that looks like a failure and is not.
+> This stop stages a full corpus: several repeat submitters above the
+> five-person floor, and series with enough points to draw. **See a
+> thin week**, on the "Too few to show" card, is its sparse counterpart
+> and is what A11 uses. Driving A10 on the thin week produces an empty
+> charts page that looks like a failure and is not.
+
+The stop is the charts drawn on that corpus, and the rows that only
+read them are driven there. A10.2 and A10.5 press something, so drive
+those from **See the charts** on the **Muse's charts** card in the free
+drive, which stages the same corpus and leaves the frame live.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A10.1 | Open `charts.html` with nothing published | "No figures have been published yet" — a first-publication message | This must be **distinguishable** from being signed out |
-| A10.2 | Clear the session and reload | Sent to sign-in, **not** the "nothing published" message | A member told "nothing published" because their session expired learns something false |
+| A10.1 | Open `charts.html` with nothing published | **Not drivable on this arm.** Every staging carries a published snapshot, and taking one down with **Unpublish** does not reach this: the charts draw again from the staged corpus. Record A10.1 as not performed | This must be **distinguishable** from being signed out |
+| A10.2 | Press **Sign out**, then press **Muse's charts** under **Go anywhere** | Sent to sign-in, **not** a "nothing published" message | A member told "nothing published" because their session expired learns something false |
 | A10.3 | With figures published, open it again | The combined-weight hero reads first, before any chart | It is the number the group actually came for |
 | A10.4 | Read the movement under the hero | Either a signed figure against a stated earlier date, or a line saying too few entries have moved since that date to say by how much. **A blank is a failure** | A delta with no baseline named is decoration, and a blank where a group has plainly changed reads as "nothing moved" |
-| A10.5 | Read the marquee series | It draws, and it is legible on all four palettes | The one chart worth the space |
+| A10.5 | Read the marquee series, then press each palette in turn under **Theme** | It draws, and it stays legible on every one of them | The one chart worth the space |
 | A10.6 | Read how old the figures are | Stated on the page | Figures with no date are trusted longer than they deserve |
 | A10.7 | Look for any handle, any individual row, anywhere on the page | **None** | Members see totals; the corpus is the keyholder's |
 
@@ -360,16 +435,23 @@ Everything here fails invisibly: nothing on the page looks wrong when
 one of these breaks. **A failure here stops the cutover** — these are
 the claims the project makes to the people whose data it holds.
 
+**Where each row is driven.** This stop is the sparse corpus drawn on
+`charts.html`, and it is where the held-back cells are read. The rows
+that read the *raw published document* need the admin surface with the
+export open: **The keyholder's desk**, last stop, **Fetch and decrypt**,
+then **Show what would be sent**. The storage rows are driven in
+devtools wherever you already are.
+
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A11.1 | Read the raw published document — the "Show what would be sent" button prints it | **No handles. No individual rows.** Counts, medians and bins only | The entire published-data claim |
+| A11.1 | Press **Show what would be sent** and read what it prints | **No handles. No individual rows.** Counts, medians and bins only | The entire published-data claim |
 | A11.2 | Look for the height-discrepancy panel in it | **Absent.** It is a tool for the keyholder | Published, it would be a list of strangers' heights |
-| A11.3 | With fewer than five repeat submitters, tick the weight series and publish | **No series is published at all** | A chart of one line is a chart of one person (#19) |
-| A11.4 | With five or more, publish twice and compare | Points carry a **date**, not an instant, and weights sit on bin edges | Rounding is what makes following one person across snapshots an inference rather than a lookup |
-| A11.5 | Read the series labels | "Person 1", never a handle | A stable label across snapshots would rebuild the thing the rounding removed |
-| A11.6 | On every page: devtools → Application → **Session storage, Local storage, and IndexedDB** | The session is in `sessionStorage` and **never** in `localStorage`. `localStorage` holds two things and both belong there: `hgb-submit-prefill`, the device-local entry prefill, and `hgb-palette`, the chosen theme — A1.9 writes the second one, so a sweep that expects an empty `localStorage` is failing a step earlier in this pass rather than finding an exposure | A credential outliving the tab is a different exposure. A row that would be red for a reason the pass itself caused is a row nobody trusts the third time |
-| A11.7 | In the same panel, open **IndexedDB** and read what is there per page | Two databases, each on the one page that has any business holding it: `hgb-keyholder-key` on `admin.html` only, present **after** a key import and gone after **Clear** (A7.5); `hgb-member-key` on `your-page.html` only, and **gone after Sign out** (A4.3 already made you press it). Neither exists on `charts.html`, `index.html` or `404.html`; a key on any of those is a finding | Both key stores were added after this section was written and it never inspected them — a privacy sweep that reads two storages while the key material sits in a third is the sweep reporting on where it happened to look. The two lifetimes differ on purpose and the difference is the claim: the member's key dies with the session, the keyholder's outlives it and answers to **Clear** alone |
-| A11.8 | Publish, have **one** member submit, publish again, and read the raw document | The movement figures are **absent from the JSON**, not merely undrawn — and the page says too few entries have moved | A combined weight is a group figure; its delta can be one person's gain, and the served body is readable by anybody holding a member session |
+| A11.3 | Read the charts this stop opens, with fewer than five repeat submitters behind them | Cells are **held back rather than drawn thin**, and the page says why. The raw document for this corpus is **not reachable on this arm** — the sparse staging carries a member session, so the admin surface cannot be opened on it, and **AL5 is where the stored document is read**. Record that half as not performed | A chart of one line is a chart of one person (#19) |
+| A11.4 | With five or more, publish twice and compare the two documents | Points carry a **date**, not an instant, and weights sit on bin edges | Rounding is what makes following one person across snapshots an inference rather than a lookup |
+| A11.5 | Read the series labels in it | "Person 1", never a handle | A stable label across snapshots would rebuild the thing the rounding removed |
+| A11.6 | Devtools → Application → **Session storage** and **Local storage** | The session is in `sessionStorage` and **never** in `localStorage`. `localStorage` holds two things and both belong there: `hgb-submit-prefill`, the device-local entry prefill, and `hgb-palette`, the chosen theme — A1.9 writes the second one, so a sweep that expects an empty `localStorage` is failing a step earlier in this pass rather than finding an exposure | A credential outliving the tab is a different exposure. A row that would be red for a reason the pass itself caused is a row nobody trusts the third time |
+| A11.7 | Devtools → **IndexedDB**, reading what each store **holds** rather than which store exists | Two databases, and each holds something only for as long as its page has business holding it: `hgb-member-key` carries the member's key while the session lives and is **empty after Sign out** (A4.3 already made you press it); `hgb-keyholder-key` is **empty on this arm** — nothing was kept, for A7.3's reason — and holds a key only after a real import, until **Clear** (A7.5, accepted at B2.4). A stored key that outlives the lever named for it is a finding | Both key stores were added after this section was written and it never inspected them — a privacy sweep that reads two storages while the key material sits in a third is the sweep reporting on where it happened to look. The panel is per origin and every page shares one, so which page has a database open says nothing; what each store *holds*, and when it empties, is the claim |
+| A11.8 | Publish, have **one** member submit, publish again, and read the raw document | The movement figures are **absent from the JSON**, not merely undrawn — and the page says too few entries have moved. A submission on this arm never joins the export, so this is **AL5's row to close**; record what the staged document shows and mark the round trip not performed | A combined weight is a group figure; its delta can be one person's gain, and the served body is readable by anybody holding a member session |
 
 > **When a privacy check reads "absent", confirm the thing would
 > otherwise have been present.** A11.2's first run in the previous pass
@@ -484,7 +566,7 @@ presence would be a sign-in bypass.
 ### B5 · The shell and the privacy checks, on live
 
 A1 and A11.1 through A11.3 again, against the real corpus — including
-A1.16's side-by-side with the mockup, because live serves different
+A1.19's side-by-side with the mockup, because live serves different
 bytes through a different cache, and A11.3's five-person floor behaves
 differently with real data than with staged members.
 
@@ -509,16 +591,16 @@ different evidence.
 ```text
 Part A staged, run on:     <date>   commit <full 40-char SHA>
   A1  shell against the mockup   …
-  A2  sign in with Telegram      …
-  A3  weigh in                   …
-  A4  the form remembers you     …
-  A5  fix a mistake (display)    …
-  A6  signed out means it        …
-  A7  the keyholder's desk       …
-  A8  the admin's panel          …
-  A9  before anything is written …
-  A10 Muse's charts              …
-  A11 too few to show            …
+  A2  signed out, nothing opens  …
+  A3  your page                  …
+  A4  the device-local prefill   …
+  A5  a correction, displayed    …
+  A6  sign out ends the session  …
+  A7  the keyholder's key        …
+  A8  admin                      …
+  A9  site content and fallback  <expected: A9.1 and A9.2 not performed, no surface>
+  A10 the published figures      …
+  A11 privacy                    …
   A12 making a correction        <expected: not performed, no surface>
   Console clean of policy violations throughout:  <yes / what fired>
 
