@@ -213,7 +213,7 @@ the form page bouncing signed-out visitors is a courtesy. The gate is
 the Worker refusing `POST /submit` without a valid session — the one
 place enforcement is possible.
 
-**The prefill is scoped to the account.** `submit.html` keeps the last
+**The prefill is scoped to the account.** `your-page.html` keeps the last
 entry in `localStorage` — measurements, gender, country, affiliations,
 the 18+ confirmation, and the height the last stored row carried; the
 stored value carries the account id, and any stored value the page will
@@ -290,8 +290,8 @@ What each page may load is a security boundary, not a convenience:
 | Page | `crypto.js` | `telegram.org` | Holds plaintext |
 | --- | --- | --- | --- |
 | `index.html` | **no** | **yes** | no (but holds the session after sign-in) |
-| `submit.html` | yes | no | yes |
-| `dashboard.html` | no | no | no |
+| `your-page.html` | yes | no | yes |
+| `charts.html` | no | no | no |
 | `admin.html` | yes | no | yes — all of it |
 | `404.html` | no | no | no |
 
@@ -305,7 +305,7 @@ flow (rejected once, on familiarity), not a wider policy.
 The line is not static against dynamic. It is **whether a wrong value
 gets sealed into a row.**
 
-The form definition — which fields `submit.html` renders, in what units
+The form definition — which fields `your-page.html` renders, in what units
 and within what bounds — is part of the stored format the way
 `ACCOUNT_SECRET` is, so it stays a repo file that the gate reads before
 it ships: a bad bound produces a plausible record, seals it, and is
@@ -397,7 +397,7 @@ the site without inheriting the data.
   impossible: the gate pins the production key and endpoint as
   literals, `main` is a protected branch with admins included, and the
   key's fingerprint is **pinned out-of-band in the Telegram group**
-  while `submit.html` displays the key it is actually using, so one
+  while `your-page.html` displays the key it is actually using, so one
   member glancing can catch a swap. Rotation must update the pinned
   message in the same sitting — a stale anchor teaches everyone to
   ignore the one alarm this produces.

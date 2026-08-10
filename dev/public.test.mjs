@@ -10,7 +10,7 @@ const sessionSource = await readFile(
 const publicSource = await readFile(
   new URL("../apps/web/public.js", import.meta.url), "utf8");
 const dashboardHtml = await readFile(
-  new URL("../apps/web/dashboard.html", import.meta.url), "utf8");
+  new URL("../apps/web/charts.html", import.meta.url), "utf8");
 
 let failures = 0;
 let ran = 0;
@@ -48,7 +48,7 @@ globalThis.sessionStorage = {
 
 const redirects = [];
 globalThis.location = {
-  pathname: "/dashboard.html",
+  pathname: "/charts.html",
   replace(target) { redirects.push(target); },
 };
 
@@ -234,7 +234,7 @@ async function loadPublic(session, nextResponse, options = {}) {
   Session.clear();
   if (session) Session.write(session);
   redirects.length = 0;
-  location.pathname = "/dashboard.html";
+  location.pathname = "/charts.html";
 
   globalThis.document = page.document;
   globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };

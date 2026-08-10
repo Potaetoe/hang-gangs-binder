@@ -1422,8 +1422,8 @@ await check("the same page under /apps/web/ is served unchanged", async () => {
 });
 
 await check("the mirror tracks the file on disk rather than a copy", async () => {
-  const answer = await get(MIRROR_PREFIX + "dashboard.html");
-  return Demo.unmirror(answer.text) === shipped["dashboard.html"];
+  const answer = await get(MIRROR_PREFIX + "charts.html");
+  return Demo.unmirror(answer.text) === shipped["charts.html"];
 });
 
 /*

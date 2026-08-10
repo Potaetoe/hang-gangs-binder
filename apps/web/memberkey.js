@@ -357,7 +357,7 @@
     });
   }
 
-  // Frozen because submit.html loads this file while holding plaintext:
+  // Frozen because your-page.html loads this file while holding plaintext:
   // an export a later script can rewrite is an `ensure` that can be
   // swapped for one handing back an attacker's public key, which would
   // seal a member's next entry to it. Freezing does not stop the global

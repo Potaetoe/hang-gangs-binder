@@ -92,7 +92,7 @@ check("a phrase in an HTML comment is caught",
       labels("<!-- the JSON link used to be grey text -->\n", "html")
       == ["used to"])
 
-# submit.html's page copy says "replacing the old one" to a member.
+# your-page.html's page copy says "replacing the old one" to a member.
 # Visible copy is the product, not commentary on the product.
 check("HTML page copy is not read",
       clean("<p>a new entry is added, and it used to be</p>\n", "html"))

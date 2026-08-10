@@ -171,7 +171,7 @@
    * means it, which is why this file re-implements none of the
    * suppression it depends on.
    *
-   * THE PERSONAL ARM IS ON submit.html, AND ITS ABSENCE HERE IS NOT
+   * THE PERSONAL ARM IS ON your-page.html, AND ITS ABSENCE HERE IS NOT
    * WAITING ON ANYTHING. It ships: the device key is apps/web/
    * memberkey.js and the rows come from GET /my-entries. It is there
    * rather than here because that is the page holding a key, and this

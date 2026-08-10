@@ -709,7 +709,7 @@
     }
   }
 
-  // Frozen because submit.html and admin.html both load this file while
+  // Frozen because your-page.html and admin.html both load this file while
   // holding plaintext: an export a later script can rewrite is an
   // `encrypt` that can be swapped for a passthrough, or a `decrypt`
   // handed the private key admin.html just imported. Freezing does not

@@ -159,7 +159,7 @@ const { check, mustReject, report } = nodeTestSuite("crypto.js", 63);
 // ---------------------------------------------------------------------
 
 await check("the exported object is frozen", () =>
-  // submit.html and admin.html both load this file and both hold
+  // your-page.html and admin.html both load this file and both hold
   // plaintext. An unfrozen export lets anything later on the page
   // replace `encrypt` with a passthrough, or hand admin's imported
   // private key to a substituted `decrypt`, and every round trip below

@@ -165,7 +165,7 @@ check("ui.js contains no Web Crypto access",
   !CRYPTO_ACCESS.test(source) && !SUBTLE_CALL.test(source));
 
 const submitSource = await readFile(
-  new URL("../apps/web/submit.html", import.meta.url), "utf8");
+  new URL("../apps/web/your-page.html", import.meta.url), "utf8");
 const signInSource = await readFile(
   new URL("../apps/web/index.html", import.meta.url), "utf8");
 const formSource = await readFile(
@@ -180,7 +180,7 @@ check("the page is filled from the configured key at runtime",
   && /publicKey/.test(formSource));
 
 /*
- * The base64-key-literal assertion used to live here, guarding submit.html
+ * The base64-key-literal assertion used to live here, guarding your-page.html
  * alone while #34 held check_web.py. It has moved to check 14 in that file,
  * where it covers every page - #41. It moved rather than being copied: a
  * page suite cannot own a repository-wide boundary, and two checks making

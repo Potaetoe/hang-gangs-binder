@@ -192,7 +192,7 @@ check("the sign-in page is pinned plain", shells["index.html"] == "plain")
 check("the error page is pinned plain", shells["404.html"] == "plain")
 check("the signed-in pages are pinned to the rail",
       all(shells[page] == "rail"
-          for page in ("submit.html", "dashboard.html", "admin.html")))
+          for page in ("your-page.html", "charts.html", "admin.html")))
 
 # And the pin has to match what actually ships.
 check("no page's shipped shell differs from its pin",
@@ -208,8 +208,8 @@ RAIL = (
     '<aside class="rail">'
     '<a class="wordmark" href="index.html"><span>Binder</span></a>'
     '<ul class="rail-links">'
-    '<li><a href="submit.html">Submit</a></li>'
-    '<li><a href="dashboard.html">Progress</a></li>'
+    '<li><a href="your-page.html">Submit</a></li>'
+    '<li><a href="charts.html">Progress</a></li>'
     '</ul>'
     '<div class="rail-session"><a id="sign-in" href="index.html">'
     'Sign in</a></div>'
@@ -219,7 +219,7 @@ RAIL = (
 
 check("a rail is read out of a page as its destinations, in order",
       [href for href, _ in check_web.rail_links(RAIL)] ==
-      ["submit.html", "dashboard.html"])
+      ["your-page.html", "charts.html"])
 check("a page with no rail reads as absence rather than as empty",
       check_web.rail_links("<p>nothing here</p>") is None)
 
@@ -240,7 +240,7 @@ check("the session block's route alone satisfies the stranding arm",
                        '<span>Binder</span></a>', '')) == [])
 check("a rail aside with no route to sign-in anywhere is refused",
       any("stranded" in p for p in check_web.rail_page_problems(
-          RAIL.replace('href="index.html"', 'href="dashboard.html"'))))
+          RAIL.replace('href="index.html"', 'href="charts.html"'))))
 
 # The other direction of the same ruling: the door is session state,
 # not navigation. A Sign in entry among the destinations is exactly
@@ -248,9 +248,9 @@ check("a rail aside with no route to sign-in anywhere is refused",
 # would let it drift back in silence.
 check("the door among the rail destinations is refused",
       any("door" in p for p in check_web.rail_page_problems(
-          RAIL.replace('<li><a href="submit.html">Submit</a></li>',
+          RAIL.replace('<li><a href="your-page.html">Submit</a></li>',
                        '<li><a href="index.html">Sign in</a></li>'
-                       '<li><a href="submit.html">Submit</a></li>'))))
+                       '<li><a href="your-page.html">Submit</a></li>'))))
 
 # The hamburger is gone, and a page that kept it is a page that did not
 # get the rail - which the parity arm alone would not catch, because two
@@ -292,7 +292,7 @@ check("every page pinned to carry the wordmark exists",
       set(check_web.WORDMARK_PAGES) <= pages)
 check("the pin covers the rail pages and the cover",
       set(check_web.WORDMARK_PAGES) ==
-      {"admin.html", "dashboard.html", "index.html", "submit.html"})
+      {"admin.html", "charts.html", "index.html", "your-page.html"})
 
 MARK = ('<span class="wordmark-owner">Hang Gang</span>'
         '<span class="wordmark-name">Binder</span>')
@@ -344,8 +344,8 @@ check("a wordmark renamed on one copy of four is refused",
       any("Muse's" in p for p in dict(check_web.wordmark_parity_problems(
           {"admin.html": ("Hang Gang", "Binder"),
            "index.html": ("Hang Gang", "Binder"),
-           "submit.html": ("Hang Gang", "Binder"),
-           "dashboard.html": ("Muse's", "Binder")})).values()))
+           "your-page.html": ("Hang Gang", "Binder"),
+           "charts.html": ("Muse's", "Binder")})).values()))
 check("a second line renamed on one copy is refused",
       any("Ledger" in p for p in dict(check_web.wordmark_parity_problems(
           {"a.html": ("Hang Gang", "Binder"),
@@ -375,7 +375,7 @@ check("the error page is pinned to offer none",
       "404.html" not in check_web.THEMED_PAGES)
 check("the three signed-in pages are pinned to offer a palette",
       all(page in check_web.THEMED_PAGES
-          for page in ("submit.html", "dashboard.html", "admin.html")))
+          for page in ("your-page.html", "charts.html", "admin.html")))
 
 # And the pin has to match what actually ships.
 check("no shipped page's Theme control differs from its pin",
@@ -870,11 +870,11 @@ check("no two destinations answer to the same name",
 # table and the fixture is built around it. What is being exercised is
 # the disagreement, and a disagreement needs one real name to disagree
 # with.
-CHARTS = check_web.DESTINATIONS["dashboard.html"]
+CHARTS = check_web.DESTINATIONS["charts.html"]
 NAMED = ("<title>%s — %s</title><h1>%s</h1>"
          '<ul class="rail-links">'
          '<li><a href="index.html">Sign in</a></li>'
-         '<li><a href="dashboard.html">%s</a></li></ul>'
+         '<li><a href="charts.html">%s</a></li></ul>'
          % (CHARTS, check_web.SITE_TITLE, CHARTS, CHARTS))
 
 check("a page whose surfaces agree raises nothing",
@@ -907,11 +907,11 @@ check("a rail calling another page by a name it does not answer to "
 # three rails with the gate green. A rule that skips what it cannot
 # recognize fails open, so unknown hrefs are reported rather than passed.
 check("a rail href is read through its spelling",
-      check_web.rail_target("./dashboard.html") == "dashboard.html")
+      check_web.rail_target("./charts.html") == "charts.html")
 check("a rail href's fragment is not part of the page it names",
-      check_web.rail_target("dashboard.html#top") == "dashboard.html")
+      check_web.rail_target("charts.html#top") == "charts.html")
 check("a rail href's query is not part of the page it names",
-      check_web.rail_target("dashboard.html?from=rail") == "dashboard.html")
+      check_web.rail_target("charts.html?from=rail") == "charts.html")
 check("an off-site rail href names no destination here",
       check_web.rail_target("https://example.com/admin.html") is None)
 check("a bare directory href is the index",
@@ -924,7 +924,7 @@ check("a dot-slash rail calling a page by a name it does not answer to "
                             'href="./index.html">Home'), CHARTS)))
 check("a rail entry naming no destination at all is refused",
       any("names no destination" in p for p in check_web.page_name_problems(
-          NAMED.replace('href="dashboard.html"', 'href="reports.html"'),
+          NAMED.replace('href="charts.html"', 'href="reports.html"'),
           CHARTS)))
 
 check("no shipped page disagrees with its own name",
@@ -1526,12 +1526,12 @@ check("pages agreeing about every chip raise nothing",
            "c.html": FOUR_CHIPS}) == [])
 
 DRIFT_FOUND = check_web.chip_parity_problems(
-    {"admin.html": FOUR_CHIPS, "dashboard.html": FOUR_CHIPS,
-     "submit.html": DRIFTED_CHIPS})
+    {"admin.html": FOUR_CHIPS, "charts.html": FOUR_CHIPS,
+     "your-page.html": DRIFTED_CHIPS})
 check("a label renamed on ONE page is refused",
       len(DRIFT_FOUND) == 1)
 check("the refusal names the page that drifted",
-      bool(DRIFT_FOUND) and DRIFT_FOUND[0][0] == "submit.html")
+      bool(DRIFT_FOUND) and DRIFT_FOUND[0][0] == "your-page.html")
 check("the refusal carries both spellings and the page to compare with",
       bool(DRIFT_FOUND) and all(
           word in DRIFT_FOUND[0][1]
@@ -1585,7 +1585,7 @@ check("every themed page ships one identical chip roster",
       len({tuple(r) for r in SHIPPED_CHIPS.values()}) == 1)
 # Without this the arm above passes on four pages carrying no chips.
 check("and that roster is not empty",
-      SHIPPED_CHIPS["submit.html"] != [])
+      SHIPPED_CHIPS["your-page.html"] != [])
 
 
 # The arm that stops every arm above being decorative, and it is the
@@ -1615,20 +1615,20 @@ def chips_over(pages):
 
 DISK_FOUND = chips_over({
     "admin.html": CHIP_GROUP,
-    "submit.html": "".join(chip_markup(n, w) for n, w in DRIFTED_CHIPS),
+    "your-page.html": "".join(chip_markup(n, w) for n, w in DRIFTED_CHIPS),
 })
 check("the wrapper reads the pages rather than answering from nowhere",
-      len(DISK_FOUND) == 1 and DISK_FOUND[0][0] == "submit.html")
+      len(DISK_FOUND) == 1 and DISK_FOUND[0][0] == "your-page.html")
 check("and it is the shipped directory it normally reads",
       check_web.WEB.endswith(os.path.join("apps", "web")))
 
-# Not decorative: submit.html's note on the #127 ruling names this
+# Not decorative: your-page.html's note on the #127 ruling names this
 # attribute at length, so a reader taking raw markup would compare a
 # page against prose about itself.
 check("a chip written out inside a comment is not part of a roster",
       chips_over({
           "admin.html": CHIP_GROUP,
-          "submit.html": CHIP_GROUP + "<!-- %s -->" % chip_markup(
+          "your-page.html": CHIP_GROUP + "<!-- %s -->" % chip_markup(
               "ghost", "Ghost"),
       }) == [])
 
@@ -1638,8 +1638,8 @@ check("a chip written out inside a comment is not part of a roster",
 check("a themed page with no chips is left to check 19, not restated",
       chips_over({
           "admin.html": CHIP_GROUP,
-          "submit.html": CHIP_GROUP,
-          "dashboard.html": "<p>Nothing here.</p>",
+          "your-page.html": CHIP_GROUP,
+          "charts.html": "<p>Nothing here.</p>",
       }) == [])
 
 
@@ -1987,16 +1987,16 @@ def refused_over(pages, css):
 
 
 REFUSED_FOUND = refused_over(
-    {"submit.html": '<span class="rail-note">Keyholder only</span>'},
+    {"your-page.html": '<span class="rail-note">Keyholder only</span>'},
     ".rail-note { display: block; }")
 check("the refusal wrapper reads the pages and the stylesheet",
       {subject for subject, _p in REFUSED_FOUND}
-      == {"submit.html", check_web.STYLESHEET})
+      == {"your-page.html", check_web.STYLESHEET})
 # theme.css and every page carry long comments quoting the markup and
 # the selectors the rules refuse.
 check("a refused surface named only in a comment is not carried",
       refused_over(
-          {"submit.html": '<!-- <span class="rail-note">x</span> -->'},
+          {"your-page.html": '<!-- <span class="rail-note">x</span> -->'},
           "/* .rail-note is gone, see #191 */") == [])
 
 
@@ -2019,22 +2019,22 @@ def chip_labels_over(pages):
 check("the chip wrapper reads the pages rather than answering from "
       "nowhere",
       [s for s, _p in chip_labels_over({
-          "submit.html": chip_page(RENAMED),
+          "your-page.html": chip_page(RENAMED),
           "admin.html": chip_page(RULED_CHIPS),
-      })] == ["submit.html"])
+      })] == ["your-page.html"])
 # A ruled palette that has stopped being offered anywhere is a stale
 # pin, and a stale pin is how a table stops describing the site.
 check("a ruled palette no page offers is reported against the pin",
       any(subject == check_web.MOCKUP_CHIP_PIN for subject, _p in
           chip_labels_over({
-              "submit.html": chip_page(RULED_CHIPS[:3]),
+              "your-page.html": chip_page(RULED_CHIPS[:3]),
               "admin.html": chip_page(RULED_CHIPS[:3]),
           })))
 # Failing open here on purpose: a site with no chips at all is check
 # 19 failing on every themed page, and four more lines saying the
 # mockup rules a palette nothing offers help nobody.
 check("a site with no chips leaves the stale-pin arm quiet",
-      chip_labels_over({"submit.html": "<p>Nothing here.</p>"}) == [])
+      chip_labels_over({"your-page.html": "<p>Nothing here.</p>"}) == [])
 
 
 # ------------------------------------------------------------------

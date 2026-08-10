@@ -197,7 +197,7 @@ WEB = os.path.join(REPO, "dist")
 # +1.7 KB gzipped on each page, and it is the growth this arm exists to
 # make somebody look at rather than the growth it exists to refuse.
 #
-# admin.html and submit.html then moved again, and only those two,
+# admin.html and your-page.html then moved again, and only those two,
 # because they are the two pages that load apps/web/crypto.js and
 # crypto.js carries a second stored format. Version 2 seals a
 # submission to the keyholder and to the submitting member at once,
@@ -238,9 +238,9 @@ WEB = os.path.join(REPO, "dist")
 #
 #   404.html        114,021 -> 116,276   (+2.0%)
 #   admin.html      165,495 -> 172,683   (+4.3%)
-#   dashboard.html  138,255 -> 145,435   (+5.2%)
+#   charts.html     138,255 -> 145,435   (+5.2%)
 #   index.html      119,494 -> 122,401   (+2.4%)
-#   submit.html     148,875 -> 155,656   (+4.6%)
+#   your-page.html  148,875 -> 155,656   (+4.6%)
 #
 # Two sources, and they land differently. theme.css carries the rail,
 # the mobile strip, the cover's keyframes, the runner and a --color-gold
@@ -268,15 +268,15 @@ WEB = os.path.join(REPO, "dist")
 #
 #   404.html        116,455 -> 119,092   (+2.3%)
 #   admin.html      172,866 -> 175,925   (+1.8%)
-#   dashboard.html  145,616 -> 148,149   (+1.7%)
+#   charts.html     145,616 -> 148,149   (+1.7%)
 #   index.html      122,580 -> 125,129   (+2.1%)
-#   submit.html     155,819 -> 159,263   (+2.2%)
+#   your-page.html  155,819 -> 159,263   (+2.2%)
 #
 # One source this time, and it is why the five numbers are so alike:
 # theme.css is in every total and carries all of it - three label
 # components where there was one, the control chassis and the tab strip
 # the owner asked for, and the instrument surface. The markup itself is
-# roughly a wash. submit.html deletes four card wrappers and gains the
+# roughly a wash. your-page.html deletes four card wrappers and gains the
 # comments explaining why; admin.html gains a nameplate and loses a
 # label. A page whose HTML barely moves still pays for a stylesheet that
 # did, and that is the shape to expect from any component work here.
@@ -294,9 +294,9 @@ WEB = os.path.join(REPO, "dist")
 #
 #   404.html        120,715 -> 103,072   (-14.6%)
 #   admin.html      190,882 -> 136,112   (-28.7%)
-#   dashboard.html  154,823 -> 118,143   (-23.7%)
+#   charts.html     154,823 -> 118,143   (-23.7%)
 #   index.html      130,088 -> 108,535   (-16.6%)
-#   submit.html     162,154 -> 125,594   (-22.5%)
+#   your-page.html  162,154 -> 125,594   (-22.5%)
 #
 # admin.html is the page that needed it. It stood at 99% of its ceiling
 # after #69's membership pane landed - one ordinary card away from a
@@ -304,7 +304,7 @@ WEB = os.path.join(REPO, "dist")
 #
 # theme.css alone accounts for 16,021 B of every one of those, because it
 # is in all five totals and 78% of it was prose. admin.html and
-# dashboard.html take the rest from dashboard.js, admin.js and crypto.js,
+# charts.html take the rest from dashboard.js, admin.js and crypto.js,
 # which are the heavily-reasoned files.
 #
 # Nothing was deleted to get this. The comments are still in apps/web,
@@ -323,7 +323,7 @@ WEB = os.path.join(REPO, "dist")
 CEILINGS = {
     "404.html": 113400,
     "admin.html": 144900,
-    "dashboard.html": 130000,
+    "charts.html": 130000,
     "index.html": 119400,
     # 138200 -> 142200. The owner's reviewed act, 2026-08-09 evening,
     # taken on a decision question with the measurements in front of it
@@ -358,7 +358,7 @@ CEILINGS = {
     # ONE CEILING by the owner personally. Every other pin here stands,
     # and STALE_ABOVE still polices this one from the other direction -
     # a ceiling that outruns its page fails whoever raised it.
-    "submit.html": 142200,
+    "your-page.html": 142200,
 }
 
 # What a fresh pin gets: about ten percent of room to grow into. Large

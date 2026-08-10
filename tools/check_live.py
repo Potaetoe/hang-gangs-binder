@@ -336,7 +336,7 @@ LEDGER = [
         "status": "performed",
         "performed": dict(
             SITTING,
-            how="submit.html's account card painted from a live call - "
+            how="your-page.html's account card painted from a live call - "
                 "Entries stored, and no \"Your Telegram id\" line for a "
                 "development session, which has none - and after a "
                 "correction landed the count held instead of going one "
@@ -458,7 +458,7 @@ LEDGER = [
         "performed": dict(
             SITTING,
             how="a member session read the published document back on "
-                "dashboard.html - the combined-weight hero, an entries "
+                "charts.html - the combined-weight hero, an entries "
                 "and people line agreeing with what had been "
                 "submitted, a freshness line and the distributions. "
                 "The signed-out refusal below is what this pairs with: "
@@ -675,7 +675,7 @@ LEDGER = [
             how="signed in from this page through the script it ships "
                 "against the deployed Worker, as an admin and as a "
                 "member, and the session it minted carried the reader "
-                "on to submit.html, where the form and the account "
+                "on to your-page.html, where the form and the account "
                 "card painted. The widget is its own row on the "
                 "first-contact list below; what is discharged here is "
                 "that this page reaches a live Worker at all and that "
@@ -700,10 +700,10 @@ LEDGER = [
         "status": "never",
     },
     {
-        "id": "submit.html",
+        "id": "your-page.html",
         "surface": "page",
         "claim": "the form round-trips to a live Worker",
-        "covers": ["apps/web/submit.html", "apps/web/submit.js"],
+        "covers": ["apps/web/your-page.html", "apps/web/submit.js"],
         "status": "performed",
         "performed": dict(
             SITTING,
@@ -716,11 +716,11 @@ LEDGER = [
                 "from the service"),
     },
     {
-        "id": "submit.html, a live 401",
+        "id": "your-page.html, a live 401",
         "surface": "page",
         "claim": "a refused session clears the stored token and sends "
                  "the reader back to the sign-in page",
-        "covers": ["apps/web/submit.html", "apps/web/submit.js"],
+        "covers": ["apps/web/your-page.html", "apps/web/submit.js"],
         "status": "performed",
         "performed": dict(
             REHEARSAL,
@@ -729,10 +729,10 @@ LEDGER = [
                 "replaced itself with index.html"),
     },
     {
-        "id": "dashboard.html",
+        "id": "charts.html",
         "surface": "page",
         "claim": "the published figures paint from a real snapshot",
-        "covers": ["apps/web/dashboard.html", "apps/web/public.js"],
+        "covers": ["apps/web/charts.html", "apps/web/public.js"],
         "status": "performed",
         "performed": dict(
             SITTING,
@@ -750,11 +750,11 @@ LEDGER = [
                 "filed against three that do not"),
     },
     {
-        "id": "dashboard.html, a live 401",
+        "id": "charts.html, a live 401",
         "surface": "page",
         "claim": "a refused session clears the token and the page says "
                  "so where it stands, rather than redirecting",
-        "covers": ["apps/web/dashboard.html", "apps/web/public.js"],
+        "covers": ["apps/web/charts.html", "apps/web/public.js"],
         "status": "performed",
         "performed": dict(
             REHEARSAL,
@@ -880,7 +880,7 @@ LEDGER = [
         "status": "performed",
         "performed": dict(
             REHEARSAL,
-            how="with sessionStorage empty, submit.html, dashboard.html "
+            how="with sessionStorage empty, your-page.html, charts.html "
                 "and admin.html each sent the reader to index.html; no "
                 "form, no figures and no key box painted, and the "
                 "network panel stayed empty on all three"),
@@ -1135,7 +1135,7 @@ LEDGER = [
         "claim": "the fingerprint members are asked to compare lives "
                  "in a Telegram group, which no page here and no shell "
                  "here can see",
-        "covers": ["apps/web/submit.html"],
+        "covers": ["apps/web/your-page.html"],
         "status": "first-contact",
         "cause": "off-machine",
     },

@@ -42,7 +42,7 @@
      * reading of location.pathname, because the two consumers have to
      * agree: a rail and a sign-in gate with separate opinions of "which
      * page is this" is how #188 shipped - Cloudflare Pages serves
-     * "submit.html" at "submit", and the raw last segment matched no
+     * "your-page.html" at "your-page", and the raw last segment matched no
      * href, so the hosted rail marked nothing. pageName() restores the
      * suffix, and the hrefs keep theirs, so the comparison holds from a
      * directory root, from /apps/web/ under a locally served repository

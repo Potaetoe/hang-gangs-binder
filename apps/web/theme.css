@@ -487,7 +487,7 @@ body {
  *
  * What was inconsistent was not the two widths; it was that a page
  * could be wide AND hold blocks that were neither wide nor centered.
- * dashboard.html and admin.html were both `wide`, and inside them
+ * charts.html and admin.html were both `wide`, and inside them
  * `.narrow` pulled prose back to the reading column and then flushed it
  * LEFT, so two pages centered their content on 46rem while two ran it
  * up the left edge of 84rem. Nothing about that was visible from any
@@ -496,7 +496,7 @@ body {
  * So: everything centers, always, and the only question a page answers
  * is how wide its column is. admin.html is the single wide page - an
  * eighteen-column table and a wall of charts is looking at data rather
- * than reading. dashboard.html joined the reading column in this
+ * than reading. charts.html joined the reading column in this
  * change: its charts are read one at a time, and at 84rem its prose
  * cards were the widest lines on the site.
  *

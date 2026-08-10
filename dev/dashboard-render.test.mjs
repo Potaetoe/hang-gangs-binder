@@ -1166,7 +1166,7 @@ await check("a redraw into a smaller state leaves nothing of the larger", () => 
 
 /*
  * ONE DRAWING BODY, TWO ENTRY POINTS. dashboard.js draws admin.html and
- * dashboard.html from the same code, which is what stops the member
+ * charts.html from the same code, which is what stops the member
  * numbers from ever disagreeing with the keyholder's. The hero belongs
  * to Progress alone - it is a member-facing payoff, and the admin page
  * is an instrument - so the split had to happen somewhere. It happens at
@@ -1351,13 +1351,13 @@ await check("a group too small to describe gets no hero either", () =>
 
 await check("the hero paints through classes, like everything else here", () =>
   // theme.css styles this; a style attribute would be dropped by
-  // dashboard.html's `style-src 'self'` and the hero would arrive naked.
+  // charts.html's `style-src 'self'` and the hero would arrive naked.
   collect(PROGRESS, (node) => node.hasAttribute("style")).length === 0 &&
   classesOf(heroOf(PROGRESS)).includes("hero"));
 
 /*
  * The member's own page, which is the surface all of section 10a is
- * about. It is a separate arm rather than a repeat: dashboard.html calls
+ * about. It is a separate arm rather than a repeat: charts.html calls
  * renderProgress and nothing else, so a suppression sentence that
  * reached only `render` would be invisible to every member and green in
  * every check above.
@@ -1586,7 +1586,7 @@ await check("a personal answer carries no floor promise, because it has no floor
      * here, and printing it over somebody's own history would be a
      * promise about groups of five made about a group of one.
      *
-     * No page builds this source yet; dashboard.html holds a published
+     * No page builds this source yet; charts.html holds a published
      * document and #85's slices 2 and 3 are what will make a personal one
      * readable. It is pinned now because the drawing half is what those
      * slices will call, and a drawing half that only knows one floor is
@@ -1623,7 +1623,7 @@ await check("an answer redraw replaces the figure rather than stacking them",
   });
 
 await check("nothing an answer draws paints itself or carries a style", () =>
-  // The same two contracts every panel above obeys: dashboard.html's
+  // The same two contracts every panel above obeys: charts.html's
   // `style-src 'self'` would drop a style attribute on the floor, and a
   // shape that fills itself cannot be themed.
   ["gender", "weight", "bmi"].every((split) => {

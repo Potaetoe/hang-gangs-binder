@@ -28,8 +28,8 @@
    */
   const DESTINATIONS = [
     { file: "index.html", label: "Sign in" },
-    { file: "submit.html", label: "Your page" },
-    { file: "dashboard.html", label: "Muse's charts" },
+    { file: "your-page.html", label: "Your page" },
+    { file: "charts.html", label: "Muse's charts" },
     { file: "admin.html", label: "Admin" },
   ];
 
@@ -720,14 +720,14 @@
     {
       id: "member",
       label: "Signed in, with a history",
-      start: "submit.html",
+      start: "your-page.html",
       session: MEMBER_SESSION,
       boxes: ["shell", "signin-id", "panel", "dashboard"],
     },
     {
       id: "member-prefilled",
       label: "Coming back to a form that remembers you",
-      start: "submit.html",
+      start: "your-page.html",
       session: MEMBER_SESSION,
       prefill: true,
       boxes: ["panel", "signout"],
@@ -735,14 +735,14 @@
     {
       id: "supersede",
       label: "A mistake, corrected",
-      start: "submit.html",
+      start: "your-page.html",
       session: MEMBER_SESSION,
       boxes: ["panel", "supersede"],
     },
     {
       id: "revoked",
       label: "Signed out somewhere else",
-      start: "submit.html",
+      start: "your-page.html",
       session: MEMBER_SESSION,
       revoked: true,
       boxes: ["signout", "revocation"],
@@ -771,7 +771,7 @@
     {
       id: "suppressed",
       label: "Too few people to publish",
-      start: "dashboard.html",
+      start: "charts.html",
       session: MEMBER_SESSION,
       boxes: ["dashboard", "privacy"],
     },
@@ -904,7 +904,7 @@
       actions: [{
         label: "See the charts",
         scenario: "member",
-        open: "dashboard.html",
+        open: "charts.html",
         try: "Scroll the charts: the combined weight, the deltas, " +
           "and everyone's line drawn together.",
       }],

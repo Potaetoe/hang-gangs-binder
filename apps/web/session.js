@@ -131,7 +131,7 @@
    * disagree about the same page.
    *
    * The suffix is restored before anything compares the name. Cloudflare
-   * Pages serves "submit.html" at "submit" and 308s the full name away,
+   * Pages serves "your-page.html" at "your-page" and 308s the full name away,
    * with no setting that refuses (#188, found on #143's hosted bake).
    * Compared raw, that segment matches no rail href, and a host that
    * strips the index name the same way turns requireSession()'s redirect

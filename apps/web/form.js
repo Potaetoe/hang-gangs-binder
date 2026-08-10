@@ -414,7 +414,7 @@
     };
   }
 
-  // Frozen because submit.html holds the submission before it is sealed:
+  // Frozen because your-page.html holds the submission before it is sealed:
   // an export a later script can rewrite is a `validate` that waves
   // anything through, or a `buildRecord` that quietly adds a field to
   // what gets encrypted.
@@ -633,7 +633,7 @@
     const unitInputs = Array.prototype.slice.call(
       document.querySelectorAll('input[name="units"]'));
 
-    // The fallback matches the radio submit.html checks. It should be
+    // The fallback matches the radio your-page.html checks. It should be
     // unreachable - a radio group with a `checked` member always has
     // one - but if the markup ever loses that attribute, the page and
     // this function should at least be wrong about the same thing.

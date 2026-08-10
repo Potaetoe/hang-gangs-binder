@@ -1141,7 +1141,7 @@
   // a literal and bolting `render` on afterwards. A member added after
   // the object is published cannot be covered by a freeze at the
   // assignment: freezing would make that later line throw, so the object
-  // admin.html and dashboard.html both hold would have to stay editable
+  // admin.html and charts.html both hold would have to stay editable
   // for as long as this file is still running.
   //
   // The conditional is load-bearing and is NOT a redundant second guard.
@@ -1612,7 +1612,7 @@
    * BinderQuery. admin.html loads this module and does not load query.js,
    * so a reference to that namespace here would be a global the
    * instrument's own page never defines. The caller is also the only one
-   * that knows what it asked: dashboard.html names its question through
+   * that knows what it asked: charts.html names its question through
    * the engine's own `describe`, so a caption can never describe a query
    * that would have thrown.
    *

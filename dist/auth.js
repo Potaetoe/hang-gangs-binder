@@ -63,7 +63,7 @@
 
     say("Signed in. Opening the form…", "good");
     if (root.location && typeof root.location.replace === "function") {
-      root.location.replace("submit.html");
+      root.location.replace("your-page.html");
     }
     return session;
   }
@@ -85,7 +85,7 @@
     UI.boot(function () {
       if (root.BinderSession.read() && root.location &&
           typeof root.location.replace === "function") {
-        root.location.replace("submit.html");
+        root.location.replace("your-page.html");
       }
     }, function (error) {
       say("Sign-in did not start correctly. " +
