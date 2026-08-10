@@ -193,9 +193,123 @@
         needed only if you are being made an admin.
       </p>
       <p class="muted small">
-        These are counts and receipt times from the service. Your encrypted
-        entries cannot be read back here because this page does not hold the
-        private key.
+        These are counts and receipt times from the service. What is in
+        each entry is opened below, in this browser, with a key only this
+        browser has.
+      </p>
+    </div>
+
+    <!--
+      Your own history, opened here and nowhere else - #85's personal
+      arm.
+
+      WHAT MAKES THIS DIFFERENT FROM THE PAGE THAT LOOKS LIKE IT.
+      dashboard.html asks the same engine the same shapes of question
+      over the PUBLISHED document, every cell of which the keyholder's
+      browser already reduced to at least MIN_CELL people. This card
+      asks over one member's own rows with no floor at all, because
+      their own data is theirs and a floor here would hide somebody's
+      own March from them for holding one entry. The two are not two
+      settings of one control: they are different sources, built by
+      different functions, and the floor arrives from the source rather
+      than from anything a question can name.
+
+      There is no source control here and none there, and that is the
+      boundary rather than a simplification of it.
+
+      Everything below is hidden until submit.js has a key, rows, and
+      something that opened - not because the states are unlikely, but
+      because each of them has its own sentence in #history-status and a
+      card of empty controls above a blank answer is not one of them.
+    -->
+    <!-- A heading rather than a runner, which is the shape dashboard.html's
+         question card already uses for the same component asked the same
+         way. A runner names the section a card stands in, and this card
+         stands in the one "Your account" above it already names; the
+         label registry in tools/check_web.py is the vocabulary for those,
+         and this is not one. -->
+    <div class="card" id="your-history" hidden>
+      <h2>Your entries, opened</h2>
+      <p class="muted small">
+        These were unsealed in this browser with a key that never leaves
+        it. Nothing here was sent anywhere to be read, and the service
+        cannot read any of it.
+      </p>
+
+      <p class="status" id="history-status" role="status"
+         aria-live="polite" hidden></p>
+
+      <!--
+        Two controls, and the ones that are missing are the point.
+
+        No counting choice: over one person's own rows, "how many
+        people" collapses a history to its latest row, which is the one
+        question a personal snapshot cannot be for. So the basis is
+        entries, decided by what the source IS rather than offered.
+
+        No combining and no widening either. Both levers exist so that a
+        coarsening stays a union of cells that each cleared a floor -
+        and this source has no floor. Offering them would be ceremony
+        over a safety property that is not in play here.
+
+        Units are not repeated: the form's own units choice is this
+        page's single one, and a second control would let one page hold
+        two answers to the same question.
+      -->
+      <div class="stack" id="history-controls" hidden>
+        <div class="field">
+          <label for="h-split">About</label>
+          <select id="h-split">
+            <option value="weight">Weight</option>
+            <option value="height">Height</option>
+            <option value="bmi">BMI</option>
+            <option value="gender">Gender</option>
+            <option value="country">Country</option>
+            <option value="roles">Feedism affiliations</option>
+          </select>
+        </div>
+
+        <fieldset class="field" id="h-measure-field">
+          <legend>Measure</legend>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="h-measure" value="count" checked>
+              <span>How many</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="h-measure" value="median">
+              <span>The median</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="h-measure" value="mean">
+              <span>The mean</span>
+            </label>
+          </div>
+          <p class="hint">
+            A middle needs numbers to take the middle of, so this only
+            offers itself for weight, height and BMI.
+          </p>
+        </fieldset>
+      </div>
+
+      <div id="history-answer"></div>
+
+      <!--
+        Rows this browser cannot open are COUNTED AND NAMED, never
+        dropped. admin.html already follows that rule for rows a rotated
+        key cannot read, and the reason is the same in both places: an
+        answer quietly computed over fewer rows than the member has is
+        an answer they cannot tell from a correct one.
+
+        The entries above this were sealed before this browser had a key
+        of its own, or on a device that is gone. Getting them back is an
+        admin unsealing them, which is the same channel this group
+        already uses to ask for a deletion.
+      -->
+      <p class="muted small" id="history-sealed" hidden>
+        <strong id="history-sealed-count"></strong> sealed to a device
+        this browser is not &mdash; they are not in the answer above.
+        Ask an admin to unlock them.
       </p>
     </div>
   </section>
@@ -559,6 +673,25 @@
 <script src="config.js"></script>
 <script src="countries.js"></script>
 <script src="crypto.js"></script>
+<!-- The member's own device key, and the engine that turns their opened
+     rows into an answer.
+
+     memberkey.js is before submit.js because submit.js asks it for a
+     key while painting the panel, and signout.js reads it when the
+     button is pressed rather than as it loads - which is why the two
+     other signed-in pages carry signout.js without this file and
+     destroy nothing rather than throwing. tools/check_web.py's
+     DEFERRED_CAPTURES carries that exemption with its reason.
+
+     query.js needs dashboard.js loaded first: it reads the suppression
+     floor, the snapshot builder and the unit table out of
+     BinderDashboard rather than carrying second copies, and it says so
+     in its own header. dashboard.js is also what draws the answer -
+     `renderAnswer` takes an answer and a caption and never mentions
+     BinderQuery, so no drawing code lives on this page. -->
+<script src="memberkey.js"></script>
+<script src="dashboard.js"></script>
+<script src="query.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <!-- After config.js, and that order is load-bearing: signing out asks

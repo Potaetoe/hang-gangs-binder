@@ -91,6 +91,7 @@ SUITE_SUFFIX = ".test.mjs"
 # nobody added here was never run and the gate was green (#204).
 NODE_SUITES = [
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
+    ("member device key custody", "dev/memberkey.test.mjs"),
     ("form record building", "dev/form.test.mjs"),
     ("form wiring + reopen after submit", "dev/form-wiring.test.mjs"),
     ("member panel + failed-send guard", "dev/submit.test.mjs"),

@@ -352,11 +352,27 @@ LEDGER = [
         "id": "GET /my-entries",
         "surface": "route",
         "claim": "a member's listing carries their own rows in id "
-                 "order and nobody else's, and the order is the half "
-                 "no suite here can falsify - the stub answers out of "
-                 "an array already in that order, so ORDER BY is "
-                 "unexercised until something reads a real result set",
+                 "order and nobody else's, with the sealed bytes as "
+                 "stored, and two halves no suite here can falsify: "
+                 "the order, because the stub answers out of an array "
+                 "already in that order, and the cap, because LIMIT is "
+                 "modelled by slicing what the stub already held "
+                 "rather than by a database that stops reading",
         "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /my-entries, after the session is revoked",
+        "surface": "route",
+        "claim": "a token captured before Sign out reads no sealed "
+                 "bytes after it. The route carries a member's whole "
+                 "encrypted history since #85, so revocation stopped "
+                 "being about counts - and the stub cannot falsify "
+                 "this half: it deletes a row from an array, which "
+                 "proves the route re-resolves the caller every call "
+                 "and proves nothing about D1 removing the row. "
+                 "Capture the token first, sign out, replay it",
+        "covers": ["server/worker.js", "apps/web/signout.js"],
         "status": "never",
     },
     {

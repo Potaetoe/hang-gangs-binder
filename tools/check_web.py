@@ -2775,6 +2775,7 @@ MODULE_EXPORTS = {
     "crypto.js": "BinderCrypto",
     "dashboard.js": "BinderDashboard",
     "form.js": "BinderForm",
+    "memberkey.js": "BinderMemberKey",
     "query.js": "BinderQuery",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
@@ -3292,6 +3293,82 @@ def module_captures(js):
             if re.search(CAPTURED_NAMESPACE % namespace, js)}
 
 
+# A namespace one script reads at CALL time from a page that may not have
+# published it, declared here with the reason.
+#
+# Why the exemption has to exist at all: signout.js is loaded by every
+# signed-in page because Sign out is in the rail, while memberkey.js is
+# loaded only by the page that seals entries. Requiring the publisher
+# beside every reader would put a member's device key on dashboard.html
+# and admin.html to satisfy a check - which is weight on two pages for
+# nothing, and a capability on the instrument page that DESIGN.md's
+# per-page table exists to keep narrow. Dropping the reference is worse:
+# DESIGN.md says signing out destroys the device key, and a sign-out
+# that does not is that sentence going quiet.
+#
+# THIS FILE DECLARES THE EXEMPTION AND DOES NOT EARN IT, and that split
+# is the whole of the rule. An earlier version tried to earn it here,
+# from the text: the reference must not appear at brace depth 1, and the
+# value must be guarded. Each of those is a PROXY for "the namespace is
+# not touched while the page loads", and all three were defeated - a
+# function defined deep and CALLED at top level captures at load with
+# the depth arm satisfied; an unbalanced brace inside a string literal
+# inflates the counter permanently, so the very `const UI =
+# root.BinderUI;` shape this rule exists for reads as deep; and a
+# file-wide guard regex is satisfied by a dead guard, or by the guard's
+# own text inside a string, while the real use goes unguarded.
+#
+# A textual proxy for a runtime property is the wrong instrument, and
+# the failure mode is the dangerous one: the exemption ALSO removes
+# order policing for the pair, so a satisfied proxy plus a script
+# reorder is key destruction that silently stops happening.
+#
+# The property is earned by EXECUTION instead, in dev/memberkey.test.mjs:
+# it loads the shipped bytes under Node with a recording global and
+# fails if the namespace is read during load. That suite reads THIS
+# table, so a pair added here with no execution evidence fails there -
+# AGENTS.md's corollary applied to the exemption itself, since something
+# outside the file has to say what the file may contain.
+#
+# What stays here is what a registry is for: the pair, and the reason.
+DEFERRED_CAPTURES = {
+    ("signout.js", "BinderMemberKey"):
+        "Sign out is in the rail on every signed-in page; the device key "
+        "exists only on the page that seals entries. Read when the button "
+        "is pressed, and guarded, so a page without the module destroys "
+        "nothing rather than throwing",
+}
+
+
+def deferred_capture_problems(name, js):
+    """[problem] for a declared deferred capture that is not reviewable.
+
+    Pure over one script's text, and deliberately narrow: it asks only
+    that a declared pair name a script which really reads the namespace,
+    and carry a reason. Whether that read is SAFE is a runtime question,
+    answered by running the bytes - see the note above.
+    """
+    problems = []
+    for (script, namespace), reason in sorted(DEFERRED_CAPTURES.items()):
+        if script != name:
+            continue
+        if not reason.strip():
+            problems.append(
+                "%s is exempted for %s with no reason written down. The "
+                "reason is the whole of what makes this reviewable"
+                % (script, namespace))
+        # A pair naming a script that does not read the namespace is an
+        # exemption for nothing - either the code moved and the row
+        # outlived it, or the row was wrong when written. Both are stale
+        # rows in a table whose only job is to be current.
+        if not re.search(CAPTURED_NAMESPACE % namespace, js):
+            problems.append(
+                "%s is exempted for %s and never reads it. An exemption "
+                "that guards nothing is a row to delete"
+                % (script, namespace))
+    return problems
+
+
 def run_order_problems(run, captures):
     """[problem] for a run of scripts that reads a namespace too early.
 
@@ -3309,6 +3386,12 @@ def run_order_problems(run, captures):
         for namespace in sorted(captures.get(name, ())):
             owner = publisher.get(namespace)
             if owner is None or owner == name:
+                continue
+            # Declared as read when something is pressed rather than as
+            # the page loads, and shape-checked where the script is read.
+            # The ordering rule has nothing to say about it: there is no
+            # load-time window to be on the wrong side of.
+            if (name, namespace) in DEFERRED_CAPTURES:
                 continue
             if owner not in at:
                 problems.append(
@@ -3329,12 +3412,19 @@ def run_order_problems(run, captures):
 def loading_problems():
     """(page, problem) for every published page's loading shape."""
     captures = {}
+    problems = []
     for name in sorted(os.listdir(WEB)):
         if name.endswith(".js"):
-            captures[name] = module_captures(strip_js_comments(
-                open(os.path.join(WEB, name), encoding="utf-8").read()))
+            js = strip_js_comments(
+                open(os.path.join(WEB, name), encoding="utf-8").read())
+            captures[name] = module_captures(js)
+            # Attributed to the script rather than to a page: an
+            # exemption whose shape has gone is wrong wherever it is
+            # loaded, and blaming the first page to load it would send
+            # the reader to the wrong file.
+            for problem in deferred_capture_problems(name, js):
+                problems.append((name, problem))
 
-    problems = []
     for name in html_pages():
         text = open(os.path.join(WEB, name), encoding="utf-8").read()
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)

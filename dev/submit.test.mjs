@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 72;
+const EXPECTED = 96;
 
 function check(label, condition) {
   performed++;
@@ -174,7 +174,22 @@ function makePage() {
     over18: makeElement("over18"),
     "prefill-note": makeElement("prefill-note", true),
     "over18-remembered": makeElement("over18-remembered", true),
+    // #85's personal arm. Every one of these ships hidden, and the
+    // resting state is what most of the arms below turn on: a member
+    // whose browser holds no key, or whose rows were all sealed
+    // elsewhere, must see the card and its sentence WITHOUT the
+    // controls or an empty answer beneath them. A stub that began
+    // painted would let a reveal stop happening unnoticed.
+    "your-history": makeElement("your-history", true),
+    "history-status": makeElement("history-status", true),
+    "history-controls": makeElement("history-controls", true),
+    "h-split": makeElement("h-split"),
+    "h-measure-field": makeElement("h-measure-field"),
+    "history-answer": makeElement("history-answer"),
+    "history-sealed": makeElement("history-sealed", true),
+    "history-sealed-count": makeElement("history-sealed-count"),
   };
+  elements["h-split"].value = "weight";
   // Radio and checkbox groups are reached by name rather than by id, so
   // they live beside `elements` rather than in it. Imperial is checked
   // because the shipped markup ships it checked.
@@ -184,6 +199,12 @@ function makePage() {
   units[0].value = "imperial";
   units[0].checked = true;
   units[1].value = "metric";
+  const measures = ["count", "median", "mean"].map((value) => {
+    const input = makeElement("h-measure-" + value);
+    input.value = value;
+    return input;
+  });
+  measures[0].checked = true;
   const roles = ["feeder", "feedee", "gainer", "admirer"].map((value) => {
     const input = makeElement("role-" + value);
     input.value = value;
@@ -217,6 +238,7 @@ function makePage() {
     },
     querySelectorAll(selector) {
       if (selector === 'input[name="units"]') return units;
+      if (selector === 'input[name="h-measure"]') return measures;
       if (selector === 'input[name="roles"]') return roles;
       if (selector === 'input[name="roles"]:checked') {
         return roles.filter((input) => input.checked);
@@ -236,7 +258,7 @@ function makePage() {
       }
     },
   };
-  return { document, elements, units, roles };
+  return { document, elements, units, roles, measures };
 }
 
 globalThis.document = makePage().document;
@@ -265,8 +287,144 @@ const MEMBER = {
   telegramId: "10",
 };
 
+/*
+ * The three modules #85's personal arm calls, stubbed so that what is
+ * asserted is WHAT THIS PAGE DOES WITH THEM rather than what they do.
+ *
+ * Each records its calls, and the recordings are the contract:
+ *
+ *  - `personalSource` counts its calls and keeps the entries it was
+ *    handed. That is the boundary from this side - dev/public.test.mjs
+ *    counts the same function to prove dashboard.html never reaches it,
+ *    and this file proves the page that MAY reach it hands it only what
+ *    opened.
+ *  - `run` keeps every query. The basis and the units are read off those
+ *    recordings rather than off the page, because a control that exists
+ *    and a value that reaches the engine are different claims.
+ *  - `decrypt` opens the blobs a scenario says are openable and throws
+ *    on the rest, which is exactly what crypto.js does with a row sealed
+ *    to a key this browser is not.
+ *
+ * `personalSource` returning a marked object rather than a real source
+ * is deliberate: a real one would need the whole snapshot builder, and
+ * what this file is for is the wiring around it.
+ */
+function engineStubs(history) {
+  const engine = {
+    ensured: [], sources: [], queries: [], drawn: [], decrypted: [],
+    described: [],
+  };
+  /*
+   * No argument means the modules are NOT on the page, which is the
+   * state every arm above this section was written against and the
+   * state two of the three signed-in pages are really in. The personal
+   * arm stops before its first fetch, and those arms keep counting the
+   * one request they always counted.
+   */
+  if (!history) {
+    delete globalThis.BinderMemberKey;
+    delete globalThis.BinderCrypto;
+    delete globalThis.BinderQuery;
+    delete globalThis.BinderDashboard;
+    return engine;
+  }
+  const key = "key" in history ? history.key : { privateKey: "device-key" };
+  const opens = history.opens || [];
+  const unavailable = history.unavailable || "no database here";
+  globalThis.BinderMemberKey = Object.freeze({
+    DB_NAME: "hgb-member-key",
+    unavailableReason() { return key ? null : unavailable; },
+    async ensure(accountId) {
+      engine.ensured.push(accountId);
+      return key;
+    },
+    async forget() { return true; },
+  });
+  globalThis.BinderCrypto = Object.freeze({
+    async decrypt(blob, withKey) {
+      engine.decrypted.push({ blob, withKey });
+      if (opens.indexOf(blob) === -1) {
+        throw new Error("none of this row's recipient blocks opened " +
+          "with this key");
+      }
+      return {
+        submittedAt: "2026-07-0" + (opens.indexOf(blob) + 1) +
+          "T00:00:00.000Z",
+        telegram: "member",
+        weight: { kg: 90 + opens.indexOf(blob), lb: 198 },
+        height: { cm: 175, totalInches: 68.9, feet: 5, inches: 8.9 },
+        entered: { units: "metric", weight: "90", height: "175" },
+        gender: "man", roles: ["gainer"], country: "US", over18: true,
+        record: 1,
+      };
+    },
+  });
+  globalThis.BinderDashboard = Object.freeze({
+    DEFAULT_UNITS: "imperial",
+    renderAnswer(container, answer, caption) {
+      engine.drawn.push({ container, answer, caption });
+    },
+  });
+  globalThis.BinderQuery = Object.freeze({
+    SPLITS: Object.freeze({
+      gender: { kind: "categorical" }, country: { kind: "categorical" },
+      roles: { kind: "categorical" }, bmi: { kind: "bins" },
+      weight: { kind: "bins" }, height: { kind: "bins" },
+    }),
+    /*
+     * The snapshot is shaped like the one apps/web/dashboard.js really
+     * builds under `identify: true` - the members the page is supposed
+     * to drop as well as the one it keeps. A stub handing back only
+     * `bases` could not tell a page that scrubs from a page that never
+     * had anything to scrub, which is the whole of what the arm below
+     * asks.
+     */
+    personalSource(entries, now) {
+      const source = {
+        personal: true, entries: entries, now: now,
+        /*
+         * THE REAL ENGINE'S MEMBER SET, read off a live
+         * BinderQuery.personalSource in a browser rather than guessed.
+         * A stub carrying fewer members than dashboard.js really builds
+         * would let the arm below assert a smaller surviving set than
+         * the page actually retains - which is the stub agreeing with
+         * this file instead of with the site, and it is how the first
+         * draft of that arm was wrong.
+         */
+        snapshot: {
+          snapshot: 3,
+          identified: true,
+          generated: "2026-08-09T00:00:00.000Z",
+          counts: { entries: entries.length, people: 1 },
+          series: [{ label: "@member", points: [{ at: 1, kg: 90 }] }],
+          seriesWithheld: false,
+          quality: { heightChanges: [], handleChanges: [{ was: "@old" }] },
+          bases: { people: {}, entries: {} },
+          movement: { kg: 1 },
+        },
+      };
+      engine.sources.push(source);
+      return source;
+    },
+    run(source, query) {
+      engine.queries.push({ source, query });
+      return { available: true, kind: "bins", cells: [], floor: 0 };
+    },
+    // Records the object it was handed, not just its words. What has to
+    // hold is that the caption and the answer describe ONE question -
+    // the identity, not a string this file could keep agreeing with.
+    describe(query) {
+      engine.described.push(query);
+      return "described " + query.split;
+    },
+  });
+  return engine;
+}
+
 let scenario = 0;
-async function loadSubmit({ member = MEMBER, replies = [], prefill } = {}) {
+async function loadSubmit({ member = MEMBER, replies = [], prefill,
+  history } = {}) {
+  const engine = engineStubs(history);
   const page = makePage();
   const requests = [];
   const bootErrors = [];
@@ -283,6 +441,16 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill } = {}) {
   globalThis.BinderUI = {
     byId(id) { return page.elements[id] || null; },
     show(element, visible) { if (element) element.hidden = !visible; },
+    // ui.js's own body, over this page's groups. Written out rather
+    // than returned from a fixed value because two of the arms below
+    // turn on a member CHANGING a radio: a stub answering a constant
+    // would let the page read a control it then ignores.
+    checkedValue(name, fallback) {
+      const chosen = Array.prototype.slice.call(
+        page.document.querySelectorAll('input[name="' + name + '"]'))
+        .filter((input) => input.checked)[0];
+      return chosen ? chosen.value : fallback;
+    },
     boot(setUp, failed) {
       try {
         const result = setUp();
@@ -324,8 +492,13 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill } = {}) {
     "#binder-signout-" + scenario);
   await import("data:text/javascript," + encodeURIComponent(submitSource) +
     "#submit-panel-" + scenario);
+  // Two turns rather than one. The panel awaits /me, then the listing,
+  // then decrypts row by row - so a single microtask drain settles the
+  // account card and leaves the history half-open, which would read as
+  // a personal arm that never runs.
   await new Promise((resolve) => setImmediate(resolve));
-  return { ...page, requests, bootErrors };
+  await new Promise((resolve) => setImmediate(resolve));
+  return { ...page, requests, bootErrors, engine };
 }
 
 function isPainted(element) {
@@ -1288,6 +1461,311 @@ check("a send that never completes dispatches no stored event",
 const accepted = await loadFormSubmit({ failWith: 200 });
 check("the same harness on a successful send does dispatch it",
   accepted.dispatched.filter((type) => type === SUBMITTED_EVENT).length === 1);
+
+/* ------------------------------------------------------------------ */
+/* Your own history, opened in this browser - #85's personal arm.      */
+
+const MINE = "a".repeat(64);
+const SUMMARY = { ok: true, entries: 2, superseded: 0,
+  lastAt: "2026-07-02T00:00:00.000Z", accountId: MINE };
+const listing = (entries) => response(200, { ok: true, entries: entries });
+const row = (id, ciphertext) => ({ id: id, receivedAt:
+  "2026-07-0" + id + "T00:00:00.000Z", superseded: false,
+ciphertext: ciphertext });
+
+check("submit.html declares the history card and loads what opens it",
+  ['id="your-history"', 'id="history-status"', 'id="history-controls"',
+    'id="h-split"', 'id="history-answer"', 'id="history-sealed"']
+    .every((id) => submitHtml.includes(id)) &&
+  /src="memberkey\.js"/.test(submitHtml) &&
+  /src="query\.js"/.test(submitHtml) &&
+  /src="dashboard\.js"/.test(submitHtml));
+
+/*
+ * Load order, which is not a preference. query.js reads the suppression
+ * floor and the snapshot builder out of BinderDashboard as it runs and
+ * says so in its own header, and submit.js asks memberkey.js for a key
+ * while painting the panel - so each of the three has to be behind its
+ * own dependency and ahead of its caller. The failure is silent in every
+ * direction: a namespace captured too early is undefined, and these
+ * modules guard on the captured value.
+ */
+check("the history's modules load in the order their dependencies need",
+  submitHtml.indexOf('src="dashboard.js"') <
+    submitHtml.indexOf('src="query.js"') &&
+  submitHtml.indexOf('src="memberkey.js"') <
+    submitHtml.indexOf('src="submit.js"') &&
+  submitHtml.indexOf('src="crypto.js"') <
+    submitHtml.indexOf('src="memberkey.js"'));
+
+/*
+ * The page's splits against the engine's, both directions, the way
+ * dev/public.test.mjs pins the published card's. One direction catches
+ * an option the engine cannot answer; the other catches a question the
+ * engine grew that this page silently stopped offering.
+ */
+const offered = [...submitHtml.matchAll(
+  /<select id="h-split">([\s\S]*?)<\/select>/g)]
+  .flatMap((block) => [...block[1].matchAll(/value="(\w+)"/g)]
+    .map((one) => one[1]));
+/* From the SHIPPED engine, not the stub. A page pinned against a stub
+ * agrees with this file rather than with apps/web/query.js, which is
+ * the drift this arm exists to catch. */
+const engineSource = await readFile(
+  new URL("../apps/web/query.js", import.meta.url), "utf8");
+const known = [...engineSource.matchAll(
+  /^\s{4}(\w+): Object\.freeze\(\{ kind:/gm)].map((one) => one[1]);
+
+check("every split the pane offers is one the engine answers, and back",
+  offered.length === 6 && known.length === 6 &&
+  offered.slice().sort().join(",") === known.slice().sort().join(","));
+
+const opened = await loadSubmit({
+  replies: [response(200, SUMMARY), listing([row(1, "one"), row(2, "two")])],
+  history: { opens: ["one", "two"] },
+});
+
+check("the listing is fetched with the session, from the member's own route",
+  opened.requests.length === 2 &&
+  opened.requests[1].url === "https://worker.example/my-entries" &&
+  authorization(opened.requests[1]) === "Bearer member-session-token");
+
+check("the key is asked for by the account id /me validated",
+  opened.engine.ensured.length === 1 &&
+  opened.engine.ensured[0] === MINE);
+
+/*
+ * THE BOUNDARY FROM THE SIDE THAT MAY CROSS IT. dev/public.test.mjs
+ * counts calls to personalSource to prove dashboard.html never reaches
+ * it; this counts them to prove this page reaches it exactly once, with
+ * exactly the rows that opened. A source built per question would
+ * decrypt again on every keystroke, and a source built from the raw
+ * listing would be a history over rows nobody read.
+ */
+check("one personal source is built, from the opened records",
+  opened.engine.sources.length === 1 &&
+  opened.engine.sources[0].entries.length === 2 &&
+  opened.engine.sources[0].entries.every((entry) =>
+    entry.accountId === MINE && typeof entry.kg === "number"));
+
+check("and every row was tried against the device key, not the key file",
+  opened.engine.decrypted.length === 2 &&
+  opened.engine.decrypted.every((one) => one.withKey === "device-key"));
+
+/*
+ * The basis is not a control and must not become one. "How many people"
+ * over one person's own rows is one person, and the answer to a question
+ * with one possible answer is not a question. Read off the query that
+ * reached the engine rather than off the markup, because a control that
+ * is absent and a value that arrives are different claims.
+ */
+check("every question asks about entries, never about people",
+  opened.engine.queries.length > 0 &&
+  opened.engine.queries.every((one) => one.query.basis === "entries"));
+
+check("and asks it of the personal source, never of anything else",
+  opened.engine.queries.every((one) => one.source.personal === true));
+
+check("the answer is drawn into the card's own container",
+  opened.engine.drawn.length === 1 &&
+  opened.engine.drawn[0].container ===
+    opened.elements["history-answer"] &&
+  opened.engine.drawn[0].caption === "described weight");
+
+check("the controls are revealed only once there is something to ask about",
+  isPainted(opened.elements["your-history"]) &&
+  isPainted(opened.elements["history-controls"]));
+
+check("nothing is said about rows sealed elsewhere when there are none",
+  !isPainted(opened.elements["history-sealed"]) &&
+  !isPainted(opened.elements["history-status"]));
+
+/*
+ * The units the answer is drawn in come from the form's own radio group,
+ * which is this page's single unit control. Asserted through the engine
+ * rather than through the DOM: what matters is the value that reached
+ * the query, and a page reading a control it then ignores would pass any
+ * check that only looked at the control.
+ */
+const metric = await loadSubmit({
+  replies: [response(200, SUMMARY), listing([row(1, "one")])],
+  history: { opens: ["one"] },
+});
+metric.units[0].checked = false;
+metric.units[1].checked = true;
+await metric.elements["h-split"].dispatch("change");
+
+check("the answer follows the form's units rather than a second control",
+  metric.engine.queries.length === 2 &&
+  metric.engine.queries[0].query.units === "imperial" &&
+  metric.engine.queries[1].query.units === "metric");
+
+/*
+ * The caption describes the question that was ASKED, and the identity is
+ * what is asserted rather than the words.
+ *
+ * Found in a browser: a caption built from a second literal read
+ * "(imperial)" over a chart drawn in metric, because `describe`
+ * normalizes an absent `units` exactly as `run` does and neither can
+ * know the other was handed something else. Comparing the strings would
+ * pin today's wording; comparing the object pins that there is only one
+ * question, which is the property that cannot drift.
+ */
+check("the caption describes the same query object the answer came from",
+  metric.engine.described.length === 2 &&
+  metric.engine.described.every((one, index) =>
+    one === metric.engine.queries[index].query) &&
+  metric.engine.described[1].units === "metric");
+
+/*
+ * A row that will not open is COUNTED and named, never dropped. The
+ * ordinary cause is a row sealed before this browser had a key of its
+ * own, which is every row stored before #85 - so this is the state most
+ * members are in on their first visit, not an edge case. An answer
+ * quietly computed over fewer rows than a member has is one they cannot
+ * tell from a correct one.
+ */
+const partly = await loadSubmit({
+  replies: [response(200, SUMMARY),
+    listing([row(1, "one"), row(2, "elsewhere"), row(3, "also-elsewhere")])],
+  history: { opens: ["one"] },
+});
+
+check("rows this browser cannot open are counted rather than dropped",
+  isPainted(partly.elements["history-sealed"]) &&
+  partly.elements["history-sealed-count"].textContent === "2" &&
+  partly.engine.sources[0].entries.length === 1);
+
+const noneOpen = await loadSubmit({
+  replies: [response(200, SUMMARY), listing([row(1, "elsewhere")])],
+  history: { opens: [] },
+});
+
+check("a history sealed entirely elsewhere is explained, not left blank",
+  isPainted(noneOpen.elements["your-history"]) &&
+  !isPainted(noneOpen.elements["history-controls"]) &&
+  noneOpen.engine.sources.length === 0 &&
+  /sealed to this browser/.test(
+    noneOpen.elements["history-status"].textContent));
+
+const noKey = await loadSubmit({
+  replies: [response(200, SUMMARY), listing([row(1, "one")])],
+  history: { key: null, unavailable: "this browser keeps no database" },
+});
+
+/*
+ * A browser that cannot keep a key says so and stops - it does not fetch
+ * the rows. Fetching them would download a member's whole sealed history
+ * into a tab that provably cannot open a byte of it, which is transfer
+ * and exposure bought for nothing.
+ */
+check("a browser with no key of its own asks the route for nothing",
+  noKey.requests.length === 1 &&
+  isPainted(noKey.elements["your-history"]) &&
+  !isPainted(noKey.elements["history-controls"]) &&
+  /no database/.test(noKey.elements["history-status"].textContent));
+
+const noRows = await loadSubmit({
+  replies: [response(200, { ok: true, entries: 0, superseded: 0,
+    lastAt: null, accountId: MINE }), listing([])],
+  history: { opens: [] },
+});
+
+check("a member with no entries is invited rather than told nothing",
+  noRows.engine.sources.length === 0 &&
+  /no entries yet/.test(noRows.elements["history-status"].textContent));
+
+/*
+ * A refused credential ends the tab's session here exactly as it does on
+ * the account summary above. Two routes answering 401 differently would
+ * be one page holding two opinions about whether it is still signed in.
+ */
+const gone = await loadSubmit({
+  replies: [response(200, SUMMARY), response(401, { error: "no" })],
+  history: { opens: [] },
+});
+
+check("a 401 from the listing clears the session and leaves the page",
+  redirects.includes("index.html") && Session.read() === null &&
+  gone.engine.sources.length === 0);
+
+/*
+ * And the failure that is not the member's session: the route is there,
+ * the answer is not usable. The card says so rather than drawing an
+ * empty chart, because an empty chart is a claim - that the answer is
+ * nothing - and it is a different one from "this did not arrive".
+ */
+const broken = await loadSubmit({
+  replies: [response(200, SUMMARY), response(200, { ok: true })],
+  history: { opens: [] },
+});
+
+check("a listing the page cannot read is reported, not drawn as empty",
+  broken.engine.drawn.length === 0 &&
+  broken.elements["history-status"].className === "status bad" &&
+  /could not be fetched/.test(
+    broken.elements["history-status"].textContent));
+
+/*
+ * Nothing decrypted survives the frame that opened it. The rule is
+ * DESIGN.md's positional one read at the smallest scale: plaintext
+ * exists where it must and nowhere else. A module-level cache would
+ * outlive the sign-out meant to end it, and a write to either store
+ * would put a member's whole history where the prefill's own erasure
+ * reasoning says nothing may sit.
+ */
+const historyCode = submitSource.replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+/*
+ * WHAT SURVIVES THE FRAME THAT DECRYPTED THE ROWS, asserted as a key set
+ * rather than as the absence of the members that happen to worry us
+ * today.
+ *
+ * Every control's handler closes over the source, so the source is what
+ * lives for the tab. `personalSource` builds its snapshot with
+ * `identify: true`, which is the keyholder's setting: it fills in a
+ * per-person series whose points are unquantized and whose label is a
+ * handle, plus a data-quality panel listing a member's own measurement
+ * disagreements. `run` reads exactly one member of that document -
+ * `bases[basis]` - so everything else is retained plaintext with no
+ * reader.
+ *
+ * The key set is compared whole so a future field cannot arrive and be
+ * retained silently; checking only that `quality` is gone would say
+ * nothing about the next one.
+ */
+check("only the partitions the chart is drawn from survive",
+  opened.engine.sources.length === 1 &&
+  Object.keys(opened.engine.sources[0].snapshot).slice().sort().join(",") ===
+    ["bases", "generated", "identified", "seriesWithheld", "snapshot"]
+      .join(","));
+
+/*
+ * The four that stay beside `bases`, named so the arm above is read as
+ * a decision rather than as whatever happened to be left. `snapshot` is
+ * a version integer, `identified` a boolean, `seriesWithheld` a
+ * boolean, `generated` the timestamp of the build. None of them is
+ * decrypted content or derived from any one row, which is the test the
+ * scrub applies - the deleted members are the ones that carry a
+ * member's own measurements, handle or history forward.
+ */
+check("and none of what stays came out of a decrypted row",
+  ["snapshot", "identified", "seriesWithheld", "generated"].every((name) => {
+    const value = opened.engine.sources[0].snapshot[name];
+    return value === undefined || typeof value !== "object";
+  }));
+
+check("and the handle the record carried never entered the source at all",
+  opened.engine.sources[0].entries.every((entry) =>
+    !("telegram" in entry)) &&
+  !JSON.stringify(opened.engine.sources[0].entries).includes("browser_check"));
+
+check("no decrypted value is written to storage or hung on the global",
+  !/(localStorage|sessionStorage)[\s\S]{0,40}(record|entries|decrypt)/i
+    .test(historyCode) &&
+  !/root\.\w+\s*=/.test(historyCode) &&
+  !/setItem\([^)]*(entry|record|history)/i.test(historyCode));
 
 if (failures) {
   console.error(`\nsubmit panel FAILED ${failures} check(s)`);

@@ -104,13 +104,48 @@
     });
   }
 
+  /*
+   * The member's device key, destroyed here rather than where it is
+   * made.
+   *
+   * DESIGN.md's Encryption section already says signing out destroys it,
+   * and names the price out loud: getting a history back afterwards
+   * costs a re-seal request to an admin. That price was accepted on
+   * #56's own reasoning, with more at stake rather than less - the
+   * prefill is one measurement a member typed, and this key opens
+   * everything they have ever submitted. A browser two people share
+   * must not hand the second one the first one's history.
+   *
+   * It is here, in the module every signed-in page loads, for exactly
+   * the reason the prefill clear is: whether the key gets destroyed must
+   * not depend on which page somebody happened to be standing on when
+   * they pressed the button. memberkey.js is loaded only by the page
+   * that seals entries, so the call is guarded rather than assumed -
+   * and a page without it has no key of its own to destroy.
+   *
+   * Not awaited, and that is the same trade the revoke above makes for
+   * the same reason: the user-visible act is leaving, and a member
+   * cannot be held on the page by a storage call. `forget()` never
+   * rejects, so nothing is left unhandled; the delete is started before
+   * the navigation below, which is what gives it a turn to run.
+   */
+  function forgetDeviceKey() {
+    const keys = root.BinderMemberKey;
+    if (keys && typeof keys.forget === "function") keys.forget();
+  }
+
   function signOut() {
-    // Ordered: the revoke needs the token that the next two lines
-    // destroy. The session is authority and the prefill is cleartext
-    // body data, so both leave together - "Sign out" means this device
-    // retains neither, and the endpoint keeps neither either.
+    // Ordered: the revoke needs the token that the lines below destroy.
+    // The session is authority, the prefill is cleartext body data, and
+    // the device key opens the whole history - so all three leave
+    // together, because "Sign out" means this device retains none of
+    // them and the endpoint keeps the session no longer either.
+    //
+    // The navigation is last and cannot move: a page that has already
+    // been replaced finishes none of the erasures above it.
     revokeSession();
     clearPrefill();
+    forgetDeviceKey();
     if (Session) Session.clear();
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("index.html");

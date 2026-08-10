@@ -455,6 +455,310 @@
     }
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Your own history, opened in this browser - #85's personal arm.    */
+
+  /*
+   * The member's own rows, fetched sealed and opened here.
+   *
+   * THE WHOLE SHAPE IN ONE PARAGRAPH. GET /my-entries answers with this
+   * account's rows and their ciphertext; memberkey.js holds a P-256 key
+   * this browser generated and cannot export; crypto.js tries that key
+   * against each row and opens the ones it was a recipient of;
+   * query.js's `personalSource` turns what opened into a source with no
+   * floor; `BinderDashboard.renderAnswer` draws the answer. Nothing
+   * decrypted leaves this function's own frame, nothing decrypted is
+   * stored anywhere, and the service saw none of it.
+   *
+   * WHY THE FLOOR IS ZERO HERE AND IS NOT ON dashboard.html. The
+   * published document is other people, so every cell of it was reduced
+   * to at least MIN_CELL before it was published. These rows are one
+   * person's own, and suppressing a member's own March because March
+   * held one entry would be hiding somebody's data from themselves. The
+   * difference is structural rather than a flag: two different builder
+   * functions, and `run` takes the floor from the source, so there is
+   * no sentence in the engine's language that asks for floor 0 over
+   * anybody else's data.
+   *
+   * EVERY WAY THIS CAN COME UP EMPTY HAS ITS OWN SENTENCE, because they
+   * are not the same event to the person reading them: a browser that
+   * cannot keep a key, a browser whose key is new, a history sealed
+   * before this feature existed, and a page that could not reach the
+   * service are four different things to do next. A single "nothing to
+   * show" would be one answer to four questions.
+   */
+  function historyStatus(message, bad) {
+    const line = $("history-status");
+    if (!line) return;
+    line.textContent = message || "";
+    line.className = bad ? "status bad" : "status";
+    show(line, Boolean(message));
+  }
+
+  /*
+   * A stored row and its opened record, in the shape the snapshot
+   * builder reads.
+   *
+   * NO HANDLE. The record carries one and this deliberately drops it.
+   * `personalSource` builds its snapshot with `identify: true`, which
+   * captions every series line "@" + telegram - and a caption naming
+   * the one person looking at it tells them nothing they do not know
+   * while putting a handle in a structure the listeners below hold for
+   * the life of the tab. The pane is the member's own; a label does not
+   * need the handle. It also empties `quality.handleChanges` at the
+   * source rather than only scrubbing it afterwards.
+   *
+   * WHAT ACTUALLY MAKES THESE ROWS THEIRS, said plainly because the
+   * obvious answer is wrong. `personalSource` refuses a list belonging
+   * to more than one person, and that guard CANNOT FIRE from this call
+   * site: it counts through BinderDashboard.peopleCount, which keys on
+   * `accountId` first, and the line below stamps every row with the one
+   * account unconditionally - so the count is one however many members'
+   * rows arrived. The guard is real for a caller that passes rows
+   * through; here it is a tautology.
+   *
+   * The mechanism that does the work is server-side: the account clause
+   * in GET /my-entries' statement, bound from the session and with
+   * nothing on the wire to point it elsewhere. dev/worker.test.mjs
+   * proves it by partition - the two accounts' listings are disjoint
+   * and together they are the whole table. Do not read the guard below
+   * as a second line of defence, because from here it is not one.
+   */
+  function historyEntry(row, record) {
+    const weight = record.weight || {};
+    const height = record.height || {};
+    const entered = record.entered || {};
+    return {
+      id: row.id,
+      accountId: account,
+      receivedAt: row.receivedAt,
+      submittedAt: record.submittedAt,
+      kg: weight.kg, lb: weight.lb,
+      cm: height.cm, totalInches: height.totalInches,
+      feet: height.feet, inches: height.inches,
+      enteredUnits: entered.units,
+      enteredWeight: entered.weight,
+      enteredHeight: entered.height,
+      gender: record.gender,
+      roles: Array.isArray(record.roles) ? record.roles.slice() : [],
+      country: record.country,
+      over18: record.over18 === true,
+      recordVersion: record.record,
+    };
+  }
+
+  /*
+   * What the listeners are allowed to keep, and nothing else.
+   *
+   * The source below outlives this function: every control's handler
+   * closes over it, so whatever is in it sits in memory for the life of
+   * the tab. `personalSource` builds its snapshot with `identify: true`
+   * - the keyholder's own setting - which is right for the numbers and
+   * wrong for everything beside them, because that setting also fills
+   * in a data-quality panel and a per-person series that exist for
+   * somebody auditing OTHER people's rows.
+   *
+   * `run` reads exactly one member of this document: `bases[basis]`.
+   * That is checkable rather than asserted - it is the only
+   * `source.snapshot.` read in apps/web/query.js. So everything else
+   * goes, and what survives the frame that decrypted these rows is the
+   * partitions the chart is drawn from: counts by category and
+   * histogram bins, already reduced from the rows rather than being
+   * them.
+   *
+   * WHAT IS DELETED AND WHY EACH ONE. `quality` is heightChanges and
+   * handleChanges - a member's measurement disagreements listed out,
+   * which the pane never draws. `series` is the per-person line, whose
+   * points are unquantized under `identify` and whose label is the
+   * handle. `counts` and `movement` are summary numbers nothing here
+   * renders. None of it is a secret from the member; all of it is
+   * retained plaintext with no reader, and the rule this follows is
+   * DESIGN.md's positional one at the smallest scale - plaintext exists
+   * where it must and nowhere else.
+   *
+   * Deleting rather than rebuilding, because the object has to stay the
+   * one `personalSource` made: `run` refuses a source it did not build,
+   * which is what stops a caller hand-making a floor-0 source over
+   * somebody else's document. A copy would not be that object.
+   */
+  function scrub(snapshot) {
+    delete snapshot.quality;
+    delete snapshot.series;
+    delete snapshot.counts;
+    delete snapshot.movement;
+  }
+
+  /*
+   * Ask the engine, draw the answer.
+   *
+   * The source is built ONCE and kept, because rebuilding it per
+   * question would decrypt the rows again for every keystroke - and
+   * because the plaintext that built it is already gone by then. What
+   * survives this function is a snapshot: counts, medians and bins over
+   * the member's own numbers, which is what they came to read.
+   */
+  function askHistory(source) {
+    const Query = root.BinderQuery;
+    const answerAt = $("history-answer");
+    const split = $("h-split").value;
+    const shape = Query.SPLITS[split];
+    if (!shape || !answerAt) return;
+
+    const bins = shape.kind === "bins";
+    /* A middle needs numbers to take the middle of, so the measure only
+     * offers itself for the binned splits - the same rule the published
+     * card follows, because it is the engine's rule and not a page's. */
+    const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
+    show($("h-measure-field"), bins);
+
+    /*
+     * ONE QUERY OBJECT, ASKED AND DESCRIBED. Two literals here would be
+     * two questions - and the one that draws the chart and the one that
+     * captions it would drift on whichever member was omitted from the
+     * second. That is not hypothetical: a caption built without `units`
+     * reads "(imperial)" over a metric chart, because `describe`
+     * normalizes an absent units the same way `run` does and neither
+     * has any way to know the other was asked something else.
+     */
+    const query = {
+      // Entries, always. "How many people" over one person's own rows is
+      // one person, and their history is the thing being asked about -
+      // so the basis follows from what the source is rather than from a
+      // control offering a question with one answer.
+      basis: "entries",
+      split: split,
+      measure: measure,
+      // The form's own units choice, which is this page's only one. A
+      // second control here would let one page hold two answers to the
+      // same question.
+      units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
+    };
+
+    let answer;
+    try {
+      answer = Query.run(source, query);
+    } catch (error) {
+      historyStatus("That question could not be asked. " +
+        (error && error.message ? error.message : ""), true);
+      return;
+    }
+    historyStatus("", false);
+    root.BinderDashboard.renderAnswer(answerAt, answer, Query.describe(query));
+  }
+
+  async function openHistory() {
+    const config = root.BINDER_CONFIG || {};
+    const Keys = root.BinderMemberKey;
+    const Crypto = root.BinderCrypto;
+    const Query = root.BinderQuery;
+    const card = $("your-history");
+
+    /* Any of these missing is a page that did not fully load, not a
+     * member with nothing to read. The account card above still paints,
+     * because counts do not need a key. */
+    if (!card || !Keys || !Crypto || !Query || !root.BinderDashboard ||
+        !config.endpoint || !account) {
+      return;
+    }
+    show(card, true);
+
+    const key = await Keys.ensure(account);
+    if (!key) {
+      historyStatus("This browser cannot keep a key of your own, so your " +
+        "entries stay sealed here. " + (Keys.unavailableReason() || ""), false);
+      return;
+    }
+
+    let rows;
+    try {
+      const response = await fetch(config.endpoint + "/my-entries", {
+        headers: Session.authorization(),
+      });
+      if (response.status === 401) {
+        // The same handling the account summary above uses, and for the
+        // same reason: a credential the endpoint refuses is one this tab
+        // must stop holding.
+        Session.clear();
+        if (root.location && typeof root.location.replace === "function") {
+          root.location.replace("index.html");
+        }
+        return;
+      }
+      if (!response.ok) throw new Error("The server answered " +
+        response.status + ".");
+      const payload = await response.json();
+      rows = payload && payload.ok === true && Array.isArray(payload.entries)
+        ? payload.entries : null;
+      if (!rows) throw new Error("The server returned an invalid listing.");
+    } catch (error) {
+      historyStatus("Your entries could not be fetched. " +
+        (error && error.message ? error.message : "The connection failed."),
+      true);
+      return;
+    }
+
+    if (!rows.length) {
+      historyStatus("You have no entries yet. Weigh in and this fills up.",
+        false);
+      return;
+    }
+
+    /*
+     * One at a time, and a row that will not open is COUNTED rather than
+     * skipped. The ordinary cause is a row sealed before this browser
+     * had a key - every entry stored before #85, and every entry from a
+     * device that is gone - and those are exactly the rows an admin can
+     * unseal. Dropping them silently would leave a member reading an
+     * answer over fewer entries than they have, with nothing on the
+     * page saying so.
+     */
+    const entries = [];
+    let sealed = 0;
+    for (const row of rows) {
+      try {
+        entries.push(historyEntry(row,
+          await Crypto.decrypt(row.ciphertext, key.privateKey)));
+      } catch (error) {
+        sealed += 1;
+      }
+    }
+
+    const sealedCount = $("history-sealed-count");
+    if (sealedCount) sealedCount.textContent = String(sealed);
+    show($("history-sealed"), sealed > 0);
+
+    if (!entries.length) {
+      historyStatus("None of your entries were sealed to this browser. " +
+        "They were stored before this browser had a key of its own, or on " +
+        "a device it is not.", false);
+      return;
+    }
+
+    let source;
+    try {
+      source = Query.personalSource(entries, Date.now());
+      scrub(source.snapshot);
+    } catch (error) {
+      historyStatus("Your entries could not be read as a history. " +
+        (error && error.message ? error.message : ""), true);
+      return;
+    }
+
+    show($("history-controls"), true);
+    $("h-split").addEventListener("change", function () { askHistory(source); });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="h-measure"]'),
+      function (input) {
+        input.addEventListener("change", function () { askHistory(source); });
+      });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) {
+        input.addEventListener("change", function () { askHistory(source); });
+      });
+    askHistory(source);
+  }
+
   /*
    * The one path that moves the baseline: a row the Worker accepted.
    *
@@ -517,5 +821,12 @@
     // at.
     await refreshPanel();
     restorePrefill();
+    // After refreshPanel(), because the account id it validates is what
+    // says whose key this is - and #56's rule is that a key or a value
+    // scoped to nobody is a key or a value shown to the wrong member.
+    // Not awaited by setUp's own callers: opening a history is a read
+    // that can take as long as it takes, and the form above it must not
+    // wait on it to become usable.
+    await openHistory();
   }
 })(globalThis);

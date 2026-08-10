@@ -7,9 +7,9 @@
  *   POST   /auth/dev         development only; 404 everywhere else.
  *   DELETE /session          end the session presented, now.
  *   GET    /me               what this account has on record.
- *   GET    /my-entries       this account's own rows, as handles: an
- *                            id, a receipt time, and whether something
- *                            supersedes it. No contents. Needs a member
+ *   GET    /my-entries       this account's own rows: an id, a receipt
+ *                            time, whether something supersedes it, and
+ *                            the sealed bytes as stored. Needs a member
  *                            session, because it needs an account.
  *   POST   /submit           append one row, optionally naming the row
  *                            it supersedes. Needs a member session.
@@ -96,6 +96,30 @@ function allowedOrigins(env) {
 // A submission is a base64 blob of a short record. 16 KB is far more
 // than that and far less than anything worth storing by accident.
 const MAX_CIPHERTEXT = 16 * 1024;
+
+// How many rows one member's listing hands back, and why there is a
+// number here at all.
+//
+// GET /my-entries carries the sealed bytes, so a listing is the largest
+// response this Worker ever sends and its size is chosen by whoever has
+// been submitting rather than by anything here. This bounds it: 500
+// rows against MAX_CIPHERTEXT is roughly 8 MB in the worst case, and
+// nine years of weekly entries in the realistic one, so nobody in this
+// group reaches it by using the site as intended.
+//
+// It is a LITERAL in the statement rather than a bound parameter, and
+// that is the load-bearing part: a cap D1 is told about is a cap on
+// what D1 reads, and nothing on the wire can move it because there is
+// nothing on the wire. Slicing the results instead would transfer
+// everything and then throw some away, which is a cap in the only place
+// it does not help.
+//
+// If a member ever does reach it their oldest rows are what they get,
+// because ORDER BY is ascending and stable. The fix at that point is
+// pagination, not a bigger number - and pagination is a parameter on
+// this route, which is the property every scope argument here rests on
+// not having.
+const MAX_ENTRY_LISTING = 500;
 
 // A snapshot is counts, medians and histogram bins, plus at most a
 // dozen short weight histories. A few KB in practice; this is the
@@ -1060,33 +1084,57 @@ async function handleMe(request, env, origin, caller) {
 }
 
 /*
- * The rows this account has written, as handles rather than as
- * contents.
+ * The rows this account has written, and the sealed bytes of each.
  *
  * WHY IT EXISTS. A correction names the row it replaces, and until this
  * route a member could name none: POST /submit answers `{ok:true}`, GET
  * /me answers counts and a date, and GET /export is admin. So the
  * member-facing half of the correction path had nothing to point at,
- * and this is the smallest thing that gives it one - an id per row, the
- * receipt time this side attested to, and whether something supersedes
- * it.
+ * and this gives it one - an id per row, the receipt time this side
+ * attested to, and whether something supersedes it.
  *
- * WHAT IT DOES NOT CARRY, and why that is a decision rather than an
- * omission:
+ * THE BYTES TRAVEL NOW, AND THEY DID NOT BEFORE. This route shipped
+ * carrying no ciphertext, on the reasoning that the bytes were inert to
+ * the only caller allowed to ask for them: nothing in the tree could
+ * open one, so the field would have been cost without use. #85's device
+ * key is what changes that - apps/web/memberkey.js gives the submitting
+ * browser a second recipient it cannot export - and the note that
+ * shipped with the refusal said this is how it would come back: a field
+ * can be added the day something can read it, and a field that has
+ * shipped cannot be taken back.
  *
- *   - No ciphertext. The Worker holds no key and the member holds none
- *     either - the device key that would open one of these rows is not
- *     in this repository - so the bytes would be inert to the only
- *     caller allowed to ask for them, while a stolen member session,
- *     which can append rows and read counts, would additionally be able
- *     to download that member's whole sealed history. A field can be
- *     added the day something can read it; a field that has shipped
- *     cannot be taken back.
+ * The cost the refusal named is real and is not paid off by the key
+ * existing: a stolen member session now downloads that member's whole
+ * sealed history rather than counts. Two things bound it. The session
+ * gate is one, which is why the arm that matters is the REVOKED one -
+ * a token captured before Sign out must read nothing after it, and
+ * every call resolves the caller against the session table rather than
+ * trusting a token's shape. MAX_ENTRY_LISTING is the other.
+ *
+ * THE WORKER STILL CANNOT TELL THESE ROWS APART. The column is emitted
+ * verbatim - not parsed, not validated, not tried against a shape, and
+ * with no per-row branch anywhere in this function. A row sealed to two
+ * recipients and a row sealed to the keyholder alone are one opaque
+ * string here, so "which of this member's rows are member-readable" is
+ * not a question this side can answer, and therefore not one anybody
+ * who reaches this side can answer either. It is decided in the browser
+ * holding the key, which is the only place that can decide it.
+ *
+ * WHAT IT STILL DOES NOT CARRY, and why that is a decision rather than
+ * an omission:
+ *
  *   - No account id. GET /me answers that question, and a fact stated
  *     in two responses is a fact two routes can disagree about.
  *   - No handle and no Telegram id. Neither is reachable from here:
  *     nothing outside handleTelegramAuth in this file ever holds one,
  *     and a row carries the HMAC account id and nothing else.
+ *   - No recipient count, and no "this one is yours" flag. Both would
+ *     be this side forming an opinion about the envelope, which is the
+ *     paragraph above.
+ *   - No count, no total, and no distinct answer for an account with
+ *     nothing stored. Absent and empty are one 200 with one empty
+ *     array, because anything else answers "has this account ever
+ *     submitted" to whoever holds the session.
  *
  * THE SCOPE IS IN THE STATEMENT, not applied to what comes back. That
  * is the lesson this route inherits from the one below it, where a
@@ -1117,9 +1165,10 @@ async function handleMe(request, env, origin, caller) {
 async function handleMyEntries(env, origin, caller) {
   const rows = await env.DB.prepare(
     "SELECT mine.id AS id, mine.received_at AS received_at, " +
-    "CASE WHEN " + SUPERSEDED + " THEN 1 ELSE 0 END AS superseded " +
+    "CASE WHEN " + SUPERSEDED + " THEN 1 ELSE 0 END AS superseded, " +
+    "mine.ciphertext AS ciphertext " +
     "FROM submissions AS mine WHERE mine.account_id = ? " +
-    "ORDER BY mine.id"
+    "ORDER BY mine.id LIMIT " + MAX_ENTRY_LISTING
   ).bind(caller.accountId).all();
 
   return json({
@@ -1135,6 +1184,11 @@ async function handleMyEntries(env, origin, caller) {
       // wrongly told an entry is already corrected offers the member
       // nothing to press and no refusal to explain why.
       superseded: row.superseded === 1,
+      // Straight off the column, with no coercion and no default. An
+      // undefined here would be this function inventing a value for a
+      // row whose bytes it failed to select; the browser's decoder says
+      // so plainly, and a "" would look to it like an empty envelope.
+      ciphertext: row.ciphertext,
     })),
   }, 200, origin);
 }

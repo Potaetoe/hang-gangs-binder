@@ -40,13 +40,25 @@
     });
   }
 
+  
+
+  function forgetDeviceKey() {
+    const keys = root.BinderMemberKey;
+    if (keys && typeof keys.forget === "function") keys.forget();
+  }
+
   function signOut() {
+     
+     
+     
+     
      
      
      
      
     revokeSession();
     clearPrefill();
+    forgetDeviceKey();
     if (Session) Session.clear();
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("index.html");
