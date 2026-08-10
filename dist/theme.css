@@ -314,7 +314,10 @@ body:not(.railed) > *,
 body.wide:not(.railed) > *,
 body.wide .page > * { max-width: var(--measure-wide); }
 
+
+
 body.wide .narrow {
+  width: 100%;
   max-width: var(--measure);
   margin-inline: auto;
 }
@@ -864,6 +867,15 @@ button.primary:disabled {
 
 
 
+.pressed,
+.pressed:hover {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+
+
 [role="tablist"] {
   display: flex;
   gap: var(--space-1);
@@ -1131,12 +1143,30 @@ body.instrument h2 { font-size: var(--text-base); }
 
 body.instrument .page { gap: var(--space-4); }
 
+
+
 body.instrument .card {
   padding: var(--space-3) var(--space-4) var(--space-4);
   gap: var(--space-2);
 }
 
-body.instrument main { gap: var(--space-3); }
+
+
+body.instrument .tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+body.instrument .tool > :not(.runner):not(.table-scroll):not(.charts) {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+
+
+body.instrument main.stack { gap: var(--space-8); }
 
 
 

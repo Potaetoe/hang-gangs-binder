@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 365
+EXPECTED = 367
 
 
 def check(label, condition):
@@ -2248,6 +2248,14 @@ check("and a card page's runner outside a box is left alone",
       grammar('<div class="stack-tight">'
               '<p class="runner"><span>Optional</span></p></div>',
               "cards", "railed") == [])
+check("a width opt-out on a page with no wide measure to opt out of "
+      "is reported",
+      any(".narrow" in problem for problem in grammar(
+          '<div class="card narrow"><p>Words.</p></div>', "cards",
+          "railed")))
+check("and the instrument keeps it, because there it paints",
+      grammar('<div class="card narrow">'
+              '<p class="caution">Development session</p></div>') == [])
 
 check("the two grammars name every signed-in page and no other",
       sorted(check_web.card_pages() + check_web.section_pages())

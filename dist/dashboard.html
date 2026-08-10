@@ -83,7 +83,7 @@
 
 <main class="stack">
 
-  <div class="card narrow" data-dev-session hidden>
+  <div class="card" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through local
@@ -92,14 +92,14 @@
   </div>
 
   <!-- Shown instead of the charts when there is nothing to draw. -->
-  <div class="card narrow" id="closed" hidden>
+  <div class="card" id="closed" hidden>
     <p class="flag">Nothing to show</p>
     <p data-reason></p>
   </div>
 
   <div class="stack" id="tool" hidden>
 
-    <div class="card narrow">
+    <div class="card">
       <p class="status" id="status" role="status" aria-live="polite"></p>
       <!--
         The age of the figures, always visible and never rounded to
@@ -248,7 +248,7 @@
       <div id="answer"></div>
     </div>
 
-    <div class="card narrow">
+    <div class="card">
       <p class="runner"><span>What this is</span></p>
       <p class="muted small">
         These figures are worked out from the submissions and published

@@ -628,11 +628,11 @@ day a check is added:
     the decision in the commit message - deliberately the same
     two-place act as raising a ceiling in tools/check_budget.py. What
     it deliberately does NOT pin, and why, is written out above the
-    table: rendered pixels, and taste. The de-carded instrument used
-    to be on that list and is now check 25's, because the change it
-    was waiting for has landed. check_contrast.py reads the same
-    hexes to a different question - legible, versus ruled - and
-    neither reads the other's table.
+    table: rendered pixels, and taste. The instrument's de-carded
+    shape is check 25's rather than this table's, for the seam that
+    list gives. check_contrast.py reads the same hexes to a different
+    question - legible, versus ruled - and neither reads the other's
+    table.
 
 25. The signed-in pages share one card geometry, and the instrument
     has no cards to share. #178, and #174 as its one control group.
@@ -2045,10 +2045,12 @@ LABEL_ROLES = {
 # carries fails too, so the list cannot rot into a description of a
 # site that no longer exists.
 LABELS = {
+    "About to clear itself": "caution",
     "Before you close this": "caution",
     "Charts": "runner",
     "Development session": "caution",
     "How your entry is handled": "runner",
+    "Key": "runner",
     "Members": "runner",
     "Membership": "runner",
     "Not open": "flag",
@@ -2057,7 +2059,11 @@ LABELS = {
     "Publish": "runner",
     "Published": "runner",
     "Received": "flag",
-    "Result": "flag",
+    # The one entry whose role has changed since it was written. It was
+    # a `flag` while Result was an outcome in a box of its own; #178
+    # made the instrument's tools into sections, so Result now names one
+    # of the six rather than reporting a verdict about the page.
+    "Result": "runner",
     "Rows that grant nothing": "caution",
     "Rows that would not open": "caution",
     "Session": "runner",
@@ -3708,15 +3714,13 @@ def chip_problems():
 #
 # WHAT IS DELIBERATELY NOT PINNED, because the next reader will ask:
 #
-#  - The de-carded admin instrument, which was on this list until #178
-#    landed and is now check 25's. The entry said pinning it "would
-#    redden this gate for a change nobody has made yet"; the change has
-#    been made, so the sentence would now be false, and a comment
-#    pointing at an unmade change that got made is what the ratchet is
-#    for. Where it went is the token/component seam this list opens
-#    with: check 25 pins a component's geometry across pages, which is
-#    a comparison rather than a copy of the mockup's rules, so it does
-#    not put a second stylesheet in this file either.
+#  - The de-carded admin instrument, which is check 25's rather than
+#    this table's. The seam is the one this list opens with: a token is
+#    a value to copy across, and a component's geometry is a comparison
+#    between pages - so pinning the instrument here would mean writing
+#    the mockup's component rules into this file, which is the second
+#    stylesheet the paragraph above refuses. Check 25 compares instead,
+#    and reads SHELLS and SURFACES for which page owes which grammar.
 #  - Rendered pixels. There is no layout engine here and #75 rejected
 #    jsdom for exactly this, so these are declared values, the same
 #    limit check_contrast.py states about itself. Which token paints
@@ -4613,6 +4617,20 @@ def grammar_markup_problems(text, grammar):
                     "card page. The instrument's grammar arriving here is "
                     "#178's drift pointing outward, and it arrives the way "
                     "every copy does - from whichever page was open")
+            # `.narrow` is declared only under `body.wide`, and a card
+            # page is not wide. So it paints nothing here while saying,
+            # in the markup, that this box is narrower than the ones
+            # beside it - and four of them said it. That is #178's
+            # disease one layer up from the stylesheet: boxes written
+            # differently and rendered identically, until the day the
+            # page becomes wide and the difference is suddenly real.
+            if "narrow" in classes:
+                problems.append(
+                    "carries .narrow inside <main>, and .narrow only means "
+                    "something on a `wide` page. A card page IS the reading "
+                    "measure, so this says a box is narrower than its "
+                    "neighbours and then paints it the same - take the class "
+                    "off rather than leaving the next reader to copy it")
         return problems
 
     boxed = {index for index, classes in containers if "card" in classes}
