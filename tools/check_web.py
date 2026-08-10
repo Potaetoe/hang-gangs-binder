@@ -4400,25 +4400,62 @@ def context_applies(context, classes):
     return wanted <= set(classes)
 
 
+def selector_weight(context, subject):
+    """(classes, elements) for one of the selectors this file accepts.
+
+    Specificity, restricted to the vocabulary context_applies() will
+    resolve at all: a component subject is one class, `h2` is one
+    element, and a context is `body` plus however many classes it names.
+    That is exact here rather than an approximation, because anything
+    outside the vocabulary is reported as unreadable instead of scored.
+
+    IT HAS TO BE MODELLED, and the first version of this check did not,
+    which is the whole reason this function exists. Ordering by source
+    position alone says a scoped rule written ABOVE the bare one loses -
+    and the browser says the opposite, because `body.x .card` outranks
+    `.card` wherever it sits. A stylesheet where a surface override sat
+    higher in the file than the component it overrides would then be a
+    real, rendered, per-page difference that this arm reported as
+    agreement. Caught by mutation: the scope was declared honestly, the
+    roster was satisfied, and the comparison stayed silent.
+    """
+    classes = 1 if subject.startswith(".") else 0
+    elements = 0 if subject.startswith(".") else 1
+    if context:
+        match = CONTEXT_COMPOUND.match(context)
+        classes += len([name for name in match.group(1).split(".") if name])
+        elements += 1  # the `body` in the context
+    return classes, elements
+
+
 def resolved_geometry(blocks, classes):
     """({(media, subject, property): value}, [unreadable context]).
 
-    The cascade approximated to what this file can honestly claim:
-    later wins, within one media scope, among the rules whose context
-    the page satisfies. Specificity is deliberately NOT modelled - the
-    stylesheet declares these three components in six blocks, and a
-    reader that pretended to resolve arbitrary specificity would be
-    wrong in a way nothing here could detect.
+    The cascade as a browser resolves it, within one media scope and
+    over the rules whose context the page satisfies: specificity first,
+    source position only to break a tie. See selector_weight() for why
+    the second half alone is not enough.
+
+    Media conditions are kept as part of the key rather than resolved
+    against a width, because there is no viewport here. Two pages have
+    to agree at every breakpoint the file declares, which is a stricter
+    claim than agreeing at one, and it is the claim #178 wants.
     """
     resolved = {}
     unreadable = []
-    for media, context, subject, declared in blocks:
+    ordered = []
+    for index, (media, context, subject, declared) in enumerate(blocks):
         applies = context_applies(context, classes)
         if applies is None:
             unreadable.append((context, subject))
             continue
         if not applies:
             continue
+        ordered.append((selector_weight(context, subject), index,
+                        media, subject, declared))
+
+    for _, _, media, subject, declared in sorted(ordered,
+                                                 key=lambda row: row[:2]):
         for name, value in declared:
             resolved[(media, subject, name)] = value
     return resolved, unreadable

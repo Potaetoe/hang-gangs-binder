@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 367
+EXPECTED = 373
 
 
 def check(label, condition):
@@ -2111,6 +2111,32 @@ check("a scope in a shape this reader cannot resolve is unread, not no",
 check("and so is a two-compound descendant scope",
       check_web.context_applies(
           "body.instrument .page", frozenset({"instrument"})) is None)
+
+check("a component subject weighs one class",
+      check_web.selector_weight("", ".card") == (1, 0))
+check("an element subject weighs one element",
+      check_web.selector_weight("", "h2") == (0, 1))
+check("a surface scope adds its body and its classes",
+      check_web.selector_weight("body.instrument", ".card") == (2, 1))
+# The defect a mutation found: ordering by source position alone lets a
+# scoped rule written ABOVE the bare one lose, where a browser has it
+# win. A per-page difference would then be real, rendered, and reported
+# as agreement.
+SCOPE_FIRST = ("body.instrument .card { padding: 9rem; }\n"
+               ".card { padding: 1rem; }\n")
+check("a scope written above the rule it overrides still wins",
+      check_web.resolved_geometry(
+          check_web.geometry_declarations(SCOPE_FIRST),
+          frozenset({"instrument"}))[0][("", ".card", "padding")] == "9rem")
+check("and the page it does not name keeps the bare rule",
+      check_web.resolved_geometry(
+          check_web.geometry_declarations(SCOPE_FIRST),
+          frozenset({"railed"}))[0][("", ".card", "padding")] == "1rem")
+check("two rules of equal weight are settled by source position",
+      check_web.resolved_geometry(
+          check_web.geometry_declarations(
+              ".card { padding: 1rem; }\n.card { padding: 2rem; }"),
+          frozenset())[0][("", ".card", "padding")] == "2rem")
 
 RESOLVED_MEMBER, UNREAD_MEMBER = check_web.resolved_geometry(
     check_web.geometry_declarations(GEOMETRY_CSS), frozenset({"railed"}))
