@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 208);
+const { check, mustReject, report } = suite("demo", 223);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -521,6 +521,87 @@ await check("publishing a snapshot makes it the one that reads back", () => {
 });
 
 /*
+ * A world with both corpora in it, which is what the console really
+ * writes: the snapshot route falls back to whichever one the staging
+ * names, so `world()` above - whose `data` is empty - cannot tell
+ * "nothing published" from "nothing staged" and every arm below would
+ * pass against a stub that never drew anything.
+ */
+const CORPORA = {
+  rich: { snapshot: 1, bases: {} },
+  sparse: { snapshot: 2, bases: {} },
+};
+const stagedWorld = (id) => ({ scenario: id, data: CORPORA });
+
+/*
+ * UNPUBLISH HAS TO LEAVE A WORLD WITH NOTHING PUBLISHED IN IT.
+ *
+ * `state.published || <the corpus this staging carries>` read a takedown
+ * as "nothing staged yet": DELETE /snapshot answered 200, the world
+ * honestly reported `published: null`, and the very next GET handed back
+ * the same eighteen entries from six people. Pressing Unpublish was
+ * indistinguishable from never having pressed it - so the charts drew
+ * on, and UAT A10.1, the row that accepts "nothing published" being
+ * distinguishable from being signed out, was marked not drivable
+ * because of exactly this.
+ *
+ * Never-touched and taken-down are `undefined` and `null`, and the two
+ * survive the round trip through this demo's sessionStorage because
+ * JSON keeps a null and drops an undefined.
+ */
+await check("taking the snapshot down leaves nothing published", () => {
+  const after = Demo.answerFor({ method: "DELETE", path: "/snapshot" },
+    stagedWorld("member")).next;
+  return Demo.answerFor({ method: "GET", path: "/snapshot" }, after)
+    .status === 404;
+});
+
+/*
+ * The other direction, and the one that stops the arm above being
+ * satisfied by a stub that publishes nothing at all: a world nobody has
+ * pressed Unpublish in still draws the corpus its staging carries.
+ */
+await check("a world nobody has taken down still draws the staged corpus", () => {
+  const answer = Demo.answerFor({ method: "GET", path: "/snapshot" },
+    stagedWorld("member"));
+  return answer.status === 200 && answer.body.snapshot.snapshot === 1;
+});
+
+/*
+ * And per staging, because the fallback picks its corpus by scenario: a
+ * takedown that only bit the branch an arm happened to drive would leave
+ * the other one drawing, which is the same defect with one witness.
+ */
+await check("a takedown is a takedown in the sparse staging too", () => {
+  const before = Demo.answerFor({ method: "GET", path: "/snapshot" },
+    stagedWorld("suppressed"));
+  const after = Demo.answerFor({ method: "DELETE", path: "/snapshot" },
+    stagedWorld("suppressed")).next;
+  return before.status === 200 && before.body.snapshot.snapshot === 2 &&
+    Demo.answerFor({ method: "GET", path: "/snapshot" }, after).status === 404;
+});
+
+/*
+ * AND IT REFUSES IN THE WORKER'S OWN WORDS.
+ *
+ * server/worker.js deletes the row and then finds no row, so the live
+ * product cannot tell a takedown from a binder nobody has published
+ * into - both are one 404 with one sentence. A stub inventing a second
+ * sentence here would be demonstrating a Worker that does not exist,
+ * which is the failure this whole file is built against. Read out of
+ * server/worker.js per AGENTS.md's corollary rather than written down a
+ * second time here.
+ */
+await check("the refusal after a takedown is the Worker's own sentence", () => {
+  const after = Demo.answerFor({ method: "DELETE", path: "/snapshot" },
+    stagedWorld("member")).next;
+  const said = Demo.answerFor({ method: "GET", path: "/snapshot" }, after)
+    .body.error;
+  return typeof said === "string" && said.length > 0 &&
+    workerSource.includes(JSON.stringify(said));
+});
+
+/*
  * The membership table the admin pane drives (#69).
  *
  * The pane keeps no local model - every write is followed by a fresh GET
@@ -962,6 +1043,37 @@ await check("a directory inside the mirror that is no page lights nothing", () =
 });
 
 /*
+ * AND THE ROOT'S ANSWER IS LOOKED UP, WHICH HAS TO BE FALSIFIABLE.
+ *
+ * The fold sends the root back through the destination lookup rather
+ * than handing back the directory index outright, so a directory index
+ * that is no destination resolves to nothing. `index.html` IS one of the
+ * four today, so those two readings agree on every address a suite can
+ * build out of the module's own list: substituting the constant for the
+ * lookup left this file at its full count, green, with the strictness
+ * gone. That is an unfalsifiable branch wearing a checked branch's
+ * clothes, and the arms above cannot see it because all of them go
+ * through DESTINATIONS.
+ *
+ * So the list the lookup reads is a parameter of it. It costs one
+ * argument and it buys the question being askable at all: given a set of
+ * destinations the directory index is NOT in, does the root still
+ * resolve to nothing? The console passes its own list and behaves
+ * exactly as before.
+ */
+await check("the directory root is looked up, not assumed", () =>
+  Demo.destinationUnder("", [{ file: "charts.html" }]) === null &&
+  Demo.destinationUnder("/", [{ file: "charts.html" }]) === null);
+
+// The other direction: with the index among them the root IS the page
+// the host serves there, which is what /demo/ really does on the baked
+// build - and the arm above alone would be satisfied by a fold that
+// resolved nothing at all.
+await check("the directory root is the index page when that is a destination", () =>
+  Demo.destinationUnder("", Demo.DESTINATIONS) === "index.html" &&
+  Demo.destinationUnder("/", [{ file: "index.html" }]) === "index.html");
+
+/*
  * And the escape, which the link containment above now prevents and this
  * refuses to paper over anyway. A frame that left the demo cannot be
  * read at all - the browser refuses the cross-origin location - and the
@@ -1106,6 +1218,7 @@ function consoleInRecordedBrowser() {
   const kept = {};
   const timers = [];
   const fetched = [];
+  const opened = [];
   CONSOLE_IDS.forEach((id) => { nodes[id] = recordedNode(id); });
 
   const replaced = [];
@@ -1165,7 +1278,14 @@ function consoleInRecordedBrowser() {
     // already has an arm for a browser that cannot start one, and what
     // is under test here is the frame, not the charts.
     Worker: function () { throw new Error("no worker in this recording"); },
-    open() {},
+    /*
+     * A tab of its own, recorded rather than swallowed. "Open this page
+     * in its own tab" was keyed on the frame being on one of the four
+     * destinations with no else, so on a page that is none of them the
+     * press did nothing and said nothing - and a recording that dropped
+     * the call could not tell that from a press that opened something.
+     */
+    open(url, target) { opened.push(String(url) + " " + String(target)); },
     /*
      * The keep-awake timer, recorded rather than run. What matters is
      * WHETHER one is pending, because that is the whole claim: the
@@ -1228,6 +1348,23 @@ function consoleInRecordedBrowser() {
     nodes.tours.children.forEach((card) => {
       card.children.forEach((child) => {
         if (child.dataset.tour === id) found = child;
+      });
+    });
+    return found;
+  };
+  /*
+   * A free-drive card's action button, one level deeper than a journey's:
+   * the buttons share a row inside the card, so this walks the card's
+   * children and then that row's. Looked up by the LABEL a viewer reads,
+   * because that is the button an arm is claiming somebody presses.
+   */
+  const cardAction = (label) => {
+    let found;
+    nodes.features.children.forEach((card) => {
+      card.children.forEach((part) => {
+        part.children.forEach((button) => {
+          if (button.textContent === label) found = button;
+        });
       });
     });
     return found;
@@ -1301,8 +1438,9 @@ function consoleInRecordedBrowser() {
   };
 
   return {
-    nodes, replaced, arrive, pressed, destination, journey, locked, staged,
-    waking, frameField, framePressed, poked, fetched, settled,
+    nodes, replaced, arrive, pressed, destination, journey, cardAction,
+    locked, staged, waking, frameField, framePressed, poked, fetched,
+    opened, settled,
     missingInFrame, frameScrolled, frameActs, unpaintedInFrame,
     paintedAfterPressing, pressableAfter, neverPressable,
   };
@@ -1353,6 +1491,52 @@ await check("a press claims nothing until the frame has arrived", () => {
       CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html" &&
     browser.pressed().join(",") === "index.html";
 });
+
+/*
+ * OPEN THIS PAGE IN ITS OWN TAB, AND THE PAGE IT CANNOT OPEN.
+ *
+ * The button takes whichever of the four destinations the frame is
+ * showing out of the frame, and it was written as that answer being
+ * non-null with no else at all. On `404.html` - a real page of the
+ * product, reachable in the frame and none of the four, which is why
+ * frameAddressOf reports it as inside with no file - the press did
+ * nothing and SAID nothing: the same silent class the address readout
+ * exists to end, sitting on the one control UAT A1.19 sends a driver
+ * through for every page it compares against the mockup.
+ */
+await check("the own-tab press opens the destination the frame is on",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    // Setting up says its own last word from a promise - this recording
+    // has no worker, so the corpus reports itself missing. Draining it
+    // first is what makes "the press changed nothing here" a claim about
+    // the press.
+    await browser.settled();
+    browser.arrive("charts.html");
+    const before = browser.nodes.status.textContent;
+    browser.nodes["open-tab"].fire("click");
+    return browser.opened.join(",") ===
+        Demo.MIRROR_PATH + "charts.html _blank" &&
+      browser.nodes.status.textContent === before;
+  });
+
+/*
+ * And the direction that was missing. The sentence names the address the
+ * frame is really on, because that address is what a viewer does next -
+ * asking for it by hand is the only way to read that page at the
+ * window's own width, and it is what UAT's own names paragraph sends
+ * them to do.
+ */
+await check("the own-tab press says so when the frame is on no destination",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.arrive("404.html");
+    browser.nodes["open-tab"].fire("click");
+    return browser.opened.length === 0 &&
+      browser.nodes.status.textContent.includes(
+        CONSOLE_ORIGIN + Demo.MIRROR_PATH + "404.html");
+  });
 
 /* ------------------------------------------------------------------ */
 /* The journeys: nine chips become four walks (#238).                  */
@@ -2213,6 +2397,137 @@ await check("a press the page cannot answer is reported, not swallowed",
       browser.framePressed().length === 0;
   });
 
+/* ------------------------------------------------------------------ */
+/* An errand the viewer has already walked away from (#251 F1/F2).      */
+
+/*
+ * AN ERRAND OUTLIVES THE STOP THAT ARMED IT, AND HAD NO WAY TO BE
+ * CANCELLED.
+ *
+ * The errand waits up to five seconds for what it is about to touch.
+ * Nothing stopped that wait when the walk moved on, so the give-up
+ * sentence landed in the status line ON TOP of whatever the viewer had
+ * moved to - a report about a page that is not on screen, delivered by
+ * the one surface built to say what really happened. Reproduced on the
+ * baked build behind a clean-URL host: an admin walk left at t=1.2s
+ * narrated "presses the page's run control..." over the member
+ * journey's sign-in stop at t=6.2s and again at t=12.4s.
+ *
+ * Driven the only way that can catch it: the frame arrives, and the
+ * walk moves on before the errand's wait has ended.
+ */
+const firstStopWith = (has) => {
+  for (const walk of Demo.TOURS) {
+    const index = walk.stops.findIndex(has);
+    if (index !== -1 && index < walk.stops.length - 1) {
+      return { walk: walk, index: index, stop: walk.stops[index] };
+    }
+  }
+  return null;
+};
+const pageOfStop = (stop) => stop.open ||
+  Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+
+const abandonedPress = firstStopWith((stop) => typeof stop.press === "string");
+
+await check("an errand the walk has moved on from says nothing", async () => {
+  if (abandonedPress === null) return false;
+  const browser = consoleInRecordedBrowser();
+  await browser.settled();
+  browser.neverPressable(abandonedPress.stop.press);
+  browser.journey(abandonedPress.walk.id).fire("click");
+  for (let i = 0; i < abandonedPress.index; i += 1) {
+    browser.nodes["tour-next"].fire("click");
+  }
+  browser.arrive(pageOfStop(abandonedPress.stop));
+  // Before the wait's own resumption, which is where the viewer really
+  // is when this bites: the press is still pending and the walk has
+  // already gone somewhere else.
+  browser.nodes["tour-next"].fire("click");
+  await browser.settled();
+  return browser.nodes.status.textContent === "";
+});
+
+/*
+ * The other direction, and it is the same script with one line removed:
+ * an errand still on its own stop DOES say what it could not do. Without
+ * this half, a console that had simply stopped reporting give-ups would
+ * pass the arm above.
+ */
+await check("an errand still on its own stop does say when it gives up",
+  async () => {
+    if (abandonedPress === null) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.neverPressable(abandonedPress.stop.press);
+    browser.journey(abandonedPress.walk.id).fire("click");
+    for (let i = 0; i < abandonedPress.index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(pageOfStop(abandonedPress.stop));
+    await browser.settled();
+    return browser.nodes.status.textContent
+      .includes(abandonedPress.stop.press);
+  });
+
+/*
+ * And the half that is not a sentence: an abandoned errand must not go
+ * on WRITING into the frame either. The key goes into the page's own box
+ * after a fetch, so an errand carrying one resumes on whatever document
+ * the frame holds by then - which is how key material reaches a page
+ * that has no business holding it, silently, with the disclosure line
+ * for it landing in the feed of a stop that staged no key.
+ */
+const abandonedKey = firstStopWith((stop) => stop.key === true);
+
+await check("an errand the walk has moved on from stages no key", async () => {
+  if (abandonedKey === null) return false;
+  const browser = consoleInRecordedBrowser();
+  await browser.settled();
+  browser.journey(abandonedKey.walk.id).fire("click");
+  for (let i = 0; i < abandonedKey.index; i += 1) {
+    browser.nodes["tour-next"].fire("click");
+  }
+  browser.arrive(pageOfStop(abandonedKey.stop));
+  browser.nodes["tour-next"].fire("click");
+  await browser.settled();
+  return browser.frameField("keyfile") === "" &&
+    !browser.nodes.feed.children.map((one) => one.textContent)
+      .includes(Demo.KEY_STAGED_LINE);
+});
+
+/*
+ * A GIVE-UP SENTENCE HAS TO SURVIVE THE ERRAND'S REMAINING ACTS (F2).
+ *
+ * The errand says what it could not do and then carries on doing the
+ * rest, and the next thing it said REPLACED the last one. A stop whose
+ * press found a control the page never enabled and whose move then found
+ * a section the page was not showing left the viewer holding the
+ * symptom - "the page is not showing that section" - with the cause,
+ * the press that never happened, already gone from the line. The cause
+ * is the half that explains why the screen does not match the words.
+ */
+const twoAct = firstStopWith((stop) =>
+  typeof stop.press === "string" && typeof stop.scroll === "string");
+
+await check("a give-up sentence survives the errand's remaining acts",
+  async () => {
+    if (twoAct === null) return false;
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.neverPressable(twoAct.stop.press);
+    browser.unpaintedInFrame(twoAct.stop.scroll);
+    browser.journey(twoAct.walk.id).fire("click");
+    for (let i = 0; i < twoAct.index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(pageOfStop(twoAct.stop));
+    await browser.settled();
+    const said = browser.nodes.status.textContent;
+    return said.includes(twoAct.stop.press) &&
+      said.includes(twoAct.stop.scroll);
+  });
+
 /*
  * THE EMPTY-SITE-COPY STOP DOES NOT CLAIM A FEATURE THAT HAS NOT
  * SHIPPED.
@@ -2342,21 +2657,34 @@ await check("the key box the tour fills is the one admin.html carries", () =>
  * through the recorded browser because the claim is that a viewer who
  * presses Fetch and decrypt finds a key already there - not that the
  * source mentions one.
+ *
+ * EVERY stop that stages it, not the first one this file finds. The arm
+ * took the first journey with a key stop and the first key stop in it,
+ * so one journey was held and the second journey's two staging stops
+ * were unguarded - the shape the press arm had already been widened out
+ * of, arriving again on a different declaration.
  */
-await check("walking to the key stop puts the key in the frame's box",
+await check("every stop that stages the key puts it in the frame's box",
   async () => {
-    const browser = consoleInRecordedBrowser();
-    const walk = Demo.TOURS.find((one) =>
-      one.stops.some((stop) => stop.key === true));
-    const index = walk.stops.findIndex((stop) => stop.key === true);
-    browser.journey(walk.id).fire("click");
-    for (let i = 0; i < index; i += 1) {
-      browser.nodes["tour-next"].fire("click");
+    let staged = 0;
+    for (const walk of Demo.TOURS) {
+      for (let index = 0; index < walk.stops.length; index += 1) {
+        const stop = walk.stops[index];
+        if (stop.key !== true) continue;
+        const browser = consoleInRecordedBrowser();
+        await browser.settled();
+        browser.journey(walk.id).fire("click");
+        for (let i = 0; i < index; i += 1) {
+          browser.nodes["tour-next"].fire("click");
+        }
+        browser.arrive(pageOfStop(stop));
+        await browser.settled();
+        if (browser.frameField("keyfile") !== devKeyFile) return false;
+        if (browser.fetched.join(",") !== Demo.DEV_KEY_FILE) return false;
+        staged += 1;
+      }
     }
-    browser.arrive(walk.stops[index].open || "admin.html");
-    await browser.settled();
-    return browser.frameField("keyfile") === devKeyFile &&
-      browser.fetched.join(",") === Demo.DEV_KEY_FILE;
+    return staged > 1;
   });
 
 /*
@@ -2399,17 +2727,55 @@ await check("the line the console says when it stages the key names it a throwaw
   /throwaway/i.test(Demo.KEY_STAGED_LINE) &&
   /offline|never|nothing real/i.test(Demo.KEY_STAGED_LINE));
 
-await check("staging the key really does say so in the feed", async () => {
-  const walk = Demo.TOURS.find((one) =>
-    one.stops.some((stop) => stop.key === true));
-  const index = walk.stops.findIndex((stop) => stop.key === true);
+/*
+ * EVERY STAGING OF THE KEY, ON BOTH SURFACES (#251 F3).
+ *
+ * The disclosure is the sentence that stops a private key appearing in a
+ * box in front of the person judging this design with nothing beside it
+ * saying what it protects, so an arm that took the FIRST journey with a
+ * key stop guarded exactly one of them and left the rest unwatched -
+ * which is the same shape the finding above describes, in the arm
+ * written to answer it. The free drive stages the key too now, and the
+ * cards are a surface a driver is sent to by name, so both are walked.
+ */
+const saidWhileStaging = async (press, page) => {
   const browser = consoleInRecordedBrowser();
-  browser.journey(walk.id).fire("click");
-  for (let i = 0; i < index; i += 1) browser.nodes["tour-next"].fire("click");
-  browser.arrive(walk.stops[index].open || "admin.html");
+  await browser.settled();
+  press(browser);
+  browser.arrive(page);
   await browser.settled();
   return browser.nodes.feed.children.map((one) => one.textContent)
     .includes(Demo.KEY_STAGED_LINE);
+};
+
+await check("every staging of the key says so in the feed", async () => {
+  let stops = 0;
+  for (const walk of Demo.TOURS) {
+    for (let index = 0; index < walk.stops.length; index += 1) {
+      const stop = walk.stops[index];
+      if (stop.key !== true) continue;
+      const said = await saidWhileStaging((browser) => {
+        browser.journey(walk.id).fire("click");
+        for (let i = 0; i < index; i += 1) {
+          browser.nodes["tour-next"].fire("click");
+        }
+      }, pageOfStop(stop));
+      if (!said) return false;
+      stops += 1;
+    }
+  }
+  let cards = 0;
+  for (const card of Demo.FEATURES) {
+    for (const action of card.actions) {
+      if (action.key !== true) continue;
+      const said = await saidWhileStaging((browser) => {
+        browser.cardAction(action.label).fire("click");
+      }, action.open || Demo.scenarioFor(action.scenario).start);
+      if (!said) return false;
+      cards += 1;
+    }
+  }
+  return stops > 1 && cards > 0;
 });
 
 /*
@@ -2427,6 +2793,72 @@ await check("a stop that stages no key says nothing about one", async () => {
   return walk.stops[0].key !== true &&
     !browser.nodes.feed.children.map((one) => one.textContent)
       .includes(Demo.KEY_STAGED_LINE);
+});
+
+/* ------------------------------------------------------------------ */
+/* The free drive reaches the same desk, so it needs the same key.      */
+
+/*
+ * THE DEAD END CAME BACK THROUGH THE OTHER SURFACE.
+ *
+ * The keyholder JOURNEY stages the throwaway key, and the card that
+ * opens the same desk staged none - so a tester who opened the free
+ * drive met exactly the dead end the key errand was added to remove:
+ * Fetch and decrypt answering "paste or choose your key file first",
+ * with no key anywhere on the machine to paste. That surface is not a
+ * corner: UAT sends a driver to the cards by name for every state no
+ * stop leaves live, and the card's own pointer tells them to unlock the
+ * rows with the demo key.
+ *
+ * Stated as a rule over the staging rather than over one card's title,
+ * because a card is a title somebody can rename and the desk is the
+ * world that needs the key.
+ */
+await check("every card action that opens the keyholder's desk stages the key",
+  () => {
+    const desk = Demo.FEATURES.flatMap((card) => card.actions)
+      .filter((action) => action.scenario === "keyholder");
+    return desk.length > 0 && desk.every((action) => action.key === true);
+  });
+
+/*
+ * Driven, for the same reason the journey's staging is: the claim is
+ * that a viewer who presses this card and then presses Fetch and decrypt
+ * finds a key already in the box, not that a field says `key: true`.
+ */
+await check("every card action that stages the key really fills the box",
+  async () => {
+    let filled = 0;
+    for (const card of Demo.FEATURES) {
+      for (const action of card.actions) {
+        if (action.key !== true) continue;
+        const browser = consoleInRecordedBrowser();
+        await browser.settled();
+        browser.cardAction(action.label).fire("click");
+        browser.arrive(action.open || Demo.scenarioFor(action.scenario).start);
+        await browser.settled();
+        if (browser.frameField("keyfile") !== devKeyFile) return false;
+        if (browser.fetched.join(",") !== Demo.DEV_KEY_FILE) return false;
+        filled += 1;
+      }
+    }
+    return filled > 0;
+  });
+
+// The other direction, exactly as the journeys carry it: a card that
+// asks for no key leaves the box alone, or the console would be writing
+// key material into pages that have no business holding it.
+await check("a card that asks for no key leaves the box empty", async () => {
+  const quiet = Demo.FEATURES.flatMap((card) => card.actions)
+    .find((action) => action.key !== true);
+  if (quiet === undefined) return false;
+  const browser = consoleInRecordedBrowser();
+  await browser.settled();
+  browser.cardAction(quiet.label).fire("click");
+  browser.arrive(quiet.open || Demo.scenarioFor(quiet.scenario).start);
+  await browser.settled();
+  return browser.frameField("keyfile") === "" &&
+    browser.fetched.length === 0;
 });
 
 /*
