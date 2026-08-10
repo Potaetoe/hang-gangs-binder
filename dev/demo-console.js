@@ -27,7 +27,7 @@
   const SESSION_KEY = "hgb-session";
   const PREFILL_KEY = "hgb-submit-prefill";
 
-  const MIRROR = "/demo/";
+  const MIRROR = Demo.MIRROR_PATH;
 
   let active = null;
   let destination = null;
@@ -138,12 +138,60 @@
     open(action.open || chosen.start);
   }
 
+  /*
+   * A press is a REQUEST to move the frame, and nothing is painted from
+   * it. What the console shows is painted when the frame ARRIVES, by
+   * resync below, because the pages in the frame decide where a request
+   * lands: a revoked session bounces back to Sign in, an auth guard
+   * refuses a gated page, and a signed-in visitor at Sign in is
+   * redirected onward. Painting here is how the console came to name
+   * pages nobody was looking at.
+   *
+   * AND THE FRAME HAS TO MOVE EVEN WHEN IT ALREADY HOLDS THAT PATH.
+   * Setting an iframe's src to the string it already carries reloads
+   * nothing in any browser, and once a page has redirected itself the
+   * string it still carries is the page somebody wants back - so that
+   * button was the one press that did nothing, with no way for the
+   * console to say so. Replacing the frame's own location is the
+   * navigation that always happens; the attribute is what opens the
+   * first one, before there is a document to talk to.
+   */
   function open(file) {
-    destination = file;
     const path = MIRROR + file;
-    $("stage").src = path;
-    $("frame-path").textContent = root.location.origin + path;
+    const frame = $("stage");
+    if (frame.getAttribute("src") === path) {
+      frame.contentWindow.location.replace(path);
+    } else {
+      frame.setAttribute("src", path);
+    }
+  }
+
+  /*
+   * The frame's own address, or null when it refuses to be read.
+   *
+   * A cross-origin location throws rather than answering, so the catch
+   * is the frame having left the demo entirely. The mirror's link edit
+   * is what stops that happening at all; this is what the viewer sees if
+   * anything ever gets past it, and it is a stated departure rather than
+   * the last page the console asked for left standing on screen.
+   */
+  function frameHref() {
+    try {
+      return $("stage").contentWindow.location.href;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function resync() {
+    const there = Demo.frameAddressOf(frameHref());
+    destination = there.file;
+    $("frame-path").textContent = there.shown;
     paintDestinations();
+    if (!there.inside) {
+      say("The frame is showing something from outside the demo. Press a " +
+        "destination to come back.");
+    }
   }
 
   /*
@@ -295,6 +343,18 @@
       worker.postMessage("build");
     });
   }
+
+  /*
+   * The one listener that keeps this console honest, and the reason it
+   * is registered here rather than inside setUp: it has to be watching
+   * before anything can move the frame, and setUp waits on the corpus.
+   *
+   * `load` fires on every COMPLETED navigation of the frame - the ones
+   * this console asked for and the ones the shipped pages perform on
+   * their own - which is the whole difference between showing where
+   * somebody was sent and showing where they are.
+   */
+  $("stage").addEventListener("load", resync);
 
   async function setUp() {
     paintFeatures();

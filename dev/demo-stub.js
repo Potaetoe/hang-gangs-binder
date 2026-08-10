@@ -34,6 +34,20 @@
   ];
 
   /*
+   * The path the mirrored pages are served under, and its one home.
+   *
+   * dev/demo-server.mjs serves it and dev/demo-console.js drives it, and
+   * they used to spell it separately - two constants that have to agree
+   * with nothing saying so. dev/demo.test.mjs now holds them to each
+   * other, which is worth having because the console derives WHICH PAGE
+   * THE FRAME IS ON from this prefix: a console reading one path while
+   * the server serves another would report every page as outside the
+   * demo, and the symptom is the address readout refusing a page that is
+   * plainly on screen.
+   */
+  const MIRROR_PATH = "/demo/";
+
+  /*
    * The sizes the console can give the frame, in CSS pixels.
    *
    * An iframe's width IS the viewport the page inside it lays out
@@ -154,6 +168,18 @@
         "the one thing the widget contributes.",
     },
     {
+      id: "links",
+      what: "Sends a link that leaves the product to its own tab.",
+      why: "Every page ships a footer link to the source on GitHub, " +
+        "with no target - right on the real site, and inside this " +
+        "frame a live escape hatch. Clicking it navigates the FRAME to " +
+        "github.com, which refuses to be framed, so the stage goes " +
+        "white and the only way back is pressing another card. A new " +
+        "tab keeps the link working and keeps the walk in the frame. " +
+        "Links inside the product are deliberately untouched: moving " +
+        "around the site in the frame is half of what there is to see.",
+    },
+    {
       id: "config",
       what: "Points config.js at a stand-in naming an address that " +
         "cannot resolve.",
@@ -180,6 +206,21 @@
   const CONFIG_STANDIN = '<script src="/dev/demo-config.js"></script>';
 
   /*
+   * The link edit, spelled as an exact pair so unmirror can undo it.
+   *
+   * Anchored on `<a href="` rather than on any anchor carrying an
+   * absolute href, because the undo has to be exact and a looser match
+   * would have to guess where to put the attributes back. If a page
+   * ever writes its external link with another attribute first, this
+   * stops matching it - and dev/demo.test.mjs asks the emitted bytes
+   * whether EVERY external anchor is contained, so that page fails the
+   * gate instead of quietly shipping an escape hatch.
+   */
+  const EXTERNAL_LINK = /<a href="(https?:\/\/)/g;
+  const EXTERNAL_LINK_OPENED =
+    '<a target="_blank" rel="noopener noreferrer" href="';
+
+  /*
    * Inserted before the first <script>, which on every page in apps/web
    * puts it after the Content-Security-Policy meta tag. Deliberately
    * after: a script inserted above the policy would not be governed by
@@ -203,6 +244,13 @@
     }
     TELEGRAM_WIDGET.lastIndex = 0;
 
+    if (EXTERNAL_LINK.test(out)) {
+      EXTERNAL_LINK.lastIndex = 0;
+      out = out.replace(EXTERNAL_LINK, EXTERNAL_LINK_OPENED + "$1");
+      applied.push("links");
+    }
+    EXTERNAL_LINK.lastIndex = 0;
+
     // 404.html loads no config.js, so this edit does not apply to every
     // page and the console's table would be wrong to imply it does.
     if (out.indexOf(CONFIG_TAG) !== -1) {
@@ -223,6 +271,7 @@
     return String(html)
       .replace(BOOT_SCRIPTS, "")
       .split(CONFIG_STANDIN).join(CONFIG_TAG)
+      .split(EXTERNAL_LINK_OPENED).join('<a href="')
       .split(TELEGRAM_STANDIN).join("https://telegram.org/js/telegram-widget.js?22");
   }
 
@@ -1160,6 +1209,65 @@
   ];
 
   /* ---------------------------------------------------------------- */
+  /* Where the frame really is.                                        */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * What the console should say, given the address the FRAME reports.
+   *
+   * The console used to write its address readout and its "current"
+   * destination from the file name it asked for, and the pages in the
+   * frame are real, live JavaScript: an already-signed-in visitor at
+   * Sign in is redirected to Your page, a revoked session bounces back
+   * to Sign in on load, an auth guard refuses a gated page, and the
+   * product's own rail carries somebody anywhere at any time. None of
+   * that goes through the console, so the console named a page nobody
+   * was looking at - which is every finding in the routing-desync class,
+   * and they collapse into this one function plus the listener that
+   * feeds it.
+   *
+   * Pure here for frameStyleFor's reason: the hazard is a readout that
+   * disagrees with the screen, and a value dev/demo.test.mjs can assert
+   * is the only version of this the suite can hold. The browser half
+   * reads a location and assigns.
+   *
+   * A null href is the frame refusing to be read - a cross-origin
+   * location throws rather than answering. The mirror's link edit is
+   * what stops the frame ever leaving, so arriving here means something
+   * got past it, and the honest answer is to say the frame is gone. The
+   * alternative is keeping the last page the console asked for on
+   * screen, which is the same lie this function exists to end, told
+   * about a blank frame.
+   *
+   * `inside` and `file` are two facts, not one. 404.html is a real page
+   * of the product, reachable in the frame, and no destination: it is
+   * inside the demo with none of the four rail buttons current, and
+   * lighting one for it would be this lie in a quieter place.
+   */
+  const FRAME_AWAY =
+    "The frame has left the demo - this is not one of its pages.";
+
+  function frameAddressOf(href) {
+    const away = { shown: FRAME_AWAY, file: null, inside: false };
+    if (typeof href !== "string" || href === "") return away;
+
+    const there = resolved(href, undefined);
+    if (there === null) return away;
+
+    const path = there.pathname || "/";
+    if (path.indexOf(MIRROR_PATH) !== 0) {
+      return { shown: href, file: null, inside: false };
+    }
+
+    const file = path.slice(MIRROR_PATH.length);
+    return {
+      shown: href,
+      file: DESTINATIONS.some((one) => one.file === file) ? file : null,
+      inside: true,
+    };
+  }
+
+  /* ---------------------------------------------------------------- */
   /* The frame's size.                                                 */
   /* ---------------------------------------------------------------- */
 
@@ -1889,6 +1997,7 @@
 
   root.BinderDemo = Object.freeze({
     DESTINATIONS: DESTINATIONS,
+    MIRROR_PATH: MIRROR_PATH,
     VIEWPORTS: VIEWPORTS,
     MIRROR_EDITS: MIRROR_EDITS,
     BOOT_SCRIPTS: BOOT_SCRIPTS,
@@ -1917,6 +2026,7 @@
     sameOriginAs: sameOriginAs,
     workerPathOf: workerPathOf,
     requestKindOf: requestKindOf,
+    frameAddressOf: frameAddressOf,
     viewportFor: viewportFor,
     frameStyleFor: frameStyleFor,
     scenarioFor: scenarioFor,
