@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 174);
+const { check, mustReject, report } = suite("demo", 175);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1585,12 +1585,28 @@ await check("a stop that does not ask for the key leaves the box empty",
       browser.fetched.length === 0;
   });
 
-await check("leaving a journey puts the glass away and the walk back", () => {
+/*
+ * The contents are the LANDING screen and step aside while a walk runs.
+ * Four journey cards stacked above the walk panel push the narration -
+ * the one thing a viewer is here to read - below the fold on an
+ * ordinary window, which was found by walking it in a browser rather
+ * than by reading the markup.
+ */
+await check("the contents step aside while a walk is running", () => {
+  const browser = consoleInRecordedBrowser();
+  const before = browser.nodes.tours.getAttribute("hidden");
+  browser.journey(Demo.TOURS[0].id).fire("click");
+  return before === null &&
+    browser.nodes.tours.getAttribute("hidden") !== null;
+});
+
+await check("leaving a journey puts the glass away and the contents back", () => {
   const browser = consoleInRecordedBrowser();
   browser.journey(Demo.TOURS[0].id).fire("click");
   browser.nodes["tour-leave"].fire("click");
   return browser.locked() === false &&
-    browser.nodes["tour-run"].getAttribute("hidden") !== null;
+    browser.nodes["tour-run"].getAttribute("hidden") !== null &&
+    browser.nodes.tours.getAttribute("hidden") === null;
 });
 
 /* ------------------------------------------------------------------ */

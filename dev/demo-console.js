@@ -533,8 +533,16 @@
     }, AWAKE_EVERY);
   }
 
+  /*
+   * The table of contents is the LANDING screen, not a permanent rail.
+   * Four journey cards above the walk panel push the narration - the
+   * one thing a viewer is here to read - below the fold on an ordinary
+   * window, so the contents step aside while a walk is running and
+   * "Leave this walk" is what brings them back.
+   */
   function paintTour() {
     const stop = walk.stops[stopAt];
+    $("tours").setAttribute("hidden", "");
     $("tour-run").removeAttribute("hidden");
     $("tour-where").textContent = walk.title + " - stop " + (stopAt + 1) +
       " of " + walk.stops.length;
@@ -572,6 +580,11 @@
       return;
     }
     walk = chosen;
+    // The status line is the last thing that happened, and starting a
+    // walk makes whatever it was stale - leaving the previous walk's
+    // farewell standing over the first stop of the next one reads as a
+    // message about the stop being shown.
+    say("");
     goToStop(0);
   }
 
@@ -581,6 +594,7 @@
     keepAwake(false);
     lock(false);
     $("tour-run").setAttribute("hidden", "");
+    $("tours").removeAttribute("hidden");
     $("try-next").textContent = "";
     say("Back to the table of contents. The frame is yours - or open " +
       "the free drive below for one feature at a time.");
@@ -681,7 +695,8 @@
         sparse: built.sparse,
       }));
       say(built.counts.rich + " entries staged for the full charts, " +
-        built.counts.sparse + " for the held-back ones. Press any card.");
+        built.counts.sparse + " for the held-back ones. Pick a walk to " +
+        "start.");
     }
 
     $("open-tab").addEventListener("click", function () {

@@ -238,7 +238,7 @@ main {
   color: var(--dim);
 }
 #feed:empty::before {
-  content: "Nothing has happened yet. Press a card, and every press "
+  content: "Nothing has happened yet. Start a walk, and every stop "
     "is narrated here.";
 }
 #feed li { animation: feed-arrive 0.3s ease-out; }
