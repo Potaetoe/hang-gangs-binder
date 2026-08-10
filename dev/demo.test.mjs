@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 224);
+const { check, mustReject, report } = suite("demo", 228);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -903,6 +903,68 @@ await check("the console page carries no footer under the working surface", () =
  */
 await check("the console stylesheet styles no footer either", () =>
   !/(^|[\s,}])footer\s*(,|\{)/m.test(consoleCss));
+
+/*
+ * AND SO IS THE WHOLE BLOCK THAT EXPLAINED THE CONSOLE (owner,
+ * 2026-08-10, correcting a half-done removal).
+ *
+ * The footer above was one part of it. The rest - a "Demo console"
+ * heading, a paragraph explaining that there are four walks and what
+ * Next does, the pledge that nothing reaches a real endpoint, and a
+ * sentence about which commit a hosted copy was taken at - was the same
+ * thing in a section of its own: setup prose standing under the working
+ * surface for a reader who does not need it. The owner's words cover all
+ * of it, and were read against the live page: those who have access to
+ * the demo know who it is for and what it is on.
+ *
+ * Asked by id and by the words rather than by the section's class, so
+ * moving the same prose into a different wrapper does not put it back
+ * quietly. The sibling arm in dev/demo-bake.test.mjs asks the same of
+ * the baked bytes, which are reached through a transform that rewrites
+ * part of this very page.
+ */
+const EXPLAINS_ITSELF = [
+  "Demo console",
+  "Four walks through the Binder",
+  "Nothing here reaches a real endpoint",
+  'id="offline-note"',
+  'id="stamp"',
+  'class="about"',
+];
+
+await check("the console page carries no block explaining itself", () =>
+  EXPLAINS_ITSELF.every((each) => !consoleHtml.includes(each)));
+
+// The rules that dressed it go with it, for the footer's reason: a
+// stylesheet still styling an element the page no longer has is dead
+// weight nobody can tell is dead by reading it.
+await check("the console stylesheet dresses no such block either", () =>
+  !/(^|[\s,}])\.(about|lede|warn)\b/m.test(consoleCss) &&
+  !/(^|[\s,}])h1\s*(,|\{)/m.test(consoleCss));
+
+/*
+ * AND THE STAMP SURVIVES THE REMOVAL, MACHINE-READABLE AND RENDERING
+ * NOTHING.
+ *
+ * The paragraph is gone; the region the bake replaces is not, and it
+ * cannot be: dev/demo-bake.mjs refuses to write a snapshot it cannot
+ * date, and an undated snapshot on a public URL is read as current
+ * forever. So the markers stay and what sits between them is metadata a
+ * reader never sees - the property the visible sentence carried, kept,
+ * with the sentence itself removed as ordered. Putting it back on screen
+ * is a one-line change to stampFor and this file, which is the shape the
+ * ruling asked for.
+ */
+await check("the console keeps the region the bake dates it through", () =>
+  Demo.stampInto(consoleHtml, "<meta name=\"x\" content=\"y\">") !== null);
+
+await check("what the live console says about its own age renders nothing", () => {
+  const between = consoleHtml.slice(
+    consoleHtml.indexOf("<!-- BAKED-AT -->"),
+    consoleHtml.indexOf("<!-- /BAKED-AT -->"));
+  return /<meta\b[^>]*>/.test(between) &&
+    between.replace(/<[^>]*>/g, "").replace(/<!--[\s\S]*?-->/g, "").trim() === "";
+});
 
 await check("the console script paints the cards and none of the bench", () =>
   consoleJs.includes('$("features")') &&

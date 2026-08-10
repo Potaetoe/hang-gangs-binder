@@ -57,7 +57,7 @@ const {
   IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty, stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 42);
+const { check, mustReject, report } = suite("demo bake", 44);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -366,6 +366,44 @@ await check("the baked console carries no footer either", async () => {
   const html = await read("dev/demo.html");
   return !/<footer[\s>]/.test(html) && !html.includes("The other arm");
 });
+
+/*
+ * And neither does it carry the block that explained the console, which
+ * is the same ruling one section wider (owner, 2026-08-10). This copy is
+ * the one that mattered most to it: a hosted URL is where a stranger
+ * meets the heading, the four-walks paragraph and the sentence about
+ * which commit this is.
+ */
+await check("the baked console carries no block explaining itself either",
+  async () => {
+    const html = await read("dev/demo.html");
+    return ["Demo console", "Four walks through the Binder",
+      "Nothing here reaches a real endpoint", 'id="offline-note"',
+      'id="stamp"', 'class="about"']
+      .every((each) => !html.includes(each));
+  });
+
+/*
+ * THE DATE SURVIVES THE REMOVAL, AND RENDERS NOTHING.
+ *
+ * The stamp is why this file is baked rather than copied: a snapshot on
+ * a public URL that cannot say which commit it is gets read as current
+ * forever, and refuseDirty plus the missing-region refusal are both
+ * built around that one sentence being true. What the owner removed is
+ * the SENTENCE, so what is written now is the same fact as metadata -
+ * present, checkable, and on nobody's screen. Asked of the emitted bytes
+ * with the tags taken out, because "invisible" is a claim about what a
+ * reader sees rather than about which element it is in.
+ */
+await check("the baked stamp names the commit without putting it on screen",
+  async () => {
+    const html = await read("dev/demo.html");
+    const commit = "0123456789abcdef0123456789abcdef01234567";
+    const readable =
+      new RegExp("<meta\\b[^>]*" + commit + "[^>]*>").test(html);
+    const onScreen = html.replace(/<[^>]*>/g, " ").includes(commit);
+    return readable && !onScreen;
+  });
 
 await check("the landing page says the data is fabricated and refuses crawlers",
   async () => {

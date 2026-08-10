@@ -15,6 +15,25 @@
 -->
 <title>Hang Gang Binder — demo console</title>
 <meta name="robots" content="noindex, nofollow">
+<!--
+  Replaced by dev/demo-bake.mjs with the commit a hosted build was taken
+  at. Served live, this console reads apps/web off disk on every request
+  and cannot be stale, so it says so; a baked copy is stale the moment
+  the next slice merges and has to admit which one it is. The markers
+  are what the bake looks for - remove them and it refuses to write
+  rather than shipping a snapshot with no date on it.
+
+  METADATA RATHER THAN A SENTENCE, AND IN THE HEAD (owner, 2026-08-10).
+  The block that carried this on screen is gone with the rest of the
+  prose explaining the console; the FACT is load-bearing and stays,
+  because a snapshot on a public URL that cannot say which commit it is
+  gets read as current forever. So it is here, where metadata belongs
+  and where nothing can render it by accident. Putting the sentence back
+  on screen is one change to stampFor and one to this file.
+-->
+<!-- BAKED-AT -->
+<meta name="hgb-baked-at" content="live from this checkout">
+<!-- /BAKED-AT -->
 <link rel="stylesheet" href="demo.css">
 </head>
 <body>
@@ -119,50 +138,6 @@
     </div>
   </section>
 
-  <!--
-    What this console IS, below the thing it is (owner, 2026-08-10).
-
-    The title, the four-walks explanation and the honesty banner opened
-    the page and pushed the journeys and the frame under a wall of
-    words, so a viewer met the explanation before the working surface.
-    They read after it now, spanning both columns, with the frame-size
-    controls and everything else above - the page opens on what somebody
-    came here to do.
-
-    The banner stays in ordinary flow and full width rather than being
-    tucked into a column: it is the demo's honesty pledge and below the
-    fold is acceptable where hidden is not.
-  -->
-  <section class="about">
-    <h1>Demo console</h1>
-    <p class="lede">
-      Four walks through the Binder. Pick one and press Next — each stop
-      stages what it needs and puts the page in the frame, and the last
-      stop of every walk hands the frame over to you. The pages in the
-      frame are the shipped files, not a recording of them.
-    </p>
-    <p class="warn" id="offline-note">
-      Nothing here reaches a real endpoint. The Worker's answers are
-      stubbed, and the only keys involved are the throwaway pairs
-      committed under <code>dev/</code>.
-    </p>
-    <!--
-      Replaced by dev/demo-bake.mjs with the commit a hosted build was
-      taken at. Served live, this console reads apps/web off disk on
-      every request and cannot be stale, so it says so; a baked copy is
-      stale the moment the next slice merges and has to admit which one
-      it is. The markers are what the bake looks for - remove them and
-      it refuses to write rather than shipping a snapshot with no date
-      on it.
-    -->
-    <!-- BAKED-AT -->
-    <p class="small" id="stamp">
-      Live from this checkout — every page in the frame is read out of
-      <code>apps/web</code> as you ask for it, so this is whatever is on
-      disk right now.
-    </p>
-    <!-- /BAKED-AT -->
-  </section>
 </main>
 
 <script src="demo-stub.js"></script>

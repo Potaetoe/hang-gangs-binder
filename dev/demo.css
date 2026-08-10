@@ -28,7 +28,11 @@ body {
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-h1 { font-size: 1.4rem; margin: 0 0 0.3rem; }
+/* No h1 rule: the only h1 this page had was the heading over the block
+ * of prose explaining the console, and that block is gone. The section
+ * labels below are h2 and stay h2 - promoting one would re-rank the
+ * working surface's headings and change what the page looks like, which
+ * is not what was asked for. */
 h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
      color: var(--dim); margin: 1.6rem 0 0.6rem; }
 h2:first-of-type { margin-top: 0.4rem; }
@@ -37,25 +41,6 @@ code { font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
        font-size: 0.92em; }
 a { color: #9ec5ff; }
 
-/* The explanation, under the working surface rather than over it. It
- * spans both columns instead of sitting in one, because a paragraph
- * measured to a 26rem column beside an empty half-page reads as a
- * leftover rather than as the page's own closing note. */
-.about {
-  grid-column: 1 / -1;
-  max-width: 60rem;
-  margin-top: 0.4rem;
-}
-.about h1 { margin-top: 0; }
-.lede { margin: 0 0 0.5rem; color: var(--dim); }
-.warn {
-  margin: 0;
-  padding: 0.55rem 0.8rem;
-  border-left: 3px solid var(--warn);
-  background: var(--panel);
-  color: var(--warn);
-  font-size: 0.9rem;
-}
 .muted { color: var(--dim); }
 .small { font-size: 0.88rem; }
 
