@@ -641,13 +641,12 @@ await check("no declared namespace is touched while its script loads",
  * the guard tells the two apart.
  *
  * DRIVEN OVER THE TABLE, NOT OVER A NAME WRITTEN HERE - the #154
- * sweep's S-20. The load-time arm above loops `declared`; these two used
- * to name their pair as string literals, and a pair of literals beside a
- * loop is a split brain. A second row added to check_web.py would take
- * the load-time property and slip past the guarded one entirely, and a
- * row renamed there would leave these arms exercising a pair the table
- * no longer declares while the loop moved on - both green, both about
- * nothing.
+ * sweep's S-20. The load-time arm above loops `declared`, and a pair of
+ * string literals beside that loop is a split brain: a second row added
+ * to check_web.py takes the load-time property and slips past the
+ * guarded one entirely, and a row renamed there leaves these arms
+ * exercising a pair the table no longer declares while the loop moves
+ * on. Both stay green, and both are then about nothing.
  *
  * WHAT CANNOT COME OFF THE TABLE is the ACT: `(script, namespace)` says
  * which global a script must not touch while it loads, and says nothing
