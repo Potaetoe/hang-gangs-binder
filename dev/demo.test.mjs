@@ -889,10 +889,19 @@ await check("an address that will not parse is refused, not read as a page", () 
 const CONSOLE_IDS = ["features", "destinations", "viewports", "status",
   "feed", "try-next", "stage", "frame-path", "open-tab", "reset"];
 
+/*
+ * WHY textContent IS A SETTER HERE AND NOT A FIELD. The console empties
+ * a holder with `holder.textContent = ""` before repainting it, and in a
+ * real document that REMOVES THE CHILDREN. A recording that kept them
+ * would accumulate every generation of destination buttons, so a console
+ * painting the wrong thing and then the right thing over it would read
+ * as two pressed buttons rather than one - which is a fixture that fails
+ * for a reason next to the one under test. Found by mutation: M1 failed
+ * an arm it was not supposed to reach.
+ */
 function recordedNode(id) {
   const it = {
     id: id,
-    textContent: "",
     className: "",
     style: {},
     dataset: {},
@@ -915,6 +924,12 @@ function recordedNode(id) {
         .forEach((fn) => fn({ currentTarget: it, target: it }));
     },
   };
+  let text = "";
+  Object.defineProperty(it, "textContent", {
+    enumerable: true,
+    get: () => text,
+    set: (value) => { text = String(value); it.children.length = 0; },
+  });
   return it;
 }
 
