@@ -986,8 +986,8 @@
    * already see the data rather than leakage outward; and the mean is a
    * number members legitimately use, so closing the door would cost real
    * value to shut one of several - count times mean is not the only pair
-   * here that reconstructs a third figure. DESIGN.md, "The dashboard and
-   * the snapshot", is where that now lives in full.
+   * here that reconstructs a third figure. DESIGN.md, "The charts and the
+   * snapshot", is where that now lives in full.
    *
    * THE TRIGGER TO RE-TAKE IT: if published snapshots ever reach an
    * audience wider than members, the calculus changes and the ruling does

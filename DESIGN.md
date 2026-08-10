@@ -336,7 +336,7 @@ a label, which is the first capability the threat model below says this
 design does not protect against. Membership could not be a repo file in
 any case, and takes the form "The identifier" gives it (#87).
 
-## The dashboard and the snapshot
+## The charts and the snapshot
 
 The aggregation happens in the keyholder's browser and only the result
 is published — nothing new ever holds the private key. The published

@@ -1551,7 +1551,7 @@ async function handlePublishSnapshot(request, env, origin) {
  * reads this document, not what may go in it. It carries no handles and
  * no rows, which is why losing the session check here would be a
  * smaller failure than losing one anywhere else and is still a failure.
- * See DESIGN.md, "The dashboard and the snapshot".
+ * See DESIGN.md, "The charts and the snapshot".
  */
 async function handleReadSnapshot(env, origin) {
   const row = await env.DB.prepare(
@@ -2123,7 +2123,7 @@ async function route(request, env, url, allowed) {
   if (method === "GET" && path === "/snapshot") {
     // Members only since 2026-08-05. The document still carries no
     // handles and no rows - gating it is not a reason to relax what
-    // goes in it. See DESIGN.md, "The dashboard and the snapshot".
+    // goes in it. See DESIGN.md, "The charts and the snapshot".
     if (!caller) return unauthorized(allowed);
     return handleReadSnapshot(env, allowed);
   }
