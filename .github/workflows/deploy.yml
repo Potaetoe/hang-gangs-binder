@@ -94,10 +94,27 @@ jobs:
       # Verified rather than assumed: `npm ci --ignore-scripts` installs
       # all 87 packages and ESLint runs clean. Nothing here needs a
       # native build.
+      # fonttools is the gate's only route into a woff2: the tables are
+      # Brotli compressed, so tools/check_fonts.py cannot read a subset
+      # face's cmap without it, and that stage is written to FAIL rather
+      # than skip when it is missing - a coverage check that goes green
+      # because it could not open the font is the armed-looking-but-not
+      # failure this repository holds to be worse than no check.
+      #
+      # Pinned, per the field note about npx resolving two different
+      # majors minutes apart. Here it buys a second thing: the committed
+      # subset was produced by this exact version, and a subsetter that
+      # drifts from the one that wrote the binary is a gate disagreeing
+      # with the artifact it guards for reasons nobody would look for.
+      #
+      # It is gate tooling and never reaches the site. pyproject.toml
+      # says why that distinction holds: the deploy job copies dist/ and
+      # never looks at a sibling directory, so this sits in the same
+      # standing as ruff and eslint rather than anywhere near plaintext.
       - name: Install the gate's tooling
         run: |
           npm ci --ignore-scripts
-          python -m pip install --quiet ruff
+          python -m pip install --quiet ruff "fonttools[woff]==4.63.0"
 
       # One step, one registry. tools/check.py is the only suite list
       # (owner decision, 2026-08-08): registering a check there is

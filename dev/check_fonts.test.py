@@ -44,7 +44,7 @@ performed = 0
 # dev/check_budget.test.py states: a hand-written total that nothing
 # compares against still prints a confident "OK" when a check stops
 # running.
-EXPECTED = 24
+EXPECTED = 26
 
 
 def check(label, condition):
@@ -106,7 +106,7 @@ check("a named entity resolves to the character it names",
 check("a numeric entity resolves to the character it names",
       check_fonts.class_text(
           '<span class="wordmark-name">Gang&#8217;s</span>',
-          "wordmark-name") == ["Gang’s"])
+          "wordmark-name") == ["Gang\u2019s"])
 
 check("surrounding whitespace is not part of the demand",
       check_fonts.class_text(
@@ -137,10 +137,27 @@ check("a space is a character the face has to carry",
 # character a wordmark most plausibly gains without anybody thinking of
 # it as a font change.
 check("a typographic apostrophe is reported when absent",
-      check_fonts.uncovered(["Gang’s"], set("Gangs")) == ["’"])
+      check_fonts.uncovered(["Gang\u2019s"], set("Gangs")) == ["\u2019"])
 
 check("an empty demand is covered by an empty face",
       check_fonts.uncovered([], set()) == [])
+
+
+# ------------------------------------------------------------------ #
+# The failure message, which has to survive being printed.            #
+#
+# The character this check names is by definition one a face could not
+# draw, and very often one the console cannot encode either. Printing it
+# raw kills the run with UnicodeEncodeError on a cp1252 terminal - the
+# check still exits non-zero, so the gate still fails, but it fails with
+# a traceback instead of the sentence saying what is wrong, at exactly
+# the moment it is doing its job. Found by mutation on this branch.
+
+check("a missing character is named by codepoint",
+      "U+4E2D" in check_fonts.describe(["中"]))
+
+check("a missing character is not embedded raw in the message",
+      check_fonts.describe(["中"]).isascii())
 
 check("the inventory arm reports what a face has stopped covering",
       check_fonts.uncovered([check_fonts.REQUIRED_INVENTORY],
