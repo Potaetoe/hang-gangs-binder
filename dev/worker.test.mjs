@@ -629,22 +629,38 @@ const DB = {
               ? rowsOf().filter((r) => matches(r, a)) : rowsOf();
             /*
              * ORDER BY, modelled from the statement rather than left to
-             * insertion order.
+             * insertion order - COLUMN AND DIRECTION BOTH.
              *
-             * Without this the stub answers out of an array that is
-             * already in id order, so the clause is unexercised - and a
-             * route that ordered by something READ OFF THE ROW would
+             * Without the column the stub answers out of an array that
+             * is already in id order, so the clause is unexercised - and
+             * a route that ordered by something READ OFF THE ROW would
              * pass every arm here. That is not hypothetical: ordering a
              * member's listing by ciphertext length makes which rows are
              * member-readable inferable from the response, which is a
              * branch on row contents this route must not have. Sorting
              * by the named column is what lets an arm assert the exact
              * sequence and mean it.
+             *
+             * The direction is the same argument one step further in,
+             * and it is the half a sorted-ascending stub silently
+             * supplies: with it hard-coded, `ORDER BY mine.id DESC`
+             * answers the same ids as `ORDER BY mine.id` and the arm
+             * asserting the sequence agrees with both. What that hides
+             * is the cap. server/worker.js promises a member who reaches
+             * MAX_ENTRY_LISTING their OLDEST rows, so the direction
+             * decides which 500 of them the response carries, and a
+             * listing that started at the other end would be a different
+             * answer no arm here could tell from this one.
+             *
+             * A statement naming neither keyword is ascending, which is
+             * what SQLite does with one.
              */
-            const order = /\bORDER BY\s+mine\.(\w+)/i.exec(trimmed);
+            const order = /\bORDER BY\s+mine\.(\w+)(?:\s+(ASC|DESC))?\b/i
+              .exec(trimmed);
             if (order) {
               const column = order[1];
-              visible = visible.slice().sort((x, y) =>
+              const sign = /^desc$/i.test(order[2] || "") ? -1 : 1;
+              visible = visible.slice().sort((x, y) => sign *
                 (x[column] > y[column] ? 1 : x[column] < y[column] ? -1 : 0));
             }
             /*
@@ -779,7 +795,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 348);
+const { check, report } = suite("worker.js", 349);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -973,9 +989,10 @@ const matrix = [
    * Site content is the one thing here that answers a caller with no
    * credential at all, and both halves of that are in this table. The
    * read is open because every page's shipped HTML is the fallback for
-   * these values and apps/web is copied verbatim to a public site, so
-   * the bytes this route enhances are world-readable already; the write
-   * is an admin session because an admin is who edits a site.
+   * these values and the deploy copies dist/ - apps/web with the
+   * comments taken out (#181) - to a public site, so the bytes this
+   * route enhances are world-readable already; the write is an admin
+   * session because an admin is who edits a site.
    */
   ["GET", "/content", null, 200],
   ["GET", "/content", MEMBER, 200],
@@ -2438,23 +2455,22 @@ check("replaying somebody else's ciphertext is refused, not answered 200",
  * POST /submit answers `{ok:true}`, GET /me answers counts and a date,
  * and GET /export is admin. So this hands back handles - an id, the
  * receipt time this side attested to, and whether something supersedes
- * it - and stops there.
+ * it - AND the sealed bytes of each row.
  *
- * IT HANDS BACK NO CIPHERTEXT, which is a decision and not an omission.
- * The member cannot open one: the device key that would decrypt it is
- * #85's half and is not in the tree, so the bytes are inert to the only
- * caller allowed to ask for them - while a stolen member session, which
- * today can append rows and read counts, would be able to download that
- * member's whole sealed history. The narrow shape is also the additive
- * one: a field can arrive the day something can read it, and a field
- * that has shipped cannot be taken back.
+ * FOUR FIELDS, and the fourth is a decision rather than an oversight.
+ * The key-set paragraph further down, above the envelope arm, carries
+ * the argument for it and the cost that comes with it; here it is
+ * enough that the shape is exactly those four and that a fifth cannot
+ * arrive without somebody reading that paragraph first.
  *
  * WHAT THIS SUITE CANNOT SAY, so that nobody reads more into it than it
- * proves. The statement carries ORDER BY and nothing here falsifies it:
- * the stub answers out of an array in insertion order, which is id
- * order, so a Worker that dropped the clause passes every arm below.
- * That claim is a live one, and tools/check_live.py carries the row
- * that says it has never been made.
+ * proves. The stub models both halves of the tail clause off the
+ * statement - the ORDER BY column, its direction, and the LIMIT - so
+ * the arms below DO fail a Worker that dropped, reversed or unbounded
+ * either one. What none of them reaches is D1: every sequence here is
+ * produced by a sort written in this file, and whether a database
+ * honors the clause it was handed is a claim only a live round trip
+ * makes. tools/check_live.py carries the row that says it is unmade.
  */
 
 reset();
@@ -2679,6 +2695,41 @@ check("the listing arrives in id order, not in an order the rows decide",
   stored[0].id === 9201,
   `${JSON.stringify(sequence)} against ${JSON.stringify(byIdAscending)}`);
 
+/*
+ * And the arm above means something only if the stub can answer any
+ * other way.
+ *
+ * The clause is MODELLED here rather than performed by a database, so
+ * the model's own fidelity is what that sequence rests on: a stub that
+ * sorted ascending whatever the statement said would answer the same
+ * ids for `ORDER BY mine.id DESC`, and the direction of a member's
+ * listing would be pinned by nothing at all. The direction is not
+ * cosmetic - server/worker.js's cap says the rows a full listing hands
+ * back are the OLDEST ones, and which end the sort starts from is the
+ * whole of that promise.
+ *
+ * Asked with the Worker's own statement and one keyword swapped in,
+ * rather than with a statement written here, so this cannot come to
+ * disagree with what the route actually sends. The first clause of the
+ * condition is what refuses a swap that silently matched nothing: a
+ * statement identical to the one it flipped would compare two readings
+ * of the same sort and pass whatever the stub does.
+ */
+const orderedSql = executed.filter((e) => e.table === "submissions")
+  .map((e) => e.sql).pop();
+const flipped = orderedSql
+  .replace(/\bORDER BY\s+mine\.(\w+)/i, "ORDER BY mine.$1 DESC");
+const descending = (await DB.prepare(flipped).bind(FIXTURE_4242).all())
+  .results.map((r) => r.id);
+
+check("the stub sorts the way the statement says, so a DESC would fail " +
+  "the arm above rather than pass it",
+  flipped !== orderedSql && descending.length > 1 &&
+  JSON.stringify(descending) ===
+    JSON.stringify(byIdAscending.slice().reverse()),
+  `${JSON.stringify(descending)} against ` +
+  `${JSON.stringify(byIdAscending.slice().reverse())}`);
+
 stored = stored.filter((r) => r.id !== 9200 && r.id !== 9201);
 
 /*
@@ -2712,8 +2763,15 @@ check("the bytes ride the scoped statement rather than a second read",
  * anybody who reaches the server side. Every row this account owns is
  * listed, openable or not; which ones open is decided in the browser
  * that holds the key, which is the only place that can decide it.
+ *
+ * THE NUL IS WRITTEN AS AN ESCAPE and must stay one. Typed as a raw
+ * byte it is the same string at runtime and a different file on disk:
+ * grep and ripgrep sniff the first buffer, call this file binary, and
+ * answer "Binary file ... matches" to every search of the most-read
+ * suite in the tree. tools/check_comments.py refuses the raw byte now,
+ * so this is the reason rather than the rule.
  */
-const GARBAGE = "not base64 at all !!!   <>&";
+const GARBAGE = "not base64 at all !!! \x00 <>&";
 stored.push({
   id: 9100, account_id: FIXTURE_4242, ciphertext: GARBAGE,
   received_at: new Date().toISOString(), supersedes: null,
@@ -2889,9 +2947,10 @@ check("a token captured before Sign out reads no bytes after it",
  * The read is open and the write is an admin session, and the asymmetry
  * is the design rather than an oversight.
  *
- * Each page's shipped HTML is the fallback for these values, and
- * apps/web is copied verbatim to a public site - so the bytes this
- * route enhances can be fetched by anybody already. A session gate here
+ * Each page's shipped HTML is the fallback for these values, and the
+ * deploy copies dist/ - apps/web with the comments taken out (#181) -
+ * to a public site, so the bytes this route enhances can be fetched by
+ * anybody already. A session gate here
  * would promise a confidentiality the fallback does not have, and the
  * cost of promising it is that somebody eventually puts something
  * private in a table designed for site copy. What follows from the open

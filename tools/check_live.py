@@ -353,11 +353,15 @@ LEDGER = [
         "surface": "route",
         "claim": "a member's listing carries their own rows in id "
                  "order and nobody else's, with the sealed bytes as "
-                 "stored, and two halves no suite here can falsify: "
-                 "the order, because the stub answers out of an array "
-                 "already in that order, and the cap, because LIMIT is "
-                 "modelled by slicing what the stub already held "
-                 "rather than by a database that stops reading",
+                 "stored. dev/worker.test.mjs reads the ORDER BY "
+                 "column, its direction and the LIMIT off the "
+                 "statement, so a Worker that drops, reverses or "
+                 "unbounds either clause goes red there. The half that "
+                 "stays live-only is D1 applying them: every sequence "
+                 "the suite compares against is produced by a sort in "
+                 "the suite, and the cap is a slice of rows the stub "
+                 "already held rather than a database that stops "
+                 "reading",
         "covers": ["server/worker.js"],
         "status": "never",
     },
@@ -656,9 +660,10 @@ LEDGER = [
                 "the break-glass token and is the row above"),
     },
 
-    # ---- pages: apps/web is copied verbatim to the published site, so
-    # every page's live behavior is unexercised until it is served from
-    # somewhere a Worker will answer. Both halves are recorded here
+    # ---- pages: dist/ is what the deploy copies - apps/web with the
+    # comments taken out of the CSS and the scripts (#181) - so a page's
+    # live behavior is unexercised until it is served from somewhere a
+    # Worker will answer. Both halves are recorded here
     # now. The refusal half needs no secret - a forged session token
     # draws a real 401 from a deployed Worker - and the signed-in half
     # needed the development sign-in secret and a person at the
