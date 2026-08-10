@@ -50,8 +50,39 @@
 
 <main>
   <section class="driver">
-    <h2>What the Binder does</h2>
-    <div class="features" id="features"></div>
+    <!--
+      The table of contents, and the console's landing screen (#238).
+
+      Nine feature chips told a reader what the product HAS and never
+      what to press first, so everybody built their own order and the
+      demo was a different demo every time it was shown. Four journeys
+      are the order, written down; the cards survive underneath as the
+      free drive, for a tester who wants one feature rather than a
+      story.
+    -->
+    <h2>Take a walk through the binder</h2>
+    <div class="tours" id="tours"></div>
+
+    <!--
+      The walk itself, on screen only while one is running. Hidden by
+      the attribute rather than a class, so dev/demo.css's own
+      [hidden] rule is the single thing deciding what is on the page.
+    -->
+    <div class="tour-run" id="tour-run" hidden>
+      <p class="tour-where" id="tour-where"></p>
+      <h3 id="tour-title"></h3>
+      <p id="tour-narration"></p>
+      <p class="tour-nav">
+        <button type="button" id="tour-back">Back</button>
+        <button type="button" id="tour-next">Next</button>
+        <button type="button" id="tour-leave">Leave this walk</button>
+      </p>
+    </div>
+
+    <details id="free-drive">
+      <summary>Free drive — every feature on its own card</summary>
+      <div class="features" id="features"></div>
+    </details>
 
     <h2>Go anywhere</h2>
     <p class="muted small">
@@ -90,7 +121,22 @@
     <h2>What just happened</h2>
     <ol id="feed" aria-live="polite"></ol>
     <p id="try-next"></p>
-    <iframe id="stage" title="The product, running"></iframe>
+    <!--
+      The frame, and the glass over it.
+
+      A journey is read, not driven, until its last stop: a walk whose
+      viewer has already clicked away is a walk being narrated over the
+      wrong page. The glass is a sibling of the frame rather than
+      anything done TO the frame - no sandbox attribute, nothing
+      touching the page inside - so the pages stay the shipped bytes
+      and the read-only promise is one CSS rule the console owns.
+    -->
+    <div class="stage-frame">
+      <iframe id="stage" title="The product, running"></iframe>
+      <div class="glass" id="glass"
+           title="This stop is for reading. The last stop of a journey
+                  hands the frame over." hidden></div>
+    </div>
   </section>
 </main>
 

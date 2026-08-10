@@ -939,6 +939,7 @@ function recordedNode(id) {
 function consoleInRecordedBrowser() {
   const nodes = {};
   const kept = {};
+  const timers = [];
   CONSOLE_IDS.forEach((id) => { nodes[id] = recordedNode(id); });
 
   const replaced = [];
@@ -973,6 +974,21 @@ function consoleInRecordedBrowser() {
     // is under test here is the frame, not the charts.
     Worker: function () { throw new Error("no worker in this recording"); },
     open() {},
+    /*
+     * The keep-awake timer, recorded rather than run. What matters is
+     * WHETHER one is pending, because that is the whole claim: the
+     * console tells the frame somebody is here while a stop is being
+     * narrated, and stops the moment the frame is handed over. Actually
+     * firing it would make these arms wait a minute each.
+     */
+    setInterval: (fn, every) => {
+      timers.push({ fn, every });
+      return timers.length;
+    },
+    clearInterval: (handle) => {
+      if (handle >= 1 && handle <= timers.length) timers[handle - 1] = null;
+    },
+    Event: function (type) { this.type = type; },
   };
   vm.createContext(context);
   vm.runInContext(consoleJs, context, { filename: "demo-console.js" });
@@ -987,13 +1003,26 @@ function consoleInRecordedBrowser() {
     .map((one) => one.title);
   const destination = (file) =>
     nodes.destinations.children.find((one) => one.title === file);
-  const journey = (id) =>
-    nodes.tours.children.find((one) => one.dataset.tour === id);
+  // The walk button lives inside its journey's card, so this looks
+  // through the card rather than only at it - the recording has no
+  // querySelector, and adding one would be a fixture inventing a
+  // convenience the console does not use.
+  const journey = (id) => {
+    let found;
+    nodes.tours.children.forEach((card) => {
+      card.children.forEach((child) => {
+        if (child.dataset.tour === id) found = child;
+      });
+    });
+    return found;
+  };
   const locked = () => nodes.glass.getAttribute("hidden") === null;
   const staged = () => kept[Demo.STORAGE_KEYS[0]];
+  const waking = () => timers.filter((one) => one !== null);
 
   return {
     nodes, replaced, arrive, pressed, destination, journey, locked, staged,
+    waking,
   };
 }
 

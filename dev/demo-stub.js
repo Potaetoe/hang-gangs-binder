@@ -537,6 +537,7 @@
    */
   const LOCAL_FILES = ["/dev/sample-submissions.json"];
 
+
   /*
    * What a request IS: a call the stub answers, a file in this build the
    * browser may fetch for real, or a refusal.
@@ -973,6 +974,239 @@
         try: "Look for the missing cells in the charts - each one is " +
           "the privacy floor holding.",
       }],
+    },
+  ];
+
+  /* ---------------------------------------------------------------- */
+  /* The journeys (#238).                                             */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * Four walks through the binder, and the reason they exist.
+   *
+   * The cards above answer "what does this product do", one feature at
+   * a time, and a person who already knows the product can drive them
+   * in any order. A person seeing it for the first time cannot: nine
+   * chips is a list of state names with no first press, so everybody
+   * builds their own order and the demo is a different demo every time
+   * it is shown. A journey is the order, written down.
+   *
+   * A STOP IS A CARD PRESS WITH A SENTENCE ON IT. Nothing new is
+   * staged - a stop names a staging id from SCENARIOS and optionally a
+   * page to open instead of that staging's start, exactly as a card's
+   * action does, and the console sequences the same stage()/open() the
+   * cards use. There is no second staging path to keep in step, which
+   * is the one way a scripted layer over a working console goes wrong.
+   *
+   * THE NARRATION IS THE MEMBER'S VOICE, NOT THE DRIVER'S (#192, ruled
+   * for this slice). UAT.md is the acceptance script and stays
+   * auditor-precise; it POINTS at these stops by number rather than
+   * repeating them. Two audiences reading one walk is not two homes for
+   * one fact - it is one walk described to the two people who need it,
+   * and the pointers are held to resolving by dev/demo.test.mjs so the
+   * two cannot drift apart silently.
+   *
+   * `free` is the last stop of every journey and only the last. Every
+   * earlier stop is read behind glass, because a walk whose viewer has
+   * already clicked away is a walk being narrated over the wrong page -
+   * and then the frame is handed over deliberately, which is the point
+   * the whole demo has been building to. The owner re-cut this from a
+   * per-stop toggle: one unlock per journey is a simpler promise and a
+   * better story.
+   *
+   * `press` is the one control the stop presses in the frame once the
+   * page has arrived, and it exists for a specific failure: a staging
+   * can be correct and land on the wrong TAB, so a stop promising "your
+   * last measurements are already in it" showed a list of past entries
+   * instead. dev/demo.test.mjs holds every `press` to naming a control
+   * the shipped page really carries.
+   *
+   */
+  const TOURS = [
+    {
+      id: "member",
+      title: "Your first weigh-in",
+      blurb: "The whole of what a member does: arrive, sign in, put a " +
+        "number in, correct one, and see where everyone stands.",
+      first: true,
+      stops: [
+        {
+          scenario: "signed-out",
+          title: "Arriving with no account",
+          narration: "This is what a stranger sees. There is no sign-up " +
+            "form and no password to choose - one Telegram button, and " +
+            "the club already knows who you are. Nothing else on the " +
+            "site is reachable from here, and the pages do not just " +
+            "hide themselves: they refuse to ask for anything at all.",
+        },
+        {
+          scenario: "member",
+          title: "What is on record",
+          narration: "Signed in, and Your page opens on what the binder " +
+            "already holds for you. The count is what stands right now, " +
+            "not how many times you have written something down.",
+        },
+        {
+          scenario: "member",
+          press: "add-entry-tab",
+          title: "Putting a number in",
+          narration: "The other tab is the weigh-in itself. Your " +
+            "measurements are sealed inside this browser before " +
+            "anything is sent, so what the server stores it cannot " +
+            "read - it holds your numbers locked, and only the " +
+            "keyholder's key opens them.",
+        },
+        {
+          scenario: "member-prefilled",
+          press: "add-entry-tab",
+          title: "The form remembers you",
+          narration: "Come back another week and the form is already " +
+            "filled with what you put in last time, so a weigh-in is " +
+            "one number and a press. It is kept on this device and " +
+            "tied to your account - sign out and it goes.",
+        },
+        {
+          scenario: "supersede",
+          title: "Fixing a mistake",
+          narration: "A correction replaces the row it corrects instead " +
+            "of piling up beside it. Four entries stand and two " +
+            "corrections rest behind them, so the number on your page " +
+            "is what you meant, not what you typed.",
+        },
+        {
+          scenario: "member",
+          open: "charts.html",
+          title: "Where everyone stands",
+          narration: "Everybody's numbers drawn as one picture - the " +
+            "combined weight, the change since last time, and the " +
+            "lines running together. Nobody's name is in any of it.",
+        },
+        {
+          scenario: "member",
+          free: true,
+          title: "Now you try",
+          narration: "The page is yours from here. Fill the form in and " +
+            "submit it, move around with the site's own navigation, " +
+            "sign out and back in. Everything you press is the real " +
+            "code - only the answers are staged.",
+        },
+      ],
+    },
+    {
+      id: "keyholder",
+      title: "The keyholder's desk",
+      blurb: "The one act the whole design turns on: the sealed rows " +
+        "come back, and only the key opens them.",
+      stops: [
+        {
+          scenario: "keyholder",
+          title: "Sealed, even to the people running it",
+          narration: "This is the desk the club's numbers are read " +
+            "from. What the server hands over is locked - every row " +
+            "sealed in the browser that wrote it, and nothing here has " +
+            "ever seen a key.",
+        },
+        {
+          scenario: "keyholder",
+          title: "The key that opens them",
+          narration: "Only the key opens these rows, and the key never " +
+            "leaves the person holding it - it is not on the server and " +
+            "the server has no way to ask for it.",
+        },
+        {
+          scenario: "keyholder",
+          free: true,
+          title: "Now you try",
+          narration: "Press Fetch and decrypt. The rows arrive sealed " +
+            "and open in front of you, and Clear takes both copies " +
+            "away again - the one on screen and the one this browser " +
+            "was keeping for next time.",
+        },
+      ],
+    },
+    {
+      id: "admin",
+      title: "Running the club",
+      blurb: "Publishing the figures, deciding who counts as an admin, " +
+        "and what the site does on its very first day.",
+      stops: [
+        {
+          scenario: "admin",
+          title: "One surface for the club's controls",
+          narration: "Publishing a fresh set of figures is one press, " +
+            "and what goes out carries no names and no rows - only the " +
+            "totals the charts draw.",
+        },
+        {
+          scenario: "admin",
+          title: "Who is allowed in here",
+          narration: "The list of people who hold admin, kept where it " +
+            "can be read and changed. The last one cannot be removed, " +
+            "because a club with nobody holding the keys is a club " +
+            "nobody can let back in.",
+        },
+        {
+          scenario: "config-fallback",
+          title: "The first day, before anyone has written anything",
+          narration: "A brand-new binder has no words written into it " +
+            "yet, and every page shows the ones it ships with. The " +
+            "first run is an ordinary day, not an error. Editing those " +
+            "words from this panel is still being built - what you can " +
+            "see today is the site standing up with nothing filled in.",
+        },
+        {
+          scenario: "admin",
+          title: "It closes itself if you walk away",
+          narration: "This page holds everybody's numbers open, so it " +
+            "watches the clock: two minutes' warning, and after ten " +
+            "minutes with nobody touching it, it signs itself out and " +
+            "throws away what it had decrypted. The console has been " +
+            "keeping this page awake while we talked. From the next " +
+            "stop it stops, and the clock is the real one.",
+        },
+        {
+          scenario: "admin",
+          free: true,
+          title: "Now you try",
+          narration: "Publish a set of figures, then open Muse's charts " +
+            "and find them drawn. Add somebody to the admin list and " +
+            "watch the panel read the list back rather than trusting " +
+            "what it just sent.",
+        },
+      ],
+    },
+    {
+      id: "refuses",
+      title: "What the binder will not hand over",
+      blurb: "Two refusals, and both of them are the promise being " +
+        "kept rather than something going wrong.",
+      stops: [
+        {
+          scenario: "revoked",
+          title: "Signed out somewhere else",
+          narration: "You signed out on your phone, and this tab still " +
+            "holds what looks like a valid pass. It is not: the first " +
+            "thing this page asks for comes back refused and you land " +
+            "at sign-in. A pass copied before you signed out opens " +
+            "nothing afterwards.",
+        },
+        {
+          scenario: "suppressed",
+          title: "Too few people to show",
+          narration: "The same charts, on a week when hardly anyone " +
+            "weighed in. Cells are missing, and that is the point - " +
+            "with few enough people a total stops being everybody and " +
+            "starts being somebody. The binder holds those back rather " +
+            "than pointing at a person.",
+        },
+        {
+          scenario: "suppressed",
+          free: true,
+          title: "Now you try",
+          narration: "Go looking for the gaps. Every one of them is a " +
+            "figure the binder could have drawn and decided not to.",
+        },
+      ],
     },
   ];
 
@@ -2008,6 +2242,7 @@
     EVENT_CHANNEL: EVENT_CHANNEL,
     SCENARIOS: SCENARIOS,
     FEATURES: FEATURES,
+    TOURS: TOURS,
     BOXES: BOXES,
     ROUTES: ROUTES,
     PREFIX_ROUTES: PREFIX_ROUTES,

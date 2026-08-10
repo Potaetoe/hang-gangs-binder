@@ -104,6 +104,74 @@ main {
   margin-bottom: 0.5rem;
 }
 
+/* The attribute, not a class, is what takes something off this page -
+ * the console hides the walk panel and the glass by setting `hidden`,
+ * and `element.hidden` reading true is not the same fact as the element
+ * being gone. One rule here is what makes the two agree. */
+[hidden] { display: none !important; }
+
+/* ------------------------------------------------------------------ */
+/* The journeys: the console's landing screen (#238).                  */
+
+.tours { display: grid; gap: 0.6rem; margin-bottom: 1rem; }
+.tour {
+  border: 1px solid var(--edge);
+  border-radius: 0.35rem;
+  padding: 0.7rem 0.85rem;
+}
+.tour h3 { margin: 0 0 0.25rem; font-size: 1.02rem; }
+.tour p { margin: 0 0 0.6rem; color: var(--dim); font-size: 0.88rem; }
+
+/* The one to start with is marked rather than merely listed first -
+ * four equal doors is the choose-your-own-order problem the journeys
+ * exist to solve, arriving one level up. */
+.tour-first { border-color: var(--warn); }
+.tour-flag {
+  margin: 0 0 0.35rem !important;
+  color: var(--warn) !important;
+  font-size: 0.72rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.tour button, .tour-nav button, #free-drive summary {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--edge);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tour-first button { border-color: var(--warn); color: var(--warn); }
+.tour button:hover, .tour-nav button:hover { border-color: var(--dim); }
+.tour-nav button:disabled { opacity: 0.45; cursor: default; }
+
+.tour-run {
+  border: 1px solid var(--warn);
+  border-radius: 0.35rem;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 1rem;
+}
+.tour-where {
+  margin: 0 0 0.3rem;
+  color: var(--warn);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+.tour-run h3 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+.tour-run p { margin: 0 0 0.6rem; font-size: 0.9rem; }
+.tour-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 !important; }
+
+/* The cards are still here and still complete; what changed is that
+ * they are no longer the first thing asked of a reader. */
+#free-drive { margin-bottom: 0.4rem; }
+#free-drive summary { display: inline-block; list-style: none; }
+#free-drive summary::-webkit-details-marker { display: none; }
+#free-drive[open] summary { margin-bottom: 0.6rem; }
+
 .features { display: grid; gap: 0.6rem; }
 .card {
   border: 1px solid var(--edge);
@@ -206,6 +274,29 @@ main {
  * in demo-stub.js, which is what lets dev/demo.test.mjs assert the size
  * without a browser. min-height stays under the phone height so it
  * cannot clamp it. */
+/* The glass sits over the frame and takes the clicks a reading stop
+ * should not deliver. A positioned wrapper is what gives it something
+ * to be absolute against; the frame is untouched, so the pages inside
+ * stay the shipped bytes and nothing here is done TO the product.
+ *
+ * `margin-inline: auto` is on the frame, so the wrapper is the full
+ * stage width and the glass with it - which is correct at the phone
+ * width too: the strip either side of a narrowed frame is console, and
+ * a click there was never going to reach the page anyway. */
+.stage-frame { position: relative; }
+#glass {
+  position: absolute;
+  inset: 0;
+  cursor: not-allowed;
+  /* Faintly warm rather than invisible: a viewer who cannot tell the
+   * page is behind glass reads the first dead click as the product
+   * being broken, which is the one impression this demo cannot afford
+   * to give. Low enough that the palette underneath is still what is
+   * being judged. */
+  background: rgb(255 196 107 / 4%);
+  border-radius: 0.35rem;
+}
+
 iframe {
   display: block;
   margin-inline: auto;
