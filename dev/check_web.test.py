@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 317
+EXPECTED = 365
 
 
 def check(label, condition):
@@ -2035,6 +2035,226 @@ check("a ruled palette no page offers is reported against the pin",
 # mockup rules a palette nothing offers help nobody.
 check("a site with no chips leaves the stale-pin arm quiet",
       chip_labels_over({"submit.html": "<p>Nothing here.</p>"}) == [])
+
+
+# ------------------------------------------------------------------
+# Check 25: one card geometry across the signed-in pages, and the
+# instrument's boxes are warnings.
+#
+# The reader is most of this arm's risk, exactly as it was for the CSP:
+# the rules are two comparisons and a roster, and everything hard is in
+# deciding which rule paints a card, which page a scope applies to, and
+# which box a label is standing in. So the scanner is driven over
+# strings here rather than over the five files it guards - a rule
+# reachable only through today's markup is a rule tested against today's
+# markup.
+
+GEOMETRY_CSS = """
+.card { padding: 1rem; border-radius: var(--radius); gap: 0.75rem; }
+.stack { display: flex; gap: 1rem; }
+.stack-tight { gap: 0.25rem; }
+h1, h2, h3 { font-family: var(--font-display); }
+body.instrument .card { padding: 0.75rem; gap: 0.5rem; }
+"""
+
+
+def subject(selector):
+    return check_web.geometry_subject(selector)
+
+
+check("a bare component selector has no context",
+      subject(".card") == ("", ".card"))
+check("a surface-qualified one carries its context",
+      subject("body.instrument .card") == ("body.instrument", ".card"))
+check("an element subject is read the same way",
+      subject("body.instrument h2") == ("body.instrument", "h2"))
+check("a component that merely starts with the name is not it",
+      subject(".stack-tight") is None)
+check("and a rule painting something else is not read at all",
+      subject(".row input[type=\"text\"]") is None)
+check("a card used only as a context paints nothing here",
+      subject(".card .hint") is None)
+
+check("a selector list is split before it is read",
+      [b[2] for b in check_web.geometry_declarations(
+          "h1, h2, h3 { font-size: 1rem; }")] == ["h2"])
+check("a block declaring no geometry is not a geometry block",
+      check_web.geometry_declarations(".card { color: red; }") == [])
+check("a longhand counts as geometry, which is the evasion a name "
+      "list misses",
+      check_web.geometry_declarations(".card { padding-top: 1rem; }") != [])
+check("and a block inside @media is attributed to its condition",
+      check_web.geometry_declarations(
+          "@media (max-width: 52rem) { .card { padding: 0; } }"
+      )[0][0] == "(max-width: 52rem)")
+check("geometry written inside a comment paints nothing",
+      check_web.geometry_declarations(
+          "/* .card { padding: 9rem; } */ .card { color: red; }") == [])
+
+check("a bare rule applies to every page",
+      check_web.context_applies("", frozenset()) is True)
+check("a surface scope applies to the page that declares it",
+      check_web.context_applies(
+          "body.instrument", frozenset({"wide", "instrument"})) is True)
+check("and not to one that does not",
+      check_web.context_applies(
+          "body.instrument", frozenset({"railed"})) is False)
+check("a scope naming two classes needs both",
+      check_web.context_applies(
+          "body.wide.instrument", frozenset({"wide"})) is False)
+# The one that keeps this arm from failing open. A context this reader
+# has no vocabulary for is neither "applies" nor "does not" - it is
+# unread, and #34 is what this repository paid to learn that the two
+# must not print the same thing.
+check("a scope in a shape this reader cannot resolve is unread, not no",
+      check_web.context_applies(".rail", frozenset({"railed"})) is None)
+check("and so is a two-compound descendant scope",
+      check_web.context_applies(
+          "body.instrument .page", frozenset({"instrument"})) is None)
+
+RESOLVED_MEMBER, UNREAD_MEMBER = check_web.resolved_geometry(
+    check_web.geometry_declarations(GEOMETRY_CSS), frozenset({"railed"}))
+RESOLVED_INSTRUMENT, _ = check_web.resolved_geometry(
+    check_web.geometry_declarations(GEOMETRY_CSS),
+    frozenset({"railed", "instrument"}))
+
+check("a member page resolves the base card padding",
+      RESOLVED_MEMBER[("", ".card", "padding")] == "1rem")
+check("the instrument's own scope wins on the instrument",
+      RESOLVED_INSTRUMENT[("", ".card", "padding")] == "0.75rem")
+check("a scope the page does not match leaves the base standing",
+      RESOLVED_MEMBER[("", ".card", "gap")] == "0.75rem")
+check("a property no scope touches survives into both",
+      RESOLVED_MEMBER[("", ".card", "border-radius")]
+      == RESOLVED_INSTRUMENT[("", ".card", "border-radius")])
+check("nothing in a readable stylesheet is reported unread",
+      UNREAD_MEMBER == [])
+
+
+def agreement_over(css, pages):
+    return [problem for _, problem
+            in check_web.geometry_agreement_problems(css, pages)]
+
+
+TWO_CARD_PAGES = dict.fromkeys(check_web.card_pages(),
+                               '<body class="railed"></body>')
+
+check("two card pages resolving the same geometry agree",
+      agreement_over(GEOMETRY_CSS, TWO_CARD_PAGES) == [])
+# The arm's whole point, stated as a test: moving the design moves
+# every page at once and stays green. A check that reddened here would
+# be edited until it stopped - #142.
+check("moving the component itself moves both pages and stays quiet",
+      agreement_over(GEOMETRY_CSS.replace("padding: 1rem", "padding: 2rem"),
+                     TWO_CARD_PAGES) == [])
+check("a scope that reaches exactly one card page is reported",
+      len(agreement_over(
+          GEOMETRY_CSS + "body.narrowcards .card { padding: 3rem; }",
+          {check_web.card_pages()[0]: '<body class="railed narrowcards">',
+           check_web.card_pages()[1]: '<body class="railed">'})) == 1)
+check("and the message says which property moved on which page",
+      "padding" in agreement_over(
+          GEOMETRY_CSS + "body.narrowcards .card { padding: 3rem; }",
+          {check_web.card_pages()[0]: '<body class="railed narrowcards">',
+           check_web.card_pages()[1]: '<body class="railed">'})[0])
+check("a property one page declares and the other does not is a "
+      "difference too",
+      len(agreement_over(
+          GEOMETRY_CSS + "body.narrowcards .card { border-top: 0; }",
+          {check_web.card_pages()[0]: '<body class="railed narrowcards">',
+           check_web.card_pages()[1]: '<body class="railed">'})) == 1)
+check("an unresolvable scope is reported rather than passed over",
+      any("cannot resolve" in problem for problem in agreement_over(
+          GEOMETRY_CSS + ".rail .card { padding: 0; }", TWO_CARD_PAGES)))
+# A comparison with one side is not a comparison. It has to say so
+# rather than print the agreement it never established.
+check("fewer than two wearers is reported, not reported as agreement",
+      len(agreement_over(GEOMETRY_CSS,
+                         {check_web.card_pages()[0]: "<body>"})) == 1)
+
+
+def scopes_over(css):
+    return [problem for _, problem in check_web.card_scope_problems(css)]
+
+
+check("the shipped scopes are the pinned scopes",
+      scopes_over(check_web.stylesheet_text()) == [])
+check("a surface override nobody wrote down is reported",
+      any("CARD_SCOPES" in problem for problem in scopes_over(
+          check_web.stylesheet_text()
+          + "\nbody.railed .card { padding: 0; }")))
+check("a pin whose block has gone is reported as stale",
+      any("still names it" in problem
+          for problem in scopes_over(".card { padding: 1rem; }")))
+check("a bare rule needs no pin",
+      scopes_over(".card { padding: 1rem; }\n.stack { gap: 1rem; }")
+      == [problem for problem in scopes_over(".card { padding: 1rem; }")
+          if "still names it" in problem])
+
+
+def markup(inner, classes="railed instrument"):
+    return ('<body class="%s"><aside class="rail">'
+            '<p class="runner"><span>Session</span></p></aside>'
+            "<main class=\"stack\">%s</main></body>" % (classes, inner))
+
+
+def grammar(inner, kind="sections", classes="railed instrument"):
+    return check_web.grammar_markup_problems(markup(inner, classes), kind)
+
+
+TOOL = '<div class="tool"><p class="runner"><span>Charts</span></p></div>'
+WARN_BOX = '<div class="card"><p class="caution">Development session</p></div>'
+FLAG_BOX = '<div class="card"><p class="flag">Unavailable</p></div>'
+
+check("a runner-headed section on the instrument is the grammar",
+      grammar(TOOL) == [])
+check("a warning box beside it is the one box that stays",
+      grammar(TOOL + WARN_BOX) == [])
+check("an outcome box is a box that says something too",
+      grammar(TOOL + FLAG_BOX) == [])
+check("a tool that kept its card is reported",
+      len(grammar('<div class="card"><p class="runner"><span>Charts</span>'
+                  "</p></div>")) > 0)
+check("and the report names the section it found in a box",
+      any("Charts" in problem for problem in grammar(
+          '<div class="card"><p class="runner"><span>Charts</span>'
+          "</p></div>")))
+check("a box with nothing to act on is a tool that kept its card",
+      any("no outcome and no caution" in problem
+          for problem in grammar('<div class="card"><p>Words.</p></div>')))
+check("a section with no runner on it is reported",
+      any("no runner standing on it" in problem
+          for problem in grammar('<div class="tool"><p>Words.</p></div>')))
+check("a runner standing on something that is not a section is reported",
+      any("not a .tool" in problem for problem in grammar(
+          '<div class="stack"><p class="runner"><span>Charts</span>'
+          "</p></div>")))
+# The rail carries a Session runner on every signed-in page, and it is
+# not a section of the document. Reading only <main> is what keeps that
+# from needing a carve-out by name - the kind that stops applying the
+# day the rail grows a second one.
+check("the rail's own runner is outside all of this",
+      grammar(TOOL) == [])
+check("a page with no main at all reports nothing rather than throwing",
+      check_web.grammar_markup_problems(
+          '<body class="railed instrument"></body>', "sections") == [])
+
+check("a card page carrying cards is the grammar",
+      grammar(WARN_BOX, "cards", "railed") == [])
+check("the instrument's section grammar leaking outward is reported",
+      any(".tool section inside <main>" in problem
+          for problem in grammar(TOOL, "cards", "railed")))
+check("and a card page's runner outside a box is left alone",
+      grammar('<div class="stack-tight">'
+              '<p class="runner"><span>Optional</span></p></div>',
+              "cards", "railed") == [])
+
+check("the two grammars name every signed-in page and no other",
+      sorted(check_web.card_pages() + check_web.section_pages())
+      == sorted(name for name, shell in check_web.SHELLS.items()
+                if shell == "rail"))
+check("the shipped pages wear the grammar they are pinned to",
+      check_web.grammar_problems() == [])
 
 
 if failures:
