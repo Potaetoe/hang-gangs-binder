@@ -42,6 +42,29 @@
   }
 
   /*
+   * A browser that will not let go of a dead credential, said once.
+   *
+   * removeItem throws in hardened configurations and under an exhausted
+   * quota, and until this the throw was swallowed whole. It is worth one
+   * line because it is not a cosmetic failure: it is the condition that
+   * makes clear() reachable from its own announcement, and a page that
+   * meets it leaves no other trace of having done so. Once per tab,
+   * because a store that refuses one removal refuses every one and the
+   * fact is worth exactly one line however many times it recurs.
+   */
+  let reportedStuck = false;
+
+  function reportStuck(error) {
+    if (reportedStuck) return;
+    reportedStuck = true;
+    if (root.console && typeof root.console.warn === "function") {
+      root.console.warn("This browser refused to remove the stored session, " +
+        "so a dead credential stays in sessionStorage until the tab closes. " +
+        "Nothing here will use it.", error);
+    }
+  }
+
+  /*
    * Dropping the credential, and telling the shell that it is gone.
    *
    * THE ANNOUNCEMENT BELONGS HERE AND NOT AT THE CALL SITES. A page acting
@@ -56,13 +79,47 @@
    * untidy: with the credential gone and the announcement stale, "your
    * sign-in is no longer valid" and "Signed in as <name>" sit on one
    * screen, and the reader has no way to tell which half is true.
+   *
+   * RE-ENTRY IS BOUNDED STRUCTURALLY rather than by argument.
+   *
+   * clear() announces; every listener re-reads; read() is itself a
+   * caller of clear(). That chain terminates because the second read
+   * leaves at `if (!raw) return null` - the key is already gone. THE
+   * ARGUMENT DEPENDS ENTIRELY ON THE REMOVAL HAVING WORKED. When it
+   * throws, the stored value is still there and still expired, so every
+   * re-read disposes of it again: about two thousand frames deep, two
+   * thousand repaints, and a RangeError swallowed by the listener guard
+   * below - in a browser, on the expiry path, which is a tab left open
+   * overnight rather than an exotic case.
+   *
+   * So a clear() running inside another clear()'s announcement performs
+   * its removal and returns without announcing. The outer announcement
+   * is already telling every listener the same thing, and the depth
+   * cannot exceed two whatever the store does. Do not replace this with
+   * a check that the value is gone: that is the same argument again,
+   * and it is the argument the throwing store falsifies.
    */
+  let announcing = false;
+
   function clear() {
     const storage = store();
     if (storage) {
-      try { storage.removeItem(STORAGE_KEY); } catch (error) {}
+      try {
+        storage.removeItem(STORAGE_KEY);
+      } catch (error) {
+        // The verdict does not change: read() below still answers null,
+        // so nothing acts on a value this file has disowned. Only the
+        // silence changes.
+        reportStuck(error);
+      }
     }
-    announce(null);
+    if (announcing) return;
+    announcing = true;
+    try {
+      announce(null);
+    } finally {
+      announcing = false;
+    }
   }
 
   function read() {
@@ -81,12 +138,14 @@
     // Malformed and expired credentials are not left around to fail every
     // request until the tab closes. They are no session, so store that fact.
     //
-    // This is also where the announcement stops recursing, and the early
-    // return above is what stops it. clear() announces, listeners re-read,
-    // and they arrive back here - to a key that is already gone, which
-    // leaves before reaching this line. Moving the disposal ahead of that
-    // return, or announcing for a key that was never there, is a stack
-    // overflow on the expiry path rather than a tidier read().
+    // The early return above still keeps the ordinary re-read cheap -
+    // listeners arrive back here to a key that is already gone and leave
+    // before this line. It is no longer what BOUNDS the recursion,
+    // because it cannot: a store whose removeItem throws leaves the key
+    // exactly where it was, and this line disposes of it again on every
+    // re-read. clear()'s own re-entry latch is the bound. Moving the
+    // disposal ahead of that return, or announcing for a key that was
+    // never there, is still the wrong direction.
     if (!value) clear();
     return value;
   }

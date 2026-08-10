@@ -16,13 +16,26 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 50);
+const { check, report } = nodeTestSuite("session/auth", 54);
 
 const values = new Map();
+
+/*
+ * A store that can be told to refuse - #154's client partition, F-4.
+ *
+ * removeItem is not a call that always works. Hardened configurations
+ * and an exhausted quota both throw, and until this suite could produce
+ * that, the one condition under which the expiry path recursed through
+ * its own readers was unreachable from here.
+ */
+let refuseRemoval = false;
 globalThis.sessionStorage = {
   getItem(key) { return values.has(key) ? values.get(key) : null; },
   setItem(key, value) { values.set(key, String(value)); },
-  removeItem(key) { values.delete(key); },
+  removeItem(key) {
+    if (refuseRemoval) throw new Error("this browser will not remove it");
+    values.delete(key);
+  },
 };
 
 const redirects = [];
@@ -493,6 +506,61 @@ check("a credential that rots under the tab repaints the rail as it goes",
  */
 check("and the store announces that once, not once per reader that looks",
   notices === 1);
+
+/*
+ * THE SAME PATH ON A BROWSER THAT WILL NOT LET GO - F-4, and the arm
+ * above cannot reach it.
+ *
+ * That arm terminates because the removal worked: the listeners re-read,
+ * find nothing, and leave. The whole no-recursion argument rested on
+ * that, and removeItem throws in hardened configurations and under an
+ * exhausted quota. When it does, the expired value is still sitting
+ * there, so every re-read disposes of it again - measured at roughly two
+ * thousand frames before the stack gave out, two thousand repaints, and
+ * the RangeError swallowed by the listener guard, on the expiry path
+ * that a tab left open overnight takes.
+ *
+ * Three separate promises, because a fix could keep any two and break
+ * the third: the verdict is still "no session" (fail open to expired,
+ * never fail closed onto a dead credential), the disposal does not
+ * recurse, and the refusal is not silent. The count is asserted rather
+ * than the mere absence of a crash - a stack that survives because the
+ * announcement was dropped altogether would leave every surface on the
+ * page painting a session that is gone, which is the bug #166 fixed.
+ */
+Session.write(GOOD);
+Session.require();
+let refusedNotices = 0;
+Session.onChange(function () { refusedNotices += 1; });
+values.set("hgb-session", JSON.stringify({
+  ...GOOD,
+  expiresAt: "2000-01-01T00:00:00.000Z",
+}));
+
+const warned = [];
+const realWarn = console.warn;
+console.warn = function (...args) { warned.push(args); };
+refuseRemoval = true;
+let overflowed = null;
+let refusedVerdict;
+try { refusedVerdict = Session.read(); }
+catch (error) { overflowed = error; }
+refuseRemoval = false;
+console.warn = realWarn;
+
+check("an expiry the browser refuses to release still reads as no session",
+  overflowed === null && refusedVerdict === null);
+check("and disposing of it does not recurse through its own readers",
+  refusedNotices === 1);
+check("and the rail is repainted for the credential that is gone",
+  rail["session-who"].textContent === "Not signed in");
+check("and the browser's refusal is reported rather than swallowed",
+  warned.length === 1 && /sessionStorage/.test(String(warned[0][0])));
+
+// The refused value is still in the store, which is the honest state
+// this leaves behind; the arms below write their own credential over it
+// rather than inheriting it.
+values.delete("hgb-session");
 
 /*
  * A reader that throws is a painting bug. Letting it out of clear() would
