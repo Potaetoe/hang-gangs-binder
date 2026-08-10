@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 163);
+const { check, mustReject, report } = suite("demo", 168);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -905,6 +905,12 @@ function recordedNode(id) {
   const it = {
     id: id,
     className: "",
+    // A form control's own two: the console writes a key into `value`
+    // and presses a tab with `click`, and both are what the shipped
+    // page would see from a person doing it by hand.
+    value: "",
+    pressed: false,
+    click() { it.pressed = true; it.fire("click"); },
     style: {},
     dataset: {},
     children: [],
@@ -940,6 +946,7 @@ function consoleInRecordedBrowser() {
   const nodes = {};
   const kept = {};
   const timers = [];
+  const fetched = [];
   CONSOLE_IDS.forEach((id) => { nodes[id] = recordedNode(id); });
 
   const replaced = [];
@@ -948,6 +955,25 @@ function consoleInRecordedBrowser() {
       href: null,
       replace(href) { replaced.push(String(href)); },
     },
+  };
+
+  /*
+   * The page inside the frame, as much of it as the console touches:
+   * it looks controls up by id, presses one, writes a key into another,
+   * and pokes the document itself to say somebody is here. Nodes are
+   * made on demand, so an errand naming a control this recording never
+   * heard of still gets an object - which is the case worth recording,
+   * because a console that quietly found nothing is exactly what the
+   * arms above are trying to catch.
+   */
+  const frameNodes = {};
+  const poked = [];
+  nodes.stage.contentDocument = {
+    getElementById: (id) => {
+      if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
+      return frameNodes[id];
+    },
+    dispatchEvent: (event) => { poked.push(event.type); },
   };
 
   const context = {
@@ -989,6 +1015,18 @@ function consoleInRecordedBrowser() {
       if (handle >= 1 && handle <= timers.length) timers[handle - 1] = null;
     },
     Event: function (type) { this.type = type; },
+    /*
+     * The console's own fetch, which is NOT the one demo-boot.js
+     * replaces: the console runs outside the frame, so this is the real
+     * one, and the only thing it is ever asked for is the committed
+     * throwaway key. Recorded by URL so an arm can say which file was
+     * read, and answered with the bytes on disk so what lands in the
+     * key box is the file rather than a stand-in for it.
+     */
+    fetch: (url) => {
+      fetched.push(String(url));
+      return Promise.resolve({ text: () => Promise.resolve(devKeyFile) });
+    },
   };
   vm.createContext(context);
   vm.runInContext(consoleJs, context, { filename: "demo-console.js" });
@@ -1019,10 +1057,18 @@ function consoleInRecordedBrowser() {
   const locked = () => nodes.glass.getAttribute("hidden") === null;
   const staged = () => kept[Demo.STORAGE_KEYS[0]];
   const waking = () => timers.filter((one) => one !== null);
+  const frameField = (id) =>
+    (id in frameNodes ? frameNodes[id].value : "");
+  const framePressed = () =>
+    Object.keys(frameNodes).filter((id) => frameNodes[id].pressed === true);
+  // Staging the key is asynchronous - the console reads the file and
+  // then writes it - so an arm has to let those settle before asking
+  // what is in the box. A macrotask drains the microtasks under it.
+  const settled = () => new Promise((done) => { setTimeout(done, 0); });
 
   return {
     nodes, replaced, arrive, pressed, destination, journey, locked, staged,
-    waking,
+    waking, frameField, framePressed, poked, fetched, settled,
   };
 }
 
@@ -1341,6 +1387,94 @@ await check("a stop stages the world it names, not the one before it", () => {
   return first === walk.stops[0].scenario &&
     browser.staged() === walk.stops[1].scenario;
 });
+
+/* ------------------------------------------------------------------ */
+/* The keyholder's key, staged so the act is performable cold (#238).  */
+
+/*
+ * The demo's headline act was not performable by anybody who had not
+ * cloned this repository.
+ *
+ * The keyholder journey promises sealed rows coming back and opening.
+ * The page asks for a key; nothing in the console, the page or the
+ * frame ever surfaced one; and the key it wants exists only as a file
+ * in this repository. So the press answered "paste or choose your key
+ * file first" and the walk dead-ended - and Publish snapshot, which the
+ * admin page only reveals after a successful decrypt, was unreachable
+ * behind the same missing ingredient.
+ *
+ * The fix is the tour putting the committed throwaway key in the page's
+ * own box, the same way a person would paste it. Everything after that
+ * is the shipped code.
+ *
+ * IT IS A THROWAWAY, AND THE COPY HAS TO SAY SO. A demo that shows a
+ * private key going into a box, in front of the person deciding whether
+ * to trust this design, teaches the wrong lesson unless it says in the
+ * same breath that this pair protects nothing and that the real one has
+ * never been in this repository. That is a claim about what the viewer
+ * is told, so it is checked rather than trusted.
+ */
+const devKeyFile = await readFile(HERE("./test-key.json"), "utf8");
+
+await check("the key the tour stages is the committed throwaway one", () =>
+  Demo.DEV_KEY_FILE === "/dev/test-key.json" &&
+  /THROWAWAY TEST KEY/i.test(devKeyFile));
+
+await check("the stop that stages the key says out loud that it is a throwaway", () =>
+  Demo.TOURS.some((one) => one.stops.some((stop) =>
+    stop.key === true && /throwaway/i.test(stop.narration) &&
+      /offline|never/i.test(stop.narration))));
+
+/*
+ * The box it goes in is the one the shipped page actually reads, read
+ * out of apps/web rather than trusted - the same corollary the press
+ * arm carries. A stop writing into a renamed textarea would fill
+ * nothing and report nothing.
+ */
+await check("the key box the tour fills is the one admin.html carries", () =>
+  shipped["admin.html"].includes('id="keyfile"'));
+
+/*
+ * And the transport, run rather than read: the console fetches the
+ * committed file and writes its text into the frame's key box. Driven
+ * through the recorded browser because the claim is that a viewer who
+ * presses Fetch and decrypt finds a key already there - not that the
+ * source mentions one.
+ */
+await check("walking to the key stop puts the key in the frame's box",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.key === true));
+    const index = walk.stops.findIndex((stop) => stop.key === true);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(walk.stops[index].open || "admin.html");
+    await browser.settled();
+    return browser.frameField("keyfile") === devKeyFile &&
+      browser.fetched.join(",") === Demo.DEV_KEY_FILE;
+  });
+
+/*
+ * Non-vacuity, and the arm that says the key is not simply always
+ * there: a stop that does not ask for it leaves the box alone. A
+ * console that filled every page's key box would pass the arm above and
+ * be staging key material into pages that have no business holding it.
+ */
+await check("a stop that does not ask for the key leaves the box empty",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.key === true));
+    browser.journey(walk.id).fire("click");
+    browser.arrive(walk.stops[0].open || "admin.html");
+    await browser.settled();
+    return walk.stops[0].key !== true &&
+      browser.frameField("keyfile") === "" &&
+      browser.fetched.length === 0;
+  });
 
 await check("leaving a journey puts the glass away and the walk back", () => {
   const browser = consoleInRecordedBrowser();
