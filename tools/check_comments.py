@@ -116,9 +116,16 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # a tidy-up afternoon.
 GENERATED = "dist"
 
+# server/schema.sql is in here because its comments are the ones
+# somebody ACTS on: which migration drops rows, which index rename is
+# half of an act, what a re-run does to a database that already holds
+# data. A sentence there is read by an operator with a terminal open,
+# which makes it the last place in this repository where a claim about
+# the past is harmless - and the file sat outside the scan while every
+# .js beside it was read (#227).
 SCAN = [
     ("apps/web", (".js", ".css", ".html")),
-    ("server", (".js",)),
+    ("server", (".js", ".sql")),
     ("dev", (".mjs", ".py", ".js")),
     ("tools", (".py",)),
 ]
@@ -129,7 +136,7 @@ EXEMPT = frozenset({
 })
 
 KIND = {".js": "js", ".mjs": "js", ".css": "css", ".html": "html",
-        ".py": "py"}
+        ".py": "py", ".sql": "sql"}
 
 # Per language: what opens a comment, and what opens a string that must
 # NOT be read as one. Two of the four matter for a reason already in
@@ -146,6 +153,11 @@ SYNTAX = {
              "string": (), "regex": False},
     "py": {"line": ("#",), "block": (('"""', '"""'), ("'''", "'''")),
            "string": ('"', "'"), "regex": False},
+    # Both quotes are code in SQL and neither is a comment: single
+    # quotes hold string literals, double quotes hold identifiers, and
+    # server/schema.sql's seeds and column names are written in them.
+    "sql": {"line": ("--",), "block": (("/*", "*/"),),
+            "string": ("'", '"'), "regex": False},
 }
 
 # Code is blanked to a character that no whitespace class matches, so
@@ -154,9 +166,12 @@ SYNTAX = {
 BLANK = "\x00"
 
 # What may separate the words of a phrase inside one comment: ordinary
-# whitespace, and the leading "*", "#" or "//" of a continuation line.
-# A phrase reflowed across a line break is the same phrase.
-GAP = r"[\s*#/]+"
+# whitespace, and the leading "*", "#", "//" or "--" of a continuation
+# line. A phrase reflowed across a line break is the same phrase, and
+# every comment in server/schema.sql is wrapped prose - so without the
+# hyphens here that file's rule would hold only for sentences that
+# happen to fit on one line.
+GAP = r"[\s*#/-]+"
 
 # A "/" may open a regular expression only where an expression may
 # begin. Without this, `.replace(/\//g, "_")` in server/worker.js reads
@@ -213,15 +228,25 @@ PHRASES = [
 # payload"; the opposite failure is silent.
 NEEDS_SUBJECT = frozenset({"used to"})
 
-# Every offender in the tree as of 2026-08-08, pinned so the ratchet
-# can start closed. {(file, phrase): count}. An entry comes OFF this
-# list in the pull request that next touches its file - never by
-# raising a count.
+# What the scan set holds, pinned so the ratchet starts closed against
+# each file on the day that file enters it. {(file, phrase): count}. An
+# entry comes OFF this list in the pull request that next touches its
+# file - never by raising a count.
+#
+# server/schema.sql's entry is the passive reading NEEDS_SUBJECT cannot
+# separate: "after the dev database has been used to rehearse it" is
+# "employed to", present tense and correct. It is pinned rather than
+# rewritten because the exemption that would clear it - a form of "be"
+# in front of the phrase - also clears "the flag was used to gate the
+# beta", and that one narrates. A false report is loud and rephrases in
+# a line; the silence is what nothing recovers from. The honest cleanup
+# is that rephrase, in the change that next edits the schema.
 ALLOWLIST = {
     ("apps/web/dashboard.js", "originally"): 1,
     ("apps/web/dashboard.js", "used to"): 1,
     ("dev/dashboard.test.mjs", "used to"): 2,
     ("dev/ui.test.mjs", "used to"): 1,
+    ("server/schema.sql", "used to"): 1,
 }
 
 
