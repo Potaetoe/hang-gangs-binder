@@ -1,13 +1,32 @@
 # dev/
 
 Test harness and scratch verification. **Never published** — the deploy
-copies `apps/web` and nothing else. Run everything at once with
-`./run check`; run one suite with `node dev/<name>.test.mjs`. Every
-suite loads the shipped file's real bytes (the pure/DOM split in
-`AGENTS.md` is what makes that possible), and every suite is registered
-in `tools/check.py` — the single registry, whose printed stage table is
-the roster; CI runs that same gate as one step. The table below maps
-what each suite defends, not where it is registered.
+copies `dist/`, and nothing under here is in it or reachable from it.
+
+Run the lot with `./run check`. Run one suite directly:
+`node dev/<name>.test.mjs` for the suites that drive the shipped
+scripts, `py -3 dev/<name>.test.py` for the ones that check a checker.
+Every suite loads the shipped file's real bytes — the pure/DOM split in
+`AGENTS.md` is what makes that possible — and every one opens with a
+header saying what it proves and why it is a file of its own rather than
+rows in its neighbour.
+
+**There is no list of the suites here, and adding one back is the
+mistake this paragraph exists to prevent (#206).** There were three
+rosters: `NODE_SUITES` in `tools/check.py`, this directory itself, and a
+table in this file. #204 taught the gate to hold the first two against
+each other in both directions — a suite that arrives with no line fails,
+and a line whose file left fails too. The table was compared against
+nothing, and by the time anybody measured it, it was short by more
+suites than a reader would ever guess from how complete it looked. A
+roster nothing checks is worse than no roster, because it reads like one
+that is checked.
+
+So `tools/check.py` is the roster. `NODE_SUITES` names the Node suites
+and carries the reason each is a separate stage; the Python suites are
+registered as stages in the same file, beside the checker each one
+guards. What actually ran is the stage table the gate prints, which is
+the one roster that cannot go stale.
 
 `harness.mjs` holds the `check`/`report` pair and the assertion that the
 number of checks a run performed is the number the suite says it has —
@@ -15,27 +34,6 @@ so a check that stops running goes red instead of vanishing under a
 confident summary. A suite adopting it keeps its own stubs, fixtures and
 labels, and passes its own count; the header of that file explains the
 two ways a check may be written and why both are still accepted.
-
-| Suite | What it proves |
-| --- | --- |
-| `crypto.test.mjs` | round trips for both stored formats, and the **committed fixtures still decrypt** — the one check standing between a format change and an unreadable database. The v2 fixture is asserted twice, once per recipient, because a change that locks one of the two out passes every round trip |
-| `form.test.mjs` | conversions, validation, the record — a wrong factor writes a plausible number into a blob with no original to compare against |
-| `form-wiring.test.mjs` | the DOM half of `form.js`, including Weigh in restoring the form after a submission (#64 lived in this gap) |
-| `submit.test.mjs` | panel counts come from `GET /me` and nowhere else; a refused send stores and claims nothing; prefill scoping (#56) |
-| `admin.test.mjs` | CSV quoting and the spreadsheet-formula guard — a quoting bug opens cleanly and is quietly wrong |
-| `admin-session.test.mjs` | the admin page runs on a session, no token box; deletion proved against a published snapshot, not the DOM |
-| `xlsx.test.mjs` | the hand-built ZIP opens at all — it ends with a reader that re-checks every CRC |
-| `dashboard.test.mjs` | aggregation, suppression floor, quantization — including that a published point is ambiguous rather than a join key |
-| `dashboard-render.test.mjs` | what the same file **draws**, which the row above cannot reach: it loads `dashboard.js` with no `document`, and the drawing half is behind that guard. Asserts the tree, not the call — the panel order, the classes `theme.css` styles against, the `MIN_CELL`-suppressed states, and that no handle survives into a published rendering |
-| `public.test.mjs` | signed-out, refused-session and nothing-published states stay distinct on the member dashboard |
-| `ui.test.mjs` | shared DOM wiring, and that `ui.js` contains no `fetch` or POST |
-| `session.test.mjs` | tab-scoped sessions, expiry, the auth POST/store/redirect handoff |
-| `worker.test.mjs` | routing, validation, CORS, sign-in, the gating matrix — and that `POST /auth/dev` **fails closed**, the one place a silent pass is itself the compromise |
-| `check_web.test.py` | `check_web.py`'s own CSP parser — a checker that cannot read is indistinguishable from a site with nothing wrong (#34) |
-| `check_server.test.py` | `check_server.py`'s vars parser and rules, including that its key pattern still matches real key material |
-| `make-sample.test.mjs` | `make-sample.mjs` still runs and still writes what its summary claims — the generator loads the shipped `form.js` and `crypto.js`, and nothing else here exercises it (#66) |
-| `demo.test.mjs` | the drivable demo cannot drift. Undoing the mirror's declared edits returns the shipped page byte for byte, every Worker path `apps/web` calls has an answer in the stub, and `apps/web` names nothing under `dev/`. It binds a socket and drives the real mirror |
-| `demo-bake.test.mjs` | the **emitted set** of a hosted build, which is a different failure from drift: no `apps/web` page written outside `/demo/` (a page with no `fetch` replacement on it is the product, live, on a public URL), no source off the allowlist, and a stamp that names the commit and refuses a dirty tree |
 
 ## Two kinds of fixture, opposite rules
 
