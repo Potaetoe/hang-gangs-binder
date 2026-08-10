@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 99;
+const EXPECTED = 101;
 
 function check(label, condition) {
   performed++;
@@ -1178,6 +1178,34 @@ check("and the guard is told about it without waiting for a reload",
   baseline.document.eventsHere.some((event) =>
     event && event.type === "binder:height-baseline" &&
     event.detail && event.detail.lastHeightCm === 177.8));
+
+/*
+ * WHAT RIDES ON binder:account, asserted as the whole key set rather
+ * than as the absence of whichever field worries us today.
+ *
+ * A `document` CustomEvent is a WIDER surface than this module's own
+ * scope, and that is the reason the arm exists. An extension content
+ * script running in an isolated world cannot read a closure in this
+ * file, and it can listen on `document` - so every member added to this
+ * payload is published to whatever the member has installed. The id is
+ * the one thing form.js needs, because it is what memberkey.js files a
+ * key under; the handle and the Telegram id this module also holds are
+ * not, and nothing structural keeps them off the event.
+ *
+ * Compared as the sorted key set so a field cannot arrive quietly: the
+ * mutation this reddens on is `telegramId` riding along beside the id,
+ * which passed the whole gate when the #85 review tried it.
+ */
+const announced = baseline.document.eventsHere.filter((event) =>
+  event && event.type === "binder:account");
+
+check("form.js is told whose account this is, on every /me that answers",
+  announced.length === 2 &&
+  announced.every((event) => event.detail.accountId === ACCOUNT));
+
+check("and the announcement carries the account id and nothing else",
+  announced.length > 0 && announced.every((event) =>
+    Object.keys(event.detail).slice().sort().join(",") === "accountId"));
 
 /* Typing does not move it. This is the check that fails on the obvious
  * wrong implementation - saving the baseline beside the draft - and the

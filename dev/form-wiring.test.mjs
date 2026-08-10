@@ -981,6 +981,140 @@ function setHeight(byId, feet, inches) {
     scenario.dispatched.includes(SUBMITTED_EVENT));
 }
 
+/* ------------------------------------------------------------------ */
+/* 10. Mandate 9, one file over.                                        */
+
+/*
+ * WHAT THE PRE-SEAL RECORD LEAVES BEHIND, and the answer has to be
+ * nothing.
+ *
+ * dev/submit.test.mjs asks this about submit.js, where a member's
+ * history is DECRYPTED. The same rule has to be asked here, where it is
+ * TYPED: buildRecord assembles the whole entry - weight, height, roles,
+ * the handle - and hands it to seal(). A form with one encrypt call had
+ * nowhere to park a copy; a form that chooses between two recipients and
+ * one has a branch, and a branch is where a cache gets parked.
+ *
+ * The mutation these arms exist to catch is a module-level
+ * `let lastEntry = null;` beside `accountId`, assigned inside seal(). It
+ * outlives every submission and it outlives sign-out - signOut() cannot
+ * reach this file's scope at all - and it passes every executed arm
+ * above, because what it changes is invisible from outside the closure.
+ *
+ * Which is why these are structural, the reason dev/submit.test.mjs
+ * gives for its own: a value cached inside a closure is not observable
+ * by any means from outside it, and that is exactly what makes the sink
+ * attractive. The question asked is narrow and total - does a frame that
+ * holds the record assign any name that outlives it? - and the list of
+ * surviving names is derived from the file rather than written here, so
+ * a cache under a name nobody predicted is caught by the same arm.
+ *
+ * Comments and string literals are removed BEFORE any brace is counted.
+ * dev/memberkey.test.mjs records what an unbalanced brace inside a
+ * string does to a raw counter: it inflates it permanently, and every
+ * rule about depth silently stops applying past that point.
+ */
+const formCode = formSource
+  .replace(/\/\*[\s\S]*?\*\//g, " ")
+  .replace(/(^|[^:])\/\/.*$/gm, "$1")
+  .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+  .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+  .replace(/`(?:[^`\\]|\\.)*`/g, "``");
+
+// The block the first brace at or after `from` opens, by matching braces.
+function frameAt(code, from) {
+  const start = from === -1 ? -1 : code.indexOf("{", from);
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < code.length; i++) {
+    if (code[i] === "{") depth += 1;
+    if (code[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return code.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+const frameOf = (code, declaration) =>
+  frameAt(code, code.indexOf(declaration));
+
+/*
+ * Every name setUp declares at its OWN top level. setUp runs once and
+ * every listener below closes over it, so those names live for the tab -
+ * they are this file's equivalent of module scope, and the depth is
+ * counted while the body is walked so a name declared inside any inner
+ * function is not one of them.
+ */
+function survivingNames(body) {
+  const names = new Set();
+  let depth = 0;
+  for (const line of body.split("\n")) {
+    if (depth === 1) {
+      const declared = /^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)/.exec(line);
+      if (declared) names.add(declared[1]);
+    }
+    for (const character of line) {
+      if (character === "{") depth += 1;
+      if (character === "}") depth -= 1;
+    }
+  }
+  return names;
+}
+
+const assignedIn = (names, frame) => [...names].filter((name) =>
+  new RegExp("(^|[^.\\w$])" + name + "\\s*=(?!=)").test(frame));
+
+const setUpBody = frameOf(formCode, "function setUp()");
+const surviving = setUpBody ? survivingNames(setUpBody) : new Set();
+const sealFrame = frameOf(formCode, "function seal(record)");
+const keyFrame = frameOf(formCode, "function memberKey()");
+// The submit listener is anonymous, so it is taken by its registration
+// rather than by a name. There is exactly one in the file.
+const submitFrame = frameAt(formCode, formCode.indexOf("form.addEventListener"));
+
+check("the module really was read - the three frames, and names with them",
+  Boolean(setUpBody) && Boolean(sealFrame) && Boolean(keyFrame) &&
+  Boolean(submitFrame) && surviving.has("accountId") &&
+  surviving.has("confirmedHeightCm"));
+
+check("the frame that seals the record assigns nothing that outlives it",
+  Boolean(sealFrame) && assignedIn(surviving, sealFrame).length === 0);
+
+check("nor does the frame that looks this member's key up",
+  Boolean(keyFrame) && assignedIn(surviving, keyFrame).length === 0);
+
+/*
+ * THE HANDLER ITSELF, which is where the record is built and the more
+ * obvious place to park one. Exactly one name is allowed to outlive it
+ * and it is named rather than counted: `confirmedHeightCm` is the height
+ * this member has already been asked about and stood by, and a guard
+ * that forgot it between presses would ask forever. The second arm says
+ * what that name holds, because "one name survives" is not the claim -
+ * "a number survives, and the entry does not" is.
+ */
+check("the frame that builds the record keeps only the height it must",
+  Boolean(submitFrame) &&
+  assignedIn(surviving, submitFrame).join(",") === "confirmedHeightCm");
+
+check("and what that one name holds is a height, not the record",
+  /confirmedHeightCm = enteredCm;/.test(formCode) &&
+  /const enteredCm = enteredHeightCm\(input\);/.test(formCode));
+
+/*
+ * And the sinks outside the closure, which no brace count can see: a
+ * record does not have to be cached to survive, it can be hung on the
+ * page or written to a store. Read off the source because the claim is
+ * that these calls are ABSENT, and an absent call runs in no scenario -
+ * the `root.` assignment is asserted as the whole set for the same
+ * reason, so a second global cannot arrive beside the export.
+ */
+check("the form writes nothing to web storage, to the DOM or to a global",
+  !/\b(?:localStorage|sessionStorage)\b/.test(formCode) &&
+  !/\.dataset\b/.test(formCode) &&
+  (formCode.match(/root\.[A-Za-z_$][\w$]*\s*=(?!=)/g) || []).join(",") ===
+    "root.BinderForm =");
+
 console.log(failures === 0
   ? "\nform wiring: all checks passed"
   : "\nform wiring: " + failures + " check(s) FAILED");
