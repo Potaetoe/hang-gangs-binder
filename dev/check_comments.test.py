@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 105
+EXPECTED = 106
 
 
 def check(label, condition):
@@ -734,6 +734,16 @@ check("an exempt file's unresolvable citation is not reported",
 
 check("and the same comment in the file beside it is",
       len(exempt_tree("tools/check_docs.py", STALE)) == 1)
+
+# The wiring, asked from outside. Every arm in this suite calls a rule
+# function directly, so a rule dropped from problems() passes all of
+# them while being absent from the gate - armed-looking and unarmed,
+# which AGENTS.md's review bar treats as worse than no check. This is
+# the one question none of those arms can answer about itself.
+check("the gate's problems() calls every rule this file defines",
+      {"generated_tree_problems", "missing_directories",
+       "control_byte_problems", "citation_problems", "ratchet_problems"}
+      <= set(check_comments.problems.__code__.co_names))
 
 
 if failures:
