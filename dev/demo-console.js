@@ -279,9 +279,62 @@
    * Both write into a page this console serves, and neither changes a
    * byte of it.
    */
-  function runErrand(todo) {
+  /*
+   * How long a section the page reveals BY ITS OWN WORK is waited for,
+   * counted in tries rather than in a duration.
+   *
+   * The admin page reveals its publishing card after a fetch and a few
+   * hundred unseals, so a console that pressed decrypt and looked once
+   * would report the card missing - a true statement made too early,
+   * which reads to a viewer exactly like the defect the report exists to
+   * expose. Tries rather than milliseconds because that is what a suite
+   * can spend all of at once: a budget in real time is a budget the
+   * arms below have to actually wait out.
+   */
+  const RENDER_TRIES = 100;
+  const RENDER_EVERY = 50;
+
+  /*
+   * The section, once it is on screen - or whatever there is after the
+   * budget runs out, which the caller reads for itself. Two failures are
+   * being told apart here and they get different sentences: a section
+   * the page does not carry at all, and one it carries and is not
+   * showing.
+   */
+  function painted(doc, id) {
+    return new Promise(function (resolve) {
+      let left = RENDER_TRIES;
+      const look = function () {
+        const section = doc.getElementById(id);
+        if (section && section.getClientRects().length > 0) {
+          resolve(section);
+          return;
+        }
+        left -= 1;
+        if (left <= 0) {
+          resolve(section);
+          return;
+        }
+        root.setTimeout(look, RENDER_EVERY);
+      };
+      look();
+    });
+  }
+
+  async function runErrand(todo) {
     const doc = frameDocument();
     if (doc === null) return;
+
+    /*
+     * THE KEY GOES IN BEFORE ANYTHING IS PRESSED, and that ordering is
+     * the errand rather than a coincidence of how this function is
+     * written. The stop that reaches the publishing card gets there by
+     * pressing the page's own Fetch and decrypt, and a key written after
+     * that press leaves the product answering "paste or choose your key
+     * file first" - a dead end reached by doing all three of the right
+     * things in the wrong order.
+     */
+    if (todo.key) await stageKey(doc);
 
     /*
      * A control that is not there is SAID, not skipped.
@@ -321,7 +374,6 @@
      * layout it does not own.
      */
     if (todo.scroll) {
-      const section = doc.getElementById(todo.scroll);
       /*
        * PRESENT IS NOT THE SAME AS ON SCREEN, and this is the one place
        * that difference is invisible. Several of the admin surface's
@@ -332,7 +384,11 @@
        * did before, with an errand that believes it ran. Rects rather
        * than the attribute, per AGENTS.md: `hidden` can read true while
        * an element paints, and the inverse is what bites here.
+       *
+       * WAITED FOR rather than looked at once, because the press above
+       * is what reveals it and the page's own work happens in between.
        */
+      const section = await painted(doc, todo.scroll);
       if (section && section.getClientRects().length > 0) {
         section.scrollIntoView({ block: "start" });
       } else if (section) {
@@ -347,7 +403,6 @@
       }
     }
 
-    if (todo.key) stageKey(doc);
   }
 
   /*
@@ -370,6 +425,16 @@
         devKey = await answer.text();
       }
       box.value = devKey;
+      /*
+       * Said the moment it happens, and to the feed rather than the
+       * status line, because the feed is the column a viewer is already
+       * reading and this line has to be beside the key rather than
+       * instead of the last thing that happened. The words are
+       * demo-stub.js's: a key going into a box in front of the person
+       * judging this design needs the sentence about what kind of key it
+       * is to travel with the ACT, not with one stop's narration.
+       */
+      feedLine(Demo.KEY_STAGED_LINE);
     } catch (error) {
       say("The demo's throwaway key could not be read (" +
         ((error && error.message) || error) + "), so this stop could not " +

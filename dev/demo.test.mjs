@@ -772,6 +772,15 @@ await check("a card speaks the driver's language, not the harness's", () =>
  */
 const consoleHtml = await readFile(HERE("./demo.html"), "utf8");
 const consoleCss = await readFile(HERE("./demo.css"), "utf8");
+/*
+ * Read here rather than beside the key arms far below, because the
+ * recorded browser's fetch hands these bytes back and the walks that
+ * stage a key are driven from several places in this file - a fixture
+ * declared after its first reader is a TDZ error the console reports as
+ * "the throwaway key could not be read", which reads like a defect in
+ * the console rather than in the order of this file.
+ */
+const devKeyFile = await readFile(HERE("./test-key.json"), "utf8");
 const consoleJs = await readFile(HERE("./demo-console.js"), "utf8");
 const bootSource = await readFile(HERE("./demo-boot.js"), "utf8");
 
@@ -2212,8 +2221,6 @@ await check("the admin journey narrates the timer rather than hiding it", () =>
  * never been in this repository. That is a claim about what the viewer
  * is told, so it is checked rather than trusted.
  */
-const devKeyFile = await readFile(HERE("./test-key.json"), "utf8");
-
 await check("the key the tour stages is the committed throwaway one", () =>
   Demo.DEV_KEY_FILE === "/dev/test-key.json" &&
   /THROWAWAY TEST KEY/i.test(devKeyFile));

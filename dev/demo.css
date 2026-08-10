@@ -329,12 +329,3 @@ iframe {
    * only ever owns the unpainted gap. */
   background: var(--panel);
 }
-
-footer {
-  max-width: 60rem;
-  margin-top: 1.4rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--edge);
-  color: var(--dim);
-  font-size: 0.9rem;
-}

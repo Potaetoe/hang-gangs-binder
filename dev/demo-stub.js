@@ -561,6 +561,27 @@
    */
   const DEV_KEY_FILE = "/dev/test-key.json";
 
+  /*
+   * What the console says, in the feed, the moment it puts that key in
+   * the page's box.
+   *
+   * THE DISCLOSURE HAS TO TRAVEL WITH THE ACT. A private key appearing
+   * in a box, in front of the person deciding whether to trust this
+   * design, teaches the wrong lesson unless the same moment says what
+   * kind of key it is - and a sentence carried by one stop's narration
+   * only covers the stop somebody wrote it for. Two journeys stage this
+   * key now, for different reasons, and the next one will not come with
+   * a narration about keys either.
+   *
+   * The feed is where it goes because the feed is already the place a
+   * viewer reads what just happened, and this is a thing the console
+   * really did rather than a line about what should be true.
+   */
+  const KEY_STAGED_LINE =
+    "The demo put its own key in the page's key box. It is a throwaway " +
+    "pair committed in this repository - it protects nothing and opens " +
+    "nothing real, and the key the gang uses is held offline and has " +
+    "never been here.";
 
   /*
    * What a request IS: a call the stub answers, a file in this build the
@@ -1177,6 +1198,9 @@
       stops: [
         {
           scenario: "admin",
+          key: true,
+          press: "run",
+          scroll: "publish-card",
           title: "One surface for the gang's controls",
           narration: "Publishing a fresh set of figures is one press, " +
             "and what goes out carries no names and no rows - only the " +
@@ -1213,6 +1237,9 @@
         },
         {
           scenario: "admin",
+          key: true,
+          press: "run",
+          scroll: "publish-card",
           free: true,
           title: "Now you try",
           narration: "Publish a set of figures, then open Muse's charts " +
@@ -1562,13 +1589,41 @@
    * the deployed demo while every arm passed here, because the arms all
    * arrived the tidy way.
    *
+   * AND THE THIRD TIDYING TAKES THE NAME AWAY ALTOGETHER. The same hosts
+   * serve a directory's index page at the directory itself, so
+   * `/demo/index.html` answers 308 to `/demo/` and what the frame
+   * reports has no file in it at all. That is the tidying that fires on
+   * the SIGN-IN page, which two of the four journeys open on - so the
+   * silent class above came back on the deployed build for half the
+   * journeys while every arm here passed, because all of them probe a
+   * name and this case has none.
+   *
    * A tidied name that matches nothing is still no destination. Widening
    * a match is one step from inventing a page, and 404.html is the case
    * that keeps it honest: a real page of the product, reachable in the
    * frame, and none of the four rail buttons is its.
    */
+
+  /*
+   * What a static host serves for a bare directory. It is the HOST's
+   * convention rather than this list's, which is why it is named here
+   * and not marked on a destination: the demo does not get to decide
+   * what /demo/ resolves to, it only has to recognize the answer.
+   */
+  const DIRECTORY_INDEX = "index.html";
+
   function destinationUnder(served) {
     const name = served.endsWith("/") ? served.slice(0, -1) : served;
+
+    /*
+     * The root goes back through this same lookup rather than returning
+     * the name directly, so a directory index that is not one of the
+     * four destinations resolves to nothing - the strictness above,
+     * kept: recovering from one bad guess is how a console starts
+     * making them.
+     */
+    if (name === "") return destinationUnder(DIRECTORY_INDEX);
+
     for (const one of DESTINATIONS) {
       if (one.file === name) return one.file;
       if (one.file === name + ".html") return one.file;
@@ -2319,6 +2374,7 @@
     FEATURES: FEATURES,
     TOURS: TOURS,
     DEV_KEY_FILE: DEV_KEY_FILE,
+    KEY_STAGED_LINE: KEY_STAGED_LINE,
     BOXES: BOXES,
     ROUTES: ROUTES,
     PREFIX_ROUTES: PREFIX_ROUTES,
