@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 473
+EXPECTED = 478
 
 
 def check(label, condition):
@@ -2819,6 +2819,43 @@ check("a stylesheet named only in a comment is not linked",
       styling_over({"your-page.html":
                     THEME_LINK + "<!-- %s -->" %
                     '<link rel="stylesheet" href="extra.css">'}) == [])
+
+# The third route, and the quietest of the three: an @import is
+# same-origin, so the policy permits it, and it sits INSIDE the file
+# checks 24 and 25 open rather than beside it - every page's link
+# roster stays correct while rules paint from somewhere nothing here
+# reads.
+IMPORTED = check_web.stylesheet_import_problems(
+    '@import url("extra.css");\n.card { padding: 1rem; }\n')
+check("a stylesheet pulling in a second one is reported",
+      len(IMPORTED) == 1)
+check("and the report quotes the import it found",
+      "extra.css" in IMPORTED[0])
+check("a stylesheet that imports nothing is clean",
+      check_web.stylesheet_import_problems(".card { padding: 1rem; }") == [])
+
+
+def imports_over(css):
+    """styling_exclusivity_problems() against a stylesheet holding `css`."""
+    with tempfile.TemporaryDirectory() as folder:
+        with open(os.path.join(folder, check_web.STYLESHEET), "w",
+                  encoding="utf-8") as handle:
+            handle.write(css)
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.styling_exclusivity_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+# theme.css argues at length, in comments, about what it refuses.
+check("an import named only in a comment is not an import",
+      imports_over("/* No @import url(\"extra.css\") here, see #227. */")
+      == [])
+check("and the same line outside a comment is one",
+      [subject for subject, _p in
+       imports_over('@import url("extra.css");')] == [check_web.STYLESHEET])
 
 check("nothing shipped is styled by anything but the one stylesheet",
       check_web.styling_exclusivity_problems() == [])
