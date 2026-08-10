@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 130);
+const { check, mustReject, report } = suite("demo", 175);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -196,10 +196,10 @@ await check("every declared edit is one the mirror actually applies", () => {
  * asked to take on trust is this list, so this is the check that has to
  * fail when it grows.
  */
-await check("the mirror declares exactly three edits, and they are these three", () =>
-  Demo.MIRROR_EDITS.length === 3 &&
+await check("the mirror declares exactly four edits, and they are these four", () =>
+  Demo.MIRROR_EDITS.length === 4 &&
   Demo.MIRROR_EDITS.map((edit) => edit.id).sort().join(",") ===
-    "boot,config,telegram" &&
+    "boot,config,links,telegram" &&
   Demo.MIRROR_EDITS.every((edit) =>
     typeof edit.what === "string" && edit.what.length > 0 &&
     typeof edit.why === "string" && edit.why.length > 0));
@@ -227,6 +227,53 @@ await check("the config edit points every page that loads config.js at the stand
 await check("a page that loads no config.js gets no config edit", () =>
   PAGES.filter((page) => !shipped[page].includes('<script src="config.js">'))
     .every((page) => !Demo.mirror(shipped[page]).applied.includes("config")));
+
+/*
+ * The fourth edit: a link out of the product cannot take the frame with
+ * it.
+ *
+ * Every page apps/web ships carries `<a href="https://github.com/...">`
+ * in its footer, with no target - right on the real site, and inside
+ * the console's frame a live escape hatch. Clicking it navigates the
+ * FRAME to github.com, which refuses to be framed, so the stage goes
+ * white and the only way back is pressing another card. Both analysts
+ * found it independently; it is the most literal case of the demo
+ * "acting like a live app" there is, because a real cross-origin
+ * request leaves the machine.
+ *
+ * Contained here rather than in apps/web because apps/web is the
+ * product: the mirror is the demo's one sanctioned way to differ from
+ * the shipped bytes, and it is declared, rendered for the owner, and
+ * held to an exact undo one screen up. That undo is what makes this
+ * safe - the round-trip check above now runs over this edit too, so a
+ * containment that also changed anything else fails there.
+ */
+await check("the mirror sends a link out of the product to its own tab", () =>
+  PAGES.every((page) => {
+    const out = Demo.mirror(shipped[page]).html;
+    const anchors = out.match(/<a [^>]*href="https?:\/\/[^"]*"[^>]*>/g) || [];
+    return anchors.length > 0 &&
+      anchors.every((tag) => tag.includes('target="_blank"') &&
+        tag.includes('rel="noopener noreferrer"'));
+  }));
+
+/*
+ * And only those. The walk happens by moving around the product, so the
+ * rail, the wordmark and every in-page link have to keep landing in the
+ * frame - a target on those would open the demo's own pages in tabs the
+ * console cannot see, which is the same walk-breaking failure from the
+ * other end.
+ */
+await check("an in-page link is left in the frame, because that is the walk", () =>
+  PAGES.every((page) => {
+    const out = Demo.mirror(shipped[page]).html;
+    const anchors = out.match(/<a [^>]*>/g) || [];
+    return anchors.filter((tag) => !/href="https?:\/\//.test(tag))
+      .every((tag) => !tag.includes("target="));
+  }));
+
+await check("every page carries the link edit, so no page is an escape", () =>
+  PAGES.every((page) => Demo.mirror(shipped[page]).applied.includes("links")));
 
 /* ------------------------------------------------------------------ */
 /* apps/web pays nothing for the demo.                                 */
@@ -745,32 +792,821 @@ await check("the console script paints the cards and none of the bench", () =>
   !consoleJs.includes('$("boxes")') &&
   !consoleJs.includes('$("edits")'));
 
+/* ------------------------------------------------------------------ */
+/* The console says where the frame IS, never where it was sent.       */
+
 /*
- * F9, keyed to card titles rather than staging ids (#209): the ids
- * are plumbing UAT.md's reader never sees, and a contract spelled in
- * words nobody reads is a contract about nothing. Each card owns one
- * UAT.md section, marked in its heading as `card "Title"`, and the
- * two documents must name exactly the same cards. Two-way on purpose:
- * one direction catches a stale section, the other catches a card no
- * section walks, and losing either half is how "contract" goes back
- * to being a word in a comment.
+ * The whole routing-desync class, at its one seam.
+ *
+ * These hold the console to reading its address readout and its
+ * "current" destination off THE FRAME, never off the file it asked for.
+ * The pages in the frame are real, live JavaScript: an already-signed-in
+ * visitor at Sign in is redirected to Your page, a revoked session
+ * bounces back to Sign in on load, an auth guard refuses a gated page,
+ * and the product's own rail carries somebody anywhere at any time.
+ * Every one of those moves the frame without the console being asked, so
+ * a console painting from its own press names a page the viewer is
+ * plainly not looking at - the owner's "it lands on the wrong forms",
+ * reproduced four ways by one analyst and six by the other.
+ *
+ * So the address is derived from where the frame REALLY IS. The pure
+ * half is here, in demo-stub.js, for the reason frameStyleFor is: what
+ * the console shows becomes a value this suite can assert, and the
+ * browser half only reads a location and assigns.
  */
-const uat = await readFile(HERE("../UAT.md"), "utf8");
-const uatCards = new Set();
-uat.split("\n").forEach((line) => {
-  if (!/^##/.test(line)) return;
-  const named = /card "([^"]+)"/.exec(line);
-  if (named) uatCards.add(named[1]);
+const CONSOLE_ORIGIN = "http://127.0.0.1:8151";
+const at = (href) => Demo.frameAddressOf(href);
+
+await check("the mirror path the console drives is the one the server serves", () =>
+  Demo.MIRROR_PATH === MIRROR_PREFIX);
+
+await check("a mirrored page is named by the frame, and its destination is current", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "charts.html");
+  return there.inside === true && there.file === "charts.html" &&
+    there.shown === CONSOLE_ORIGIN + Demo.MIRROR_PATH + "charts.html";
 });
 
-await check("UAT.md's card headings are readable at all", () =>
-  uatCards.size > 0);
+/*
+ * The finding itself, as a value. The console asked for your-page.html
+ * and the shipped auth guard answered by putting Sign in on the screen;
+ * what the address says is Sign in, because that is what is there.
+ */
+await check("a page that redirected itself is read at where it landed", () => {
+  const asked = "your-page.html";
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html");
+  return there.file === "index.html" && there.file !== asked;
+});
 
-await check("UAT.md and the console name exactly the same cards", () => {
-  const mine = new Set(Demo.FEATURES.map((card) => card.title));
-  return uatCards.size === mine.size &&
-    [...mine].every((title) => uatCards.has(title)) &&
-    [...uatCards].every((title) => mine.has(title));
+/*
+ * A mirrored page that is no destination highlights none of them.
+ * 404.html is a real page of the product and reachable in the frame, and
+ * lighting one of the four rail buttons for it would be the same lie in
+ * a quieter place.
+ */
+await check("a mirrored page that is no destination lights none of them", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "404.html");
+  return there.inside === true && there.file === null;
+});
+
+/*
+ * And the escape, which the link containment above now prevents and this
+ * refuses to paper over anyway. A frame that left the demo cannot be
+ * read at all - the browser refuses the cross-origin location - and the
+ * console's last honest act is to say so rather than keep showing the
+ * page it last asked for. Defence in depth: the containment is the fix,
+ * this is what the viewer sees if anything ever gets past it.
+ */
+await check("a frame that cannot be read is said to have left, not guessed at", () => {
+  const there = at(null);
+  return there.inside === false && there.file === null &&
+    typeof there.shown === "string" && there.shown.length > 0 &&
+    /demo/i.test(there.shown);
+});
+
+await check("an address outside the mirror is no page of the product", () => {
+  const there = at("https://github.com/Potaetoe/hang-gangs-binder");
+  return there.inside === false && there.file === null;
+});
+
+await check("an address that will not parse is refused, not read as a page", () =>
+  at("http://[").inside === false && at("http://[").file === null);
+
+/*
+ * THE WIRING, EARNED BY RUNNING THE BYTES (#154 F1's rule, applied to
+ * the console instead of the boot file).
+ *
+ * A source-string arm here would ask whether demo-console.js CONTAINS
+ * the word "load", which the comment explaining the listener contains
+ * too. What has to be true is that the console listens to the FRAME and
+ * repaints from the frame's own location - so the real file runs under
+ * node:vm against a RECORDED browser, exactly the way demo-boot.js is
+ * driven below, and the recording is asked what the console did.
+ *
+ * The recorded frame is the load-bearing part: its contentWindow
+ * reports a location the console never set, which is the situation
+ * every finding in this class arrives through.
+ */
+const CONSOLE_IDS = ["features", "destinations", "viewports", "status",
+  "feed", "try-next", "stage", "frame-path", "open-tab", "reset",
+  "tours", "tour-run", "tour-where", "tour-title", "tour-narration",
+  "tour-back", "tour-next", "tour-leave", "glass"];
+
+/*
+ * WHY textContent IS A SETTER HERE AND NOT A FIELD. The console empties
+ * a holder with `holder.textContent = ""` before repainting it, and in a
+ * real document that REMOVES THE CHILDREN. A recording that kept them
+ * would accumulate every generation of destination buttons, so a console
+ * painting the wrong thing and then the right thing over it would read
+ * as two pressed buttons rather than one - which is a fixture that fails
+ * for a reason next to the one under test. Found by mutation: M1 failed
+ * an arm it was not supposed to reach.
+ */
+function recordedNode(id) {
+  const it = {
+    id: id,
+    className: "",
+    // A form control's own two: the console writes a key into `value`
+    // and presses a tab with `click`, and both are what the shipped
+    // page would see from a person doing it by hand.
+    value: "",
+    pressed: false,
+    click() { it.pressed = true; it.fire("click"); },
+    style: {},
+    dataset: {},
+    children: [],
+    attrs: {},
+    scrollTop: 0,
+    scrollHeight: 0,
+    listeners: {},
+    setAttribute(name, value) { it.attrs[name] = String(value); },
+    removeAttribute(name) { delete it.attrs[name]; },
+    getAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(it.attrs, name)
+        ? it.attrs[name] : null;
+    },
+    appendChild(child) { it.children.push(child); return child; },
+    addEventListener(type, fn) {
+      (it.listeners[type] = it.listeners[type] || []).push(fn);
+    },
+    fire(type) {
+      (it.listeners[type] || []).slice()
+        .forEach((fn) => fn({ currentTarget: it, target: it }));
+    },
+  };
+  let text = "";
+  Object.defineProperty(it, "textContent", {
+    enumerable: true,
+    get: () => text,
+    set: (value) => { text = String(value); it.children.length = 0; },
+  });
+  return it;
+}
+
+function consoleInRecordedBrowser() {
+  const nodes = {};
+  const kept = {};
+  const timers = [];
+  const fetched = [];
+  CONSOLE_IDS.forEach((id) => { nodes[id] = recordedNode(id); });
+
+  const replaced = [];
+  nodes.stage.contentWindow = {
+    location: {
+      href: null,
+      replace(href) { replaced.push(String(href)); },
+    },
+  };
+
+  /*
+   * The page inside the frame, as much of it as the console touches:
+   * it looks controls up by id, presses one, writes a key into another,
+   * and pokes the document itself to say somebody is here. Nodes are
+   * made on demand, so an errand naming a control this recording never
+   * heard of still gets an object - which is the case worth recording,
+   * because a console that quietly found nothing is exactly what the
+   * arms above are trying to catch.
+   */
+  const frameNodes = {};
+  const poked = [];
+  nodes.stage.contentDocument = {
+    getElementById: (id) => {
+      if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
+      return frameNodes[id];
+    },
+    dispatchEvent: (event) => { poked.push(event.type); },
+  };
+
+  const context = {
+    BinderDemo: Demo,
+    document: {
+      getElementById: (id) => nodes[id] || null,
+      createElement: (tag) => recordedNode(tag),
+    },
+    location: { origin: CONSOLE_ORIGIN },
+    // A real store rather than a sink: the staging IS three writes into
+    // it, so a recording that swallowed them could not tell a stop that
+    // staged its world from one that staged nothing.
+    sessionStorage: {
+      getItem: (key) => (key in kept ? kept[key] : null),
+      setItem: (key, value) => { kept[key] = String(value); },
+      removeItem: (key) => { delete kept[key]; },
+    },
+    localStorage: {
+      setItem: (key, value) => { kept[key] = String(value); },
+      removeItem: (key) => { delete kept[key]; },
+    },
+    // The corpus worker is refused rather than recorded: buildCorpus
+    // already has an arm for a browser that cannot start one, and what
+    // is under test here is the frame, not the charts.
+    Worker: function () { throw new Error("no worker in this recording"); },
+    open() {},
+    /*
+     * The keep-awake timer, recorded rather than run. What matters is
+     * WHETHER one is pending, because that is the whole claim: the
+     * console tells the frame somebody is here while a stop is being
+     * narrated, and stops the moment the frame is handed over. Actually
+     * firing it would make these arms wait a minute each.
+     */
+    setInterval: (fn, every) => {
+      timers.push({ fn, every });
+      return timers.length;
+    },
+    clearInterval: (handle) => {
+      if (handle >= 1 && handle <= timers.length) timers[handle - 1] = null;
+    },
+    Event: function (type) { this.type = type; },
+    /*
+     * The console's own fetch, which is NOT the one demo-boot.js
+     * replaces: the console runs outside the frame, so this is the real
+     * one, and the only thing it is ever asked for is the committed
+     * throwaway key. Recorded by URL so an arm can say which file was
+     * read, and answered with the bytes on disk so what lands in the
+     * key box is the file rather than a stand-in for it.
+     */
+    fetch: (url) => {
+      fetched.push(String(url));
+      return Promise.resolve({ text: () => Promise.resolve(devKeyFile) });
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(consoleJs, context, { filename: "demo-console.js" });
+
+  const arrive = (file) => {
+    nodes.stage.contentWindow.location.href =
+      CONSOLE_ORIGIN + Demo.MIRROR_PATH + file;
+    nodes.stage.fire("load");
+  };
+  const pressed = () => nodes.destinations.children
+    .filter((one) => one.getAttribute("aria-pressed") === "true")
+    .map((one) => one.title);
+  const destination = (file) =>
+    nodes.destinations.children.find((one) => one.title === file);
+  // The walk button lives inside its journey's card, so this looks
+  // through the card rather than only at it - the recording has no
+  // querySelector, and adding one would be a fixture inventing a
+  // convenience the console does not use.
+  const journey = (id) => {
+    let found;
+    nodes.tours.children.forEach((card) => {
+      card.children.forEach((child) => {
+        if (child.dataset.tour === id) found = child;
+      });
+    });
+    return found;
+  };
+  const locked = () => nodes.glass.getAttribute("hidden") === null;
+  const staged = () => kept[Demo.STORAGE_KEYS[0]];
+  const waking = () => timers.filter((one) => one !== null);
+  const frameField = (id) =>
+    (id in frameNodes ? frameNodes[id].value : "");
+  const framePressed = () =>
+    Object.keys(frameNodes).filter((id) => frameNodes[id].pressed === true);
+  // Staging the key is asynchronous - the console reads the file and
+  // then writes it - so an arm has to let those settle before asking
+  // what is in the box. A macrotask drains the microtasks under it.
+  const settled = () => new Promise((done) => { setTimeout(done, 0); });
+
+  return {
+    nodes, replaced, arrive, pressed, destination, journey, locked, staged,
+    waking, frameField, framePressed, poked, fetched, settled,
+  };
+}
+
+await check("the console repaints its address from the frame's own arrival", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.destination("your-page.html").fire("click");
+  // The shipped auth guard answers by putting Sign in on the screen.
+  browser.arrive("index.html");
+  return browser.nodes["frame-path"].textContent ===
+      CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html" &&
+    browser.pressed().join(",") === "index.html";
+});
+
+/*
+ * The compounding half, and the reason the resync alone is not the whole
+ * repair: setting an iframe's `src` to the string it already holds
+ * reloads nothing in any browser. Once a page has redirected itself, the
+ * string the frame still holds is the page the viewer wants back - so
+ * the button for it is a press that does nothing, with no way for the
+ * console to say so. Replacing the frame's own location is the
+ * navigation that always happens.
+ */
+await check("a press moves the frame even when the frame already holds that page", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.destination("index.html").fire("click");
+  const first = browser.nodes.stage.getAttribute("src");
+  browser.arrive("your-page.html");
+  browser.destination("index.html").fire("click");
+  return first === Demo.MIRROR_PATH + "index.html" &&
+    browser.replaced.join(",") === Demo.MIRROR_PATH + "index.html";
+});
+
+/*
+ * Non-vacuity for the two arms above: a recording whose frame never
+ * moves on its own would let a console that still paints from its own
+ * press pass both. This one asserts the console does NOT claim a page
+ * before the frame has arrived at it - the press assigns, the arrival
+ * paints, and between them the readout still names the page actually on
+ * screen.
+ */
+await check("a press claims nothing until the frame has arrived", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.arrive("index.html");
+  browser.destination("charts.html").fire("click");
+  return browser.nodes["frame-path"].textContent ===
+      CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html" &&
+    browser.pressed().join(",") === "index.html";
+});
+
+/* ------------------------------------------------------------------ */
+/* The journeys: nine chips become four walks (#238).                  */
+
+/*
+ * A grid of nine state names is not a walk. It tells somebody what the
+ * product HAS and never what to press first, so a cold viewer builds
+ * their own order and the demo is different every time it is shown.
+ * The owner's ruling is a scripted one: four journeys, each a sequence
+ * of stops, each stop a staged world plus a page plus the sentence
+ * that says what to look at.
+ *
+ * The cards do not go. They keep every arm above - the register, the
+ * two-way scenario coverage, the pointer per action - and move behind a
+ * free-drive disclosure for a tester who wants one feature rather than
+ * a story. What changes is which of the two is the landing screen.
+ */
+await check("every journey has an id, a title, a blurb and stops", () =>
+  Array.isArray(Demo.TOURS) && Demo.TOURS.length === 4 &&
+  Demo.TOURS.every((walk) =>
+    typeof walk.id === "string" && walk.id.length > 0 &&
+    typeof walk.title === "string" && walk.title.length > 0 &&
+    typeof walk.blurb === "string" && walk.blurb.length > 0 &&
+    Array.isArray(walk.stops) && walk.stops.length > 0));
+
+await check("no two journeys share an id or a title", () =>
+  new Set(Demo.TOURS.map((walk) => walk.id)).size === Demo.TOURS.length &&
+  new Set(Demo.TOURS.map((walk) => walk.title)).size === Demo.TOURS.length);
+
+/*
+ * One journey is where somebody starts, and the table of contents says
+ * so. A reader given four equal doors picks one at random, which is the
+ * problem the journeys exist to solve, moved up a level.
+ */
+await check("exactly one journey is the one to start with", () =>
+  Demo.TOURS.filter((walk) => walk.first === true).length === 1);
+
+/*
+ * DRIVABLE, in the sense the two-way promise uses: a stop names a
+ * staging that exists and a page apps/web actually ships. A stop naming
+ * neither is a step in a script nobody can walk.
+ */
+await check("every stop stages a real world and opens a shipped page", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) =>
+    Demo.SCENARIOS.some((one) => one.id === stop.scenario) &&
+    (stop.open === undefined ||
+      Demo.DESTINATIONS.some((d) => d.file === stop.open)))));
+
+/*
+ * The other direction, and it is the one that catches drift: a staging
+ * no journey reaches is a world the scripted demo never shows. The
+ * cards keep their own copy of this arm, so both surfaces are held -
+ * losing either is how a staging goes quietly unwalked.
+ */
+await check("every staging is reached by some journey stop", () => {
+  const reached = new Set();
+  Demo.TOURS.forEach((walk) =>
+    walk.stops.forEach((stop) => reached.add(stop.scenario)));
+  return Demo.SCENARIOS.every((one) => reached.has(one.id));
+});
+
+/*
+ * THE GLASS COMES OFF AT THE END OF A JOURNEY, NEVER IN THE MIDDLE
+ * (the owner's re-cut). Every journey finishes on a stop that hands the
+ * frame over, and no earlier stop does - which is the whole shape of
+ * the promise: read along, then drive. A journey with the free stop in
+ * the middle would leave the rest of its script being narrated over a
+ * page the viewer has already wandered off.
+ */
+await check("every journey ends by handing the frame over, and only then", () =>
+  Demo.TOURS.every((walk) =>
+    walk.stops[walk.stops.length - 1].free === true &&
+    walk.stops.slice(0, -1).every((stop) => stop.free !== true)));
+
+await check("a journey speaks the driver's language, not the harness's", () =>
+  Demo.TOURS.every((walk) =>
+    [walk.title, walk.blurb]
+      .concat(walk.stops.map((stop) => stop.title))
+      .concat(walk.stops.map((stop) => stop.narration))
+      .every((text) => typeof text === "string" && text.length > 0 &&
+        !CARD_JARGON.test(text) && !text.includes("`"))));
+
+/*
+ * A stop that presses something in the frame names a control THE
+ * SHIPPED PAGE ACTUALLY CARRIES, read out of apps/web rather than
+ * trusted.
+ *
+ * This is AGENTS.md's corollary: a check computed entirely from the
+ * file it guards cannot detect that the file was rearranged. The
+ * prefill stop exists because the staging lands on the tab that does
+ * not show the prefilled form, and the fix is the tour pressing the
+ * other tab - so the day that tab is renamed, this fails here rather
+ * than becoming a stop that silently presses nothing and shows the
+ * wrong tab again.
+ */
+await check("a stop that presses a control names one the page really has", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (stop.press === undefined) return true;
+    const page = stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+    return shipped[page].includes('id="' + stop.press + '"');
+  })));
+
+// Non-vacuity: an arm over no presses passes forever.
+await check("at least one stop really does press a control", () =>
+  Demo.TOURS.some((walk) =>
+    walk.stops.some((stop) => typeof stop.press === "string")));
+
+/* ------------------------------------------------------------------ */
+/* UAT.md walks the journeys (#238, the owner's re-cut).               */
+
+/*
+ * F9, re-keyed from cards to journey stops and NOT weakened.
+ *
+ * The contract was one UAT.md section per card, titles agreeing exactly
+ * in both directions. The journeys replace the cards as what a driver
+ * is sent through, so the pointer has to move with them - but the two
+ * directions are the whole value, and a re-key that kept one is a
+ * re-key that threw the contract away and left the word.
+ *
+ * TWO VOICES, RULED AND NOT MERGED. UAT.md is the DRIVER's acceptance
+ * script, auditor-precise, and it REFERENCES a journey stop; the tour's
+ * narration is the member-facing voice #192 settled. Different readers,
+ * same walk. So this asserts the pointers resolve, never that the two
+ * documents say the same words - the day it asserted that, one of the
+ * two voices would have to go.
+ *
+ * The section IDs stay A0-A12 and the recording template's row names
+ * stay exactly as they were, because the posting format is what a
+ * recorded pass is filed as and re-keying that costs a record nobody
+ * can compare.
+ */
+const uat = await readFile(HERE("../UAT.md"), "utf8");
+const uatStops = [];
+uat.split("\n").forEach((line) => {
+  if (!/^##/.test(line)) return;
+  const named = /journey "([^"]+)", stop ([0-9]+)/.exec(line);
+  if (named) uatStops.push({ title: named[1], stop: Number(named[2]) });
+});
+
+await check("UAT.md's journey pointers are readable at all", () =>
+  uatStops.length >= 10);
+
+/*
+ * REACHABLE: every staged section points at a journey that exists and a
+ * stop that journey really has. A section pointing at stop 9 of a
+ * seven-stop walk sends a driver somewhere there is nothing to do.
+ */
+await check("every UAT section points at a journey stop that exists", () =>
+  uatStops.every((pointer) => {
+    const walk = Demo.TOURS.find((one) => one.title === pointer.title);
+    return walk !== undefined && pointer.stop >= 1 &&
+      pointer.stop <= walk.stops.length;
+  }));
+
+/*
+ * And the direction that catches a journey nobody accepts: four walks
+ * exist and the acceptance script has to send a driver through all of
+ * them. Without this half a journey could be added, shown to the owner,
+ * and never appear in the document that decides whether it passed.
+ */
+await check("every journey is walked by some UAT section", () => {
+  const walked = new Set(uatStops.map((pointer) => pointer.title));
+  return Demo.TOURS.every((walk) => walked.has(walk.title));
+});
+
+/*
+ * The cards keep their own home. They are the free drive, and UAT.md
+ * names journeys rather than cards - so nothing here holds the two
+ * documents to one card list, and nothing should: the cards are a
+ * complete surface in their own right, which the scenario-coverage arms
+ * above hold in both directions without UAT.md's help.
+ */
+await check("no UAT section still points at a card", () =>
+  !/^##.*card "/m.test(uat));
+
+/* ------------------------------------------------------------------ */
+/* The walk, and the glass over it, driven for real.                   */
+
+await check("the console page carries the journeys, the walk and the glass", () =>
+  consoleHtml.includes('id="tours"') &&
+  consoleHtml.includes('id="tour-run"') &&
+  consoleHtml.includes('id="tour-narration"') &&
+  consoleHtml.includes('id="tour-next"') &&
+  consoleHtml.includes('id="tour-back"') &&
+  consoleHtml.includes('id="glass"'));
+
+/*
+ * The cards are still on the page and still behind a disclosure, which
+ * is the whole of the demotion: a tester who wants one feature opens
+ * it, and a cold viewer is not asked to choose among nine states before
+ * anything has been explained.
+ */
+await check("the cards are on the page, behind the free-drive disclosure", () =>
+  /<details[^>]*id="free-drive"/.test(consoleHtml) &&
+  consoleHtml.indexOf('id="free-drive"') <
+    consoleHtml.indexOf('id="features"'));
+
+/*
+ * The glass has to be a real element with real CSS behind it, because
+ * an overlay that does not cover anything is a promise of read-only
+ * that the first click disproves - in front of the owner.
+ */
+const consoleCss = await readFile(HERE("./demo.css"), "utf8");
+await check("the glass is laid over the frame by the stylesheet", () =>
+  /#glass\s*\{[^}]*position:\s*absolute/.test(consoleCss) &&
+  /#glass\s*\{[^}]*inset:/.test(consoleCss) &&
+  /\[hidden\]\s*\{[^}]*display:\s*none/.test(consoleCss));
+
+/*
+ * And now the engine, run rather than read. Same reasoning as the
+ * resync arms above: every string a source-level check could pin here
+ * is one the comment explaining the engine also contains.
+ */
+await check("the console opens on the journeys with none running", () => {
+  const browser = consoleInRecordedBrowser();
+  return browser.nodes.tours.children.length === Demo.TOURS.length &&
+    browser.nodes["tour-run"].getAttribute("hidden") !== null &&
+    browser.locked() === false;
+});
+
+await check("starting a journey stages its first stop behind the glass", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS[0];
+  browser.journey(walk.id).fire("click");
+  return browser.nodes["tour-title"].textContent === walk.stops[0].title &&
+    browser.nodes["tour-narration"].textContent === walk.stops[0].narration &&
+    browser.nodes["tour-run"].getAttribute("hidden") === null &&
+    browser.locked() === true;
+});
+
+await check("Next and Back move along the journey's own stops", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS[0];
+  browser.journey(walk.id).fire("click");
+  browser.nodes["tour-next"].fire("click");
+  const second = browser.nodes["tour-title"].textContent;
+  browser.nodes["tour-next"].fire("click");
+  const third = browser.nodes["tour-title"].textContent;
+  browser.nodes["tour-back"].fire("click");
+  return second === walk.stops[1].title && third === walk.stops[2].title &&
+    browser.nodes["tour-title"].textContent === walk.stops[1].title;
+});
+
+/*
+ * The ruling itself, as an executed fact: the glass stays on for every
+ * narrated stop and comes off at the end. Walked stop by stop rather
+ * than jumped to the last one, because what is being asserted is that
+ * nothing in the middle unlocks it.
+ */
+await check("the glass holds all the way to the stop that hands it over", () =>
+  Demo.TOURS.every((walk) => {
+    const browser = consoleInRecordedBrowser();
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < walk.stops.length; i += 1) {
+      if (browser.locked() !== (walk.stops[i].free !== true)) return false;
+      if (i < walk.stops.length - 1) browser.nodes["tour-next"].fire("click");
+    }
+    return browser.locked() === false;
+  }));
+
+await check("a stop stages the world it names, not the one before it", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS[0];
+  browser.journey(walk.id).fire("click");
+  const first = browser.staged();
+  browser.nodes["tour-next"].fire("click");
+  return first === walk.stops[0].scenario &&
+    browser.staged() === walk.stops[1].scenario;
+});
+
+/* ------------------------------------------------------------------ */
+/* Three fixture gaps, told honestly rather than papered over (#238).  */
+
+/*
+ * THE PREFILL STOP LANDS ON THE TAB THE PREFILLED FORM IS ON.
+ *
+ * The staging was always right - the measurements really are written
+ * into the device's own store - and Your page opens on the list of past
+ * entries, which is a different tab. So the card promising "your last
+ * measurements are already in it" showed a list of dates, and the
+ * promise was true about a screen nobody was looking at. Held by
+ * driving it: the stop is walked to and the frame is asked which
+ * control was pressed.
+ */
+await check("the prefill stop presses its way to the form it promises",
+  async () => {
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.scenario === "member-prefilled"));
+    const index = walk.stops.findIndex((stop) =>
+      stop.scenario === "member-prefilled");
+    const browser = consoleInRecordedBrowser();
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive("your-page.html");
+    await browser.settled();
+    return browser.framePressed().join(",") === "add-entry-tab";
+  });
+
+/*
+ * THE EMPTY-SITE-COPY STOP DOES NOT CLAIM A FEATURE THAT HAS NOT
+ * SHIPPED.
+ *
+ * That staging exists to demonstrate #87 - an admin editing the site's
+ * words - and #87 has not landed: nothing in apps/web calls /content at
+ * all. What the page shows is therefore materially the same admin panel
+ * as its two neighbours, and a stop presenting it as the feature would
+ * be the false-confidence direction this suite's header names, told to
+ * the person deciding the cutover.
+ *
+ * The condition is read out of apps/web rather than written down, so
+ * the day #87 lands this arm stops applying on its own rather than
+ * pinning the demo to an apology it has outgrown.
+ */
+const contentShipped = Demo.probeHit(webSource["admin.js"],
+  { file: "apps/web/admin.js", pattern: "\"/content\"" });
+
+await check("the empty-copy stop says the editing surface is still to come", () => {
+  const stop = Demo.TOURS.flatMap((one) => one.stops)
+    .find((each) => each.scenario === "config-fallback");
+  return stop !== undefined &&
+    (contentShipped || /still being built|not yet|to come/i.test(stop.narration));
+});
+
+/*
+ * THE IDLE TIMER IS KEPT AWAY WHILE A STOP IS READ, AND HANDED BACK
+ * WITH THE FRAME.
+ *
+ * The admin page's ten-minute expiry is real, correct product
+ * behavior - it exists so a keyholder's decrypted corpus is not left
+ * open on an unattended screen - and it is measured against interaction
+ * with the FRAME's document, so a presenter talking over the console
+ * does not count as being there. Ten minutes into a narrated walk it
+ * signs itself out and throws away what it decrypted, mid-sentence.
+ *
+ * Both halves are asserted, and the second is the one that keeps this
+ * honest: a console that simply held the page awake forever would have
+ * disabled a security feature and told nobody. It stops at the stop
+ * that hands the frame over, so the viewer who was just told about the
+ * clock is handed the real one.
+ */
+await check("a narrated stop tells the frame somebody is here", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS.find((one) => one.id === "admin");
+  browser.journey(walk.id).fire("click");
+  const awake = browser.waking();
+  return awake.length === 1 && awake[0].every < 8 * 60 * 1000;
+});
+
+await check("and stops the moment the frame is handed over", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS.find((one) => one.id === "admin");
+  browser.journey(walk.id).fire("click");
+  for (let i = 1; i < walk.stops.length; i += 1) {
+    browser.nodes["tour-next"].fire("click");
+  }
+  return walk.stops[walk.stops.length - 1].free === true &&
+    browser.waking().length === 0;
+});
+
+await check("leaving a journey stops it too", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.journey("admin").fire("click");
+  browser.nodes["tour-leave"].fire("click");
+  return browser.waking().length === 0;
+});
+
+/*
+ * And the disclosure, because a demo that quietly defeats a security
+ * feature to look better is the false-confidence direction again. The
+ * admin journey says out loud what the timer does and that the console
+ * has been holding it off.
+ */
+await check("the admin journey narrates the timer rather than hiding it", () =>
+  Demo.TOURS.find((one) => one.id === "admin").stops
+    .some((stop) => /ten minutes/i.test(stop.narration) &&
+      /awake/i.test(stop.narration)));
+
+/* ------------------------------------------------------------------ */
+/* The keyholder's key, staged so the act is performable cold (#238).  */
+
+/*
+ * The demo's headline act was not performable by anybody who had not
+ * cloned this repository.
+ *
+ * The keyholder journey promises sealed rows coming back and opening.
+ * The page asks for a key; nothing in the console, the page or the
+ * frame ever surfaced one; and the key it wants exists only as a file
+ * in this repository. So the press answered "paste or choose your key
+ * file first" and the walk dead-ended - and Publish snapshot, which the
+ * admin page only reveals after a successful decrypt, was unreachable
+ * behind the same missing ingredient.
+ *
+ * The fix is the tour putting the committed throwaway key in the page's
+ * own box, the same way a person would paste it. Everything after that
+ * is the shipped code.
+ *
+ * IT IS A THROWAWAY, AND THE COPY HAS TO SAY SO. A demo that shows a
+ * private key going into a box, in front of the person deciding whether
+ * to trust this design, teaches the wrong lesson unless it says in the
+ * same breath that this pair protects nothing and that the real one has
+ * never been in this repository. That is a claim about what the viewer
+ * is told, so it is checked rather than trusted.
+ */
+const devKeyFile = await readFile(HERE("./test-key.json"), "utf8");
+
+await check("the key the tour stages is the committed throwaway one", () =>
+  Demo.DEV_KEY_FILE === "/dev/test-key.json" &&
+  /THROWAWAY TEST KEY/i.test(devKeyFile));
+
+await check("the stop that stages the key says out loud that it is a throwaway", () =>
+  Demo.TOURS.some((one) => one.stops.some((stop) =>
+    stop.key === true && /throwaway/i.test(stop.narration) &&
+      /offline|never/i.test(stop.narration))));
+
+/*
+ * The box it goes in is the one the shipped page actually reads, read
+ * out of apps/web rather than trusted - the same corollary the press
+ * arm carries. A stop writing into a renamed textarea would fill
+ * nothing and report nothing.
+ */
+await check("the key box the tour fills is the one admin.html carries", () =>
+  shipped["admin.html"].includes('id="keyfile"'));
+
+/*
+ * And the transport, run rather than read: the console fetches the
+ * committed file and writes its text into the frame's key box. Driven
+ * through the recorded browser because the claim is that a viewer who
+ * presses Fetch and decrypt finds a key already there - not that the
+ * source mentions one.
+ */
+await check("walking to the key stop puts the key in the frame's box",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.key === true));
+    const index = walk.stops.findIndex((stop) => stop.key === true);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(walk.stops[index].open || "admin.html");
+    await browser.settled();
+    return browser.frameField("keyfile") === devKeyFile &&
+      browser.fetched.join(",") === Demo.DEV_KEY_FILE;
+  });
+
+/*
+ * Non-vacuity, and the arm that says the key is not simply always
+ * there: a stop that does not ask for it leaves the box alone. A
+ * console that filled every page's key box would pass the arm above and
+ * be staging key material into pages that have no business holding it.
+ */
+await check("a stop that does not ask for the key leaves the box empty",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.key === true));
+    browser.journey(walk.id).fire("click");
+    browser.arrive(walk.stops[0].open || "admin.html");
+    await browser.settled();
+    return walk.stops[0].key !== true &&
+      browser.frameField("keyfile") === "" &&
+      browser.fetched.length === 0;
+  });
+
+/*
+ * The contents are the LANDING screen and step aside while a walk runs.
+ * Four journey cards stacked above the walk panel push the narration -
+ * the one thing a viewer is here to read - below the fold on an
+ * ordinary window, which was found by walking it in a browser rather
+ * than by reading the markup.
+ */
+await check("the contents step aside while a walk is running", () => {
+  const browser = consoleInRecordedBrowser();
+  const before = browser.nodes.tours.getAttribute("hidden");
+  browser.journey(Demo.TOURS[0].id).fire("click");
+  return before === null &&
+    browser.nodes.tours.getAttribute("hidden") !== null;
+});
+
+await check("leaving a journey puts the glass away and the contents back", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.journey(Demo.TOURS[0].id).fire("click");
+  browser.nodes["tour-leave"].fire("click");
+  return browser.locked() === false &&
+    browser.nodes["tour-run"].getAttribute("hidden") !== null &&
+    browser.nodes.tours.getAttribute("hidden") === null;
 });
 
 /* ------------------------------------------------------------------ */

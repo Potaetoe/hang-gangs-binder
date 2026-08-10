@@ -34,6 +34,19 @@
   ];
 
   /*
+   * The path the mirrored pages are served under, and its one home.
+   *
+   * dev/demo-server.mjs serves this path and dev/demo-console.js drives
+   * it, so the two have to agree and dev/demo.test.mjs holds them to
+   * each other. Do not give either side a spelling of its own: the
+   * console decides WHICH PAGE THE FRAME IS ON from this prefix, so a
+   * console reading one path while the server serves another reports
+   * every page as outside the demo - and the symptom is an address
+   * readout refusing a page that is plainly on screen.
+   */
+  const MIRROR_PATH = "/demo/";
+
+  /*
    * The sizes the console can give the frame, in CSS pixels.
    *
    * An iframe's width IS the viewport the page inside it lays out
@@ -154,6 +167,18 @@
         "the one thing the widget contributes.",
     },
     {
+      id: "links",
+      what: "Sends a link that leaves the product to its own tab.",
+      why: "Every page ships a footer link to the source on GitHub, " +
+        "with no target - right on the real site, and inside this " +
+        "frame a live escape hatch. Clicking it navigates the FRAME to " +
+        "github.com, which refuses to be framed, so the stage goes " +
+        "white and the only way back is pressing another card. A new " +
+        "tab keeps the link working and keeps the walk in the frame. " +
+        "Links inside the product are deliberately untouched: moving " +
+        "around the site in the frame is half of what there is to see.",
+    },
+    {
       id: "config",
       what: "Points config.js at a stand-in naming an address that " +
         "cannot resolve.",
@@ -180,6 +205,21 @@
   const CONFIG_STANDIN = '<script src="/dev/demo-config.js"></script>';
 
   /*
+   * The link edit, spelled as an exact pair so unmirror can undo it.
+   *
+   * Anchored on `<a href="` rather than on any anchor carrying an
+   * absolute href, because the undo has to be exact and a looser match
+   * would have to guess where to put the attributes back. If a page
+   * ever writes its external link with another attribute first, this
+   * stops matching it - and dev/demo.test.mjs asks the emitted bytes
+   * whether EVERY external anchor is contained, so that page fails the
+   * gate instead of quietly shipping an escape hatch.
+   */
+  const EXTERNAL_LINK = /<a href="(https?:\/\/)/g;
+  const EXTERNAL_LINK_OPENED =
+    '<a target="_blank" rel="noopener noreferrer" href="';
+
+  /*
    * Inserted before the first <script>, which on every page in apps/web
    * puts it after the Content-Security-Policy meta tag. Deliberately
    * after: a script inserted above the policy would not be governed by
@@ -203,6 +243,13 @@
     }
     TELEGRAM_WIDGET.lastIndex = 0;
 
+    if (EXTERNAL_LINK.test(out)) {
+      EXTERNAL_LINK.lastIndex = 0;
+      out = out.replace(EXTERNAL_LINK, EXTERNAL_LINK_OPENED + "$1");
+      applied.push("links");
+    }
+    EXTERNAL_LINK.lastIndex = 0;
+
     // 404.html loads no config.js, so this edit does not apply to every
     // page and the console's table would be wrong to imply it does.
     if (out.indexOf(CONFIG_TAG) !== -1) {
@@ -223,6 +270,7 @@
     return String(html)
       .replace(BOOT_SCRIPTS, "")
       .split(CONFIG_STANDIN).join(CONFIG_TAG)
+      .split(EXTERNAL_LINK_OPENED).join('<a href="')
       .split(TELEGRAM_STANDIN).join("https://telegram.org/js/telegram-widget.js?22");
   }
 
@@ -487,6 +535,29 @@
    * host serves to anybody without asking.
    */
   const LOCAL_FILES = ["/dev/sample-submissions.json"];
+
+  /*
+   * The keyholder's half of the throwaway pair, by path.
+   *
+   * IT IS DELIBERATELY NOT IN LOCAL_FILES, and the difference is the
+   * whole care of it. That list is what a page INSIDE the frame may
+   * fetch for real, and no shipped page fetches a key - adding one
+   * there would widen what the product is permitted to read to include
+   * key material, which is the opposite of what this demo exists to
+   * show. This path is fetched by the CONSOLE, which runs outside the
+   * frame with its own real fetch, and the console writes the text into
+   * the page's key box exactly as a person pasting it would.
+   *
+   * The file is committed on purpose and says so in its own first
+   * field: it protects nothing, opens nothing real, and exists so the
+   * suites and this demo can perform a decrypt at all. The key the
+   * portal actually uses is held offline and has never been in this
+   * repository. dev/demo-bake.mjs already emits this file by name, so a
+   * hosted build performs the same act rather than dead-ending where
+   * the local one works.
+   */
+  const DEV_KEY_FILE = "/dev/test-key.json";
+
 
   /*
    * What a request IS: a call the stub answers, a file in this build the
@@ -928,6 +999,250 @@
   ];
 
   /* ---------------------------------------------------------------- */
+  /* The journeys (#238).                                             */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * Four walks through the binder, and the reason they exist.
+   *
+   * The cards above answer "what does this product do", one feature at
+   * a time, and a person who already knows the product can drive them
+   * in any order. A person seeing it for the first time cannot: nine
+   * chips is a list of state names with no first press, so everybody
+   * builds their own order and the demo is a different demo every time
+   * it is shown. A journey is the order, written down.
+   *
+   * A STOP IS A CARD PRESS WITH A SENTENCE ON IT. Nothing new is
+   * staged - a stop names a staging id from SCENARIOS and optionally a
+   * page to open instead of that staging's start, exactly as a card's
+   * action does, and the console sequences the same stage()/open() the
+   * cards use. There is no second staging path to keep in step, which
+   * is the one way a scripted layer over a working console goes wrong.
+   *
+   * THE NARRATION IS THE MEMBER'S VOICE, NOT THE DRIVER'S (#192, ruled
+   * for this slice). UAT.md is the acceptance script and stays
+   * auditor-precise; it POINTS at these stops by number rather than
+   * repeating them. Two audiences reading one walk is not two homes for
+   * one fact - it is one walk described to the two people who need it,
+   * and the pointers are held to resolving by dev/demo.test.mjs so the
+   * two cannot drift apart silently.
+   *
+   * `free` is the last stop of every journey and only the last. Every
+   * earlier stop is read behind glass, because a walk whose viewer has
+   * already clicked away is a walk being narrated over the wrong page -
+   * and then the frame is handed over deliberately, which is the point
+   * the whole demo has been building to. The owner re-cut this from a
+   * per-stop toggle: one unlock per journey is a simpler promise and a
+   * better story.
+   *
+   * `press` is the one control the stop presses in the frame once the
+   * page has arrived, and it exists for a specific failure: a staging
+   * can be correct and land on the wrong TAB, so a stop promising "your
+   * last measurements are already in it" showed a list of past entries
+   * instead. dev/demo.test.mjs holds every `press` to naming a control
+   * the shipped page really carries.
+   *
+   * `key` stages the committed throwaway key into the page's own key
+   * box, so the keyholder's headline act is performable by somebody who
+   * has never seen this repository. The stop's own words have to name
+   * it a throwaway, and that is checked rather than trusted: a key
+   * going into a box in front of the person judging this design teaches
+   * the wrong lesson unless the sentence beside it says what kind of
+   * key it is.
+   */
+  const TOURS = [
+    {
+      id: "member",
+      title: "Your first weigh-in",
+      blurb: "The whole of what a member does: arrive, sign in, put a " +
+        "number in, correct one, and see where everyone stands.",
+      first: true,
+      stops: [
+        {
+          scenario: "signed-out",
+          title: "Arriving with no account",
+          narration: "This is what a stranger sees. There is no sign-up " +
+            "form and no password to choose - one Telegram button, and " +
+            "the club already knows who you are. Nothing else on the " +
+            "site is reachable from here, and the pages do not just " +
+            "hide themselves: they refuse to ask for anything at all.",
+        },
+        {
+          scenario: "member",
+          title: "What is on record",
+          narration: "Signed in, and Your page opens on what the binder " +
+            "already holds for you. The count is what stands right now, " +
+            "not how many times you have written something down.",
+        },
+        {
+          scenario: "member",
+          press: "add-entry-tab",
+          title: "Putting a number in",
+          narration: "The other tab is the weigh-in itself. Your " +
+            "measurements are sealed inside this browser before " +
+            "anything is sent, so what the server stores it cannot " +
+            "read - it holds your numbers locked, and only the " +
+            "keyholder's key opens them.",
+        },
+        {
+          scenario: "member-prefilled",
+          press: "add-entry-tab",
+          title: "The form remembers you",
+          narration: "Come back another week and the form is already " +
+            "filled with what you put in last time, so a weigh-in is " +
+            "one number and a press. It is kept on this device and " +
+            "tied to your account - sign out and it goes.",
+        },
+        {
+          scenario: "supersede",
+          title: "Fixing a mistake",
+          narration: "A correction replaces the row it corrects instead " +
+            "of piling up beside it. Four entries stand and two " +
+            "corrections rest behind them, so the number on your page " +
+            "is what you meant, not what you typed.",
+        },
+        {
+          scenario: "member",
+          open: "charts.html",
+          title: "Where everyone stands",
+          narration: "Everybody's numbers drawn as one picture - the " +
+            "combined weight, the change since last time, and the " +
+            "lines running together. Nobody's name is in any of it.",
+        },
+        {
+          scenario: "member",
+          free: true,
+          title: "Now you try",
+          narration: "The page is yours from here. Fill the form in and " +
+            "submit it, move around with the site's own navigation, " +
+            "sign out and back in. Everything you press is the real " +
+            "code - only the answers are staged.",
+        },
+      ],
+    },
+    {
+      id: "keyholder",
+      title: "The keyholder's desk",
+      blurb: "The one act the whole design turns on: the sealed rows " +
+        "come back, and only the key opens them.",
+      stops: [
+        {
+          scenario: "keyholder",
+          title: "Sealed, even to the people running it",
+          narration: "This is the desk the club's numbers are read " +
+            "from. What the server hands over is locked - every row " +
+            "sealed in the browser that wrote it, and nothing here has " +
+            "ever seen a key.",
+        },
+        {
+          scenario: "keyholder",
+          key: true,
+          title: "The key goes in the box",
+          narration: "The key is in the box now, put there for you. It " +
+            "is a throwaway pair kept in this project on purpose - it " +
+            "protects nothing and opens nothing real, so it is safe to " +
+            "show. The one the club actually uses is held offline and " +
+            "has never been anywhere near here.",
+        },
+        {
+          scenario: "keyholder",
+          key: true,
+          free: true,
+          title: "Now you try",
+          narration: "Press Fetch and decrypt. The rows arrive sealed " +
+            "and open in front of you, and Clear takes both copies " +
+            "away again - the one on screen and the one this browser " +
+            "was keeping for next time.",
+        },
+      ],
+    },
+    {
+      id: "admin",
+      title: "Running the club",
+      blurb: "Publishing the figures, deciding who counts as an admin, " +
+        "and what the site does on its very first day.",
+      stops: [
+        {
+          scenario: "admin",
+          title: "One surface for the club's controls",
+          narration: "Publishing a fresh set of figures is one press, " +
+            "and what goes out carries no names and no rows - only the " +
+            "totals the charts draw.",
+        },
+        {
+          scenario: "admin",
+          title: "Who is allowed in here",
+          narration: "The list of people who hold admin, kept where it " +
+            "can be read and changed. The last one cannot be removed, " +
+            "because a club with nobody holding the keys is a club " +
+            "nobody can let back in.",
+        },
+        {
+          scenario: "config-fallback",
+          title: "The first day, before anyone has written anything",
+          narration: "A brand-new binder has no words written into it " +
+            "yet, and every page shows the ones it ships with. The " +
+            "first run is an ordinary day, not an error. Editing those " +
+            "words from this panel is still being built - what you can " +
+            "see today is the site standing up with nothing filled in.",
+        },
+        {
+          scenario: "admin",
+          title: "It closes itself if you walk away",
+          narration: "This page holds everybody's numbers open, so it " +
+            "watches the clock: two minutes' warning, and after ten " +
+            "minutes with nobody touching it, it signs itself out and " +
+            "throws away what it had decrypted. The console has been " +
+            "keeping this page awake while we talked. From the next " +
+            "stop it stops, and the clock is the real one.",
+        },
+        {
+          scenario: "admin",
+          free: true,
+          title: "Now you try",
+          narration: "Publish a set of figures, then open Muse's charts " +
+            "and find them drawn. Add somebody to the admin list and " +
+            "watch the panel read the list back rather than trusting " +
+            "what it just sent.",
+        },
+      ],
+    },
+    {
+      id: "refuses",
+      title: "What the binder will not hand over",
+      blurb: "Two refusals, and both of them are the promise being " +
+        "kept rather than something going wrong.",
+      stops: [
+        {
+          scenario: "revoked",
+          title: "Signed out somewhere else",
+          narration: "You signed out on your phone, and this tab still " +
+            "holds what looks like a valid pass. It is not: the first " +
+            "thing this page asks for comes back refused and you land " +
+            "at sign-in. A pass copied before you signed out opens " +
+            "nothing afterwards.",
+        },
+        {
+          scenario: "suppressed",
+          title: "Too few people to show",
+          narration: "The same charts, on a week when hardly anyone " +
+            "weighed in. Cells are missing, and that is the point - " +
+            "with few enough people a total stops being everybody and " +
+            "starts being somebody. The binder holds those back rather " +
+            "than pointing at a person.",
+        },
+        {
+          scenario: "suppressed",
+          free: true,
+          title: "Now you try",
+          narration: "Go looking for the gaps. Every one of them is a " +
+            "figure the binder could have drawn and decided not to.",
+        },
+      ],
+    },
+  ];
+
+  /* ---------------------------------------------------------------- */
   /* Reading the shipped bytes for what a box needs.                  */
   /* ---------------------------------------------------------------- */
 
@@ -1158,6 +1473,64 @@
       probe: { file: "apps/web/dashboard.js", pattern: "MIN_CELL" },
     },
   ];
+
+  /* ---------------------------------------------------------------- */
+  /* Where the frame really is.                                        */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * What the console should say, given the address the FRAME reports.
+   *
+   * THE ADDRESS IS DERIVED FROM THE FRAME, NEVER FROM THE PRESS, and
+   * this function plus the load listener that feeds it are the whole of
+   * that. Compute either value from the file the console ASKED for and
+   * the console names a page nobody is looking at: the pages in the
+   * frame are real, live JavaScript, so an already-signed-in visitor at
+   * Sign in is redirected to Your page, a revoked session bounces back
+   * to Sign in on load, an auth guard refuses a gated page, and the
+   * product's own rail carries somebody anywhere at any time. None of
+   * that goes through the console.
+   *
+   * Pure here for frameStyleFor's reason: the hazard is a readout that
+   * disagrees with the screen, and a value dev/demo.test.mjs can assert
+   * is the only version of this the suite can hold. The browser half
+   * reads a location and assigns.
+   *
+   * A null href is the frame refusing to be read - a cross-origin
+   * location throws rather than answering. The mirror's link edit is
+   * what stops the frame ever leaving, so arriving here means something
+   * got past it, and the honest answer is to say the frame is gone. The
+   * alternative is keeping the last page the console asked for on
+   * screen, which is the same lie this function exists to end, told
+   * about a blank frame.
+   *
+   * `inside` and `file` are two facts, not one. 404.html is a real page
+   * of the product, reachable in the frame, and no destination: it is
+   * inside the demo with none of the four rail buttons current, and
+   * lighting one for it would be this lie in a quieter place.
+   */
+  const FRAME_AWAY =
+    "The frame has left the demo - this is not one of its pages.";
+
+  function frameAddressOf(href) {
+    const away = { shown: FRAME_AWAY, file: null, inside: false };
+    if (typeof href !== "string" || href === "") return away;
+
+    const there = resolved(href, undefined);
+    if (there === null) return away;
+
+    const path = there.pathname || "/";
+    if (path.indexOf(MIRROR_PATH) !== 0) {
+      return { shown: href, file: null, inside: false };
+    }
+
+    const file = path.slice(MIRROR_PATH.length);
+    return {
+      shown: href,
+      file: DESTINATIONS.some((one) => one.file === file) ? file : null,
+      inside: true,
+    };
+  }
 
   /* ---------------------------------------------------------------- */
   /* The frame's size.                                                 */
@@ -1889,6 +2262,7 @@
 
   root.BinderDemo = Object.freeze({
     DESTINATIONS: DESTINATIONS,
+    MIRROR_PATH: MIRROR_PATH,
     VIEWPORTS: VIEWPORTS,
     MIRROR_EDITS: MIRROR_EDITS,
     BOOT_SCRIPTS: BOOT_SCRIPTS,
@@ -1899,6 +2273,8 @@
     EVENT_CHANNEL: EVENT_CHANNEL,
     SCENARIOS: SCENARIOS,
     FEATURES: FEATURES,
+    TOURS: TOURS,
+    DEV_KEY_FILE: DEV_KEY_FILE,
     BOXES: BOXES,
     ROUTES: ROUTES,
     PREFIX_ROUTES: PREFIX_ROUTES,
@@ -1917,6 +2293,7 @@
     sameOriginAs: sameOriginAs,
     workerPathOf: workerPathOf,
     requestKindOf: requestKindOf,
+    frameAddressOf: frameAddressOf,
     viewportFor: viewportFor,
     frameStyleFor: frameStyleFor,
     scenarioFor: scenarioFor,

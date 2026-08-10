@@ -23,16 +23,25 @@ against: where the site and the mockup disagree, the site is wrong,
 consistent in the wrong typeface passes every self-comparison and still
 fails this pass. A1 is where that comparison is driven.
 
-**Sections are keyed to the demo console's feature cards.** A section
-that drives a card names it in the heading, exactly as the card titles
-itself — `dev/demo.test.mjs` holds the two documents to the same set,
-in both directions, so a renamed card and a stale section cannot
-coexist quietly. The staging that used to be named by scenario id in
-these headings is the console's plumbing now; press the card's button
-and it is done for you. **A section with no card in its heading drives
-nothing**, and says in its own words why: the surface it was written
-for does not exist yet, and the rows are here so their absence is
-something a driver reads rather than something they have to notice.
+**Sections are keyed to the demo console's journeys.** A section that
+drives a stop names the journey and the stop number in its heading —
+`dev/demo.test.mjs` holds every pointer to a journey and a stop that
+exist, and holds every journey to being walked by some section, so a
+renamed journey and a stale section cannot coexist quietly. Open the
+journey, press Next to the stop named, and the console has staged
+everything that step needs. **A section with no journey in its heading
+drives nothing**, and says in its own words why: the surface it was
+written for does not exist yet, and the rows are here so their absence
+is something a driver reads rather than something they have to notice.
+
+**This document and the console's narration are two voices, and they
+stay two.** What you are reading is the driver's script: precise about
+what passes, written for somebody deciding whether to accept the
+product. The sentence the console reads out at each stop is the
+member's, written for somebody being shown the product for the first
+time (#192). They describe the same walk and neither is a copy of the
+other, which is why the check between them holds that the pointers
+resolve and never that the words agree.
 
 **Palettes are described by character here and never by chip label.**
 The **Theme** control in front of you is the list, and counting the
@@ -89,18 +98,31 @@ recorded from the wrong arm proves less than it claims.
 ./run demo
 ```
 
-Then <http://127.0.0.1:8126/dev/demo.html> — the console. Under **What
-the Binder does** is one card per feature; each section below names its
-card in the heading. Press the card's button and the console stages
-everything that feature needs — the session this tab should hold, the
-figures the charts draw — and opens the right page in the frame.
+Then <http://127.0.0.1:8126/dev/demo.html> — the console. It opens on
+**Take a walk through the binder**: four journeys, each a numbered
+sequence of stops, and each section below names the journey and stop it
+drives. Walking a journey stages everything each stop needs — the
+session this tab should hold, the figures the charts draw, the
+throwaway key where a stop needs one — and opens the right page in the
+frame.
+
+**The frame is behind glass while a journey is being read, and the last
+stop of every journey hands it over.** That is deliberate: a walk whose
+viewer has already clicked away is a walk being narrated over the wrong
+page. Where a section below asks you to *do* something in the frame,
+walk to the journey's last stop, or open **Free drive** and press the
+matching feature card — the cards stage one state at a time and leave
+the frame live throughout, which is the faster route for a driver who
+already knows what they are looking for.
+
 Above the frame, the feed narrates what actually happened — the
-press's own staging first, then a line for each answer the stubbed
-Worker gives as the page asks — and the pointer under it names the
-one thing to try in the frame next.
-**Go anywhere** keeps every page reachable regardless of what you
-pressed last, **Reset the demo state** puts the current card's world
-back how its button starts it, and the frame-size buttons show the
+staging first, then a line for each answer the stubbed Worker gives as
+the page asks. **The address above the frame is always the page the
+frame is really on**, including when a shipped page redirects itself,
+so a readout disagreeing with what you can see is a defect rather than
+the console lagging. **Go anywhere** keeps every page reachable
+regardless of what you pressed last, **Reset the demo state** puts the
+current world back how it starts, and the frame-size buttons show the
 narrow layout without pretending to be a phone.
 
 **The pages in the frame are the shipped pages, mirrored off disk.**
@@ -154,13 +176,15 @@ it is testing. Since #179 the two agree, so a step that sends you to
 `charts.html` and finds a rail entry reading anything but **Muse's
 charts** has found a defect rather than a naming gap.
 
-### A1 · The shell, held to the mockup — every card
+### A1 · The shell, held to the mockup — every journey
 
 The redesign's own surface, driven with the mockup open beside it.
 Everything here is visible without a request, so it is the cheapest
-section and the one that fails first. Any card's button stages it;
-start from **Sign in with Telegram**'s for the signed-out rows and
-**Weigh in**'s for the railed ones.
+section and the one that fails first. Every journey's every stop shows
+it, so nothing here needs a particular one; the shortest route to the
+two states this section needs is **Your first weigh-in** stop 1 for the
+signed-out rows and stop 2 for the railed ones. Use the free drive if
+you would rather stage one state at a time than walk.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -181,7 +205,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A1.15 | Read the browser tab on every page | Every title ends **— Hang Gang Binder**, and the page's own name is the same words the rail uses | One name per destination; a tab disagreeing with the nav is #127's whole complaint, and #191 settled the set |
 | A1.16 | Put the mockup beside each of the five pages and read them together | Same faces, same accents, same rail geometry, same footer, same names. Anything the mockup draws that the site does not do — or does differently — is recorded as a failure here, not explained away | The mockup is the ruling. This row is what makes drift from it a defect rather than a taste |
 
-### A2 · Signed out, nothing is reachable — card "Sign in with Telegram"
+### A2 · Signed out, nothing is reachable — journey "Your first weigh-in", stop 1
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -192,7 +216,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A2.5 | Open `404.html` | An error page that says so plainly and offers one way back | Reached by strangers and by mistyped links, so it must not look broken |
 | A2.6 | Press the Telegram button — in the demo it is a local stand-in; everything after the press is the shipped code | You land on **Your page**, signed in | The entrance is one press, and the press is where the demo's substitution ends |
 
-### A3 · Your page — card "Weigh in"
+### A3 · Your page — journey "Your first weigh-in", stop 3
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -208,7 +232,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A3.10 | Under **On record**, find **Your entries, opened** and read what it says about the rows it could not open | Every row this browser cannot open is **counted and named** — "*n* sealed to a device this browser is not" — and the answer above it is not quietly computed over the rest. #85's personal pane. **The demo's rows are placeholder bytes sealed to nobody by design**, so what this arm accepts is that the pane reports its own blindness honestly; a pane that drew a confident answer over rows it never opened would pass a check written any other way | An answer computed over fewer rows than the member has is an answer they cannot tell from a correct one. Staged, this is the only half that can be driven — AL7 is the round trip |
 | A3.11 | Ask the pane two different questions — change **About**, then **Measure** | The answer changes with them, and there is **no counting choice and no combining control** | It asks over one member's own rows with no five-person floor, because their own data is theirs; the levers that exist to keep a coarsening above a floor would be ceremony over a safety property that is not in play, and offering them would teach the wrong model of what the floor is for |
 
-### A4 · The device-local prefill — card "The form remembers you"
+### A4 · The device-local prefill — journey "Your first weigh-in", stop 4
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -219,7 +243,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A4.5 | With the second member signed in, look at `localStorage` in devtools | The first member's prefill entry is **gone**, not merely ignored | Data already on the device had to be erased, not just stopped from growing |
 | A4.6 | Hand-edit the prefill entry to something malformed and reload | The page starts normally with empty fields and no error | Someone hand-editing storage, or an older format, must not produce a dead page |
 
-### A5 · A correction, as the member reads it — card "Fix a mistake"
+### A5 · A correction, as the member reads it — journey "Your first weigh-in", stop 5
 
 > **This section accepts the DISPLAY of a correction, never the act of
 > making one.** No member-facing correction control ships: `form.js`
@@ -241,7 +265,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A5.4 | Press **Weigh in**'s button to reach a member who has corrected nothing, and look for the line | **It is absent**, not showing "0 corrections" | Most members on most days have corrected nothing, and a zero invites the question of what a correction is from the one person who has never made one |
 | A5.5 | Watch the feed above the frame as the card stages | It reports the two numbers it just staged, and they are the two the panel then shows | The feed is computed from the staging rather than scripted (#212), so this is the one place the demo can be caught disagreeing with itself |
 
-### A6 · Sign out ends the session — card "Signed out means signed out"
+### A6 · Sign out ends the session — journey "What the binder will not hand over", stop 1
 
 The card's button arrives one moment **after** a sign-out somewhere
 else: this tab still holds a session the server has already revoked.
@@ -264,7 +288,7 @@ on the Weigh in card first.
 > which is tab-scoped anyway. The card on that page names Clear, and
 > A7.5 is where you exercise it.
 
-### A7 · The keyholder's key — card "The keyholder's desk"
+### A7 · The keyholder's key — journey "The keyholder's desk", stop 2
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -279,7 +303,7 @@ on the Weigh in card first.
 | A7.9 | Press one download, and read what the page says | It acknowledges **the press**, naming the format, and says it cannot know whether the file arrived. **Nothing claims the file was saved** | The one act on this page whose result lands somewhere the page cannot see. A timer that claimed arrival would be worse than no acknowledgement, which is at least honest about knowing nothing |
 | A7.10 | Press a second download while the first is still lit, then wait out the acknowledgement | **Exactly one is lit at a time** — the second press takes the light from the first — and the lit state clears on its own afterwards | Three lit buttons say three files are in flight and cannot say which press produced which; the acknowledgement's whole job is telling one press from another at the moment the data is in the clear |
 
-### A8 · Admin — card "The admin's panel"
+### A8 · Admin — journey "Running the club", stop 1
 
 Written against what the surface must *be*, not against its chrome:
 the instrument-panel treatment is a slice of its own, and steps pinned
@@ -299,7 +323,7 @@ accept.
 | A8.9 | Push the offset past ten minutes from that press — `skip += 11*60*1000` — and watch both the page and the feed above the frame | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on `index.html` signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
 | A8.10 | Confirm what A8.9 did **not** do — press **The keyholder's desk**'s button to arrive with a session again, and fetch | The **stored private key is still there**: the page decrypts without another paste or file | The key is not authority. Nothing issued it and nothing can revoke it, so an idle timer that destroyed it would make walking away cost the keyholder their key — **Clear** stays the one lever that removes it (A7.5) |
 
-### A9 · Site content and its fallback — card "Before anything is written"
+### A9 · Site content and its fallback — journey "Running the club", stop 3
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -308,7 +332,7 @@ accept.
 | A9.3 | Drive the site with the configuration unreachable | Every page still reads correctly, on the shipped copy | The site must not depend on a route answering to be readable |
 | A9.4 | Check that no edited copy has become a second home for a fact | Content is wording, never a claim stated in full only here | One home per fact, and an admin-editable second copy is the one nobody corrects |
 
-### A10 · The published figures — card "Muse's charts"
+### A10 · The published figures — journey "Your first weigh-in", stop 6
 
 > **See the charts** stages a full corpus: several repeat submitters
 > above the five-person floor, and series with enough points to draw.
@@ -326,11 +350,11 @@ accept.
 | A10.6 | Read how old the figures are | Stated on the page | Figures with no date are trusted longer than they deserve |
 | A10.7 | Look for any handle, any individual row, anywhere on the page | **None** | Members see totals; the corpus is the keyholder's |
 
-### A11 · Privacy — card "Too few to show"
+### A11 · Privacy — journey "What the binder will not hand over", stop 2
 
-The checks whose failure is not visible from the page. **A failure here
-stops the cutover** — these are the claims the project makes to the
-people whose data it holds.
+Everything here fails invisibly: nothing on the page looks wrong when
+one of these breaks. **A failure here stops the cutover** — these are
+the claims the project makes to the people whose data it holds.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
@@ -353,9 +377,9 @@ people whose data it holds.
 
 ### A12 · Making a correction — nothing to drive yet (#84)
 
-**No card, deliberately.** Every other section names the demo card that
-stages it; this one has nothing to stage because the surface does not
-exist on either arm. It is a section rather than a line in the issue so
+**No journey, deliberately.** Every other section names the journey stop
+that stages it; this one has nothing to stage because the surface does
+not exist on either arm. It is a section rather than a line in the issue so
 that the rows are *written down where a driver looks for them* — A5 is
 the section a reader reaches for when they want this, and A5 accepts the
 display instead. A pass that simply omits these leaves the reader to
