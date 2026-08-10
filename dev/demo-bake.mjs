@@ -222,14 +222,23 @@ code { font-family: ui-monospace, monospace; font-size: 0.9em; }
 `;
 }
 
+/*
+ * WHAT THE SNAPSHOT SAYS ABOUT ITS OWN AGE, AND WHY NOBODY READS IT.
+ *
+ * This was a paragraph on the console. The owner removed the whole block
+ * of prose explaining the console, this sentence with it - whoever can
+ * open the demo knows what it is - but the FACT it carried is what makes
+ * baking safe: a snapshot on a public URL that cannot name its commit is
+ * read as current forever, and refuseDirty below plus the
+ * missing-region refusal in bake() are both built around it being true.
+ *
+ * So it is metadata now: present, checkable by anybody who looks, and on
+ * nobody's screen. Do not turn it back into visible copy without the
+ * owner - and if they ask for it back, this function and the region in
+ * dev/demo.html are the whole change.
+ */
 export function stampFor(commit, at) {
-  return `<p class="small" id="stamp">
-    Baked from commit <code>${commit}</code> at <code>${at}</code>. This
-    is a snapshot: it shows the pages as they were at that commit, and
-    anything merged since is not in it. The live console reads
-    <code>apps/web</code> off disk per request and cannot go stale — this
-    copy can, which is why it says which one it is.
-  </p>`;
+  return `<meta name="hgb-baked-at" content="${commit} ${at}">`;
 }
 
 /*

@@ -893,6 +893,13 @@
    * marked `card "Title"` in its heading, titles agreeing exactly in
    * both directions.
    *
+   * An action may also carry the `press`, `key` and `scroll` a journey
+   * stop carries, and the console sequences them through the same
+   * errand. They are here because a card can land on the wrong tab or
+   * in front of a locked box exactly as a stop can, and a second
+   * staging path for the free drive is the drift the stops' own header
+   * warns about one surface up.
+   *
    * `try` is the one thing to touch in the frame after the press,
    * carried on the action itself rather than painted from a separate
    * list, because a pointer that cannot name its action is a pointer
@@ -965,9 +972,20 @@
       blurb: "The export opens only for the key. Fetch the sealed " +
         "rows, unlock them with the demo's throwaway key, store the " +
         "key for next time, and clear both copies with one press.",
+      /*
+       * `key` for the journey's reason, on the surface the journey does
+       * not cover. The card opens the same desk and its pointer tells a
+       * viewer to unlock the rows with the demo key - and it staged
+       * none, so a tester who opened the free drive met exactly the dead
+       * end the errand was added to remove: the product answering "paste
+       * or choose your key file first" about a key that exists only as a
+       * file in this repository. UAT sends a driver here by name for
+       * every state no stop leaves live, so this is a main road.
+       */
       actions: [{
         label: "Sit at the desk",
         scenario: "keyholder",
+        key: true,
         try: "Fetch the sealed rows, unlock them with the throwaway " +
           "demo key, then clear both copies with one press.",
       }],
@@ -976,9 +994,28 @@
       title: "The admin's panel",
       blurb: "One surface for the gang's controls: publish a fresh " +
         "snapshot, manage who counts as an admin, export the rows.",
+      /*
+       * ALL THREE, FOR THE SAME REASON THE PUBLISHING STOPS CARRY THEM.
+       *
+       * The page keeps its publishing card in the markup and hidden, and
+       * reveals it only after a successful decrypt. This card promises
+       * publishing in its blurb and in its pointer, and staged none of
+       * that - so it opened on the key box with Publish reporting
+       * `disabled: false` and rendering nothing at all. The press did
+       * nothing and nothing said so, on the one card UAT sends a driver
+       * to by name for the taken-down charts.
+       *
+       * The promise is kept rather than withdrawn, which is the owner's
+       * ruling on this class: the screen is made to show what the words
+       * say. The order is the errand's, not this list's - the key before
+       * the press, or the product asks for a key file.
+       */
       actions: [{
         label: "Run the panel",
         scenario: "admin",
+        key: true,
+        press: "run",
+        scroll: "publish-card",
         try: "Publish a fresh snapshot, then open Muse's charts and " +
           "see it drawn.",
       }],
@@ -1568,7 +1605,7 @@
 
     return {
       shown: href,
-      file: destinationUnder(path.slice(MIRROR_PATH.length)),
+      file: destinationUnder(path.slice(MIRROR_PATH.length), DESTINATIONS),
       inside: true,
     };
   }
@@ -1612,19 +1649,32 @@
    */
   const DIRECTORY_INDEX = "index.html";
 
-  function destinationUnder(served) {
+  /*
+   * THE DESTINATIONS ARE AN ARGUMENT, AND THAT IS WHAT MAKES THE ROOT'S
+   * FOLD A CHECKED BRANCH RATHER THAN A DESCRIBED ONE.
+   *
+   * The root goes back through this same lookup rather than returning
+   * the directory index outright, so a directory index that is not one
+   * of the destinations resolves to nothing - the strictness below,
+   * kept: recovering from one bad guess is how a console starts making
+   * them. `index.html` IS one of the four, so the fold and a bare
+   * `return DIRECTORY_INDEX` agree on every address that can be built
+   * out of this file's own list, and substituting one for the other left
+   * dev/demo.test.mjs green at its full count with the strictness gone.
+   * A branch nothing can falsify is a branch nobody is holding.
+   *
+   * Reading the list from a parameter is what makes the question
+   * askable: given destinations the directory index is not among, does
+   * the root still resolve to nothing? Do not close this back over
+   * DESTINATIONS for tidiness - the closure is the unfalsifiable
+   * version, and the one caller passes the same list either way.
+   */
+  function destinationUnder(served, among) {
     const name = served.endsWith("/") ? served.slice(0, -1) : served;
 
-    /*
-     * The root goes back through this same lookup rather than returning
-     * the name directly, so a directory index that is not one of the
-     * four destinations resolves to nothing - the strictness above,
-     * kept: recovering from one bad guess is how a console starts
-     * making them.
-     */
-    if (name === "") return destinationUnder(DIRECTORY_INDEX);
+    if (name === "") return destinationUnder(DIRECTORY_INDEX, among);
 
-    for (const one of DESTINATIONS) {
+    for (const one of among) {
       if (one.file === name) return one.file;
       if (one.file === name + ".html") return one.file;
     }
@@ -1837,8 +1887,32 @@
         next.published = null;
         return { status: 200, body: { ok: true }, next: next };
       }
-      const published = state.published ||
-        (scenario.id === "suppressed" ? data.sparse : data.rich);
+      /*
+       * A TAKEDOWN IS NOT THE SAME WORLD AS ONE NOBODY HAS PUBLISHED IN.
+       *
+       * This was `state.published || <the corpus this staging carries>`,
+       * and `||` reads the null DELETE writes as "nothing staged yet":
+       * the press answered 200, the world honestly reported
+       * `published: null`, and the very next read handed back the same
+       * eighteen entries from six people. Unpublish was
+       * indistinguishable from never having pressed it, which is the one
+       * thing UAT A10.1 exists to accept.
+       *
+       * `undefined` is never-touched and `null` is taken-down, and the
+       * two survive the trip through this demo's sessionStorage because
+       * JSON keeps a null and drops an undefined.
+       */
+      const published = state.published === undefined
+        ? (scenario.id === "suppressed" ? data.sparse : data.rich)
+        : state.published;
+      /*
+       * And the refusal is the WORKER's, word for word. server/worker.js
+       * deletes the row and then finds no row, so the live product
+       * cannot tell these two apart either - a stub with a sentence of
+       * its own here would be demonstrating a Worker that does not
+       * exist, which is how a demo lies while every one of its own
+       * checks passes.
+       */
       if (!published) {
         return {
           status: 404,
@@ -2394,6 +2468,7 @@
     workerPathOf: workerPathOf,
     requestKindOf: requestKindOf,
     frameAddressOf: frameAddressOf,
+    destinationUnder: destinationUnder,
     viewportFor: viewportFor,
     frameStyleFor: frameStyleFor,
     scenarioFor: scenarioFor,
