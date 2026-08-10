@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 186);
+const { check, mustReject, report } = suite("demo", 191);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -957,6 +957,18 @@ function recordedNode(id) {
     value: "",
     pressed: false,
     click() { it.pressed = true; it.fire("click"); },
+    // What a stop's scroll asks of a section: the page brings itself
+    // there. Recorded rather than run, because what is under test is
+    // WHICH section was asked - a recording that measured a layout
+    // would be measuring one this fixture invented.
+    broughtIntoView: false,
+    scrollIntoView() { it.broughtIntoView = true; },
+    // Whether this node PAINTS, which is a different question from
+    // whether it exists - several of the admin surface's sections are in
+    // the markup and hidden until the page's own code reveals them.
+    // Rendering by default, so an arm has to opt a node out.
+    rendering: true,
+    getClientRects() { return it.rendering ? [{}] : []; },
     style: {},
     dataset: {},
     children: [],
@@ -1119,11 +1131,19 @@ function consoleInRecordedBrowser() {
   const settled = () => new Promise((done) => { setTimeout(done, 0); });
 
   const missingInFrame = (id) => { absent.add(id); };
+  const frameScrolled = () =>
+    Object.keys(frameNodes).filter((id) => frameNodes[id].broughtIntoView);
+  // A section the page carries but is not showing - the hidden admin
+  // tools, which is the case a present-or-absent test cannot see.
+  const unpaintedInFrame = (id) => {
+    if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
+    frameNodes[id].rendering = false;
+  };
 
   return {
     nodes, replaced, arrive, pressed, destination, journey, locked, staged,
     waking, frameField, framePressed, poked, fetched, settled,
-    missingInFrame,
+    missingInFrame, frameScrolled, unpaintedInFrame,
   };
 }
 
@@ -1279,6 +1299,30 @@ await check("a stop that presses a control names one the page really has", () =>
 await check("at least one stop really does press a control", () =>
   Demo.TOURS.some((walk) =>
     walk.stops.some((stop) => typeof stop.press === "string")));
+
+/*
+ * A stop that moves the page names a section THE SHIPPED PAGE REALLY
+ * CARRIES, read out of apps/web exactly as a press is.
+ *
+ * The admin surface is one long page - key box, publishing, membership -
+ * so a stop can be on the right page with its subject a screen and a
+ * half below the fold, which is the tab defect at a different
+ * granularity. The day a section is renamed this fails here, rather than
+ * becoming a stop that scrolls nowhere and narrates over the top of the
+ * page again.
+ */
+await check("a stop that scrolls names a section the page really has", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (stop.scroll === undefined) return true;
+    const page = stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+    return shipped[page].includes('id="' + stop.scroll + '"');
+  })));
+
+// Non-vacuity: an arm over no scrolls passes forever.
+await check("at least one stop really does move the page", () =>
+  Demo.TOURS.some((walk) =>
+    walk.stops.some((stop) => typeof stop.scroll === "string")));
 
 /*
  * WHICH stops have to declare one - the half the arm above cannot see.
@@ -1610,6 +1654,92 @@ await check("every stop that declares a press really presses it", async () => {
   }
   return true;
 });
+
+/*
+ * And the same, driven, for every stop that moves the page: the walk is
+ * walked and the frame is asked which section was brought into view.
+ */
+await check("every stop that declares a scroll really moves the page",
+  async () => {
+    for (const walk of Demo.TOURS) {
+      for (let index = 0; index < walk.stops.length; index += 1) {
+        const stop = walk.stops[index];
+        if (typeof stop.scroll !== "string") continue;
+        const browser = consoleInRecordedBrowser();
+        browser.journey(walk.id).fire("click");
+        for (let i = 0; i < index; i += 1) {
+          browser.nodes["tour-next"].fire("click");
+        }
+        const page = stop.open ||
+          Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+        browser.arrive(page);
+        await browser.settled();
+        if (!browser.frameScrolled().includes(stop.scroll)) return false;
+      }
+    }
+    return true;
+  });
+
+/*
+ * A section the page cannot answer for is said out loud too - the scroll
+ * half of the arm below, and the same hazard: a stop narrating a part of
+ * the page nobody is looking at.
+ */
+await check("a scroll the page cannot answer is reported, not swallowed",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => typeof stop.scroll === "string"));
+    const index = walk.stops.findIndex((stop) =>
+      typeof stop.scroll === "string");
+    browser.missingInFrame(walk.stops[index].scroll);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    const stop = walk.stops[index];
+    browser.arrive(stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start);
+    await browser.settled();
+    return browser.nodes.status.textContent.includes(stop.scroll) &&
+      browser.frameScrolled().length === 0;
+  });
+
+/*
+ * A SECTION THAT IS THERE AND NOT ON SCREEN IS THE CASE THAT NEARLY GOT
+ * THROUGH.
+ *
+ * The admin surface keeps its publishing tools in the markup and hidden
+ * until the page's own code reveals them, and scrollIntoView on a
+ * section that is not painting moves nothing and says nothing. A stop
+ * declaring one would narrate over the top of the page with an errand
+ * that believed it ran - the original defect, reached through a
+ * declaration that LOOKS honored. Found by driving it in a browser: a
+ * scroll to the publishing card left the frame at the top of the page
+ * with no report anywhere, so that declaration was withdrawn and this
+ * arm stands where it was.
+ */
+await check("a section the page is not showing is reported, not scrolled to",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => typeof stop.scroll === "string"));
+    const index = walk.stops.findIndex((stop) =>
+      typeof stop.scroll === "string");
+    const stop = walk.stops[index];
+    browser.unpaintedInFrame(stop.scroll);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start);
+    await browser.settled();
+    return browser.nodes.status.textContent.includes(stop.scroll) &&
+      browser.frameScrolled().length === 0;
+  });
 
 /*
  * A DECLARATION THE PAGE CANNOT HONOR IS SAID OUT LOUD.

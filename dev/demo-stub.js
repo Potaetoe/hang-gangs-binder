@@ -1045,6 +1045,15 @@
    * instead. dev/demo.test.mjs holds every `press` to naming a control
    * the shipped page really carries.
    *
+   * `scroll` is that same promise one page-shape down. A stop can land
+   * on the right page and the right tab and still narrate something
+   * below the fold: the admin page carries the key box, the publishing
+   * controls and the membership lists on one long surface, so the stop
+   * about who holds admin opened with its subject a screen and a half
+   * away. It names a section of the page and the page brings itself
+   * there. dev/demo.test.mjs holds every `scroll` to naming a section
+   * the shipped page really carries, the same way it holds `press`.
+   *
    * `key` stages the committed throwaway key into the page's own key
    * box, so the keyholder's headline act is performable by somebody who
    * has never seen this repository. The stop's own words have to name
@@ -1175,6 +1184,7 @@
         },
         {
           scenario: "admin",
+          scroll: "membership-card",
           title: "Who is allowed in here",
           narration: "The list of people who hold admin, kept where it " +
             "can be read and changed. The last one cannot be removed, " +
@@ -1183,12 +1193,13 @@
         },
         {
           scenario: "config-fallback",
+          open: "charts.html",
           title: "The first day, before anyone has written anything",
           narration: "A brand-new binder has no words written into it " +
-            "yet, and every page shows the ones it ships with. The " +
-            "first run is an ordinary day, not an error. Editing those " +
-            "words from this panel is still being built - what you can " +
-            "see today is the site standing up with nothing filled in.",
+            "yet, and this is what it shows: the words every page ships " +
+            "with, standing in until somebody writes their own. The " +
+            "first run is an ordinary day, not an error. Editing them " +
+            "from the admin panel is still being built.",
         },
         {
           scenario: "admin",

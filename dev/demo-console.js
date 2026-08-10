@@ -306,6 +306,47 @@
       }
     }
 
+    /*
+     * `scroll` is the same promise as `press`, one page-shape down: a
+     * stop can land on the right page and the right tab and STILL
+     * narrate something below the fold. The admin page carries the
+     * publishing controls, the key box and the membership lists on one
+     * long surface, so the stop about who holds admin opened on the key
+     * box with its subject a screen and a half away.
+     *
+     * The page's own section is scrolled to by the page's own means -
+     * this asks the element to bring itself into view, which is what a
+     * link to it would do. Nothing is measured or positioned here; a
+     * console computing an offset would be a console guessing at a
+     * layout it does not own.
+     */
+    if (todo.scroll) {
+      const section = doc.getElementById(todo.scroll);
+      /*
+       * PRESENT IS NOT THE SAME AS ON SCREEN, and this is the one place
+       * that difference is invisible. Several of the admin surface's
+       * sections start hidden and are revealed by the page's own code
+       * once it knows what the session may do, and scrollIntoView on a
+       * section that is not rendering moves nothing and reports nothing -
+       * so the stop would narrate over the top of the page exactly as it
+       * did before, with an errand that believes it ran. Rects rather
+       * than the attribute, per AGENTS.md: `hidden` can read true while
+       * an element paints, and the inverse is what bites here.
+       */
+      if (section && section.getClientRects().length > 0) {
+        section.scrollIntoView({ block: "start" });
+      } else if (section) {
+        say("This stop moves the page to its " + todo.scroll + " section, " +
+          "and the page is not showing that section in this staging - so " +
+          "what is on screen is wherever the page opened.");
+      } else {
+        say("This stop moves the page to its " + todo.scroll + " section, " +
+          "and the page in the frame has no such section - so what is on " +
+          "screen is wherever the page opened, not what this stop " +
+          "describes.");
+      }
+    }
+
     if (todo.key) stageKey(doc);
   }
 
@@ -587,8 +628,10 @@
     paintTour();
     lock(stop.free !== true);
     keepAwake(stop.free !== true);
-    goTo(stop.open || chosen.start,
-      stop.press || stop.key ? { press: stop.press, key: stop.key } : null);
+    const todo = stop.press || stop.key || stop.scroll
+      ? { press: stop.press, key: stop.key, scroll: stop.scroll }
+      : null;
+    goTo(stop.open || chosen.start, todo);
   }
 
   function startTour(id) {
