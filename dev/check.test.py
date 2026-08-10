@@ -16,14 +16,26 @@ cannot be shown to fail, and "the roster agrees" and "nothing was
 enumerated" both print an empty list. The missing-dev/ arms below are
 that second sentence made to fail.
 
+#227 is the same sentence about the other language: the walk read
+`*.test.mjs` and nothing else, so the arm that catches a stray Node
+suite immediately was blind to a stray `dev/*.test.py`. Both suffixes
+are walked now, and the Python side needs one link the Node side does
+not - main() loops over NODE_SUITES, so a line there IS a stage,
+whereas the Python suites are hand-written stages beside the checker
+each one guards. `registration_problems` is what holds that list to
+what main() runs.
+
 Each rule is watched from both sides - an arm that sees it fire and an
 arm that sees it stay silent - because a check that refuses everything
 looks exactly like one that refuses correctly.
 
-Two arms read tools/check.py's own source instead of a rule, and they
-are the ticket rather than decoration: a check that is written but never
-registered is the exact failure this file exists about, and nothing else
-here would notice the gate quietly dropping either of its two stages.
+Several arms read tools/check.py's own source instead of a rule, and
+they are the ticket rather than decoration: a check that is written but
+never registered is the exact failure this file exists about, and
+nothing else here would notice the gate quietly dropping one of its
+stages. One of them reads a stage's LABEL rather than its argv, because
+the label is the whole of what a reader of the stage table is given
+(P3 F8).
 
 This is also tools/check.py's first self-suite. Every other checker in
 tools/ has had one since the checker it tests was written; the gate
@@ -34,6 +46,7 @@ No framework and no new dependency, matching the suites beside it.
 
 import inspect
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -59,7 +72,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 24
+EXPECTED = 37
 
 # Every scratch root built here, so the suite removes what it made even
 # when an arm fails. mkdtemp does not clean up after itself.
@@ -239,6 +252,73 @@ check("the enumeration stays inside dev/", gate.SUITE_DIR == "dev")
 check("a suite is a *.test.mjs file", gate.SUITE_SUFFIX == ".test.mjs")
 
 # ---------------------------------------------------------------------
+# The Python half of the same question. #227: everything above walked
+# *.test.mjs and nothing else, so a stray dev/*.test.py landed unnoticed
+# while the .mjs control was caught immediately - the arm was written
+# once and the other language was left with the hand list #204 is about.
+#
+# The two suffixes are read by one walk with a parameter rather than by
+# a second function, because two functions would be two places for the
+# arrival direction to be forgotten in, which is the whole ticket.
+
+root = tree("a.test.py", "b.test.py")
+check("a Python roster naming exactly what is on disk reports nothing",
+      gate.roster_problems(roster("dev/a.test.py", "dev/b.test.py"), {},
+                           root, gate.PYTHON_SUITE_SUFFIX) == [])
+
+root = tree("a.test.py", "arrived.test.py")
+py_arriving = gate.roster_problems(roster("dev/a.test.py"), {}, root,
+                                   gate.PYTHON_SUITE_SUFFIX)
+check("a Python suite on disk that no line names is reported",
+      "dev/arrived.test.py" in only(py_arriving))
+
+root = tree("a.test.py")
+py_departing = gate.roster_problems(roster("dev/a.test.py",
+                                           "dev/gone.test.py"), {}, root,
+                                    gate.PYTHON_SUITE_SUFFIX)
+check("a Python line naming a file that is not there is reported",
+      "dev/gone.test.py" in only(py_departing))
+
+# The two walks are blind to each other, which is what makes running
+# both of them the only way to cover dev/. One walk that swept both
+# would report every .py as an unregistered .mjs and the reverse.
+root = tree("a.test.mjs", "b.test.py")
+check("the Node walk does not read a Python suite",
+      gate.roster_problems(roster("dev/a.test.mjs"), {}, root) == [])
+check("the Python walk does not read a Node suite",
+      gate.roster_problems(roster("dev/b.test.py"), {}, root,
+                           gate.PYTHON_SUITE_SUFFIX) == [])
+
+check("a Python suite is a *.test.py file",
+      gate.PYTHON_SUITE_SUFFIX == ".test.py")
+check("the Python roster names something",
+      len(gate.PYTHON_SUITES) > 0)
+
+# ---------------------------------------------------------------------
+# The link the Node side does not need. main() loops over NODE_SUITES,
+# so a line there IS a stage; the Python suites are hand-written run()
+# calls beside the checker each one guards, deliberately - so
+# PYTHON_SUITES is a list beside main() rather than the thing main()
+# reads, and without this arm it could name a stage nobody runs. The
+# roster arm above chains disk to the list; this one chains the list to
+# the gate.
+
+ghost = gate.registration_problems([("ghost stage", "dev/g.test.py")],
+                                   "nothing runs anything")
+check("a rostered Python suite main() does not run is reported",
+      "dev/g.test.py" in only(ghost))
+
+check("a rostered Python suite main() does run is not reported",
+      gate.registration_problems(
+          [("ghost stage", "dev/g.test.py")],
+          '("ghost stage", ["dev/g.test.py"])') == [])
+
+drifted = gate.registration_problems(
+    [("ghost stage", "dev/g.test.py")], '("other name", ["dev/g.test.py"])')
+check("a stage label that drifted from the roster is reported",
+      "ghost stage" in only(drifted))
+
+# ---------------------------------------------------------------------
 # Registration. An arm nobody runs is the ticket, so the two stages this
 # change adds are pinned against main()'s own source - nothing else in
 # this repository would notice either one being dropped.
@@ -246,8 +326,25 @@ check("a suite is a *.test.mjs file", gate.SUITE_SUFFIX == ".test.mjs")
 source = inspect.getsource(gate.main)
 check("the gate's main() calls the roster arm",
       "roster_problems(" in source)
+check("the gate's main() walks the Python suffix too",
+      "PYTHON_SUITE_SUFFIX" in source)
+check("the gate's main() calls the registration arm",
+      "registration_problems(" in source)
 check("the gate's main() registers this suite as a stage",
       "dev/check.test.py" in source)
+
+# ---------------------------------------------------------------------
+# What the stage table calls things. P3 F8: checks 24 and 25 are the
+# design gate of record, they live inside tools/check_web.py, and the
+# one stage that runs it was called `apps/web publishable` - so a
+# mockup-token failure printed under a name that says neither. The label
+# is the only thing a reader of the table gets, and this arm is what
+# stops it reverting to the shorter one.
+
+design = re.search(r'results\.append\(\("([^"]+)", run\(\s*"[^"]+",\s*'
+                   r'\[sys\.executable, "tools/check_web\.py"\]', source)
+check("the stage that carries the design gate is named for it too",
+      design is not None and "design gate" in design.group(1))
 
 
 for path in ROOTS:

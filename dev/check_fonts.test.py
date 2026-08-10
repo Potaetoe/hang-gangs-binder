@@ -22,11 +22,31 @@ for and the face lacks fails, and an inventory the face no longer
 covers fails too. The second arm is what stops a future re-subset from
 quietly narrowing the face to whatever today's copy happens to use.
 
+THE TWO ARRIVAL DIRECTIONS
+--------------------------
+#227. Everything above answers for a face or a class DEPARTING. Both
+arrival directions were invisible: a `.woff2` vendored into dist/fonts
+that no line names was never looked at, and a class given the subset
+family by theme.css was never asked what characters it spells. That is
+the shape #204 found in the gate's own suite list, in a check whose own
+docstring says the friction is the point - "a table derived from what
+exists cannot fail when something is added, and something being added
+is exactly when a subset gets forgotten". It could not fail when
+something was added.
+
+Both new rosters are exercised over inputs this suite builds - a
+scratch fonts directory and stylesheet strings - for the reason the
+extractor above is: a rule exercised only against the tree it guards
+cannot be shown to fail, and "the roster agrees" and "nothing was
+enumerated" print the same empty list.
+
 No framework, matching the suites beside it.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 
 # tools/ is not a package and check_fonts.py is a script, so the import
 # has to be made reachable before it can be named. isort would hoist the
@@ -44,7 +64,11 @@ performed = 0
 # dev/check_budget.test.py states: a hand-written total that nothing
 # compares against still prints a confident "OK" when a check stops
 # running.
-EXPECTED = 26
+EXPECTED = 60
+
+# Every scratch root built here, so the suite removes what it made even
+# when an arm fails. mkdtemp does not clean up after itself.
+ROOTS = []
 
 
 def check(label, condition):
@@ -53,6 +77,49 @@ def check(label, condition):
     if not condition:
         failures += 1
     print("pass " if condition else "FAIL ", label)
+
+
+def only(problems):
+    """The single problem expected, or "" when there is not exactly one.
+
+    Indexing straight into the list would raise instead of reporting,
+    and a suite that raises stops: the remaining contracts never run, so
+    a mutation shows one break at a time rather than all of them.
+    """
+    return problems[0] if len(problems) == 1 else ""
+
+
+def fonts(*names, present=True):
+    """A scratch published tree holding fonts/<name> for each name given.
+
+    Under the OS temp directory rather than in the checkout, for
+    dev/check.test.py's reason: a fixture written beside these files
+    would be read as source by the comment stage and linted by another.
+
+    `present=False` builds the tree without the fonts directory at all,
+    which is the case where an enumeration reads nothing and has to say
+    so rather than printing the silence of a roster that agrees.
+    """
+    root = tempfile.mkdtemp(prefix="binder-faces-")
+    ROOTS.append(root)
+    if present:
+        os.mkdir(os.path.join(root, check_fonts.FONT_DIR))
+        for name in names:
+            path = os.path.join(root, check_fonts.FONT_DIR, name)
+            with open(path, "wb") as handle:
+                handle.write(b"scratch fixture, never parsed")
+    return root
+
+
+# One italic @font-face and one rule that takes it - the shape theme.css
+# has, small enough to vary one thing at a time.
+FACE_RULE = ('@font-face { font-family: "P"; font-style: italic;'
+             ' font-weight: 600;'
+             ' src: url("fonts/p-italic.woff2") format("woff2"); }\n')
+WORDMARK_RULE = ('.wordmark-name { font-family: var(--font-display);'
+                 ' font-style: italic; }\n')
+PINNED = ("wordmark-name",)
+FACE = "fonts/p-italic.woff2"
 
 
 # ------------------------------------------------------------------ #
@@ -169,6 +236,179 @@ check("the inventory arm passes a face that still covers it",
 
 
 # ------------------------------------------------------------------ #
+# Arrival, first direction: a face vendored into the published tree.   #
+
+root = fonts("a.woff2")
+check("a face roster naming exactly what is vendored reports nothing",
+      check_fonts.face_roster_problems({"fonts/a.woff2": ("k",)}, {},
+                                       root) == [])
+
+root = fonts("a.woff2", "b.woff2")
+arriving = check_fonts.face_roster_problems({"fonts/a.woff2": ("k",)}, {},
+                                            root)
+check("a vendored face that no line names is reported",
+      "fonts/b.woff2" in only(arriving))
+check("the arrival message says nothing checks it",
+      "nothing here checks it" in only(arriving))
+
+check("a face given a reason is not reported as unnamed",
+      check_fonts.face_roster_problems(
+          {"fonts/a.woff2": ("k",)},
+          {"fonts/b.woff2": "a reason"}, root) == [])
+
+root = fonts("a.woff2")
+stale = check_fonts.face_roster_problems({"fonts/a.woff2": ("k",)},
+                                         {"fonts/b.woff2": "a reason"}, root)
+check("a reason for a face that is not vendored is reported",
+      "fonts/b.woff2" in only(stale))
+
+contradiction = check_fonts.face_roster_problems(
+    {"fonts/a.woff2": ("k",)}, {"fonts/a.woff2": "a reason"}, root)
+check("a face both pinned and excused is reported",
+      "fonts/a.woff2" in only(contradiction))
+
+root = fonts("a.woff2", "b.woff2.bak")
+check("a name that merely contains the suffix is not a face",
+      check_fonts.face_roster_problems({"fonts/a.woff2": ("k",)}, {},
+                                       root) == [])
+
+root = fonts(present=False)
+check("a missing fonts directory is reported rather than read as agreement",
+      check_fonts.face_roster_problems({}, {}, root) != [])
+
+
+# ------------------------------------------------------------------ #
+# Arrival, second direction: a class given the subset face.            #
+#
+# The key is `font-style: italic`, and it is decisive only while the
+# tree vendors one italic face - which is why the first arm below is
+# not about classes at all. A second italic @font-face would make the
+# key ambiguous, so it is REPORTED rather than quietly narrowing what
+# the roster can claim.
+
+check("a stylesheet whose italic rules are all pinned reports nothing",
+      check_fonts.italic_problems(FACE_RULE + WORDMARK_RULE,
+                                  PINNED, {}, FACE) == [])
+
+new_class = check_fonts.italic_problems(
+    FACE_RULE + WORDMARK_RULE + ".blurb { font-style: italic; }\n",
+    PINNED, {}, FACE)
+check("a class the stylesheet makes italic that no line names is reported",
+      "blurb" in only(new_class))
+check("the message says the characters it spells go unchecked",
+      "never asked" in only(new_class))
+
+check("a class given a reason is not reported as unnamed",
+      check_fonts.italic_problems(
+          FACE_RULE + WORDMARK_RULE + ".blurb { font-style: italic; }\n",
+          PINNED, {"blurb": "a reason"}, FACE) == [])
+
+# A prose class that is styled italic somewhere else in the cascade is
+# still a demand on the face, so the roster has to hold every subject -
+# but only the subject. A descendant selector styles its rightmost
+# compound, and reporting `.cover-leaf` too would be friction with no
+# cause behind it.
+check("only the rightmost compound of a selector is the subject",
+      check_fonts.italic_problems(
+          FACE_RULE + ".cover-leaf .wordmark-name { font-style: italic; }\n",
+          PINNED, {}, FACE) == [])
+
+comma = check_fonts.italic_problems(
+    FACE_RULE + ".wordmark-name, .blurb { font-style: italic; }\n",
+    PINNED, {}, FACE)
+check("a comma list is read as several selectors",
+      "blurb" in only(comma))
+
+media = check_fonts.italic_problems(
+    FACE_RULE + WORDMARK_RULE
+    + "@media (max-width: 40rem) { .zoom { font-style: italic; } }\n",
+    PINNED, {}, FACE)
+check("a rule inside a media query is read like any other",
+      "zoom" in only(media))
+
+# An element selector with no class cannot be pinned against anything,
+# so it is reported rather than passed over - the alternative is a
+# demand the roster structurally cannot see.
+bare = check_fonts.italic_problems(
+    FACE_RULE + WORDMARK_RULE + "em { font-style: italic; }\n",
+    PINNED, {}, FACE)
+check("an italic rule whose subject carries no class is reported",
+      "em" in only(bare))
+
+check("a commented-out italic rule is not a demand",
+      check_fonts.italic_problems(
+          FACE_RULE + WORDMARK_RULE
+          + "/* .ghost { font-style: italic; } */\n",
+          PINNED, {}, FACE) == [])
+
+check("an @font-face descriptor is not a styling rule",
+      check_fonts.italic_selectors(FACE_RULE) == [])
+
+# Departure, the direction the class roster also has to answer for: a
+# line naming a class the stylesheet has stopped styling italic is a
+# line about nothing, and it is what a rename leaves behind.
+gone = check_fonts.italic_problems(FACE_RULE + WORDMARK_RULE
+                                   + ".blurb { font-style: italic; }\n",
+                                   PINNED, {"other": "a reason"}, FACE)
+check("a reason for a class the stylesheet does not make italic is reported",
+      any("other" in problem for problem in gone))
+
+renamed = check_fonts.italic_problems(
+    FACE_RULE + ".renamed { font-style: italic; }\n",
+    PINNED, {"renamed": "a reason"}, FACE)
+check("a pinned class the stylesheet no longer makes italic is reported",
+      "wordmark-name" in only(renamed))
+
+# Nothing read is not nothing wrong, again: a stylesheet with no italic
+# rule in it at all reports the same empty list as one whose rules all
+# agree.
+silent = check_fonts.italic_problems(FACE_RULE, (), {}, FACE)
+check("a stylesheet with no italic rule is reported rather than read as "
+      "agreement", silent != [])
+
+two = check_fonts.italic_problems(
+    FACE_RULE + FACE_RULE.replace("p-italic", "q-italic") + WORDMARK_RULE,
+    PINNED, {}, FACE)
+check("a second italic face is reported, because the key stops being "
+      "decisive", any("q-italic" in problem for problem in two))
+
+other = check_fonts.italic_problems(
+    FACE_RULE.replace("p-italic", "q-italic") + WORDMARK_RULE,
+    PINNED, {}, FACE)
+check("an italic face the roster does not name is reported",
+      any("q-italic" in problem for problem in other))
+
+# The default pinned set is FACES' row for the italic face, so naming a
+# face FACES does not carry leaves this arm measuring an empty roster -
+# which would pass every class through. It is reported instead.
+check("an italic face FACES does not carry is reported",
+      any("FACES" in problem for problem in check_fonts.italic_problems(
+          FACE_RULE + WORDMARK_RULE, None, {}, "fonts/absent.woff2")))
+
+
+# ------------------------------------------------------------------ #
+# The block reader the two class arms rest on.                        #
+
+check("a block's selector is read without the block before it",
+      check_fonts.css_blocks(".a { color: red; }\n.b { color: blue; }")
+      == [(".a", " color: red; "), (".b", " color: blue; ")])
+
+check("a nested block is read and its wrapper is not a selector",
+      [prelude for prelude, _ in
+       check_fonts.css_blocks("@media (x) { .a { color: red; } }")]
+      == [".a"])
+
+check("the subject of a descendant selector is its last compound",
+      check_fonts.subject_classes(".a .b") == {"b"})
+
+check("a pseudo-class is not part of the name",
+      check_fonts.subject_classes("a.link:hover") == {"link"})
+
+check("a selector with no class has no subject to pin",
+      check_fonts.subject_classes("em") == set())
+
+
+# ------------------------------------------------------------------ #
 # The real tree.                                                      #
 
 check("the face roster names at least one face",
@@ -190,9 +430,38 @@ check("the real face's cmap is non-empty",
           os.path.join(check_fonts.WEB, *path.split("/")))) > 0
           for path in check_fonts.FACES))
 
+# The decisive arms for the two new rosters, and they are the same
+# sentence as "the real wordmark comes back out of the real pages": an
+# enumeration that finds nothing and a scan that reads no rule both make
+# every rule above pass while measuring an empty set.
+check("the enumeration finds the vendored faces",
+      len(check_fonts.vendored_faces()) >= 2)
+
+check("the roster answers for every face that is vendored",
+      set(check_fonts.vendored_faces())
+      == set(check_fonts.FACES) | set(check_fonts.FACES_UNPINNED))
+
+with open(os.path.join(check_fonts.WEB, check_fonts.STYLESHEET),
+          encoding="utf-8") as handle:
+    stylesheet = handle.read()
+
+check("the shipped stylesheet really does make the wordmark italic",
+      any("wordmark-name" in check_fonts.subject_classes(selector)
+          for selector in check_fonts.italic_selectors(stylesheet)))
+
+check("and it loads exactly one italic face, the one the roster pins",
+      check_fonts.italic_face_sources(stylesheet)
+      == [check_fonts.ITALIC_FACE])
+
+check("the italic face the class roster is about is a rostered face",
+      check_fonts.ITALIC_FACE in check_fonts.FACES)
+
 check("so the gate passes on the tree as it stands",
       check_fonts.problems() == [])
 
+
+for path in ROOTS:
+    shutil.rmtree(path, ignore_errors=True)
 
 if failures:
     print("\ncheck_fonts.py FAILED %d of %d checks" % (failures, performed))
