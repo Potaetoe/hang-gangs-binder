@@ -279,9 +279,79 @@
    * Both write into a page this console serves, and neither changes a
    * byte of it.
    */
-  function runErrand(todo) {
+  /*
+   * ARRIVING IS NOT THE SAME AS BEING READY, and the frame's `load` is
+   * the moment that difference is easiest to miss.
+   *
+   * Two ways it bites, both found by driving the baked demo behind a
+   * clean-URL host rather than by reading anything:
+   *
+   *  - The admin page ships its decrypt button DISABLED and enables it
+   *    when its own session check answers, about a frame later. A
+   *    disabled button swallows click() silently - no event is
+   *    dispatched at all - so the errand pressed nothing, reported
+   *    nothing, and the stop narrated over a page where nothing had
+   *    happened.
+   *  - The publishing card that press reveals arrives later again,
+   *    after a fetch and a few hundred unseals, and scrollIntoView on a
+   *    section that is not rendering moves nothing just as quietly.
+   *
+   * So the errand waits for what it is about to touch, and says so when
+   * the wait runs out. The budget is spent in TRIES rather than in a
+   * duration because that is what a suite can spend all of at once: a
+   * budget in real time is a budget the arms have to sit through.
+   */
+  const READY_TRIES = 100;
+  const READY_EVERY = 50;
+
+  /*
+   * The element once `ready` holds of it, or whatever is there when the
+   * budget runs out - which the caller reads for itself, because absent
+   * and not-yet-ready are two different sentences to a viewer.
+   */
+  function waitFor(doc, id, ready) {
+    return new Promise(function (resolve) {
+      let left = READY_TRIES;
+      const look = function () {
+        const found = doc.getElementById(id);
+        if (found && ready(found)) {
+          resolve(found);
+          return;
+        }
+        left -= 1;
+        if (left <= 0) {
+          resolve(found);
+          return;
+        }
+        root.setTimeout(look, READY_EVERY);
+      };
+      look();
+    });
+  }
+
+  // Rects rather than the attribute, per AGENTS.md: `hidden` can read
+  // true while an element paints, and the inverse is what bites here.
+  const PAINTS = function (node) {
+    return node.getClientRects().length > 0;
+  };
+  const PRESSABLE = function (node) {
+    return node.disabled !== true;
+  };
+
+  async function runErrand(todo) {
     const doc = frameDocument();
     if (doc === null) return;
+
+    /*
+     * THE KEY GOES IN BEFORE ANYTHING IS PRESSED, and that ordering is
+     * the errand rather than a coincidence of how this function is
+     * written. The stop that reaches the publishing card gets there by
+     * pressing the page's own Fetch and decrypt, and a key written after
+     * that press leaves the product answering "paste or choose your key
+     * file first" - a dead end reached by doing all three of the right
+     * things in the wrong order.
+     */
+    if (todo.key) await stageKey(doc);
 
     /*
      * A control that is not there is SAID, not skipped.
@@ -293,11 +363,25 @@
      * declaration. The suite holds every declared press to naming a
      * control the shipped page really carries, so reaching this line
      * means the page moved under the tour since the gate last ran.
+     *
+     * AND A CONTROL THE PAGE HAS NOT ENABLED YET IS THE QUIETER HALF.
+     * click() on a disabled button dispatches NOTHING - no event, no
+     * error, no way to tell it apart from a press that was received and
+     * ignored - so a stop pressing one narrates over a page where its
+     * press never happened. That is not hypothetical: the admin page
+     * ships its decrypt button disabled and enables it when its own
+     * session check answers, about a frame after the frame reports
+     * `load`.
      */
     if (todo.press) {
-      const control = doc.getElementById(todo.press);
-      if (control) {
+      const control = await waitFor(doc, todo.press, PRESSABLE);
+      if (control && PRESSABLE(control)) {
         control.click();
+      } else if (control) {
+        say("This stop presses the page's " + todo.press + " control, and " +
+          "the page has not made it pressable in this staging - so " +
+          "nothing was pressed, and what is on screen is whatever the " +
+          "page opened on.");
       } else {
         say("This stop opens the page's " + todo.press + " control, and " +
           "the page in the frame has no such control - so what is on " +
@@ -321,7 +405,6 @@
      * layout it does not own.
      */
     if (todo.scroll) {
-      const section = doc.getElementById(todo.scroll);
       /*
        * PRESENT IS NOT THE SAME AS ON SCREEN, and this is the one place
        * that difference is invisible. Several of the admin surface's
@@ -329,11 +412,13 @@
        * once it knows what the session may do, and scrollIntoView on a
        * section that is not rendering moves nothing and reports nothing -
        * so the stop would narrate over the top of the page exactly as it
-       * did before, with an errand that believes it ran. Rects rather
-       * than the attribute, per AGENTS.md: `hidden` can read true while
-       * an element paints, and the inverse is what bites here.
+       * did before, with an errand that believes it ran.
+       *
+       * WAITED FOR rather than looked at once, because the press above
+       * is what reveals it and the page's own work happens in between.
        */
-      if (section && section.getClientRects().length > 0) {
+      const section = await waitFor(doc, todo.scroll, PAINTS);
+      if (section && PAINTS(section)) {
         section.scrollIntoView({ block: "start" });
       } else if (section) {
         say("This stop moves the page to its " + todo.scroll + " section, " +
@@ -347,7 +432,6 @@
       }
     }
 
-    if (todo.key) stageKey(doc);
   }
 
   /*
@@ -370,6 +454,16 @@
         devKey = await answer.text();
       }
       box.value = devKey;
+      /*
+       * Said the moment it happens, and to the feed rather than the
+       * status line, because the feed is the column a viewer is already
+       * reading and this line has to be beside the key rather than
+       * instead of the last thing that happened. The words are
+       * demo-stub.js's: a key going into a box in front of the person
+       * judging this design needs the sentence about what kind of key it
+       * is to travel with the ACT, not with one stop's narration.
+       */
+      feedLine(Demo.KEY_STAGED_LINE);
     } catch (error) {
       say("The demo's throwaway key could not be read (" +
         ((error && error.message) || error) + "), so this stop could not " +
