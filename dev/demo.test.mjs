@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 168);
+const { check, mustReject, report } = suite("demo", 174);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1387,6 +1387,115 @@ await check("a stop stages the world it names, not the one before it", () => {
   return first === walk.stops[0].scenario &&
     browser.staged() === walk.stops[1].scenario;
 });
+
+/* ------------------------------------------------------------------ */
+/* Three fixture gaps, told honestly rather than papered over (#238).  */
+
+/*
+ * THE PREFILL STOP LANDS ON THE TAB THE PREFILLED FORM IS ON.
+ *
+ * The staging was always right - the measurements really are written
+ * into the device's own store - and Your page opens on the list of past
+ * entries, which is a different tab. So the card promising "your last
+ * measurements are already in it" showed a list of dates, and the
+ * promise was true about a screen nobody was looking at. Held by
+ * driving it: the stop is walked to and the frame is asked which
+ * control was pressed.
+ */
+await check("the prefill stop presses its way to the form it promises",
+  async () => {
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.scenario === "member-prefilled"));
+    const index = walk.stops.findIndex((stop) =>
+      stop.scenario === "member-prefilled");
+    const browser = consoleInRecordedBrowser();
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive("your-page.html");
+    await browser.settled();
+    return browser.framePressed().join(",") === "add-entry-tab";
+  });
+
+/*
+ * THE EMPTY-SITE-COPY STOP DOES NOT CLAIM A FEATURE THAT HAS NOT
+ * SHIPPED.
+ *
+ * That staging exists to demonstrate #87 - an admin editing the site's
+ * words - and #87 has not landed: nothing in apps/web calls /content at
+ * all. What the page shows is therefore materially the same admin panel
+ * as its two neighbours, and a stop presenting it as the feature would
+ * be the false-confidence direction this suite's header names, told to
+ * the person deciding the cutover.
+ *
+ * The condition is read out of apps/web rather than written down, so
+ * the day #87 lands this arm stops applying on its own rather than
+ * pinning the demo to an apology it has outgrown.
+ */
+const contentShipped = Demo.probeHit(webSource["admin.js"],
+  { file: "apps/web/admin.js", pattern: "\"/content\"" });
+
+await check("the empty-copy stop says the editing surface is still to come", () => {
+  const stop = Demo.TOURS.flatMap((one) => one.stops)
+    .find((each) => each.scenario === "config-fallback");
+  return stop !== undefined &&
+    (contentShipped || /still being built|not yet|to come/i.test(stop.narration));
+});
+
+/*
+ * THE IDLE TIMER IS KEPT AWAY WHILE A STOP IS READ, AND HANDED BACK
+ * WITH THE FRAME.
+ *
+ * The admin page's ten-minute expiry is real, correct product
+ * behavior - it exists so a keyholder's decrypted corpus is not left
+ * open on an unattended screen - and it is measured against interaction
+ * with the FRAME's document, so a presenter talking over the console
+ * does not count as being there. Ten minutes into a narrated walk it
+ * signs itself out and throws away what it decrypted, mid-sentence.
+ *
+ * Both halves are asserted, and the second is the one that keeps this
+ * honest: a console that simply held the page awake forever would have
+ * disabled a security feature and told nobody. It stops at the stop
+ * that hands the frame over, so the viewer who was just told about the
+ * clock is handed the real one.
+ */
+await check("a narrated stop tells the frame somebody is here", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS.find((one) => one.id === "admin");
+  browser.journey(walk.id).fire("click");
+  const awake = browser.waking();
+  return awake.length === 1 && awake[0].every < 8 * 60 * 1000;
+});
+
+await check("and stops the moment the frame is handed over", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS.find((one) => one.id === "admin");
+  browser.journey(walk.id).fire("click");
+  for (let i = 1; i < walk.stops.length; i += 1) {
+    browser.nodes["tour-next"].fire("click");
+  }
+  return walk.stops[walk.stops.length - 1].free === true &&
+    browser.waking().length === 0;
+});
+
+await check("leaving a journey stops it too", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.journey("admin").fire("click");
+  browser.nodes["tour-leave"].fire("click");
+  return browser.waking().length === 0;
+});
+
+/*
+ * And the disclosure, because a demo that quietly defeats a security
+ * feature to look better is the false-confidence direction again. The
+ * admin journey says out loud what the timer does and that the console
+ * has been holding it off.
+ */
+await check("the admin journey narrates the timer rather than hiding it", () =>
+  Demo.TOURS.find((one) => one.id === "admin").stops
+    .some((stop) => /ten minutes/i.test(stop.narration) &&
+      /awake/i.test(stop.narration)));
 
 /* ------------------------------------------------------------------ */
 /* The keyholder's key, staged so the act is performable cold (#238).  */
