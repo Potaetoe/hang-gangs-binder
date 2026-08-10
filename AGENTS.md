@@ -223,7 +223,11 @@ linters cannot express:
   in its allowlist, a new one fails the gate, and a pin that stops
   matching fails too, so the list can only shrink and cannot go stale.
   Take an entry off in the change that next touches its file; never
-  raise a count.
+  raise a count. **A comment that names another file and quotes it must
+  still be quoting it**, which the same checker enforces against the
+  cited file rather than against phrases — so renaming a heading is one
+  change that moves every comment quoting it, and `archive/` is a
+  different file from the document it archives (#217).
 - **Commit messages carry the reasoning** — the why, what was rejected,
   what was verified. This project recovers facts from `git log`; a PR
   body is not in the repository. A single subject line is for changes
