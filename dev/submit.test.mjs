@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 95;
+const EXPECTED = 96;
 
 function check(label, condition) {
   performed++;
@@ -382,11 +382,22 @@ function engineStubs(history) {
     personalSource(entries, now) {
       const source = {
         personal: true, entries: entries, now: now,
+        /*
+         * THE REAL ENGINE'S MEMBER SET, read off a live
+         * BinderQuery.personalSource in a browser rather than guessed.
+         * A stub carrying fewer members than dashboard.js really builds
+         * would let the arm below assert a smaller surviving set than
+         * the page actually retains - which is the stub agreeing with
+         * this file instead of with the site, and it is how the first
+         * draft of that arm was wrong.
+         */
         snapshot: {
           snapshot: 3,
           identified: true,
+          generated: "2026-08-09T00:00:00.000Z",
           counts: { entries: entries.length, people: 1 },
           series: [{ label: "@member", points: [{ at: 1, kg: 90 }] }],
+          seriesWithheld: false,
           quality: { heightChanges: [], handleChanges: [{ was: "@old" }] },
           bases: { people: {}, entries: {} },
           movement: { kg: 1 },
@@ -1727,7 +1738,23 @@ const historyCode = submitSource.replace(/\/\*[\s\S]*?\*\//g, "")
 check("only the partitions the chart is drawn from survive",
   opened.engine.sources.length === 1 &&
   Object.keys(opened.engine.sources[0].snapshot).slice().sort().join(",") ===
-    ["bases", "identified", "snapshot"].join(","));
+    ["bases", "generated", "identified", "seriesWithheld", "snapshot"]
+      .join(","));
+
+/*
+ * The four that stay beside `bases`, named so the arm above is read as
+ * a decision rather than as whatever happened to be left. `snapshot` is
+ * a version integer, `identified` a boolean, `seriesWithheld` a
+ * boolean, `generated` the timestamp of the build. None of them is
+ * decrypted content or derived from any one row, which is the test the
+ * scrub applies - the deleted members are the ones that carry a
+ * member's own measurements, handle or history forward.
+ */
+check("and none of what stays came out of a decrypted row",
+  ["snapshot", "identified", "seriesWithheld", "generated"].every((name) => {
+    const value = opened.engine.sources[0].snapshot[name];
+    return value === undefined || typeof value !== "object";
+  }));
 
 check("and the handle the record carried never entered the source at all",
   opened.engine.sources[0].entries.every((entry) =>
