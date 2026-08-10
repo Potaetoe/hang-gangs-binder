@@ -57,7 +57,7 @@ const {
   IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty, stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 40);
+const { check, mustReject, report } = suite("demo bake", 41);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -292,15 +292,39 @@ await check("the baked sign-in page loads no third-party widget", async () => {
     html.includes("/dev/demo-telegram.js");
 });
 
-await check("all three declared edits are applied across the baked pages",
+/*
+ * The edits are named here as literals, and the count with them, for
+ * the reason dev/demo.test.mjs spells the same list out: an arm that
+ * compared the table to itself would hold just as well for three edits
+ * or for five, so an edit added without anybody deciding to add one
+ * would pass it. A bake emits pages a static host serves to whoever
+ * asks, so what differs from the product in them is exactly the thing
+ * that cannot be allowed to grow quietly.
+ */
+await check("all four declared edits are applied across the baked pages",
   async () => {
     const applied = new Set();
     for (const page of pages) {
       const shipped = await readFile(join(ROOT, "apps", "web", page), "utf8");
       Demo.mirror(shipped).applied.forEach((id) => applied.add(id));
     }
-    return applied.size === 3 && applied.has("boot") &&
-      applied.has("telegram") && applied.has("config");
+    return applied.size === 4 && applied.has("boot") &&
+      applied.has("telegram") && applied.has("config") &&
+      applied.has("links");
+  });
+
+/*
+ * And the fourth edit where it matters most. A hosted build is the one
+ * a stranger clicks around in, so the footer's link out of the product
+ * has to open its own tab there too - a frame that navigates itself to
+ * a host refusing to be framed leaves a white rectangle and no way back.
+ */
+await check("a baked page sends a link out of the product to its own tab",
+  async () => {
+    const html = await read("demo/index.html");
+    const anchors = html.match(/<a [^>]*href="https?:\/\/[^"]*"[^>]*>/g) || [];
+    return anchors.length > 0 &&
+      anchors.every((tag) => tag.includes('target="_blank"'));
   });
 
 await check("the raw copies are byte-equal to what apps/web ships", async () => {

@@ -798,16 +798,16 @@ await check("the console script paints the cards and none of the bench", () =>
 /*
  * The whole routing-desync class, at its one seam.
  *
- * The console used to write its address readout and its "current"
- * destination from THE FILE NAME IT ASKED FOR. The pages in the frame
- * are real, live JavaScript: an already-signed-in visitor at Sign in is
- * redirected to Your page, a revoked session bounces back to Sign in on
- * load, an auth guard refuses a gated page, and the product's own rail
- * carries somebody anywhere at any time. Every one of those moves the
- * frame without the console being asked, and the console then names a
- * page the viewer is plainly not looking at - the owner's "it lands on
- * the wrong forms", reproduced four ways by one analyst and six by the
- * other.
+ * These hold the console to reading its address readout and its
+ * "current" destination off THE FRAME, never off the file it asked for.
+ * The pages in the frame are real, live JavaScript: an already-signed-in
+ * visitor at Sign in is redirected to Your page, a revoked session
+ * bounces back to Sign in on load, an auth guard refuses a gated page,
+ * and the product's own rail carries somebody anywhere at any time.
+ * Every one of those moves the frame without the console being asked, so
+ * a console painting from its own press names a page the viewer is
+ * plainly not looking at - the owner's "it lands on the wrong forms",
+ * reproduced four ways by one analyst and six by the other.
  *
  * So the address is derived from where the frame REALLY IS. The pure
  * half is here, in demo-stub.js, for the reason frameStyleFor is: what
@@ -1284,11 +1284,11 @@ await check("every journey is walked by some UAT section", () => {
 });
 
 /*
- * The cards keep their own home too. They are the free drive now, and
- * UAT.md no longer names them - so the arm that used to hold the two
- * documents to one card list is gone, and this is what remains of it:
- * the cards are still a complete surface in their own right, which the
- * scenario-coverage arms above already hold in both directions.
+ * The cards keep their own home. They are the free drive, and UAT.md
+ * names journeys rather than cards - so nothing here holds the two
+ * documents to one card list, and nothing should: the cards are a
+ * complete surface in their own right, which the scenario-coverage arms
+ * above hold in both directions without UAT.md's help.
  */
 await check("no UAT section still points at a card", () =>
   !/^##.*card "/m.test(uat));

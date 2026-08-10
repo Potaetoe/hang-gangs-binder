@@ -36,14 +36,13 @@
   /*
    * The path the mirrored pages are served under, and its one home.
    *
-   * dev/demo-server.mjs serves it and dev/demo-console.js drives it, and
-   * they used to spell it separately - two constants that have to agree
-   * with nothing saying so. dev/demo.test.mjs now holds them to each
-   * other, which is worth having because the console derives WHICH PAGE
-   * THE FRAME IS ON from this prefix: a console reading one path while
-   * the server serves another would report every page as outside the
-   * demo, and the symptom is the address readout refusing a page that is
-   * plainly on screen.
+   * dev/demo-server.mjs serves this path and dev/demo-console.js drives
+   * it, so the two have to agree and dev/demo.test.mjs holds them to
+   * each other. Do not give either side a spelling of its own: the
+   * console decides WHICH PAGE THE FRAME IS ON from this prefix, so a
+   * console reading one path while the server serves another reports
+   * every page as outside the demo - and the symptom is an address
+   * readout refusing a page that is plainly on screen.
    */
   const MIRROR_PATH = "/demo/";
 
@@ -1482,16 +1481,15 @@
   /*
    * What the console should say, given the address the FRAME reports.
    *
-   * The console used to write its address readout and its "current"
-   * destination from the file name it asked for, and the pages in the
-   * frame are real, live JavaScript: an already-signed-in visitor at
+   * THE ADDRESS IS DERIVED FROM THE FRAME, NEVER FROM THE PRESS, and
+   * this function plus the load listener that feeds it are the whole of
+   * that. Compute either value from the file the console ASKED for and
+   * the console names a page nobody is looking at: the pages in the
+   * frame are real, live JavaScript, so an already-signed-in visitor at
    * Sign in is redirected to Your page, a revoked session bounces back
    * to Sign in on load, an auth guard refuses a gated page, and the
    * product's own rail carries somebody anywhere at any time. None of
-   * that goes through the console, so the console named a page nobody
-   * was looking at - which is every finding in the routing-desync class,
-   * and they collapse into this one function plus the listener that
-   * feeds it.
+   * that goes through the console.
    *
    * Pure here for frameStyleFor's reason: the hazard is a readout that
    * disagrees with the screen, and a value dev/demo.test.mjs can assert

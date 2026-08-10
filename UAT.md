@@ -352,9 +352,9 @@ accept.
 
 ### A11 · Privacy — journey "What the binder will not hand over", stop 2
 
-The checks whose failure is not visible from the page. **A failure here
-stops the cutover** — these are the claims the project makes to the
-people whose data it holds.
+Everything here fails invisibly: nothing on the page looks wrong when
+one of these breaks. **A failure here stops the cutover** — these are
+the claims the project makes to the people whose data it holds.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
