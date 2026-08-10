@@ -16,10 +16,12 @@
  * A fake database would prove that a fake database works; what it would
  * not prove is the thing that matters - that the shipped file asks for
  * its own database, keyed the way #56 and #65 require. So the custody
- * RULES are exercised as a pure function over records, the storage calls
- * are read off the source, and the round trip through a real IndexedDB
- * is a browser claim rather than a Node one. Where a claim is a browser
- * claim it says so here rather than being quietly omitted.
+ * RULES are exercised as functions over records - the shape half pure
+ * and synchronous, the halves-agree half against real WebCrypto - the
+ * storage calls are read off the source, and the round trip through a
+ * real IndexedDB is a browser claim rather than a Node one. Where a
+ * claim is a browser claim it says so here rather than being quietly
+ * omitted.
  */
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -39,7 +41,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 49);
+const { check, report } = suite("memberkey.js", 66);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -60,8 +62,8 @@ await check("and it is frozen, like every other module here", () =>
  */
 await check("the exported surface is the one two other files build on", () =>
   Object.keys(Keys).slice().sort().join(",") ===
-    ["DB_NAME", "ROW_KEY", "STORE_NAME", "custodyVerdict", "ensure",
-      "forget", "unavailableReason"].sort().join(","));
+    ["DB_NAME", "ROW_KEY", "STORE_NAME", "custodyRuling", "custodyVerdict",
+      "ensure", "forget", "unavailableReason"].sort().join(","));
 
 /*
  * Its own database, and this arm is the mechanical half of an argument
@@ -387,6 +389,265 @@ await check("no account id means no record is anybody's", () =>
   Keys.custodyVerdict(good(), null) === "erase" &&
   Keys.custodyVerdict(good(), undefined) === "erase" &&
   Keys.custodyVerdict(good(), "") === "erase");
+
+/* ------------------------------------------------------------------ */
+/* Custody, second half: are those two halves two halves of one key?   */
+
+/*
+ * THE QUESTION EVERY ARM ABOVE IS UNABLE TO ASK.
+ *
+ * Each of those judges `publicKeyRaw` by what it looks like: sixty-five
+ * values, readable by index, tagged as bytes. A GENUINE `Uint8Array` of
+ * sixty-five attacker-chosen bytes satisfies every one of them, survives
+ * `structuredClone` into IndexedDB, and carries no mark at all of who
+ * wrote it. Nothing about its shape is wrong; what is wrong is whose it
+ * is.
+ *
+ * Adopting one is the gravest outcome this file has. The member keeps a
+ * good private key, `usable` hands form.js a well-formed public half,
+ * and every entry from then on seals to a key the member cannot open -
+ * with the page showing nothing unusual, because nothing unusual has
+ * happened yet. It surfaces on export day, over rows already written.
+ *
+ * WHY AGREEMENT AND NOT A SIGNATURE: the stored private key is
+ * `deriveBits`-only by construction and could not sign a challenge if
+ * this file asked it to. ECDH runs from both ends instead, and the two
+ * secrets are equal exactly when the halves are two ends of one pair.
+ *
+ * These arms run against REAL WEBCRYPTO - Node's is the browser's - so
+ * they exercise the derivation rather than a description of it. What
+ * they cannot reach is `ensure` erasing and regenerating on this
+ * verdict, which needs a real IndexedDB; that is a browser claim, made
+ * in the pull request and labelled there.
+ */
+const foreign = await crypto.subtle.generateKey(
+  { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+
+const rawOf = async (key) =>
+  new Uint8Array(await crypto.subtle.exportKey("raw", key));
+
+/*
+ * A record built the way `generateFor` builds one: a private key and the
+ * exported public half of whichever pair is named. Passing two different
+ * pairs is how the poisoned row is written.
+ */
+const filed = async (privateHalf, publicHalf) => ({
+  accountId: "a".repeat(64),
+  privateKey: privateHalf,
+  publicKeyRaw: await rawOf(publicHalf),
+  createdAt: "2026-08-09T00:00:00.000Z",
+});
+
+await check("the two halves of one real pair are adopted", async () =>
+  (await Keys.custodyRuling(await filed(pair.privateKey, pair.publicKey),
+    "a".repeat(64))) === "use");
+
+/*
+ * THE ARM THIS SECTION EXISTS FOR. Both halves are genuine, both are the
+ * right shape, and they are halves of different keypairs - which is
+ * exactly what a poisoned row looks like when whoever wrote it knows
+ * what a P-256 point is.
+ */
+await check("a genuine public half of somebody else's pair is ERASED",
+  async () =>
+    (await Keys.custodyRuling(await filed(pair.privateKey, foreign.publicKey),
+      "a".repeat(64))) === "erase");
+
+/*
+ * And the measurement that says the arm above is about something: the
+ * shape rule adopts that identical record. Without this, a ruling that
+ * simply forwarded the shape verdict would pass the arm above the day
+ * somebody made the two halves match by accident.
+ */
+await check("and nothing in its shape refuses it - the shape rule adopts it",
+  async () =>
+    Keys.custodyVerdict(await filed(pair.privateKey, foreign.publicKey),
+      "a".repeat(64)) === "use");
+
+/*
+ * Sixty-five bytes that are not a point at all. `good()` above carries
+ * exactly this - sixty-five zeros - which is why it is still the fixture
+ * the shape arms use and no longer a record this file would keep.
+ */
+await check("sixty-five bytes that are no point on the curve are erased",
+  async () => {
+    const flat = new Uint8Array(65);
+    const prefixed = new Uint8Array(65);
+    prefixed[0] = 4;
+    prefixed.fill(9, 1);
+    for (const raw of [flat, prefixed]) {
+      const record = await filed(pair.privateKey, pair.publicKey);
+      record.publicKeyRaw = raw;
+      if ((await Keys.custodyRuling(record, "a".repeat(64))) !== "erase") {
+        return false;
+      }
+    }
+    return true;
+  });
+
+/*
+ * The platform fact the on-curve half of the rule stands on, asserted
+ * rather than assumed: WebCrypto will not import those bytes as a point,
+ * so the import is a real check and its throw is a real refusal.
+ */
+await check("and the reason: WebCrypto refuses to import them at all",
+  async () => {
+    try {
+      await crypto.subtle.importKey("raw", new Uint8Array(65),
+        { name: "ECDH", namedCurve: "P-256" }, false, []);
+      return false;
+    } catch (error) {
+      return true;
+    }
+  });
+
+/*
+ * A pair whose halves DO match, on a private key that cannot derive.
+ * The test cannot be performed, and "cannot be performed" has to land on
+ * erase rather than on adopt - a record this file cannot vouch for is
+ * refused whether the answer was no or there was no answer.
+ */
+await check("a private key that cannot derive is erased, not adopted",
+  async () => {
+    const mute = await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey"]);
+    return (await Keys.custodyRuling(await filed(mute.privateKey,
+      mute.publicKey), "a".repeat(64))) === "erase";
+  });
+
+await check("what the shape rule refuses, the ruling refuses too", async () =>
+  (await Keys.custodyRuling(null, "a".repeat(64))) === "generate" &&
+  (await Keys.custodyRuling(await filed(pair.privateKey, pair.publicKey),
+    "b".repeat(64))) === "erase" &&
+  (await Keys.custodyRuling(good(), null)) === "erase");
+
+/*
+ * NOTHING IS REMEMBERED, and the third call is the half that matters.
+ * A verdict cached on the module would answer for the record it first
+ * saw, and the record is precisely the thing an attacker replaces - so
+ * a cache would let a poisoned row inherit a clean row's answer, and
+ * would let one poisoned row condemn every later clean one.
+ */
+await check("the halves are re-checked on every call, never remembered",
+  async () => {
+    const record = await filed(pair.privateKey, pair.publicKey);
+    const first = await Keys.custodyRuling(record, "a".repeat(64));
+    record.publicKeyRaw = await rawOf(foreign.publicKey);
+    const second = await Keys.custodyRuling(record, "a".repeat(64));
+    const third = await Keys.custodyRuling(
+      await filed(pair.privateKey, pair.publicKey), "a".repeat(64));
+    return first === "use" && second === "erase" && third === "use";
+  });
+
+await check("and the record is not marked on the way past", async () => {
+  const record = await filed(pair.privateKey, pair.publicKey);
+  await Keys.custodyRuling(record, "a".repeat(64));
+  return Reflect.ownKeys(record).sort().join(",") ===
+    "accountId,createdAt,privateKey,publicKeyRaw";
+});
+
+/*
+ * The throwaway pair, read off the source for the same reason the
+ * member's own pair is: a suite that generated its own would prove what
+ * WebCrypto does and nothing about what this file asks for. Every
+ * `generateKey` in the file is covered rather than the first one, so a
+ * second pair cannot arrive with weaker arguments than the first.
+ */
+const generateCalls = [...code.matchAll(
+  /generateKey\(\s*\{\s*name:\s*"ECDH",\s*namedCurve:\s*([\w"-]+)\s*\},\s*(\w+),\s*\[([^\]]*)\]/g)];
+
+await check("every pair this file makes is non-extractable and derive-only",
+  () => generateCalls.length === 2 && generateCalls.every((one) =>
+    one[2] === "false" && one[3].replace(/\s|"/g, "") === "deriveBits"));
+
+/*
+ * The stored public half is imported with NO usage at all, which is what
+ * WebCrypto requires of an ECDH public key and what says this import is
+ * a validity check rather than a key being put to work. Non-extractable
+ * for the same reason everything else here is: there is no path by which
+ * a poisoned point should become bytes this page can hand anywhere.
+ */
+const importCall = /importKey\(\s*\n?\s*"raw", record\.publicKeyRaw,\s*\n?\s*\{\s*name:\s*"ECDH",\s*namedCurve:\s*(\w+)\s*\},\s*(\w+),\s*\[([^\]]*)\]/
+  .exec(code);
+
+await check("the record's public half is imported as a point on the curve",
+  () => Boolean(importCall) && importCall[1] === "CURVE" &&
+    importCall[2] === "false" && importCall[3].trim() === "");
+
+const agreeBody =
+  /async function halvesAgree\(record\) \{([\s\S]*?)\n {2}\}/.exec(code);
+const compareLoop = agreeBody &&
+  /for \(let i = 0; i < SECRET_BYTES; i\+\+\) \{([\s\S]*?)\n {6}\}/
+    .exec(agreeBody[1]);
+
+/*
+ * COUNTED, AND TO THE END. A comparison that returns on the first
+ * differing byte answers in a time that depends on how much of the
+ * secret the caller guessed right - and while the caller here is a
+ * record in a database rather than a network peer, the shape is one
+ * nobody should have to re-derive the safety of. A fixed count also
+ * means a short secret cannot end the walk early with the accumulator
+ * still clean.
+ */
+await check("the two secrets are compared byte by byte, to the end", () =>
+  Boolean(compareLoop) && /\|=/.test(compareLoop[1]) &&
+  /\^/.test(compareLoop[1]) &&
+  !/\breturn\b|\bbreak\b/.test(compareLoop[1]));
+
+/*
+ * And never as text. `btoa` of a shared secret, a `join`, a `toString` -
+ * each turns thirty-two bytes into a string that lives until the garbage
+ * collector gets to it and compares by a path nobody controls.
+ */
+await check("and never as strings - no base64, no join, no text compare",
+  () => Boolean(agreeBody) &&
+    !/btoa|String\.fromCharCode|\.join\(|JSON\.|toString\(/.test(agreeBody[1]));
+
+await check("the throwaway pair is never stored, returned or written down",
+  () => Boolean(agreeBody) &&
+    !/store\.|\.put\(|console\.|return ephemeral/.test(agreeBody[1]));
+
+/*
+ * The wiring, which is the one claim here that is textual rather than
+ * behavioral: `ensure` has to act on the RULING. Calling the shape
+ * verdict instead would leave every arm above green over a file that
+ * still adopts the poisoned row, so the arm asks for the ruling by name
+ * AND for the shape verdict's absence from that function.
+ */
+const ensureBody =
+  /async function ensure\(accountId\) \{([\s\S]*?)\n {2}\}/.exec(code);
+
+await check("ensure decides on the ruling, not on the shape rule alone",
+  () => Boolean(ensureBody) &&
+    /await custodyRuling\(record, accountId\)/.test(ensureBody[1]) &&
+    !/custodyVerdict\(/.test(ensureBody[1]));
+
+/*
+ * ERASE MEANS THE STORE, not the row that was read. The new cause routes
+ * into the same path the old ones use, and a `delete` on one key would
+ * leave the rest of a store this file did not write sitting there.
+ */
+await check("and an erase still clears the whole store, never one row",
+  () => Boolean(ensureBody) &&
+    /verdict === "erase"[\s\S]{0,240}store\.clear\(\)/.test(ensureBody[1]) &&
+    !/store\.delete\(/.test(code));
+
+/*
+ * NO MIGRATION. The cross-check is computed, never stored, so a key a
+ * member's browser made yesterday is adopted today without a new field
+ * to fill in or a version to upgrade past. A record that had to carry
+ * proof of itself would make every existing one unvouchable, and "erase,
+ * never skip" would then destroy every legitimate key in the field.
+ */
+const storedFields = /return \{([\s\S]*?)\n {4}\};/.exec(
+  (/async function generateFor\(accountId\) \{([\s\S]*?)\n {2}\}/
+    .exec(code) || ["", ""])[1]);
+
+await check("nothing new is stored, and the database version does not move",
+  () => Boolean(storedFields) &&
+    [...storedFields[1].matchAll(/^\s*(\w+):/gm)].map((one) => one[1])
+      .sort().join(",") === "accountId,createdAt,privateKey,publicKeyRaw" &&
+    /factory\.open\(DB_NAME, 1\)/.test(code));
 
 /* ------------------------------------------------------------------ */
 /* No database: the path a member must never notice.                   */
