@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 130);
+const { check, mustReject, report } = suite("demo", 143);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -196,10 +196,10 @@ await check("every declared edit is one the mirror actually applies", () => {
  * asked to take on trust is this list, so this is the check that has to
  * fail when it grows.
  */
-await check("the mirror declares exactly three edits, and they are these three", () =>
-  Demo.MIRROR_EDITS.length === 3 &&
+await check("the mirror declares exactly four edits, and they are these four", () =>
+  Demo.MIRROR_EDITS.length === 4 &&
   Demo.MIRROR_EDITS.map((edit) => edit.id).sort().join(",") ===
-    "boot,config,telegram" &&
+    "boot,config,links,telegram" &&
   Demo.MIRROR_EDITS.every((edit) =>
     typeof edit.what === "string" && edit.what.length > 0 &&
     typeof edit.why === "string" && edit.why.length > 0));
@@ -227,6 +227,53 @@ await check("the config edit points every page that loads config.js at the stand
 await check("a page that loads no config.js gets no config edit", () =>
   PAGES.filter((page) => !shipped[page].includes('<script src="config.js">'))
     .every((page) => !Demo.mirror(shipped[page]).applied.includes("config")));
+
+/*
+ * The fourth edit: a link out of the product cannot take the frame with
+ * it.
+ *
+ * Every page apps/web ships carries `<a href="https://github.com/...">`
+ * in its footer, with no target - right on the real site, and inside
+ * the console's frame a live escape hatch. Clicking it navigates the
+ * FRAME to github.com, which refuses to be framed, so the stage goes
+ * white and the only way back is pressing another card. Both analysts
+ * found it independently; it is the most literal case of the demo
+ * "acting like a live app" there is, because a real cross-origin
+ * request leaves the machine.
+ *
+ * Contained here rather than in apps/web because apps/web is the
+ * product: the mirror is the demo's one sanctioned way to differ from
+ * the shipped bytes, and it is declared, rendered for the owner, and
+ * held to an exact undo one screen up. That undo is what makes this
+ * safe - the round-trip check above now runs over this edit too, so a
+ * containment that also changed anything else fails there.
+ */
+await check("the mirror sends a link out of the product to its own tab", () =>
+  PAGES.every((page) => {
+    const out = Demo.mirror(shipped[page]).html;
+    const anchors = out.match(/<a [^>]*href="https?:\/\/[^"]*"[^>]*>/g) || [];
+    return anchors.length > 0 &&
+      anchors.every((tag) => tag.includes('target="_blank"') &&
+        tag.includes('rel="noopener noreferrer"'));
+  }));
+
+/*
+ * And only those. The walk happens by moving around the product, so the
+ * rail, the wordmark and every in-page link have to keep landing in the
+ * frame - a target on those would open the demo's own pages in tabs the
+ * console cannot see, which is the same walk-breaking failure from the
+ * other end.
+ */
+await check("an in-page link is left in the frame, because that is the walk", () =>
+  PAGES.every((page) => {
+    const out = Demo.mirror(shipped[page]).html;
+    const anchors = out.match(/<a [^>]*>/g) || [];
+    return anchors.filter((tag) => !/href="https?:\/\//.test(tag))
+      .every((tag) => !tag.includes("target="));
+  }));
+
+await check("every page carries the link edit, so no page is an escape", () =>
+  PAGES.every((page) => Demo.mirror(shipped[page]).applied.includes("links")));
 
 /* ------------------------------------------------------------------ */
 /* apps/web pays nothing for the demo.                                 */
@@ -744,6 +791,224 @@ await check("the console script paints the cards and none of the bench", () =>
   !consoleJs.includes('$("scenarios")') &&
   !consoleJs.includes('$("boxes")') &&
   !consoleJs.includes('$("edits")'));
+
+/* ------------------------------------------------------------------ */
+/* The console says where the frame IS, never where it was sent.       */
+
+/*
+ * The whole routing-desync class, at its one seam.
+ *
+ * The console used to write its address readout and its "current"
+ * destination from THE FILE NAME IT ASKED FOR. The pages in the frame
+ * are real, live JavaScript: an already-signed-in visitor at Sign in is
+ * redirected to Your page, a revoked session bounces back to Sign in on
+ * load, an auth guard refuses a gated page, and the product's own rail
+ * carries somebody anywhere at any time. Every one of those moves the
+ * frame without the console being asked, and the console then names a
+ * page the viewer is plainly not looking at - the owner's "it lands on
+ * the wrong forms", reproduced four ways by one analyst and six by the
+ * other.
+ *
+ * So the address is derived from where the frame REALLY IS. The pure
+ * half is here, in demo-stub.js, for the reason frameStyleFor is: what
+ * the console shows becomes a value this suite can assert, and the
+ * browser half only reads a location and assigns.
+ */
+const CONSOLE_ORIGIN = "http://127.0.0.1:8151";
+const at = (href) => Demo.frameAddressOf(href);
+
+await check("the mirror path the console drives is the one the server serves", () =>
+  Demo.MIRROR_PATH === MIRROR_PREFIX);
+
+await check("a mirrored page is named by the frame, and its destination is current", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "charts.html");
+  return there.inside === true && there.file === "charts.html" &&
+    there.shown === CONSOLE_ORIGIN + Demo.MIRROR_PATH + "charts.html";
+});
+
+/*
+ * The finding itself, as a value. The console asked for your-page.html
+ * and the shipped auth guard answered by putting Sign in on the screen;
+ * what the address says is Sign in, because that is what is there.
+ */
+await check("a page that redirected itself is read at where it landed", () => {
+  const asked = "your-page.html";
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html");
+  return there.file === "index.html" && there.file !== asked;
+});
+
+/*
+ * A mirrored page that is no destination highlights none of them.
+ * 404.html is a real page of the product and reachable in the frame, and
+ * lighting one of the four rail buttons for it would be the same lie in
+ * a quieter place.
+ */
+await check("a mirrored page that is no destination lights none of them", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "404.html");
+  return there.inside === true && there.file === null;
+});
+
+/*
+ * And the escape, which the link containment above now prevents and this
+ * refuses to paper over anyway. A frame that left the demo cannot be
+ * read at all - the browser refuses the cross-origin location - and the
+ * console's last honest act is to say so rather than keep showing the
+ * page it last asked for. Defence in depth: the containment is the fix,
+ * this is what the viewer sees if anything ever gets past it.
+ */
+await check("a frame that cannot be read is said to have left, not guessed at", () => {
+  const there = at(null);
+  return there.inside === false && there.file === null &&
+    typeof there.shown === "string" && there.shown.length > 0 &&
+    /demo/i.test(there.shown);
+});
+
+await check("an address outside the mirror is no page of the product", () => {
+  const there = at("https://github.com/Potaetoe/hang-gangs-binder");
+  return there.inside === false && there.file === null;
+});
+
+await check("an address that will not parse is refused, not read as a page", () =>
+  at("http://[").inside === false && at("http://[").file === null);
+
+/*
+ * THE WIRING, EARNED BY RUNNING THE BYTES (#154 F1's rule, applied to
+ * the console instead of the boot file).
+ *
+ * A source-string arm here would ask whether demo-console.js CONTAINS
+ * the word "load", which the comment explaining the listener contains
+ * too. What has to be true is that the console listens to the FRAME and
+ * repaints from the frame's own location - so the real file runs under
+ * node:vm against a RECORDED browser, exactly the way demo-boot.js is
+ * driven below, and the recording is asked what the console did.
+ *
+ * The recorded frame is the load-bearing part: its contentWindow
+ * reports a location the console never set, which is the situation
+ * every finding in this class arrives through.
+ */
+const CONSOLE_IDS = ["features", "destinations", "viewports", "status",
+  "feed", "try-next", "stage", "frame-path", "open-tab", "reset"];
+
+function recordedNode(id) {
+  const it = {
+    id: id,
+    textContent: "",
+    className: "",
+    style: {},
+    dataset: {},
+    children: [],
+    attrs: {},
+    scrollTop: 0,
+    scrollHeight: 0,
+    listeners: {},
+    setAttribute(name, value) { it.attrs[name] = String(value); },
+    getAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(it.attrs, name)
+        ? it.attrs[name] : null;
+    },
+    appendChild(child) { it.children.push(child); return child; },
+    addEventListener(type, fn) {
+      (it.listeners[type] = it.listeners[type] || []).push(fn);
+    },
+    fire(type) {
+      (it.listeners[type] || []).slice()
+        .forEach((fn) => fn({ currentTarget: it, target: it }));
+    },
+  };
+  return it;
+}
+
+function consoleInRecordedBrowser() {
+  const nodes = {};
+  CONSOLE_IDS.forEach((id) => { nodes[id] = recordedNode(id); });
+
+  const replaced = [];
+  nodes.stage.contentWindow = {
+    location: {
+      href: null,
+      replace(href) { replaced.push(String(href)); },
+    },
+  };
+
+  const context = {
+    BinderDemo: Demo,
+    document: {
+      getElementById: (id) => nodes[id] || null,
+      createElement: (tag) => recordedNode(tag),
+    },
+    location: { origin: CONSOLE_ORIGIN },
+    sessionStorage: {
+      getItem: () => null, setItem() {}, removeItem() {},
+    },
+    localStorage: { setItem() {}, removeItem() {} },
+    // The corpus worker is refused rather than recorded: buildCorpus
+    // already has an arm for a browser that cannot start one, and what
+    // is under test here is the frame, not the charts.
+    Worker: function () { throw new Error("no worker in this recording"); },
+    open() {},
+  };
+  vm.createContext(context);
+  vm.runInContext(consoleJs, context, { filename: "demo-console.js" });
+
+  const arrive = (file) => {
+    nodes.stage.contentWindow.location.href =
+      CONSOLE_ORIGIN + Demo.MIRROR_PATH + file;
+    nodes.stage.fire("load");
+  };
+  const pressed = () => nodes.destinations.children
+    .filter((one) => one.getAttribute("aria-pressed") === "true")
+    .map((one) => one.title);
+  const destination = (file) =>
+    nodes.destinations.children.find((one) => one.title === file);
+
+  return { nodes, replaced, arrive, pressed, destination };
+}
+
+await check("the console repaints its address from the frame's own arrival", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.destination("your-page.html").fire("click");
+  // The shipped auth guard answers by putting Sign in on the screen.
+  browser.arrive("index.html");
+  return browser.nodes["frame-path"].textContent ===
+      CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html" &&
+    browser.pressed().join(",") === "index.html";
+});
+
+/*
+ * The compounding half, and the reason the resync alone is not the whole
+ * repair: setting an iframe's `src` to the string it already holds
+ * reloads nothing in any browser. Once a page has redirected itself, the
+ * string the frame still holds is the page the viewer wants back - so
+ * the button for it is a press that does nothing, with no way for the
+ * console to say so. Replacing the frame's own location is the
+ * navigation that always happens.
+ */
+await check("a press moves the frame even when the frame already holds that page", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.destination("index.html").fire("click");
+  const first = browser.nodes.stage.getAttribute("src");
+  browser.arrive("your-page.html");
+  browser.destination("index.html").fire("click");
+  return first === Demo.MIRROR_PATH + "index.html" &&
+    browser.replaced.join(",") === Demo.MIRROR_PATH + "index.html";
+});
+
+/*
+ * Non-vacuity for the two arms above: a recording whose frame never
+ * moves on its own would let a console that still paints from its own
+ * press pass both. This one asserts the console does NOT claim a page
+ * before the frame has arrived at it - the press assigns, the arrival
+ * paints, and between them the readout still names the page actually on
+ * screen.
+ */
+await check("a press claims nothing until the frame has arrived", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.arrive("index.html");
+  browser.destination("charts.html").fire("click");
+  return browser.nodes["frame-path"].textContent ===
+      CONSOLE_ORIGIN + Demo.MIRROR_PATH + "index.html" &&
+    browser.pressed().join(",") === "index.html";
+});
 
 /*
  * F9, keyed to card titles rather than staging ids (#209): the ids
