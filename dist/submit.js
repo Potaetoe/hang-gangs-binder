@@ -505,8 +505,9 @@
 
       historyStatus("None of your entries were sealed to this browser. " +
         "They were stored before this browser had a key of its own, on a " +
-        "device this is not, or before signing out here destroyed the key " +
-        "that would have opened them.", false);
+        "device this is not, before signing out here destroyed the key " +
+        "that would have opened them, or before this page had finished " +
+        "loading your account. Ask an admin to unlock them.", false);
       return;
     }
 

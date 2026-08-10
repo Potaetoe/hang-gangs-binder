@@ -756,19 +756,33 @@
 
     if (!entries.length) {
       /*
-       * The third cause is named because it is the one a member is
-       * likeliest to have caused themselves and the likeliest to read as
-       * a fault. Signing out destroys the device key on purpose - the
-       * whole point is that a shared browser hands nobody the previous
-       * member's history - so a member who signs out and back in finds
-       * everything sealed, on the very device they are holding. Told
-       * only the first two causes, they would be reading a sentence that
-       * blames a device they never left.
+       * FOUR CAUSES, AND THE LAST TWO ARE THE ONES THIS PAGE OWES AN
+       * EXPLANATION FOR, because both happen on the very device the
+       * member is holding and both otherwise read as a fault.
+       *
+       * Signing out destroys the device key on purpose - the whole point
+       * is that a shared browser hands nobody the previous member's
+       * history - so a member who signs out and back in finds everything
+       * sealed where they are sitting.
+       *
+       * The fourth is this page's own timing. form.js can only widen a
+       * seal to an account it has been told about, and it is told on the
+       * event this module fires once /me answers; nothing gates Send on
+       * that answer, deliberately, because blocking a submission on a
+       * request that may never return is the worse failure. So a member
+       * on a slow connection who fills the form and presses Send
+       * immediately gets a keyholder-only row, permanently, on a browser
+       * that holds a perfectly good key.
+       *
+       * The remedy sentence is the one the partial-history line already
+       * uses, word for word: a member who reads either of them is in the
+       * same position and there is no reason for two answers.
        */
       historyStatus("None of your entries were sealed to this browser. " +
         "They were stored before this browser had a key of its own, on a " +
-        "device this is not, or before signing out here destroyed the key " +
-        "that would have opened them.", false);
+        "device this is not, before signing out here destroyed the key " +
+        "that would have opened them, or before this page had finished " +
+        "loading your account. Ask an admin to unlock them.", false);
       return;
     }
 

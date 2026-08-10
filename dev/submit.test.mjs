@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 101;
+const EXPECTED = 102;
 
 function check(label, condition) {
   performed++;
@@ -1698,6 +1698,23 @@ check("a history sealed entirely elsewhere is explained, not left blank",
   !isPainted(noneOpen.elements["history-controls"]) &&
   noneOpen.engine.sources.length === 0 &&
   /sealed to this browser/.test(
+    noneOpen.elements["history-status"].textContent));
+
+/*
+ * THE CAUSE A MEMBER CANNOT POSSIBLY DEDUCE, pinned so the copy cannot
+ * fall back to blaming a device.
+ *
+ * #85's seal widens to an account this module announces once /me
+ * answers, and nothing gates Send on that answer - deliberately, since
+ * blocking a submission on a request that may never return is the worse
+ * failure. So an entry sent in the first moments of a slow load is
+ * keyholder-only for good, on a browser holding a perfectly good key.
+ * The other three causes all point at a device; this one happened here,
+ * and a sentence listing only the three is a sentence that blames the
+ * member's hardware for the page's own timing.
+ */
+check("and the timing this page causes is named, not only the devices",
+  /finished loading your account/.test(
     noneOpen.elements["history-status"].textContent));
 
 const noKey = await loadSubmit({
