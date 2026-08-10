@@ -108,11 +108,15 @@
   /* ---------------------------------------------------------------- */
 
   /*
-   * apps/web is copied verbatim to the published site, so it holds no
-   * test hook, no fixture and no development-only global - and this demo
-   * adds none. What it does instead is serve a MIRROR of those files,
-   * read off disk on every request, with the two edits below applied on
-   * the way out.
+   * apps/web is what the published site is made of - `./run build`
+   * writes dist/, which is these files with the comments stripped out of
+   * the CSS and the scripts and nothing else changed, and dist/ is what
+   * deploys (#181). So apps/web holds no test hook, no fixture and no
+   * development-only global, and this demo adds none: a hook here would
+   * be a hook in the published bytes, the stripping notwithstanding.
+   * What the demo does instead is serve a MIRROR of the apps/web files,
+   * read off disk on every request, with the three edits below applied
+   * on the way out.
    *
    * That distinction is the whole design. The prohibition in
    * dev/README.md is on hooks in the shipped bytes; the reason for the
@@ -1712,13 +1716,23 @@
   /*
    * The press's own half: what the staging just did to this tab, told
    * from the staging's fields rather than from a description written
-   * beside them - so a scenario that stages something new with no
-   * story for it fails dev/demo.test.mjs rather than staging silently.
+   * beside them.
    *
    * The session line is unconditional because every staging decides
    * what the tab holds, including deciding it holds nothing - and
    * "nothing" is the line a driver most needs said out loud, because
    * a signed-out tab looks exactly like a tab nobody staged.
+   *
+   * WHICH IS ALSO WHY THIS FUNCTION CANNOT BE HELD TO "IT SAID
+   * SOMETHING". That line is there for every scenario, so a length test
+   * passes for a staging this function has never heard of, and the
+   * staging then lands silent in the feed with the whole gate green.
+   * dev/demo.test.mjs holds it two ways instead, and both are worth
+   * knowing before adding to SCENARIOS above: a field outside the
+   * plumbing set has to change what comes back, proven by taking it
+   * away; and the stagings whose whole story IS the session line are
+   * named there as literals, so a new one fails until somebody says
+   * out loud that it stages nothing a driver can see.
    */
   function stagingStory(scenario) {
     const staged = scenario || {};

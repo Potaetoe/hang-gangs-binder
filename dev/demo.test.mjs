@@ -30,7 +30,10 @@
  * owner sees while deciding the cutover, and it is the worse of the two
  * because it produces a screen that looks right. Checks below that carry
  * an F-number are the second kind: each one pins a way this suite was
- * observed to stay green while the demo told one of those two lies.
+ * observed to stay green while the demo told one of those two lies. A
+ * bare F-number is #140's; one prefixed with an issue - `#154 F2` - is
+ * that issue's, because two reviews numbering findings from one is how
+ * a citation stops naming anything.
  *
  * WHY SO MANY CHECKS ANCHOR ON LITERALS RATHER THAN THE STUB'S OWN
  * CONSTANTS. A check that asserts the emitted HTML contains
@@ -42,6 +45,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { get as httpGet } from "node:http";
+import vm from "node:vm";
 import { suite } from "./harness.mjs";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -63,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 126);
+const { check, mustReject, report } = suite("demo", 130);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -275,7 +279,8 @@ const callsHas = (method, path) =>
  * trusted - the same shape as check_web.py's parser having a suite.
  */
 await check("the endpoint reader finds the calls that are plainly there", () =>
-  callsHas("GET", "/me") && callsHas("POST", "/submit") &&
+  callsHas("GET", "/me") && callsHas("GET", "/my-entries") &&
+  callsHas("POST", "/submit") &&
   callsHas("GET", "/snapshot") && callsHas("GET", "/export") &&
   callsHas("POST", "/auth/telegram") && callsHas("POST", "/auth/dev"));
 
@@ -289,6 +294,54 @@ await check("the endpoint reader carries the verb each call uses", () =>
   callsHas("DELETE", "/session") && !callsHas("GET", "/session") &&
   callsHas("POST", "/snapshot") && callsHas("DELETE", "/snapshot") &&
   callsHas("DELETE", "/submission/"));
+
+/*
+ * #154 F2. THE READER SEES ONE WAY OF SPELLING A CALL, SO THAT IS THE
+ * ONLY WAY apps/web MAY SPELL ONE.
+ *
+ * Everything above this line is the stub being held to what apps/web
+ * calls - and every one of those checks is only as wide as the idiom
+ * `config.endpoint + "/path"` that CALL_SITE matches. A call written
+ * any other way is not a call the reader disagrees about; it is a call
+ * the reader cannot see at all, so the coverage arms pass over it and
+ * the route reaches the demo unanswered, which is a 404 in front of the
+ * owner and a green gate behind it. The blind spot cannot be closed by
+ * a wider regex - `${config.endpoint}/x`, `config.endpoint.concat(...)`
+ * and a URL assembled in a local all need the parse this suite is not
+ * going to grow - so the endpoint's every appearance in shipped code is
+ * held to a shape the reader does demonstrably read:
+ *
+ *   - `.endpoint +` a quoted path, or an identifier (auth.js hands in
+ *     one of AUTH_PATHS, and endpointCallsIn resolves that list);
+ *   - `.endpoint` read for its truthiness and nothing else, which is
+ *     the guard every caller opens with.
+ *
+ * Anything else fails here rather than vanishing, including the
+ * template literal - `}` is not on that list. Comments and their
+ * examples are stripped first, the way memberkey.test.mjs strips before
+ * asking a source question, because this arm's subject is what the code
+ * does and a false red on a paragraph is a gate nobody can read.
+ */
+const ENDPOINT_USE = /\.\s*endpoint\b/g;
+const READER_SEES = /^\s*(?:\+\s*(?:"|[A-Za-z_$])|[)|&,;])/;
+
+await check("every endpoint call in apps/web is spelled the way the reader reads", () => {
+  let seen = 0;
+  for (const [name, src] of Object.entries(webSource)) {
+    if (!name.endsWith(".js")) continue;
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    ENDPOINT_USE.lastIndex = 0;
+    let use;
+    while ((use = ENDPOINT_USE.exec(code)) !== null) {
+      seen += 1;
+      if (!READER_SEES.test(code.slice(use.index + use[0].length))) return false;
+    }
+  }
+  // A pattern that matches nothing passes this arm the way it passes
+  // every arm downstream of the reader, and for the same reason.
+  return seen >= 15;
+});
 
 await check("the stub answers every call apps/web makes, by verb and path", () =>
   calls.every((one) => Demo.routeFor(one.path, one.method) !== null));
@@ -859,8 +912,16 @@ await check("every narration of real traffic speaks the driver's language", () =
 /*
  * The other half of the feed: what the press itself just did. Also pure,
  * also derived - from the staging's own fields, not from a description
- * beside them - so a scenario that stages something new with no story
- * for it fails here rather than staging silently.
+ * beside them.
+ *
+ * WHAT THIS ARM DOES AND DOES NOT SAY. It says every line is a line, in
+ * the driver's language. It says nothing about whether a staging is
+ * narrated at all: stagingStory's session line is unconditional, so
+ * `length >= 1` holds for a scenario nothing else in the function has
+ * ever heard of. The two arms under it are the ones that make the
+ * coverage claim, and they are separate because this one is about the
+ * REGISTER and those are about REACH - a single arm mixing them fails
+ * for two unrelated reasons and reads as one.
  */
 await check("every staging tells its story, in the driver's language", () =>
   Demo.SCENARIOS.every((one) => {
@@ -869,6 +930,68 @@ await check("every staging tells its story, in the driver's language", () =>
       story.every((line) => typeof line === "string" && line.length > 0 &&
         !CARD_JARGON.test(line) && !line.includes("`"));
   }));
+
+/*
+ * #154 F3, first half. EVERY STAGED FLAG IS NARRATED, PROVEN BY TAKING
+ * IT AWAY.
+ *
+ * A scenario is plumbing - id, label, start, session, boxes - plus the
+ * flags that make it worth staging: a prefill waiting on the device, a
+ * session revoked somewhere else. The plumbing is listed here and
+ * everything outside the list is treated as a flag that has to change
+ * what the feed says, which is asserted the only way that cannot be
+ * faked: build the same scenario without the flag and require a
+ * different story. An arm phrased as "the story is long enough" holds
+ * for a flag nothing reads.
+ *
+ * The list is deliberately the thing a new plumbing field trips over.
+ * Adding one fails here until somebody says out loud that it stages
+ * nothing a driver can see - which is the cheaper failure, because the
+ * other direction is a staged behavior that the console never mentions
+ * and nobody notices for a release.
+ */
+const STAGING_PLUMBING = ["id", "label", "start", "session", "boxes"];
+const flagsOn = (one) =>
+  Object.keys(one).filter((key) => !STAGING_PLUMBING.includes(key));
+// Non-vacuity, for the reason the endpoint reader has an arm of its own:
+// a differential test over an empty set of differences passes forever.
+const stagedFlagCount =
+  Demo.SCENARIOS.reduce((total, one) => total + flagsOn(one).length, 0);
+
+await check("every flag a staging sets is a flag the story tells", () =>
+  stagedFlagCount >= 2 &&
+  Demo.SCENARIOS.every((one) => {
+    const told = Demo.stagingStory(one).join("\n");
+    return flagsOn(one).every((flag) => {
+      const without = Object.assign({}, one);
+      delete without[flag];
+      return Demo.stagingStory(without).join("\n") !== told;
+    });
+  }));
+
+/*
+ * #154 F3, second half. THE SILENT STAGINGS ARE NAMED HERE, AS
+ * LITERALS.
+ *
+ * A staging keyed on its id rather than on a flag - the correction, the
+ * suppressed charts, the empty site copy - is invisible to the arm
+ * above, because there is no field to take away. And most of the
+ * scenarios legitimately say nothing beyond the session line: arriving
+ * signed out, or signed in, IS the whole staging. So the ones that are
+ * allowed to be silent are spelled out, the same way the mirror's three
+ * edits are spelled out one screen up rather than counted from the
+ * table they guard.
+ *
+ * What this buys is the case #154 found: a staging added with a card to
+ * reach it passes every other arm in this file and lands silent in the
+ * feed, because every one of them is computed from SCENARIOS and holds
+ * as well over ten stagings as over nine. It fails here, and the author
+ * chooses - write the story, or say here that this one has none.
+ */
+await check("only the stagings named here narrate nothing beyond the session line", () =>
+  Demo.SCENARIOS.filter((one) => Demo.stagingStory(one).length < 2)
+    .map((one) => one.id).sort().join(",") ===
+    "admin,keyholder,member,signed-out");
 
 await check("the stories say the thing each staging exists to show", () => {
   const storyOf = (id) => Demo.stagingStory(Demo.scenarioFor(id)).join(" ");
@@ -890,15 +1013,104 @@ await check("every card action tells the driver what to try next", () =>
     !CARD_JARGON.test(action.try) && !action.try.includes("`"))));
 
 /*
- * The wiring, held at source level the way the boot scripts themselves
- * are: the browser halves cannot run under Node, and what matters is
- * that the one file every stubbed answer passes through is the file
- * that posts, and the console is the file that listens.
+ * #154 F1. THE TRANSPORT IS EARNED BY RUNNING THE BYTES, BECAUSE A
+ * SOURCE-STRING ARM HERE IS SATISFIABLE BY A COMMENT.
+ *
+ * demo-boot.js is the one file every stubbed answer passes through, and
+ * its `tell()` is what puts narrate's sentence on the channel. Asking
+ * that file's TEXT for "Demo.narrate", "BroadcastChannel" and
+ * "EVENT_CHANNEL" does not ask whether any of it runs: the comment
+ * above `tell()` names Demo.narrate in prose, so a `tell()` emptied to
+ * a no-op keeps every one of those three strings and leaves the whole
+ * suite green. The demo then paints its staging lines exactly as it
+ * does now and
+ * narrates nothing that actually happened - a feed that looks live with
+ * no event under it, which is the false-confidence lie told on the one
+ * instrument the owner accepts the cutover with.
+ *
+ * So the file is loaded the way memberkey.test.mjs loads a shipped
+ * script: its real bytes under node:vm, with the browser it needs
+ * RECORDED rather than described - a BroadcastChannel that keeps what
+ * it is handed, a fetch it wraps, and the real Demo behind it. One
+ * stubbed answer is driven through the fetch this file installs and the
+ * channel has to carry narrate's own line for that answer. No seam is
+ * added to demo-boot.js to make this possible; a testability hook in
+ * the file under test is one more thing the shipped page does not do.
+ *
+ * There is no source-level arm beside this one, deliberately. Every
+ * literal such an arm could pin - the channel's name, the narrator, the
+ * transport - is spelled by the execution below, and a comment cannot
+ * execute.
  */
-await check("the boot script narrates the traffic onto the channel", () =>
-  bootSource.includes("Demo.narrate") &&
-  bootSource.includes("BroadcastChannel") &&
-  bootSource.includes("EVENT_CHANNEL"));
+const DEMO_ORIGIN = "http://127.0.0.1:8126";
+const WORKER_ORIGIN = "https://worker.example";
+
+function bootInRecordedBrowser() {
+  const posted = [];
+  const opened = [];
+  const proxied = [];
+  const stored = {};
+  const context = {
+    BinderDemo: Demo,
+    BINDER_CONFIG: { endpoint: WORKER_ORIGIN },
+    location: { href: DEMO_ORIGIN + "/your-page.html" },
+    Response,
+    sessionStorage: {
+      getItem: (key) => (key in stored ? stored[key] : null),
+      setItem: (key, value) => { stored[key] = String(value); },
+    },
+    /*
+     * A constructor rather than an object, because the file asks
+     * `typeof root.BroadcastChannel === "function"` and then news it -
+     * and the name it is newed with is the thing worth recording.
+     */
+    BroadcastChannel: function (name) {
+      opened.push(name);
+      this.postMessage = (message) => { posted.push(message); };
+    },
+    fetch: (input) => { proxied.push(input); return Promise.resolve(null); },
+  };
+  vm.createContext(context);
+  vm.runInContext(bootSource, context, { filename: "demo-boot.js" });
+  return { context, posted, opened, proxied };
+}
+
+const BOOT_STATE = { scenario: "member", data: {} };
+
+await check("the boot file puts narrate's own line for a stubbed answer on the channel",
+  async () => {
+    const { context, posted, opened, proxied } = bootInRecordedBrowser();
+    const response = await context.fetch(WORKER_ORIGIN + "/me",
+      { method: "GET" });
+    const answer = Demo.answerFor({ method: "GET", path: "/me", body: null },
+      BOOT_STATE);
+    const want = Demo.narrate({ method: "GET", path: "/me",
+      status: answer.status, body: answer.body });
+    return opened.join(",") === Demo.EVENT_CHANNEL &&
+      typeof want === "string" && want.length > 0 &&
+      posted.length === 1 && posted[0].line === want &&
+      response.status === answer.status &&
+      // The stubbed answer is stubbed: nothing reached the wrapped fetch.
+      proxied.length === 0;
+  });
+
+/*
+ * And the silence, which is half of what makes the feed readable: a
+ * channel that posted every answer would pass the arm above while
+ * burying the press being watched under a line per page load. Site copy
+ * is the case that actually occurs - every page asks for it.
+ */
+await check("and it stays silent for an answer narrate has no line for",
+  async () => {
+    const { context, posted } = bootInRecordedBrowser();
+    const answer = Demo.answerFor(
+      { method: "GET", path: "/content", body: null }, BOOT_STATE);
+    await context.fetch(WORKER_ORIGIN + "/content", { method: "GET" });
+    return answer.status === 200 &&
+      Demo.narrate({ method: "GET", path: "/content", status: answer.status,
+        body: answer.body }) === null &&
+      posted.length === 0;
+  });
 
 await check("the console page carries the feed and the pointer", () =>
   consoleHtml.includes('id="feed"') &&
