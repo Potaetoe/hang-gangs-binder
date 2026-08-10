@@ -994,9 +994,28 @@
       title: "The admin's panel",
       blurb: "One surface for the gang's controls: publish a fresh " +
         "snapshot, manage who counts as an admin, export the rows.",
+      /*
+       * ALL THREE, FOR THE SAME REASON THE PUBLISHING STOPS CARRY THEM.
+       *
+       * The page keeps its publishing card in the markup and hidden, and
+       * reveals it only after a successful decrypt. This card promises
+       * publishing in its blurb and in its pointer, and staged none of
+       * that - so it opened on the key box with Publish reporting
+       * `disabled: false` and rendering nothing at all. The press did
+       * nothing and nothing said so, on the one card UAT sends a driver
+       * to by name for the taken-down charts.
+       *
+       * The promise is kept rather than withdrawn, which is the owner's
+       * ruling on this class: the screen is made to show what the words
+       * say. The order is the errand's, not this list's - the key before
+       * the press, or the product asks for a key file.
+       */
       actions: [{
         label: "Run the panel",
         scenario: "admin",
+        key: true,
+        press: "run",
+        scroll: "publish-card",
         try: "Publish a fresh snapshot, then open Muse's charts and " +
           "see it drawn.",
       }],

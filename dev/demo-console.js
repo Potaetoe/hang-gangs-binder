@@ -60,13 +60,65 @@
    * console's own arming path, and the rail button beside the frame is
    * how a viewer walks away without touching the journey at all.
    *
-   * NOT bumped on the frame's own arrivals, which is the half that has
-   * to stay: a shipped page that redirects itself fires `load` twice
-   * without anybody asking for a navigation, and an errand cancelled by
-   * that is an errand that never runs on the two journeys opening on the
-   * sign-in page.
+   * NOT bumped on the frame's own arrivals by itself, which is the half
+   * that has to stay: a shipped page that redirects itself fires `load`
+   * twice without anybody asking for a navigation, and an errand
+   * cancelled by that is an errand that never finishes on the journeys
+   * opening on the sign-in page. What DOES bump it on an arrival is
+   * `tookTheWheel` below, and only when the viewer caused the arrival.
    */
   let era = 0;
+
+  /*
+   * THE THIRD WAY OUT OF A STOP: THE PAGE IN THE FRAME NAVIGATING
+   * ITSELF, BECAUSE THE VIEWER PRESSED SOMETHING ON IT.
+   *
+   * open() covers Next, Back, the Go-anywhere rail and Reset, and
+   * leaveTour() covers leaving - every path where the CONSOLE moves. The
+   * product's own navigation is inside the frame, and this console's own
+   * copy invites a viewer to use it, so a real click on a real link in
+   * there walks away from the stop without touching any of them. Left
+   * uncovered, the errand went on: the key-staging disclosure line
+   * landed in the feed while the charts page - which has no key box at
+   * all - was on screen, and the give-up sentence landed over whatever
+   * the viewer had moved to. That is the same defect the era exists to
+   * end, arriving through a door the era did not watch.
+   *
+   * AND THE OBVIOUS REPAIR IS WRONG. Bumping the era on every arrival
+   * cancels the self-redirect case too, which is the half above; a page
+   * that redirects itself would then cancel every errand armed for it.
+   * The arrival cannot answer the question because both look identical
+   * to the frame: one `load`, one new address, nobody to ask.
+   *
+   * So the question is not what moved or when, but WHOSE PRESS caused
+   * it - and the browser already answers that. A press a person made
+   * carries `isTrusted: true`; the console's own control.click(), the
+   * keep-awake poke, and a page's script clicking something for itself
+   * all carry false. Click alone is listened for: a link, a button and
+   * a form's implicit submission all arrive as one, and a listener for
+   * an event no navigation comes from would be a branch nothing could
+   * falsify - which is the thing this whole change is about.
+   *
+   * Cleared when the console navigates, because the console's own press
+   * is the newer instruction: a viewer who pokes a tab on the page and
+   * then presses Next would otherwise cancel the errand of the stop they
+   * just asked for, on its first arrival.
+   */
+  let handled = false;
+
+  function tookTheWheel(event) {
+    if (!event || event.isTrusted !== true) return;
+    handled = true;
+  }
+
+  function watchFrame() {
+    const doc = frameDocument();
+    if (doc === null) return;
+    // Capture, so a page that stops propagation on its own links is
+    // still seen. Registering the same pair on the same document is one
+    // registration, so re-arming on every arrival costs nothing.
+    doc.addEventListener("click", tookTheWheel, true);
+  }
 
   // The journey being walked, and how far along it. Null is the free
   // drive: the table of contents on screen, the glass away, the cards
@@ -232,6 +284,7 @@
     const path = MIRROR + file;
     const frame = $("stage");
     era += 1;
+    handled = false;
     if (frame.getAttribute("src") === path) {
       frame.contentWindow.location.replace(path);
     } else {
@@ -257,6 +310,23 @@
   }
 
   function resync() {
+    /*
+     * Whether the viewer asked for this arrival, answered before
+     * anything else because it decides whether there is still an errand.
+     * The flag belongs to the document being left, so it is read and
+     * cleared here whichever way it came out.
+     */
+    const byViewer = handled;
+    handled = false;
+    if (byViewer) {
+      era += 1;
+      // The errand still waiting was armed for the console's navigation,
+      // not for the one the viewer just made - even if the page they
+      // reached happens to be the page it was waiting for.
+      errand = null;
+    }
+    watchFrame();
+
     const there = Demo.frameAddressOf(frameHref());
     destination = there.file;
     shownAt = there.shown;

@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 228);
+const { check, mustReject, report } = suite("demo", 237);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -2117,7 +2117,11 @@ const CORPUS_OPEN =
   /driven with the corpus already open at journey "([^"]+)", stop ([0-9]+)/;
 const drivenOpen = [];
 uatSections.forEach((section) => {
-  const named = CORPUS_OPEN.exec(section.lines.join("\n"));
+  // Whitespace collapsed first: this is a wrapped markdown paragraph, so
+  // the phrase carrying the contract straddles a line break as often as
+  // not, and a contract that depended on where the prose happened to
+  // wrap would be re-broken by the next edit that changed a word length.
+  const named = CORPUS_OPEN.exec(section.lines.join(" ").replace(/\s+/g, " "));
   if (named === null) return;
   const walk = Demo.TOURS.find((one) => one.title === named[1]);
   drivenOpen.push({

@@ -367,17 +367,17 @@ to today's ornament would be falsified by the work they are meant to
 accept.
 
 **Where each row is driven.** Stop 1 opens the surface behind glass,
-publishing controls and all, and A8.1 is read there. Stop 5, **Now you
-try**, hands the frame over — it is the only stop of this journey that
-does — so A8.6 is pressed there. That hand-over also matters for the
-clock: the console holds this page awake at every reading stop and
-lets go at the last one, which is what makes the idle rows measure the
-real thing rather than a page nobody is touching. The rows table, what
-Publish sends and the idle warning all wait on a decrypt; two journeys
-reach one, since this one's stops 1 and 5 stage the throwaway key and
-press the page's own **Fetch and decrypt** for you as well. Drive A8.3,
-A8.4 and A8.7 to A8.10 on **The keyholder's desk**, last stop, so those
-five are read off one open surface rather than two. A8.2 needs a member
+publishing controls and all, and A8.1 is read there. Everything else
+you press is **driven with the corpus already open at journey "Running
+the gang", stop 5** — *Now you try* — which is A8.3, A8.4, A8.6, and
+A8.7 to A8.10, read off one surface rather than two. That stop stages
+the throwaway key and presses the page's own decrypt before it lets go,
+so the rows table and the publishing card are on screen when the frame
+becomes yours; it is also the only stop of this journey that hands the
+frame over at all, and the hand-over is what makes the idle rows
+measure the real thing — the console holds this page awake at every
+reading stop and lets go at the last one, so a page nobody is touching
+is exactly what A8.7 gets. A8.2 needs a member
 session on the admin page: press **Open
 Your page** on the **Weigh in** card in the free drive, then **Admin**
 under **Go anywhere**.
