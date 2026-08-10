@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 175);
+const { check, mustReject, report } = suite("demo", 192);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -850,6 +850,51 @@ await check("a mirrored page that is no destination lights none of them", () => 
 });
 
 /*
+ * THE HOST IS ALLOWED TO SERVE A PAGE UNDER A TIDIER NAME, AND THE
+ * CONSOLE STILL HAS TO KNOW WHICH PAGE IT IS.
+ *
+ * The demo is baked to static files and put behind an ordinary static
+ * host, and the common ones serve `/demo/your-page.html` by redirecting
+ * to `/demo/your-page` - "clean URLs", on by default. The console asks
+ * for the file name it knows; what comes back is the same page under a
+ * name one character-run shorter.
+ *
+ * Matching the file name exactly is what broke: the frame is plainly on
+ * Your page, `file` reads null, and everything keyed on it goes quiet
+ * AT ONCE and WITHOUT SAYING SO - no rail button current, and every
+ * stop's errand dropped, because an errand waits for the page it was
+ * meant for and that page never appears to arrive. The tour stop that
+ * promised the weigh-in form narrated over the list of past entries
+ * again, which is the defect this whole file exists to have caught, and
+ * it came back through the HOST rather than through the tour.
+ *
+ * So the extension is the host's to drop, not the console's to depend
+ * on. What is NOT allowed is inventing a page: a tidied name that
+ * matches nothing is still no destination, or a console recovering from
+ * one bad guess would start making them.
+ */
+await check("a page served without its extension is still that page", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "your-page");
+  return there.inside === true && there.file === "your-page.html";
+});
+
+await check("a page served with a trailing slash is still that page", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "charts/");
+  return there.inside === true && there.file === "charts.html";
+});
+
+// The other direction, and the one that keeps the tidying honest.
+await check("a tidied name matching no page is still no destination", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "your-pages");
+  return there.inside === true && there.file === null;
+});
+
+await check("a non-destination page the host tidied lights nothing", () => {
+  const there = at(CONSOLE_ORIGIN + Demo.MIRROR_PATH + "404");
+  return there.inside === true && there.file === null;
+});
+
+/*
  * And the escape, which the link containment above now prevents and this
  * refuses to paper over anyway. A frame that left the demo cannot be
  * read at all - the browser refuses the cross-origin location - and the
@@ -912,6 +957,18 @@ function recordedNode(id) {
     value: "",
     pressed: false,
     click() { it.pressed = true; it.fire("click"); },
+    // What a stop's scroll asks of a section: the page brings itself
+    // there. Recorded rather than run, because what is under test is
+    // WHICH section was asked - a recording that measured a layout
+    // would be measuring one this fixture invented.
+    broughtIntoView: false,
+    scrollIntoView() { it.broughtIntoView = true; },
+    // Whether this node PAINTS, which is a different question from
+    // whether it exists - several of the admin surface's sections are in
+    // the markup and hidden until the page's own code reveals them.
+    // Rendering by default, so an arm has to opt a node out.
+    rendering: true,
+    getClientRects() { return it.rendering ? [{}] : []; },
     style: {},
     dataset: {},
     children: [],
@@ -969,8 +1026,14 @@ function consoleInRecordedBrowser() {
    */
   const frameNodes = {};
   const poked = [];
+  // Controls this recording answers for with null, so an arm can stand a
+  // page up that does NOT carry what a stop asked for - the rename that
+  // lands between the page and the tour. Everything else is made on
+  // demand, so the default page has whatever it is asked for.
+  const absent = new Set();
   nodes.stage.contentDocument = {
     getElementById: (id) => {
+      if (absent.has(id)) return null;
       if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
       return frameNodes[id];
     },
@@ -1067,9 +1130,20 @@ function consoleInRecordedBrowser() {
   // what is in the box. A macrotask drains the microtasks under it.
   const settled = () => new Promise((done) => { setTimeout(done, 0); });
 
+  const missingInFrame = (id) => { absent.add(id); };
+  const frameScrolled = () =>
+    Object.keys(frameNodes).filter((id) => frameNodes[id].broughtIntoView);
+  // A section the page carries but is not showing - the hidden admin
+  // tools, which is the case a present-or-absent test cannot see.
+  const unpaintedInFrame = (id) => {
+    if (!(id in frameNodes)) frameNodes[id] = recordedNode(id);
+    frameNodes[id].rendering = false;
+  };
+
   return {
     nodes, replaced, arrive, pressed, destination, journey, locked, staged,
     waking, frameField, framePressed, poked, fetched, settled,
+    missingInFrame, frameScrolled, unpaintedInFrame,
   };
 }
 
@@ -1225,6 +1299,109 @@ await check("a stop that presses a control names one the page really has", () =>
 await check("at least one stop really does press a control", () =>
   Demo.TOURS.some((walk) =>
     walk.stops.some((stop) => typeof stop.press === "string")));
+
+/*
+ * A stop that moves the page names a section THE SHIPPED PAGE REALLY
+ * CARRIES, read out of apps/web exactly as a press is.
+ *
+ * The admin surface is one long page - key box, publishing, membership -
+ * so a stop can be on the right page with its subject a screen and a
+ * half below the fold, which is the tab defect at a different
+ * granularity. The day a section is renamed this fails here, rather than
+ * becoming a stop that scrolls nowhere and narrates over the top of the
+ * page again.
+ */
+await check("a stop that scrolls names a section the page really has", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (stop.scroll === undefined) return true;
+    const page = stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+    return shipped[page].includes('id="' + stop.scroll + '"');
+  })));
+
+// Non-vacuity: an arm over no scrolls passes forever.
+await check("at least one stop really does move the page", () =>
+  Demo.TOURS.some((walk) =>
+    walk.stops.some((stop) => typeof stop.scroll === "string")));
+
+/*
+ * WHICH stops have to declare one - the half the arm above cannot see.
+ *
+ * "Names a control the page really has" is satisfied by declaring
+ * nothing, so the two stops that carried the fix were the only thing
+ * holding it: delete one declaration and this suite stayed green while
+ * the stop went back to narrating the weigh-in form over the list of
+ * past entries. The arm has to run the other way too - a stop whose own
+ * words are ABOUT the other tab must press its way there.
+ *
+ * The trigger is read out of the shipped page rather than written down
+ * here: the tab that does not open the page names itself ("Weigh in"),
+ * and the pane it controls is the one holding the page's form. So a stop
+ * that says either word is a stop about that tab. Restating the two here
+ * would be the corollary AGENTS.md names - a check computed from the
+ * thing it guards cannot notice the thing was renamed.
+ *
+ * And the reverse direction in the same arm, which is what keeps it from
+ * becoming "press everything": a stop whose words do NOT name that tab
+ * must not press it, or the two stops that correctly open on the list of
+ * past entries would be dragged onto the form.
+ */
+const TABBED_PAGE = "your-page.html";
+const tabsOf = (html) =>
+  Array.from(html.matchAll(
+    /<button[^>]*id="([^"]+)"[^>]*role="tab"[^>]*aria-selected="(true|false)"[^>]*>\s*([^<]+?)\s*</g))
+    .map((hit) => ({ id: hit[1], opens: hit[2] === "true", label: hit[3] }));
+
+const pageTabs = tabsOf(shipped[TABBED_PAGE]);
+const otherTab = pageTabs.find((one) => one.opens === false);
+
+// The page really does carry a tablist with a tab it does not open on,
+// or every arm below is asserting over an empty list.
+await check("the tabbed page carries one tab it does not open on", () =>
+  pageTabs.length === 2 && otherTab !== undefined &&
+  pageTabs.filter((one) => one.opens).length === 1);
+
+/*
+ * The pane that tab controls holds the page's form, which is the second
+ * word a stop uses for it. Read rather than assumed: the day the form
+ * moves to the other pane, "the form" stops meaning this tab and this
+ * arm has to be re-argued rather than quietly kept passing.
+ */
+const paneOf = (html, id) => {
+  const opened = html.indexOf('id="' + id + '"');
+  if (opened === -1) return "";
+  // Past this pane's own opening tag before looking for the next pane,
+  // because role="tabpanel" sits beside the id INSIDE that tag - a search
+  // from the id finds this pane again and reads it as empty.
+  const after = html.indexOf(">", opened);
+  const next = html.indexOf('role="tabpanel"', after);
+  return html.slice(after, next === -1 ? html.length : next);
+};
+
+await check("the tab the page does not open on is the one holding the form",
+  () => paneOf(shipped[TABBED_PAGE], otherTab.id.replace(/-tab$/, "-pane"))
+    .includes("<form"));
+
+const NAMES_OTHER_TAB = new RegExp(
+  "(" + otherTab.label.trim().replace(/\s+/g, "[\\s-]") + "|\\bform\\b)", "i");
+
+const onTabbedPage = (stop) =>
+  (stop.open || Demo.SCENARIOS.find((one) => one.id === stop.scenario).start)
+    === TABBED_PAGE;
+
+await check("a stop about the other tab presses its way there, and only those do",
+  () => Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (!onTabbedPage(stop)) return true;
+    const about = NAMES_OTHER_TAB.test(stop.title + " " + stop.narration);
+    return about === (stop.press === otherTab.id);
+  })));
+
+// Non-vacuity in both directions: the partition is real, not one side.
+await check("the tabbed page carries stops on both sides of that line", () => {
+  const stops = Demo.TOURS.flatMap((walk) => walk.stops).filter(onTabbedPage);
+  return stops.some((stop) => stop.press === otherTab.id) &&
+    stops.some((stop) => stop.press === undefined);
+});
 
 /* ------------------------------------------------------------------ */
 /* UAT.md walks the journeys (#238, the owner's re-cut).               */
@@ -1417,6 +1594,211 @@ await check("the prefill stop presses its way to the form it promises",
     browser.arrive("your-page.html");
     await browser.settled();
     return browser.framePressed().join(",") === "add-entry-tab";
+  });
+
+/*
+ * THE SAME STOP, ON THE HOST THE DEMO IS ACTUALLY PUBLISHED TO.
+ *
+ * The arm above proves the errand runs when the frame arrives under the
+ * file name the console asked for. This one proves it runs when the host
+ * hands the page back under its tidied name, which is what the baked
+ * demo behind a static host really does - and where the tab press and
+ * the key staging were BOTH dead while every arm in this file passed,
+ * because all of them arrived the tidy way.
+ *
+ * Driven rather than reasoned: the walk is walked, the frame arrives at
+ * the extensionless address, and the frame is asked what was pressed.
+ */
+await check("a stop's errand runs when the host drops the extension",
+  async () => {
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.scenario === "member-prefilled"));
+    const index = walk.stops.findIndex((stop) =>
+      stop.scenario === "member-prefilled");
+    const browser = consoleInRecordedBrowser();
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive("your-page");
+    await browser.settled();
+    return browser.framePressed().join(",") === "add-entry-tab";
+  });
+
+/*
+ * EVERY stop that declares a press, not the one this file happened to
+ * grow an arm for.
+ *
+ * The prefill stop had a driven arm of its own from the day it was
+ * written; the stop before it declared the same press and had none, so
+ * deleting that declaration left this suite green and put the original
+ * defect back on a stop nobody was watching. A per-stop arm is a per-stop
+ * promise, and the stops outnumber the arms.
+ */
+await check("every stop that declares a press really presses it", async () => {
+  for (const walk of Demo.TOURS) {
+    for (let index = 0; index < walk.stops.length; index += 1) {
+      const stop = walk.stops[index];
+      if (typeof stop.press !== "string") continue;
+      const browser = consoleInRecordedBrowser();
+      browser.journey(walk.id).fire("click");
+      for (let i = 0; i < index; i += 1) {
+        browser.nodes["tour-next"].fire("click");
+      }
+      const page = stop.open ||
+        Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+      browser.arrive(page);
+      await browser.settled();
+      if (!browser.framePressed().includes(stop.press)) return false;
+    }
+  }
+  return true;
+});
+
+/*
+ * And the same, driven, for every stop that moves the page: the walk is
+ * walked and the frame is asked which section was brought into view.
+ */
+await check("every stop that declares a scroll really moves the page",
+  async () => {
+    for (const walk of Demo.TOURS) {
+      for (let index = 0; index < walk.stops.length; index += 1) {
+        const stop = walk.stops[index];
+        if (typeof stop.scroll !== "string") continue;
+        const browser = consoleInRecordedBrowser();
+        browser.journey(walk.id).fire("click");
+        for (let i = 0; i < index; i += 1) {
+          browser.nodes["tour-next"].fire("click");
+        }
+        const page = stop.open ||
+          Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+        browser.arrive(page);
+        await browser.settled();
+        if (!browser.frameScrolled().includes(stop.scroll)) return false;
+      }
+    }
+    return true;
+  });
+
+/*
+ * A section the page cannot answer for is said out loud too - the scroll
+ * half of the arm below, and the same hazard: a stop narrating a part of
+ * the page nobody is looking at.
+ */
+await check("a scroll the page cannot answer is reported, not swallowed",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => typeof stop.scroll === "string"));
+    const index = walk.stops.findIndex((stop) =>
+      typeof stop.scroll === "string");
+    browser.missingInFrame(walk.stops[index].scroll);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    const stop = walk.stops[index];
+    browser.arrive(stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start);
+    await browser.settled();
+    return browser.nodes.status.textContent.includes(stop.scroll) &&
+      browser.frameScrolled().length === 0;
+  });
+
+/*
+ * RESET MID-WALK RESTAGES THE STOP INSTEAD OF ONLY SAYING IT DID.
+ *
+ * Reset restaged the last card pressed, and during a walk there is no
+ * card - so it dropped the world key, announced that the state was
+ * reset, and left the frame standing in the world from before it with
+ * the walk card still on its stop. A console whose whole job is to say
+ * what really happened cannot have a button that reports an act it did
+ * not perform. Driven: the stop's world is staged again and the frame is
+ * asked to move.
+ */
+await check("reset during a walk stages the stop again, not just a message",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    const walk = Demo.TOURS[0];
+    browser.journey(walk.id).fire("click");
+    browser.nodes["tour-next"].fire("click");
+    const moved = browser.replaced.length + browser.nodes.stage.attrs.src;
+    browser.nodes.reset.fire("click");
+    await browser.settled();
+    return browser.staged() === walk.stops[1].scenario &&
+      moved !== browser.replaced.length + browser.nodes.stage.attrs.src &&
+      /stop/i.test(browser.nodes.status.textContent);
+  });
+
+/*
+ * A SECTION THAT IS THERE AND NOT ON SCREEN IS THE CASE THAT NEARLY GOT
+ * THROUGH.
+ *
+ * The admin surface keeps its publishing tools in the markup and hidden
+ * until the page's own code reveals them, and scrollIntoView on a
+ * section that is not painting moves nothing and says nothing. A stop
+ * declaring one would narrate over the top of the page with an errand
+ * that believed it ran - the original defect, reached through a
+ * declaration that LOOKS honored. Found by driving it in a browser: a
+ * scroll to the publishing card left the frame at the top of the page
+ * with no report anywhere, so that declaration was withdrawn and this
+ * arm stands where it was.
+ */
+await check("a section the page is not showing is reported, not scrolled to",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => typeof stop.scroll === "string"));
+    const index = walk.stops.findIndex((stop) =>
+      typeof stop.scroll === "string");
+    const stop = walk.stops[index];
+    browser.unpaintedInFrame(stop.scroll);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start);
+    await browser.settled();
+    return browser.nodes.status.textContent.includes(stop.scroll) &&
+      browser.frameScrolled().length === 0;
+  });
+
+/*
+ * A DECLARATION THE PAGE CANNOT HONOR IS SAID OUT LOUD.
+ *
+ * The arm above holds every declared press to naming a control the
+ * shipped page carries, so this cannot happen while the gate is green.
+ * The day it does - a rename landing between the page and the tour - the
+ * stop is narrated over whatever the page opened on, and the console's
+ * whole job is to say what really happened rather than to let a stop
+ * describe a screen nobody is looking at. Recorded by asking the console
+ * for the missing control BY A NAME THE RECORDING REFUSES.
+ */
+await check("a press the page cannot answer is reported, not swallowed",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    // Setting up says its own last word - this recording has no worker,
+    // so the corpus reports itself missing - and it says it from a
+    // promise. Draining that first is what leaves the status line
+    // holding THIS stop's report rather than the boot's.
+    await browser.settled();
+    browser.missingInFrame("add-entry-tab");
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.press === "add-entry-tab"));
+    const index = walk.stops.findIndex((stop) =>
+      stop.press === "add-entry-tab");
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive("your-page.html");
+    await browser.settled();
+    return browser.nodes.status.textContent.includes("add-entry-tab") &&
+      browser.framePressed().length === 0;
   });
 
 /*

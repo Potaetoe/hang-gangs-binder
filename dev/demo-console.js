@@ -283,9 +283,68 @@
     const doc = frameDocument();
     if (doc === null) return;
 
+    /*
+     * A control that is not there is SAID, not skipped.
+     *
+     * The stop's promise is about what is on screen when it lands, so a
+     * press that quietly found nothing leaves the narration describing a
+     * tab the viewer is not looking at - which is the original defect,
+     * arriving through a rename rather than through a missing
+     * declaration. The suite holds every declared press to naming a
+     * control the shipped page really carries, so reaching this line
+     * means the page moved under the tour since the gate last ran.
+     */
     if (todo.press) {
       const control = doc.getElementById(todo.press);
-      if (control) control.click();
+      if (control) {
+        control.click();
+      } else {
+        say("This stop opens the page's " + todo.press + " control, and " +
+          "the page in the frame has no such control - so what is on " +
+          "screen is whatever the page opened on, not what this stop " +
+          "describes.");
+      }
+    }
+
+    /*
+     * `scroll` is the same promise as `press`, one page-shape down: a
+     * stop can land on the right page and the right tab and STILL
+     * narrate something below the fold. The admin page carries the
+     * publishing controls, the key box and the membership lists on one
+     * long surface, so the stop about who holds admin opened on the key
+     * box with its subject a screen and a half away.
+     *
+     * The page's own section is scrolled to by the page's own means -
+     * this asks the element to bring itself into view, which is what a
+     * link to it would do. Nothing is measured or positioned here; a
+     * console computing an offset would be a console guessing at a
+     * layout it does not own.
+     */
+    if (todo.scroll) {
+      const section = doc.getElementById(todo.scroll);
+      /*
+       * PRESENT IS NOT THE SAME AS ON SCREEN, and this is the one place
+       * that difference is invisible. Several of the admin surface's
+       * sections start hidden and are revealed by the page's own code
+       * once it knows what the session may do, and scrollIntoView on a
+       * section that is not rendering moves nothing and reports nothing -
+       * so the stop would narrate over the top of the page exactly as it
+       * did before, with an errand that believes it ran. Rects rather
+       * than the attribute, per AGENTS.md: `hidden` can read true while
+       * an element paints, and the inverse is what bites here.
+       */
+      if (section && section.getClientRects().length > 0) {
+        section.scrollIntoView({ block: "start" });
+      } else if (section) {
+        say("This stop moves the page to its " + todo.scroll + " section, " +
+          "and the page is not showing that section in this staging - so " +
+          "what is on screen is wherever the page opened.");
+      } else {
+        say("This stop moves the page to its " + todo.scroll + " section, " +
+          "and the page in the frame has no such section - so what is on " +
+          "screen is wherever the page opened, not what this stop " +
+          "describes.");
+      }
     }
 
     if (todo.key) stageKey(doc);
@@ -569,8 +628,10 @@
     paintTour();
     lock(stop.free !== true);
     keepAwake(stop.free !== true);
-    goTo(stop.open || chosen.start,
-      stop.press || stop.key ? { press: stop.press, key: stop.key } : null);
+    const todo = stop.press || stop.key || stop.scroll
+      ? { press: stop.press, key: stop.key, scroll: stop.scroll }
+      : null;
+    goTo(stop.open || chosen.start, todo);
   }
 
   function startTour(id) {
@@ -703,11 +764,38 @@
       if (destination) root.open(MIRROR + destination, "_blank");
     });
 
+    /*
+     * Reset puts back the two things a press can change - the published
+     * snapshot and a revocation - and then RESTAGES whatever is being
+     * shown, so the frame is showing the world the console just claimed.
+     *
+     * A walk was the case that lied. Only a card press was restaged, and
+     * during a walk there is no card, so the button dropped the world
+     * key, said the state was reset, and left the frame standing in the
+     * world from before it - with the walk card still on its stop. The
+     * viewer is told something happened and can see that nothing did.
+     * Walking the stop again is the same three writes it arrived by, so
+     * the claim and the screen agree.
+     *
+     * The sentence names what was actually restaged rather than always
+     * naming a card, because "back to how the card's action starts" is
+     * a card the viewer never pressed on every stop of every journey.
+     */
     $("reset").addEventListener("click", function () {
       root.sessionStorage.removeItem(WORLD_KEY);
-      if (active) stage(active);
-      say("Demo state reset. The published snapshot and any revocation " +
-        "are back to how the card's action starts.");
+      if (walk !== null) {
+        goToStop(stopAt);
+        say("Demo state reset, and this stop staged again from the " +
+          "start. The published snapshot and any revocation are back to " +
+          "how the stop begins.");
+      } else if (active) {
+        stage(active);
+        say("Demo state reset. The published snapshot and any revocation " +
+          "are back to how the card's action starts.");
+      } else {
+        say("Demo state reset. The published snapshot and any revocation " +
+          "are back to how they start - pick a walk or a card to see it.");
+      }
     });
   }
 

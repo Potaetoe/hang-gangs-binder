@@ -953,7 +953,7 @@
     },
     {
       title: "The admin's panel",
-      blurb: "One surface for the club's controls: publish a fresh " +
+      blurb: "One surface for the gang's controls: publish a fresh " +
         "snapshot, manage who counts as an admin, export the rows.",
       actions: [{
         label: "Run the panel",
@@ -1045,6 +1045,15 @@
    * instead. dev/demo.test.mjs holds every `press` to naming a control
    * the shipped page really carries.
    *
+   * `scroll` is that same promise one page-shape down. A stop can land
+   * on the right page and the right tab and still narrate something
+   * below the fold: the admin page carries the key box, the publishing
+   * controls and the membership lists on one long surface, so the stop
+   * about who holds admin opened with its subject a screen and a half
+   * away. It names a section of the page and the page brings itself
+   * there. dev/demo.test.mjs holds every `scroll` to naming a section
+   * the shipped page really carries, the same way it holds `press`.
+   *
    * `key` stages the committed throwaway key into the page's own key
    * box, so the keyholder's headline act is performable by somebody who
    * has never seen this repository. The stop's own words have to name
@@ -1066,7 +1075,7 @@
           title: "Arriving with no account",
           narration: "This is what a stranger sees. There is no sign-up " +
             "form and no password to choose - one Telegram button, and " +
-            "the club already knows who you are. Nothing else on the " +
+            "the gang already knows who you are. Nothing else on the " +
             "site is reachable from here, and the pages do not just " +
             "hide themselves: they refuse to ask for anything at all.",
         },
@@ -1114,6 +1123,7 @@
         },
         {
           scenario: "member",
+          press: "add-entry-tab",
           free: true,
           title: "Now you try",
           narration: "The page is yours from here. Fill the form in and " +
@@ -1132,7 +1142,7 @@
         {
           scenario: "keyholder",
           title: "Sealed, even to the people running it",
-          narration: "This is the desk the club's numbers are read " +
+          narration: "This is the desk the gang's numbers are read " +
             "from. What the server hands over is locked - every row " +
             "sealed in the browser that wrote it, and nothing here has " +
             "ever seen a key.",
@@ -1144,7 +1154,7 @@
           narration: "The key is in the box now, put there for you. It " +
             "is a throwaway pair kept in this project on purpose - it " +
             "protects nothing and opens nothing real, so it is safe to " +
-            "show. The one the club actually uses is held offline and " +
+            "show. The one the gang actually uses is held offline and " +
             "has never been anywhere near here.",
         },
         {
@@ -1161,33 +1171,35 @@
     },
     {
       id: "admin",
-      title: "Running the club",
+      title: "Running the gang",
       blurb: "Publishing the figures, deciding who counts as an admin, " +
         "and what the site does on its very first day.",
       stops: [
         {
           scenario: "admin",
-          title: "One surface for the club's controls",
+          title: "One surface for the gang's controls",
           narration: "Publishing a fresh set of figures is one press, " +
             "and what goes out carries no names and no rows - only the " +
             "totals the charts draw.",
         },
         {
           scenario: "admin",
+          scroll: "membership-card",
           title: "Who is allowed in here",
           narration: "The list of people who hold admin, kept where it " +
             "can be read and changed. The last one cannot be removed, " +
-            "because a club with nobody holding the keys is a club " +
+            "because a gang with nobody holding the keys is a gang " +
             "nobody can let back in.",
         },
         {
           scenario: "config-fallback",
+          open: "charts.html",
           title: "The first day, before anyone has written anything",
           narration: "A brand-new binder has no words written into it " +
-            "yet, and every page shows the ones it ships with. The " +
-            "first run is an ordinary day, not an error. Editing those " +
-            "words from this panel is still being built - what you can " +
-            "see today is the site standing up with nothing filled in.",
+            "yet, and this is what it shows: the words every page ships " +
+            "with, standing in until somebody writes their own. The " +
+            "first run is an ordinary day, not an error. Editing them " +
+            "from the admin panel is still being built.",
         },
         {
           scenario: "admin",
@@ -1527,12 +1539,41 @@
       return { shown: href, file: null, inside: false };
     }
 
-    const file = path.slice(MIRROR_PATH.length);
     return {
       shown: href,
-      file: DESTINATIONS.some((one) => one.file === file) ? file : null,
+      file: destinationUnder(path.slice(MIRROR_PATH.length)),
       inside: true,
     };
+  }
+
+  /*
+   * The destination a served path names, allowing for the host having
+   * tidied the name on the way out.
+   *
+   * THE EXTENSION IS THE HOST'S TO DROP. The baked demo sits behind an
+   * ordinary static host, and the common ones serve `your-page.html` by
+   * redirecting to `your-page` - "clean URLs", on by default and not
+   * something the bake can turn off. Matching the file name exactly read
+   * that as a page the demo does not have, and then everything keyed on
+   * the answer went quiet AT ONCE and WITHOUT SAYING SO: no rail button
+   * current, and every stop's errand dropped, because an errand waits
+   * for the page it was meant for and that page never appeared to
+   * arrive. The tab press and the keyholder's key box died together on
+   * the deployed demo while every arm passed here, because the arms all
+   * arrived the tidy way.
+   *
+   * A tidied name that matches nothing is still no destination. Widening
+   * a match is one step from inventing a page, and 404.html is the case
+   * that keeps it honest: a real page of the product, reachable in the
+   * frame, and none of the four rail buttons is its.
+   */
+  function destinationUnder(served) {
+    const name = served.endsWith("/") ? served.slice(0, -1) : served;
+    for (const one of DESTINATIONS) {
+      if (one.file === name) return one.file;
+      if (one.file === name + ".html") return one.file;
+    }
+    return null;
   }
 
   /* ---------------------------------------------------------------- */
