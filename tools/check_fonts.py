@@ -8,7 +8,9 @@ inventory rather than a full latin subset, because the only text it
 draws is one word - "Binder", in the rail wordmark and on index.html's
 cover leaf. A full latin subset of a display face is 23,204 gzipped
 bytes, and theme.css names it from every page, so the difference is
-paid on all four rail pages.
+paid wherever that word is drawn: every rail page, plus index.html,
+which is not one. SHELLS in tools/check_web.py is the roster that says
+which pages those are.
 
 WHY THIS CHECK HAS TO EXIST, AND WHY IT HAD TO EXIST FIRST
 ----------------------------------------------------------

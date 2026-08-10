@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 373
+EXPECTED = 414
 
 
 def check(label, condition):
@@ -2063,17 +2063,56 @@ def subject(selector):
 
 
 check("a bare component selector has no context",
-      subject(".card") == ("", ".card"))
+      subject(".card") == ("", ".card", ".card"))
 check("a surface-qualified one carries its context",
-      subject("body.instrument .card") == ("body.instrument", ".card"))
+      subject("body.instrument .card")
+      == ("body.instrument", ".card", ".card"))
 check("an element subject is read the same way",
-      subject("body.instrument h2") == ("body.instrument", "h2"))
+      subject("body.instrument h2") == ("body.instrument", "h2", "h2"))
 check("a component that merely starts with the name is not it",
       subject(".stack-tight") is None)
 check("and a rule painting something else is not read at all",
       subject(".row input[type=\"text\"]") is None)
 check("a card used only as a context paints nothing here",
       subject(".card .hint") is None)
+
+# The gap #154's partition-2 sweep found, and the reason it was ranked
+# blocks-cutover: a subject was recognized only when the rightmost
+# compound was EXACTLY the component, so qualifying it took the rule out
+# of both arms while the browser went on applying it normally. Silence
+# is the failure mode that looks like success.
+check("a type qualifier does not make it a different component",
+      subject("div.card") == ("", ".card", "div.card"))
+check("nor does one on a scoped rule",
+      subject("body.entries div.card")
+      == ("body.entries", ".card", "div.card"))
+check("the shipped shape of that gap reads as the stack it is",
+      subject("body.instrument main.stack")
+      == ("body.instrument", ".stack", "main.stack"))
+check("a modifier class alongside the component is still the component",
+      subject("section.card.wide") == ("", ".card", "section.card.wide"))
+# From #154's partition-3 report: a redundant qualifier matches exactly
+# the element set the bare selector does, so reading it as a different
+# subject is a rule that paints cards and is compared against nothing.
+check("a redundant same-class qualifier is the same subject",
+      subject(".card.card") == ("", ".card", ".card.card"))
+
+# The asymmetry the same finding names: an unreadable CONTEXT was
+# reported and an unreadable SUBJECT was dropped. A reader that skips
+# what it cannot parse prints the same OK as one that found nothing
+# wrong, which is #34 again one layer in.
+check("a subject this reader cannot score is reported, not dropped",
+      subject(".card:hover") == ("", None, ".card:hover"))
+check("and so is one behind a pseudo-element",
+      subject("body.instrument .card::before")
+      == ("body.instrument", None, ".card::before"))
+check("and one behind an attribute selector",
+      subject(".card[data-open]") == ("", None, ".card[data-open]"))
+check("a compound naming two components at once cannot be scored either",
+      subject("h2.card") == ("", None, "h2.card"))
+check("but a pseudo-class on something that is not a component stays "
+      "silent",
+      subject(".row:hover") is None)
 
 check("a selector list is split before it is read",
       [b[2] for b in check_web.geometry_declarations(
@@ -2090,6 +2129,23 @@ check("and a block inside @media is attributed to its condition",
 check("geometry written inside a comment paints nothing",
       check_web.geometry_declarations(
           "/* .card { padding: 9rem; } */ .card { color: red; }") == [])
+check("a qualified subject reaches the reader at all",
+      [b[2] for b in check_web.geometry_declarations(
+          "body.instrument main.stack { gap: 1rem; }")] == [".stack"])
+
+# #154's partition-2 F2. The owner's ruling quoted in theme.css opens
+# with "cards to all be the same width", and the width family was the
+# one part of a card's shape this pattern could not see - so the fully
+# declared, honestly written per-page width override passed both arms.
+for property_ in ("width", "min-width", "max-width", "inline-size",
+                  "min-inline-size", "max-inline-size", "margin",
+                  "margin-top", "margin-inline", "margin-inline-start",
+                  "margin-block", "flex-basis"):
+    check("%s is part of a card's shape" % property_,
+          check_web.geometry_declarations(
+              ".card { %s: 1rem; }" % property_) != [])
+check("and a property that only sounds like one is not",
+      check_web.geometry_declarations(".card { marginal: 1rem; }") == [])
 
 check("a bare rule applies to every page",
       check_web.context_applies("", frozenset()) is True)
@@ -2118,6 +2174,17 @@ check("an element subject weighs one element",
       check_web.selector_weight("", "h2") == (0, 1))
 check("a surface scope adds its body and its classes",
       check_web.selector_weight("body.instrument", ".card") == (2, 1))
+# Reading a qualified compound as its bare component would be a lie
+# about specificity, and specificity is what orders the cascade below.
+# `div.card` outranks `.card` wherever it sits, exactly as a scope does.
+check("a type qualifier weighs its element",
+      check_web.selector_weight("", "div.card") == (1, 1))
+check("a modifier class weighs a class",
+      check_web.selector_weight("", "section.card.wide") == (2, 1))
+check("a redundant qualifier weighs twice, which is what a browser does",
+      check_web.selector_weight("", ".card.card") == (2, 0))
+check("the shipped instrument stack weighs both bodies and both classes",
+      check_web.selector_weight("body.instrument", "main.stack") == (2, 2))
 # The defect a mutation found: ordering by source position alone lets a
 # scoped rule written ABOVE the bare one lose, where a browser has it
 # win. A per-page difference would then be real, rendered, and reported
@@ -2137,6 +2204,15 @@ check("two rules of equal weight are settled by source position",
           check_web.geometry_declarations(
               ".card { padding: 1rem; }\n.card { padding: 2rem; }"),
           frozenset())[0][("", ".card", "padding")] == "2rem")
+# The same defect one step along: a qualified compound written above the
+# bare rule wins in a browser too, and reading it as the bare component
+# would put it back under source position.
+QUALIFIED_FIRST = ("div.card { padding: 9rem; }\n"
+                   ".card { padding: 1rem; }\n")
+check("a qualified rule written above the bare one still wins",
+      check_web.resolved_geometry(
+          check_web.geometry_declarations(QUALIFIED_FIRST),
+          frozenset())[0][("", ".card", "padding")] == "9rem")
 
 RESOLVED_MEMBER, UNREAD_MEMBER = check_web.resolved_geometry(
     check_web.geometry_declarations(GEOMETRY_CSS), frozenset({"railed"}))
@@ -2192,6 +2268,48 @@ check("a property one page declares and the other does not is a "
 check("an unresolvable scope is reported rather than passed over",
       any("cannot resolve" in problem for problem in agreement_over(
           GEOMETRY_CSS + ".rail .card { padding: 0; }", TWO_CARD_PAGES)))
+check("and so is a subject in a shape this reader cannot score",
+      any("cannot score" in problem for problem in agreement_over(
+          GEOMETRY_CSS + ".card:hover { padding: 0; }", TWO_CARD_PAGES)))
+
+# #154's partition-2 F1, as the report wrote it: the qualified form of a
+# per-page override has to fail everything the bare form fails. Four
+# properties, four failures, either way round.
+SPLIT_PAGES = {
+    check_web.card_pages()[0]: '<body class="railed narrowcards">',
+    check_web.card_pages()[1]: '<body class="railed">',
+}
+OVERRIDE = ("{ padding: 3rem; gap: 0; border-top: 0; max-width: 18rem; }")
+
+check("a qualified per-page override fails exactly what the bare one "
+      "fails",
+      agreement_over(
+          GEOMETRY_CSS + "body.narrowcards div.card " + OVERRIDE,
+          SPLIT_PAGES)
+      == agreement_over(
+          GEOMETRY_CSS + "body.narrowcards .card " + OVERRIDE, SPLIT_PAGES))
+check("and there are four of them, one per property that moved",
+      len(agreement_over(
+          GEOMETRY_CSS + "body.narrowcards div.card " + OVERRIDE,
+          SPLIT_PAGES)) == 4)
+
+# #154's partition-2 F2, the report's own mutation. It is the honest,
+# fully declared per-page width override - which is why it passed.
+WIDTHS = "{ max-width: 18rem; width: 18rem; margin-inline: 0; }"
+
+check("a per-page width override is a difference this arm reports",
+      len(agreement_over(GEOMETRY_CSS + "body.narrowcards .card " + WIDTHS,
+                         SPLIT_PAGES)) == 3)
+# The #142 direction, and the one that decides whether the family can
+# stay in the pattern: widths that move both pages at once are the
+# design evolving, and an arm that reddened here would be edited until
+# it stopped.
+check("a shared width rule moves both pages together and stays quiet",
+      agreement_over(GEOMETRY_CSS + ".card " + WIDTHS, TWO_CARD_PAGES) == [])
+check("and it needs no scope pin either, because it scopes nothing",
+      [problem for problem
+       in check_web.card_scope_problems(GEOMETRY_CSS + ".card " + WIDTHS)
+       if "does not name it" in problem[1]] == [])
 # A comparison with one side is not a comparison. It has to say so
 # rather than print the agreement it never established.
 check("fewer than two wearers is reported, not reported as agreement",
@@ -2216,6 +2334,51 @@ check("a bare rule needs no pin",
       scopes_over(".card { padding: 1rem; }\n.stack { gap: 1rem; }")
       == [problem for problem in scopes_over(".card { padding: 1rem; }")
           if "still names it" in problem])
+check("a width-family override is a scope like any other",
+      any("does not name it" in problem for problem in scopes_over(
+          check_web.stylesheet_text()
+          + "\nbody.railed .card { max-width: 18rem; }")))
+check("and a qualified one cannot slip past the roster",
+      any("does not name it" in problem for problem in scopes_over(
+          check_web.stylesheet_text()
+          + "\nbody.railed div.card { padding: 0; }")))
+
+# #154's partition-3 report: the roster said only THAT a scope existed,
+# so the scope's own values were free to move. A roster that cannot see
+# its entry change is a roster the design drifts underneath - which is
+# the whole defect #178 was about, one indirection out.
+SHIPPED_CSS = check_web.stylesheet_text()
+INSTRUMENT_PADDING = "var(--space-3) var(--space-4) var(--space-4)"
+
+check("a rostered scope changing its value is reported",
+      any("CARD_SCOPES" in problem for problem in scopes_over(
+          SHIPPED_CSS.replace(INSTRUMENT_PADDING, "7px"))))
+check("and the message says which property moved",
+      any("padding" in problem for problem in scopes_over(
+          SHIPPED_CSS.replace(INSTRUMENT_PADDING, "7px"))))
+check("a rostered scope growing a property is reported too",
+      any("max-width" in problem for problem in scopes_over(
+          SHIPPED_CSS.replace(
+              "padding: " + INSTRUMENT_PADDING,
+              "max-width: 18rem;\n  padding: " + INSTRUMENT_PADDING))))
+
+# The other direction, and the one that keeps the pin from being edited
+# away the first time the design legitimately moves: the entry and the
+# rule are edited together, the same two-place act as raising a ceiling
+# in tools/check_budget.py.
+SHIPPED_SCOPES = check_web.CARD_SCOPES
+MOVED = dict(SHIPPED_SCOPES)
+MOVED[("body.instrument", ".card")] = {
+    "why": SHIPPED_SCOPES[("body.instrument", ".card")]["why"],
+    "declares": dict(SHIPPED_SCOPES[("body.instrument", ".card")]["declares"]),
+}
+MOVED[("body.instrument", ".card")]["declares"][("", "padding")] = "7px"
+try:
+    check_web.CARD_SCOPES = MOVED
+    check("a scope moved in both places at once is silent",
+          scopes_over(SHIPPED_CSS.replace(INSTRUMENT_PADDING, "7px")) == [])
+finally:
+    check_web.CARD_SCOPES = SHIPPED_SCOPES
 
 
 def markup(inner, classes="railed instrument"):

@@ -1733,7 +1733,9 @@ body.instrument .tool > :not(.runner):not(.table-scroll):not(.charts) {
 /* Sections are further apart than the boxes were close, which is the
    half of "denser" this ruling gives back: the runner is a thin line
    and needs air above it to read as a division rather than as another
-   paragraph. */
+   paragraph. Pinned as a scope in CARD_SCOPES in tools/check_web.py,
+   value and all, so this gap moves in that file and this one together
+   or not at all. */
 body.instrument main.stack { gap: var(--space-8); }
 
 /*
