@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 143);
+const { check, mustReject, report } = suite("demo", 163);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -887,7 +887,9 @@ await check("an address that will not parse is refused, not read as a page", () 
  * every finding in this class arrives through.
  */
 const CONSOLE_IDS = ["features", "destinations", "viewports", "status",
-  "feed", "try-next", "stage", "frame-path", "open-tab", "reset"];
+  "feed", "try-next", "stage", "frame-path", "open-tab", "reset",
+  "tours", "tour-run", "tour-where", "tour-title", "tour-narration",
+  "tour-back", "tour-next", "tour-leave", "glass"];
 
 /*
  * WHY textContent IS A SETTER HERE AND NOT A FIELD. The console empties
@@ -911,6 +913,7 @@ function recordedNode(id) {
     scrollHeight: 0,
     listeners: {},
     setAttribute(name, value) { it.attrs[name] = String(value); },
+    removeAttribute(name) { delete it.attrs[name]; },
     getAttribute(name) {
       return Object.prototype.hasOwnProperty.call(it.attrs, name)
         ? it.attrs[name] : null;
@@ -935,6 +938,7 @@ function recordedNode(id) {
 
 function consoleInRecordedBrowser() {
   const nodes = {};
+  const kept = {};
   CONSOLE_IDS.forEach((id) => { nodes[id] = recordedNode(id); });
 
   const replaced = [];
@@ -952,10 +956,18 @@ function consoleInRecordedBrowser() {
       createElement: (tag) => recordedNode(tag),
     },
     location: { origin: CONSOLE_ORIGIN },
+    // A real store rather than a sink: the staging IS three writes into
+    // it, so a recording that swallowed them could not tell a stop that
+    // staged its world from one that staged nothing.
     sessionStorage: {
-      getItem: () => null, setItem() {}, removeItem() {},
+      getItem: (key) => (key in kept ? kept[key] : null),
+      setItem: (key, value) => { kept[key] = String(value); },
+      removeItem: (key) => { delete kept[key]; },
     },
-    localStorage: { setItem() {}, removeItem() {} },
+    localStorage: {
+      setItem: (key, value) => { kept[key] = String(value); },
+      removeItem: (key) => { delete kept[key]; },
+    },
     // The corpus worker is refused rather than recorded: buildCorpus
     // already has an arm for a browser that cannot start one, and what
     // is under test here is the frame, not the charts.
@@ -975,8 +987,14 @@ function consoleInRecordedBrowser() {
     .map((one) => one.title);
   const destination = (file) =>
     nodes.destinations.children.find((one) => one.title === file);
+  const journey = (id) =>
+    nodes.tours.children.find((one) => one.dataset.tour === id);
+  const locked = () => nodes.glass.getAttribute("hidden") === null;
+  const staged = () => kept[Demo.STORAGE_KEYS[0]];
 
-  return { nodes, replaced, arrive, pressed, destination };
+  return {
+    nodes, replaced, arrive, pressed, destination, journey, locked, staged,
+  };
 }
 
 await check("the console repaints its address from the frame's own arrival", () => {
@@ -1025,32 +1043,282 @@ await check("a press claims nothing until the frame has arrived", () => {
     browser.pressed().join(",") === "index.html";
 });
 
+/* ------------------------------------------------------------------ */
+/* The journeys: nine chips become four walks (#238).                  */
+
 /*
- * F9, keyed to card titles rather than staging ids (#209): the ids
- * are plumbing UAT.md's reader never sees, and a contract spelled in
- * words nobody reads is a contract about nothing. Each card owns one
- * UAT.md section, marked in its heading as `card "Title"`, and the
- * two documents must name exactly the same cards. Two-way on purpose:
- * one direction catches a stale section, the other catches a card no
- * section walks, and losing either half is how "contract" goes back
- * to being a word in a comment.
+ * A grid of nine state names is not a walk. It tells somebody what the
+ * product HAS and never what to press first, so a cold viewer builds
+ * their own order and the demo is different every time it is shown.
+ * The owner's ruling is a scripted one: four journeys, each a sequence
+ * of stops, each stop a staged world plus a page plus the sentence
+ * that says what to look at.
+ *
+ * The cards do not go. They keep every arm above - the register, the
+ * two-way scenario coverage, the pointer per action - and move behind a
+ * free-drive disclosure for a tester who wants one feature rather than
+ * a story. What changes is which of the two is the landing screen.
  */
-const uat = await readFile(HERE("../UAT.md"), "utf8");
-const uatCards = new Set();
-uat.split("\n").forEach((line) => {
-  if (!/^##/.test(line)) return;
-  const named = /card "([^"]+)"/.exec(line);
-  if (named) uatCards.add(named[1]);
+await check("every journey has an id, a title, a blurb and stops", () =>
+  Array.isArray(Demo.TOURS) && Demo.TOURS.length === 4 &&
+  Demo.TOURS.every((walk) =>
+    typeof walk.id === "string" && walk.id.length > 0 &&
+    typeof walk.title === "string" && walk.title.length > 0 &&
+    typeof walk.blurb === "string" && walk.blurb.length > 0 &&
+    Array.isArray(walk.stops) && walk.stops.length > 0));
+
+await check("no two journeys share an id or a title", () =>
+  new Set(Demo.TOURS.map((walk) => walk.id)).size === Demo.TOURS.length &&
+  new Set(Demo.TOURS.map((walk) => walk.title)).size === Demo.TOURS.length);
+
+/*
+ * One journey is where somebody starts, and the table of contents says
+ * so. A reader given four equal doors picks one at random, which is the
+ * problem the journeys exist to solve, moved up a level.
+ */
+await check("exactly one journey is the one to start with", () =>
+  Demo.TOURS.filter((walk) => walk.first === true).length === 1);
+
+/*
+ * DRIVABLE, in the sense the two-way promise uses: a stop names a
+ * staging that exists and a page apps/web actually ships. A stop naming
+ * neither is a step in a script nobody can walk.
+ */
+await check("every stop stages a real world and opens a shipped page", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) =>
+    Demo.SCENARIOS.some((one) => one.id === stop.scenario) &&
+    (stop.open === undefined ||
+      Demo.DESTINATIONS.some((d) => d.file === stop.open)))));
+
+/*
+ * The other direction, and it is the one that catches drift: a staging
+ * no journey reaches is a world the scripted demo never shows. The
+ * cards keep their own copy of this arm, so both surfaces are held -
+ * losing either is how a staging goes quietly unwalked.
+ */
+await check("every staging is reached by some journey stop", () => {
+  const reached = new Set();
+  Demo.TOURS.forEach((walk) =>
+    walk.stops.forEach((stop) => reached.add(stop.scenario)));
+  return Demo.SCENARIOS.every((one) => reached.has(one.id));
 });
 
-await check("UAT.md's card headings are readable at all", () =>
-  uatCards.size > 0);
+/*
+ * THE GLASS COMES OFF AT THE END OF A JOURNEY, NEVER IN THE MIDDLE
+ * (the owner's re-cut). Every journey finishes on a stop that hands the
+ * frame over, and no earlier stop does - which is the whole shape of
+ * the promise: read along, then drive. A journey with the free stop in
+ * the middle would leave the rest of its script being narrated over a
+ * page the viewer has already wandered off.
+ */
+await check("every journey ends by handing the frame over, and only then", () =>
+  Demo.TOURS.every((walk) =>
+    walk.stops[walk.stops.length - 1].free === true &&
+    walk.stops.slice(0, -1).every((stop) => stop.free !== true)));
 
-await check("UAT.md and the console name exactly the same cards", () => {
-  const mine = new Set(Demo.FEATURES.map((card) => card.title));
-  return uatCards.size === mine.size &&
-    [...mine].every((title) => uatCards.has(title)) &&
-    [...uatCards].every((title) => mine.has(title));
+await check("a journey speaks the driver's language, not the harness's", () =>
+  Demo.TOURS.every((walk) =>
+    [walk.title, walk.blurb]
+      .concat(walk.stops.map((stop) => stop.title))
+      .concat(walk.stops.map((stop) => stop.narration))
+      .every((text) => typeof text === "string" && text.length > 0 &&
+        !CARD_JARGON.test(text) && !text.includes("`"))));
+
+/*
+ * A stop that presses something in the frame names a control THE
+ * SHIPPED PAGE ACTUALLY CARRIES, read out of apps/web rather than
+ * trusted.
+ *
+ * This is AGENTS.md's corollary: a check computed entirely from the
+ * file it guards cannot detect that the file was rearranged. The
+ * prefill stop exists because the staging lands on the tab that does
+ * not show the prefilled form, and the fix is the tour pressing the
+ * other tab - so the day that tab is renamed, this fails here rather
+ * than becoming a stop that silently presses nothing and shows the
+ * wrong tab again.
+ */
+await check("a stop that presses a control names one the page really has", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (stop.press === undefined) return true;
+    const page = stop.open ||
+      Demo.SCENARIOS.find((one) => one.id === stop.scenario).start;
+    return shipped[page].includes('id="' + stop.press + '"');
+  })));
+
+// Non-vacuity: an arm over no presses passes forever.
+await check("at least one stop really does press a control", () =>
+  Demo.TOURS.some((walk) =>
+    walk.stops.some((stop) => typeof stop.press === "string")));
+
+/* ------------------------------------------------------------------ */
+/* UAT.md walks the journeys (#238, the owner's re-cut).               */
+
+/*
+ * F9, re-keyed from cards to journey stops and NOT weakened.
+ *
+ * The contract was one UAT.md section per card, titles agreeing exactly
+ * in both directions. The journeys replace the cards as what a driver
+ * is sent through, so the pointer has to move with them - but the two
+ * directions are the whole value, and a re-key that kept one is a
+ * re-key that threw the contract away and left the word.
+ *
+ * TWO VOICES, RULED AND NOT MERGED. UAT.md is the DRIVER's acceptance
+ * script, auditor-precise, and it REFERENCES a journey stop; the tour's
+ * narration is the member-facing voice #192 settled. Different readers,
+ * same walk. So this asserts the pointers resolve, never that the two
+ * documents say the same words - the day it asserted that, one of the
+ * two voices would have to go.
+ *
+ * The section IDs stay A0-A12 and the recording template's row names
+ * stay exactly as they were, because the posting format is what a
+ * recorded pass is filed as and re-keying that costs a record nobody
+ * can compare.
+ */
+const uat = await readFile(HERE("../UAT.md"), "utf8");
+const uatStops = [];
+uat.split("\n").forEach((line) => {
+  if (!/^##/.test(line)) return;
+  const named = /journey "([^"]+)", stop ([0-9]+)/.exec(line);
+  if (named) uatStops.push({ title: named[1], stop: Number(named[2]) });
+});
+
+await check("UAT.md's journey pointers are readable at all", () =>
+  uatStops.length >= 10);
+
+/*
+ * REACHABLE: every staged section points at a journey that exists and a
+ * stop that journey really has. A section pointing at stop 9 of a
+ * seven-stop walk sends a driver somewhere there is nothing to do.
+ */
+await check("every UAT section points at a journey stop that exists", () =>
+  uatStops.every((pointer) => {
+    const walk = Demo.TOURS.find((one) => one.title === pointer.title);
+    return walk !== undefined && pointer.stop >= 1 &&
+      pointer.stop <= walk.stops.length;
+  }));
+
+/*
+ * And the direction that catches a journey nobody accepts: four walks
+ * exist and the acceptance script has to send a driver through all of
+ * them. Without this half a journey could be added, shown to the owner,
+ * and never appear in the document that decides whether it passed.
+ */
+await check("every journey is walked by some UAT section", () => {
+  const walked = new Set(uatStops.map((pointer) => pointer.title));
+  return Demo.TOURS.every((walk) => walked.has(walk.title));
+});
+
+/*
+ * The cards keep their own home too. They are the free drive now, and
+ * UAT.md no longer names them - so the arm that used to hold the two
+ * documents to one card list is gone, and this is what remains of it:
+ * the cards are still a complete surface in their own right, which the
+ * scenario-coverage arms above already hold in both directions.
+ */
+await check("no UAT section still points at a card", () =>
+  !/^##.*card "/m.test(uat));
+
+/* ------------------------------------------------------------------ */
+/* The walk, and the glass over it, driven for real.                   */
+
+await check("the console page carries the journeys, the walk and the glass", () =>
+  consoleHtml.includes('id="tours"') &&
+  consoleHtml.includes('id="tour-run"') &&
+  consoleHtml.includes('id="tour-narration"') &&
+  consoleHtml.includes('id="tour-next"') &&
+  consoleHtml.includes('id="tour-back"') &&
+  consoleHtml.includes('id="glass"'));
+
+/*
+ * The cards are still on the page and still behind a disclosure, which
+ * is the whole of the demotion: a tester who wants one feature opens
+ * it, and a cold viewer is not asked to choose among nine states before
+ * anything has been explained.
+ */
+await check("the cards are on the page, behind the free-drive disclosure", () =>
+  /<details[^>]*id="free-drive"/.test(consoleHtml) &&
+  consoleHtml.indexOf('id="free-drive"') <
+    consoleHtml.indexOf('id="features"'));
+
+/*
+ * The glass has to be a real element with real CSS behind it, because
+ * an overlay that does not cover anything is a promise of read-only
+ * that the first click disproves - in front of the owner.
+ */
+const consoleCss = await readFile(HERE("./demo.css"), "utf8");
+await check("the glass is laid over the frame by the stylesheet", () =>
+  /#glass\s*\{[^}]*position:\s*absolute/.test(consoleCss) &&
+  /#glass\s*\{[^}]*inset:/.test(consoleCss) &&
+  /\[hidden\]\s*\{[^}]*display:\s*none/.test(consoleCss));
+
+/*
+ * And now the engine, run rather than read. Same reasoning as the
+ * resync arms above: every string a source-level check could pin here
+ * is one the comment explaining the engine also contains.
+ */
+await check("the console opens on the journeys with none running", () => {
+  const browser = consoleInRecordedBrowser();
+  return browser.nodes.tours.children.length === Demo.TOURS.length &&
+    browser.nodes["tour-run"].getAttribute("hidden") !== null &&
+    browser.locked() === false;
+});
+
+await check("starting a journey stages its first stop behind the glass", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS[0];
+  browser.journey(walk.id).fire("click");
+  return browser.nodes["tour-title"].textContent === walk.stops[0].title &&
+    browser.nodes["tour-narration"].textContent === walk.stops[0].narration &&
+    browser.nodes["tour-run"].getAttribute("hidden") === null &&
+    browser.locked() === true;
+});
+
+await check("Next and Back move along the journey's own stops", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS[0];
+  browser.journey(walk.id).fire("click");
+  browser.nodes["tour-next"].fire("click");
+  const second = browser.nodes["tour-title"].textContent;
+  browser.nodes["tour-next"].fire("click");
+  const third = browser.nodes["tour-title"].textContent;
+  browser.nodes["tour-back"].fire("click");
+  return second === walk.stops[1].title && third === walk.stops[2].title &&
+    browser.nodes["tour-title"].textContent === walk.stops[1].title;
+});
+
+/*
+ * The ruling itself, as an executed fact: the glass stays on for every
+ * narrated stop and comes off at the end. Walked stop by stop rather
+ * than jumped to the last one, because what is being asserted is that
+ * nothing in the middle unlocks it.
+ */
+await check("the glass holds all the way to the stop that hands it over", () =>
+  Demo.TOURS.every((walk) => {
+    const browser = consoleInRecordedBrowser();
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < walk.stops.length; i += 1) {
+      if (browser.locked() !== (walk.stops[i].free !== true)) return false;
+      if (i < walk.stops.length - 1) browser.nodes["tour-next"].fire("click");
+    }
+    return browser.locked() === false;
+  }));
+
+await check("a stop stages the world it names, not the one before it", () => {
+  const browser = consoleInRecordedBrowser();
+  const walk = Demo.TOURS[0];
+  browser.journey(walk.id).fire("click");
+  const first = browser.staged();
+  browser.nodes["tour-next"].fire("click");
+  return first === walk.stops[0].scenario &&
+    browser.staged() === walk.stops[1].scenario;
+});
+
+await check("leaving a journey puts the glass away and the walk back", () => {
+  const browser = consoleInRecordedBrowser();
+  browser.journey(Demo.TOURS[0].id).fire("click");
+  browser.nodes["tour-leave"].fire("click");
+  return browser.locked() === false &&
+    browser.nodes["tour-run"].getAttribute("hidden") !== null;
 });
 
 /* ------------------------------------------------------------------ */
