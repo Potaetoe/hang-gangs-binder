@@ -55,9 +55,12 @@
    * sideways scroll - with nothing changed in apps/web and nothing
    * recorded here. That is the whole feature: a width.
    *
-   * The Theme control is deliberately not in that list. It is one
-   * disclosure at every width (#150), so it sits outside every media
-   * query and is not something narrowing the frame reveals.
+   * The palette control is deliberately not in that list. It is one
+   * control at every width (#150), so it sits outside every media
+   * query and is not something narrowing the frame reveals. What
+   * narrowing the frame DOES reach it for is the flyout's flip: on a
+   * short viewport the panel has no room above the footer and opens
+   * downward instead, which is a measurement rather than a breakpoint.
    *
    * NOTHING HERE EMULATES A DEVICE. No touch, no user agent, no pixel
    * ratio. The demo is never driven on a phone (the owner's ruling on

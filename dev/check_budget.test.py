@@ -45,7 +45,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 55
+EXPECTED = 56
 
 
 def check(label, condition):
@@ -293,12 +293,19 @@ check("the extractor finds real references in a real page",
 check("and the stylesheet is among them", "theme.css" in INDEX_REFS)
 
 # What the cover genuinely pulls in: the pre-paint theme script from the
-# head, the body scripts that sign somebody in, and nav.js - which is
-# here for the Theme disclosure this page carries at every width (#150)
-# rather than for a rail it does not have.
+# head, the body scripts that sign somebody in, and theme.js for the row
+# of palette swatches in its footer.
 check("and the scripts are among them",
       {"theme-init.js", "config.js", "ui.js", "session.js", "auth.js",
-       "theme.js", "nav.js"} <= set(INDEX_REFS))
+       "theme.js"} <= set(INDEX_REFS))
+
+# nav.js marks the current entry in the rail, and this page has no rail.
+# The negative arm below is the general one; this is the specific file
+# whose only reason to be here was a disclosure the sign-in page no
+# longer carries, and a page paying for a script that finds nothing is
+# weight nobody would notice.
+check("and the rail script is not, since this page has no rail",
+      "nav.js" not in INDEX_REFS)
 
 # The negative arm, and crypto.js is the right file to hold it: this
 # page is the one page tools/check_web.py's check 11 refuses it on, so

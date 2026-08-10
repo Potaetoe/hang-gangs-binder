@@ -101,34 +101,30 @@
 -->
 <footer>
   <!--
-    The same single Theme control the rail pages carry - the owner's
-    second ruling on #150. This page has no rail to put it in, so it
-    goes at the foot, in normal flow, below everything somebody came
-    here to do.
+    The four palettes as swatches, with nothing to reveal. The three
+    signed-in pages open a floating Theme panel; this page may not, and
+    that is the sign-in page's standing rule rather than a layout
+    preference: a control with no hidden state cannot be open over the
+    Telegram widget, which is the only thing here that signs anybody
+    in. A dead theme.js, a dead stylesheet and a layout that lands
+    somewhere unexpected all leave the door reachable.
 
-    That position is the sign-in page's standing rule doing its work,
-    not a layout preference. The chips open IN FLOW and downward, so
-    every way the reveal can fail leaves the sign-in form untouched: a
-    dead theme.js leaves a button that opens nothing, a dead stylesheet
-    leaves four plain buttons in the footer, and neither can put
-    anything over the Telegram widget. The palette a visitor already
-    chose is painted before any of this runs, by theme-init.js in the
-    head.
-
-    Nothing here may be renamed on its own - see the long note in
-    your-page.html, which owns that reasoning; these four buttons are the
-    fourth copy of it.
+    The palette a visitor already chose is painted before any of this
+    runs, by theme-init.js in the head. Each dot shows the palette it
+    offers; why those colors are written on the dot instead of taken
+    from a token is in theme.css beside them. The words are in
+    aria-label because a dot has none - check 23 reads a chip's name
+    that way when there is nothing to see.
   -->
-  <div class="theme-picker">
-    <button type="button" class="theme-disclosure" id="theme-toggle"
-            aria-expanded="false" aria-controls="theme-chips">Theme</button>
-    <div class="themes" id="theme-chips" role="group"
-         aria-label="Color theme">
-      <button type="button" data-set-theme="midnight">Midnight</button>
-      <button type="button" data-set-theme="pink">Pink</button>
-      <button type="button" data-set-theme="daylight">Daylight</button>
-      <button type="button" data-set-theme="contrast">Contrast</button>
-    </div>
+  <div class="theme-swatches" role="group" aria-label="Color theme">
+    <button type="button" data-set-theme="midnight" aria-label="Midnight"
+      ><span class="swatch-dot" data-palette="midnight"></span></button>
+    <button type="button" data-set-theme="pink" aria-label="Pink"
+      ><span class="swatch-dot" data-palette="pink"></span></button>
+    <button type="button" data-set-theme="daylight" aria-label="Daylight"
+      ><span class="swatch-dot" data-palette="daylight"></span></button>
+    <button type="button" data-set-theme="contrast" aria-label="Contrast"
+      ><span class="swatch-dot" data-palette="contrast"></span></button>
   </div>
 
   <p>
@@ -142,12 +138,9 @@
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <script src="auth.js"></script>
-<!-- nav.js is loaded here for its second job only: opening the Theme
-     chips above. Its first - marking which rail entry is the current
-     destination - finds no rail on this page and does nothing, which is
-     cheaper than a second copy of the disclosure wiring that could
-     drift from the one the rail pages run. -->
-<script src="nav.js"></script>
+<!-- nav.js is not loaded here: it marks the current entry in the rail,
+     and this page has no rail. The swatches above need no opening, so
+     theme.js is the whole of what this page's palette costs it. -->
 <script src="theme.js"></script>
 </body>
 </html>

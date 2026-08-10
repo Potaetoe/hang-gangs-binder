@@ -71,11 +71,63 @@
    
   apply(stored || preferred());
 
+  
+
+  const picker = document.querySelector("details.theme-picker");
+  const panel = picker && picker.querySelector(".theme-flyout");
+  const summary = picker && picker.querySelector("summary");
+
+   
+   
+   
+   
+  function place() {
+    if (!panel) return;
+    picker.removeAttribute("data-flip");
+    if (panel.getBoundingClientRect().top < 0) {
+      picker.setAttribute("data-flip", "down");
+    }
+  }
+
+   
+   
+   
+  function close() {
+    if (!picker || !picker.open) return;
+    picker.open = false;
+    summary.focus();
+  }
+
+  if (picker) {
+    picker.addEventListener("toggle", function () {
+      if (picker.open) place();
+    });
+
+     
+     
+     
+     
+     
+     
+    document.addEventListener("click", function (event) {
+      if (picker.open && !picker.contains(event.target)) picker.open = false;
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") close();
+    });
+  }
+
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
       const name = b.getAttribute("data-set-theme");
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
+       
+       
+       
+       
+      close();
     });
   });
 })();

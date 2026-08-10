@@ -877,70 +877,207 @@ body.railed {
 .rail-signin { text-align: center; }
 
 /*
- * The Theme control: one disclosure and the chips it opens, wired by
- * theme.js via [data-set-theme]. The owner's ruling on #150 is that
- * this is ONE control at every width, so none of it sits in a media
- * query, and the group is not named for the rail - the sign-in page
- * carries this control and has no rail at all.
+ * The palette controls, wired by theme.js via [data-set-theme]. There
+ * are two of them, and the difference between them is a ruling rather
+ * than a layout preference:
+ *
+ *   FLYOUT   the three signed-in pages. A Theme disclosure whose panel
+ *            FLOATS over the page and moves nothing.
+ *   SWATCH   index.html. The same four palettes as dots that are
+ *            always there, in flow, with nothing to reveal.
+ *
+ * Neither sits in a media query. One control at every width is still
+ * the rule (#150); what the split answers is that "one control" means
+ * something different on a page somebody has signed in to and on the
+ * page that signs them in.
+ *
+ * tools/check_web.py's check 19 is what pins which page carries which,
+ * and it refuses the disclosure on the sign-in page by name.
+ */
+
+/*
+ * THE FLYOUT.
+ *
+ * `position: relative` here against `absolute` on the panel is the
+ * whole of what keeps this control from moving the page. The details
+ * element's own box stays the size of its summary open or shut, because
+ * the only other child is out of flow - so reaching for a palette
+ * cannot push a footer link down, reflow a grid, or scroll a reader
+ * away from the line they were on. That is what a working page's footer
+ * can afford, and it is what an in-flow reveal cannot offer at all.
+ *
+ * `inline-block` rather than a column: a stretched details fills the
+ * page and takes the pill's width with it, and once the panel is out of
+ * flow there is nothing left to space out.
  */
 .theme-picker {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  position: relative;
+  display: inline-block;
 }
 
 /*
- * Chip family, above. Only what makes this one the disclosure rather
- * than a palette is here.
- *
- * `align-self` is what keeps the pill the width of its word. The group
- * above is a column, so a stretched child fills the rail - which is
- * right for the chips, because it is the width they wrap inside, and
- * wrong for a pill.
+ * The summary IS the button, so the marker a browser draws beside it
+ * has to go - left in, it reads as a second control next to the word.
+ * Both spellings, because `list-style` is the standard one and WebKit
+ * still answers only to the pseudo-element.
  */
-.theme-disclosure {
-  display: inline-flex;
-  align-self: flex-start;
-  align-items: center;
-  gap: var(--space-2);
-}
+.theme-picker summary { list-style: none; }
 
-.theme-disclosure:hover,
-.theme-disclosure[aria-expanded="true"] {
+.theme-picker summary::-webkit-details-marker { display: none; }
+
+.theme-picker summary:hover,
+.theme-picker[open] summary {
   background: var(--color-accent-quiet);
   color: var(--color-text);
 }
 
 /*
- * Closed until the disclosure opens it, and opened IN FLOW: the chips
- * push what follows them down the rail rather than floating over it. A
- * floating layer is deferred to #82, where the custom-palette editor is
- * what decides whether this list earns one. In flow, the sign-in page's
- * rule needs no special case - a reveal that covers nothing cannot
- * cover the sign-in form.
+ * Shut and open, said here rather than left to the browser.
  *
- * Opened with a data attribute rather than the `hidden` one, and that
- * is forced rather than preferred: [hidden] is display:none !important
- * at the top of this file, so chips folded that way could not be
- * revealed again by any rule here.
+ * A closed <details> hides everything but its summary on its own, and
+ * leaning on that is the one thing that would make this fragile: what
+ * gets hidden is a slot, author rules reach it unevenly across engines,
+ * and a child taken out of flow is exactly the case they differ on.
+ * Two lines here cost nothing and remove the question.
  *
- * A visitor whose scripts are dead keeps them folded, which costs
- * nothing real: theme.js is what makes a chip change anything, so with
- * scripts dead an open list would be four buttons that do nothing. The
- * stored palette and the system preference are both still honored -
- * that is theme-init.js and the media blocks at the top of this file,
- * neither of which needs a chip.
- *
- * No transition and no animation, at any width. Nothing here is
- * decorative, and a display toggle has nothing to interpolate.
+ * Not the `hidden` attribute and not [hidden] - that is display:none
+ * !important at the top of this file, so a panel folded that way could
+ * not be revealed again by any rule here.
  */
-.themes {
-  display: none;
+.theme-picker:not([open]) > .theme-flyout { display: none; }
+
+.theme-flyout {
+  position: absolute;
+  z-index: 9999;
+  inset-inline-start: 0;
+  inset-block-end: calc(100% + var(--space-2));
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  inline-size: max-content;
+  max-inline-size: min(18rem, 80vw);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+}
+
+/*
+ * Which way it opens, and why up is the default rather than the flip.
+ *
+ * This control is at the foot of the page. Downward from there is off
+ * the end of a short document and under the browser's own furniture on
+ * a phone; upward is over content the reader has already gone past. So
+ * up is right most of the time, and theme.js flips it only when a
+ * measurement says the room is not there - taken on open, because how
+ * much room is above depends on where the page is scrolled and nothing
+ * in a stylesheet can know that.
+ *
+ * With theme.js dead the panel opens upward and stays there, which is
+ * the honest resting state: the palettes are all reachable, and the one
+ * case the flip exists for is a viewport short enough that the footer
+ * is already near the top.
+ */
+.theme-picker[data-flip="down"] > .theme-flyout {
+  inset-block-end: auto;
+  inset-block-start: calc(100% + var(--space-2));
+}
+
+/*
+ * THE SWATCHES, on the sign-in page.
+ *
+ * In flow, always visible, and safe by construction rather than by
+ * argument. There is no hidden state here, so there is nothing that can
+ * be open over the Telegram widget - and the widget is the only thing
+ * on that page that signs anybody in. Every earlier version of this
+ * control had to reason about how its reveal fails; this one has no
+ * reveal to fail.
+ */
+.theme-swatches {
+  display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.theme-picker[data-open="true"] .themes { display: flex; }
+/*
+ * The button is the target and the dot inside it is the whole of what
+ * it shows, so the target is sized for a finger rather than for the
+ * dot: 2rem square against a 1.25rem dot. The name a member is offered
+ * this palette by is in aria-label, which is what check 23 reads when a
+ * chip has no words in it.
+ */
+.theme-swatches button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  padding: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.theme-swatches button:hover {
+  background: var(--color-accent-quiet);
+}
+
+/* The pressed one is marked on the button rather than on the dot: the
+   dot is already spending both of its colors on saying which palette
+   it is, and a third state painted into it would be a mark competing
+   with the thing it marks. */
+.theme-swatches button[aria-pressed="true"] {
+  background: var(--color-accent-quiet);
+  border-color: var(--color-accent);
+}
+
+/*
+ * The dot, and the one place in this file where a palette's colors are
+ * written onto a component instead of taken from a token.
+ *
+ * It is forced rather than chosen. Each palette is scoped to
+ * :root[data-theme="..."], so from inside whichever one the page is
+ * currently wearing there is no expression that names another's page
+ * color: var(--color-bg) says the color already on screen, four times
+ * over, and the row comes out in one color.
+ *
+ * Which makes this exactly the shape that goes stale in silence - so it
+ * does not get to. check 24's swatch arm in tools/check_web.py holds
+ * these eight values to the palettes the mockup rules, both directions,
+ * and reddens the gate the day a palette is retuned without them.
+ *
+ * The width and the style are declared here so that only the color
+ * varies below. A ring folded into the `border` shorthand would put its
+ * color where that arm cannot read it, and an unreadable value is one
+ * nothing compares.
+ */
+.swatch-dot {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border-radius: 50%;
+  border-style: solid;
+  border-width: 0.22rem;
+}
+
+.swatch-dot[data-palette="midnight"] {
+  background: #120d10;
+  border-color: #c73743;
+}
+
+.swatch-dot[data-palette="pink"] {
+  background: #1e141a;
+  border-color: #e87fa8;
+}
+
+.swatch-dot[data-palette="daylight"] {
+  background: #f3eadb;
+  border-color: #8e2530;
+}
+
+.swatch-dot[data-palette="contrast"] {
+  background: #000000;
+  border-color: #f08090;
+}
 
 /* ------------------------------------------------------------------ */
 /* The cover, and the way it opens.                                    */
@@ -1016,14 +1153,19 @@ body.railed {
 
 .cover-leaf .wordmark-name { font-size: clamp(2.2rem, 1.6rem + 3vw, 3.4rem); }
 
-/* The CHIP family: a segmented control of four, plus the disclosure
-   that folds them away on a strip. The border is what makes each one a
-   separate target - same 1.4.11 reasoning as the form fields - and the
-   pill and the smaller type are what keep a row of settings from
-   carrying a row of actions' weight. The chassis above gives them their
-   face, weight, cursor and transition. */
-.themes button,
-.theme-disclosure {
+/* The CHIP family: a segmented control of four, plus the summary that
+   folds them away. The border is what makes each one a separate target
+   - same 1.4.11 reasoning as the form fields - and the pill and the
+   smaller type are what keep a row of settings from carrying a row of
+   actions' weight. The chassis above gives them their face, weight,
+   cursor and transition.
+
+   The sign-in page's swatches are the same family and take their
+   chassis from it, but not this face: a dot's whole job is to show two
+   colors of its own, so it is sized and shaped where it is defined
+   rather than here. */
+.theme-flyout button,
+.theme-picker summary {
   background: var(--color-surface);
   color: var(--color-text-muted);
   border: 1px solid var(--color-border-strong);
@@ -1032,12 +1174,12 @@ body.railed {
   font-size: var(--text-sm);
 }
 
-.themes button:hover {
+.theme-flyout button:hover {
   background: var(--color-accent-quiet);
   color: var(--color-text);
 }
 
-.themes button[aria-pressed="true"] {
+.theme-flyout button[aria-pressed="true"] {
   color: var(--color-on-accent);
   background: var(--color-accent);
   border-color: var(--color-accent);
@@ -1192,9 +1334,10 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
  *   ACTION   .primary / .secondary - does something to the world. The
  *            square-ish corner and the roomier padding are what make it
  *            a target rather than a tag.
- *   CHIP     the theme buttons and their disclosure - picks a setting.
- *            Pill-shaped and small: a row of settings should not carry
- *            the visual weight of a row of actions.
+ *   CHIP     the palette buttons, the summary that opens them, and the
+ *            sign-in page's swatches - picks a setting. Pill-shaped and
+ *            small: a row of settings should not carry the visual
+ *            weight of a row of actions.
  *   TAB      switches which pane is showing. It performs nothing, which
  *            is why it is the one family with no fill and no border of
  *            its own - see the strip below.
@@ -1205,8 +1348,9 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
  */
 .primary,
 .secondary,
-.themes button,
-.theme-disclosure,
+.theme-flyout button,
+.theme-picker summary,
+.theme-swatches button,
 [role="tab"] {
   font: inherit;
   font-weight: 600;
