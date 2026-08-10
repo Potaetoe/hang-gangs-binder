@@ -733,7 +733,7 @@ day a check is added:
     makes that answer true, and #154's sweep found it written down
     nowhere (P2 F3, and mutation J for the second half).
 
-    Two routes, and neither is check 13's:
+    Three routes, and none of them is check 13's:
 
     - The CSP pin table itself. Check 13 reconciles each page's
       shipped policy against its pin, which means it has no opinion
@@ -748,6 +748,10 @@ day a check is added:
       origin is exactly what 'self' means. Check 1 asks only whether
       the file a link names exists, and checks 24 and 25 open
       theme.css by name, so the sheet beside it is read by nothing.
+    - The same route spelled inside the file: an @import in theme.css.
+      Same origin, so the policy permits it; inside the file the design
+      arms open, so every page's link roster stays right; and invisible
+      to check 1, which reads href and src out of the HTML.
 
     What is NOT restated here: a page carrying no stylesheet at all is
     check 3's missing-head report, and a shipped policy that has drifted
@@ -5381,12 +5385,38 @@ def page_stylesheet_problems(text):
     return problems
 
 
+# An import is the same route as a second <link>, spelled inside the
+# file rather than beside it. Read off the stylesheet with its comments
+# already stripped, because this file argues about what it refuses at
+# length and in prose.
+STYLE_IMPORT = re.compile(r"@import\b[^;]*;?", re.I)
+
+
+def stylesheet_import_problems(css):
+    """[problem] for a stylesheet pulling a second one in behind it."""
+    return [
+        "carries %s. An import is the same styling route as a second "
+        "<link> and the quieter one: it is same-origin, so style-src "
+        "'self' permits it, and it is inside the file check 24 and check "
+        "25 open rather than beside it - so every page's link roster "
+        "stays right while rules paint from a file nothing here reads"
+        % " ".join(found.group(0).split())
+        for found in STYLE_IMPORT.finditer(css)
+    ]
+
+
 def styling_exclusivity_problems():
     """[(subject, problem)] for styling that reaches past the design gate."""
     problems = list(pinned_style_problems())
     for name in html_pages():
         for problem in page_stylesheet_problems(page_text(name)):
             problems.append((name, problem))
+
+    css = stylesheet_text()
+    if css is not None:
+        for problem in stylesheet_import_problems(css):
+            problems.append((STYLESHEET, problem))
+
     return sorted(problems)
 
 
