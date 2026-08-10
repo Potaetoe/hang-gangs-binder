@@ -551,7 +551,9 @@
 
     async function memberKey() {
       const keys = root.BinderMemberKey;
+      const sealer = root.BinderCrypto;
       if (!keys || typeof keys.ensure !== "function" || !accountId) return null;
+      if (!sealer || typeof sealer.encryptTo !== "function") return null;
       let key = null;
       try {
         key = await keys.ensure(accountId);

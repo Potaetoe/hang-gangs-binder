@@ -953,10 +953,10 @@ function setHeight(byId, feet, inches) {
  *     this tree, so the two scripts are cached on the platform default
  *     and a browser can hold yesterday's crypto.js beside today's
  *     form.js. Every other way the second recipient goes missing is
- *     handled before a byte is encrypted; this one used to reach the
- *     call site as a TypeError, which turned a submission that had
- *     always worked into a blocked one - on the browsers that DO hold a
- *     device key, which is the wrong half of the population to fail.
+ *     handled before a byte is encrypted. Unguarded, this one reaches
+ *     the call site as a TypeError and blocks the submission outright -
+ *     and only on the browsers that DO hold a device key, which is the
+ *     wrong half of the population to fail.
  *
  *     The stale module is built by rebuilding the global from the real
  *     one rather than by deleting a member: crypto.js freezes its

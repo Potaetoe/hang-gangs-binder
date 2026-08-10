@@ -718,16 +718,26 @@
      * This member's own device key, or null - and null is an ordinary
      * Tuesday rather than a fault.
      *
-     * Four different browsers answer null here and none of them is
+     * Five different browsers answer null here and none of them is
      * broken: one that has not heard from /me yet, one whose page did
      * not load memberkey.js, one that keeps no database at all (private
-     * browsing, storage blocked, no IndexedDB), and an id the store
-     * refuses to file under. memberkey.js's own header says the missing
+     * browsing, storage blocked, no IndexedDB), an id the store refuses
+     * to file under, and one holding a crypto.js that has no `encryptTo`
+     * to spend the key on. memberkey.js's own header says the missing
      * key is never an error; this is the caller that has to mean it.
+     *
+     * THE FIFTH IS A CACHE, not a page. No `_headers` file exists in
+     * this tree, so both scripts are cached on the platform default and
+     * a browser can hold yesterday's crypto.js beside today's form.js.
+     * Asked here rather than at the call site because an absent function
+     * is the same fact as an absent key - this browser cannot widen the
+     * seal - and the answer to that fact is one branch, not two.
      */
     async function memberKey() {
       const keys = root.BinderMemberKey;
+      const sealer = root.BinderCrypto;
       if (!keys || typeof keys.ensure !== "function" || !accountId) return null;
+      if (!sealer || typeof sealer.encryptTo !== "function") return null;
       let key = null;
       try {
         key = await keys.ensure(accountId);
