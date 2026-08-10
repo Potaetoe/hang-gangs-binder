@@ -53,7 +53,7 @@ async function check(label, fn) {
 }
 
 await check("the exported object is frozen", () =>
-  // submit.html holds the submission before crypto.js seals it, so an
+  // your-page.html holds the submission before crypto.js seals it, so an
   // export a later script can rewrite is a `validate` that waves
   // anything through, or a `buildRecord` that adds a field to what gets
   // encrypted. tools/check_web.py check 15 holds the rule across the

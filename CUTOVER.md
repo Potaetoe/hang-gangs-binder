@@ -40,7 +40,7 @@ completes. That is why the Worker deploys before the site.
       Encrypted, so nothing can check it before step 8 — a wrong id
       looks exactly like a working deployment until the export. Know
       what you put in it. (Your id: sign in through Telegram and read
-      it on `submit.html`, under "Your entries". A development sign-in
+      it on `your-page.html`, under "Your entries". A development sign-in
       carries none — `POST /auth/dev` mints an account for a subject
       string rather than for a Telegram user.)
 - [ ] **No open `enhancement` issues remain** — owner decision
@@ -110,7 +110,7 @@ to `potaetoe.github.io`. The CSP was confirmed against the real
 callback is unproven. If the widget misrenders anyway, the policy is in
 `DESIGN.md`, "The sign-in page and the CSP".
 
-**Continue when:** a session is minted and reaches `submit.html`.
+**Continue when:** a session is minted and reaches `your-page.html`.
 
 ### 8 — One real submission, then one export
 
@@ -129,16 +129,16 @@ Acceptance, on the live site:
 - [ ] Someone **outside** the group tries to sign in and is refused
       (if `TELEGRAM_GROUP_CHAT_ID` is set).
 - [ ] `POST /auth/dev` returns **404** on production.
-- [ ] Signed out, `submit.html`, `dashboard.html` and `admin.html` all
+- [ ] Signed out, `your-page.html`, `charts.html` and `admin.html` all
       bounce to sign-in with **zero** Worker requests.
-- [ ] A member session reaches the dashboard; an admin-only page
+- [ ] A member session reaches `charts.html`; an admin-only page
       refuses a member with a message, not a blank page.
 - [ ] Publish a snapshot (so members see figures) and re-run the
       privacy checks from `UAT.md` A11.1–A11.3 against the real
       corpus: no handles or rows in the published document, no
       height panel, no series under five lines. **A failure here stops
       everything else until resolved.**
-- [ ] `submit.html`'s key fingerprint matches the pinned group message.
+- [ ] `your-page.html`'s key fingerprint matches the pinned group message.
 
 Aftercare:
 

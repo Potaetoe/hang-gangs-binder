@@ -470,7 +470,7 @@
    * decrypted leaves this function's own frame, nothing decrypted is
    * stored anywhere, and the service saw none of it.
    *
-   * WHY THE FLOOR IS ZERO HERE AND IS NOT ON dashboard.html. The
+   * WHY THE FLOOR IS ZERO HERE AND IS NOT ON charts.html. The
    * published document is other people, so every cell of it was reduced
    * to at least MIN_CELL before it was published. These rows are one
    * person's own, and suppressing a member's own March because March

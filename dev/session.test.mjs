@@ -27,7 +27,7 @@ globalThis.sessionStorage = {
 
 const redirects = [];
 globalThis.location = {
-  pathname: "/submit.html",
+  pathname: "/your-page.html",
   replace(target) { redirects.push(target); },
 };
 
@@ -84,7 +84,7 @@ check("the sign-in page does not redirect itself",
 
 /*
  * The page's name, on a host that rewrites the URL - #188. Cloudflare
- * Pages serves "submit.html" at "submit" and 308s the full name away,
+ * Pages serves "your-page.html" at "your-page" and 308s the full name away,
  * with no setting that refuses (#143's hosted bake is where this bit).
  * Compared raw, that segment matches no rail href, and a host that
  * strips the index name the same way turns requireSession()'s redirect
@@ -93,12 +93,12 @@ check("the sign-in page does not redirect itself",
  * suffix restored, and nav.js asks it rather than keeping a second
  * computation that can disagree with the sign-in gate.
  */
-location.pathname = "/demo/submit";
+location.pathname = "/demo/your-page";
 check("a host-stripped page name answers with its file's own name",
-  Session.pageName() === "submit.html");
-location.pathname = "/demo/submit.html";
+  Session.pageName() === "your-page.html");
+location.pathname = "/demo/your-page.html";
 check("a name the host left alone passes through untouched",
-  Session.pageName() === "submit.html");
+  Session.pageName() === "your-page.html");
 location.pathname = "/demo/";
 check("a directory index is the sign-in page",
   Session.pageName() === "index.html");
@@ -128,7 +128,7 @@ check("read recovers the tab-scoped session",
 check("authorization builds the bearer header",
   Session.authorization().Authorization === "Bearer tab-token");
 
-location.pathname = "/submit.html";
+location.pathname = "/your-page.html";
 redirects.length = 0;
 check("a signed-in member page is not redirected",
   Session.require().session === "tab-token" && redirects.length === 0);
@@ -241,7 +241,7 @@ check("development auth POSTs the exact payload to the configured Worker",
 check("a successful auth response is stored before redirecting",
   devSession.session === "tab-token" &&
   Session.read().session === "tab-token" &&
-  redirects.at(-1) === "submit.html");
+  redirects.at(-1) === "your-page.html");
 
 requests.length = 0;
 await globalThis.onTelegramAuth({ id: 42, hash: "signed" });
@@ -309,7 +309,7 @@ catch (error) { wrongRoute = error; }
 check("authentication cannot be pointed at an arbitrary route",
   wrongRoute && /not a sign-in route/.test(wrongRoute.message));
 
-const memberPages = ["index.html", "submit.html", "dashboard.html", "admin.html"];
+const memberPages = ["index.html", "your-page.html", "charts.html", "admin.html"];
 const pageSources = await Promise.all(memberPages.map((page) =>
   readFile(new URL("../apps/web/" + page, import.meta.url), "utf8")));
 check("every interactive page loads session.js",
@@ -356,7 +356,7 @@ check("the sign-out act keeps the network session.js refuses to hold",
   /\bfetch\s*\(/.test(signOutSource) && /"DELETE"/.test(signOutSource) &&
   /keepalive/.test(signOutSource));
 
-const railPages = ["submit.html", "dashboard.html", "admin.html"];
+const railPages = ["your-page.html", "charts.html", "admin.html"];
 const railSources = await Promise.all(railPages.map((page) =>
   readFile(new URL("../apps/web/" + page, import.meta.url), "utf8")));
 check("every page whose rail offers Sign out loads the file that does it",
@@ -433,7 +433,7 @@ check("the rail subscribes rather than the store reaching for the rail",
 Session.clear();
 await import("data:text/javascript," + encodeURIComponent(signOutSource));
 
-location.pathname = "/submit.html";
+location.pathname = "/your-page.html";
 redirects.length = 0;
 Session.write(GOOD);
 Session.require();

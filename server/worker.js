@@ -210,7 +210,7 @@ const SESSION_HOURS = { member: 24 * 7, admin: 2 };
  * account and reads a document carrying no handles and no rows, so
  * there is no plaintext corpus behind it to leave on a screen; and the
  * measurable thing here is requests, while somebody filling in
- * apps/web/submit.html sends none until they submit. A window short
+ * apps/web/your-page.html sends none until they submit. A window short
  * enough to behave like an attention timer therefore signs a member out
  * mid-entry, and nothing in apps/web polls to hold one open - so the
  * failure mode is losing what they typed, for a session that had no

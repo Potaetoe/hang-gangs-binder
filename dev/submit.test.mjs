@@ -1,5 +1,5 @@
 /*
- * Contract checks for the member panel on submit.html.
+ * Contract checks for the member panel on your-page.html.
  *
  * The shipped page module runs unchanged under the same small browser stubs
  * as session.test.mjs and public.test.mjs. The missing module is treated as
@@ -15,7 +15,7 @@ const signOutSource = await readFile(
 const formSource = await readFile(
   new URL("../apps/web/form.js", import.meta.url), "utf8");
 const submitHtml = await readFile(
-  new URL("../apps/web/submit.html", import.meta.url), "utf8");
+  new URL("../apps/web/your-page.html", import.meta.url), "utf8");
 const submitSource = await readFile(
   new URL("../apps/web/submit.js", import.meta.url), "utf8")
   .catch((error) => {
@@ -67,7 +67,7 @@ globalThis.localStorage = storage(localValues);
 
 const redirects = [];
 globalThis.location = {
-  pathname: "/submit.html",
+  pathname: "/your-page.html",
   replace(target) { redirects.push(target); },
 };
 
@@ -295,7 +295,7 @@ const MEMBER = {
  *
  *  - `personalSource` counts its calls and keeps the entries it was
  *    handed. That is the boundary from this side - dev/public.test.mjs
- *    counts the same function to prove dashboard.html never reaches it,
+ *    counts the same function to prove charts.html never reaches it,
  *    and this file proves the page that MAY reach it hands it only what
  *    opened.
  *  - `run` keeps every query. The basis and the units are read off those
@@ -434,7 +434,7 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill,
   localValues.clear();
   if (prefill !== undefined) localValues.set(PREFILL_KEY, prefill);
   redirects.length = 0;
-  location.pathname = "/submit.html";
+  location.pathname = "/your-page.html";
 
   globalThis.document = page.document;
   globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
@@ -483,7 +483,7 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill,
   scenario++;
   /*
    * In the page's own order: signout.js before submit.js, because
-   * submit.html loads them that way and submit.js reads the prefill key
+   * your-page.html loads them that way and submit.js reads the prefill key
    * off BinderSignOut at module scope. Loading them the other way round
    * here would test an arrangement the site does not ship, and would
    * fail for a reason no page can produce.
@@ -517,7 +517,7 @@ const panelIds = [
   "member-telegram-id-line", "member-telegram-id",
   "member-corrections-line", "member-corrections",
 ];
-check("submit.html declares the panel controls and loads its shipped module",
+check("your-page.html declares the panel controls and loads its shipped module",
   panelIds.every((id) => submitHtml.includes(`id="${id}"`)) &&
   /src="submit\.js"/.test(submitHtml));
 
@@ -528,7 +528,7 @@ check("submit.html declares the panel controls and loads its shipped module",
  * dead button, and a module with no markup is a page whose rail cannot
  * end a session.
  */
-check("submit.html carries the rail's session home and loads signout.js",
+check("your-page.html carries the rail's session home and loads signout.js",
   submitHtml.includes('id="sign-out"') &&
   submitHtml.includes('id="sign-in"') &&
   submitHtml.includes('id="session-who"') &&
@@ -537,7 +537,7 @@ check("submit.html carries the rail's session home and loads signout.js",
 /* Load order, pinned because it is invisible until it breaks: the
  * revoke reads BINDER_CONFIG.endpoint, and submit.js reads the prefill
  * key off BinderSignOut while its module body runs. */
-check("submit.html loads signout.js after config.js and before submit.js",
+check("your-page.html loads signout.js after config.js and before submit.js",
   submitHtml.indexOf('src="config.js"') <
     submitHtml.indexOf('src="signout.js"') &&
   submitHtml.indexOf('src="signout.js"') <
@@ -1473,7 +1473,7 @@ const row = (id, ciphertext) => ({ id: id, receivedAt:
   "2026-07-0" + id + "T00:00:00.000Z", superseded: false,
 ciphertext: ciphertext });
 
-check("submit.html declares the history card and loads what opens it",
+check("your-page.html declares the history card and loads what opens it",
   ['id="your-history"', 'id="history-status"', 'id="history-controls"',
     'id="h-split"', 'id="history-answer"', 'id="history-sealed"']
     .every((id) => submitHtml.includes(id)) &&
@@ -1536,7 +1536,7 @@ check("the key is asked for by the account id /me validated",
 
 /*
  * THE BOUNDARY FROM THE SIDE THAT MAY CROSS IT. dev/public.test.mjs
- * counts calls to personalSource to prove dashboard.html never reaches
+ * counts calls to personalSource to prove charts.html never reaches
  * it; this counts them to prove this page reaches it exactly once, with
  * exactly the rows that opened. A source built per question would
  * decrypt again on every keystroke, and a source built from the raw

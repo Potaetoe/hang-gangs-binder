@@ -103,7 +103,7 @@ check("a commented-out tag beside a live one leaves the live one",
 
 check("a rel the browser fetches nothing for is skipped",
       check_budget.page_references(
-          '<link rel="canonical" href="submit.html">') == [])
+          '<link rel="canonical" href="your-page.html">') == [])
 
 # The default has to be fail-safe. An unknown rel that does transfer
 # must land in the total rather than slip out of it: a budget that
@@ -147,7 +147,8 @@ check("the same file referenced twice counts once",
 # Every page links to every other page in its nav. Those are
 # navigations, not part of this page's payload.
 check("an anchor href is not a transfer",
-      check_budget.page_references('<a href="submit.html">Submit</a>') == [])
+      check_budget.page_references(
+          '<a href="your-page.html">Your page</a>') == [])
 
 check("a script with no src is not a reference",
       check_budget.page_references(
@@ -209,13 +210,13 @@ check("a url() inside a CSS comment is not counted",
 # The arithmetic, as a pure function over a found-set.                 #
 
 # 21,000 bytes across three files, heaviest first when ordered.
-PAGE = [("submit.html", 5000), ("form.js", 8500), ("theme.css", 7500)]
+PAGE = [("your-page.html", 5000), ("form.js", 8500), ("theme.css", 7500)]
 TOTAL = 21000
 
 
 def budget(ceiling):
-    return check_budget.budget_problems({"submit.html": PAGE},
-                                        {"submit.html": ceiling})
+    return check_budget.budget_problems({"your-page.html": PAGE},
+                                        {"your-page.html": ceiling})
 
 
 check("a page under its ceiling has no problem", budget(23000) == [])
@@ -228,7 +229,7 @@ check("a page exactly at its ceiling has no problem", budget(TOTAL) == [])
 over = budget(20000)
 check("a page over its ceiling fails", len(over) == 1)
 check("and the failure names the page, the total and the ceiling",
-      "submit.html" in over[0] and "21,000" in over[0]
+      "your-page.html" in over[0] and "21,000" in over[0]
       and "20,000" in over[0])
 
 # Named so the fix is obvious without rerunning anything. form.js is

@@ -274,14 +274,14 @@ await check("every baked page unmirrors back to the shipped bytes", async () => 
 });
 
 await check("a baked page carries the fetch replacement, stub before boot", async () => {
-  const html = await read("demo/submit.html");
+  const html = await read("demo/your-page.html");
   const stub = html.indexOf("/dev/demo-stub.js");
   const boot = html.indexOf("/dev/demo-boot.js");
   return stub !== -1 && boot !== -1 && stub < boot;
 });
 
 await check("a baked page points config.js at the demo stand-in", async () => {
-  const html = await read("demo/submit.html");
+  const html = await read("demo/your-page.html");
   return html.includes("/dev/demo-config.js") &&
     !html.includes('<script src="config.js">');
 });

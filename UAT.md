@@ -142,10 +142,14 @@ arm, held offline.
 even when the page looks right, and several of this project's bugs were
 invisible anywhere else.
 
-**Names.** Each destination is addressed by file name, with the label
-it carries beside it: `index.html` (**Sign in**), `submit.html` (**Your
-page**), `dashboard.html` (**Muse's charts**), `admin.html` (**Admin**).
-The file name is the anchor because it is the part that does not move.
+**Names.** Each destination is addressed by file name, with the label it
+carries beside it: `index.html` (**Sign in**), `your-page.html` (**Your
+page**), `charts.html` (**Muse's charts**), `admin.html` (**Admin**).
+The file name is the address because the label is part of what several
+of these steps are checking, and a step cannot be addressed by the thing
+it is testing. Since #179 the two agree, so a step that sends you to
+`charts.html` and finds a rail entry reading anything but **Muse's
+charts** has found a defect rather than a naming gap.
 
 ### A1 · The shell, held to the mockup — every card
 
@@ -162,7 +166,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 | A1.3 | Turn on the operating system's reduced-motion setting and reload | The binder is **already open** — no frame of the closed cover at all | At a shortened duration the first frame still paints, and a full-screen flash is the exact thing that setting asks not to be given |
 | A1.4 | Read the wordmark against the mockup | Two lines: **Hang Gang** small, uppercase, letter-spaced, in the gold accent and the monospace face; **Binder** under it in the italic serif and the rose accent. A plain default serif or a single-line wordmark is a failure | The wordmark is the identity, and it is the first place a font that did not load shows |
 | A1.5 | Confirm `index.html` and `404.html` carry **no rail** | Both are plain, with a single way onward | The owner's decision: no rail before sign-in, and an error page goes plain on principle |
-| A1.6 | Signed in, open `submit.html`, `dashboard.html` and `admin.html` | All three carry the same rail — three destinations in the same order, and the session block under them: your name and **Sign out** while the session lives, **Sign in** when this tab holds none (#187) | Three hand-written copies; a rail that differs per page is how somebody gets stranded, and the door lives beside the words that say whether you need it |
+| A1.6 | Signed in, open `your-page.html`, `charts.html` and `admin.html` | All three carry the same rail — three destinations in the same order, and the session block under them: your name and **Sign out** while the session lives, **Sign in** when this tab holds none (#187) | Three hand-written copies; a rail that differs per page is how somebody gets stranded, and the door lives beside the words that say whether you need it |
 | A1.7 | On each, check which destination is marked current | The one you are on, and only it | The rail is also the answer to "where am I" |
 | A1.8 | Find the **Theme** control | In the **page footer**, on every page but `404.html` — including signed-out on `index.html` | #187 moved the picker out of the rail: the palette belongs to the reader, not to the session, and the footer is the one place every page shares |
 | A1.9 | Open **Theme** and press **every chip it offers, in turn** — the control is the list, and working from a remembered set of names instead is how a palette goes undriven | Each one repaints the whole page, the control marks which is active, and the choice survives a reload | A preference that does not persist is not a preference. Counting the chips against the control rather than against a list written here is also what catches one going missing |
@@ -178,8 +182,8 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A2.1 | Open `submit.html` | Sent to `index.html`; the form never paints | A usable-looking form whose request would be refused wastes a submitter's typing |
-| A2.2 | Open `dashboard.html` | Sent to sign-in; no figures | Members-only since 2026-08-05 |
+| A2.1 | Open `your-page.html` | Sent to `index.html`; the form never paints | A usable-looking form whose request would be refused wastes a submitter's typing |
+| A2.2 | Open `charts.html` | Sent to sign-in; no figures | Members-only since 2026-08-05 |
 | A2.3 | Open `admin.html` | Sent to sign-in; no key box, no rows | The admin page has no typed-token path any more |
 | A2.4 | Watch the network panel on all three | **No request** went out at all | Refusing before asking is the property; a request that earns a 401 has still announced you |
 | A2.5 | Open `404.html` | An error page that says so plainly and offers one way back | Reached by strangers and by mistyped links, so it must not look broken |
@@ -189,7 +193,7 @@ start from **Sign in with Telegram**'s for the signed-out rows and
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A3.1 | Land on `submit.html` | Two tabs, **On record** showing, and the rail carrying your name and a **Sign out** | The session has one home on every page rather than one page |
+| A3.1 | Land on `your-page.html` | Two tabs, **On record** showing, and the rail carrying your name and a **Sign out** | The session has one home on every page rather than one page |
 | A3.2 | Read the entry count | It matches what is actually stored for you | The count comes from `GET /me` and nothing else; this is the acceptance criterion |
 | A3.3 | On a member with nothing stored, read the "last submitted" line | Something honest — "No entries yet" — never "Invalid Date" | A brand-new member is the most common first view of this page |
 | A3.4 | Switch between **On record** and **Weigh in**, repeatedly | **Exactly one** pane visible at a time, never both, never neither | `[hidden]` losing to `display: flex` has shipped here before |
@@ -229,8 +233,8 @@ on the Weigh in card first.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A6.1 | From a live session, press **Sign out** on `submit.html` | Returned to `index.html`, and the session is gone from `sessionStorage` | The user-visible half, and it must always succeed |
-| A6.2 | Repeat from `dashboard.html`, then from `admin.html` | Identical behavior from each | Sign out is on every railed page, so every page has to mean the same thing by it |
+| A6.1 | From a live session, press **Sign out** on `your-page.html` | Returned to `index.html`, and the session is gone from `sessionStorage` | The user-visible half, and it must always succeed |
+| A6.2 | Repeat from `charts.html`, then from `admin.html` | Identical behavior from each | Sign out is on every railed page, so every page has to mean the same thing by it |
 | A6.3 | On the card's own arrival — a revoked session — make the page request anything: reload, or switch panel tabs | It is refused, this tab drops its copy, and you are sent to sign in **in words, not a spinner** | Dropping this tab's copy of the token is not the end of a session — the row is. A token captured before sign-out opens nothing (#90) |
 | A6.4 | Watch the rail as the session dies | The session block changes with it: your name goes, **Sign in** returns, without a reload | #166. A rail still offering Sign out for a session that no longer exists is a door painted on a wall |
 | A6.5 | Read what the page says while the revoke is in flight | Nothing about the revoke | The act you performed is the local clear; a message about the other half would describe a sign-out that did not happen |
@@ -264,7 +268,7 @@ accept.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A8.1 | Open `admin.html` and look at it beside `submit.html` | It is unmistakably a different kind of surface — dense, instrument-like, obviously the place the site is operated from | #68. A member page and an admin page that read alike is how somebody operates the site by accident |
+| A8.1 | Open `admin.html` and look at it beside `your-page.html` | It is unmistakably a different kind of surface — dense, instrument-like, obviously the place the site is operated from | #68. A member page and an admin page that read alike is how somebody operates the site by accident |
 | A8.2 | Reach it on a **member** session | Refused, **with a message saying an admin session is needed** | A member reaching the admin surface is the failure; a blank page is a bad way to say so |
 | A8.3 | Delete a row | It disappears from the table | Step 7's behavior |
 | A8.4 | **Immediately press Publish, then read the published document** | The deleted row's data is **not** in it | The sharp hazard: a deleted row surviving in derived state is resurrected by the next Publish |
@@ -290,7 +294,7 @@ accept.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| A10.1 | Open `dashboard.html` with nothing published | "No figures have been published yet" — a first-publication message | This must be **distinguishable** from being signed out |
+| A10.1 | Open `charts.html` with nothing published | "No figures have been published yet" — a first-publication message | This must be **distinguishable** from being signed out |
 | A10.2 | Clear the session and reload | Sent to sign-in, **not** the "nothing published" message | A member told "nothing published" because their session expired learns something false |
 | A10.3 | With figures published, open it again | The combined-weight hero reads first, before any chart | It is the number the group actually came for |
 | A10.4 | Read the movement under the hero | Either a signed figure against a stated earlier date, or a line saying too few entries have moved since that date to say by how much. **A blank is a failure** | A delta with no baseline named is decoration, and a blank where a group has plainly changed reads as "nothing moved" |
@@ -333,7 +337,7 @@ separately so a staged result is never mistaken for a live one.
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
 | AL1 | Sign in through `POST /auth/dev` per A0, submit one entry | The row arrives and the count moves | The round trip the staged arm cannot make |
-| AL2 | Read the numeric Telegram id line on `submit.html` | It is **hidden** — a development session has none | `POST /auth/dev` mints an account for a subject string rather than for a Telegram user, and "Your Telegram id:" followed by nothing reads as a broken page to somebody on their way to configure something |
+| AL2 | Read the numeric Telegram id line on `your-page.html` | It is **hidden** — a development session has none | `POST /auth/dev` mints an account for a subject string rather than for a Telegram user, and "Your Telegram id:" followed by nothing reads as a broken page to somebody on their way to configure something |
 | AL3 | Press **Sign out**, then confirm server-side that the session row is gone | It is | #90. The user-visible clear always succeeds; this is the half that closes the window a captured token would otherwise keep open |
 | AL4 | Reuse the revoked token by hand against the endpoint | Refused | Otherwise the row survived to its natural expiry and Sign out hardened nothing |
 | AL5 | Publish, then re-run A11.1 through A11.3 against what the Worker actually stored | Same answers | The staged document is built for the check; this one is not |
@@ -368,7 +372,7 @@ Run in order; B1 gates the rest.
 | --- | --- | --- | --- |
 | B1.1 | Open the live `index.html` | The cover opens and the Telegram widget **renders** | It cannot be tested anywhere else. If it does not, suspect the policy first |
 | B1.2 | Watch the console while it loads | No `securitypolicyviolation` | The sign-in page's policy is in `DESIGN.md`, "The sign-in page and the CSP" |
-| B1.3 | Sign in as yourself | A session is minted and you reach `submit.html` | |
+| B1.3 | Sign in as yourself | A session is minted and you reach `your-page.html` | |
 | B1.4 | Read your numeric id on the page | It is shown, under **On record** | #58 replaced digging it out of session storage by hand |
 | B1.5 | If `TELEGRAM_GROUP_CHAT_ID` is set: have someone outside the group try | Refused | Otherwise anyone with a Telegram account can sign in |
 
@@ -393,7 +397,7 @@ presence would be a sign-in bypass.
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |
-| B4.1 | Compare `submit.html`'s fingerprint with the pinned group message | They **match** | A fingerprint disagreeing with the live site is the only alarm this mechanism can raise |
+| B4.1 | Compare `your-page.html`'s fingerprint with the pinned group message | They **match** | A fingerprint disagreeing with the live site is the only alarm this mechanism can raise |
 | B4.2 | If you rotated the key during the cutover | Update the pinned message **in the same sitting** | A stale anchor is worse than none: it teaches everybody to ignore the one alarm |
 
 ### B5 · The shell and the privacy checks, on live

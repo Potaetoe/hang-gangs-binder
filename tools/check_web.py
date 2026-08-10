@@ -92,7 +92,7 @@ day a check is added:
 
    Sending, not touching. An earlier version of this check counted any
    fetch at all, which was right while every page here either submitted
-   or exported, and became wrong the day dashboard.html arrived: that
+   or exported, and became wrong the day charts.html arrived: that
    page only reads an aggregate that was published on purpose, sends
    nothing, and deliberately does not load crypto.js so that it cannot
    be talked into decrypting anything. Holding a read-only page to a
@@ -237,7 +237,7 @@ day a check is added:
     legitimately carries two.
 
     What makes a public key dangerous is being written down somewhere
-    that cannot rotate. submit.html displays the first 32 characters of
+    that cannot rotate. your-page.html displays the first 32 characters of
     BINDER_CONFIG.publicKey so the group can compare it against the
     fingerprint published out-of-band in #29, and the entire mechanism
     rests on that value being derived at runtime from the key actually in
@@ -1202,9 +1202,9 @@ CSP_DEVIATIONS = {
 CSP_PAGES = frozenset({
     "404.html",
     "admin.html",
-    "dashboard.html",
+    "charts.html",
     "index.html",
-    "submit.html",
+    "your-page.html",
 })
 
 EXPECTED_CSP = {
@@ -1353,7 +1353,7 @@ def sign_in_boundary_problems():
     directive on every page rather than two on one.
 
     The Telegram spread check stays even though a whole-policy pin
-    subsumes it, because it says *why* in its message. "submit.html names
+    subsumes it, because it says *why* in its message. "your-page.html names
     telegram.org even though only index.html is allowed the callback
     exception" tells a reader what rule they broke; "script-src is
     'self' https://telegram.org; pinned as 'self'" tells them a value
@@ -1567,9 +1567,9 @@ def column_branch_alignment_problems():
 SHELLS = {
     "404.html": "plain",
     "admin.html": "rail",
-    "dashboard.html": "rail",
+    "charts.html": "rail",
     "index.html": "plain",
-    "submit.html": "rail",
+    "your-page.html": "rail",
 }
 
 # The hamburger the rail replaced. The destinations are visible at
@@ -1783,7 +1783,7 @@ def shell_problems():
 # is exactly when somebody copies a shell from whichever page they had
 # open. 404.html deliberately carries none.
 WORDMARK_PAGES = frozenset({
-    "admin.html", "dashboard.html", "index.html", "submit.html",
+    "admin.html", "charts.html", "index.html", "your-page.html",
 })
 
 # The two lines, by the classes theme.css paints them with. Read as
@@ -1942,7 +1942,7 @@ def wordmark_problems():
 # builds the next page from whichever one they had open. A chip there
 # writes a stored preference from an error page and fails nothing.
 THEMED_PAGES = frozenset({
-    "admin.html", "dashboard.html", "index.html", "submit.html",
+    "admin.html", "charts.html", "index.html", "your-page.html",
 })
 
 # The ids the disclosure is wired through. A pair rather than one id
@@ -2404,9 +2404,9 @@ SITE_TITLE = "Hang Gang Binder"
 DESTINATIONS = {
     "404.html": "Not found",
     "admin.html": "Admin",
-    "dashboard.html": "Muse's charts",
+    "charts.html": "Muse's charts",
     "index.html": "Sign in",
-    "submit.html": "Your page",
+    "your-page.html": "Your page",
 }
 
 HEADING = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
@@ -2524,9 +2524,9 @@ def name_problems():
 SURFACES = {
     "404.html": "member",
     "admin.html": "instrument",
-    "dashboard.html": "member",
+    "charts.html": "member",
     "index.html": "member",
-    "submit.html": "member",
+    "your-page.html": "member",
 }
 
 INSTRUMENT_BODY = re.compile(
@@ -2698,7 +2698,7 @@ def promoted_country_problems():
     return problems
 
 
-FORM_PAGE = "submit.html"
+FORM_PAGE = "your-page.html"
 
 # The two halves of the units default, as they appear in the markup.
 UNIT_SYSTEMS = ("imperial", "metric")
@@ -2862,8 +2862,8 @@ NO_MODULE_EXPORT = {
     "countries.js": "is two data tables the form reads",
     "nav.js": "wires the current-destination mark and the Theme "
               "disclosure in place and returns",
-    "public.js": "wires dashboard.html and calls into BinderDashboard",
-    "submit.js": "wires submit.html and calls into BinderForm",
+    "public.js": "wires charts.html and calls into BinderDashboard",
+    "submit.js": "wires your-page.html and calls into BinderForm",
     "theme-init.js": "sets the pre-paint theme attribute and returns",
     "theme.js": "wires the theme chips in place",
 }
@@ -3369,7 +3369,7 @@ def module_captures(js):
 # Why the exemption has to exist at all: signout.js is loaded by every
 # signed-in page because Sign out is in the rail, while memberkey.js is
 # loaded only by the page that seals entries. Requiring the publisher
-# beside every reader would put a member's device key on dashboard.html
+# beside every reader would put a member's device key on charts.html
 # and admin.html to satisfy a check - which is weight on two pages for
 # nothing, and a capability on the instrument page that DESIGN.md's
 # per-page table exists to keep narrow. Dropping the reference is worse:
@@ -3528,7 +3528,7 @@ def page_chips(text):
     whoever reads the failure to look at different things.
 
     Takes comment-stripped markup, for the reason page_text() gives:
-    submit.html's note on the "Daylight" ruling names this
+    your-page.html's note on the "Daylight" ruling names this
     attribute repeatedly, and a rule reading a page's comments is
     describing markup the page does not have.
     """

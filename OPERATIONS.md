@@ -259,7 +259,7 @@ that fails the tool is broken, not your key.
 public half in `config.js`; old rows still need the old key, so the old
 key is **archived, not destroyed**. A rotation has a second step that
 is not optional: **update the pinned fingerprint message in the
-Telegram group in the same sitting.** `submit.html` shows the key it
+Telegram group in the same sitting.** `your-page.html` shows the key it
 actually encrypts with; the pinned message is the anchor members
 compare against, and a stale anchor teaches everyone to ignore the one
 alarm the mechanism can raise. Nothing enforces this — no agent can see
@@ -433,7 +433,7 @@ purpose — a list that could rewrite itself completely leaves no root of
 trust outside itself (`DESIGN.md`, "Admin accounts and deletion").
 
 1. They sign in on the live site — any member can. Their numeric id
-   arrives in the session, and `submit.html` shows it back to them
+   arrives in the session, and `your-page.html` shows it back to them
    under "Your entries".
 2. An existing admin adds that number as an `admin` row, or the owner
    adds it to `ADMIN_TELEGRAM_IDS` in the dashboard.
@@ -451,8 +451,8 @@ the secret in the same sitting. What it does not do is end the session —
 demotion is not revocation, the person is still in the group, and the
 session goes on working as the ordinary member session it also is.
 Ending one outright is `DELETE /session`, which a page sends when
-somebody presses **Sign out**; `submit.html` has that control, and
-`admin.html` and `dashboard.html` do not yet (#81).
+somebody presses **Sign out**; `your-page.html` has that control, and
+`admin.html` and `charts.html` do not yet (#81).
 
 **The last `admin` row will not come off, and that is not a bug to work
 around.** The endpoint refuses it rather than emptying the table, so add
@@ -642,7 +642,7 @@ person, not a website.
 **`DESIGN.md`'s threat model builds one alarm, and this is what to do
 when it rings.** Anyone who can write to the repository or the Pages
 deployment swaps `publicKey` and every later submission encrypts to
-them, silently; the detection is a member comparing what `submit.html`
+them, silently; the detection is a member comparing what `your-page.html`
 displays against the fingerprint pinned in the Telegram group. Its
 entire output is a person saying "these do not match," and the order
 below is the part that is not obvious — several plausible first moves
@@ -666,7 +666,7 @@ failure "The keys" warns about from the other side.
    origin, and the next `wrangler deploy` puts the old value back,
    because `deploy` applies `[vars]` over the dashboard's.
 2. **Capture what you are looking at, before touching anything.** The
-   value `submit.html` is showing, the text of the pinned message, and
+   value `your-page.html` is showing, the text of the pinned message, and
    the time. A screenshot is enough. Step 6 overwrites the only record
    of which key was substituted. **Anyone.**
 3. **Verify against the served file, not the source.** The site and the

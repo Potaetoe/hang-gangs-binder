@@ -409,7 +409,7 @@ await check("and the name it calls is the name this module exports", () => {
  * That exemption is dangerous in a specific way, and it is worth naming
  * before the arms: it does not merely permit the read, it REMOVES ORDER
  * POLICING for the pair. So if the read were in fact a load-time
- * capture, a later reorder of submit.html's script run would capture
+ * capture, a later reorder of your-page.html's script run would capture
  * undefined, sign-out would silently stop destroying the key, and
  * DESIGN.md's sentence about signing out would go false with every
  * stage of the gate green.

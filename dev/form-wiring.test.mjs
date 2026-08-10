@@ -10,7 +10,7 @@
  *
  * SO THE WIRING HAS NEVER BEEN TESTED, and #64 is what that cost. The
  * submit handler replaced the form with a confirmation card one way, with no
- * path back; once submit.html grew tabs, "Weigh in" leads to that card and no
+ * path back; once your-page.html grew tabs, "Weigh in" leads to that card and no
  * form, recoverable only by reloading - while the card's own text said "just
  * fill the form again". Every existing suite passed throughout, because
  * dev/submit.test.mjs asserts the panes and this lives one level down inside
@@ -28,7 +28,7 @@ import { readFile } from "node:fs/promises";
 const formSource = await readFile(
   new URL("../apps/web/form.js", import.meta.url), "utf8");
 const submitHtml = await readFile(
-  new URL("../apps/web/submit.html", import.meta.url), "utf8");
+  new URL("../apps/web/your-page.html", import.meta.url), "utf8");
 
 const SUBMITTED_EVENT = "binder:submitted";
 const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
@@ -357,7 +357,7 @@ function fillValidEntry(byId) {
   // includes() would report a wording change that never happened.
   const flat = submitHtml.replace(/\s+/g, " ");
 
-  check("submit.html carries the repeat note",
+  check("your-page.html carries the repeat note",
     submitHtml.includes('id="repeat-note"'));
   check("the repeat note ships hidden",
     /id="repeat-note"[^>]*hidden/.test(submitHtml));
@@ -509,7 +509,7 @@ function setHeight(byId, feet, inches) {
 {
   const flat = submitHtml.replace(/\s+/g, " ");
 
-  check("submit.html carries the note about what was carried forward",
+  check("your-page.html carries the note about what was carried forward",
     submitHtml.includes('id="prefill-note"'));
   check("the prefill note ships hidden, for a device with nothing to say",
     /id="prefill-note"[^>]*hidden/.test(submitHtml));
@@ -520,7 +520,7 @@ function setHeight(byId, feet, inches) {
   check("and says signing out erases it",
     /sign(ing)? out/i.test(prefillCopy ? prefillCopy[1] : ""));
 
-  check("submit.html carries the line explaining a remembered 18+",
+  check("your-page.html carries the line explaining a remembered 18+",
     submitHtml.includes('id="over18-remembered"'));
   check("the 18+ line ships hidden, so an unremembered box explains nothing",
     /id="over18-remembered"[^>]*hidden/.test(submitHtml));
