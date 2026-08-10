@@ -30,9 +30,60 @@ const formSource = await readFile(
 const submitHtml = await readFile(
   new URL("../apps/web/your-page.html", import.meta.url), "utf8");
 
+/*
+ * The two modules the seal really runs through, read as bytes because
+ * section 9 loads them instead of stubbing them. Everything above that
+ * section keeps the small stub: those arms are about the form's
+ * behavior around a seal, and a real one would make each of them wait
+ * on WebCrypto for nothing.
+ */
+const cryptoSource = await readFile(
+  new URL("../apps/web/crypto.js", import.meta.url), "utf8");
+const memberKeySource = await readFile(
+  new URL("../apps/web/memberkey.js", import.meta.url), "utf8");
+
+/*
+ * The keyholder's stand-in - throwaway, committed on purpose, opening
+ * nothing real. dev/crypto.test.mjs reads the same file, and the
+ * member's half is deliberately NOT read from its neighbour here: a
+ * member key is generated inside the browser and is non-extractable, so
+ * the only honest source for one is memberkey.js itself, which is what
+ * section 9 makes it.
+ */
+const keyFile = JSON.parse(await readFile(
+  new URL("test-key.json", import.meta.url), "utf8"));
+
+/*
+ * The Worker's entire opinion about a submission's bytes, read off the
+ * Worker rather than restated here.
+ *
+ * This suite guards a client file, so a limit written down in this file
+ * would be a limit that agrees with itself - AGENTS.md's review bar
+ * names that exact shape ("something outside the file has to say what
+ * it may contain"). The envelope the form writes has to survive the
+ * route that already accepts what it writes today, and the only things
+ * that route asks are the size cap and the alphabet. Extracted, so a
+ * narrowing of either reddens section 9 instead of being remembered.
+ */
+const workerSource = await readFile(
+  new URL("../server/worker.js", import.meta.url), "utf8");
+const MAX_CIPHERTEXT =
+  /const MAX_CIPHERTEXT = (\d+) \* (\d+);/.exec(workerSource).slice(1)
+    .reduce((a, b) => Number(a) * Number(b));
+// The alphabet the route tests the field against, taken whole. Written
+// out here it would be a fourth copy of a pattern that already exists in
+// the Worker, in crypto.js's header and in dev/crypto.test.mjs.
+const WORKER_BASE64 = new RegExp(
+  /if \(!\/(\^.+\$)\/\.test\(ciphertext\)\)/.exec(workerSource)[1]);
+
 const SUBMITTED_EVENT = "binder:submitted";
 const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
 const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
+const ACCOUNT_EVENT = "binder:account";
+
+// 64 lower-case hex, which is the only shape memberkey.js will file a
+// record under - anything else is refused before it can select one.
+const ACCOUNT = "a".repeat(64);
 
 let failures = 0;
 function check(label, condition) {
@@ -134,6 +185,123 @@ function makePage() {
   return { document, byId, elements };
 }
 
+/* ------------------------------------------------------------------ */
+/* A database for section 9, and what it is and is not standing in for. */
+
+/*
+ * dev/memberkey.test.mjs refuses to invent an IndexedDB, and it is right
+ * to: the claim it makes is about the STORAGE - its own database, keyed
+ * per account, erased rather than adopted - and a fake store would prove
+ * a fake store works.
+ *
+ * The claim here is the opposite one. Section 9 asks whether the bytes
+ * the form puts on the wire can be opened by the member who wrote them,
+ * and every part of that is real: form.js's own submit handler,
+ * crypto.js's `encryptTo`, WebCrypto's P-256 and AES-GCM, and a private
+ * half that memberkey.js generated non-extractable and never let out.
+ * The store is the one thing in that sentence that is scaffolding, so it
+ * is the one thing stubbed - and it is stubbed at the browser's own API
+ * rather than at memberkey.js's, so `ensure` runs its real bytes:
+ * `generateKey` with `extractable: false`, `exportKey` for the 65-byte
+ * point, `custodyVerdict` over what comes back, `put` under the key
+ * path.
+ *
+ * What it does NOT reproduce, said plainly rather than left to be
+ * discovered: a real store structure-clones what it is handed, and this
+ * one keeps the reference. That difference cannot reach the seal - a
+ * cloned CryptoKey and the original derive identically, which is the
+ * property the whole design rests on - but it is why the round trip
+ * through a real IndexedDB stays a browser claim, made in Chrome, and
+ * not one this file may make.
+ */
+function makeIndexedDb() {
+  const rows = new Map();     // database -> store -> Map(key, record)
+  const paths = new Map();    // database -> store -> key path
+
+  // Asynchronous, because the shipped file attaches its handlers after
+  // the call returns. A stub that answered synchronously would run every
+  // callback against a request nobody had wired up yet.
+  function settle(produce) {
+    const request = {};
+    queueMicrotask(function () {
+      try {
+        request.result = produce();
+        if (request.onsuccess) request.onsuccess();
+      } catch (error) {
+        request.error = error;
+        if (request.onerror) request.onerror();
+      }
+    });
+    return request;
+  }
+
+  function store(database, name) {
+    const table = rows.get(database).get(name);
+    const path = paths.get(database).get(name);
+    return {
+      get(key) {
+        return settle(() => (table.has(key) ? table.get(key) : undefined));
+      },
+      // The key comes out of the record, exactly as an object store with
+      // a keyPath does - which is the #56 property memberkey.js stands
+      // on, so a stub that took the key as an argument would quietly
+      // test a different store.
+      put(record) {
+        return settle(() => {
+          table.set(record[path], record);
+          return record[path];
+        });
+      },
+      clear() { return settle(() => { table.clear(); return undefined; }); },
+    };
+  }
+
+  return {
+    open(database) {
+      const fresh = !rows.has(database);
+      if (fresh) {
+        rows.set(database, new Map());
+        paths.set(database, new Map());
+      }
+      const request = {};
+      request.result = {
+        close() {},
+        // The store name arrives twice - once naming the transaction's
+        // scope and once selecting within it - and this stub enforces no
+        // scope, so the first is taken and dropped.
+        transaction(_scope) {
+          return { objectStore(which) { return store(database, which); } };
+        },
+        createObjectStore(name, options) {
+          rows.get(database).set(name, new Map());
+          paths.get(database).set(name, options.keyPath);
+        },
+      };
+      queueMicrotask(function () {
+        if (fresh && request.onupgradeneeded) request.onupgradeneeded();
+        if (request.onsuccess) request.onsuccess();
+      });
+      return request;
+    },
+    deleteDatabase(database) {
+      const request = {};
+      queueMicrotask(function () {
+        rows.delete(database);
+        paths.delete(database);
+        if (request.onsuccess) request.onsuccess();
+      });
+      return request;
+    },
+  };
+}
+
+function bytesOf(base64) {
+  const binary = atob(base64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
 const MEMBER = {
   session: "token", expiresAt: "2099-01-02T03:04:05.000Z",
   username: "member", isAdmin: false, isDev: false, telegramId: "10",
@@ -143,7 +311,10 @@ globalThis.CustomEvent = class CustomEvent {
   constructor(type, init) { this.type = type; this.detail = init && init.detail; }
 };
 
-async function loadForm({ submitStatus = 200 } = {}) {
+let realLoads = 0;
+
+async function loadForm({ submitStatus = 200, real = false,
+  keyless = false } = {}) {
   const page = makePage();
   const dispatched = [];
   // The whole event as well as its type. The panel remembers the height
@@ -156,7 +327,11 @@ async function loadForm({ submitStatus = 200 } = {}) {
   globalThis.document = page.document;
   globalThis.BINDER_CONFIG = {
     endpoint: "https://worker.example",
-    publicKey: "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMP",
+    // The real key only under `real`. The short string below is not a
+    // point at all, which is the honest thing for a scenario whose
+    // crypto is a stub: a scenario that carried a real key while
+    // encrypting with a stub would look like it had proved something.
+    publicKey: real ? keyFile.publicKey : "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMP",
   };
   // Counted rather than ignored - #166. Dropping the credential the Worker
   // has just refused is half of what this page owes a member whose session
@@ -169,10 +344,34 @@ async function loadForm({ submitStatus = 200 } = {}) {
     authorization() { return { Authorization: "Bearer token" }; },
     clear() { cleared.push(true); },
   };
-  globalThis.BinderCrypto = {
-    unavailableReason() { return null; },
-    async encrypt() { return "AQIDBA=="; },
-  };
+  /*
+   * Either the small stub, or the two shipped modules themselves.
+   *
+   * Loaded here rather than once at the top because both assign a frozen
+   * global and every scenario needs its own: memberkey.js hands back
+   * whatever is in the database it can see, and a key generated for one
+   * scenario turning up in the next would make an arm about a fresh
+   * browser pass on a stale key.
+   */
+  delete globalThis.BinderMemberKey;
+  if (real) {
+    realLoads++;
+    // The store is installed BEFORE the module, and removed for the
+    // keyless scenario, because memberkey.js asks for `indexedDB` at
+    // call time - which is what lets a browser that keeps no database
+    // answer null rather than throw.
+    globalThis.indexedDB = keyless ? undefined : makeIndexedDb();
+    await import("data:text/javascript," + encodeURIComponent(cryptoSource) +
+      "#real-crypto-" + realLoads);
+    await import("data:text/javascript," +
+      encodeURIComponent(memberKeySource) + "#real-memberkey-" + realLoads);
+  } else {
+    delete globalThis.indexedDB;
+    globalThis.BinderCrypto = {
+      unavailableReason() { return null; },
+      async encrypt() { return "AQIDBA=="; },
+    };
+  }
   globalThis.BinderUI = {
     byId(id) { return page.byId(id); },
     show(element, visible) { if (element) element.hidden = !visible; },
@@ -194,7 +393,13 @@ async function loadForm({ submitStatus = 200 } = {}) {
       } catch (error) { bootErrors.push(error); failed(error); }
     },
   };
-  globalThis.fetch = async function () {
+  // The body as well as the fact of the request - #85. What the form
+  // seals is only checkable from what it actually sent, and a stub that
+  // discarded the body is how a seal half can go missing with every arm
+  // in this file green.
+  const posted = [];
+  globalThis.fetch = async function (url, options) {
+    posted.push({ url, options: options || {} });
     return {
       ok: submitStatus >= 200 && submitStatus < 300,
       status: submitStatus,
@@ -214,7 +419,33 @@ async function loadForm({ submitStatus = 200 } = {}) {
   await import("data:text/javascript," +
     encodeURIComponent(formSource) + "#" + Math.random());
 
-  return { page, dispatched, events, bootErrors, cleared };
+  return { page, dispatched, events, bootErrors, cleared, posted };
+}
+
+// The one field the Worker is handed, out of the request the form really
+// made. Reading it back through JSON.parse rather than a substring is
+// deliberate: the body is what the endpoint parses, so anything this
+// cannot get out of it is something the Worker could not either.
+function sealedBy({ posted }) {
+  return JSON.parse(posted[0].options.body).ciphertext;
+}
+
+/*
+ * A row opened, or null because it would not open.
+ *
+ * crypto.js throws on a refusal, which is right for a page that has to
+ * say why - and wrong for an arm whose whole question is whether a
+ * given key opens a given row. Unwrapped, "the member cannot open their
+ * own entry" arrives as an unhandled rejection that takes every arm
+ * after it down and names none of them, which is a worse report than
+ * the failure it is reporting.
+ */
+async function openedWith(blob, key) {
+  try {
+    return await globalThis.BinderCrypto.decrypt(blob, key);
+  } catch (error) {
+    return null;
+  }
 }
 
 function fillValidEntry(byId) {
@@ -526,6 +757,179 @@ function setHeight(byId, feet, inches) {
     /id="over18-remembered"[^>]*hidden/.test(submitHtml));
   check("the 18+ box itself still ships unticked",
     /id="over18"(?![^>]*checked)/.test(submitHtml));
+}
+
+/* ------------------------------------------------------------------ */
+/* 9. THE SEAL, driven end to end - #85's personal arm.                 */
+
+/*
+ * WHY THIS SECTION EXISTS, and why nothing above it could have caught
+ * what it caught.
+ *
+ * The member's half of #85 shipped as two halves that never met. One
+ * side generates a device key and offers to open rows with it; the other
+ * side seals entries. Every suite covering either side was green, and
+ * `encryptTo` had no caller anywhere in the published tree - so every
+ * member's pane reported nothing openable, forever, under a sentence
+ * blaming rows for predating a feature that had in fact never started.
+ *
+ * BOTH SIDES WERE DOUBLES, which is the actual defect in the coverage.
+ * dev/submit.test.mjs stubs `decrypt`, so its "opened" rows open because
+ * the stub says they do; the demo serves fixture rows, so its history
+ * fills from bytes no form ever wrote. Two suites can agree perfectly
+ * about a round trip neither of them performs. Nothing short of running
+ * the real seal into the real opener closes that, so that is what this
+ * section does: form.js's own submit handler, crypto.js's own
+ * `encryptTo`, and a private half memberkey.js generated and never let
+ * out of the browser.
+ *
+ * The record is not written here either - it is whatever buildRecord
+ * made out of the boxes filled in above, which is the thing a member
+ * would actually get back.
+ */
+
+{
+  const scenario = await loadForm({ real: true });
+  await scenario.page.document.dispatch(ACCOUNT_EVENT, { accountId: ACCOUNT });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+
+  const blob = sealedBy(scenario);
+  const bytes = bytesOf(blob);
+
+  check("a member whose browser holds a key seals to two recipients",
+    bytes[0] === 2 && bytes[1] === 2);
+
+  /*
+   * The keyholder first, because this is the half that must not have
+   * been traded away. A change that sealed only to the member would open
+   * here for the member and leave the export unreadable - discovered on
+   * export day, over every row written in between.
+   */
+  const forKeyholder = await openedWith(blob, keyFile);
+  check("and the keyholder opens it, which is the half that cannot be lost",
+    Boolean(forKeyholder) && forKeyholder.telegram === "member" &&
+    forKeyholder.weight.lb === 200 &&
+    forKeyholder.height.feet === 5 && forKeyholder.height.inches === 10);
+
+  /*
+   * And the member, through the same store the page would use. `ensure`
+   * is asked again rather than being remembered from the seal: what has
+   * to be true is that the key a later visit finds opens what an earlier
+   * one wrote, which is the whole of what the personal pane does.
+   */
+  const key = await globalThis.BinderMemberKey.ensure(ACCOUNT);
+  const forMember = await openedWith(blob, key.privateKey);
+  check("and the member's own device key opens it too - the half that was missing",
+    Boolean(forMember) && forMember.telegram === "member" &&
+    forMember.weight.lb === 200 &&
+    JSON.stringify(forMember) === JSON.stringify(forKeyholder));
+
+  check("the key that opened it is one nothing can read out of the browser",
+    key.privateKey.extractable === false && key.privateKey.type === "private");
+
+  /*
+   * MANDATE 4, from this side. The Worker was proved to have no branch
+   * on a row's contents; what is left to show is that the wider envelope
+   * is not distinguishable by being REFUSED - a row the endpoint would
+   * turn away is told apart from one it accepts by the most visible
+   * signal there is. Both limits come off the Worker's own source above.
+   */
+  check("the wider envelope is one the endpoint carries verbatim",
+    WORKER_BASE64.test(blob) && blob.length <= MAX_CIPHERTEXT);
+}
+
+/*
+ * 9b. THE FAIL-OPEN DIRECTION, and it is three separate browsers rather
+ *     than one, because they fail for three different reasons and a
+ *     guard written for one of them can miss the others entirely.
+ *
+ *     Every one of them must submit exactly as the site did before this
+ *     existed: a member is never blocked from recording an entry because
+ *     a convenience key was unavailable. What they lose is breadth.
+ */
+
+{
+  // The page has not heard from /me yet, so there is no account to ask
+  // for a key under - the state every first paint passes through.
+  const scenario = await loadForm({ real: true });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+
+  const blob = sealedBy(scenario);
+  check("with no account known the entry seals to the keyholder alone",
+    bytesOf(blob)[0] === 1);
+  check("and that entry is still stored, exactly as it was before #85",
+    scenario.page.byId("done").hidden === false &&
+    scenario.dispatched.includes(SUBMITTED_EVENT));
+  const opened = await openedWith(blob, keyFile);
+  check("and the keyholder opens it", opened.telegram === "member");
+}
+
+{
+  // A browser that keeps no database: private browsing, storage blocked,
+  // or one that simply has no IndexedDB. `ensure` answers null and the
+  // form must treat that as an ordinary Tuesday.
+  const scenario = await loadForm({ real: true, keyless: true });
+  await scenario.page.document.dispatch(ACCOUNT_EVENT, { accountId: ACCOUNT });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+
+  const blob = sealedBy(scenario);
+  check("a browser that can keep no key of its own still submits",
+    scenario.page.byId("done").hidden === false &&
+    scenario.dispatched.includes(SUBMITTED_EVENT));
+  check("and what it submits is the single-recipient row it always was",
+    bytesOf(blob)[0] === 1);
+  const opened = await openedWith(blob, keyFile);
+  check("which the keyholder opens", opened.telegram === "member");
+}
+
+{
+  // The module absent altogether - a page that failed to load it, and
+  // the state form.js would be in on any page that does not ship it.
+  const scenario = await loadForm({ real: true });
+  delete globalThis.BinderMemberKey;
+  await scenario.page.document.dispatch(ACCOUNT_EVENT, { accountId: ACCOUNT });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+
+  check("a page with no member-key module submits a single-recipient row",
+    bytesOf(sealedBy(scenario))[0] === 1 &&
+    scenario.page.byId("done").hidden === false);
+}
+
+/*
+ * 9c. The control that stops 9b passing on a form that gave up sealing
+ *     widely altogether. Without it, every arm above is satisfied by a
+ *     file that never calls `encryptTo` at all - which is precisely the
+ *     state this section was written to end.
+ */
+{
+  const scenario = await loadForm({ real: true });
+  await scenario.page.document.dispatch(ACCOUNT_EVENT, { accountId: ACCOUNT });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+  check("and the wide seal is what an account plus a database produces",
+    bytesOf(sealedBy(scenario))[0] === 2);
+}
+
+/*
+ * 9d. An account id the store will not file under. memberkey.js refuses
+ *     anything that is not 64 hex characters, and the form has to read
+ *     that refusal as "no key" rather than as an error worth stopping a
+ *     submission for - the same fail-open the three browsers above get.
+ */
+{
+  const scenario = await loadForm({ real: true });
+  await scenario.page.document.dispatch(ACCOUNT_EVENT,
+    { accountId: "not-an-account-id" });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+
+  check("an account id the key store refuses costs breadth, not the entry",
+    bytesOf(sealedBy(scenario))[0] === 1 &&
+    scenario.page.byId("done").hidden === false);
 }
 
 console.log(failures === 0
