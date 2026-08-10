@@ -24,6 +24,13 @@
   const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
 
    
+   
+   
+   
+   
+  const ACCOUNT_EVENT = "binder:account";
+
+   
   const FIELD_IDS = [
     "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
   ];
@@ -125,6 +132,14 @@
   
 
   let account = null;
+
+  
+
+  function announceAccount() {
+    document.dispatchEvent(new CustomEvent(ACCOUNT_EVENT, {
+      detail: { accountId: account },
+    }));
+  }
 
   function savePrefill() {
     const store = localStore();
@@ -312,6 +327,7 @@
       account = typeof payload.accountId === "string" && payload.accountId
         ? payload.accountId
         : null;
+      announceAccount();
       renderAccount(payload);
       setStatus("", false);
     } catch (error) {
@@ -485,9 +501,12 @@
     show($("history-sealed"), sealed > 0);
 
     if (!entries.length) {
+      
+
       historyStatus("None of your entries were sealed to this browser. " +
-        "They were stored before this browser had a key of its own, or on " +
-        "a device it is not.", false);
+        "They were stored before this browser had a key of its own, on a " +
+        "device this is not, or before signing out here destroyed the key " +
+        "that would have opened them.", false);
       return;
     }
 

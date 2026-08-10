@@ -695,6 +695,86 @@
     });
 
     /*
+     * Whose account this is - #85, arriving the same way the baseline
+     * above does and for the same reason.
+     *
+     * The id is what memberkey.js files a key under, and it exists in
+     * exactly one place: the GET /me response, which submit.js owns.
+     * This file must not fetch it - a second caller would be a second
+     * answer to "whose page is this", and the account scoping that
+     * decides what may be shown at all lives over there. So it crosses
+     * on an event, like the height and the two before it.
+     *
+     * Null until it arrives, and null is never an error. It is the state
+     * every first paint passes through, and what it costs is the entry's
+     * second recipient rather than the member's entry.
+     */
+    let accountId = null;
+    document.addEventListener("binder:account", function (event) {
+      accountId = event && event.detail ? event.detail.accountId : null;
+    });
+
+    /*
+     * This member's own device key, or null - and null is an ordinary
+     * Tuesday rather than a fault.
+     *
+     * Four different browsers answer null here and none of them is
+     * broken: one that has not heard from /me yet, one whose page did
+     * not load memberkey.js, one that keeps no database at all (private
+     * browsing, storage blocked, no IndexedDB), and an id the store
+     * refuses to file under. memberkey.js's own header says the missing
+     * key is never an error; this is the caller that has to mean it.
+     */
+    async function memberKey() {
+      const keys = root.BinderMemberKey;
+      if (!keys || typeof keys.ensure !== "function" || !accountId) return null;
+      let key = null;
+      try {
+        key = await keys.ensure(accountId);
+      } catch (error) {
+        // `ensure` answers null rather than throwing, so reaching here
+        // means the module is not the one this file expects. That is
+        // still a browser with no usable key, which is still not a
+        // reason to stop somebody submitting.
+        return null;
+      }
+      return key && typeof key.publicKeyBase64 === "string" &&
+        key.publicKeyBase64 ? key : null;
+    }
+
+    /*
+     * One entry, sealed to everybody who may open it.
+     *
+     * The keyholder is always a recipient. The member's own device key
+     * is an ADDITIONAL one when this browser has it, which is the whole
+     * of what lets somebody read their own history back - #85, and
+     * memberkey.js's header documents this exact call site. Without it
+     * the row is what it has always been: version 1, one recipient, and
+     * openable on export day.
+     *
+     * BREADTH FAILS OPEN; THE SUBMISSION NEVER DOES. Every way the
+     * second recipient can go missing is handled above, before a single
+     * byte is encrypted, so a browser that cannot hold a key submits
+     * exactly as it did before this existed.
+     *
+     * A SEAL THAT THROWS IS A DIFFERENT EVENT, and it is deliberately
+     * not caught here. crypto.js refuses loudly when two recipients turn
+     * out to be the same key, because a row that looks dual-sealed and
+     * opens for nobody new cannot be told from a correct one by anything
+     * downstream - that refusal is the only place the mistake can be
+     * loud, and quietly retrying with one recipient would spend it. So
+     * this throws to the caller's existing handler: nothing is sent, and
+     * the member is told why.
+     */
+    async function seal(record) {
+      const key = await memberKey();
+      return key
+        ? root.BinderCrypto.encryptTo(
+          record, [config.publicKey, key.publicKeyBase64])
+        : root.BinderCrypto.encrypt(record, config.publicKey);
+    }
+
+    /*
      * The height this member has already been asked about and stood by.
      * Held as the number rather than as a flag: a flag would let one
      * confirmation license every later typo in the same sitting, so
@@ -745,7 +825,7 @@
       let blob;
       try {
         record = buildRecord(input, Date.now(), input.sessionUsername);
-        blob = await root.BinderCrypto.encrypt(record, config.publicKey);
+        blob = await seal(record);
       } catch (error) {
         submit.disabled = false;
         // Nothing has left the browser at this point, which is worth

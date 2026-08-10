@@ -426,7 +426,19 @@ async function loadForm({ submitStatus = 200, real = false,
 // made. Reading it back through JSON.parse rather than a substring is
 // deliberate: the body is what the endpoint parses, so anything this
 // cannot get out of it is something the Worker could not either.
+/*
+ * What was put on the wire, or the empty string because nothing was.
+ *
+ * A submission that never happened is the exact failure the fail-open
+ * arms exist to catch, so it has to arrive as a check that says "no" -
+ * not as a subscript on undefined that takes the rest of the file with
+ * it and names none of what it took. Reading the field back through
+ * JSON.parse rather than a substring is the same discipline: the body is
+ * what the endpoint parses, so anything this cannot get out of it is
+ * something the Worker could not either.
+ */
 function sealedBy({ posted }) {
+  if (!posted.length) return "";
   return JSON.parse(posted[0].options.body).ciphertext;
 }
 

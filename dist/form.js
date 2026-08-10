@@ -542,6 +542,42 @@
 
     
 
+    let accountId = null;
+    document.addEventListener("binder:account", function (event) {
+      accountId = event && event.detail ? event.detail.accountId : null;
+    });
+
+    
+
+    async function memberKey() {
+      const keys = root.BinderMemberKey;
+      if (!keys || typeof keys.ensure !== "function" || !accountId) return null;
+      let key = null;
+      try {
+        key = await keys.ensure(accountId);
+      } catch (error) {
+         
+         
+         
+         
+        return null;
+      }
+      return key && typeof key.publicKeyBase64 === "string" &&
+        key.publicKeyBase64 ? key : null;
+    }
+
+    
+
+    async function seal(record) {
+      const key = await memberKey();
+      return key
+        ? root.BinderCrypto.encryptTo(
+          record, [config.publicKey, key.publicKeyBase64])
+        : root.BinderCrypto.encrypt(record, config.publicKey);
+    }
+
+    
+
     let confirmedHeightCm = null;
 
     form.addEventListener("submit", async function (event) {
@@ -581,7 +617,7 @@
       let blob;
       try {
         record = buildRecord(input, Date.now(), input.sessionUsername);
-        blob = await root.BinderCrypto.encrypt(record, config.publicKey);
+        blob = await seal(record);
       } catch (error) {
         submit.disabled = false;
          
