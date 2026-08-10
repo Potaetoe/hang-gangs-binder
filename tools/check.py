@@ -183,7 +183,8 @@ PYTHON_SUITES = [
 PYTHON_SUITES_EXCLUDED = {}
 
 
-def roster_problems(listed=None, excluded=None, repo=None, suffix=None):
+def roster_problems(listed=None, excluded=None, repo=None, suffix=None,
+                    names=None):
     """Every way the hand roster and dev/ can disagree, as readable lines.
 
     Both directions in one walk, which is the point rather than a
@@ -202,6 +203,12 @@ def roster_problems(listed=None, excluded=None, repo=None, suffix=None):
     the arrival direction to be forgotten in - which is the whole
     ticket, twice over (#204, then #227).
 
+    `names` is the price of that sharing and it is not cosmetic. A walk
+    that does not know which roster it is reading names the wrong one:
+    the Python arm fired on a stray .test.py and told the reader to add
+    it to NODE_SUITES, the one list that then fails for naming a
+    .test.py. Found by mutation on this branch.
+
     The parameters exist so dev/check.test.py can drive this over a
     directory it builds. Reading the real tree is the stage's job in
     main(), and a rule exercised only against the tree it guards cannot
@@ -211,6 +218,8 @@ def roster_problems(listed=None, excluded=None, repo=None, suffix=None):
     excluded = NODE_SUITES_EXCLUDED if excluded is None else excluded
     repo = REPO if repo is None else repo
     suffix = SUITE_SUFFIX if suffix is None else suffix
+    roster, skipped = (("NODE_SUITES", "NODE_SUITES_EXCLUDED")
+                       if names is None else names)
 
     directory = os.path.join(repo, SUITE_DIR)
     if not os.path.isdir(directory):
@@ -227,26 +236,26 @@ def roster_problems(listed=None, excluded=None, repo=None, suffix=None):
     for path in sorted(registered):
         if not os.path.isfile(os.path.join(repo, path)):
             problems.append(
-                "%s is registered in NODE_SUITES and there is no such "
+                "%s is registered in %s and there is no such "
                 "file. Either the suite moved and its line did not, or "
                 "the suite was deleted and its line stayed - a stage "
                 "that cannot run is a stage that reports FAILED for a "
-                "reason nobody can act on." % path)
+                "reason nobody can act on." % (path, roster))
 
     for path in sorted(found - registered - set(excluded)):
         problems.append(
-            "%s is not in NODE_SUITES, so the gate never runs it. A "
+            "%s is not in %s, so the gate never runs it. A "
             "suite nobody runs is decoration that reads as coverage: "
-            "add it there with a label, or say in NODE_SUITES_EXCLUDED "
-            "why it is skipped." % path)
+            "add it there with a label, or say in %s "
+            "why it is skipped." % (path, roster, skipped))
 
     for path in sorted(excluded):
         if path not in found:
             problems.append(
-                "NODE_SUITES_EXCLUDED names %s and the enumeration does "
+                "%s names %s and the enumeration does "
                 "not find it. An exclusion for a file that is not there "
                 "excuses nothing and hides the next reader from the one "
-                "that is - delete the entry." % path)
+                "that is - delete the entry." % (skipped, path))
         if path in registered:
             problems.append(
                 "%s is both registered and excluded. The gate runs it, "
@@ -528,7 +537,8 @@ def main():
     # written by hand rather than iterated.
     roster = (roster_problems()
               + roster_problems(PYTHON_SUITES, PYTHON_SUITES_EXCLUDED, None,
-                                PYTHON_SUITE_SUFFIX)
+                                PYTHON_SUITE_SUFFIX,
+                                ("PYTHON_SUITES", "PYTHON_SUITES_EXCLUDED"))
               + registration_problems())
     print("\n=== dev/ suite roster ===", flush=True)
     for problem in roster:
