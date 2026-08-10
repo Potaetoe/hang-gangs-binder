@@ -9,9 +9,9 @@
 -- `account_id` and `supersedes` are the only metadata stored, and each
 -- of the three is in the clear because a pointer or an id the Worker
 -- cannot read is one it can neither check nor count - see DESIGN.md,
--- "Data collected", on why the Telegram handle is not a column, and
--- "Accounts" on why an account id can sit in the clear where a handle
--- cannot.
+-- "The identifier is the whole problem", on why the Telegram handle is
+-- not a column and why an account id can sit in the clear where a
+-- handle cannot.
 --
 -- ---------------------------------------------------------------------
 -- AHEAD OF THE LIVE DATABASE, as of 2026-08-05.

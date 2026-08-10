@@ -64,7 +64,7 @@ is deliberately not here".
 What none of it can see is the Cloudflare dashboard. A Worker with no
 D1 binding, or no EXPORT_TOKEN, passes every check here and fails on
 the first real request - so a live round trip stays part of deploying.
-See server/README.md, "Checking a deployment".
+See OPERATIONS.md, "Checking a deployment".
 
 Order is deliberate: check_web.py runs first because the one failure
 that cannot be undone is publishing a private key, and there is no

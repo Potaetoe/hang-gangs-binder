@@ -21,6 +21,12 @@ is not pinned fails, and a pin that stops matching fails too. A list
 that can only shrink is the whole design - cleanup rides the pull
 requests that touch those files.
 
+The citation rule at the end is the same shape for a different claim.
+A phrase is judged from inside one file; a quotation of another file
+cannot be, so the resolver is driven over trees this suite builds and
+the arms that matter are the near misses - case, wrapping and dash
+style are not staleness, and a heading surviving only in archive/ is.
+
 No framework, matching the suites beside it.
 """
 
@@ -45,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 79
+EXPECTED = 108
 
 
 def check(label, condition):
@@ -535,6 +541,234 @@ check("a control byte in the newest scanned language is reported too",
 
 check("the real tree carries no control byte",
       check_comments.control_byte_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# And a comment that quotes another file has to still be quoting it.  #
+#
+# The class #217 names: a comment falsified by an edit to a DIFFERENT
+# file. The phrase ratchet above is computed entirely from the file it
+# guards, so it cannot see it - AGENTS.md, "The review bar", states the
+# corollary, and the worked example is a comment that justified a value
+# by a note another change had deleted. Nothing went red.
+#
+# Both halves again. The extractor is driven over strings, because a
+# rule that finds no citation at all reports a perfectly clean tree;
+# then the resolver is driven over a tree this suite builds, because
+# the real tree is clean once this lands and a rule exercised only
+# against a clean tree can never be shown to fire.
+
+
+def cited(text, kind):
+    return [(path, quote) for _line, path, quote
+            in check_comments.citations(text, kind)]
+
+
+check("a comma citation is read",
+      cited('/* See DESIGN.md, "Key custody", for why. */\n', "js")
+      == [("DESIGN.md", "Key custody")])
+
+check("a possessive citation is read",
+      cited("/* DESIGN.md's \"Key custody\" rules it. */\n", "js")
+      == [("DESIGN.md", "Key custody")])
+
+check("a colon citation is read",
+      cited('/* DESIGN.md: "Key custody". */\n', "js")
+      == [("DESIGN.md", "Key custody")])
+
+check("a citation written the other way round is read",
+      cited('/* the rule "Key custody" in DESIGN.md */\n', "js")
+      == [("DESIGN.md", "Key custody")])
+
+# The measured false positive, and the reason a connective is required.
+# tools/check_web.py imagines somebody pasting a key into config.js
+# "just to test the export locally" - a quoted utterance sitting next to
+# a filename, which is not a citation of that file and never resolves.
+# Bare juxtaposition is that shape here, in every instance measured.
+check("a quoted utterance merely next to a filename is not a citation",
+      cited('/* pasting a key into config.js "just to test it" */\n', "js")
+      == [])
+
+check("a quotation with no file beside it is not a citation",
+      cited('/* the answer is "nothing", and that is the point */\n', "js")
+      == [])
+
+# The directory has to survive. A flattener that treated "/" as a
+# continuation mark - the shape of the one in GAP above - turned
+# "server/README.md" into a bare "README.md" and resolved the citation
+# against the wrong file, in the wrong direction: quietly green.
+check("a path keeps its directory",
+      cited('/* See server/README.md, "Checking a deployment". */\n', "js")
+      == [("server/README.md", "Checking a deployment")])
+
+check("a citation split across a block comment's continuation is read",
+      cited('/*\n * See DESIGN.md,\n * "Key custody", for why.\n */\n', "js")
+      == [("DESIGN.md", "Key custody")])
+
+check("and it is reported on the line the quotation starts",
+      check_comments.citations(
+          '\n\n/*\n * See DESIGN.md,\n * "Key custody".\n */\n', "js")
+      == [(5, "DESIGN.md", "Key custody")])
+
+check("a citation in a Python docstring is read",
+      cited('"""See AGENTS.md, "Code standards"."""\n', "py")
+      == [("AGENTS.md", "Code standards")])
+
+# Found by rebasing onto the change that put server/schema.sql in the
+# scan set. Every comment in that file is wrapped prose opening with
+# "--", and its one citation spans two lines, so a flattener that does
+# not know SQL's marker measures DESIGN.md for 'Admin -- accounts and
+# deletion' and reports a correct comment. The false positive was real
+# and this is the arm that keeps it fixed.
+check("a citation wrapped across two SQL comment lines is read",
+      cited('-- DESIGN.md, "Admin\n-- accounts and deletion", rules it.\n',
+            "sql")
+      == [("DESIGN.md", "Admin accounts and deletion")])
+
+# The other side of that, and the reason the marker is two hyphens
+# rather than one or more. A leading "-" is a prose bullet, and eating
+# it reshapes the sentence a quotation is measured against.
+#
+# The block carries no asterisks on purpose. Only ONE marker comes off a
+# line, so a " * - " line has its hyphen saved by the asterisk in front
+# of it and proves nothing about the hyphen rule - which is what the
+# first version of this arm did, and a mutation to "-+" walked straight
+# past it.
+check("a leading bullet is not mistaken for a comment marker",
+      cited('/*\nDESIGN.md, "a rule\n- and its exception", holds.\n*/\n',
+            "js")
+      == [("DESIGN.md", "a rule - and its exception")])
+
+check("a citation-shaped string literal is not read",
+      cited('const s = \'See DESIGN.md, "Key custody"\';\n', "js")
+      == [])
+
+
+def resolving(comment, target, contents, kind="js"):
+    """citation_problems() over a tree holding one citation, one target."""
+    root = tempfile.mkdtemp(prefix="check-comments-cites-")
+    os.makedirs(os.path.join(root, "dev"))
+    with open(os.path.join(root, "dev", "suite.test.mjs"), "w",
+              encoding="utf-8") as handle:
+        handle.write(comment)
+    full = os.path.join(root, *target.split("/"))
+    if not os.path.isdir(os.path.dirname(full)):
+        os.makedirs(os.path.dirname(full))
+    with open(full, "w", encoding="utf-8") as handle:
+        handle.write(contents)
+    return check_comments.citation_problems(
+        scan=[("dev", (".mjs",))], repo=root)
+
+
+PRESENT = "## Key custody\n\nThe keyholder holds it.\n"
+
+check("a citation the cited file does not contain is reported",
+      len(resolving('/* See DESIGN.md, "Key custody". */\n',
+                    "DESIGN.md", "## Sessions\n")) == 1)
+
+check("and the report names the citing file, the line, the target and "
+      "the quotation",
+      all(part in resolving('/* See DESIGN.md, "Key custody". */\n',
+                            "DESIGN.md", "## Sessions\n")[0]
+          for part in ("dev/suite.test.mjs", ":1:", "DESIGN.md",
+                       "Key custody")))
+
+check("the same citation resolves when the cited file carries it",
+      resolving('/* See DESIGN.md, "Key custody". */\n',
+                "DESIGN.md", PRESENT) == [])
+
+# The measured near misses, all three of which are correct comments.
+# DESIGN.md leads a bullet with "**One partition, not two.**" and three
+# comments cite it mid-sentence in lower case; a case-sensitive rule
+# reports all three and teaches the next reader to distrust it.
+check("case is not what makes a citation stale",
+      resolving('/* See DESIGN.md, "one partition, not two". */\n',
+                "DESIGN.md", "- **One partition, not two.** Both.\n") == [])
+
+check("nor is the line the comment happened to wrap on",
+      resolving('/*\n * See DESIGN.md, "Renumbering does not\n'
+                ' * prevent linkage".\n */\n',
+                "DESIGN.md",
+                "Renumbering does not prevent linkage was false.\n") == [])
+
+check("nor is the dash somebody typed",
+      resolving('/* See DESIGN.md, "linkage - a correction". */\n',
+                "DESIGN.md", "linkage — a correction\n") == [])
+
+# The decisive arm, and #217's exact shape. archive/DESIGN.md is a
+# different file from DESIGN.md and holds the pre-2026-08-08 wording of
+# every heading that moved; a resolver matching on basename would find
+# the old heading in the archive and call the stale citation fine.
+check("a heading that survives only in archive/ does not resolve a "
+      "citation of the live document",
+      len(resolving('/* See DESIGN.md, "Key custody". */\n',
+                    "archive/DESIGN.md", PRESENT)) == 1)
+
+check("and citing the archive directly does resolve",
+      resolving('/* See archive/DESIGN.md, "Key custody". */\n',
+                "archive/DESIGN.md", PRESENT) == [])
+
+check("a citation of a file that is not here is reported as that",
+      len(resolving('/* See GONE.md, "Key custody". */\n',
+                    "DESIGN.md", PRESENT)) == 1)
+
+check("and that report says the file is missing rather than the "
+      "quotation",
+      "not a file" in resolving('/* See GONE.md, "Key custody". */\n',
+                                "DESIGN.md", PRESENT)[0])
+
+# The real tree, both directions. The count is the null-result guard:
+# every arm above passes on an extractor that finds nothing at all.
+check("the real tree's citations resolve",
+      check_comments.citation_problems() == [])
+
+check("and the extractor found real ones to resolve",
+      len(check_comments.all_citations()) > 40)
+
+check("including citations of documents outside the scanned tree",
+      {path for _rel, _line, path, _quote
+       in check_comments.all_citations()} >= {"DESIGN.md", "AGENTS.md",
+                                              "OPERATIONS.md"})
+
+# The exemption carries here, and unlike the byte rule it carries for
+# the reason it was written: a file explaining what an unresolvable
+# citation looks like has to be able to write one down, exactly as the
+# file defining the forbidden phrases has to be able to name them. A
+# byte has no such argument behind it, which is why that rule ignores
+# EXEMPT and this one honors it.
+
+
+def exempt_tree(relpath, comment):
+    """citation_problems() over a tree whose only comment is in relpath."""
+    root = tempfile.mkdtemp(prefix="check-comments-exempt-")
+    full = os.path.join(root, *relpath.split("/"))
+    os.makedirs(os.path.dirname(full))
+    with open(full, "w", encoding="utf-8") as handle:
+        handle.write(comment)
+    with open(os.path.join(root, "DESIGN.md"), "w",
+              encoding="utf-8") as handle:
+        handle.write("## Sessions\n")
+    return check_comments.citation_problems(
+        scan=[("tools", (".py",))], repo=root)
+
+
+STALE = '# See DESIGN.md, "Key custody".\n'
+
+check("an exempt file's unresolvable citation is not reported",
+      exempt_tree("tools/check_comments.py", STALE) == [])
+
+check("and the same comment in the file beside it is",
+      len(exempt_tree("tools/check_docs.py", STALE)) == 1)
+
+# The wiring, asked from outside. Every arm in this suite calls a rule
+# function directly, so a rule dropped from problems() passes all of
+# them while being absent from the gate - armed-looking and unarmed,
+# which AGENTS.md's review bar treats as worse than no check. This is
+# the one question none of those arms can answer about itself.
+check("the gate's problems() calls every rule this file defines",
+      {"generated_tree_problems", "missing_directories",
+       "control_byte_problems", "citation_problems", "ratchet_problems"}
+      <= set(check_comments.problems.__code__.co_names))
 
 
 if failures:

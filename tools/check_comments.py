@@ -76,6 +76,51 @@ The gap that leaves is real and is stated rather than hidden: this
 check reads phrases, so a comment that narrates a change without using
 one of them passes. It is a ratchet on the common shapes, not a proof.
 
+AND A QUOTATION OF ANOTHER FILE HAS TO STILL BE IN IT
+-----------------------------------------------------
+A third rule over the same scan set, and the only one here that reads
+outside the file it guards. The ratchet above is a phrase rule computed
+from one file, so a comment falsified by an edit to a DIFFERENT file is
+invisible to it however tight the phrase list gets - AGENTS.md, "The
+review bar", states that corollary and #217 is the ticket. See
+citation_problems() for the argument and for why archive/DESIGN.md is a
+different file from DESIGN.md.
+
+WHY THE CITATION RULE IS THIS NARROW
+------------------------------------
+Because the wide version does not work, which was established by
+measurement against this tree rather than argued. Three candidates lost
+before this one, each stricter than the last:
+
+ - Any quoted string of eight characters or more that appears nowhere
+   else in the tree: 422 reports out of 1161 quotations. Comments here
+   quote rhetorically far more often than they cite - "is this the same
+   person", "the answer is nothing" - and they quote code inline.
+ - The same, restricted to comments that name a file somewhere in the
+   block: 98 of 212. Naming a file three sentences away says nothing
+   about whether the quotation is a citation of it.
+ - A file plus a bare identifier, no quotation: 332 of 487, and
+   unfixable. English verbs follow filenames constantly here
+   ("apps/web/form.js writes ...", "DESIGN.md argues ..."), and no stop
+   list separates a verb from an identifier without parsing the
+   sentence.
+
+Requiring a connective between the file and the quotation - a comma, a
+colon, a possessive, or the quotation standing before "in FILE" - took
+it to 63 candidates, every one of them a real citation, and 7 that did
+not resolve. Six were genuinely stale, all six pointing at headings the
+2026-08-08 documentation rewrite moved into archive/; the seventh
+quoted "an account" where DESIGN.md says "the account". Zero false
+positives, which is why this is a hard rule with no allowlist rather
+than a ratchet.
+
+What that narrowness costs is stated rather than hidden, and it is the
+same gap the phrase list has: a comment that describes another file
+without quoting it - "the keyholder note under Admin", the sentence
+#217 was filed for - is not a citation and is not checked. Quoting the
+thing you are relying on is what makes the reliance checkable. This
+catches the shape that can be caught, not the class.
+
 The two files that define and test the rule are EXEMPT, because a file
 has to be able to name the phrases it forbids - the same reason
 tools/check_server.py strips comments before looking for
@@ -183,6 +228,52 @@ REGEX_BEFORE = frozenset("(,=:[!&|?{};+-*%^~<>") | {""}
 # a phrase - everything that is punctuation of the comment rather than
 # words of the sentence.
 LEAD = re.compile(r"""[\s*#/<!"'-]+$""")
+
+# What opens a continuation line, stripped when a comment is read as one
+# sentence. Only the LEADING marker, and only these: GAP above collapses
+# every "/" and "-" it meets, which is right for a phrase and wrong for
+# a citation, because it turns "server/README.md" into a bare
+# "README.md" and resolves the citation against a different file. That
+# failure is silent.
+#
+# "--" is two or more, never one, and that is the whole reason SQL can
+# be read at all here: every comment in server/schema.sql is wrapped
+# prose opening with "--", so a citation that spans two of its lines
+# reads as 'Admin -- accounts and deletion' unless the marker comes off.
+# A single leading "-" is a prose bullet and stays - eating one would
+# silently reshape the sentence a quotation is measured against.
+CONTINUATION = re.compile(r"^[ \t]*(?:\*+|\#+|//+|<!--|--+)?[ \t]*")
+
+# A path this repository could hold. Extensions rather than "anything
+# with a dot" so that "e.g." and "t.me/handle" are not read as files.
+CITED = r"(?:[\w.-]+/)*[\w.-]+\.(?:md|py|js|mjs|css|html|sql|json|toml|txt)"
+
+# A CITATION IS A FILE PLUS A CONNECTIVE PLUS A QUOTATION, and the
+# connective is what makes the rule usable rather than merely correct.
+# Bare juxtaposition - a quotation sitting next to a filename with
+# nothing joining them - is a quoted utterance in this tree, not a
+# citation: check_web.py imagines a key pasted into config.js "just to
+# test the export locally", and dashboard-render.test.mjs paraphrases
+# one file's comment while naming another. Neither ever resolves, and
+# both would be reported forever. See WHY THE CITATION RULE IS THIS
+# NARROW in the docstring for what that costs and what it buys.
+CITATIONS = (
+    (re.compile(r"(%s)(?:'s|[,:])\s+\"([^\"\n]{6,160})\"" % CITED), 1, 2),
+    (re.compile(r"\"([^\"\n]{6,160})\"\s+(?:in|of|under)\s+(%s)\b" % CITED),
+     2, 1),
+)
+
+# Ways of writing the same quotation that are not staleness: the case
+# it was folded to mid-sentence, the line the comment wrapped on, and
+# whether the author typed a hyphen where the document has an em dash.
+# All three are real comments here, and reporting them would teach the
+# next reader to distrust the rule.
+# Written as escapes rather than as the characters themselves: this is
+# the file that argues bytes should stay ordinary, and a range of six
+# dashes nobody can tell apart on screen is the worst place to spend
+# that credibility.
+DASHES = re.compile("[\u2010-\u2015]")
+WRAPPED = re.compile(r"\s+")
 
 
 def marker(*words):
@@ -564,6 +655,155 @@ def control_byte_problems(scan=None, repo=None):
     return out
 
 
+def comment_regions(masked):
+    """[(start, stop)] for each comment region of a masked file.
+
+    Newlines survive comments_only() everywhere, so a region ends at the
+    first blanked code character rather than at a line break - which is
+    what makes a run of "//" lines one comment instead of several.
+    """
+    regions = []
+    start = None
+    for index, char in enumerate(masked):
+        if char == BLANK:
+            if start is not None:
+                regions.append((start, index))
+                start = None
+        elif start is None:
+            start = index
+    if start is not None:
+        regions.append((start, len(masked)))
+    return regions
+
+
+def unwrap(masked, start, stop):
+    """One comment region as a single line, and each character's offset.
+
+    The offsets are what let a match report the line it was written on
+    after the wrapping has been taken out; returning the text alone
+    would put every citation in a block comment on the block's line.
+    """
+    text = []
+    offsets = []
+    position = start
+    for number, raw in enumerate(masked[start:stop].split("\n")):
+        if number:
+            text.append(" ")
+            offsets.append(position)
+        for index in range(CONTINUATION.match(raw).end(), len(raw)):
+            text.append(raw[index])
+            offsets.append(position + index)
+        position += len(raw) + 1
+    return "".join(text), offsets
+
+
+def citations(text, kind):
+    """[(line, cited path, quotation)] for one file's source, sorted."""
+    masked = comments_only(text, kind)
+    found = []
+    for start, stop in comment_regions(masked):
+        flat, offsets = unwrap(masked, start, stop)
+        for pattern, path_group, quote_group in CITATIONS:
+            for match in pattern.finditer(flat):
+                at = offsets[match.start(quote_group)]
+                found.append((masked.count("\n", 0, at) + 1,
+                              match.group(path_group),
+                              match.group(quote_group)))
+    return sorted(found)
+
+
+def anchor(text):
+    """A quotation as it is compared against the file it names."""
+    return WRAPPED.sub(" ", DASHES.sub("-", text)).strip().lower()
+
+
+def all_citations(scan=None, repo=None):
+    """[(file, line, cited path, quotation)] over the scan set.
+
+    Separate from the rule below because main() has to be able to say
+    how many citations were checked. "Every citation resolves" is true
+    of a scan that found none, and that is the failure shape this
+    repository holds to be worse than a red gate.
+    """
+    scan = SCAN if scan is None else scan
+    repo = REPO if repo is None else repo
+    out = []
+    for dirname, extensions in scan:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            full = os.path.join(base, name)
+            if not os.path.isfile(full) or not name.endswith(extensions):
+                continue
+            relpath = "%s/%s" % (dirname, name)
+            if relpath in EXEMPT:
+                continue
+            with open(full, encoding="utf-8") as handle:
+                text = handle.read()
+            kind = KIND[os.path.splitext(name)[1]]
+            for line, path, quote in citations(text, kind):
+                out.append((relpath, line, path, quote))
+    return out
+
+
+def citation_problems(scan=None, repo=None):
+    """A problem per quotation the file it names does not contain.
+
+    THIS IS THE ONE RULE HERE THAT READS OUTSIDE THE FILE IT GUARDS, and
+    that is the whole point of it (#217). AGENTS.md, "The review bar":
+    a check computed entirely from the file it guards cannot detect what
+    happened outside it - so the phrase ratchet above, however tight,
+    structurally cannot see a comment falsified by an edit to a
+    different file. The worked example is a comment justifying a rail
+    width by a note in a page another change had deleted; the sentence
+    stayed, the note went, and nothing anywhere went red.
+
+    archive/DESIGN.md is a DIFFERENT FILE from DESIGN.md and the
+    distinction is load-bearing. It holds the pre-2026-08-08 wording of
+    every heading the documentation rewrite moved, so a resolver
+    matching on basename would find each stale citation's target in the
+    archive and pass - quietly, which is the direction that costs.
+    Citing the archive directly stays correct: AGENTS.md sanctions it as
+    where the full reasoning lives when a root document compresses a
+    decision to a sentence.
+
+    The parameters exist so dev/check_comments.test.py can drive this
+    over trees it builds. The real tree is clean, and a rule exercised
+    only against a clean tree cannot be shown to fire.
+    """
+    repo = REPO if repo is None else repo
+    contents = {}
+    out = []
+    for relpath, line, path, quote in all_citations(scan, repo):
+        if path not in contents:
+            target = os.path.join(repo, *path.split("/"))
+            if not os.path.isfile(target):
+                contents[path] = None
+            else:
+                # errors="replace" because a citation of a file this
+                # cannot decode is still worth answering; a traceback
+                # out of a gate stage answers nothing.
+                with open(target, encoding="utf-8",
+                          errors="replace") as handle:
+                    contents[path] = anchor(handle.read())
+        if contents[path] is None:
+            out.append(
+                "%s:%d: the comment cites %s, which is not a file here. "
+                "Point it at the file that holds this now, or drop the "
+                "reference - a pointer to nothing is worse than none"
+                % (relpath, line, path))
+        elif anchor(quote) not in contents[path]:
+            out.append(
+                "%s:%d: the comment quotes %r out of %s, and %s does not "
+                "contain it. Either the quotation is wrong or what it "
+                "named has moved: true the comment against the file as "
+                "it stands now, or cite the file that carries the "
+                "wording today (archive/ keeps the pre-2026-08-08 one)"
+                % (relpath, line, quote, path, path))
+    return out
+
+
 def problems():
     found, scanned = scan_tree()
     out = generated_tree_problems()
@@ -573,6 +813,7 @@ def problems():
         for name in missing_directories()
     )
     out.extend(control_byte_problems())
+    out.extend(citation_problems())
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 
@@ -587,12 +828,14 @@ def main():
 
     _found, scanned = scan_tree()
     # What was established, not the part that is easy to say: "no new
-    # offenses" is true of a scan that read no files. The counts are
-    # what make the line worth printing.
-    print("check_comments: comments explain why and every scanned file "
-          "is text (%d files scanned, %d pinned occurrence(s) left to "
-          "clean up)."
-          % (len(scanned), sum(ALLOWLIST.values())))
+    # offenses" is true of a scan that read no files, and so is "every
+    # citation resolves". The counts are what make the line worth
+    # printing.
+    print("check_comments: comments explain why, every scanned file is "
+          "text and every quotation of another file is still in it "
+          "(%d files scanned, %d cross-file citation(s) resolved, %d "
+          "pinned occurrence(s) left to clean up)."
+          % (len(scanned), len(all_citations()), sum(ALLOWLIST.values())))
     return 0
 
 

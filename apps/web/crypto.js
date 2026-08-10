@@ -22,8 +22,8 @@
  *
  * The scheme is ECIES, composed from primitives the browser already
  * ships - no library, no CDN, nothing vendored. See DESIGN.md,
- * "Encryption, concretely", for why ~60 lines of composition beat 200 KB
- * of libsodium on the one page that handles cleartext.
+ * "Encryption", for why ~60 lines of composition beat 200 KB of
+ * libsodium on the one page that handles cleartext.
  *
  *   1. Generate a throwaway P-256 keypair, used for this submission and
  *      then dropped. Its private half never leaves this function, which

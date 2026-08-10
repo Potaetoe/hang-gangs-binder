@@ -26,8 +26,9 @@
    * makes sense inside a record does not survive a spreadsheet, and a
    * keyholder sorting by weight should not have to parse JSON.
    *
-   * Both unit systems are here because both are stored - see DESIGN.md,
-   * "Why every row carries both unit systems". `entered_*` is what the
+   * Both unit systems are here because both are stored - see
+   * archive/DESIGN.md, "Why every row carries both unit systems", which
+   * is where that reasoning lives now. `entered_*` is what the
    * submitter actually typed, which is the column to trust when a
    * rounded value looks odd.
    *
