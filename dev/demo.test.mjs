@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 175);
+const { check, mustReject, report } = suite("demo", 186);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1625,6 +1625,11 @@ await check("every stop that declares a press really presses it", async () => {
 await check("a press the page cannot answer is reported, not swallowed",
   async () => {
     const browser = consoleInRecordedBrowser();
+    // Setting up says its own last word - this recording has no worker,
+    // so the corpus reports itself missing - and it says it from a
+    // promise. Draining that first is what leaves the status line
+    // holding THIS stop's report rather than the boot's.
+    await browser.settled();
     browser.missingInFrame("add-entry-tab");
     const walk = Demo.TOURS.find((one) =>
       one.stops.some((stop) => stop.press === "add-entry-tab"));
@@ -1636,7 +1641,8 @@ await check("a press the page cannot answer is reported, not swallowed",
     }
     browser.arrive("your-page.html");
     await browser.settled();
-    return browser.nodes.status.textContent.includes("add-entry-tab");
+    return browser.nodes.status.textContent.includes("add-entry-tab") &&
+      browser.framePressed().length === 0;
   });
 
 /*

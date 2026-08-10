@@ -307,7 +307,7 @@ on the Weigh in card first.
 | A7.9 | Press one download, and read what the page says | It acknowledges **the press**, naming the format, and says it cannot know whether the file arrived. **Nothing claims the file was saved** | The one act on this page whose result lands somewhere the page cannot see. A timer that claimed arrival would be worse than no acknowledgement, which is at least honest about knowing nothing |
 | A7.10 | Press a second download while the first is still lit, then wait out the acknowledgement | **Exactly one is lit at a time** — the second press takes the light from the first — and the lit state clears on its own afterwards | Three lit buttons say three files are in flight and cannot say which press produced which; the acknowledgement's whole job is telling one press from another at the moment the data is in the clear |
 
-### A8 · Admin — journey "Running the club", stop 1
+### A8 · Admin — journey "Running the gang", stop 1
 
 Written against what the surface must *be*, not against its chrome:
 the instrument-panel treatment is a slice of its own, and steps pinned
@@ -327,7 +327,7 @@ accept.
 | A8.9 | Push the offset past ten minutes from that press — `skip += 11*60*1000` — and watch both the page and the feed above the frame | The decrypted rows and the files built from them are **gone**, the key boxes are empty, you land on `index.html` signed out — and the feed shows a `DELETE /session` going out, so the credential is **revoked at the Worker** and not merely dropped in the tab | This is the page that holds every submitter's plaintext. The tab going quietly on working is the failure the whole timer exists to prevent, and a local clear alone would leave the captured-token window open that #90 closed |
 | A8.10 | Confirm what A8.9 did **not** do — press **The keyholder's desk**'s button to arrive with a session again, and fetch | The **stored private key is still there**: the page decrypts without another paste or file | The key is not authority. Nothing issued it and nothing can revoke it, so an idle timer that destroyed it would make walking away cost the keyholder their key — **Clear** stays the one lever that removes it (A7.5) |
 
-### A9 · Site content and its fallback — journey "Running the club", stop 3
+### A9 · Site content and its fallback — journey "Running the gang", stop 3
 
 | # | Do | Pass looks like | Why |
 | --- | --- | --- | --- |

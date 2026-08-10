@@ -283,9 +283,27 @@
     const doc = frameDocument();
     if (doc === null) return;
 
+    /*
+     * A control that is not there is SAID, not skipped.
+     *
+     * The stop's promise is about what is on screen when it lands, so a
+     * press that quietly found nothing leaves the narration describing a
+     * tab the viewer is not looking at - which is the original defect,
+     * arriving through a rename rather than through a missing
+     * declaration. The suite holds every declared press to naming a
+     * control the shipped page really carries, so reaching this line
+     * means the page moved under the tour since the gate last ran.
+     */
     if (todo.press) {
       const control = doc.getElementById(todo.press);
-      if (control) control.click();
+      if (control) {
+        control.click();
+      } else {
+        say("This stop opens the page's " + todo.press + " control, and " +
+          "the page in the frame has no such control - so what is on " +
+          "screen is whatever the page opened on, not what this stop " +
+          "describes.");
+      }
     }
 
     if (todo.key) stageKey(doc);
