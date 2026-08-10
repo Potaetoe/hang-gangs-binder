@@ -798,6 +798,20 @@ function setHeight(byId, feet, inches) {
  * The record is not written here either - it is whatever buildRecord
  * made out of the boxes filled in above, which is the thing a member
  * would actually get back.
+ *
+ * HOW MUCH OF THIS SECTION WAS RED, corrected here because the log
+ * cannot be edited. Commit 9a2a2b2's verification line reads "all 15
+ * arms that were red at 1faf9af"; both of its numbers are wrong. At the
+ * RED commit 0744c4f this section carried 14 arms and exactly 3 of them
+ * were red - the envelope not version 2, the member's key not opening
+ * the row, and an account plus a database not producing a wide seal.
+ * 0744c4f's own message says three, and replaying that commit from a
+ * clean extraction says three.
+ *
+ * Those two figures are about that commit, not about the file in front
+ * of you: 9e was written after it, so counting the arms below will not
+ * reproduce the 14. Append-only history keeps the wrong sentence where
+ * it was written, which is why the right one is here.
  */
 
 {
@@ -995,19 +1009,31 @@ function setHeight(byId, feet, inches) {
  * nowhere to park a copy; a form that chooses between two recipients and
  * one has a branch, and a branch is where a cache gets parked.
  *
- * The mutation these arms exist to catch is a module-level
- * `let lastEntry = null;` beside `accountId`, assigned inside seal(). It
- * outlives every submission and it outlives sign-out - signOut() cannot
- * reach this file's scope at all - and it passes every executed arm
- * above, because what it changes is invisible from outside the closure.
+ * THE SINK HAS THREE SHAPES AND ONE ARM EACH, because a guard written
+ * for the first of them lets the other two straight through:
  *
- * Which is why these are structural, the reason dev/submit.test.mjs
- * gives for its own: a value cached inside a closure is not observable
- * by any means from outside it, and that is exactly what makes the sink
- * attractive. The question asked is narrow and total - does a frame that
- * holds the record assign any name that outlives it? - and the list of
- * surviving names is derived from the file rather than written here, so
- * a cache under a name nobody predicted is caught by the same arm.
+ *  - a name that outlives the seal, reassigned inside it -
+ *    `let lastEntry = null;` at the top level of setUp beside
+ *    `accountId`, or one scope further out at the top level of the IIFE,
+ *    with `lastEntry = record;` in seal(). Both live for the tab and
+ *    both survive sign-out, because signOut() cannot reach either scope;
+ *  - a property hung on something the seal path can already see -
+ *    `form.lastEntry = record;`, an expando on the live <form> element,
+ *    or the same write onto the configuration object;
+ *  - web storage, `dataset`, or a second global beside the export.
+ *
+ * The first two are invisible from outside the closure that holds them,
+ * which is the reason dev/submit.test.mjs gives for its own structural
+ * arms and the reason the sink is attractive. So the question asked of
+ * the source is narrow and total - does a frame that holds the record
+ * assign, or hang anything on, any name that outlives it? - and the list
+ * of surviving names is derived from BOTH tab-lived scopes in the file
+ * rather than written here, so a cache under a name nobody predicted is
+ * caught by the same arm.
+ *
+ * A property on an element is the one shape that is also observable from
+ * outside, so 10b puts the question to the objects themselves after a
+ * real submission rather than trusting the source alone.
  *
  * Comments and string literals are removed BEFORE any brace is counted.
  * dev/memberkey.test.mjs records what an unbalanced brace inside a
@@ -1040,11 +1066,16 @@ const frameOf = (code, declaration) =>
   frameAt(code, code.indexOf(declaration));
 
 /*
- * Every name setUp declares at its OWN top level. setUp runs once and
- * every listener below closes over it, so those names live for the tab -
- * they are this file's equivalent of module scope, and the depth is
+ * Every name a frame declares at its OWN top level, with the depth
  * counted while the body is walked so a name declared inside any inner
  * function is not one of them.
+ *
+ * Asked of two frames, because this file has two scopes that live for
+ * the tab and a cache moved between them is the same cache: the IIFE's
+ * body, which is module scope proper, and setUp's body, which every
+ * listener below it closes over. setUp's names alone are not the set:
+ * that leaves the longer-lived of the two scopes unwatched, and it is
+ * the scope a cache reaches by moving one line up.
  */
 function survivingNames(body) {
   const names = new Set();
@@ -1062,27 +1093,68 @@ function survivingNames(body) {
   return names;
 }
 
-const assignedIn = (names, frame) => [...names].filter((name) =>
-  new RegExp("(^|[^.\\w$])" + name + "\\s*=(?!=)").test(frame));
+/*
+ * A name goes into its pattern escaped. `$` is a legal identifier and
+ * it is declared at the IIFE's top level here, and unescaped it is a
+ * regular-expression anchor - the arm would silently stop asking about
+ * the one name this file uses on nearly every line.
+ */
+const pattern = (name, tail) =>
+  new RegExp("(^|[^.\\w$])" + name.replace(/\$/g, "\\$") + tail);
 
+const assignedIn = (names, frame) => [...names].filter((name) =>
+  pattern(name, "\\s*=(?!=)").test(frame));
+
+/*
+ * A name does not have to be reassigned to hold the record: a property
+ * hung on it does the same job and reaches every object the seal path
+ * can already see - the live <form> element, the configuration, a table
+ * declared at module scope.
+ *
+ * Asked of the two seal-path frames only. Writing to the DOM is the
+ * submit handler's job (`status.textContent`, `submit.disabled`,
+ * `done.hidden`), so the same rule there would forbid the file's own
+ * behavior; what watches the handler is 10b, which asks the objects.
+ */
+const propertyAssignedIn = (names, frame) => [...names].filter((name) =>
+  pattern(name, "\\.[\\w$]+\\s*=(?!=)").test(frame));
+
+const iifeBody = frameOf(formCode, "(function (root)");
 const setUpBody = frameOf(formCode, "function setUp()");
-const surviving = setUpBody ? survivingNames(setUpBody) : new Set();
+const surviving = new Set([
+  ...(iifeBody ? survivingNames(iifeBody) : []),
+  ...(setUpBody ? survivingNames(setUpBody) : []),
+]);
 const sealFrame = frameOf(formCode, "function seal(record)");
 const keyFrame = frameOf(formCode, "function memberKey()");
 // The submit listener is anonymous, so it is taken by its registration
 // rather than by a name. There is exactly one in the file.
 const submitFrame = frameAt(formCode, formCode.indexOf("form.addEventListener"));
 
-check("the module really was read - the three frames, and names with them",
-  Boolean(setUpBody) && Boolean(sealFrame) && Boolean(keyFrame) &&
-  Boolean(submitFrame) && surviving.has("accountId") &&
-  surviving.has("confirmedHeightCm"));
+/*
+ * The reader is asserted before anything is asked of it. A brace count
+ * that lost its place, or a frame the file no longer spells this way,
+ * would hand every arm below an empty name set - which passes, loudly
+ * proving nothing. `LIMITS` and `show` are named because they sit at
+ * the far ends of the IIFE's own body: one above the pure half, one
+ * below it, so a frame that stopped early carries neither.
+ */
+check("the module really was read - four frames, and names from both scopes",
+  Boolean(iifeBody) && Boolean(setUpBody) && Boolean(sealFrame) &&
+  Boolean(keyFrame) && Boolean(submitFrame) &&
+  surviving.has("accountId") && surviving.has("confirmedHeightCm") &&
+  surviving.has("LIMITS") && surviving.has("show"));
 
 check("the frame that seals the record assigns nothing that outlives it",
   Boolean(sealFrame) && assignedIn(surviving, sealFrame).length === 0);
 
 check("nor does the frame that looks this member's key up",
   Boolean(keyFrame) && assignedIn(surviving, keyFrame).length === 0);
+
+check("and neither hangs the record on anything either of them can reach",
+  Boolean(sealFrame) && Boolean(keyFrame) &&
+  propertyAssignedIn(surviving, sealFrame).length === 0 &&
+  propertyAssignedIn(surviving, keyFrame).length === 0);
 
 /*
  * THE HANDLER ITSELF, which is where the record is built and the more
@@ -1102,18 +1174,65 @@ check("and what that one name holds is a height, not the record",
   /const enteredCm = enteredHeightCm\(input\);/.test(formCode));
 
 /*
- * And the sinks outside the closure, which no brace count can see: a
- * record does not have to be cached to survive, it can be hung on the
- * page or written to a store. Read off the source because the claim is
- * that these calls are ABSENT, and an absent call runs in no scenario -
- * the `root.` assignment is asserted as the whole set for the same
- * reason, so a second global cannot arrive beside the export.
+ * And the three sinks that live outside every frame above, which no
+ * brace count can see. Read off the source because the claim is that
+ * these calls are ABSENT, and an absent call runs in no scenario - the
+ * `root.` assignment is asserted as the whole set for the same reason,
+ * so a second global cannot arrive beside the export.
  */
-check("the form writes nothing to web storage, to the DOM or to a global",
+check("the form writes nothing to web storage, to a dataset or to a global",
   !/\b(?:localStorage|sessionStorage)\b/.test(formCode) &&
   !/\.dataset\b/.test(formCode) &&
   (formCode.match(/root\.[A-Za-z_$][\w$]*\s*=(?!=)/g) || []).join(",") ===
     "root.BinderForm =");
+
+/*
+ * 10b. THE SAME QUESTION PUT TO THE OBJECTS, after a real submission.
+ *
+ * A property hung on a live element is the one sink here that IS
+ * observable from outside, and it is the worst of the three: unfrozen,
+ * silent, holding the whole pre-seal record - weight, height, roles,
+ * the handle - for the life of the tab, across every later submission
+ * and across sign-out, because signOut() reaches this file's elements
+ * no more than it reaches its scopes.
+ *
+ * So it is asked by execution rather than only by pattern. Every
+ * element this page hands out is built by makeElement, so its own names
+ * are a fixed set and any name past that set was put there by the
+ * module under test. The elements this page created and never handed
+ * out are deliberately not walked: form.js gives an <optgroup> a
+ * `label`, which is a legitimate name outside makeElement's set, and an
+ * arm that reported it would be reporting the harness.
+ *
+ * The configuration object is asked the same way. It is frozen in a
+ * browser, so a write there throws in production - and a suite that
+ * left it to the platform would be reporting the platform's guarantee
+ * as its own.
+ */
+{
+  const shape = Object.keys(makeElement("shape")).sort().join(",");
+  const scenario = await loadForm({ real: true });
+  const configShape = Object.keys(globalThis.BINDER_CONFIG).sort().join(",");
+  await scenario.page.document.dispatch(ACCOUNT_EVENT, { accountId: ACCOUNT });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+
+  const held = [...scenario.page.elements.values()];
+  const marked = held.filter(
+    (element) => Object.keys(element).sort().join(",") !== shape);
+
+  // The control. Asking the elements what they hold proves nothing on a
+  // page that never sealed, and the wide seal is the branch a cache
+  // would be parked in.
+  check("the entry really was sealed before the objects are asked",
+    held.length > 0 && bytesOf(sealedBy(scenario))[0] === 2);
+
+  check("and no element this page handed out carries a name form.js hung on it",
+    marked.length === 0);
+
+  check("nor does the configuration the seal reads its recipient from",
+    Object.keys(globalThis.BINDER_CONFIG).sort().join(",") === configShape);
+}
 
 console.log(failures === 0
   ? "\nform wiring: all checks passed"
