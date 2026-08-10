@@ -39,7 +39,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 48);
+const { check, report } = suite("memberkey.js", 49);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -639,24 +639,67 @@ await check("no declared namespace is touched while its script loads",
  * be USED, which is what a dead guard fails: `if (keys && false)` reads
  * the global and then does nothing, and only watching the far side of
  * the guard tells the two apart.
+ *
+ * DRIVEN OVER THE TABLE, NOT OVER A NAME WRITTEN HERE - the #154
+ * sweep's S-20. The load-time arm above loops `declared`; these two used
+ * to name their pair as string literals, and a pair of literals beside a
+ * loop is a split brain. A second row added to check_web.py would take
+ * the load-time property and slip past the guarded one entirely, and a
+ * row renamed there would leave these arms exercising a pair the table
+ * no longer declares while the loop moved on - both green, both about
+ * nothing.
+ *
+ * WHAT CANNOT COME OFF THE TABLE is the ACT: `(script, namespace)` says
+ * which global a script must not touch while it loads, and says nothing
+ * about what calling into it looks like. So the act is written here, per
+ * pair, and the coverage arm below is what keeps that from re-opening
+ * the same hole: every declared row must have one, so a row added to
+ * check_web.py with no act to drive it fails here rather than being
+ * granted the exemption unexercised.
  */
+const GUARD_ACTS = new Map([
+  ["signout.js|BinderMemberKey", () => {
+    let forgotten = 0;
+    return {
+      publish: { forget() { forgotten += 1; return Promise.resolve(true); } },
+      drive(context) { context.BinderSignOut.signOut(); },
+      used() { return forgotten === 1; },
+    };
+  }],
+]);
+
+const pairKey = (one) => one.script + "|" + one.namespace;
+
+await check("every declared row carries an act this file can drive", () =>
+  declared.length > 0 && declared.every((one) => GUARD_ACTS.has(pairKey(one))));
+
 await check("with the namespace absent the act completes rather than throwing",
   async () => {
-    const { context } = await loadRecording("signout.js", "BinderMemberKey",
-      undefined);
-    context.BinderSignOut.signOut();
+    for (const one of declared) {
+      const make = GUARD_ACTS.get(pairKey(one));
+      if (!make) return false;
+      const act = make();
+      const { context } = await loadRecording(one.script, one.namespace,
+        undefined);
+      act.drive(context);
+    }
     return true;
   });
 
 await check("with it present the act reaches through the guard and uses it",
   async () => {
-    let forgotten = 0;
-    const { context, reads } = await loadRecording("signout.js",
-      "BinderMemberKey",
-      { forget() { forgotten += 1; return Promise.resolve(true); } });
-    context.BinderSignOut.signOut();
-    return forgotten === 1 && reads.includes("call") &&
-      !reads.includes("load");
+    for (const one of declared) {
+      const make = GUARD_ACTS.get(pairKey(one));
+      if (!make) return false;
+      const act = make();
+      const { context, reads } = await loadRecording(one.script,
+        one.namespace, act.publish);
+      act.drive(context);
+      if (!act.used() || !reads.includes("call") || reads.includes("load")) {
+        return false;
+      }
+    }
+    return true;
   });
 
 /*
