@@ -39,7 +39,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 44);
+const { check, report } = suite("memberkey.js", 48);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -319,6 +319,59 @@ await check("and the reason: none of those three carries any bytes to read",
   () => [new ArrayBuffer(65), new DataView(new ArrayBuffer(65)),
     { byteLength: 65 }].every((value) =>
     String.fromCharCode.apply(null, value) === ""));
+
+/*
+ * THE FOURTH SHAPE, and it is why the three above are shapes somebody
+ * thought of rather than the class itself.
+ *
+ * `Object.prototype.toString` is not a brand check. `Symbol.toStringTag`
+ * overrides what it answers, so any object at all can call itself
+ * "[object Uint8Array]" - and there is no realm in which a genuine one
+ * behaves differently, so the tag buys the cross-realm tolerance it was
+ * chosen for and buys no custody at all.
+ *
+ * What closes the class is the walk the consumers really perform.
+ * `usable` turns the value into base64 by reading it BY INDEX, and
+ * `generateFor` measures the bytes it exported with `.length` - so
+ * `.length` is the length that matters. `byteLength` is a property all
+ * four of these carry and none of them has to walk to anything.
+ *
+ * Two spoofs, because they fail differently and the second is the worse
+ * one. The first claims the tag alone and walks to nothing, which is the
+ * empty-public-half failure the three arms above describe. The second
+ * claims the tag AND the length: it walks to sixty-five characters, so
+ * the public half comes back non-empty and TRUTHY, and form.js seals a
+ * member's entries to a key nothing ever generated.
+ */
+await check("a public half that only claims the Uint8Array tag is erased",
+  () => {
+    const record = good();
+    record.publicKeyRaw = {
+      byteLength: 65,
+      get [Symbol.toStringTag]() { return "Uint8Array"; },
+    };
+    return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
+  });
+
+await check("and one claiming the tag and the length, holding no bytes",
+  () => {
+    const record = good();
+    record.publicKeyRaw = {
+      length: 65,
+      byteLength: 65,
+      get [Symbol.toStringTag]() { return "Uint8Array"; },
+    };
+    return Keys.custodyVerdict(record, "a".repeat(64)) === "erase";
+  });
+
+await check("and the reason the tag cannot be the test: it is writable",
+  () => Object.prototype.toString.call({
+    get [Symbol.toStringTag]() { return "Uint8Array"; },
+  }) === "[object Uint8Array]");
+
+await check("and the reason the second is worse: it walks to a whole key",
+  () => String.fromCharCode.apply(null, { length: 65 }) ===
+    String.fromCharCode(0).repeat(65));
 
 await check("a record that is not an object is erased", () =>
   Keys.custodyVerdict("mine", "a".repeat(64)) === "erase" &&

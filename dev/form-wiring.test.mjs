@@ -944,6 +944,43 @@ function setHeight(byId, feet, inches) {
     scenario.page.byId("done").hidden === false);
 }
 
+/*
+ * 9e. A crypto.js that does not carry `encryptTo` - the fifth browser,
+ *     and the one the four above cannot reach because it is not the key
+ *     that is missing but the function that would use it.
+ *
+ *     It is reachable by cache skew alone: no `_headers` file exists in
+ *     this tree, so the two scripts are cached on the platform default
+ *     and a browser can hold yesterday's crypto.js beside today's
+ *     form.js. Every other way the second recipient goes missing is
+ *     handled before a byte is encrypted; this one used to reach the
+ *     call site as a TypeError, which turned a submission that had
+ *     always worked into a blocked one - on the browsers that DO hold a
+ *     device key, which is the wrong half of the population to fail.
+ *
+ *     The stale module is built by rebuilding the global from the real
+ *     one rather than by deleting a member: crypto.js freezes its
+ *     export, so a `delete` would throw here instead of modelling
+ *     anything.
+ */
+{
+  const scenario = await loadForm({ real: true });
+  await scenario.page.document.dispatch(ACCOUNT_EVENT, { accountId: ACCOUNT });
+  const current = globalThis.BinderCrypto;
+  globalThis.BinderCrypto = Object.freeze({
+    unavailableReason: current.unavailableReason,
+    encrypt: current.encrypt,
+  });
+  fillValidEntry(scenario.page.byId);
+  await scenario.page.byId("submission").dispatch("submit");
+  globalThis.BinderCrypto = current;
+
+  check("a crypto.js with no encryptTo costs breadth, not the entry",
+    bytesOf(sealedBy(scenario))[0] === 1 &&
+    scenario.page.byId("done").hidden === false &&
+    scenario.dispatched.includes(SUBMITTED_EVENT));
+}
+
 console.log(failures === 0
   ? "\nform wiring: all checks passed"
   : "\nform wiring: " + failures + " check(s) FAILED");
