@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 206);
+const { check, mustReject, report } = suite("demo", 208);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1032,7 +1032,21 @@ function recordedNode(id, log) {
     id: id,
     className: "",
     pressed: false,
-    click() { it.pressed = true; note("pressed"); it.fire("click"); },
+    /*
+     * A DISABLED CONTROL SWALLOWS click() ENTIRELY - no event is
+     * dispatched, nothing throws, and the caller cannot tell that from a
+     * press that was received. Recorded that way rather than as a flag
+     * an arm could read, because a fixture where the press "worked but
+     * was ignored" is a fixture that cannot reproduce the defect: the
+     * admin page ships its decrypt button disabled and enables it when
+     * its own session check answers.
+     */
+    click() {
+      if (it.disabled === true) return;
+      it.pressed = true;
+      note("pressed");
+      it.fire("click");
+    },
     // What a stop's scroll asks of a section: the page brings itself
     // there. Recorded rather than run, because what is under test is
     // WHICH section was asked - a recording that measured a layout
@@ -1251,6 +1265,30 @@ function consoleInRecordedBrowser() {
    * and happened to be lucky, and one that never painted could not tell
    * waiting from giving up.
    */
+  /*
+   * A control the page has not enabled yet, and enables `after` looks
+   * later - which is what the admin surface really does with its
+   * decrypt button while its session check is in flight.
+   *
+   * The count is spent on READS of `disabled`, so the console has to be
+   * the one asking: a fixture that flipped on a timer would go pressable
+   * whether or not anybody looked, and could not tell waiting from
+   * getting lucky.
+   */
+  const pressableAfter = (id, after) => {
+    let left = after;
+    Object.defineProperty(inFrame(id), "disabled", {
+      configurable: true,
+      get: () => {
+        if (left <= 0) return false;
+        left -= 1;
+        return true;
+      },
+      set: () => {},
+    });
+  };
+  const neverPressable = (id) => { inFrame(id).disabled = true; };
+
   const paintedAfterPressing = (id, controlId, after) => {
     const section = inFrame(id);
     let left = Infinity;
@@ -1266,7 +1304,7 @@ function consoleInRecordedBrowser() {
     nodes, replaced, arrive, pressed, destination, journey, locked, staged,
     waking, frameField, framePressed, poked, fetched, settled,
     missingInFrame, frameScrolled, frameActs, unpaintedInFrame,
-    paintedAfterPressing,
+    paintedAfterPressing, pressableAfter, neverPressable,
   };
 }
 
@@ -2051,6 +2089,57 @@ await check("a stop that promises publishing lands with that card on screen",
       }
     }
     return walked > 0;
+  });
+
+/*
+ * A CONTROL THE PAGE HAS NOT ENABLED YET, WHICH IS THE QUIETEST FAILURE
+ * IN THIS WHOLE FILE.
+ *
+ * click() on a disabled button dispatches nothing at all: no event, no
+ * throw, and no way for the caller to tell it from a press that was
+ * received and ignored. The admin page ships its decrypt button
+ * disabled and enables it when its own session check answers, about a
+ * frame after the frame reports `load` - so the errand pressed a dead
+ * button, said nothing, and the stop narrated over a page where nothing
+ * had happened. Found by driving the baked build behind a clean-URL
+ * host; every arm in this file passed while it was true, because the
+ * recording's controls were pressable from the first instant.
+ */
+await check("a control the page has not enabled yet is waited for, then pressed",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.pressableAfter(DECRYPT, 4);
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.press === DECRYPT));
+    const index = walk.stops.findIndex((stop) => stop.press === DECRYPT);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(ADMIN_PAGE);
+    await browser.settled();
+    return browser.framePressed().includes(DECRYPT) &&
+      !browser.nodes.status.textContent.includes(DECRYPT);
+  });
+
+// And the other direction: one it never enables is said, not swallowed.
+await check("a control the page never makes pressable is reported, not pressed",
+  async () => {
+    const browser = consoleInRecordedBrowser();
+    await browser.settled();
+    browser.neverPressable(DECRYPT);
+    const walk = Demo.TOURS.find((one) =>
+      one.stops.some((stop) => stop.press === DECRYPT));
+    const index = walk.stops.findIndex((stop) => stop.press === DECRYPT);
+    browser.journey(walk.id).fire("click");
+    for (let i = 0; i < index; i += 1) {
+      browser.nodes["tour-next"].fire("click");
+    }
+    browser.arrive(ADMIN_PAGE);
+    await browser.settled();
+    return !browser.framePressed().includes(DECRYPT) &&
+      browser.nodes.status.textContent.includes(DECRYPT);
   });
 
 /*

@@ -280,46 +280,63 @@
    * byte of it.
    */
   /*
-   * How long a section the page reveals BY ITS OWN WORK is waited for,
-   * counted in tries rather than in a duration.
+   * ARRIVING IS NOT THE SAME AS BEING READY, and the frame's `load` is
+   * the moment that difference is easiest to miss.
    *
-   * The admin page reveals its publishing card after a fetch and a few
-   * hundred unseals, so a console that pressed decrypt and looked once
-   * would report the card missing - a true statement made too early,
-   * which reads to a viewer exactly like the defect the report exists to
-   * expose. Tries rather than milliseconds because that is what a suite
-   * can spend all of at once: a budget in real time is a budget the
-   * arms below have to actually wait out.
+   * Two ways it bites, both found by driving the baked demo behind a
+   * clean-URL host rather than by reading anything:
+   *
+   *  - The admin page ships its decrypt button DISABLED and enables it
+   *    when its own session check answers, about a frame later. A
+   *    disabled button swallows click() silently - no event is
+   *    dispatched at all - so the errand pressed nothing, reported
+   *    nothing, and the stop narrated over a page where nothing had
+   *    happened.
+   *  - The publishing card that press reveals arrives later again,
+   *    after a fetch and a few hundred unseals, and scrollIntoView on a
+   *    section that is not rendering moves nothing just as quietly.
+   *
+   * So the errand waits for what it is about to touch, and says so when
+   * the wait runs out. The budget is spent in TRIES rather than in a
+   * duration because that is what a suite can spend all of at once: a
+   * budget in real time is a budget the arms have to sit through.
    */
-  const RENDER_TRIES = 100;
-  const RENDER_EVERY = 50;
+  const READY_TRIES = 100;
+  const READY_EVERY = 50;
 
   /*
-   * The section, once it is on screen - or whatever there is after the
-   * budget runs out, which the caller reads for itself. Two failures are
-   * being told apart here and they get different sentences: a section
-   * the page does not carry at all, and one it carries and is not
-   * showing.
+   * The element once `ready` holds of it, or whatever is there when the
+   * budget runs out - which the caller reads for itself, because absent
+   * and not-yet-ready are two different sentences to a viewer.
    */
-  function painted(doc, id) {
+  function waitFor(doc, id, ready) {
     return new Promise(function (resolve) {
-      let left = RENDER_TRIES;
+      let left = READY_TRIES;
       const look = function () {
-        const section = doc.getElementById(id);
-        if (section && section.getClientRects().length > 0) {
-          resolve(section);
+        const found = doc.getElementById(id);
+        if (found && ready(found)) {
+          resolve(found);
           return;
         }
         left -= 1;
         if (left <= 0) {
-          resolve(section);
+          resolve(found);
           return;
         }
-        root.setTimeout(look, RENDER_EVERY);
+        root.setTimeout(look, READY_EVERY);
       };
       look();
     });
   }
+
+  // Rects rather than the attribute, per AGENTS.md: `hidden` can read
+  // true while an element paints, and the inverse is what bites here.
+  const PAINTS = function (node) {
+    return node.getClientRects().length > 0;
+  };
+  const PRESSABLE = function (node) {
+    return node.disabled !== true;
+  };
 
   async function runErrand(todo) {
     const doc = frameDocument();
@@ -346,11 +363,25 @@
      * declaration. The suite holds every declared press to naming a
      * control the shipped page really carries, so reaching this line
      * means the page moved under the tour since the gate last ran.
+     *
+     * AND A CONTROL THE PAGE HAS NOT ENABLED YET IS THE QUIETER HALF.
+     * click() on a disabled button dispatches NOTHING - no event, no
+     * error, no way to tell it apart from a press that was received and
+     * ignored - so a stop pressing one narrates over a page where its
+     * press never happened. That is not hypothetical: the admin page
+     * ships its decrypt button disabled and enables it when its own
+     * session check answers, about a frame after the frame reports
+     * `load`.
      */
     if (todo.press) {
-      const control = doc.getElementById(todo.press);
-      if (control) {
+      const control = await waitFor(doc, todo.press, PRESSABLE);
+      if (control && PRESSABLE(control)) {
         control.click();
+      } else if (control) {
+        say("This stop presses the page's " + todo.press + " control, and " +
+          "the page has not made it pressable in this staging - so " +
+          "nothing was pressed, and what is on screen is whatever the " +
+          "page opened on.");
       } else {
         say("This stop opens the page's " + todo.press + " control, and " +
           "the page in the frame has no such control - so what is on " +
@@ -381,15 +412,13 @@
        * once it knows what the session may do, and scrollIntoView on a
        * section that is not rendering moves nothing and reports nothing -
        * so the stop would narrate over the top of the page exactly as it
-       * did before, with an errand that believes it ran. Rects rather
-       * than the attribute, per AGENTS.md: `hidden` can read true while
-       * an element paints, and the inverse is what bites here.
+       * did before, with an errand that believes it ran.
        *
        * WAITED FOR rather than looked at once, because the press above
        * is what reveals it and the page's own work happens in between.
        */
-      const section = await painted(doc, todo.scroll);
-      if (section && section.getClientRects().length > 0) {
+      const section = await waitFor(doc, todo.scroll, PAINTS);
+      if (section && PAINTS(section)) {
         section.scrollIntoView({ block: "start" });
       } else if (section) {
         say("This stop moves the page to its " + todo.scroll + " section, " +
