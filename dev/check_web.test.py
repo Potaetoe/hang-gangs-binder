@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 414
+EXPECTED = 453
 
 
 def check(label, condition):
@@ -279,6 +279,113 @@ check("a fragment is not a way off a page",
 check("an off-site link is not a way through the site",
       any("no way off it" in p for p in check_web.plain_page_problems(
           '<a href="https://example.com">away</a>')))
+
+# The session block, the other half of the shell nothing was comparing
+# (#200). The rail arm above reads .rail-links, so the block holding the
+# session line, the door and the exit sat outside every comparison while
+# being kept in three copies by hand - #152's disease with a different
+# subject, exactly as the wordmark's was.
+SESSION = check_web.rail_session(RAIL)
+
+check("the session block is read out of a rail as a fragment",
+      SESSION is not None and
+      SESSION.startswith('<div class="rail-session"') and
+      SESSION.endswith("</div>") and 'id="sign-in"' in SESSION)
+check("a rail with no session block reads as absence",
+      check_web.rail_session('<aside class="rail"></aside>') is None)
+
+# The reason this is a depth-aware scan and not a non-greedy match: a
+# session block that grows a wrapper stops at the wrapper's own closing
+# tag, and the arm then compares three truncated fragments that agree
+# about the half they can still see.
+NESTED = RAIL.replace(
+    '<a id="sign-in" href="index.html">Sign in</a>',
+    '<div class="rail-door"><a id="sign-in" href="index.html">Sign in</a>'
+    '</div>')
+check("a session block containing a div is read whole",
+      check_web.rail_session(NESTED).endswith("</div></div>"))
+check("an unclosed session block reads as absence rather than as the "
+      "rest of the page",
+      check_web.rail_session('<div class="rail-session"><a>Sign in</a>')
+      is None)
+
+# What counts as a difference between two copies. Indentation does not:
+# the three copies sit at three different depths on their pages the day
+# somebody reflows one, and a failure nobody can act on is a failure
+# everybody learns to re-run. Words and attributes do.
+check("a fragment's indentation is not part of it",
+      check_web.fragment_pieces(
+          '<div class="rail-session">\n  <a>Sign in</a>\n</div>') ==
+      check_web.fragment_pieces(
+          '<div class="rail-session"><a>Sign in</a></div>'))
+check("a fragment's words are part of it",
+      check_web.fragment_pieces("<a>Sign in</a>") !=
+      check_web.fragment_pieces("<a>Log in</a>"))
+check("a fragment's attributes are part of it",
+      check_web.fragment_pieces('<a id="sign-in"></a>') !=
+      check_web.fragment_pieces('<a id="signin"></a>'))
+
+# The parity arm itself, on fragments rather than on the three files, so
+# what is exercised is the shape of the failure.
+THREE = dict.fromkeys(("admin.html", "charts.html", "your-page.html"),
+                      SESSION)
+
+check("three identical session blocks raise nothing",
+      check_web.session_parity_problems(THREE) == [])
+
+drifted = check_web.session_parity_problems(
+    dict(THREE, **{"your-page.html": SESSION.replace("Sign in", "Log in")}))
+check("a session block that drifted on one page is refused",
+      [name for name, _ in drifted] == ["your-page.html"])
+check("the failure names a page to compare against",
+      any("admin.html" in problem for _, problem in drifted))
+check("the failure says which piece differs",
+      any("'Log in'" in problem and "'Sign in'" in problem
+          for _, problem in drifted))
+
+# The other direction, and the one that says this is a parity arm rather
+# than a pin: the same edit made on every copy is a rename, not a drift,
+# and the copies are still identical afterwards.
+check("the same edit on every copy raises nothing",
+      check_web.session_parity_problems(
+          {name: block.replace("Sign in", "Log in")
+           for name, block in THREE.items()}) == [])
+check("reindenting one copy is not a difference",
+      check_web.session_parity_problems(
+          dict(THREE, **{"charts.html": SESSION.replace("><", ">\n  <")}))
+      == [])
+
+check("a copy that runs on past the others is refused",
+      any("carries" in problem for _, problem in
+          check_web.session_parity_problems(
+              dict(THREE,
+                   **{"your-page.html": SESSION + "<span>and</span>"}))))
+check("a copy that stops short of the others is refused",
+      any("stops short" in problem for _, problem in
+          check_web.session_parity_problems(
+              dict(THREE,
+                   **{"your-page.html": SESSION[:SESSION.index("<a ")]}))))
+
+# The hole check 23 paid for in #114 and the wordmark arm remembers: a
+# parity rule holding one copy cannot fail, so it says so instead of
+# passing.
+check("one session block left to compare is refused",
+      any("cannot fail" in problem for _, problem in
+          check_web.session_parity_problems({"admin.html": SESSION})))
+
+# And the absence that would make parity vacuously true. A page that
+# dropped its copy leaves the survivors agreeing with each other.
+check("a rail page with no session block is refused",
+      any("session block" in problem
+          for problem in check_web.rail_page_problems(
+              RAIL.replace(SESSION, ""))))
+
+# The pin and the pages, so the arm is not comparing an empty set.
+RAILED = sorted(name for name, shell in check_web.SHELLS.items()
+                if shell == "rail")
+check("every railed page ships a session block for the arm to compare",
+      all(check_web.rail_session(check_web.page_text(name)) is not None
+          for name in RAILED) and len(RAILED) >= 2)
 
 
 # The wordmark, which crosses both shells and is the one hand-kept copy
@@ -929,6 +1036,133 @@ check("a rail entry naming no destination at all is refused",
 
 check("no shipped page disagrees with its own name",
       check_web.name_problems() == [])
+
+# The copies of a name that live outside .rail-links (#201). The rail
+# loop above reads the destinations list, and #187 moved the door out of
+# it - so five copies of the door label, three in the session blocks and
+# two in footers, answered to no table at all while a rename swept the
+# pages around them.
+#
+# A link is a copy of a name unless PROSE_LINKS says it is a sentence.
+# The fixture is built around the real names for the reason NAMED gives.
+DOOR = check_web.DESTINATIONS["index.html"]
+ELSEWHERE = (
+    '<aside class="rail">'
+    '<a class="wordmark" href="index.html"><span>%s</span></a>'
+    '<ul class="rail-links"><li><a href="charts.html">%s</a></li></ul>'
+    '<div class="rail-session"><a href="index.html">%s</a></div>'
+    '</aside>'
+    '<footer><p><a href="index.html">%s</a> · '
+    '<a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code'
+    '</a></p></footer>'
+    % (check_web.SITE_TITLE, CHARTS, DOOR, DOOR))
+
+check("a page whose links use the pinned names raises nothing",
+      check_web.named_link_problems("admin.html", ELSEWHERE) == [])
+
+# The two halves #201 counted, each on its own.
+check("the door label inside the session block is held to the name table",
+      any('calling index.html "Log in"' in p
+          for p in check_web.named_link_problems(
+              "admin.html",
+              ELSEWHERE.replace(
+                  '<div class="rail-session"><a href="index.html">%s</a>'
+                  % DOOR,
+                  '<div class="rail-session"><a href="index.html">Log in'
+                  '</a>'))))
+check("the door label in a footer is held to the name table",
+      any('calling index.html "Log in"' in p
+          for p in check_web.named_link_problems(
+              "admin.html",
+              ELSEWHERE.replace('<footer><p><a href="index.html">%s</a>'
+                                % DOOR,
+                                '<footer><p><a href="index.html">Log in'
+                                '</a>'))))
+
+# The rail's destinations already answer to page_name_problems(), and a
+# defect reported twice reads as two defects.
+check("the rail's own destinations are left to the rail arm",
+      check_web.named_link_problems(
+          "admin.html",
+          ELSEWHERE.replace('<li><a href="charts.html">%s</a></li>' % CHARTS,
+                            '<li><a href="charts.html">Progress</a></li>'))
+      == [])
+
+# The wordmark is the site's name rather than a page's, and check 10
+# holds its four copies to each other. Held here too it would answer to
+# two tables, and the first rename would have to satisfy both.
+check("the wordmark answers to its own arm and not to this one",
+      check_web.named_link_problems(
+          "admin.html",
+          ELSEWHERE.replace("<span>%s</span>" % check_web.SITE_TITLE,
+                            "<span>Some Other Name</span>")) == [])
+
+# Fails open is the failure this arm inherits from #127: a link the
+# table cannot resolve is reported rather than skipped.
+check("a link to a page the name table does not know is refused",
+      any("names no destination" in p for p in check_web.named_link_problems(
+          "admin.html",
+          ELSEWHERE.replace('<footer><p><a href="index.html">',
+                            '<footer><p><a href="reports.html">'))))
+check("an off-site link is not this table's to name",
+      check_web.named_link_problems(
+          "index.html",
+          '<a href="https://example.com/index.html">Sign in</a>') == [])
+
+# Prose is declared per page, not globally: the same sentence on a page
+# that never had it is a new copy nothing was watching.
+check("a link the table declares prose raises nothing",
+      check_web.named_link_problems(
+          "404.html", '<a href="index.html">Go to sign in</a>') == [])
+check("prose declared for one page does not excuse another",
+      any("Go to sign in" in p for p in check_web.named_link_problems(
+          "admin.html", '<a href="index.html">Go to sign in</a>')))
+
+# Both directions on the table itself. A declaration nothing carries any
+# more is a pin that cannot fail, the same defect WORDMARK_PAGES refuses.
+check("every prose declaration names a page that exists",
+      {page for page, _ in check_web.PROSE_LINKS} <= pages)
+check("every prose declaration names a destination that exists",
+      {target for _, target in check_web.PROSE_LINKS} <=
+      set(check_web.DESTINATIONS))
+check("a prose declaration nothing carries any more is refused",
+      len(check_web.prose_pin_problems(set())) ==
+      sum(len(labels) for labels in check_web.PROSE_LINKS.values()))
+
+
+def door_drift(text, token, index, replacement):
+    """One page's markup with only the (index+1)th copy of a token changed.
+
+    One copy at a time is the whole point: a rename that reaches every
+    copy is a rename, and the drift this arm exists for is the one that
+    reaches all but one.
+    """
+    parts = text.split(token)
+    return (token.join(parts[:index + 1]) + replacement +
+            token.join(parts[index + 1:]))
+
+
+# The five copies #201 counted, named and mutated one at a time against
+# the pages that actually ship. This is the arm's real subject; the
+# fixtures above are its shape.
+DOORS = (("admin.html", 2), ("charts.html", 2), ("your-page.html", 1))
+check("the door copies outside the rail's destinations still number five",
+      sum(check_web.page_text(name).count(">%s</a>" % DOOR)
+          for name, _ in DOORS) == 5)
+for door_page, door_copies in DOORS:
+    check("%s carries the door copies this arm was counted against"
+          % door_page,
+          check_web.page_text(door_page).count(">%s</a>" % DOOR) ==
+          door_copies)
+    for door_index in range(door_copies):
+        check("%s's door copy %d is under the name table"
+              % (door_page, door_index + 1),
+              any('calling index.html "Log in"' in p
+                  for p in check_web.named_link_problems(
+                      door_page,
+                      door_drift(check_web.page_text(door_page),
+                                 ">%s</a>" % DOOR, door_index,
+                                 ">Log in</a>"))))
 
 
 # ------------------------------------------------------------------ #

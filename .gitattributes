@@ -26,6 +26,11 @@
 *.toml  text eol=lf
 *.sql   text eol=lf
 *.svg   text eol=lf
+# robots.txt and the three OFL licenses. Pinned like the rest and still
+# copied byte for byte by tools/build_web.mjs: the copy mode is what lets
+# this pin land on working trees that were checked out before it, where
+# both copies of a .txt are still CRLF and agree with each other.
+*.txt   text eol=lf
 
 # Binary, never touched. woff2 is here for the same reason the rest
 # are: text=auto guesses, and a guess that goes the wrong way on a font

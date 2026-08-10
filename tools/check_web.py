@@ -184,9 +184,10 @@ day a check is added:
     The wordmark is the shell's other hand-kept copy, and it crosses
     both shells - three rails and the sign-in cover - which is half of
     why nothing was comparing it. The paragraph above says the rail
-    "carries the wordmark" while the comparison reads .rail-links and
-    stops; the name tables read titles, headings and rail entries; the
-    chip arm reads chips. So the site's own name could be renamed on
+    "carries the wordmark" while the parity arms read .rail-links and
+    the session block and stop there; the name tables read titles,
+    headings and the links a page writes a name into; the chip arm
+    reads chips. So the site's own name could be renamed on
     three copies of four with the whole gate green, which is #152's
     disease with a different subject. WORDMARK_PAGES pins which pages
     carry one, outside the markup and in both directions, for the
@@ -1597,13 +1598,25 @@ RETIRED_IDS = ("nav-toggle", "nav-menu")
 RAIL_MARKUP = re.compile(r'class="rail[\s"]', re.I)
 
 
+def rail_menu(text):
+    """One page's .rail-links list, or None when it carries none.
+
+    Named separately from the pairs inside it because the name-table arm
+    needs the region rather than its contents: the destinations answer
+    to the rail loop in page_name_problems(), and a link reported by two
+    arms reads as two defects.
+    """
+    menu = re.search(r'<ul[^>]*class="rail-links".*?</ul>', text, re.S | re.I)
+    return menu.group(0) if menu else None
+
+
 def rail_links(text):
     """The (href, label) pairs inside a page's .rail-links, in order."""
-    menu = re.search(r'<ul[^>]*class="rail-links".*?</ul>', text, re.S | re.I)
-    if not menu:
+    menu = rail_menu(text)
+    if menu is None:
         return None
     return re.findall(r'<a\s+href="([^"]+)"[^>]*>(.*?)</a>',
-                      menu.group(0), re.S | re.I)
+                      menu, re.S | re.I)
 
 
 def rail_aside(text):
@@ -1621,6 +1634,118 @@ def rail_aside(text):
     match = re.search(r'<aside[^>]*class="rail[\s"].*?</aside>',
                       text, re.S | re.I)
     return match.group(0) if match else None
+
+
+# The session block, read the way WORDMARK_LINES reads its classes: as a
+# word inside the class list rather than as the whole attribute, so a
+# second class beside this one is still the same component.
+RAIL_SESSION_OPEN = re.compile(
+    r'<div\b[^>]*class\s*=\s*["\'][^"\']*\brail-session\b[^"\']*["\'][^>]*>',
+    re.I)
+
+# Every div boundary, opening or closing, so the scan below can count
+# depth. A non-greedy `.*?</div>` stops at the FIRST closing tag, which
+# for a block that grows a wrapper is the wrapper's - and three copies
+# truncated at the same place agree about the half they can still see.
+DIV_EDGE = re.compile(r"<div\b[^>]*>|</div\s*>", re.I)
+
+# What a parity failure with no page to blame is attributed to, for the
+# reason WORDMARK_PIN gives: the pin is the subject in that case.
+SESSION_PIN = "SHELLS in tools/check_web.py"
+
+
+def rail_session(text):
+    """One page's .rail-session block, or None when it carries none.
+
+    Comments are expected to be gone already - every rule here reads the
+    markup page_text() returns - because a div boundary inside a comment
+    is a boundary this scan would count.
+    """
+    start = RAIL_SESSION_OPEN.search(text)
+    if not start:
+        return None
+
+    depth = 0
+    for edge in DIV_EDGE.finditer(text, start.start()):
+        depth += -1 if edge.group(0).startswith("</") else 1
+        if depth == 0:
+            return text[start.start():edge.end()]
+
+    # Unclosed. Absence rather than the rest of the page: returning the
+    # tail would hand the parity arm a fragment that grows with whatever
+    # was written after it, and the arm above reports the absence.
+    return None
+
+
+def fragment_pieces(markup):
+    """One markup fragment as its tags and its words, spacing flattened.
+
+    Indentation is not a difference between two copies of a block: the
+    three copies sit at whatever depth their page puts them at, and a
+    failure that fires on a reflow is one everybody learns to re-run.
+    Words and attributes are differences.
+
+    Kept as a list rather than folded to a hash, so a failure can name
+    the piece that differs - and rather than to a set, because a set
+    cannot see a reordering or a duplicate, which are two of the ways a
+    hand-copied block drifts.
+    """
+    pieces = []
+    for piece in re.findall(r"<[^>]+>|[^<]+", markup):
+        flattened = " ".join(piece.split())
+        if flattened:
+            pieces.append(flattened)
+    return pieces
+
+
+def fragment_difference(here, there, reference):
+    """What to say about two fragments that disagree, naming a page."""
+    for mine, theirs in zip(here, there):
+        if mine != theirs:
+            return "writes %r where %s writes %r" % (mine, reference, theirs)
+    if len(here) > len(there):
+        return ("carries %r, which %s does not"
+                % (here[len(there)], reference))
+    return ("stops short of %s, which goes on to %r"
+            % (reference, there[len(here)]))
+
+
+def session_parity_problems(blocks):
+    """[(page, problem)] for session blocks that disagree.
+
+    `blocks` is {page: markup} for the railed pages whose block could be
+    read whole. Compared against whichever page sorts first, for the
+    reason rail parity gives: a message naming a page to go and look at
+    beats one saying only that they differ.
+    """
+    if len(blocks) < 2:
+        return [(SESSION_PIN,
+                 "leaves this arm %d session block to compare. Parity is a "
+                 "claim about copies, and a rule holding one copy cannot "
+                 "fail - the hole check 23 paid for in #114. Either the "
+                 "railed pages come back, or this arm has outlived its "
+                 "subject and goes out with the reason written down"
+                 % len(blocks))]
+
+    problems = []
+    reference = sorted(blocks)[0]
+    for name in sorted(blocks):
+        if name == reference:
+            continue
+        here = fragment_pieces(blocks[name])
+        there = fragment_pieces(blocks[reference])
+        if here == there:
+            continue
+        problems.append((
+            name,
+            "has a session block that differs from %s's: it %s. Every "
+            "railed page carries its own copy of the block that says "
+            "whether this tab holds a session and offers the door or the "
+            "exit, so an edit reaching some of the copies leaves a member "
+            "meeting a different session on every page"
+            % (reference, fragment_difference(here, there, reference))))
+
+    return problems
 
 
 def local_links(text):
@@ -1707,6 +1832,17 @@ def rail_page_problems(text):
                 "door or the exit" % href)
             break
 
+    # Parity is a claim about copies, so a page that simply dropped its
+    # copy makes the claim true of whatever survived. The absence is
+    # refused here rather than left to the comparison, for the reason
+    # the identical-incomplete rails above give.
+    if rail_session(text) is None:
+        problems.append(
+            "carries a rail with no .rail-session block that closes. That "
+            "block is where the rail says whether this tab holds a session "
+            "and offers the door or the exit, and a page without one "
+            "leaves the parity arm comparing whichever copies survived")
+
     for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
         problems.append(
             "still carries id=\"%s\" from the hamburger the rail replaced. "
@@ -1739,6 +1875,7 @@ def shell_problems():
             "in apps/web. Delete the entry, or restore the page"))
 
     rails = {}
+    sessions = {}
     for name in pages:
         if name not in SHELLS:
             continue
@@ -1757,6 +1894,14 @@ def shell_problems():
         links = rail_links(text)
         if links:
             rails[name] = links
+
+        # A block that could not be read whole is no evidence about
+        # another page's, so it stays out of the comparison - but it is
+        # REPORTED above, never skipped, which is the discipline #152
+        # was filed for.
+        session = rail_session(text)
+        if session is not None:
+            sessions[name] = session
 
     # Compared against whichever page sorts first, so the message names a
     # specific page to go and look at rather than "they differ".
@@ -1782,6 +1927,12 @@ def shell_problems():
                 % (reference, reference,
                    sorted(there - here) or "nothing extra",
                    sorted(here - there) or "nothing extra")))
+
+    # The rest of the shell the comparison above never read. #187 moved
+    # the door out of .rail-links and into this block, so the arm that
+    # compares the destinations stopped covering the half that changed
+    # (#200).
+    problems.extend(session_parity_problems(sessions))
 
     # A rail link to a page that does not exist is caught by check 1 as a
     # broken reference, so it is not repeated here.
@@ -2405,7 +2556,10 @@ def css_role_problems(css):
 # The heading and the title are checked as well as the rails, which is
 # the half a rail-parity rule cannot reach: three rails agreeing with
 # each other and disagreeing with the page they open is exactly the
-# drift that issue inventoried.
+# drift that issue inventoried. So are the copies that live outside the
+# destinations list - the door in each session block and in two footers,
+# which #187 put beyond the rail loop's reach and PROSE_LINKS below
+# brings back.
 #
 # The site's own name reaches a reader by two routes - the tab strip,
 # through this constant, and the wordmark over the door - and #191 rules
@@ -2423,6 +2577,44 @@ DESTINATIONS = {
     "index.html": "Sign in",
     "your-page.html": "Your page",
 }
+
+# Which links say something other than the name of the page they open.
+# Keyed (page, destination) and holding the exact words, because the
+# difference between a name and a sentence is not in the markup: "Sign
+# in" and "Add yours" are the same element pointing at the same page,
+# and only a table outside the pages can say which of them is a copy of
+# a name that a rename has to reach.
+#
+# Pinned for the reason SHELLS gives, and the ABSENT direction is again
+# the one with teeth: a link this table does not name is held to the
+# name, so a new sentence arrives loudly instead of widening the hole
+# #201 filed - five copies of the door label, three in the session
+# blocks and two in footers, answering to nothing while #191 renamed the
+# pages around them. A declaration nothing carries any more FAILS as
+# stale, for the reason WORDMARK_PAGES gives.
+#
+# What this cannot say is whether a sentence is still true after a
+# rename. "Go to sign in" is prose, and prose is the owner's to write.
+PROSE_LINKS = {
+    ("404.html", "index.html"): frozenset({"Go to sign in"}),
+    ("admin.html", "charts.html"): frozenset({"Open it"}),
+    ("charts.html", "index.html"): frozenset({"Add yours"}),
+    ("index.html", "charts.html"): frozenset({"See what everyone adds up to"}),
+    ("your-page.html", "charts.html"): frozenset(
+        {"See what everyone adds up to"}),
+}
+
+# What a stale prose declaration is attributed to, for the reason
+# WORDMARK_PIN gives.
+PROSE_PIN = "PROSE_LINKS in tools/check_web.py"
+
+# One anchor, split into its attributes and what it shows, so the arm
+# can read a class off it. The wordmark is an anchor to index.html whose
+# words are the site's name rather than that page's, and check 10 holds
+# its four copies to each other - held here too it would answer to two
+# tables at once, and the next rename would have to satisfy both.
+ANCHOR = re.compile(r"<a\b([^>]*)>(.*?)</a>", re.S | re.I)
+ANCHOR_HREF = re.compile(r'href\s*=\s*["\']([^"\']*)["\']', re.I)
 
 HEADING = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
 TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.S | re.I)
@@ -2500,6 +2692,75 @@ def page_name_problems(text, expected):
     return problems
 
 
+def named_links(text):
+    """[(destination, label)] for the links on one page that name a page.
+
+    Everything the rail loop in page_name_problems() does not already
+    read: the session block's door, the footers' door, and every link in
+    the content that writes a page's name out. Off-site links belong to
+    somebody else's site, and the wordmark answers to check 10.
+    """
+    menu = rail_menu(text)
+    elsewhere = text.replace(menu, "") if menu else text
+
+    found = []
+    for attributes, shown in ANCHOR.findall(elsewhere):
+        href = ANCHOR_HREF.search(attributes)
+        if not href:
+            continue
+        if "wordmark" in " ".join(re.findall(CLASS_ATTR, attributes)).split():
+            continue
+        target = rail_target(href.group(1))
+        if target is None:
+            continue
+        found.append((target, label_text(shown)))
+    return found
+
+
+def named_link_problems(name, text):
+    """[problem] for one page's links calling a page something else."""
+    problems = []
+    for target, shown in named_links(text):
+        if target not in DESTINATIONS:
+            problems.append(
+                "links to %s, which names no destination in DESTINATIONS in "
+                "tools/check_web.py. Say what that page is called, or fix "
+                "the link - a link this table cannot resolve is one no "
+                "rename will ever reach" % target)
+        elif shown != DESTINATIONS[target] and shown not in PROSE_LINKS.get(
+                (name, target), frozenset()):
+            problems.append(
+                'has a link calling %s "%s", and that page is called "%s". '
+                "Either the name changed here and not in DESTINATIONS in "
+                "tools/check_web.py, or this link is a sentence rather than "
+                "a copy of the name and PROSE_LINKS has to say so"
+                % (target, shown, DESTINATIONS[target]))
+    return problems
+
+
+def prose_pin_problems(shown):
+    """[(subject, problem)] for prose declarations nothing carries.
+
+    `shown` is the (page, destination, words) actually found. A pin with
+    nothing behind it is a check that cannot fail, and the pages are
+    where the words live - so the table shrinks when the site does,
+    rather than quietly excusing a link that comes back later.
+    """
+    problems = []
+    for (page, target), labels in sorted(PROSE_LINKS.items()):
+        for words in sorted(labels):
+            if (page, target, words) in shown:
+                continue
+            problems.append((
+                PROSE_PIN,
+                'declares "%s" on %s as prose pointing at %s, and no link '
+                "there shows it. Delete the declaration, or restore the "
+                "link - a declaration with nothing behind it excuses a "
+                "copy of the name that nobody has written yet"
+                % (words, page, target)))
+    return problems
+
+
 def name_problems():
     """(page, problem) for surfaces that disagree about a page's name."""
     problems = []
@@ -2517,13 +2778,19 @@ def name_problems():
             "is pinned in DESTINATIONS in tools/check_web.py and is not a "
             "page in apps/web. Delete the entry, or restore the page"))
 
+    shown = set()
     for name in pages:
         if name not in DESTINATIONS:
             continue
-        for problem in page_name_problems(page_text(name),
-                                          DESTINATIONS[name]):
+        text = page_text(name)
+        for problem in page_name_problems(text, DESTINATIONS[name]):
             problems.append((name, problem))
+        for problem in named_link_problems(name, text):
+            problems.append((name, problem))
+        shown.update((name, target, words)
+                     for target, words in named_links(text))
 
+    problems.extend(prose_pin_problems(shown))
     return problems
 
 

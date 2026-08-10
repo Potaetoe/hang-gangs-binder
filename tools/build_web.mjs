@@ -171,13 +171,15 @@ export function cssShape(text) {
  * either way. The shipped bytes do not move; the build stops depending
  * on which machine ran the last checkout.
  *
- * The listed extensions are exactly the ones .gitattributes pins to
- * `eol=lf`, and that boundary is the point rather than a coincidence.
- * robots.txt and the three OFL licenses fall under `* text=auto`, which
- * hands this working tree CRLF - normalize those and every build leaves
- * them permanently modified against the index, which is enough to make
- * `./run bake`'s dirty-tree guard refuse to stamp a commit on a tree
- * where nothing is wrong.
+ * The listed extensions are the ones .gitattributes pins to `eol=lf`
+ * AND normalizes here. `*.txt` - robots.txt and the three OFL licenses -
+ * is pinned there too and is deliberately absent from this table, which
+ * is the part to leave alone. An attribute only takes effect when git
+ * writes the file, so a working tree checked out before that pin still
+ * holds those files in CRLF in BOTH trees, where they agree with each
+ * other and the byte-compare below passes. Copying them is what keeps
+ * that tree honest; normalizing would write LF into dist/ beside a CRLF
+ * source and fail the compare on a machine where nothing is wrong.
  *
  * Anything not listed is copied byte for byte, and the default is that
  * way round on purpose: woff2 is a compressed container, and "normalize
