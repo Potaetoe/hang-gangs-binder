@@ -469,80 +469,167 @@ check("no shipped page's wordmark disagrees with another's",
 
 
 # ------------------------------------------------------------------ #
-# Check 19 - the Theme control, present where it is pinned and absent  #
-# everywhere else.                                                    #
+# Check 19 - the palette control, in the shape each page is pinned to  #
+# carry, and absent everywhere else.                                  #
 
-# The pin first, because every rule below describes whichever pages it
-# names. The sign-in page is in it and the error page is not, and that
-# pair is the whole ruling on #150: one control at every width, offered
-# signed out, and never on the page somebody reaches by accident.
-check("the sign-in page is pinned to offer a palette",
-      "index.html" in check_web.THEMED_PAGES)
-check("the error page is pinned to offer none",
+# The pins first, because every rule below describes whichever pages
+# they name. The pair that matters is index.html against the other
+# three: the sign-in page offers its palettes in flow because a panel
+# opening there would open over the widget that signs people in, and
+# the signed-in pages float theirs because a panel that displaced a
+# form or a grid would be paid for on every page view.
+check("the sign-in page is pinned to the swatch shape",
+      check_web.SWATCH_PAGES == {"index.html"})
+check("the three signed-in pages are pinned to the flyout shape",
+      check_web.FLYOUT_PAGES ==
+      {"your-page.html", "charts.html", "admin.html"})
+check("the error page is pinned to offer no palette at all",
       "404.html" not in check_web.THEMED_PAGES)
-check("the three signed-in pages are pinned to offer a palette",
-      all(page in check_web.THEMED_PAGES
-          for page in ("your-page.html", "charts.html", "admin.html")))
+# The union is derived, so a page cannot be in a shape table and out of
+# the set every chip arm reads.
+check("every page in a shape table offers a palette",
+      check_web.THEMED_PAGES ==
+      check_web.FLYOUT_PAGES | check_web.SWATCH_PAGES)
+check("no page is pinned to two shapes at once",
+      not (check_web.FLYOUT_PAGES & check_web.SWATCH_PAGES))
 
-# And the pin has to match what actually ships.
-check("no shipped page's Theme control differs from its pin",
+# And the pins have to match what actually ships.
+check("no shipped page's palette control differs from its pin",
       check_web.theme_control_page_problems() == [])
 
-# The rules on strings, both directions on each. THEMED is the whole
-# control: the button, the group it names, and one chip inside it.
-THEMED = (
-    '<div class="theme-picker">'
-    '<button id="theme-toggle" aria-controls="theme-chips">Theme</button>'
-    '<div id="theme-chips"><button data-set-theme="midnight">M</button>'
-    '</div></div>'
+# The rules on strings, both directions on each. FLYOUT_MARKUP is the whole
+# signed-in control: the disclosure element, the word on its summary,
+# and one chip inside the panel it opens.
+FLYOUT_MARKUP = (
+    '<details class="theme-picker">'
+    '<summary>Theme</summary>'
+    '<div class="theme-flyout"><button data-set-theme="midnight">Midnight'
+    '</button></div>'
+    '</details>'
 )
 
-check("a complete Theme control on a page pinned to offer one "
-      "raises nothing",
-      check_web.theme_control_problems(THEMED, True) == [])
+# And SWATCH_MARKUP is the sign-in page's: a row in flow, and a dot named by
+# its aria-label because there are no words in a dot.
+SWATCH_MARKUP = (
+    '<div class="theme-swatches" role="group" aria-label="Color theme">'
+    '<button data-set-theme="midnight" aria-label="Midnight">'
+    '<span class="swatch-dot" data-palette="midnight"></span></button>'
+    '</div>'
+)
+
+check("a complete flyout on a page pinned to one raises nothing",
+      check_web.theme_control_problems(FLYOUT_MARKUP, check_web.FLYOUT) == [])
+check("a complete swatch row on a page pinned to one raises nothing",
+      check_web.theme_control_problems(SWATCH_MARKUP, check_web.SWATCH) == [])
 check("a page pinned to offer none, carrying none, raises nothing",
-      check_web.theme_control_problems('<main>Sorry.</main>', False) == [])
+      check_web.theme_control_problems('<main>Sorry.</main>', None) == [])
 
-# The ids one at a time, so a message names the missing one.
-check("a page that offers a palette and lost the button is refused",
-      any("theme-toggle" in p for p in check_web.theme_control_problems(
-          THEMED.replace('id="theme-toggle"', 'id="something-else"'), True)))
-check("a page that offers a palette and lost the chip group is refused",
-      any("theme-chips" in p for p in check_web.theme_control_problems(
-          THEMED.replace('id="theme-chips"', 'id="something-else"'), True)))
-
-# A disclosure opening an empty group is a control that reaches no
-# palette, and both ids survive that.
+# The element, not the class. A control assembled out of a <div> and a
+# script is a palette that disappears on the first script failure, and
+# the class alone would certify it.
+DIV_PICKER = FLYOUT_MARKUP.replace(
+    "<details", "<div").replace("</details>", "</div>")
+check("a flyout page whose disclosure is not a <details> is refused",
+      any("<details" in p for p in check_web.theme_control_problems(
+          DIV_PICKER, check_web.FLYOUT)))
+check("a flyout page whose summary lost the word Theme is refused",
+      any("summary" in p for p in check_web.theme_control_problems(
+          FLYOUT_MARKUP.replace("<summary>Theme</summary>",
+                                "<summary>Colors</summary>"),
+          check_web.FLYOUT)))
 check("a disclosure with no chip behind it is refused",
-      any("data-set-theme" in p for p in check_web.theme_control_problems(
-          THEMED.replace('data-set-theme', 'data-something'), True)))
+      any("empty panel" in p for p in check_web.theme_control_problems(
+          FLYOUT_MARKUP.replace("data-set-theme", "data-something"),
+          check_web.FLYOUT)))
+# Chips beside the control rather than inside it stand open in the
+# footer forever, and every arm above survives that untouched.
+check("chips outside the disclosure are refused",
+      any("OUTSIDE" in p for p in check_web.theme_control_problems(
+          '<details class="theme-picker"><summary>Theme</summary></details>'
+          '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
+# A <details> that never closes swallows the rest of the page into the
+# panel, and a reader that stopped at the first close tag would have
+# reported the chips as loose instead.
+check("a disclosure that never closes is refused as unreadable",
+      any("never closes" in p for p in check_web.theme_control_problems(
+          '<details class="theme-picker"><summary>Theme</summary>'
+          '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
+check("a nested <details> does not end the panel early",
+      check_web.theme_control_problems(
+          '<details class="theme-picker"><summary>Theme</summary>'
+          '<details><summary>More</summary></details>'
+          '<button data-set-theme="pink">Pink</button></details>',
+          check_web.FLYOUT) == [])
+check("a flyout page carrying the swatch row as well is refused",
+      any("swatch row" in p for p in check_web.theme_control_problems(
+          FLYOUT_MARKUP + SWATCH_MARKUP, check_web.FLYOUT)))
 
-# The absent direction, which is what stops a chip landing on the error
-# page the way every other copy-paste failure here lands.
-check("a page pinned to offer no palette, carrying the button, "
-      "is refused",
-      any("theme-toggle" in p for p in check_web.theme_control_problems(
-          '<button id="theme-toggle"></button>', False)))
-check("a page pinned to offer no palette, carrying the chip group, "
-      "is refused",
-      any("theme-chips" in p for p in check_web.theme_control_problems(
-          '<div id="theme-chips"></div>', False)))
+# The sign-in page's direction, and it is the one with a name. This is
+# the ruling being reversed rather than drifting.
+check("a disclosure on the sign-in page is refused",
+      any("Telegram widget" in p for p in check_web.theme_control_problems(
+          FLYOUT_MARKUP, check_web.SWATCH)))
+check("a bare Theme summary on the sign-in page is refused too",
+      any("Telegram widget" in p for p in check_web.theme_control_problems(
+          SWATCH_MARKUP + "<summary>Theme</summary>", check_web.SWATCH)))
+check("a sign-in page with chips and no swatch row is refused",
+      any("theme-swatches" in p for p in check_web.theme_control_problems(
+          '<button data-set-theme="pink" aria-label="Pink"></button>',
+          check_web.SWATCH)))
+check("a sign-in page with a swatch row and no chip is refused",
+      any("data-set-theme" in p for p in check_web.theme_control_problems(
+          '<div class="theme-swatches"></div>', check_web.SWATCH)))
+
+# The retired hooks, refused on every page rather than merely absent.
+# Nothing reads them: the disclosure opens itself and the sign-in page
+# has none, so an id left behind is what the next page copied from this
+# one inherits.
+for RETIRED in ("theme-toggle", "theme-chips"):
+    check("id=%s is refused on a flyout page" % RETIRED,
+          any(RETIRED in p for p in check_web.theme_control_problems(
+              FLYOUT_MARKUP.replace("<summary>",
+                             '<summary id="%s">' % RETIRED),
+              check_web.FLYOUT)))
+    check("id=%s is refused on a page that offers no palette" % RETIRED,
+          any(RETIRED in p for p in check_web.theme_control_problems(
+              '<div id="%s"></div>' % RETIRED, None)))
+
+# The absent direction, which is what stops a control landing on the
+# error page the way every other copy-paste failure here lands.
 check("a page pinned to offer no palette, carrying a chip, is refused",
       any("stored preference" in p
           for p in check_web.theme_control_problems(
-              '<button data-set-theme="pink">P</button>', False)))
+              '<button data-set-theme="pink">P</button>', None)))
+check("a page pinned to offer no palette, carrying a disclosure, "
+      "is refused",
+      any("pinned in neither" in p
+          for p in check_web.theme_control_problems(FLYOUT_MARKUP, None)))
+check("a page pinned to offer no palette, carrying a swatch row, "
+      "is refused",
+      any("pinned in neither" in p
+          for p in check_web.theme_control_problems(
+              '<div class="theme-swatches"></div>', None)))
 
 # The stale-pin arm. A roster entry with no page behind it is a check
 # that cannot fail, which is the failure #114 paid for - so it is
 # exercised here rather than assumed, by pinning a page that does not
 # ship and putting the real set back immediately.
-SHIPPING = check_web.THEMED_PAGES
-check_web.THEMED_PAGES = SHIPPING | {"nowhere.html"}
+SHIPPING_FLYOUT = check_web.FLYOUT_PAGES
+SHIPPING_THEMED = check_web.THEMED_PAGES
+check_web.THEMED_PAGES = SHIPPING_THEMED | {"nowhere.html"}
 check("a themed-page pin with no page behind it is refused",
       any(page == "nowhere.html"
           for page, _problem in check_web.theme_control_page_problems()))
-check_web.THEMED_PAGES = SHIPPING
-check("the real pin is back after the stale-pin arm",
+check_web.THEMED_PAGES = SHIPPING_THEMED
+
+# And a page pinned to both shapes, which would be read against one of
+# them while the other's refusals quietly stopped being reachable.
+check_web.FLYOUT_PAGES = SHIPPING_FLYOUT | {"index.html"}
+check("a page pinned to both shapes at once is refused",
+      any("BOTH" in problem
+          for _page, problem in check_web.theme_control_page_problems()))
+check_web.FLYOUT_PAGES = SHIPPING_FLYOUT
+check("the real pins are back after the stale-pin arms",
       check_web.theme_control_page_problems() == [])
 
 
@@ -1721,6 +1808,21 @@ check("a chip's words are read through its own inner markup",
       check_web.page_chips(
           '<button data-set-theme="pink"><span>Pink</span></button>')
       == [("pink", "Pink")])
+# The sign-in swatch: a colored dot has no words in it, so its name is
+# the aria-label. A reader that saw only visible words would leave
+# every swatch nameless, and the parity and ruled-word arms below would
+# then be comparing three pages while the fourth went unread.
+check("a wordless chip is named by its aria-label",
+      check_web.page_chips(
+          '<button data-set-theme="pink" aria-label="Pink">'
+          '<span class="swatch-dot" data-palette="pink"></span></button>')
+      == [("pink", "Pink")])
+# Visible words win, because they are what a sighted member acts on and
+# a label disagreeing with them is #152 one layer down.
+check("visible words outrank an aria-label that disagrees",
+      check_web.page_chips(
+          '<button data-set-theme="pink" aria-label="Rose">Pink</button>')
+      == [("pink", "Pink")])
 # None, not "" - a chip with no closing tag and a chip with no words
 # send whoever reads the failure to look at different things.
 check("a chip whose element never closes has no label to compare",
@@ -1745,8 +1847,8 @@ check("an empty chip id is refused",
 check("the same palette twice on one page is refused",
       any("two chips" in p for p in check_web.chip_roster_problems(
           chip_markup("pink", "Pink") + chip_markup("pink", "Rose"))))
-check("a chip with no visible words is refused",
-      any("no visible words" in p for p in check_web.chip_roster_problems(
+check("a chip with neither words nor an aria-label is refused",
+      any("nor an aria-label" in p for p in check_web.chip_roster_problems(
           '<button data-set-theme="pink"></button>')))
 check("a chip whose element never closes is refused",
       any("never closes" in p for p in check_web.chip_roster_problems(
@@ -2051,6 +2153,66 @@ check("a vendored family no stack leads with is reported",
       any("Comic Sans" in p for p in check_web.font_stack_problems(
           token_css(extra='@font-face { font-family: "Comic Sans"; '
                           'src: url("c.woff2"); }'))))
+
+
+# The sign-in swatches, which are the one component this check reads.
+# A dot cannot ask CSS for a palette other than the one the page is
+# wearing, so the eight colors are written on the component - and a
+# copy nothing compares is what stops meaning the palette the moment
+# that palette is retuned.
+def swatch_css(overrides=None, drop=()):
+    """The shipped swatch rules, with the named palettes edited."""
+    out = []
+    for palette, tokens in sorted(check_web.MOCKUP_PALETTES.items()):
+        if palette in drop:
+            continue
+        edit = (overrides or {}).get(palette, {})
+        shown = {"background": tokens["--color-bg"],
+                 "border-color": tokens["--color-accent"]}
+        shown.update(edit)
+        body = "".join("%s: %s;" % pair for pair in sorted(shown.items())
+                       if pair[1] is not None)
+        out.append('.swatch-dot[data-palette="%s"] { %s }' % (palette, body))
+    return "\n".join(out)
+
+
+check("swatches painted from the ruled palettes raise nothing",
+      check_web.swatch_problems(swatch_css()) == [])
+
+# The arm this exists for. Retune a palette and leave the dot behind,
+# and the row goes on looking exactly as deliberate as it did before.
+check("a swatch whose background has left its palette is refused",
+      any("--color-bg" in p for p in check_web.swatch_problems(
+          swatch_css({"pink": {"background": "#000000"}}))))
+check("a swatch whose ring has left its palette is refused",
+      any("--color-accent" in p for p in check_web.swatch_problems(
+          swatch_css({"midnight": {"border-color": "#000000"}}))))
+check("a swatch missing half the dot is refused",
+      any("falls through" in p for p in check_web.swatch_problems(
+          swatch_css({"daylight": {"border-color": None}}))))
+
+# Both directions on the roster, the DESTINATIONS way.
+check("a ruled palette with no swatch at all is refused",
+      any("contrast" in p for p in check_web.swatch_problems(
+          swatch_css(drop=("contrast",)))))
+check("a swatch for a palette the mockup does not rule is refused",
+      any("sepia" in p for p in check_web.swatch_problems(
+          swatch_css() +
+          '\n.swatch-dot[data-palette="sepia"] { background: #fff; '
+          'border-color: #000; }')))
+check("the same swatch painted twice over is refused",
+      any("times over" in p for p in check_web.swatch_problems(
+          swatch_css() + "\n" + swatch_css(drop=("pink", "daylight",
+                                                 "contrast")))))
+
+# And a stylesheet that offers no swatches at all fails rather than
+# passing quietly - four missing dots read as four missing rules, not
+# as a page that stopped offering palettes.
+check("a stylesheet painting no swatch at all is refused",
+      len(check_web.swatch_problems("")) == len(check_web.MOCKUP_PALETTES))
+
+check("the shipped stylesheet's swatches are the ruled palettes",
+      check_web.swatch_problems(check_web.stylesheet_text()) == [])
 
 
 # The reader under all of it. A table keyed on the exact bytes of a
