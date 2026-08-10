@@ -1158,9 +1158,13 @@ async function handleMe(request, env, origin, caller) {
  *
  * ORDER BY is not decoration. Without it the order is D1's to choose,
  * and a listing that reshuffles between loads is one a member cannot
- * read. Nothing in dev/worker.test.mjs can falsify the clause - the stub
- * answers out of an array already in id order - so the claim is a live
- * one and tools/check_live.py carries the row that says it is unmade.
+ * read. dev/worker.test.mjs reads the column, the direction and the cap
+ * off this statement and sorts by them, so dropping the clause or
+ * turning it around goes red there. What that cannot reach is D1: the
+ * sequence it compares against is produced by a sort in the suite, and
+ * whether the database honors the clause it was handed is a claim only
+ * a live round trip makes. tools/check_live.py carries the row that
+ * says that half is unmade.
  */
 async function handleMyEntries(env, origin, caller) {
   const rows = await env.DB.prepare(
