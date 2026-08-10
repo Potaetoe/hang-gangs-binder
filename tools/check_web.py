@@ -2317,6 +2317,7 @@ def theme_control_problems(text, shape):
                 for words in SUMMARY.findall(text))
     swatch_row = SWATCH_GROUP.search(text) is not None
     chips = CHIP_MARKUP.search(text) is not None
+    inside = len(CHIP_MARKUP.findall(body)) if body is not None else 0
 
     if shape == FLYOUT:
         if not disclosure:
@@ -2341,12 +2342,21 @@ def theme_control_problems(text, shape):
                 "offers a palette and carries no data-set-theme chip, so "
                 "its disclosure opens an empty panel. theme.js wires the "
                 "chips by that attribute and finds nothing to wire")
-        elif body is not None and not CHIP_MARKUP.search(body):
+        elif body is not None and inside < len(CHIP_MARKUP.findall(text)):
+            # COUNTED rather than asked whether any chip is inside. One
+            # chip left beside the disclosure while the others stay in it
+            # is the shape this arm is for, and "does the panel contain a
+            # chip" answers yes to it - which is how a stray palette
+            # button ends up standing open in the footer forever with the
+            # gate green. Found by mutation, which is what mutation is
+            # for.
             problems.append(
-                "carries its data-set-theme chips OUTSIDE the palette "
-                "disclosure. The panel floats from inside that element, so "
-                "chips left beside it are four buttons standing open in "
-                "the footer that no press ever folds away")
+                "carries %d of its %d data-set-theme chips OUTSIDE the "
+                "palette disclosure. The panel floats from inside that "
+                "element, so a chip left beside it is a button standing "
+                "open in the footer that no press ever folds away"
+                % (len(CHIP_MARKUP.findall(text)) - inside,
+                   len(CHIP_MARKUP.findall(text))))
         if swatch_row:
             problems.append(
                 "carries the sign-in page's always-visible swatch row as "

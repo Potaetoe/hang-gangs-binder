@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 505
+EXPECTED = 506
 
 
 def check(label, condition):
@@ -546,6 +546,15 @@ check("a disclosure with no chip behind it is refused",
 check("chips outside the disclosure are refused",
       any("OUTSIDE" in p for p in check_web.theme_control_problems(
           '<details class="theme-picker"><summary>Theme</summary></details>'
+          '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
+# The arm is a COUNT, not a "does the panel hold any chip". One chip
+# left beside a disclosure that still holds three answers yes to that
+# question and ships a button standing open in the footer forever -
+# which is how the first version of this arm passed a live mutation.
+check("ONE chip outside a disclosure that still holds others is refused",
+      any("1 of its 2" in p for p in check_web.theme_control_problems(
+          '<details class="theme-picker"><summary>Theme</summary>'
+          '<button data-set-theme="midnight">Midnight</button></details>'
           '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
 # A <details> that never closes swallows the rest of the page into the
 # panel, and a reader that stopped at the first close tag would have
