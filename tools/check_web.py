@@ -18,9 +18,10 @@ day a check is added:
 
 2. Nothing in apps/web looks like a private key. This is the one that
    matters. The whole design rests on the private key never being
-   published, and apps/web is copied verbatim to a public site - so the
-   moment a key lands in that directory it is public, permanently, in
-   the git history as well as on the web. A regex is a weak guard, but
+   published, and apps/web is what dist/ is built from (#181) - the
+   build strips comments and nothing else, so the moment a key lands in
+   this directory it is public, permanently, in the git history as well
+   as on the web, whatever the build does. A regex is a weak guard, but
    it catches the realistic accidents: pasting a key into config.js
    "just to test the export locally" and forgetting, and - now that
    tools/keygen.html exists - pasting the whole key file into config.js
@@ -670,14 +671,28 @@ day a check is added:
       evolves everywhere at once gets edited until it stops, and
       #142 is where that was learned. What it catches is one page
       moving alone.
+
+      What it CANNOT catch is stated where it is implemented: this
+      arm can only see a difference the card pages' body classes can
+      express, and today those pages carry the same ones. The roster
+      below is the teeth, and #154's sweep found both of its gaps.
     - THE SCOPED OVERRIDE, which is how one page moves alone. Every
-      surface-qualified rule painting a card component -
-      `body.instrument .card` is the one that exists - is named in
-      CARD_SCOPES with the surface it is for, in both directions. An
-      override nobody wrote down fails; a pin whose block has gone
-      fails as stale. With two card pages the agreement arm alone
+      surface-qualified rule painting a card component is named in
+      CARD_SCOPES with the surface it is for and WITH WHAT IT
+      DECLARES, in every direction. An override nobody wrote down
+      fails; a pin whose block has gone fails as stale; a rostered
+      scope whose own values have moved fails too, because a roster
+      that answers only whether a scope exists is one the design
+      drifts underneath. With two card pages the agreement arm alone
       could be satisfied by a rule that moved both, and this is the
       half that refuses it.
+
+      A component is read however its compound is qualified -
+      `div.card` and `main.stack` paint cards and stacks - and a
+      compound this reader cannot score is REPORTED rather than
+      dropped, the way an unresolvable scope already was. Both are
+      #154's partition-2 finding: silence and agreement printed the
+      same word.
 
     Then the markup, which is where a grammar is actually worn:
 
@@ -4267,9 +4282,21 @@ GEOMETRY_SUBJECTS = ("h2", ".card", ".stack")
 # `padding-top` on one page and `padding` on the other is a difference
 # a set of four names never sees, and neither is a shorthand somebody
 # splits in half while "tidying".
+#
+# The width family is here because the owner ruling this check holds
+# opens with "cards to all be the same width" - a card's width is the
+# first thing that ruling is about, and a per-page width override is
+# the drift arriving in the plainest way there is. The logical
+# properties are the same evasion as the longhands one row up:
+# `inline-size` is `width` under another name, and a family that
+# refused only the physical spelling would be a family somebody rewrote
+# rather than obeyed.
 GEOMETRY_PROPERTY = re.compile(
     r"^(background|background-[\w-]+|border|border-[\w-]+"
     r"|padding|padding-[\w-]+|gap|row-gap|column-gap"
+    r"|width|min-width|max-width"
+    r"|inline-size|min-inline-size|max-inline-size"
+    r"|margin|margin-[\w-]+|flex-basis"
     r"|font-family|font-size)$")
 
 # The surface-qualified rules that may paint a card component, and what
@@ -4283,17 +4310,54 @@ GEOMETRY_PROPERTY = re.compile(
 # Both directions, the DESTINATIONS way. An entry whose block has gone
 # is a pin that can no longer fail, and a block no entry names is the
 # override nobody declared.
+#
+# And each entry pins what its scope DECLARES, not merely that it
+# exists. A roster that answered only the existence question let the
+# scope's own values move underneath it - the instrument's card padding
+# could become 7px and every arm stayed quiet, which is #178's defect
+# one indirection out. `declares` is keyed by (media condition,
+# property) because a scope that only exists inside a breakpoint is a
+# different override from one that always applies, and the empty
+# condition is the unconditional rule. Editing a value here in the same
+# change as the stylesheet is the point: deliberately the same
+# two-place act as raising a ceiling in tools/check_budget.py.
 CARD_SCOPES = {
-    ("body.instrument", ".card"):
-        "the instrument's remaining warning boxes, tightened with the "
-        "rest of that surface by the owner's decision on #73. It is a "
-        "scope rather than drift because #178 took the instrument out "
-        "of the card grammar entirely - what is left inside these "
-        "boxes is a caution and a paragraph, never a tool",
-    ("body.instrument", "h2"):
-        "the instrument gives up the display serif (#73), and a card "
-        "heading is that decoration one level down. The sizes stay "
-        "ordered so the page title stays the largest thing on it",
+    ("body.instrument", ".card"): {
+        "why":
+            "the instrument's remaining warning boxes, tightened with "
+            "the rest of that surface by the owner's decision on #73. "
+            "It is a scope rather than drift because #178 took the "
+            "instrument out of the card grammar entirely - what is "
+            "left inside these boxes is a caution and a paragraph, "
+            "never a tool",
+        "declares": {
+            ("", "padding"): "var(--space-3) var(--space-4) var(--space-4)",
+            ("", "gap"): "var(--space-2)",
+        },
+    },
+    ("body.instrument", "h2"): {
+        "why":
+            "the instrument gives up the display serif (#73), and a "
+            "card heading is that decoration one level down. The sizes "
+            "stay ordered so the page title stays the largest thing on "
+            "it",
+        "declares": {
+            ("", "font-family"): "var(--font-body)",
+            ("", "font-size"): "var(--text-base)",
+        },
+    },
+    ("body.instrument", ".stack"): {
+        "why":
+            "the instrument's section-to-section rhythm, which #178 "
+            "ruled and measured at --space-8 against the card pages' "
+            "--space-4. A runner is a thin line and needs air above it "
+            "to read as a division rather than as another paragraph, "
+            "so this scope is the de-carded grammar itself rather than "
+            "drift away from the shared one",
+        "declares": {
+            ("", "gap"): "var(--space-8)",
+        },
+    },
 }
 
 BODY_CLASS_ATTR = re.compile(
@@ -4320,28 +4384,102 @@ def body_classes(text):
     return frozenset(found.group(1).split()) if found else frozenset()
 
 
+# One compound's simple selectors. Every shape is listed, including the
+# ones this reader cannot score, because the whole point is to tell
+# "not a card rule" apart from "a card rule in a shape I cannot read" -
+# and a tokenizer that only knew the readable shapes would answer the
+# first for both.
+SIMPLE_SELECTOR = re.compile(
+    r"\*|[a-zA-Z][\w-]*|\.[\w-]+|#[\w-]+|\[[^\]]*\]"
+    r"|::?[\w-]+(?:\([^)]*\))?")
+
+# The two it can: a type selector and a class selector. Those are what
+# selector_weight() below scores exactly.
+TYPE_OR_CLASS = re.compile(r"[a-zA-Z][\w-]*|\.[\w-]+")
+
+# Whether a compound names a component at all, for the case where it
+# does not tokenize. The lookarounds are why `.stack-tight` is not
+# `.stack` and `div.h2` is not `h2`.
+SUBJECT_MENTION = re.compile(
+    "|".join(r"(?<![\w-])%s(?![\w-])" % re.escape(name)
+             if name.startswith(".")
+             else r"(?<![\w.-])%s(?![\w-])" % re.escape(name)
+             for name in GEOMETRY_SUBJECTS))
+
+
+def compound_simples(compound):
+    """[simple selector] for one compound, or None if it does not read."""
+    simples = []
+    index = 0
+    while index < len(compound):
+        found = SIMPLE_SELECTOR.match(compound, index)
+        if not found:
+            return None
+        simples.append(found.group(0))
+        index = found.end()
+    return simples
+
+
 def geometry_subject(selector):
-    """(context, subject) for a selector painting a card component.
+    """(context, subject, compound) for a rule painting a card component.
 
     Read from the right-hand end, the way the cascade does: the
     rightmost compound is what the rule paints, and everything left of
     it is the condition under which it paints. `.stack-tight` is a
-    different component from `.stack` and must not match it, so the
-    compound is compared whole rather than by prefix.
+    different component from `.stack` and must not match it, so simple
+    selectors are compared whole rather than by prefix.
+
+    A qualifier does not make a component a different component.
+    `div.card`, `main.stack`, `section.card.wide` and `.card.card` all
+    paint cards, a browser applies every one of them, and reading only
+    the bare form is how a per-page override written the ordinary way
+    stayed out of both arms (#154's partition-2 finding). What the
+    qualifier does change is specificity, which selector_weight() below
+    scores from this compound rather than from the subject.
+
+    `subject` is None when the compound names a component in a shape
+    this reader cannot score - a pseudo-class, a pseudo-element, an
+    attribute, an id, or two components at once. That is REPORTED by
+    the caller, never passed over: an arm that drops what it cannot
+    parse prints the same OK as one that found nothing wrong, which is
+    #34, and the unreadable-context path beside it has always said so.
+
+    The residual is stated rather than hidden. A modifier class reads
+    as its component, so `.card.narrow` is compared as though every
+    card carried it - loud where it is wrong, which is the direction a
+    refusal is allowed to be wrong in. `.narrow` is refused outright by
+    this same check, so the shape has no home here to begin with.
     """
     compounds = " ".join(selector.split()).split()
-    if not compounds or compounds[-1] not in GEOMETRY_SUBJECTS:
+    if not compounds:
         return None
-    return " ".join(compounds[:-1]), compounds[-1]
+    context, compound = " ".join(compounds[:-1]), compounds[-1]
+
+    simples = compound_simples(compound)
+    if simples is None:
+        return (context, None, compound) if SUBJECT_MENTION.search(
+            compound) else None
+
+    named = {simple for simple in simples if simple in GEOMETRY_SUBJECTS}
+    if not named:
+        return None
+    if len(named) > 1 or not all(TYPE_OR_CLASS.fullmatch(simple)
+                                 for simple in simples):
+        return context, None, compound
+    return context, named.pop(), compound
 
 
 def geometry_declarations(css):
-    """[(media, context, subject, [(property, value)])] in source order.
+    """[(media, context, subject, compound, [(property, value)])].
 
-    Blocks declaring no geometry are left out entirely, so @font-face,
-    @keyframes and every color rule never appear here at all. Order
-    within one media scope is document order, which is what makes "the
-    last declaration wins" resolvable below.
+    In source order. Blocks declaring no geometry are left out
+    entirely, so @font-face, @keyframes and every color rule never
+    appear here at all. Order within one media scope is document order,
+    which is what makes "the last declaration wins" resolvable below.
+
+    The raw compound rides along because specificity is scored from it
+    and the messages name it: a subject this reader cannot score has
+    nothing else to be called by.
     """
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
     blocks = []
@@ -4357,7 +4495,8 @@ def geometry_declarations(css):
             for selector in rule.group(1).split(","):
                 found = geometry_subject(selector)
                 if found:
-                    blocks.append((media, found[0], found[1], declared))
+                    blocks.append((media, found[0], found[1], found[2],
+                                   declared))
 
     outside = []
     index = 0
@@ -4400,14 +4539,21 @@ def context_applies(context, classes):
     return wanted <= set(classes)
 
 
-def selector_weight(context, subject):
+def selector_weight(context, compound):
     """(classes, elements) for one of the selectors this file accepts.
 
     Specificity, restricted to the vocabulary context_applies() will
-    resolve at all: a component subject is one class, `h2` is one
-    element, and a context is `body` plus however many classes it names.
-    That is exact here rather than an approximation, because anything
-    outside the vocabulary is reported as unreadable instead of scored.
+    resolve at all: the compound contributes one per class and one per
+    type selector it actually carries, and a context is `body` plus
+    however many classes it names. That is exact here rather than an
+    approximation, because anything outside the vocabulary is reported
+    as unreadable instead of scored.
+
+    Scored from the COMPOUND rather than from the subject, which is the
+    other half of reading `div.card` as a card at all: it outranks
+    `.card` wherever it sits, and calling both of them one class would
+    hand the tie back to source position - the very defect the
+    paragraph below says this function exists to have fixed.
 
     IT HAS TO BE MODELLED, and the first version of this check did not,
     which is the whole reason this function exists. Ordering by source
@@ -4419,8 +4565,9 @@ def selector_weight(context, subject):
     agreement. Caught by mutation: the scope was declared honestly, the
     roster was satisfied, and the comparison stayed silent.
     """
-    classes = 1 if subject.startswith(".") else 0
-    elements = 0 if subject.startswith(".") else 1
+    simples = compound_simples(compound) or []
+    classes = len([simple for simple in simples if simple.startswith(".")])
+    elements = len([simple for simple in simples if simple[:1].isalpha()])
     if context:
         match = CONTEXT_COMPOUND.match(context)
         classes += len([name for name in match.group(1).split(".") if name])
@@ -4429,7 +4576,12 @@ def selector_weight(context, subject):
 
 
 def resolved_geometry(blocks, classes):
-    """({(media, subject, property): value}, [unreadable context]).
+    """({(media, subject, property): value}, [(context, subject, compound)]).
+
+    The second half is what could not be read - a context in a shape
+    this reader has no vocabulary for, or a subject it cannot score,
+    the two told apart by whether `subject` is None. Both are handed
+    back for REPORTING rather than dropped.
 
     The cascade as a browser resolves it, within one media scope and
     over the rules whose context the page satisfies: specificity first,
@@ -4444,14 +4596,18 @@ def resolved_geometry(blocks, classes):
     resolved = {}
     unreadable = []
     ordered = []
-    for index, (media, context, subject, declared) in enumerate(blocks):
+    for index, (media, context, subject, compound,
+                declared) in enumerate(blocks):
+        if subject is None:
+            unreadable.append((context, None, compound))
+            continue
         applies = context_applies(context, classes)
         if applies is None:
-            unreadable.append((context, subject))
+            unreadable.append((context, subject, compound))
             continue
         if not applies:
             continue
-        ordered.append((selector_weight(context, subject), index,
+        ordered.append((selector_weight(context, compound), index,
                         media, subject, declared))
 
     for _, _, media, subject, declared in sorted(ordered,
@@ -4480,6 +4636,16 @@ def geometry_agreement_problems(css, pages):
     rather than from a table: which surface a page declares is check
     18's to pin, and reading it here rather than restating it is what
     keeps one fact in one place.
+
+    WHAT THIS ARM CANNOT SAY, and it has to be said out loud because
+    the arm reads as though it compared everything: it can only find a
+    difference the card pages' BODY CLASSES can express. Today they
+    carry the same ones, so every scope either reaches both pages or
+    neither, and no stylesheet edit can make these two resolutions
+    diverge at all. The roster below is the teeth in that arrangement -
+    which is why both of #154's blocks-cutover findings against this
+    check were about what the roster could see, and why a gap here is
+    not covered by "the other arm would catch it".
     """
     problems = []
     blocks = geometry_declarations(css)
@@ -4493,11 +4659,30 @@ def geometry_agreement_problems(css, pages):
                  "tools/check_web.py are what say which pages those are")]
 
     resolutions = {}
+    # Reported once rather than once per wearer: what a reader cannot
+    # read does not depend on which page it was being read against, and
+    # the same sentence twice reads as two defects.
+    reported = set()
     for name in wearers:
         resolved, unreadable = resolved_geometry(blocks,
                                                  body_classes(pages[name]))
         resolutions[name] = resolved
-        for context, subject in unreadable:
+        for entry in unreadable:
+            if entry in reported:
+                continue
+            reported.add(entry)
+            context, subject, compound = entry
+            if subject is None:
+                problems.append((
+                    STYLESHEET,
+                    "paints a card component with \"%s\", which this check "
+                    "cannot score. It reads a compound of type and class "
+                    "selectors and nothing else, so a component behind a "
+                    "pseudo-class, an attribute or an id - or two components "
+                    "at once - is reported rather than passed over. A rule "
+                    "the browser applies and this arm drops is exactly how a "
+                    "shape came apart unnoticed (#178)" % compound))
+                continue
             problems.append((
                 STYLESHEET,
                 "paints %s under \"%s\", which this check cannot resolve "
@@ -4531,27 +4716,67 @@ def geometry_agreement_problems(css, pages):
 
 
 def card_scope_problems(css):
-    """[(subject, problem)] for surface overrides nobody wrote down."""
+    """[(subject, problem)] for surface overrides nobody wrote down.
+
+    Three refusals, not one. A scope no entry names is the override
+    nobody declared; an entry with no block behind it is a pin that can
+    no longer fail; and a rostered scope whose DECLARATIONS have moved
+    is the one the first two miss - #154's partition-3 finding, where
+    the instrument's card padding could become 7px with every arm
+    quiet, because the roster only ever answered whether the scope
+    existed.
+
+    Blocks are merged per scope before any of that, in source order, so
+    a surface written across two rules is one entry here rather than
+    two reports of the same thing.
+    """
     problems = []
-    found = set()
+    declared = {}
 
-    for media, context, subject, _ in geometry_declarations(css):
-        if not context:
+    for media, context, subject, _, pairs in geometry_declarations(css):
+        if subject is None or not context:
             continue
-        found.add((context, subject))
-        if (context, subject) in CARD_SCOPES:
-            continue
-        problems.append((
-            STYLESHEET,
-            "paints %s under \"%s\"%s, and CARD_SCOPES in tools/check_web.py "
-            "does not name it. A rule that shapes a card on one surface and "
-            "not another is how the pages came apart in the first place "
-            "(#178): say there which surface it is for and why, or take the "
-            "scope off and move the design everywhere at once"
-            % (subject, context,
-               " inside @media %s" % media if media else "")))
+        block = declared.setdefault((context, subject), {})
+        for name, value in pairs:
+            block[(media, name)] = value
 
-    for context, subject in sorted(set(CARD_SCOPES) - found):
+    for key in sorted(declared):
+        context, subject = key
+        found = declared[key]
+        conditions = "".join(
+            " inside @media %s" % media
+            for media in sorted({media for media, _ in found if media}))
+
+        if key not in CARD_SCOPES:
+            problems.append((
+                STYLESHEET,
+                "paints %s under \"%s\"%s, and CARD_SCOPES in "
+                "tools/check_web.py does not name it. A rule that shapes a "
+                "card on one surface and not another is how the pages came "
+                "apart in the first place (#178): say there which surface it "
+                "is for and why, or take the scope off and move the design "
+                "everywhere at once" % (subject, context, conditions)))
+            continue
+
+        pinned = CARD_SCOPES[key]["declares"]
+        for media, name in sorted(set(pinned) | set(found)):
+            here = found.get((media, name))
+            there = pinned.get((media, name))
+            if here == there:
+                continue
+            problems.append((
+                STYLESHEET,
+                "gives %s a %s of %s under \"%s\"%s, and CARD_SCOPES in "
+                "tools/check_web.py pins %s. A roster that says only THAT a "
+                "scope exists cannot see the scope itself move: edit the "
+                "entry in the same change as the rule - the same two-place "
+                "act as raising a ceiling in tools/check_budget.py - or say "
+                "in that change why the surface needs this one"
+                % (subject, name, here or "nothing", context,
+                   " inside @media %s" % media if media else "",
+                   there or "nothing")))
+
+    for context, subject in sorted(set(CARD_SCOPES) - set(declared)):
         problems.append((
             STYLESHEET,
             "declares no geometry for %s under \"%s\", and CARD_SCOPES in "
