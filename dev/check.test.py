@@ -72,7 +72,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # having no check at all.
-EXPECTED = 37
+EXPECTED = 40
 
 # Every scratch root built here, so the suite removes what it made even
 # when an arm fails. mkdtemp does not clean up after itself.
@@ -293,6 +293,30 @@ check("a Python suite is a *.test.py file",
       gate.PYTHON_SUITE_SUFFIX == ".test.py")
 check("the Python roster names something",
       len(gate.PYTHON_SUITES) > 0)
+
+# Found by mutation on this branch: the walk fired on a stray
+# dev/stray.test.py and told the reader to add it to NODE_SUITES, which
+# is the list that would then fail for naming a .test.py. A message that
+# sends somebody to the wrong file is a check that costs more than it
+# saves, and one walk serving two rosters is exactly where that happens.
+root = tree("arrived.test.py")
+misdirected = gate.roster_problems([], {}, root, gate.PYTHON_SUITE_SUFFIX,
+                                   ("PYTHON_SUITES", "PYTHON_SUITES_EXCLUDED"))
+check("the Python walk sends the reader to the Python roster",
+      "PYTHON_SUITES" in only(misdirected)
+      and "NODE_SUITES" not in only(misdirected))
+
+root = tree()
+stale_named = gate.roster_problems([], {"dev/x.test.py": "a reason"}, root,
+                                   gate.PYTHON_SUITE_SUFFIX,
+                                   ("PYTHON_SUITES",
+                                    "PYTHON_SUITES_EXCLUDED"))
+check("and names the Python exclusion list when that is the one at fault",
+      "PYTHON_SUITES_EXCLUDED" in only(stale_named))
+
+root = tree("arrived.test.mjs")
+check("the Node walk still names the Node roster",
+      "NODE_SUITES" in only(gate.roster_problems([], {}, root)))
 
 # ---------------------------------------------------------------------
 # The link the Node side does not need. main() loops over NODE_SUITES,
