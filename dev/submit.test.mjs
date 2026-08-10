@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 93;
+const EXPECTED = 95;
 
 function check(label, condition) {
   performed++;
@@ -371,8 +371,27 @@ function engineStubs(history) {
       roles: { kind: "categorical" }, bmi: { kind: "bins" },
       weight: { kind: "bins" }, height: { kind: "bins" },
     }),
+    /*
+     * The snapshot is shaped like the one apps/web/dashboard.js really
+     * builds under `identify: true` - the members the page is supposed
+     * to drop as well as the one it keeps. A stub handing back only
+     * `bases` could not tell a page that scrubs from a page that never
+     * had anything to scrub, which is the whole of what the arm below
+     * asks.
+     */
     personalSource(entries, now) {
-      const source = { personal: true, entries: entries, now: now };
+      const source = {
+        personal: true, entries: entries, now: now,
+        snapshot: {
+          snapshot: 3,
+          identified: true,
+          counts: { entries: entries.length, people: 1 },
+          series: [{ label: "@member", points: [{ at: 1, kg: 90 }] }],
+          quality: { heightChanges: [], handleChanges: [{ was: "@old" }] },
+          bases: { people: {}, entries: {} },
+          movement: { kg: 1 },
+        },
+      };
       engine.sources.push(source);
       return source;
     },
@@ -1686,6 +1705,34 @@ check("a listing the page cannot read is reported, not drawn as empty",
  */
 const historyCode = submitSource.replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+/*
+ * WHAT SURVIVES THE FRAME THAT DECRYPTED THE ROWS, asserted as a key set
+ * rather than as the absence of the members that happen to worry us
+ * today.
+ *
+ * Every control's handler closes over the source, so the source is what
+ * lives for the tab. `personalSource` builds its snapshot with
+ * `identify: true`, which is the keyholder's setting: it fills in a
+ * per-person series whose points are unquantized and whose label is a
+ * handle, plus a data-quality panel listing a member's own measurement
+ * disagreements. `run` reads exactly one member of that document -
+ * `bases[basis]` - so everything else is retained plaintext with no
+ * reader.
+ *
+ * The key set is compared whole so a future field cannot arrive and be
+ * retained silently; checking only that `quality` is gone would say
+ * nothing about the next one.
+ */
+check("only the partitions the chart is drawn from survive",
+  opened.engine.sources.length === 1 &&
+  Object.keys(opened.engine.sources[0].snapshot).slice().sort().join(",") ===
+    ["bases", "identified", "snapshot"].join(","));
+
+check("and the handle the record carried never entered the source at all",
+  opened.engine.sources[0].entries.every((entry) =>
+    !("telegram" in entry)) &&
+  !JSON.stringify(opened.engine.sources[0].entries).includes("browser_check"));
 
 check("no decrypted value is written to storage or hung on the global",
   !/(localStorage|sessionStorage)[\s\S]{0,40}(record|entries|decrypt)/i

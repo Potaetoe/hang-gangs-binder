@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 318
+EXPECTED = 317
 
 
 def check(label, condition):
@@ -1390,31 +1390,38 @@ check("the exemption is per script, not per namespace",
           check_web.run_order_problems(
               ["submit.js"], {"submit.js": {"BinderMemberKey"}})))
 
-GUARDED = ('(function (root) { function go() { const keys = '
-           'root.BinderMemberKey; if (keys && keys.forget) keys.forget(); } '
-           '})(globalThis);')
+# WHAT THIS FILE MAY AND MAY NOT ASSERT ABOUT THE EXEMPTION.
+#
+# An earlier version of these arms exercised a textual shape rule here -
+# brace depth for "is the read deferred", a regex for "is it guarded" -
+# and a review defeated every one of them: a deep-defined function CALLED
+# at top level, a brace inside a string literal inflating the counter,
+# and a dead or string-embedded guard. Those were proxies for a runtime
+# property, and no rewriting of a proxy fixes that.
+#
+# The property is earned by running the shipped bytes, in
+# dev/memberkey.test.mjs, which reads the table below and fails if a
+# declared namespace is touched during load. What is left here is what
+# Python over text can honestly say: the row exists, it carries a reason,
+# and it names a script that really reads the namespace.
+READS = ('(function (root) { function go() { const keys = '
+         'root.BinderMemberKey; if (keys) keys.forget(); } })(globalThis);')
 
-check("a deferred read inside a function, guarded, raises nothing",
-      check_web.deferred_capture_problems("signout.js", GUARDED) == [])
-check("the same read at the module's own top level is refused",
-      any("top level" in p for p in check_web.deferred_capture_problems(
-          "signout.js",
-          "(function (root) { const keys = root.BinderMemberKey; })"
-          "(globalThis);")))
-check("an unguarded deferred read is refused",
-      any("does not guard" in p for p in check_web.deferred_capture_problems(
-          "signout.js",
-          "(function (root) { function go() { const keys = "
-          "root.BinderMemberKey; keys.forget(); } })(globalThis);")))
-check("a deferred read bound to no name is refused",
-      any("nothing for the absence guard" in p
-          for p in check_web.deferred_capture_problems(
-              "signout.js",
-              "(function (root) { function go() { "
-              "root.BinderMemberKey.forget(); } })(globalThis);")))
-check("a script with no declaration of its own is not shape-checked here",
-      check_web.deferred_capture_problems("ui.js", GUARDED) == [])
-check("and the shipped signout.js satisfies the shape it claims",
+check("a declared pair whose script really reads the namespace is fine",
+      check_web.deferred_capture_problems("signout.js", READS) == [])
+# The staleness arm, which is the one failure a registry can have on its
+# own: the code moved and the exemption outlived it. An exemption for a
+# read that is not there suppresses ordering for nothing, and the next
+# reader has no way to tell it from a live one.
+check("an exemption for a namespace the script never reads is refused",
+      any("guards nothing" in p for p in
+          check_web.deferred_capture_problems(
+              "signout.js", "(function (root) { })(globalThis);")))
+check("a script with no declaration of its own is not judged here",
+      check_web.deferred_capture_problems("ui.js", READS) == [])
+check("every declared pair carries a reason somebody can review",
+      all(reason.strip() for reason in check_web.DEFERRED_CAPTURES.values()))
+check("and the shipped signout.js satisfies what this file can check",
       check_web.deferred_capture_problems(
           DEFERRED[0],
           check_web.strip_js_comments(open(

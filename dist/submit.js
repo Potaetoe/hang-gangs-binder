@@ -345,7 +345,6 @@
       accountId: account,
       receivedAt: row.receivedAt,
       submittedAt: record.submittedAt,
-      telegram: record.telegram,
       kg: weight.kg, lb: weight.lb,
       cm: height.cm, totalInches: height.totalInches,
       feet: height.feet, inches: height.inches,
@@ -358,6 +357,15 @@
       over18: record.over18 === true,
       recordVersion: record.record,
     };
+  }
+
+  
+
+  function scrub(snapshot) {
+    delete snapshot.quality;
+    delete snapshot.series;
+    delete snapshot.counts;
+    delete snapshot.movement;
   }
 
   
@@ -486,6 +494,7 @@
     let source;
     try {
       source = Query.personalSource(entries, Date.now());
+      scrub(source.snapshot);
     } catch (error) {
       historyStatus("Your entries could not be read as a history. " +
         (error && error.message ? error.message : ""), true);

@@ -325,7 +325,40 @@ CEILINGS = {
     "admin.html": 144900,
     "dashboard.html": 130000,
     "index.html": 119400,
-    "submit.html": 138200,
+    # 138200 -> 142200. The owner's reviewed act, 2026-08-09 evening,
+    # taken on a decision question with the measurements in front of it
+    # and recorded on #85 at close. THIS IS THE FIRST CEILING THIS
+    # SYSTEM HAS MOVED, and this diff is the record of it, which is the
+    # mechanism working rather than an exception to it: growth becomes a
+    # reviewed act instead of an accident, and here it was reviewed by
+    # the person whose budget it is.
+    #
+    # The page gained the personal history pane by owner order (#85's
+    # member-held keys), so the budget for what the page does moved with
+    # what the page does. It is not a page that grew by drift.
+    #
+    # The number is chosen against the one hazard a local measurement
+    # cannot see. At 138200 the page measured 1.47% clear, and this file
+    # documents CI gzip variance of up to 4.3% - so the margin was
+    # inside the noise of the two machines that run this gate, and a
+    # green local run would not have predicted the runner. +4000 B
+    # restores 4.25%, which sits just under that documented worst case
+    # rather than comfortably above it; that is the honest description
+    # of what was bought.
+    #
+    # Rejected in the same decision, and recorded so they are not
+    # re-proposed as savings nobody considered: stripping the wordmark
+    # face's OpenType layout would free 3532 B and leave 404.html 42 B
+    # above the stale-headroom floor below - a 0.046% margin on the
+    # other arm of this same check, which relocates the risk rather than
+    # removing it. Subsetting the mono face is real and larger, and is a
+    # slice of its own rather than a thing to fold into a feature.
+    #
+    # The standing no-ceiling-moves ruling on #85 is superseded FOR THIS
+    # ONE CEILING by the owner personally. Every other pin here stands,
+    # and STALE_ABOVE still polices this one from the other direction -
+    # a ceiling that outruns its page fails whoever raised it.
+    "submit.html": 142200,
 }
 
 # What a fresh pin gets: about ten percent of room to grow into. Large

@@ -22,6 +22,7 @@
  * claim it says so here rather than being quietly omitted.
  */
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import { suite } from "./harness.mjs";
 
 const HERE = (p) => new URL(p, import.meta.url);
@@ -38,7 +39,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 34);
+const { check, report } = suite("memberkey.js", 38);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -392,6 +393,137 @@ await check("and the name it calls is the name this module exports", () => {
   const called = /(\w+)\.forget\(\)/.exec(signOutSource);
   return Boolean(called) && typeof Keys.forget === "function";
 });
+
+/* ------------------------------------------------------------------ */
+/* The deferred-capture exemption, earned by running the bytes.        */
+
+/*
+ * WHY THIS IS HERE AND NOT IN tools/check_web.py.
+ *
+ * signout.js is loaded by every signed-in page; memberkey.js by the one
+ * page that seals entries. So signout.js reads `BinderMemberKey` off a
+ * global that two of the three pages never publish, and
+ * `DEFERRED_CAPTURES` in check_web.py exempts that pair from the
+ * script-ordering rule.
+ *
+ * That exemption is dangerous in a specific way, and it is worth naming
+ * before the arms: it does not merely permit the read, it REMOVES ORDER
+ * POLICING for the pair. So if the read were in fact a load-time
+ * capture, a later reorder of submit.html's script run would capture
+ * undefined, sign-out would silently stop destroying the key, and
+ * DESIGN.md's sentence about signing out would go false with every
+ * stage of the gate green.
+ *
+ * check_web.py tried to earn the exemption from the text - the
+ * reference must sit deeper than the module's top level, and the value
+ * must be guarded. A review defeated all three arms of that:
+ *
+ *   - a function DEFINED deep and CALLED at the module's top level
+ *     reads at load while sitting at depth 2;
+ *   - an unbalanced brace inside a string literal inflates a raw brace
+ *     counter permanently, so everything after it reads as deep -
+ *     including the exact `const UI = root.BinderUI;` hazard;
+ *   - a file-wide regex for a guard is satisfied by a dead one
+ *     (`if (keys && false)`) or by the guard's own text inside a
+ *     string, while the real use goes unguarded.
+ *
+ * Each of those is a textual proxy for a runtime property, so the fix
+ * is not a better regex. The property is "the namespace is not touched
+ * while the page loads", and the only thing that settles it is loading
+ * the page's actual bytes and watching. These arms do that, over the
+ * TABLE rather than over signout.js by name, so a pair added to
+ * check_web.py with no execution evidence fails here.
+ */
+const checkWeb = await readFile(HERE("../tools/check_web.py"), "utf8");
+/* The table's own block, bounded before anything is read out of it. A
+ * pattern swept over the whole file matches every other two-string tuple
+ * in it, and a reader that finds the wrong rows is worse than one that
+ * finds none - it would exercise pairs that are not exemptions and miss
+ * the ones that are. */
+const table = /DEFERRED_CAPTURES = \{([\s\S]*?)^\}/m.exec(checkWeb);
+const declared = table ? [...table[1].matchAll(
+  /\(\s*"([\w.-]+)",\s*"(\w+)"\s*\)\s*:/g)].map((one) => ({
+  script: one[1], namespace: one[2],
+})) : [];
+
+await check("the deferred-capture table is readable, and it is not empty",
+  () => Boolean(table) && declared.length > 0 &&
+    declared.some((one) => one.script === "signout.js" &&
+      one.namespace === "BinderMemberKey"));
+
+/*
+ * One load, one recorded global.
+ *
+ * The namespace is defined as a GETTER on the context's own global, so
+ * every read is observed - including one that happens and then discards
+ * the value, which is the shape a defeated proxy lets through. The
+ * script is run as the page runs it: its own bytes, no document (the
+ * DOM half returns early, exactly as on a page whose elements it does
+ * not need), and `globalThis` as its `root`.
+ */
+async function loadRecording(script, namespace, publish) {
+  const source = await readFile(HERE("../apps/web/" + script), "utf8");
+  const reads = [];
+  const context = {
+    BinderSession: { authorization() { return {}; }, clear() {} },
+    BINDER_CONFIG: {},
+    fetch() { return Promise.resolve(); },
+    location: { replace() {} },
+    localStorage: {
+      getItem() { return null; }, setItem() {}, removeItem() {},
+    },
+  };
+  vm.createContext(context);
+  let loading = true;
+  Object.defineProperty(context, namespace, {
+    configurable: true,
+    get() {
+      reads.push(loading ? "load" : "call");
+      return publish;
+    },
+  });
+  vm.runInContext(source, context, { filename: script });
+  loading = false;
+  return { context, reads };
+}
+
+await check("no declared namespace is touched while its script loads",
+  async () => {
+    for (const one of declared) {
+      const { reads } = await loadRecording(one.script, one.namespace, {
+        forget() { return Promise.resolve(true); },
+      });
+      if (reads.includes("load")) return false;
+    }
+    return true;
+  });
+
+/*
+ * And the two halves of "guarded", which the regex could only gesture
+ * at. Absent, the act must complete without throwing - that is what a
+ * page with no memberkey.js does. Present, the namespace must actually
+ * be USED, which is what a dead guard fails: `if (keys && false)` reads
+ * the global and then does nothing, and only watching the far side of
+ * the guard tells the two apart.
+ */
+await check("with the namespace absent the act completes rather than throwing",
+  async () => {
+    const { context } = await loadRecording("signout.js", "BinderMemberKey",
+      undefined);
+    context.BinderSignOut.signOut();
+    return true;
+  });
+
+await check("with it present the act reaches through the guard and uses it",
+  async () => {
+    let forgotten = 0;
+    const { context, reads } = await loadRecording("signout.js",
+      "BinderMemberKey",
+      { forget() { forgotten += 1; return Promise.resolve(true); } });
+    context.BinderSignOut.signOut();
+    return forgotten === 1 && reads.includes("call") &&
+      !reads.includes("load");
+  });
 
 /*
  * Order, which is the half a reader would not think to check. The revoke

@@ -499,13 +499,30 @@
    * A stored row and its opened record, in the shape the snapshot
    * builder reads.
    *
-   * The account id is the member's own and the handle comes out of the
-   * record, because `snapshotOf` is given `identify: true` - the same
-   * call admin.html makes over its own rows. That is not a leak of
-   * anything: the only rows here are this member's, the only reader is
-   * their own tab, and `personalSource` refuses a list belonging to
-   * more than one person by counting people through
-   * BinderDashboard.peopleCount rather than trusting the caller.
+   * NO HANDLE. The record carries one and this deliberately drops it.
+   * `personalSource` builds its snapshot with `identify: true`, which
+   * captions every series line "@" + telegram - and a caption naming
+   * the one person looking at it tells them nothing they do not know
+   * while putting a handle in a structure the listeners below hold for
+   * the life of the tab. The pane is the member's own; a label does not
+   * need the handle. It also empties `quality.handleChanges` at the
+   * source rather than only scrubbing it afterwards.
+   *
+   * WHAT ACTUALLY MAKES THESE ROWS THEIRS, said plainly because the
+   * obvious answer is wrong. `personalSource` refuses a list belonging
+   * to more than one person, and that guard CANNOT FIRE from this call
+   * site: it counts through BinderDashboard.peopleCount, which keys on
+   * `accountId` first, and the line below stamps every row with the one
+   * account unconditionally - so the count is one however many members'
+   * rows arrived. The guard is real for a caller that passes rows
+   * through; here it is a tautology.
+   *
+   * The mechanism that does the work is server-side: the account clause
+   * in GET /my-entries' statement, bound from the session and with
+   * nothing on the wire to point it elsewhere. dev/worker.test.mjs
+   * proves it by partition - the two accounts' listings are disjoint
+   * and together they are the whole table. Do not read the guard below
+   * as a second line of defence, because from here it is not one.
    */
   function historyEntry(row, record) {
     const weight = record.weight || {};
@@ -516,7 +533,6 @@
       accountId: account,
       receivedAt: row.receivedAt,
       submittedAt: record.submittedAt,
-      telegram: record.telegram,
       kg: weight.kg, lb: weight.lb,
       cm: height.cm, totalInches: height.totalInches,
       feet: height.feet, inches: height.inches,
@@ -529,6 +545,47 @@
       over18: record.over18 === true,
       recordVersion: record.record,
     };
+  }
+
+  /*
+   * What the listeners are allowed to keep, and nothing else.
+   *
+   * The source below outlives this function: every control's handler
+   * closes over it, so whatever is in it sits in memory for the life of
+   * the tab. `personalSource` builds its snapshot with `identify: true`
+   * - the keyholder's own setting - which is right for the numbers and
+   * wrong for everything beside them, because that setting also fills
+   * in a data-quality panel and a per-person series that exist for
+   * somebody auditing OTHER people's rows.
+   *
+   * `run` reads exactly one member of this document: `bases[basis]`.
+   * That is checkable rather than asserted - it is the only
+   * `source.snapshot.` read in apps/web/query.js. So everything else
+   * goes, and what survives the frame that decrypted these rows is the
+   * partitions the chart is drawn from: counts by category and
+   * histogram bins, already reduced from the rows rather than being
+   * them.
+   *
+   * WHAT IS DELETED AND WHY EACH ONE. `quality` is heightChanges and
+   * handleChanges - a member's measurement disagreements listed out,
+   * which the pane never draws. `series` is the per-person line, whose
+   * points are unquantized under `identify` and whose label is the
+   * handle. `counts` and `movement` are summary numbers nothing here
+   * renders. None of it is a secret from the member; all of it is
+   * retained plaintext with no reader, and the rule this follows is
+   * DESIGN.md's positional one at the smallest scale - plaintext exists
+   * where it must and nowhere else.
+   *
+   * Deleting rather than rebuilding, because the object has to stay the
+   * one `personalSource` made: `run` refuses a source it did not build,
+   * which is what stops a caller hand-making a floor-0 source over
+   * somebody else's document. A copy would not be that object.
+   */
+  function scrub(snapshot) {
+    delete snapshot.quality;
+    delete snapshot.series;
+    delete snapshot.counts;
+    delete snapshot.movement;
   }
 
   /*
@@ -680,6 +737,7 @@
     let source;
     try {
       source = Query.personalSource(entries, Date.now());
+      scrub(source.snapshot);
     } catch (error) {
       historyStatus("Your entries could not be read as a history. " +
         (error && error.message ? error.message : ""), true);

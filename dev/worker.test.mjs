@@ -625,8 +625,28 @@ const DB = {
              * that matters on this route has to produce the leak, not a
              * blank.
              */
-            const visible = bound.length
+            let visible = bound.length
               ? rowsOf().filter((r) => matches(r, a)) : rowsOf();
+            /*
+             * ORDER BY, modelled from the statement rather than left to
+             * insertion order.
+             *
+             * Without this the stub answers out of an array that is
+             * already in id order, so the clause is unexercised - and a
+             * route that ordered by something READ OFF THE ROW would
+             * pass every arm here. That is not hypothetical: ordering a
+             * member's listing by ciphertext length makes which rows are
+             * member-readable inferable from the response, which is a
+             * branch on row contents this route must not have. Sorting
+             * by the named column is what lets an arm assert the exact
+             * sequence and mean it.
+             */
+            const order = /\bORDER BY\s+mine\.(\w+)/i.exec(trimmed);
+            if (order) {
+              const column = order[1];
+              visible = visible.slice().sort((x, y) =>
+                (x[column] > y[column] ? 1 : x[column] < y[column] ? -1 : 0));
+            }
             /*
              * The row cap, read off the statement for the same reason
              * every other rule here is. Ignoring it would let a Worker
@@ -759,7 +779,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 347);
+const { check, report } = suite("worker.js", 348);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -2620,6 +2640,46 @@ check("no other account's bytes appear in this member's listing",
   !listedText.includes(NOT_MINE) &&
   stored.filter((r) => r.account_id !== FIXTURE_4242).length > 0,
   listedText.slice(0, 60) + "…");
+
+/*
+ * THE ORDER IS THE ROW ID AND NOTHING READ OFF THE ROW, and this is a
+ * confidentiality arm rather than a tidiness one.
+ *
+ * Order is a channel. Sorted by anything the row CONTAINS - ciphertext
+ * length is the obvious one, since a dual-sealed row is longer than a
+ * keyholder-only row by a fixed 125 bytes - the sequence tells whoever
+ * holds the response which of a member's rows are member-readable,
+ * which is precisely the fact this route refuses to compute. Ordering
+ * by the id is ordering by something assigned before any of this
+ * existed.
+ *
+ * Asserted as the EXACT sequence against ids sorted numerically, not as
+ * a set and not as "sorted", because a comparison that sorts both sides
+ * agrees with any order at all - which is how this went unnoticed. The
+ * rows are deliberately inserted out of id order first, so insertion
+ * order and id order are different sequences and the stub cannot answer
+ * correctly by accident.
+ */
+stored.push({
+  id: 9200, account_id: FIXTURE_4242, ciphertext: "c2hvcnQ=",
+  received_at: "2020-01-01T00:00:00.000Z", supersedes: null,
+});
+stored.unshift({
+  id: 9201, account_id: FIXTURE_4242,
+  ciphertext: "bXVjaC1sb25nZXItY2lwaGVydGV4dC10aGFuLXRoZS1vdGhlcnMtaGVyZQ==",
+  received_at: "2019-01-01T00:00:00.000Z", supersedes: null,
+});
+const sequence = entriesOf(await (await myEntries(READER)).json())
+  .map((e) => e.id);
+const byIdAscending = stored.filter((r) => r.account_id === FIXTURE_4242)
+  .map((r) => r.id).sort((a, b) => a - b);
+
+check("the listing arrives in id order, not in an order the rows decide",
+  JSON.stringify(sequence) === JSON.stringify(byIdAscending) &&
+  stored[0].id === 9201,
+  `${JSON.stringify(sequence)} against ${JSON.stringify(byIdAscending)}`);
+
+stored = stored.filter((r) => r.id !== 9200 && r.id !== 9201);
 
 /*
  * One statement, not two. The account scope lives in the SQL, and a

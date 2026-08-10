@@ -3294,9 +3294,7 @@ def module_captures(js):
 
 
 # A namespace one script reads at CALL time from a page that may not have
-# published it, declared here with the reason - and admitted only when the
-# reading script is SHAPED that way, which is what the two arms below
-# verify.
+# published it, declared here with the reason.
 #
 # Why the exemption has to exist at all: signout.js is loaded by every
 # signed-in page because Sign out is in the rail, while memberkey.js is
@@ -3304,22 +3302,35 @@ def module_captures(js):
 # beside every reader would put a member's device key on dashboard.html
 # and admin.html to satisfy a check - which is weight on two pages for
 # nothing, and a capability on the instrument page that DESIGN.md's
-# per-page table exists to keep narrow. The alternative of dropping the
-# reference is worse: DESIGN.md says signing out destroys the device key,
-# and a sign-out that does not is that sentence going quiet.
+# per-page table exists to keep narrow. Dropping the reference is worse:
+# DESIGN.md says signing out destroys the device key, and a sign-out
+# that does not is that sentence going quiet.
 #
-# Why it is safe HERE and would not be in general: the hazard the rule
-# above names is a value captured while the page loads, when the
-# publisher has not run - `const UI = root.BinderUI;` at the top of a
-# file. A read inside a function that runs when somebody presses a button
-# has no such window, and a read that is guarded before use answers
-# "this page has no key of its own" instead of throwing.
+# THIS FILE DECLARES THE EXEMPTION AND DOES NOT EARN IT, and that split
+# is the whole of the rule. An earlier version tried to earn it here,
+# from the text: the reference must not appear at brace depth 1, and the
+# value must be guarded. Each of those is a PROXY for "the namespace is
+# not touched while the page loads", and all three were defeated - a
+# function defined deep and CALLED at top level captures at load with
+# the depth arm satisfied; an unbalanced brace inside a string literal
+# inflates the counter permanently, so the very `const UI =
+# root.BinderUI;` shape this rule exists for reads as deep; and a
+# file-wide guard regex is satisfied by a dead guard, or by the guard's
+# own text inside a string, while the real use goes unguarded.
 #
-# So a declaration alone does not buy the exemption. Both properties are
-# checked, because a pair listed here would otherwise be a permanent
-# hole that outlives the shape that justified it: the reference must
-# never appear at the module's own top level, and the value must be
-# guarded before it is used.
+# A textual proxy for a runtime property is the wrong instrument, and
+# the failure mode is the dangerous one: the exemption ALSO removes
+# order policing for the pair, so a satisfied proxy plus a script
+# reorder is key destruction that silently stops happening.
+#
+# The property is earned by EXECUTION instead, in dev/memberkey.test.mjs:
+# it loads the shipped bytes under Node with a recording global and
+# fails if the namespace is read during load. That suite reads THIS
+# table, so a pair added here with no execution evidence fails there -
+# AGENTS.md's corollary applied to the exemption itself, since something
+# outside the file has to say what the file may contain.
+#
+# What stays here is what a registry is for: the pair, and the reason.
 DEFERRED_CAPTURES = {
     ("signout.js", "BinderMemberKey"):
         "Sign out is in the rail on every signed-in page; the device key "
@@ -3330,12 +3341,12 @@ DEFERRED_CAPTURES = {
 
 
 def deferred_capture_problems(name, js):
-    """[problem] for a declared deferred capture whose shape does not hold.
+    """[problem] for a declared deferred capture that is not reviewable.
 
-    Pure over one script's text, so the two properties can be exercised
-    against sources this tree does not contain - a rule tested only
-    against the file it was written for is a rule that says yes to
-    whatever that file happens to do.
+    Pure over one script's text, and deliberately narrow: it asks only
+    that a declared pair name a script which really reads the namespace,
+    and carry a reason. Whether that read is SAFE is a runtime question,
+    answered by running the bytes - see the note above.
     """
     problems = []
     for (script, namespace), reason in sorted(DEFERRED_CAPTURES.items()):
@@ -3346,40 +3357,15 @@ def deferred_capture_problems(name, js):
                 "%s is exempted for %s with no reason written down. The "
                 "reason is the whole of what makes this reviewable"
                 % (script, namespace))
-        reference = re.compile(CAPTURED_NAMESPACE % namespace)
-        # Brace depth, counted from the file's own IIFE. Everything a
-        # module writes sits at depth 1; a function body is deeper. A
-        # reference at depth 1 is read while the page loads, which is
-        # exactly the hazard the exemption does not cover.
-        depth = 0
-        for index, character in enumerate(js):
-            if character == "{":
-                depth += 1
-            elif character == "}":
-                depth -= 1
-            elif reference.match(js, index) and depth <= 1:
-                problems.append(
-                    "%s reads %s at its own top level while claiming to "
-                    "defer it. That runs as the page loads, which is the "
-                    "capture this exemption does not cover" % (script, namespace))
-                break
-        # The guard is required on the name the read was bound to, not
-        # merely present somewhere in the file. Any `if` anywhere would
-        # otherwise satisfy this, which is a check that cannot fail.
-        bound = re.search(
-            r"(?:const|let|var)\s+(\w+)\s*=\s*" + (CAPTURED_NAMESPACE % namespace),
-            js)
-        if not bound:
+        # A pair naming a script that does not read the namespace is an
+        # exemption for nothing - either the code moved and the row
+        # outlived it, or the row was wrong when written. Both are stale
+        # rows in a table whose only job is to be current.
+        if not re.search(CAPTURED_NAMESPACE % namespace, js):
             problems.append(
-                "%s reads %s without binding it to a name, so there is "
-                "nothing for the absence guard to test" % (script, namespace))
-            continue
-        local = bound.group(1)
-        if not re.search(r"if\s*\(\s*%s\s*&&" % local, js):
-            problems.append(
-                "%s reads %s into `%s` and does not guard on it. A page "
-                "that does not publish the module must go quiet, not throw"
-                % (script, namespace, local))
+                "%s is exempted for %s and never reads it. An exemption "
+                "that guards nothing is a row to delete"
+                % (script, namespace))
     return problems
 
 
