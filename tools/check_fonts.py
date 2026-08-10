@@ -49,6 +49,29 @@ carry: a table derived from what exists cannot fail when something is
 added, and something being added is exactly when a subset gets
 forgotten.
 
+AND UNTIL #227 THE FRICTION WAS NOT THERE
+-----------------------------------------
+The paragraph above is the argument for a hand roster, and the roster
+it argued for could not fail when something was added - which is the
+one case it names. Both arrival directions were open:
+
+ - a `.woff2` vendored into dist/fonts that no line here names was
+   simply never looked at. FACES_UNPINNED closes it: every vendored
+   face is either pinned above or carries a written reason it needs no
+   coverage check, so a new face is a sentence somebody wrote.
+
+ - a class theme.css gives the subset face was never asked what
+   characters it spells. ITALIC_FACE and the class roster close that
+   one, and they key on `font-style: italic` because that declaration
+   is what can only be served by a vendored italic face. The key is
+   decisive only while the tree vendors ONE italic face, so a second
+   one is reported rather than silently narrowing this claim.
+
+Both are held in both directions - a roster line whose face or class
+has gone fails too - for the reason tools/check.py's suite roster is:
+an arm for one direction that can pass while the other is broken is
+what #204 found, and it is what was here.
+
 TWO ARMS, BECAUSE THE FIRST ONE ALONE ROTS
 -------------------------------------------
  - a character the pages ask for and the face lacks FAILS, naming the
@@ -78,6 +101,12 @@ It reads static markup only. Text a script writes into one of these
 elements is outside what this can see - there is none today, and that
 is a fact about the tree rather than a property of this check.
 
+The class roster reads `font-style: italic` as a declaration of its
+own and does not read the `font` shorthand, which can carry a style in
+front of a size. There is none in the stylesheet; a shorthand that
+arrives is a demand this would not see, which is why it is written
+down here rather than left to be discovered.
+
 It does not read apps/web. The two trees are held identical by the
 gate's build stage, which is a better guarantee than reading both here
 would be.
@@ -101,6 +130,54 @@ WEB = os.path.join(REPO, "dist")
 FACES = {
     "fonts/playfair-display-600-italic-latin.woff2": ("wordmark-name",),
 }
+
+# Where the face roster below looks, and what it counts as a face.
+# Named rather than inlined so dev/check_fonts.test.py can pin the
+# scope, the shape tools/check.py's SUITE_DIR is in.
+FONT_DIR = "fonts"
+FONT_SUFFIX = ".woff2"
+
+# The one stylesheet the class roster reads. Every rule on this site
+# lives in it; a second one linked from a single page is the styling
+# route this cannot see, and it is check_web.py's CSP arms that keep
+# that route shut.
+STYLESHEET = "theme.css"
+
+# {vendored face: why no line in FACES pins it}. Every .woff2 in the
+# published fonts directory is in one table or the other, so a face
+# arriving is a sentence somebody wrote rather than a file nobody
+# looked at - the shape tools/check.py's NODE_SUITES_EXCLUDED has, and
+# for the same reason. An entry the enumeration cannot find fails, so
+# this list can only shrink and cannot go stale.
+FACES_UNPINNED = {
+    "fonts/dm-sans-400-latin.woff2":
+        "a full latin subset, not narrowed to any one string. Nothing "
+        "here can go silently missing from it, so there is no per-"
+        "character demand to pin",
+    "fonts/dm-sans-600-latin.woff2":
+        "the same face at the weight the headings ask for, and a full "
+        "latin subset for the same reason",
+    "fonts/jetbrains-mono-400-latin.woff2":
+        "a full latin subset. It draws the mono roles - labels, ids, "
+        "figures - and carries the whole alphabet either way",
+    "fonts/playfair-display-600-latin.woff2":
+        "the upright half of the display family, and a full latin "
+        "subset. Only the italic half was cut to a wordmark's "
+        "inventory by #85, which is what put it in FACES and this one "
+        "here",
+}
+
+# The face the class roster is about, and the declaration that reaches
+# it. `font-style: italic` is the key because it is the one thing a
+# rule can say that only a vendored italic face can serve - and it is
+# decisive only while this tree vendors exactly one, which
+# italic_problems() checks rather than assumes.
+ITALIC_FACE = "fonts/playfair-display-600-italic-latin.woff2"
+
+# {class: why it takes italic text and needs no coverage line}. Empty,
+# and the emptiness is the point, exactly as NODE_SUITES_EXCLUDED's is:
+# a class left out on purpose is then a sentence somebody wrote.
+ITALIC_CLASSES_UNPINNED = {}
 
 # What every face above must carry regardless of what the pages spell
 # today. Full ASCII printable, so any English wordmark fits without a
@@ -135,6 +212,12 @@ REQUIRED_INVENTORY = (
 # show the shape of the problem without turning the message into a
 # character dump.
 WORST = 12
+
+# The declaration that reaches an italic face. Anchored on a declaration
+# boundary rather than searched for loose, because `font-style: italic`
+# is also a substring of nothing else here and would be one the day a
+# custom property is named after it.
+ITALIC = re.compile(r"(^|;)\s*font-style\s*:\s*italic\s*(;|$)", re.I)
 
 
 def html_pages():
@@ -232,6 +315,216 @@ def uncovered(texts, cmap):
     return sorted(needed - set(cmap))
 
 
+def vendored_faces(web=None):
+    """Every face file in the published fonts directory, or None.
+
+    None rather than an empty set when the directory is not there, so
+    "nothing was enumerated" cannot print the same silence as "the
+    roster agrees" - #34's finding, and the reason tools/check.py's
+    roster arm opens the same way.
+    """
+    web = WEB if web is None else web
+    directory = os.path.join(web, FONT_DIR)
+    if not os.path.isdir(directory):
+        return None
+    return {FONT_DIR + "/" + name for name in os.listdir(directory)
+            if name.endswith(FONT_SUFFIX)}
+
+
+def face_roster_problems(pinned=None, unpinned=None, web=None):
+    """Every way the two face tables and the fonts directory disagree.
+
+    This is the ARRIVAL half. A face named in FACES that is not on disk
+    is already reported by problems() below, which names the face and
+    says the coverage could not be checked - a better message than
+    anything this walk could give - so it is deliberately not repeated
+    here.
+
+    The parameters exist so dev/check_fonts.test.py can drive this over
+    a directory it builds: a rule exercised only against the tree it
+    guards cannot be shown to fail.
+    """
+    pinned = FACES if pinned is None else pinned
+    unpinned = FACES_UNPINNED if unpinned is None else unpinned
+
+    found = vendored_faces(web)
+    if found is None:
+        return ["%s/ is not there at all, so no face was enumerated and "
+                "both tables were compared against an empty answer. A "
+                "reader that found nothing to read prints the same "
+                "silence as a roster that agrees." % FONT_DIR]
+
+    problems = []
+
+    for path in sorted(found - set(pinned) - set(unpinned)):
+        problems.append(
+            "%s is vendored and nothing here checks it. A face is either "
+            "pinned in FACES against the classes it draws, or given a "
+            "line in FACES_UNPINNED saying why it needs no coverage "
+            "check. A subset face nobody pinned is the failure this file "
+            "exists about, and it renders as a fallback serif rather "
+            "than as an error." % path)
+
+    for path in sorted(unpinned):
+        if path not in found:
+            problems.append(
+                "FACES_UNPINNED names %s and the enumeration does not "
+                "find it. A reason for a face that is not vendored "
+                "excuses nothing and hides the next reader from the one "
+                "that is - delete the entry." % path)
+        if path in pinned:
+            problems.append(
+                "%s is both pinned in FACES and excused in "
+                "FACES_UNPINNED. It is checked, so the excuse is a false "
+                "sentence about this gate - delete whichever of the two "
+                "is wrong." % path)
+
+    return problems
+
+
+def css_blocks(css):
+    """(selector text, declarations) for every innermost brace block.
+
+    Innermost, which is what makes a media query readable without a
+    parser: the pattern cannot cross a brace, so a wrapper holding
+    another block never matches and the rules inside it are read
+    exactly as the ones outside are. The wrapper's own prelude is not
+    returned, and it is not wanted - `@media` styles nothing itself.
+
+    Comments go first, for the reason class_text() drops them: a rule
+    somebody commented out styles nothing, so a class only a
+    commented-out rule carries would be reported for a demand that does
+    not exist. The published stylesheet has no comments left in it -
+    tools/build_web.mjs takes them out - which makes this the arm that
+    survives this reader ever being pointed at apps/web.
+    """
+    css = re.sub(r"/\*.*?\*/", " ", css, flags=re.S)
+    return [(match.group(1).strip(), match.group(2))
+            for match in re.finditer(r"([^{}]*)\{([^{}]*)\}", css)]
+
+
+def italic_selectors(css):
+    """Every selector whose rule asks for italic text, comma-split.
+
+    At-rule blocks are skipped: `@font-face` DECLARES a face and its
+    `font-style` is a descriptor saying what the file contains, not a
+    demand that anything be drawn in it. Reading one as a rule would
+    report the face as styling nothing and the roster as short by
+    whatever the descriptor's prelude spelled.
+    """
+    found = []
+    for prelude, declarations in css_blocks(css):
+        if not prelude or prelude.startswith("@"):
+            continue
+        if ITALIC.search(declarations):
+            found.extend(part.strip() for part in prelude.split(",")
+                         if part.strip())
+    return found
+
+
+def subject_classes(selector):
+    """The classes on the element a selector styles.
+
+    Its rightmost compound, not every class in it. `.cover-leaf
+    .wordmark-name` styles the wordmark and says nothing about what
+    `.cover-leaf` is drawn in, so collecting both would demand a roster
+    line for a class that takes no face - friction with no cause behind
+    it, which is the kind that gets a check deleted.
+    """
+    compound = re.split(r"[\s>+~]+", selector.strip())[-1]
+    return set(re.findall(r"\.([A-Za-z0-9_-]+)", compound))
+
+
+def italic_face_sources(css):
+    """The face file every italic @font-face block loads, sorted."""
+    found = []
+    for prelude, declarations in css_blocks(css):
+        if prelude.lower() != "@font-face" or not ITALIC.search(declarations):
+            continue
+        url = re.search(r"""url\(\s*["']?([^"')]+)""", declarations)
+        found.append(url.group(1).strip() if url else "")
+    return sorted(found)
+
+
+def italic_problems(css, pinned=None, unpinned=None, face=None):
+    """Every way the class roster and the stylesheet disagree.
+
+    The arrival direction (#227) is the third loop: a class the
+    stylesheet makes italic that no line names takes a face nobody
+    asked what it can draw. The other loops are what keep that arm
+    honest - a key that has stopped being decisive, a scan that read
+    nothing, and roster lines about classes the stylesheet no longer
+    styles.
+    """
+    face = ITALIC_FACE if face is None else face
+    unpinned = ITALIC_CLASSES_UNPINNED if unpinned is None else unpinned
+    problems = []
+
+    if pinned is None:
+        if face not in FACES:
+            problems.append(
+                "%s is the face this class roster is about and FACES does "
+                "not carry it, so the roster it reads is empty and every "
+                "class would pass. Either the face moved and ITALIC_FACE "
+                "did not, or its FACES line went." % face)
+        pinned = FACES.get(face, ())
+
+    sources = italic_face_sources(css)
+    if sources != [face]:
+        problems.append(
+            "%s declares %s as its italic face(s) and this roster is "
+            "about %s. The class arm reads `font-style: italic` as "
+            "meaning that face, which it only does while exactly one is "
+            "vendored - so a second face, or a different one, is "
+            "reported rather than left to narrow this check silently."
+            % (STYLESHEET, ", ".join(sources) or "no face", face))
+
+    selectors = italic_selectors(css)
+    if not selectors:
+        problems.append(
+            "no rule in %s asks for italic text, so this roster was "
+            "compared against an empty scan and would pass however wrong "
+            "it was. Either the selector reader has stopped matching, or "
+            "nothing takes the italic face and its FACES line should go "
+            "with it." % STYLESHEET)
+
+    seen = set()
+    for selector in selectors:
+        classes = subject_classes(selector)
+        if not classes:
+            problems.append(
+                "`%s` is styled italic in %s and the element it styles "
+                "carries no class, so there is no name to pin it against "
+                "and the characters it spells are never asked of the "
+                "face. Give it a class and a roster line, or style it "
+                "through one that has both." % (selector, STYLESHEET))
+            continue
+        seen |= classes
+        for name in sorted(classes - set(pinned) - set(unpinned)):
+            problems.append(
+                ".%s is made italic by %s and no line names it, so the "
+                "characters it spells were never asked of %s. Add it to "
+                "that face's row in FACES, or say in "
+                "ITALIC_CLASSES_UNPINNED why it needs no coverage line."
+                % (name, STYLESHEET, face))
+
+    for name in sorted(set(unpinned) - seen):
+        problems.append(
+            "ITALIC_CLASSES_UNPINNED names .%s and no rule in %s makes it "
+            "italic. A reason for a class that takes no face excuses "
+            "nothing - delete the entry." % (name, STYLESHEET))
+
+    for name in sorted(set(pinned) - seen):
+        problems.append(
+            "FACES pins .%s against %s and no rule in %s makes it "
+            "italic, so that row is measuring a demand this face no "
+            "longer serves. Either the class was renamed in the "
+            "stylesheet and not here, or the row should go."
+            % (name, face, STYLESHEET))
+
+    return problems
+
+
 def face_cmap(path):
     """The set of characters one font file can draw.
 
@@ -289,17 +582,37 @@ def problems():
     """Every problem in the tree as it stands."""
     found = []
 
+    # The two rosters run before the dependency gate below, because
+    # neither needs to open a font: a face that arrived unnamed and a
+    # class that arrived unpinned are exactly as true on a machine
+    # without fontTools, and reporting only "install fontTools" there
+    # would hide them behind an environment fault.
+    found.extend(face_roster_problems())
+
+    stylesheet = os.path.join(WEB, STYLESHEET)
+    if not os.path.isfile(stylesheet):
+        found.append(
+            "%s is not in the published tree, so no rule was read and the "
+            "class roster verified nothing. It is where every rule on "
+            "this site lives; a published tree without it is a site with "
+            "no styling at all." % STYLESHEET)
+    else:
+        with open(stylesheet, encoding="utf-8") as handle:
+            found.extend(italic_problems(handle.read()))
+
     try:
         import fontTools  # noqa: F401
     except ImportError:
-        return ["fontTools is not installed, so no face could be read and "
-                "this check verified nothing. It is the gate's only route "
-                "into a woff2 - the tables are Brotli compressed - so this "
-                "is reported as a failure rather than skipped: a stage "
-                "that passes when its dependency is missing is the "
-                "armed-looking-but-not check this repository holds to be "
-                "worse than having no check at all. Install it with "
-                "`python -m pip install fonttools[woff]`"]
+        found.append(
+            "fontTools is not installed, so no face could be read and the "
+            "coverage half of this check verified nothing. It is the "
+            "gate's only route into a woff2 - the tables are Brotli "
+            "compressed - so this is reported as a failure rather than "
+            "skipped: a stage that passes when its dependency is missing "
+            "is the armed-looking-but-not check this repository holds to "
+            "be worse than having no check at all. Install it with "
+            "`python -m pip install fonttools[woff]`")
+        return found
 
     demanded = demanded_text()
 

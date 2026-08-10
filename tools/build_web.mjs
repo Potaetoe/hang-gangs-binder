@@ -156,37 +156,58 @@ export function cssShape(text) {
  * CSS and JS, so the HTML pages keep every comment they have.
  *
  * WHY NORMALIZING IS NOT OPTIONAL, and it cost a rebase to find out.
- * .gitattributes stores this repository as LF and hands Windows working
- * copies CRLF, but git only rewrites a working file whose blob changed -
- * so after a rebase this tree held apps/web/countries.js in CRLF beside
- * a dist/countries.js that had just been checked out in LF. A generator
- * that copies whatever bytes it happens to read then produces an
- * artifact that fails its own byte-compare, on a machine where nothing
- * is actually wrong, and commits identically anyway because git
- * normalizes on the way in. That is a check that cries wolf, and a check
- * nobody believes is worse than one that is absent.
+ * .gitattributes pins every extension in this table to `eol=lf`, so a
+ * checkout made under those pins hands them LF on every platform - this
+ * file included. That is not the same as every working tree holding LF:
+ * an attribute takes effect only when git WRITES a file, so a tree
+ * checked out before a pin landed keeps whatever it had, and a rebase
+ * rewrites only the blobs it moved. This tree therefore held
+ * apps/web/countries.js in CRLF beside a dist/countries.js that had
+ * just been written in LF. A generator that copies whatever bytes it
+ * happens to read then produces an artifact that fails its own
+ * byte-compare, on a machine where nothing is actually wrong, and
+ * commits identically anyway because git normalizes on the way in. That
+ * is a check that cries wolf, and a check nobody believes is worse than
+ * one that is absent.
  *
  * So the build reads text as text and writes LF, which is what the
  * repository stores and therefore what a fresh checkout of dist/ holds
  * either way. The shipped bytes do not move; the build stops depending
  * on which machine ran the last checkout.
  *
- * The listed extensions are the ones .gitattributes pins to `eol=lf`
- * AND normalizes here. `*.txt` - robots.txt and the three OFL licenses -
- * is pinned there too and is deliberately absent from this table, which
- * is the part to leave alone. An attribute only takes effect when git
- * writes the file, so a working tree checked out before that pin still
- * holds those files in CRLF in BOTH trees, where they agree with each
- * other and the byte-compare below passes. Copying them is what keeps
- * that tree honest; normalizing would write LF into dist/ beside a CRLF
- * source and fail the compare on a machine where nothing is wrong.
- *
  * Anything not listed is copied byte for byte, and the default is that
  * way round on purpose: woff2 is a compressed container, and "normalize
  * the line endings" inside one produces a font no browser will parse.
  */
-const MODE = {
+export const MODE = {
   ".js": "js", ".css": "css", ".html": "text", ".svg": "text",
+};
+
+/*
+ * Extensions .gitattributes pins to `eol=lf` that this build copies
+ * byte for byte anyway, and the reason for each. It is the exception
+ * list to MODE above, and the two together are what dev/build_web.
+ * test.mjs holds against .gitattributes - reading both files, so this
+ * table cannot claim a membership it does not have.
+ *
+ * What is checked, exactly: every extension normalized above is pinned
+ * `eol=lf`, and every pinned extension apps/web actually holds is
+ * either normalized above or named here. The converse is not claimed
+ * and would be false - .gitattributes pins .py, .md, .toml and more,
+ * none of which apps/web holds. That unchecked claim was the defect
+ * (#227): the sentence here said this table WAS the pinned list.
+ */
+export const PINNED_BUT_COPIED = {
+  ".txt":
+    "robots.txt and the three OFL licenses. The `*.txt` pin landed on " +
+    "2026-08-09, later than the rest, and an attribute takes effect " +
+    "only when git writes the file - so a working tree checked out " +
+    "before it still holds these in CRLF in BOTH trees, where they " +
+    "agree with each other and the byte-compare passes. Copying is " +
+    "what keeps that tree honest; normalizing would write LF into " +
+    "dist/ beside a CRLF source and fail the compare on a machine " +
+    "where nothing is wrong. Leave this alone until no such tree is " +
+    "left.",
 };
 
 const LINE_ENDINGS = /\r\n?/g;

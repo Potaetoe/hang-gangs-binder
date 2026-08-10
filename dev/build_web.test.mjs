@@ -16,16 +16,26 @@
  *  - the token arm refuses a build that did more than remove comments,
  *    which is the scope wall #181 sets and the one a byte-comparison
  *    against a fresh build can never see.
+ *
+ * A fourth group joined them for #227, and it is about a claim rather
+ * than a behavior. Three files declare this repository's line-ending
+ * regime - .gitattributes for git, .editorconfig for editors, and MODE
+ * in the generator for the build - and nothing compared any two of
+ * them. The generator's table SAID it was the .gitattributes eol=lf
+ * list and was not; .editorconfig told an editor to write run.cmd in
+ * LF while .gitattributes pins it to CRLF. Both are the same defect: a
+ * roster with no reader behind it.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync }
   from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, extname } from "node:path";
 import { nodeTestSuite } from "./harness.mjs";
 import { stripJs, stripCss, jsTokens, cssShape, plan, build, differences,
-         write, SOURCE } from "../tools/build_web.mjs";
+         write, SOURCE, REPO, MODE, PINNED_BUT_COPIED }
+  from "../tools/build_web.mjs";
 
-const { check, report } = nodeTestSuite("build_web.mjs", 39);
+const { check, report } = nodeTestSuite("build_web.mjs", 57);
 
 /* ---- the strippers ------------------------------------------------- */
 
@@ -128,11 +138,13 @@ check("the vendored faces are copied rather than read as text",
 
 /*
  * The line-ending arm, and it is here because a rebase produced it
- * rather than because somebody imagined it. .gitattributes stores this
- * repository as LF and hands Windows CRLF, and git only rewrites a
- * working file whose blob changed - so a source can sit in CRLF beside
- * a freshly checked-out artifact in LF, on a machine where nothing is
- * wrong. A build that copied those bytes would fail its own
+ * rather than because somebody imagined it. .gitattributes pins these
+ * extensions to `eol=lf`, so a checkout made under the pins is LF on
+ * every platform - but an attribute takes effect only when git writes
+ * the file, and a rebase writes only the blobs it moved. A source can
+ * therefore sit in CRLF, left over from a checkout that predates its
+ * pin, beside a freshly written artifact in LF, on a machine where
+ * nothing is wrong. A build that copied those bytes would fail its own
  * byte-compare and commit identically anyway.
  */
 check("a CRLF source builds to the same bytes as an LF one",
@@ -230,5 +242,149 @@ check("the committed dist/ is exactly what apps/web builds to",
 
 check("and it holds every page the source does",
   plan().filter((entry) => entry.rel.endsWith(".html")).length === 5);
+
+/* ---- the line-ending regime, across the three files that declare it - */
+
+/*
+ * Every `eol=` pin in a .gitattributes text, as {pattern: ending}. A
+ * commented-out pin is not a pin, and `* text=auto` states no ending at
+ * all, so neither is read.
+ */
+function eolPins(text) {
+  const pins = new Map();
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/#.*$/, "").trim();
+    const found = /^(\S+)\s+.*\beol=(\w+)/.exec(line);
+    if (found) pins.set(found[1], found[2]);
+  }
+  return pins;
+}
+
+/* .editorconfig as ordered sections, each with the settings under it.
+   Keys before the first section header - `root = true` - belong to no
+   section and are dropped, which is what EditorConfig says of them. */
+function editorconfigSections(text) {
+  const sections = [];
+  let current = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/[#;].*$/, "").trim();
+    if (!line) continue;
+    const header = /^\[(.+)\]$/.exec(line);
+    if (header) {
+      current = { glob: header[1], settings: new Map() };
+      sections.push(current);
+      continue;
+    }
+    const pair = /^([A-Za-z_]+)\s*=\s*(\S+)$/.exec(line);
+    if (pair && current) current.settings.set(pair[1], pair[2]);
+  }
+  return sections;
+}
+
+/*
+ * Whether a section glob covers a file name: true, false, or null for a
+ * glob shape this reader does not implement.
+ *
+ * Null rather than false, and the difference is the whole value of the
+ * arm below. This is not an EditorConfig implementation - it answers one
+ * question about the section shapes this repository's file actually uses
+ * (a literal name, `*.ext`, and one brace list). A shape it cannot read
+ * would silently answer "no rule covers this", which is indistinguishable
+ * from a file with no rule and would let a real disagreement through.
+ */
+function globMatches(glob, name) {
+  const braces = /^(.*)\{([^{}]*)\}(.*)$/.exec(glob);
+  const alternatives = braces
+    ? braces[2].split(",").map((part) => braces[1] + part.trim() + braces[3])
+    : [glob];
+  if (alternatives.some((one) => /[[\]{}?]/.test(one) || one.includes("**"))) {
+    return null;
+  }
+  return alternatives.some((one) => new RegExp("^" + one.split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[^/]*") + "$").test(name));
+}
+
+/* The end_of_line an editor would apply to one file: the last matching
+   section that states one wins, and a matching section that states none
+   leaves the previous answer standing. */
+function editorconfigEol(sections, name) {
+  let answer = null;
+  for (const section of sections) {
+    if (globMatches(section.glob, name) === true
+        && section.settings.has("end_of_line")) {
+      answer = section.settings.get("end_of_line");
+    }
+  }
+  return answer;
+}
+
+/* A .gitattributes pattern as a file name a glob can be tried against. */
+const sampleName = (pattern) =>
+  (pattern.startsWith("*.") ? "sample" + pattern.slice(1) : pattern);
+
+check("a pin is read off a .gitattributes line",
+  eolPins("*.x  text eol=crlf\n").get("*.x") === "crlf");
+check("a commented-out pin is not a pin",
+  eolPins("# *.y text eol=lf\n").size === 0);
+check("a line stating no ending is not a pin",
+  eolPins("* text=auto\n").size === 0);
+
+check("a brace list in a section header is expanded",
+  globMatches("*.{a,b}", "sample.b") === true
+  && globMatches("*.{a,b}", "sample.c") === false);
+check("a literal section name matches only itself",
+  globMatches("Makefile", "Makefile") === true
+  && globMatches("Makefile", "Makefile.in") === false);
+check("a glob shape this reader cannot expand is null, not false",
+  globMatches("**/x", "y") === null);
+
+const madeUp = editorconfigSections(
+  "root = true\n[*]\nend_of_line = lf\nindent_size = 2\n"
+  + "[*.z]\nindent_size = 4\n[*.q]\nend_of_line = crlf\n");
+check("a setting before the first section belongs to no section",
+  madeUp.length === 3);
+check("a later section overrides an earlier one",
+  editorconfigEol(madeUp, "sample.q") === "crlf");
+check("a matching section that states no ending does not override",
+  editorconfigEol(madeUp, "sample.z") === "lf");
+
+const attributes = readFileSync(join(REPO, ".gitattributes"), "utf8");
+const editorconfig = readFileSync(join(REPO, ".editorconfig"), "utf8");
+const pins = eolPins(attributes);
+const sections = editorconfigSections(editorconfig);
+
+/* The decisive arms. Two readers that find nothing report the same
+   agreement as two files that agree, which is the failure every roster
+   in this repository is written against. */
+check("the real .gitattributes states line-ending pins",
+  pins.size > 5);
+check("the real .editorconfig states sections",
+  sections.length > 2);
+check("every .editorconfig section is a shape this reader understands",
+  sections.every((section) => globMatches(section.glob, "sample.x") !== null));
+
+check("every line-ending pin gets the same answer from .editorconfig",
+  [...pins].every(([pattern, ending]) =>
+    editorconfigEol(sections, sampleName(pattern)) === ending));
+
+const pinnedLf = new Set([...pins]
+  .filter(([pattern, ending]) => ending === "lf" && pattern.startsWith("*."))
+  .map(([pattern]) => pattern.slice(1)));
+const held = new Set(plan().map((entry) => extname(entry.rel).toLowerCase()));
+
+check("every extension the build normalizes is pinned eol=lf",
+  Object.keys(MODE).every((ext) => pinnedLf.has(ext)));
+
+check("every pinned extension apps/web holds is normalized or excused",
+  [...held].filter((ext) => pinnedLf.has(ext))
+    .every((ext) => ext in MODE || ext in PINNED_BUT_COPIED));
+
+check("an excused extension is one the pin actually covers",
+  Object.keys(PINNED_BUT_COPIED).every((ext) => pinnedLf.has(ext)));
+check("an excused extension is not also normalized",
+  Object.keys(PINNED_BUT_COPIED).every((ext) => !(ext in MODE)));
+check("an excused extension is one apps/web actually holds",
+  Object.keys(PINNED_BUT_COPIED).every((ext) => held.has(ext)));
 
 report();

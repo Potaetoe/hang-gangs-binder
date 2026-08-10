@@ -29,5 +29,15 @@ indent_size = 4
 indent_size = 2
 trim_trailing_whitespace = false
 
+# The cmd half of the launcher, and the one place the [*] rule above is
+# wrong. .gitattributes pins *.cmd to eol=crlf because cmd.exe misparses
+# multi-line blocks under LF; without this section an editor obeying
+# end_of_line = lf saves the file in the shape that breaks it, and it
+# stays broken until the next checkout converts it back. The two files
+# are held to the same answer by dev/build_web.test.mjs, which reads
+# both - the disagreement stood because nothing compared them.
+[*.cmd]
+end_of_line = crlf
+
 [Makefile]
 indent_style = tab

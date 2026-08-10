@@ -22,11 +22,16 @@ suites than a reader would ever guess from how complete it looked. A
 roster nothing checks is worse than no roster, because it reads like one
 that is checked.
 
-So `tools/check.py` is the roster. `NODE_SUITES` names the Node suites
-and carries the reason each is a separate stage; the Python suites are
-registered as stages in the same file, beside the checker each one
-guards. What actually ran is the stage table the gate prints, which is
-the one roster that cannot go stale.
+So `tools/check.py` is the roster, and since #227 it is one for both
+languages: `NODE_SUITES` names the Node suites and carries the reason
+each is a separate stage, `PYTHON_SUITES` names the ones that check a
+checker, and each is held against this directory in both directions.
+The Python stages are still written by hand beside the checker each one
+guards — that is what puts `check_docs.py`'s suite next to
+`check_docs.py` rather than in a block at the end — so `PYTHON_SUITES`
+is held against `main()` as well, or it could name a stage nobody runs.
+What actually ran is the stage table the gate prints, which is the one
+roster that cannot go stale.
 
 `harness.mjs` holds the `check`/`report` pair and the assertion that the
 number of checks a run performed is the number the suite says it has —
