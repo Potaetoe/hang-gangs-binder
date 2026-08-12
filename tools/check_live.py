@@ -698,9 +698,12 @@ LEDGER = [
         "claim": "a reader asking for reduced motion is given no frame "
                  "of the closed cover at all, the stylesheet "
                  "cancelling that animation outright rather than "
-                 "shortening it - at 0.01ms the first frame still "
-                 "paints, and the first frame is an opaque panel "
-                 "across the whole viewport",
+                 "shortening it - at 0.01ms the keyframes still run and "
+                 "the blanket rule leaves the delay alone, so what is "
+                 "left is not one frame but the closed cover held "
+                 "opaque for about 200ms: the whole viewport at a "
+                 "phone width, a centered reading-column panel over "
+                 "the sign-in card at a desktop one",
         "covers": ["apps/web/index.html", "apps/web/theme.css"],
         "status": "never",
     },
