@@ -2117,12 +2117,16 @@ body.instrument main.stack { gap: var(--space-8); }
    *
    * At 0.01ms the keyframes still run: the browser can paint the first
    * frame, and the first frame of this one is an opaque panel across
-   * the entire viewport. A full-screen flash is the specific thing a
-   * reader who has asked for reduced motion is asking not to be given,
-   * and "too fast to notice" is a claim about a machine nobody here is
-   * testing on. Cancelling the animation leaves the leaf in its resting
-   * state, which is already open - so this snaps straight to the opened
-   * binder with no frame of the closed one.
+   * the entire viewport. Worse, the blanket rule shortens the DURATION
+   * and says nothing about the delay, so the cover's ~200ms hold
+   * survives it whole and `backwards` fill paints the closed cover for
+   * every millisecond of it. What the blanket rule leaves is therefore
+   * not a flash but a fifth of a second of full-screen panel - the
+   * specific thing a reader who has asked for reduced motion is asking
+   * not to be given, and on every machine, not just a slow one.
+   * Cancelling the animation leaves the leaf in its resting state,
+   * which is already open - so this snaps straight to the opened binder
+   * with no frame of the closed one.
    */
   .cover-leaf { animation: none !important; }
 }
