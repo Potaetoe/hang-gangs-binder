@@ -352,6 +352,34 @@ function grantsAnything(row) {
 }
 
 /*
+ * The same question, asked of SQLite instead of of a row.
+ *
+ * A SECOND SPELLING IS UNAVOIDABLE, and this sits against the first so
+ * that neither can be read without the other. Every read that decides
+ * anything asks grantsAnything() in JavaScript; the last-admin guard
+ * cannot, because it has to be one statement to be atomic, and a count
+ * the Worker reads first is the race that guard exists to close. So the
+ * predicate is written twice and the two spellings must agree about
+ * every row, or the guard would protect a set the authority read does
+ * not honor.
+ *
+ * `length() = 64` beside a negated GLOB rather than a pattern spelling
+ * sixty-four characters out: GLOB has no repetition count, and it is
+ * case-sensitive where LIKE is not - so "sixty-four characters, none of
+ * them outside 0-9a-f" is how /^[0-9a-f]{64}$/ is said here. Upper-case
+ * hex is exactly what `wrangler d1 execute` writes and exactly what
+ * this has to refuse.
+ *
+ * NULL and non-text answer NULL rather than true, which a WHERE reads
+ * as false - the same fail-closed direction the typeof half carries
+ * above, for the same reason.
+ */
+function grantsAnythingSql(column) {
+  return "length(" + column + ") = 64 AND " +
+    column + " NOT GLOB '*[^0-9a-f]*'";
+}
+
+/*
  * The account ids the `membership` table grants one role.
  *
  * FAILS CLOSED IN EVERY DIRECTION A READ CAN GO WRONG, which is the
@@ -1970,10 +1998,31 @@ async function handleAddMembership(request, env, origin, caller) {
  * list is not removing them from the other, and a route that took only
  * an account id would have to guess which was meant.
  *
- * THE LAST ADMIN ROW DOES NOT COME OFF. Now that a row grants what it
- * says, an empty admin list is a lockout with no lever inside the
- * product to undo it - and the way it happens is not recklessness, it is
- * two admins tidying the same list.
+ * THE LAST ADMIN ROW THAT GRANTS DOES NOT COME OFF. Now that a row
+ * grants what it says, an admin list with no granting row left is a
+ * lockout with no lever inside the product to undo it - and the way it
+ * happens is not recklessness, it is two admins tidying the same list.
+ *
+ * GRANTS AND NOT ROWS, which is the whole of the subquery's shape. A
+ * row whose account id is not sixty-four lowercase hex characters
+ * grants nobody anything - grantsAnything() above drops it from every
+ * read that decides - so counting it here would let one real admin
+ * beside one dud read as two, and the last granting row would come off
+ * against a count that was never authority. The dual-read is the only
+ * reason that is not a live lockout today: the secret still grants
+ * while the flip has not happened. OPERATIONS.md, "Making someone an
+ * admin", carries the precondition in the other direction, for whoever
+ * performs the flip.
+ *
+ * AND A ROW THAT GRANTS NOTHING IS SPARED THE GUARD ENTIRELY, which is
+ * the second arm and not a refinement of the first. Removing a dud
+ * cannot empty a set it was never in, so the guard has nothing to
+ * protect there - and narrowing the count alone would make the dud
+ * unremovable in the very staging that matters, one real admin beside
+ * one dud, while answering "that is the last admin row" about a row
+ * that is no admin at all. GET's `malformed` list hands an admin that
+ * id so it can be pressed; a refusal here would answer 409 to the id
+ * that list just gave out.
  *
  * Counted and deleted in ONE statement, inside one D1 batch, and that is
  * the whole design rather than an implementation taste. A count read
@@ -2018,12 +2067,23 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
     return json({ error: "Not found." }, 404, origin);
   }
 
+  /*
+   * The subquery names its own copy of the table, because both halves
+   * of this guard test `account_id` and only the alias says which row
+   * each one means: unqualified inside a subquery, SQLite resolves the
+   * column to the inner FROM, so the two tests would read identically
+   * and mean opposite things.
+   */
+  const lastGrantingAdmin =
+    " AND (NOT (" + grantsAnythingSql("account_id") + ")" +
+    " OR (SELECT COUNT(*) FROM membership AS granting" +
+    " WHERE granting.role = 'admin' AND " +
+    grantsAnythingSql("granting.account_id") + ") > 1)";
+
   const [, survivors] = await env.DB.batch([
     env.DB.prepare(
       "DELETE FROM membership WHERE account_id = ? COLLATE NOCASE AND role = ?" +
-      (role === "admin"
-        ? " AND (SELECT COUNT(*) FROM membership WHERE role = 'admin') > 1"
-        : "")
+      (role === "admin" ? lastGrantingAdmin : "")
     ).bind(wanted, role),
     env.DB.prepare(
       "SELECT account_id FROM membership " +

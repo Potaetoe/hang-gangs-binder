@@ -260,10 +260,39 @@ const DB = {
      * the parameter reading above cannot see it, and a stub that did
      * not model it would delete the row anyway and pass an
      * implementation carrying no guard at all.
+     *
+     * THREE THINGS READ OFF IT RATHER THAN ONE, because the guard has
+     * three moving parts and hard-coding any of them here would pass an
+     * implementation that dropped it. The count and its role come out
+     * of `guard`; `countsGrantsOnly` is whether the subquery carries
+     * the grants test, so a subquery that went back to counting every
+     * row lets the dud inflate the count here exactly as it would in
+     * D1; and `sparesADud` is whether the DELETE exempts a target that
+     * grants nothing, so an implementation dropping that arm makes the
+     * dud unremovable here rather than quietly staying green.
+     *
+     * The role and the alias are optional in the pattern on purpose:
+     * the wide guard this replaced still parses, so reverting the
+     * Worker to it is modelled rather than unrecognised - an
+     * unrecognised statement would read as "no guard" and take the
+     * arms down in the wrong direction.
      */
+    const GRANTS_IN_SQL =
+      /length\(\s*(?:\w+\.)?account_id\s*\)\s*=\s*64/i;
+    const NOT_HEX_IN_SQL = /NOT GLOB '\*\[\^0-9a-f\]\*'/i;
     const guard =
-      /AND \(SELECT COUNT\(\*\) FROM membership WHERE role = '(\w+)'\) > (\d+)/i
+      /(?:AND|OR) \(SELECT COUNT\(\*\) FROM membership(?: AS \w+)? WHERE (?:\w+\.)?role = '(\w+)'([\s\S]*?)\) > (\d+)/i
         .exec(sql);
+    const countsGrantsOnly = Boolean(guard) &&
+      GRANTS_IN_SQL.test(guard[2]) && NOT_HEX_IN_SQL.test(guard[2]);
+    const spare = /AND \(NOT \(([\s\S]*?)\) OR \(SELECT COUNT\(\*\)/i.exec(sql);
+    const sparesADud = Boolean(spare) &&
+      GRANTS_IN_SQL.test(spare[1]) && NOT_HEX_IN_SQL.test(spare[1]);
+
+    /* grantsAnything() as the statement above spells it, and the whole
+     * question the narrowed guard asks: which rows the count can see. */
+    const grantsInSql = (value) =>
+      typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 
     /*
      * A correction's two statements, neither of which looks like anything
@@ -347,9 +376,21 @@ const DB = {
           // matches no row. Nothing here reports the refusal, and
           // nothing in D1 would either - the Worker learns it by
           // looking for the row afterwards, inside the same batch.
-          const blocked = Boolean(guard) &&
-            roster.filter((r) => r.role === guard[1]).length
-              <= Number(guard[2]);
+          //
+          // Both halves read the table BEFORE the delete, because
+          // SQLite evaluates a subquery against the snapshot the delete
+          // applies to - that simultaneity is the whole reason the
+          // guard is a subquery rather than a round trip, so a stub
+          // that counted afterwards would model the race it closes.
+          let blocked = false;
+          if (guard) {
+            const counted = roster.filter((r) => r.role === guard[1] &&
+              (!countsGrantsOnly || grantsInSql(r.account_id)));
+            const target = roster.find((r) => matches(r, a));
+            const spared = sparesADud && target !== undefined &&
+              !grantsInSql(target.account_id);
+            blocked = !spared && counted.length <= Number(guard[3]);
+          }
           if (!blocked) roster = roster.filter((r) => !matches(r, a));
         } else upsert(roster, ["account_id", "role"], a);
       } else if (verb === "DELETE") {
@@ -795,7 +836,7 @@ const bearer = (t, headers = good) =>
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
  */
-const { check, report } = suite("worker.js", 349);
+const { check, report } = suite("worker.js", 359);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -3588,7 +3629,31 @@ check("carrying exactly the two statements the guard is made of",
   together.length === 2, `${together.length} statement(s) in the batch`);
 check("the first deletes with the count as a subquery, not as a round trip",
   together.length === 2 && /^\s*DELETE FROM membership/i.test(together[0].sql) &&
-  /AND \(SELECT COUNT\(\*\) FROM membership WHERE role = 'admin'\) > 1/i
+  /\(SELECT COUNT\(\*\) FROM membership AS \w+ WHERE \w+\.role = 'admin'/i
+    .test(together[0].sql) &&
+  /\) > 1\)/.test(together[0].sql),
+  together.length ? together[0].sql : "no statement");
+
+/*
+ * The statement's own words, and not only what it did to `roster`.
+ *
+ * The outcome arms above are answered by a stub that models the guard,
+ * so they hold the stub and the Worker to each other rather than either
+ * to SQLite. What SQLite is actually sent is this string, and the two
+ * clauses that matter are the ones the wide guard did not have: the
+ * count is taken over rows carrying an account id of the right length
+ * and the right alphabet, and the row being deleted is spared when it
+ * does not. A regex over the statement is the only assertion that
+ * survives the stub being wrong.
+ */
+check("the count it takes is over rows that grant, not every admin row",
+  together.length === 2 &&
+  /COUNT\(\*\)[\s\S]*length\(\w+\.account_id\) = 64[\s\S]*\w+\.account_id NOT GLOB '\*\[\^0-9a-f\]\*'/i
+    .test(together[0].sql),
+  together.length ? together[0].sql : "no statement");
+check("and the row being removed is spared that count when it grants nothing",
+  together.length === 2 &&
+  /AND \(NOT \(length\(account_id\) = 64 AND account_id NOT GLOB '\*\[\^0-9a-f\]\*'\) OR \(SELECT COUNT/i
     .test(together[0].sql),
   together.length ? together[0].sql : "no statement");
 check("the second asks for the row, which is what a count cannot answer",
