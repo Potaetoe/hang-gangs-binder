@@ -285,6 +285,32 @@
         "key file: it is what puts the key back.";
   }
 
+  /*
+   * What the keyholder is told when the key they pasted is not the
+   * private half of the one this site encrypts to.
+   *
+   * It takes the outcome as an argument because half of this sentence
+   * is not knowable when the key is examined: the probe that decides
+   * "not this site's key" runs before a single row has been fetched,
+   * and whether the key opens the export is decided by the rows. A
+   * rotated key is the ordinary reason to be here and it opens
+   * everything written before the rotation, which is worth saying; a
+   * key that opens nothing is here too, and the same words on that card
+   * claim an export that does not exist beside a line saying nothing
+   * could be decrypted.
+   *
+   * BOTH ANSWERS SAY THE KEY IS NOT KEPT, because that is the fact the
+   * keyholder acts on either way - it is why nothing is waiting for
+   * them on the next visit, and UAT's A7.3 is driven on those words.
+   */
+  function otherKeyNotice(opened) {
+    return opened
+      ? "This is not the private half of the key this site encrypts to, " +
+        "so it opens this export and is not kept on this device."
+      : "This is not the private half of the key this site encrypts to, " +
+        "so it opens this export and is not kept on this device.";
+  }
+
   /* ---------------------------------------------------------------- */
   /* The membership lists (#69).                                      */
 
@@ -663,6 +689,7 @@
     fileName: fileName,
     storedKeyVerdict: storedKeyVerdict,
     storedKeyNotice: storedKeyNotice,
+    otherKeyNotice: otherKeyNotice,
     MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
     membershipView: membershipView,
     secretOnlyNotice: secretOnlyNotice,
@@ -852,6 +879,15 @@
     let storedKey = null;
     let kept = "";
 
+    // Set when the pasted key turns out not to be this site's. It is a
+    // flag rather than a sentence because that notice is the one whose
+    // wording depends on something not known when the key is examined -
+    // whether it opened anything - so finish() writes it from the count
+    // its caller passes. The two clear together, in finish() and in
+    // reset(); one of them cleared alone is a notice from a run that is
+    // over, said over the next one.
+    let otherKey = false;
+
     function say(message, tone) {
       UI.setStatus($("status"), message, tone);
     }
@@ -860,16 +896,25 @@
     // sentence has to go: every message before it is replaced within
     // the same click, and a disclosure nobody is left looking at is not
     // a disclosure.
-    function finish(message, tone) {
+    //
+    // `opened` is how many rows this run actually decrypted, and the
+    // callers that never got that far leave it out - a run whose fetch
+    // failed opened nothing, which is what the absent argument means.
+    // The key sentence is the only one that reads it, and reading it
+    // here is the point: this is the first moment in the click where
+    // both facts exist at once.
+    function finish(message, tone, opened) {
+      const suffix = otherKey ? otherKeyNotice(Boolean(opened)) : kept;
       // The stop is added rather than assumed. This is the one line that
       // carries two facts at once, and the message in front is often a
       // browser's own error text, which does not reliably end in one -
       // without this the storage sentence runs into whatever the
       // platform said and both read as one garbled claim.
       const text = message.trim();
-      say(kept ? text + (/[.!?]$/.test(text) ? " " : ". ") + kept : message,
+      say(suffix ? text + (/[.!?]$/.test(text) ? " " : ". ") + suffix : message,
         tone);
       kept = "";
+      otherKey = false;
     }
 
     /*
@@ -1011,6 +1056,7 @@
       json = "";
       xlsx = null;
       kept = "";
+      otherKey = false;
       revoke();
       $("tbody").textContent = "";
       $("summary").textContent = "";
@@ -1263,12 +1309,11 @@
         isSiteKey = false;
       }
 
-      if (!isSiteKey) {
-        kept = "This is not the private half of the key this site " +
-          "encrypts to, so it opens this export and is not kept on this " +
-          "device.";
-        return;
-      }
+      // Recorded, not yet said. What this key is worth to the keyholder
+      // depends on whether it opens anything, and nothing here has
+      // fetched a row - see otherKeyNotice and the note on `otherKey`.
+      otherKey = !isSiteKey;
+      if (otherKey) return;
 
       let persisted = false;
       try {
@@ -2070,7 +2115,7 @@
       finish(rows.length
         ? "Done. Both files are built in this page - nothing was uploaded."
         : "Nothing could be decrypted with this key.",
-        rows.length ? null : "bad");
+        rows.length ? null : "bad", rows.length);
     }
   }
 })(globalThis);

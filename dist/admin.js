@@ -168,6 +168,16 @@
         "key file: it is what puts the key back.";
   }
 
+  
+
+  function otherKeyNotice(opened) {
+    return opened
+      ? "This is not the private half of the key this site encrypts to, " +
+        "so it opens this export and is not kept on this device."
+      : "This is not the private half of the key this site encrypts to, " +
+        "so it opens this export and is not kept on this device.";
+  }
+
    
    
 
@@ -383,6 +393,7 @@
     fileName: fileName,
     storedKeyVerdict: storedKeyVerdict,
     storedKeyNotice: storedKeyNotice,
+    otherKeyNotice: otherKeyNotice,
     MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
     membershipView: membershipView,
     secretOnlyNotice: secretOnlyNotice,
@@ -535,6 +546,15 @@
     let storedKey = null;
     let kept = "";
 
+     
+     
+     
+     
+     
+     
+     
+    let otherKey = false;
+
     function say(message, tone) {
       UI.setStatus($("status"), message, tone);
     }
@@ -543,16 +563,25 @@
      
      
      
-    function finish(message, tone) {
+     
+     
+     
+     
+     
+     
+     
+    function finish(message, tone, opened) {
+      const suffix = otherKey ? otherKeyNotice(Boolean(opened)) : kept;
        
        
        
        
        
       const text = message.trim();
-      say(kept ? text + (/[.!?]$/.test(text) ? " " : ". ") + kept : message,
+      say(suffix ? text + (/[.!?]$/.test(text) ? " " : ". ") + suffix : message,
         tone);
       kept = "";
+      otherKey = false;
     }
 
     
@@ -633,6 +662,7 @@
       json = "";
       xlsx = null;
       kept = "";
+      otherKey = false;
       revoke();
       $("tbody").textContent = "";
       $("summary").textContent = "";
@@ -802,12 +832,11 @@
         isSiteKey = false;
       }
 
-      if (!isSiteKey) {
-        kept = "This is not the private half of the key this site " +
-          "encrypts to, so it opens this export and is not kept on this " +
-          "device.";
-        return;
-      }
+       
+       
+       
+      otherKey = !isSiteKey;
+      if (otherKey) return;
 
       let persisted = false;
       try {
@@ -1477,7 +1506,7 @@
       finish(rows.length
         ? "Done. Both files are built in this page - nothing was uploaded."
         : "Nothing could be decrypted with this key.",
-        rows.length ? null : "bad");
+        rows.length ? null : "bad", rows.length);
     }
   }
 })(globalThis);
