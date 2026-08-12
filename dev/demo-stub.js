@@ -1275,13 +1275,16 @@
            * demo frame is 544 px tall at a 1280x800 window, and the
            * stop is behind glass, so a viewer cannot go and look.
            *
-           * The rows that grant nothing sit below the fold by a little
-           * rather than by a screen - the always-allow list ends inside
-           * the frame and their heading is the next thing after it - so
-           * the sentence states the guard's rule instead of pointing at
-           * them, which is what makes it true of what is showing. The
-           * free stop at the end of this walk is where they can be
-           * pressed.
+           * The rows that grant nothing are just past the fold rather
+           * than a screen beyond it, which is close enough to be worth
+           * stating: measured on the baked build at 1280x800, the
+           * always-allow list ends 524 px into the 544 px frame and
+           * their heading starts at 536, so a strip of that heading
+           * shows and no row under it does. The sentence therefore
+           * states the guard's rule instead of pointing at them, which
+           * is what keeps it true of what is on the screen rather than
+           * only of the card. The free stop at the end of this walk is
+           * where they can be pressed.
            */
           narration: "The list of people who hold admin, kept where it " +
             "can be read and changed. The last row that really grants " +
