@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 237);
+const { check, mustReject, report } = suite("demo", 251);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1930,6 +1930,137 @@ await check("a card action that promises publishing stages its way to the card, 
 await check("the free drive carries admin-page cards on both sides of that line", () =>
   cardActionsOnAdmin.some((one) => PROMISES_PUBLISHING.test(one.words)) &&
   cardActionsOnAdmin.some((one) => !PROMISES_PUBLISHING.test(one.words)));
+
+/* ------------------------------------------------------------------ */
+/* #259 F7. The stop about the admin list narrates the guard there is. */
+
+/*
+ * THE DEFECT: THE NARRATION PROMISED A GUARD NOBODY HAS.
+ *
+ * "The last one cannot be removed" is narrated over a list whose every
+ * granting row comes off in front of the viewer. The guard counts ADMIN
+ * ROWS and not grants - the shipped Worker's subquery is
+ * `WHERE role = 'admin'` with no grants test, and the stub models that
+ * deployment rather than the fixed one - and this staging seeds a row
+ * that grants nobody. So the rows that do grant admin can all be
+ * removed while the dud keeps the count above one, and a viewer who
+ * follows the sentence and presses Remove twice ends on the empty admin
+ * list the sentence said was impossible.
+ *
+ * What is true is on the page already, in the page's own words: the
+ * malformed list says the guard "counts these too", and the notice under
+ * the admin list says an admin is granted "by no row above". Both are
+ * read out of apps/web below and the stop is held to saying the same two
+ * things, because a narration checked only against itself is a sentence
+ * nothing can falsify - which is how this one survived.
+ */
+
+/*
+ * The section the stop moves to, derived from the page rather than
+ * named here: the identified div the admin list is drawn inside is the
+ * membership card, the same reading `publishSection` takes.
+ */
+const membershipSection = sectionHolding(shipped[ADMIN_PAGE],
+  "membership-admin");
+
+const membershipStops = Demo.TOURS.flatMap((walk) => walk.stops)
+  .filter(onAdminPage)
+  .filter((stop) => stop.scroll === membershipSection);
+
+const adminHtmlFlat = shipped[ADMIN_PAGE].replace(/\s+/g, " ");
+const adminJsFlat = webSource["admin.js"].replace(/\s+/g, " ");
+
+/*
+ * The guard DRIVEN rather than read - every granting admin row removed
+ * in the order the pane offers them, then the row that is left.
+ *
+ * Bounded by the row count it started with, because a stub that answered
+ * 200 without removing anything would otherwise spin here forever, and a
+ * suite that hangs is a suite that reports nothing at all.
+ */
+const drivenAdmin = (() => {
+  let state = world("admin");
+  const read = () =>
+    Demo.answerFor({ method: "GET", path: "/membership" }, state).body;
+  const removals = [];
+  const started = read().membership.length + read().malformed.length;
+  for (let i = 0; i < started; i += 1) {
+    const row = read().membership.find((one) => one.role === "admin");
+    if (row === undefined) break;
+    const answer = Demo.answerFor(
+      { method: "DELETE", path: "/membership/admin/" + row.account_id },
+      state);
+    removals.push(answer.status);
+    if (answer.status !== 200) break;
+    state = Object.assign({}, state, answer.next);
+  }
+  const left = read();
+  const survivor = left.malformed[0];
+  return {
+    removals: removals,
+    left: left,
+    refused: survivor === undefined ? null : Demo.answerFor(
+      { method: "DELETE", path: "/membership/admin/" + survivor.account_id },
+      state),
+  };
+})();
+
+await check("the section that stop moves to is the one holding the admin list", () =>
+  typeof membershipSection === "string" && membershipSection.length > 0 &&
+  membershipSection !== publishSection &&
+  adminHtmlFlat.indexOf('id="' + membershipSection + '"') <
+    adminHtmlFlat.indexOf('id="secret-only"') &&
+  membershipStops.length > 0);
+
+await check("every row that really grants admin comes off in front of the viewer", () =>
+  drivenAdmin.removals.length >= 2 &&
+  drivenAdmin.removals.every((status) => status === 200) &&
+  drivenAdmin.left.membership
+    .filter((row) => row.role === "admin").length === 0);
+
+await check("what the guard holds back is a row, and it is one that grants nobody", () =>
+  drivenAdmin.left.malformed.length === 1 &&
+  drivenAdmin.refused !== null && drivenAdmin.refused.status === 409 &&
+  /last admin row/.test(drivenAdmin.refused.body.error));
+
+/*
+ * The floor that makes the empty list survivable, and the reason the
+ * stop may name one at all: the pane goes on reporting an admin the
+ * secret grants after every row is gone.
+ */
+await check("an admin no row covers is still granted when the list is empty", () =>
+  drivenAdmin.left.secretOnly.length > 0);
+
+await check("the stop about the admin list says what the page says the guard counts", () =>
+  membershipStops.length > 0 &&
+  adminHtmlFlat.includes(
+    "the guard that refuses to remove the last admin row counts these too") &&
+  membershipStops.every((stop) => /\bcounts rows\b/i.test(stop.narration)));
+
+await check("the stop about the admin list names the floor the panel reports", () =>
+  adminJsFlat.includes("and by no row above") &&
+  membershipStops.every((stop) => /\bby no row\b/i.test(stop.narration)));
+
+/*
+ * The general rule the defect was a case of: what a removal guard
+ * protects here is a ROW, so a stop promising that something cannot be
+ * removed has to say which. "The last one" reads as the last person
+ * holding admin, and that is the claim the drive above falsifies.
+ */
+await check("a stop saying something cannot be removed says it is a row", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) =>
+    !/cannot be removed/i.test(stop.narration) ||
+    /\brows?\b/i.test(stop.narration))));
+
+// Non-vacuity: the partition is real, and the admin page carries stops
+// that are not about the list at all - so the two arms above are not
+// requirements every stop happens to meet.
+await check("the admin page carries stops that are not about the list", () => {
+  const stops = Demo.TOURS.flatMap((walk) => walk.stops).filter(onAdminPage);
+  return stops.length > membershipStops.length &&
+    stops.some((stop) => stop.scroll !== membershipSection &&
+      !/\bcounts rows\b/i.test(stop.narration));
+});
 
 /*
  * WHICH stops have to declare one - the half the arm above cannot see.
@@ -4088,6 +4219,125 @@ await check("the two corpora are different people", () => {
 
 await check("nothing published carries a handle", () =>
   !JSON.stringify(richSnapshot).includes("demo_member"));
+
+/* ------------------------------------------------------------------ */
+/* #259 F5. The document the journey narrates a change over.           */
+
+/*
+ * THE DEFECT: THE NARRATION PROMISED A FIGURE THE STAGING COULD NOT
+ * DRAW.
+ *
+ * "the combined weight, the change since last time, and the lines
+ * running together" is narrated over a FIRST publish. movementOf()
+ * answers null when there is no comparable predecessor, movementText()
+ * answers null on that, and the hero delta is simply never appended - so
+ * the one line the sentence named was the only thing on that page the
+ * viewer could not find, with nothing on screen to say why. It is the
+ * false-confidence direction this suite's header names: a plausible
+ * screen, missing the thing being described.
+ *
+ * So the staged document is a SECOND publish, built the way
+ * apps/web/admin.js builds one - the earlier generation from the
+ * corpus's own earlier submissions, both generations through the shipped
+ * snapshotOf. Nothing writes a document by hand: a predecessor spelled
+ * out beside the aggregation would be the demo holding a second opinion
+ * about what a snapshot is, which is the thing dev/demo-corpus.js exists
+ * to avoid.
+ */
+const corpusDeps = Object.assign({ snapshotOf: Dashboard.snapshotOf }, deps);
+
+/*
+ * Built lazily and memoized, so a builder that is missing or throws
+ * fails the arms that need it by name instead of dying at file scope and
+ * taking every check after it down with it.
+ */
+const publishedCache = new Map();
+const publishedFor = (which) => {
+  if (!publishedCache.has(which)) {
+    publishedCache.set(which, Demo.publishedFrom(which, corpusDeps));
+  }
+  return publishedCache.get(which);
+};
+
+/*
+ * Read back through the stub's own /snapshot route rather than off the
+ * builder, because the seed a journey stop reads is the one at that
+ * route: a builder producing a perfect document the staging never served
+ * would satisfy an arm written the other way.
+ */
+const stagedDocument = (scenario) => {
+  const answer = Demo.answerFor({ method: "GET", path: "/snapshot" }, {
+    scenario: scenario,
+    data: { rich: publishedFor("rich"), sparse: publishedFor("sparse") },
+  });
+  return answer.status === 200 ? answer.body.snapshot : null;
+};
+
+await check("the document the charts staging serves is a second publish", () => {
+  const doc = stagedDocument("member");
+  return doc !== null && doc.movement !== null &&
+    typeof doc.movement.since === "string" &&
+    Number.isFinite(Date.parse(doc.movement.since)) &&
+    Date.parse(doc.movement.since) < Date.parse(doc.generated);
+});
+
+await check("and it carries a movement over the floor, in both bases and both systems", () => {
+  const movement = stagedDocument("member").movement;
+  return movement.bases !== null &&
+    ["people", "entries"].every((basis) =>
+      movement.bases[basis] !== null &&
+      Object.keys(Dashboard.UNITS).every((unit) =>
+        Number.isFinite(movement.bases[basis][unit].weight) &&
+        movement.bases[basis][unit].weight !== 0));
+});
+
+/*
+ * The predecessor is this corpus one publish ago and not a second
+ * dataset: the staged document counts what the plain aggregation counts,
+ * and only the movement is new. Without this the builder could be
+ * measuring against people the demo never shows.
+ */
+await check("the staged document is the same corpus, one publish later", () => {
+  const doc = stagedDocument("member");
+  return doc.counts.entries === richSnapshot.counts.entries &&
+    doc.counts.people === richSnapshot.counts.people &&
+    doc.series !== null && doc.series.length === richSnapshot.series.length;
+});
+
+/*
+ * WHICH field the line is drawn from, read out of apps/web rather than
+ * asserted here - AGENTS.md's corollary: a check computed entirely from
+ * the demo cannot notice that the page stopped reading `movement`, and
+ * would go on certifying a staging nothing renders.
+ */
+await check("the change-since line the charts draw is drawn from that field", () =>
+  webSource["dashboard.js"].includes(
+    "function movementText(snapshot, basis, spec) {") &&
+  webSource["dashboard.js"].includes("const movement = snapshot.movement;") &&
+  webSource["dashboard.js"].includes(
+    "const moved = movementText(snapshot, basis, spec);"));
+
+/*
+ * And the coherence arm the slice is for: the demo narrates only what
+ * the staging shows. A stop whose own words promise the change since
+ * last time has to open on a document that has one.
+ */
+const PROMISES_MOVEMENT = /\bsince last time\b/i;
+
+await check("a stop promising a change since last time opens on a document with one", () =>
+  Demo.TOURS.every((walk) => walk.stops.every((stop) => {
+    if (!PROMISES_MOVEMENT.test(stop.title + " " + stop.narration)) return true;
+    const doc = stagedDocument(stop.scenario);
+    return doc !== null && doc.movement !== null && doc.movement.bases !== null;
+  })));
+
+// Non-vacuity in both directions: some stop really promises it, and a
+// staging with nothing comparable really says nothing - so the arm above
+// is a partition rather than a sentence true of everything.
+await check("some stop promises it, and a staging with nothing to compare stays silent", () =>
+  Demo.TOURS.some((walk) => walk.stops.some((stop) =>
+    PROMISES_MOVEMENT.test(stop.title + " " + stop.narration))) &&
+  stagedDocument("suppressed").movement === null);
 
 /* ------------------------------------------------------------------ */
 /* The server serves the mirror, and only out of apps/web.             */
