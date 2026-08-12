@@ -1276,15 +1276,34 @@
            * stop is behind glass, so a viewer cannot go and look.
            *
            * The rows that grant nothing are just past the fold rather
-           * than a screen beyond it, which is close enough to be worth
-           * stating: measured on the baked build at 1280x800, the
-           * always-allow list ends 524 px into the 544 px frame and
-           * their heading starts at 536, so a strip of that heading
-           * shows and no row under it does. The sentence therefore
-           * states the guard's rule instead of pointing at them, which
-           * is what keeps it true of what is on the screen rather than
-           * only of the card. The free stop at the end of this walk is
-           * where they can be pressed.
+           * than a screen beyond it, so the sentence states the
+           * guard's rule instead of pointing at them - which is what
+           * keeps it true of what is on the screen rather than only of
+           * the card.
+           *
+           * THE PROPERTY, AND NOT A PIXEL COUNT. What "just past"
+           * means, in the only form worth trusting: the always-allow
+           * list ends inside the frame, the heading over the rows that
+           * grant nothing is cut by the fold, and no row beneath that
+           * heading is on screen at all. The last part is the
+           * load-bearing one - the sentence may not point at a row a
+           * viewer cannot see. Re-establish it the way it is found:
+           * bake this commit, walk to this stop at 1280x800 with the
+           * document's fonts reporting loaded, and read the rectangles
+           * off the membership-always_allow and membership-malformed
+           * blocks.
+           *
+           * A figure written here instead would be a number nothing
+           * can falsify - the geometry arm in dev/demo.test.mjs reads
+           * markup rather than rendered height, and nothing else in
+           * the gate renders this page at all - and it is not even
+           * stable across the sessions that measure it: two of them
+           * have come back 81 px apart on one commit at one frame
+           * size. That is the trap, and it is why this paragraph
+           * carries no figure of its own.
+           *
+           * The free stop at the end of this walk is where the rows
+           * that grant nothing can be pressed.
            */
           narration: "The list of people who hold admin, kept where it " +
             "can be read and changed. The last row that really grants " +
