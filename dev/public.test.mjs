@@ -218,6 +218,21 @@ function answerOf(query, cells) {
   };
 }
 
+/*
+ * A refusal the way the engine actually raises one - #265 rows 14-16.
+ *
+ * query.js keeps its precise message, which is written for whoever is
+ * holding the document, and carries a `plain` half written for whoever
+ * is holding the page. The two are one claim in two registers, so a
+ * fixture that could only produce the message could not tell a card
+ * showing the plain half from a card showing nothing at all.
+ */
+function refusalOf(spec) {
+  const error = new Error(typeof spec === "string" ? spec : spec.message);
+  if (spec && spec.plain) error.plain = spec.plain;
+  return error;
+}
+
 let scenario = 0;
 async function loadPublic(session, nextResponse, options = {}) {
   const page = makePage();
@@ -297,7 +312,7 @@ async function loadPublic(session, nextResponse, options = {}) {
     BASES: Engine.BASES,
     MEASURES: Engine.MEASURES,
     publishedSource(snapshot) {
-      if (options.sourceRefuses) throw new Error(options.sourceRefuses);
+      if (options.sourceRefuses) throw refusalOf(options.sourceRefuses);
       const source = { published: snapshot };
       engine.sources.push(source);
       return source;
@@ -308,7 +323,7 @@ async function loadPublic(session, nextResponse, options = {}) {
     },
     run(source, query) {
       engine.runs.push({ source, query });
-      if (options.runThrows) throw new Error(options.runThrows);
+      if (options.runThrows) throw refusalOf(options.runThrows);
       return answerOf(query, query.merge
         ? [{ label: query.merge[0].as, count: 9 }]
         : (options.cells || [{ label: "male", count: 7 },
@@ -325,11 +340,31 @@ async function loadPublic(session, nextResponse, options = {}) {
     return nextResponse;
   };
 
+  /*
+   * The console, recorded rather than silenced.
+   *
+   * The engine's own words are the only explanation anybody debugging a
+   * refused document gets, and #265 moved them off the member's card -
+   * so where they went has to be provable, or "kept for the console" is
+   * a claim nothing carries. Restored before this returns, because the
+   * harness prints its own results through the real one.
+   */
+  const logged = [];
+  const realConsole = globalThis.console;
+  globalThis.console = {
+    ...realConsole,
+    warn(...args) { logged.push(args.join(" ")); },
+  };
+
   scenario++;
-  await import("data:text/javascript," + encodeURIComponent(publicSource) +
-    "#public-session-" + scenario);
-  await new Promise((resolve) => setImmediate(resolve));
-  return { ...page, requests, renders, answers, engine };
+  try {
+    await import("data:text/javascript," + encodeURIComponent(publicSource) +
+      "#public-session-" + scenario);
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    globalThis.console = realConsole;
+  }
+  return { ...page, requests, renders, answers, engine, logged };
 }
 
 function authorization(request) {
@@ -758,33 +793,106 @@ check("without the engine the card stays shut and the panels still draw",
   engineless.elements.closed.hidden === true);
 
 const refused = await loadPublic(MEMBER, response(200, SNAPSHOT), {
-  sourceRefuses: "that is a keyholder snapshot, not a published one",
+  sourceRefuses: {
+    message: "that is a keyholder snapshot, not a published one - it " +
+      "carries handles and unsuppressed cells",
+    plain: "What arrived is not the published copy this page may show.",
+  },
 });
 
 check("a document the engine refuses takes the controls away and says why",
-  // The refusal names WHICH refusal it was - a version this engine does
-  // not read, or a keyholder snapshot arriving where a published one
-  // belongs. A house paraphrase would lose the only explanation anyone
-  // gets, and inert controls would invite a member to keep clicking.
+  // The refusal still names WHICH refusal it was - a version this engine
+  // does not read, or a keyholder snapshot arriving where a published one
+  // belongs - but it names it in the page's own register: #265 row 14.
+  // "document", "queried", "engine", "unsuppressed cells" are the
+  // engine's nouns, and this is a member's screen. Inert controls would
+  // invite a member to keep clicking, so they still go away.
   refused.elements.question.hidden === false &&
   refused.elements["q-controls"].hidden === true &&
   refused.elements["q-status"].className === "status bad" &&
-  /keyholder snapshot/.test(refused.elements["q-status"].textContent) &&
+  refused.elements["q-status"].textContent ===
+    "These figures cannot be asked questions here. What arrived is not " +
+    "the published copy this page may show." &&
   refused.answers.length === 0 &&
   refused.renders.length === 1);
 
+check("and the engine's own words go to the console, not to the member",
+  // Losing them entirely would lose the only explanation anybody
+  // debugging a refused document gets. They are not lost; they are
+  // somewhere a member never looks.
+  !/keyholder snapshot|unsuppressed/.test(
+    refused.elements["q-status"].textContent) &&
+  refused.logged.some((line) => /keyholder snapshot/.test(line)));
+
 const throwing = await loadPublic(MEMBER, response(200, SNAPSHOT), {
-  runThrows: "a median over \"gender\" is not a question",
+  runThrows: {
+    message: "a median over \"gender\" is not a question - a middle needs " +
+      "numbers to take the middle of",
+    plain: "A middle needs numbers to work with, so it is only offered " +
+      "for weight, height and BMI.",
+  },
 });
 
-check("a question the engine refuses is reported in the engine's own words",
+check("a question the engine refuses is reported in the card's own words",
+  // #265 row 16. The engine's refusals are precise and are written in
+  // the engine's nouns - "split", "cell", "merge" - none of which this
+  // page ever puts on screen. What the member reads is the same claim
+  // in the words the controls above it use.
   throwing.elements["q-status"].className === "status bad" &&
   throwing.elements["q-status"].textContent ===
-    "a median over \"gender\" is not a question" &&
+    "A middle needs numbers to work with, so it is only offered for " +
+    "weight, height and BMI." &&
+  throwing.logged.some((line) => /is not a question/.test(line)) &&
   throwing.answers.length === 0 &&
   // and the page is still a page
   throwing.elements.tool.hidden === false &&
   throwing.renders.length === 1);
+
+/*
+ * A refusal the engine raised with no plain half - #265 row 16's other
+ * direction, and the one with teeth.
+ *
+ * Every member-reachable throw in query.js carries one, but the page
+ * cannot be built on that promise: a throw added there tomorrow, or one
+ * from a path nobody expected a member to reach, arrives here bare. The
+ * old page printed whatever it was handed, which is how "unknown split
+ * \"x\" - it is one of gender, country, roles, bmi, weight, height"
+ * reached a member's screen. A house sentence is what a bare refusal
+ * gets now, and the engine's words still reach the console.
+ */
+const bare = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  runThrows: "unknown unit system \"furlongs\"",
+});
+
+check("a refusal with no plain half gets a house sentence, not the engine's",
+  bare.elements["q-status"].className === "status bad" &&
+  bare.elements["q-status"].textContent ===
+    "That question could not be answered." &&
+  bare.logged.some((line) => /furlongs/.test(line)) &&
+  bare.answers.length === 0);
+
+/*
+ * The option the engine does not know - #265 row 15.
+ *
+ * The pin above makes this unreachable in the shipped pair, and the
+ * sentence is still said out loud rather than thrown, because whoever
+ * reaches it added an option and will not read a stack trace. What
+ * changed is who it was addressed to: "This page offers a question the
+ * engine does not answer: bmi." names a module and a raw split id on a
+ * member's screen. The id is what the developer needs, so the id goes
+ * to the console and the member gets a sentence about their question.
+ */
+const stranger = await loadPublic(MEMBER, response(200, SNAPSHOT), {
+  split: "handle",
+});
+
+check("a split the engine does not answer says so without naming the id",
+  stranger.elements["q-status"].className === "status bad" &&
+  stranger.elements["q-status"].textContent ===
+    "That question is not one these figures can answer." &&
+  !/handle/.test(stranger.elements["q-status"].textContent) &&
+  stranger.logged.some((line) => /handle/.test(line)) &&
+  stranger.answers.length === 0);
 
 /* ------------------------------------------------------------------ */
 

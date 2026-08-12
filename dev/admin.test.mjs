@@ -657,6 +657,31 @@ await check("the secretOnly notice says the ids resolve to nobody", () =>
     secretOnly: ["e".repeat(64)],
   })))));
 
+/*
+ * The noun agrees with the number - #265 row 35.
+ *
+ * "1 admin(s) are granted" disagrees with itself at the count this
+ * notice most often carries, and `(s)` is the tell of a number pasted
+ * into a sentence rather than written into one. The site already knows
+ * how to do this: submit.js writes "1 correction" / "2 corrections"
+ * from a count, and UAT.md A5.3 refuses "1 corrections" in as many
+ * words. Both directions, because a helper that always says "admins"
+ * passes the plural half on its own.
+ */
+await check("one admin granted only by the secret reads as one admin", () => {
+  const notice = secretOnlyNotice(membershipView(ANSWER({
+    secretOnly: ["e".repeat(64)],
+  })));
+  return /\b1 admin is granted\b/.test(notice) && !/\(s\)/.test(notice);
+});
+
+await check("two of them read as two admins", () => {
+  const notice = secretOnlyNotice(membershipView(ANSWER({
+    secretOnly: ["e".repeat(64), "f".repeat(64)],
+  })));
+  return /\b2 admins are granted\b/.test(notice) && !/\(s\)/.test(notice);
+});
+
 /* The three refusals, which are three different acts and not three
  * different sentences. */
 await check("401 discards the session and leaves", () =>

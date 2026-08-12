@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 102;
+const EXPECTED = 103;
 
 function check(label, condition) {
   performed++;
@@ -1696,7 +1696,7 @@ check("a history sealed entirely elsewhere is explained, not left blank",
   isPainted(noneOpen.elements["your-history"]) &&
   !isPainted(noneOpen.elements["history-controls"]) &&
   noneOpen.engine.sources.length === 0 &&
-  /sealed to this browser/.test(
+  /cannot be opened on this browser/.test(
     noneOpen.elements["history-status"].textContent));
 
 /*
@@ -1708,17 +1708,49 @@ check("a history sealed entirely elsewhere is explained, not left blank",
  * blocking a submission on a request that may never return is the worse
  * failure. So an entry sent in the first moments of a slow load is
  * keyholder-only for good, on a browser holding a perfectly good key.
- * The other three causes all point at a device; this one happened here,
- * and a sentence listing only the three is a sentence that blames the
- * member's hardware for the page's own timing.
+ * A sentence listing only devices blames the member's hardware for the
+ * page's own timing.
+ *
+ * The MECHANISM is no longer spelled out on screen - #265's copy pass
+ * (row 17, owner-ruled) collapsed four mechanisms into two causes a
+ * member can act on, because all four printed at once, twice, in four
+ * lines. What survives is the property the arm was written for: the
+ * sentence must name a cause that happened on THIS browser as well as
+ * one that happened elsewhere. "Sealed before it had a key of its own"
+ * is the timing case in the member's terms - the row was sealed at a
+ * moment this browser's key was not there to seal to - and it is what
+ * this now pins, in both halves, so a rewrite back to a devices-only
+ * sentence still fails here.
  */
-check("and the timing this page causes is named, not only the devices",
-  /finished loading your account/.test(
+check("and the cause on this browser is named, not only the devices",
+  /before it had a key of its own/.test(
+    noneOpen.elements["history-status"].textContent) &&
+  /on another device/.test(
     noneOpen.elements["history-status"].textContent));
+
+/*
+ * And the partial line does not print underneath it - #265 row 17.
+ *
+ * Both sentences fired together before that: the four-cause line saying
+ * nothing opened, and immediately below it "n sealed to a device this
+ * browser is not - they are not in the answer above", claiming rows are
+ * missing from an answer that was never drawn. The controls stay hidden
+ * on this path, so there is no answer above for anything to be absent
+ * from.
+ */
+check("nothing opened says so once, with no partial line under it",
+  !isPainted(noneOpen.elements["history-sealed"]));
 
 const noKey = await loadSubmit({
   replies: [response(200, SUMMARY), listing([row(1, "one")])],
-  history: { key: null, unavailable: "this browser keeps no database" },
+  // The reason memberkey.js actually returns, word for word - a stub
+  // that reads like the product string and is not it is a fixture that
+  // lies to the next reader (#265 row 5 moved the real one off
+  // "database").
+  history: {
+    key: null,
+    unavailable: "It has nowhere to keep one that would last past this tab.",
+  },
 });
 
 /*
@@ -1731,7 +1763,7 @@ check("a browser with no key of its own asks the route for nothing",
   noKey.requests.length === 1 &&
   isPainted(noKey.elements["your-history"]) &&
   !isPainted(noKey.elements["history-controls"]) &&
-  /no database/.test(noKey.elements["history-status"].textContent));
+  /nowhere to keep one/.test(noKey.elements["history-status"].textContent));
 
 const noRows = await loadSubmit({
   replies: [response(200, { ok: true, entries: 0, superseded: 0,
