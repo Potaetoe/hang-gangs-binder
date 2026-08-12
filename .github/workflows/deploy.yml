@@ -73,9 +73,25 @@ jobs:
         with:
           python-version: '3.12'
 
+      # 22 rather than 20 because the gate's strongest membership arms
+      # execute the delete guard's SQL through `node:sqlite`, which
+      # arrived after 20. On 20 they self-skip loudly and the run counts
+      # six checks fewer - honest, and still a runner that never asks an
+      # engine anything, so the one mutation class nothing else in the
+      # gate catches went uncaught here.
+      #
+      # THE MAJOR IS THE FLOOR, NOT THE WHOLE CONDITION: the module needs
+      # --experimental-sqlite until 22.13.0 and runs unflagged from
+      # there. A bare '22' takes the newest 22.x, which is far past that,
+      # so this is safe - but pinning a patch below 22.13 would put the
+      # six arms straight back into the silence this pin removes.
+      #
+      # This pin's proof cannot exist before it runs: it is this
+      # workflow's own verify log reading `worker.js OK - 365 checks`
+      # rather than 359, with no "node:sqlite is absent" note above it.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # --ignore-scripts is not decoration. Linting brought 87 transitive
       # packages into a repository whose design rejected libsodium.js -
