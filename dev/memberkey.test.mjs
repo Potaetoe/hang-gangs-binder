@@ -831,6 +831,23 @@ const checkWeb = await readFile(HERE("../tools/check_web.py"), "utf8");
  * tuple in it, and a reader that finds the wrong rows is worse than one
  * that finds none.
  *
+ * THE BOUND IS COLUMN 0, and that is what makes the sentence above
+ * true rather than aspirational. The assignment is matched at the start
+ * of a line because that is where a module-level table lives, and the
+ * block ends at the first line after the opening brace that begins in
+ * column 0 - which has to be the dict's own `}` or there is no block
+ * here to read. Python indents a statement's continuation lines and
+ * puts nothing else at column 0 until the statement ends, so one rule
+ * covers both legal shapes of an empty table: `{}` closing on the
+ * opening line, and a `}` on a line of its own.
+ *
+ * A `}`-at-line-start terminator is the shape that does not work, and
+ * it is worth naming because it is the obvious one. `DEFERRED_CAPTURES
+ * = {}` gives it nothing to stop at, so the body runs on to the close
+ * of whatever table comes next - check_web.py is four thousand lines
+ * and holds several, some of them tuple-keyed - and the rows it then
+ * reports as exemptions are somebody else's.
+ *
  * QUOTE-AGNOSTIC, and that is not tidiness. Python does not care which
  * quote a string is written with and nothing in this repository's gate
  * enforces one, so a single-quoted row is the same row to check_web.py
@@ -845,9 +862,12 @@ const checkWeb = await readFile(HERE("../tools/check_web.py"), "utf8");
  * file can no longer see the exemptions".
  */
 function declaredCaptures(python) {
-  const block = /DEFERRED_CAPTURES = \{([\s\S]*?)^\}/m.exec(python);
-  if (!block) return null;
-  return [...block[1].matchAll(
+  const opened = /^DEFERRED_CAPTURES = \{/m.exec(python);
+  if (!opened) return null;
+  const after = python.slice(opened.index + opened[0].length);
+  const closed = /^\S/m.exec(after);
+  if (!closed || after[closed.index] !== "}") return null;
+  return [...after.slice(0, closed.index).matchAll(
     /\(\s*(["'])([\w.-]+)\1\s*,\s*(["'])(\w+)\3\s*\)\s*:/g)].map((one) => ({
     script: one[2], namespace: one[4],
   }));
@@ -980,12 +1000,14 @@ await check("and a table with no close of its own is unreadable, not empty",
  * looking like they work.
  *
  * A getter defined with Object.defineProperty on the sandbox OBJECT,
- * after vm.createContext() has contextified it, is reached through
- * V8's global proxy when script inside the context reads the name. The
- * proxy does not propagate a throw from that getter: the read answers
- * undefined and the exception is swallowed. Measured on Node v24.19.0
- * with a getter whose whole body is `throw`, read three ways
- * (`root.x`, `globalThis.x`, bare `x`) - none of them threw.
+ * after vm.createContext() has contextified it, is not on the global
+ * that script inside the context reads through V8's global proxy. The
+ * getter is never invoked at all, so a body that throws never runs.
+ * Measured on Node v24.19.0 with a getter whose whole body is `throw`,
+ * read three ways: `root.x` and `globalThis.x` answer undefined, and
+ * bare `x` throws ReferenceError because the name is not defined - a
+ * different exception from a different place, and not the refusal this
+ * mode exists to imitate.
  *
  * Which makes a "blocked" mode written that way a second spelling of
  * "absent": both hand the shipped file a falsy value, both take the
