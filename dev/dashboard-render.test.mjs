@@ -1574,8 +1574,17 @@ await check("no floor promise is printed over an answer with no groups", () => {
   const emptied = figures(asked(ASKABLE_SPARSE,
     { basis: "people", split: "gender" }))[0];
 
-  const unavailable = { source: "published", basis: "people", split: "gender",
-    units: null, measure: "count", kind: "categorical", available: false,
+  /*
+   * A STAT, and that is what makes this half discriminate rather than
+   * ride on the half above it. An unavailable categorical answer has an
+   * empty cell list too, so the cells guard alone would cover it and
+   * the `available` guard could be deleted with nothing going red. A
+   * median has no cells to be empty: it is the one shape where "the
+   * keyholder published no breakdown for this basis" is the only thing
+   * saying there is nothing to promise about.
+   */
+  const unavailable = { source: "published", basis: "people", split: "weight",
+    units: "imperial", measure: "median", kind: "stat", available: false,
     floor: D.MIN_CELL, cells: [], total: 0, value: 0 };
   const container = makeNode("div", HTML_NS);
   D.renderAnswer(container, unavailable, "asked: gender");
