@@ -3911,15 +3911,20 @@ def module_captures(js):
 # A namespace one script reads at CALL time from a page that may not have
 # published it, declared here with the reason.
 #
-# Why the exemption has to exist at all: signout.js is loaded by every
-# signed-in page because Sign out is in the rail, while memberkey.js is
-# loaded only by the page that seals entries. Requiring the publisher
-# beside every reader would put a member's device key on charts.html
-# and admin.html to satisfy a check - which is weight on two pages for
-# nothing, and a capability on the instrument page that DESIGN.md's
-# per-page table exists to keep narrow. Dropping the reference is worse:
-# DESIGN.md says signing out destroys the device key, and a sign-out
-# that does not is that sentence going quiet.
+# EMPTY, AND THAT IS THE HEALTHY STATE. Every script in apps/web is
+# loaded on a page that publishes what it captures, so the ordering rule
+# below judges every capture there is. The table stays because the
+# exemption it grants is real - a rule with no way to say "this read
+# happens when a button is pressed" would eventually be answered by
+# loading a publisher onto pages that need none of it - but a row is a
+# cost, and an empty registry is what a registry looks like when the
+# code does not need one.
+#
+# What a row costs, said plainly, because the last one cost it: the
+# exemption does not merely permit the read, it REMOVES ORDER POLICING
+# for the pair. So a page reorder afterwards captures undefined, the
+# guarded call goes quiet, and whatever that call was for stops
+# happening with every stage of this gate green.
 #
 # THIS FILE DECLARES THE EXEMPTION AND DOES NOT EARN IT, and that split
 # is the whole of the rule. An earlier version tried to earn it here,
@@ -3933,38 +3938,33 @@ def module_captures(js):
 # file-wide guard regex is satisfied by a dead guard, or by the guard's
 # own text inside a string, while the real use goes unguarded.
 #
-# A textual proxy for a runtime property is the wrong instrument, and
-# the failure mode is the dangerous one: the exemption ALSO removes
-# order policing for the pair, so a satisfied proxy plus a script
-# reorder is key destruction that silently stops happening.
-#
 # The property is earned by EXECUTION instead, in dev/memberkey.test.mjs:
-# it loads the shipped bytes under Node with a recording global and
-# fails if the namespace is read during load. That suite reads THIS
-# table, so a pair added here with no execution evidence fails there -
-# AGENTS.md's corollary applied to the exemption itself, since something
-# outside the file has to say what the file may contain.
+# it reads THIS table and fails if it holds a row whose deferred read is
+# not demonstrated by loading the shipped bytes under a recording global.
+# Adding a row here is therefore two changes, and the second one is the
+# evidence - AGENTS.md's corollary applied to the exemption itself, since
+# something outside the file has to say what the file may contain.
 #
-# What stays here is what a registry is for: the pair, and the reason.
-DEFERRED_CAPTURES = {
-    ("signout.js", "BinderMemberKey"):
-        "Sign out is in the rail on every signed-in page; the device key "
-        "exists only on the page that seals entries. Read when the button "
-        "is pressed, and guarded, so a page without the module destroys "
-        "nothing rather than throwing",
-}
+# What belongs here is what a registry is for: the pair, and the reason.
+DEFERRED_CAPTURES = {}
 
 
-def deferred_capture_problems(name, js):
+def deferred_capture_problems(name, js, declared=DEFERRED_CAPTURES):
     """[problem] for a declared deferred capture that is not reviewable.
 
     Pure over one script's text, and deliberately narrow: it asks only
     that a declared pair name a script which really reads the namespace,
     and carry a reason. Whether that read is SAFE is a runtime question,
     answered by running the bytes - see the note above.
+
+    The table is a PARAMETER, defaulting to the shipped one, because the
+    shipped one is empty: arms driving it would exercise the loop zero
+    times and pass by describing nothing, which is the armed-looking and
+    inert shape this repository refuses. dev/check_web.test.py hands it
+    a synthetic table instead, and the gate below hands it none.
     """
     problems = []
-    for (script, namespace), reason in sorted(DEFERRED_CAPTURES.items()):
+    for (script, namespace), reason in sorted(declared.items()):
         if script != name:
             continue
         if not reason.strip():
@@ -3984,12 +3984,13 @@ def deferred_capture_problems(name, js):
     return problems
 
 
-def run_order_problems(run, captures):
+def run_order_problems(run, captures, declared=DEFERRED_CAPTURES):
     """[problem] for a run of scripts that reads a namespace too early.
 
     Pure, over a run and a capture map, because the hazard is a page's
     ORDER and a rule exercised only against the five orders that exist
-    today is a rule tested against today's content.
+    today is a rule tested against today's content. The exemption table
+    is a parameter for the reason deferred_capture_problems() gives.
     """
     publisher = {namespace: name for name, namespace in MODULE_EXPORTS.items()}
     at = {}
@@ -4006,7 +4007,7 @@ def run_order_problems(run, captures):
             # the page loads, and shape-checked where the script is read.
             # The ordering rule has nothing to say about it: there is no
             # load-time window to be on the wrong side of.
-            if (name, namespace) in DEFERRED_CAPTURES:
+            if (name, namespace) in declared:
                 continue
             if owner not in at:
                 problems.append(
@@ -4022,6 +4023,56 @@ def run_order_problems(run, captures):
                     "page does not throw, it goes quiet"
                     % (name, owner, name, namespace))
     return problems
+
+
+# The Sign out control, by the id signout.js wires its click to. Read as
+# the whole attribute value rather than as a substring, so a control
+# named `sign-out-confirm` tomorrow is not silently taken for this one.
+SIGN_OUT_CONTROL = re.compile(r'\bid\s*=\s*["\']sign-out["\']', re.I)
+
+# The module that performs it, and the only place destruction lives.
+SIGN_OUT_SCRIPT = "signout.js"
+
+
+def sign_out_wiring_problems(text):
+    """[problem] for a page offering Sign out without the module for it.
+
+    Nothing else in this file says a page must load a particular script.
+    SHELLS pins the markup a page carries, page_loading_problems() pins
+    where scripts sit, and run_order_problems() pins their order - none
+    of the three has an opinion about which scripts exist. That gap is
+    fine for every module here except this one, because signing out is
+    the act that destroys what this device retains: the session, the
+    cleartext prefill, and the device key that opens every entry the
+    member has ever submitted.
+
+    Destruction rides signout.js precisely so that no page can forget it
+    while offering the button - IndexedDB is origin-wide and the key is
+    there whatever the page loaded. So the button and the module are one
+    thing, and this is the rule that says so. A page copied from an open
+    tab with the rail in it and one line missing from the run would
+    otherwise ship a control that neither ends the session nor destroys
+    anything, and every stage of this gate would pass.
+
+    Comments go first, because a script tag commented out while
+    debugging is not a loaded script and the page comments beside these
+    runs discuss this very file at length. A page whose body cannot be
+    read is not judged here: page_loading_problems() reports that on the
+    same page, and one defect is one row.
+    """
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    if not SIGN_OUT_CONTROL.search(text):
+        return []
+    if page_body(text) is None:
+        return []
+    if SIGN_OUT_SCRIPT in page_script_run(text):
+        return []
+    return [
+        "offers a Sign out control and never loads %s, which is the "
+        "module that performs it. Sign out ends the session, erases the "
+        "cleartext prefill and destroys the member's device key - a page "
+        "with the button and without the module offers all three and "
+        "does none of them" % SIGN_OUT_SCRIPT]
 
 
 def loading_problems():
@@ -4046,6 +4097,8 @@ def loading_problems():
         for problem in page_loading_problems(text):
             problems.append((name, problem))
         for problem in run_order_problems(page_script_run(text), captures):
+            problems.append((name, problem))
+        for problem in sign_out_wiring_problems(text):
             problems.append((name, problem))
     return problems
 

@@ -672,11 +672,10 @@
      rows into an answer.
 
      memberkey.js is before submit.js because submit.js asks it for a
-     key while painting the panel, and signout.js reads it when the
-     button is pressed rather than as it loads - which is why the two
-     other signed-in pages carry signout.js without this file and
-     destroy nothing rather than throwing. tools/check_web.py's
-     DEFERRED_CAPTURES carries that exemption with its reason.
+     key while painting the panel. Nothing else on this page reads it:
+     signing out destroys the key's database from signout.js directly,
+     which is what lets the two other signed-in pages carry the Sign out
+     button without this file and still destroy the key.
 
      query.js needs dashboard.js loaded first: it reads the suppression
      floor, the snapshot builder and the unit table out of

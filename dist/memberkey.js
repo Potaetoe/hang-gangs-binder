@@ -236,32 +236,6 @@
     }
   }
 
-  
-
-  function forget() {
-    return new Promise(function (resolve) {
-      const factory = database();
-      if (!factory) {
-        resolve(false);
-        return;
-      }
-      let request;
-      try {
-        request = factory.deleteDatabase(DB_NAME);
-      } catch (error) {
-        resolve(false);
-        return;
-      }
-      request.onsuccess = function () { resolve(true); };
-      request.onerror = function () { resolve(false); };
-       
-       
-       
-       
-      request.onblocked = function () { resolve(false); };
-    });
-  }
-
    
    
    
@@ -282,6 +256,5 @@
      
     custodyRuling: custodyRuling,
     ensure: ensure,
-    forget: forget,
   });
 })(globalThis);

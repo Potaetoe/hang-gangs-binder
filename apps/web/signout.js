@@ -116,22 +116,83 @@
    * everything they have ever submitted. A browser two people share
    * must not hand the second one the first one's history.
    *
-   * It is here, in the module every signed-in page loads, for exactly
-   * the reason the prefill clear is: whether the key gets destroyed must
-   * not depend on which page somebody happened to be standing on when
-   * they pressed the button. memberkey.js is loaded only by the page
-   * that seals entries, so the call is guarded rather than assumed -
-   * and a page without it has no key of its own to destroy.
+   * IT IS DESTROYED FROM HERE AND UNCONDITIONALLY, because IndexedDB is
+   * origin-wide. The key sits in this origin whatever page the member is
+   * standing on, so destruction cannot depend on which modules that page
+   * happened to load - and memberkey.js is loaded by one signed-in page
+   * of three. Reaching through it is how sign-out came to destroy
+   * nothing on charts.html and admin.html, which are the two pages a
+   * member is most likely to leave from (#257). That is the same
+   * argument the prefill's key makes above, and it is why both acts live
+   * in the module every signed-in page runs.
    *
-   * Not awaited, and that is the same trade the revoke above makes for
-   * the same reason: the user-visible act is leaving, and a member
-   * cannot be held on the page by a storage call. `forget()` never
-   * rejects, so nothing is left unhandled; the delete is started before
-   * the navigation below, which is what gives it a turn to run.
+   * DELETING THE DATABASE, not the row. A delete of one key leaves the
+   * store, the database and anything else in it behind - and anything
+   * else is precisely the foreign records the erase rule in
+   * memberkey.js exists to remove. Sign out means this device retains
+   * nothing of this member's, and a deleted database is a claim a reader
+   * can check.
+   *
+   * The name is written down twice, here and in memberkey.js, because
+   * that file is not on two of these pages to be asked. A rename on
+   * either side would leave sign-out deleting a database nobody made,
+   * with no symptom at all, so dev/memberkey.test.mjs compares the two
+   * literals.
+   *
+   * ONE NAME, AND NOTHING ENUMERATED. Sign out is in the rail on
+   * admin.html too, where the keyholder's imported working copy lives in
+   * a database of its own. A sweep over the origin's databases, or a
+   * second name added here for tidiness, would destroy the corpus key on
+   * the way out of the export page.
+   *
+   * Never thrown from and never waited on, which is the same trade the
+   * revoke above makes for the same reason: the user-visible act is
+   * leaving, and a member cannot be held on the page by a storage call.
+   * Both guards below are load-bearing rather than defensive - reading
+   * `indexedDB` throws outright in some hardened configurations, and
+   * `deleteDatabase` can refuse on an origin whose storage is disabled.
+   * Either one, unguarded, ends signOut() above the credential clear and
+   * the navigation, so the member is left signed in on the page they
+   * pressed Sign out on - which is worse than the key surviving.
    */
+  const KEY_DB_NAME = "hgb-member-key";
+
+  function database() {
+    try {
+      return root.indexedDB || null;
+    } catch (error) {
+      // Accessing indexedDB throws outright in some hardened
+      // configurations rather than reading undefined, and that is a
+      // browser without one rather than a fault to report.
+      return null;
+    }
+  }
+
+  /*
+   * Silent, and assigned rather than left unset so that neither outcome
+   * surfaces as an unhandled error event in a console a member has open.
+   *
+   * There is nothing to do about either, which is why nothing is done. A
+   * block is another tab holding the database open, and that tab closes
+   * its handle after every transaction, so the delete completes the
+   * moment it does. A retry, a close() of somebody else's connection, or
+   * a timeout would each put a wait between a member and leaving, for an
+   * act that either finishes on its own or is finished by the next
+   * sign-out - and DESIGN.md's recovery path covers the remainder.
+   */
+  function unreported() {}
+
   function forgetDeviceKey() {
-    const keys = root.BinderMemberKey;
-    if (keys && typeof keys.forget === "function") keys.forget();
+    const factory = database();
+    if (!factory) return;
+    let request;
+    try {
+      request = factory.deleteDatabase(KEY_DB_NAME);
+    } catch (error) {
+      return;
+    }
+    request.onerror = unreported;
+    request.onblocked = unreported;
   }
 
   function signOut() {
