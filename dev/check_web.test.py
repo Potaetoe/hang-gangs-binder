@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 506
+EXPECTED = 513
 
 
 def check(label, condition):
@@ -1665,6 +1665,61 @@ check("every shipped page holds the loading shape",
       check_web.loading_problems() == [])
 
 
+# ------------------------------------------------------------------ #
+# The Sign out control and the module that performs it.               #
+#
+# The button and the module are one thing, and this is the rule that
+# keeps them one. Destroying the member's device key lives in
+# signout.js, which every page offering Sign out already loads, rather
+# than in the key module - IndexedDB is origin-wide, and two of the
+# three pages that offer the button never load memberkey.js, so a
+# destruction reached through it destroys nothing on exactly those
+# pages. That is #257, and it shipped.
+#
+# Which leaves exactly one way for a future page to reopen it: ship the
+# control and not the module. Nothing else in this file says a page must
+# load any particular script - SHELLS pins the markup a page carries and
+# the loading rules pin where scripts sit, and neither has an opinion
+# about which ones. So a page could be added tomorrow with the rail
+# copied from an open tab, the button in it, and the run missing one
+# line, and every stage of this gate would pass while its Sign out both
+# did nothing and destroyed nothing.
+SIGN_OUT_CONTROL = ('<button type="button" class="secondary rail-signout" '
+                    'id="sign-out" hidden>Sign out</button>')
+SIGN_OUT_MODULE = '<script src="signout.js"></script>'
+
+check("a page offering Sign out and loading the module raises nothing",
+      check_web.sign_out_wiring_problems(
+          page(body=SIGN_OUT_CONTROL + RUN + SIGN_OUT_MODULE)) == [])
+check("a page offering Sign out and not loading it is refused",
+      any("signout.js" in p for p in check_web.sign_out_wiring_problems(
+          page(body=SIGN_OUT_CONTROL + RUN))))
+# The direction that keeps this from being a rule about every page. The
+# cover and the error page carry no session home by SHELLS, and a rule
+# demanding the module there would be demanding a sign-out on a page
+# with nothing to sign out of.
+check("a page with no Sign out control is not judged here",
+      check_web.sign_out_wiring_problems(page(body=RUN)) == [])
+# Both quote styles, for the reason the pre-paint arms give one section
+# up: nothing in this repository enforces one, and a reader blind to the
+# other is a reader a page slips past without meaning to.
+check("the control is found whichever quote it is written with",
+      any("signout.js" in p for p in check_web.sign_out_wiring_problems(
+          page(body="<button id='sign-out' hidden>Sign out</button>" + RUN))))
+# A commented-out script tag is not a loaded script, and this is the
+# arm that says so. It is not hypothetical: every one of these pages
+# carries a long comment beside its script run explaining the order, and
+# commenting a line out while debugging is how the tag comes to sit
+# inside one. A reader that counted it would call the page wired.
+check("a commented-out script tag does not satisfy the rule",
+      any("signout.js" in p for p in check_web.sign_out_wiring_problems(
+          page(body=SIGN_OUT_CONTROL + RUN
+               + "<!-- " + SIGN_OUT_MODULE + " -->"))))
+check("and every shipped page that offers Sign out loads it",
+      all(check_web.sign_out_wiring_problems(check_web.page_text(name)) == []
+          for name in check_web.html_pages()))
+
+
 # The order arm. `const UI = root.BinderUI;` runs when the file does, and
 # the modules holding it guard on the captured value - so getting this
 # wrong produces a page that goes quiet rather than one that throws,
@@ -1700,25 +1755,43 @@ check("a publisher absent from the page entirely is refused",
           ["auth.js"], CAPTURES)))
 
 # The deferred-capture exemption, and the shape that is the whole of what
-# admits it. Exercised against sources this tree does not contain,
-# because a rule tested only against the one file it was written for is a
-# rule that says yes to whatever that file happens to do - and this one
-# is an exemption, so it is the rule most able to turn into a hole.
+# admits it. Every arm here drives a SYNTHETIC table rather than the
+# shipped one, which is #257's doing: the shipped table is empty now, and
+# an arm reading it would pass by describing nothing at all. Exercised
+# against sources this tree does not contain for the same reason - a rule
+# tested only against the one file it was written for is a rule that says
+# yes to whatever that file happens to do, and this one is an exemption,
+# so it is the rule most able to turn into a hole.
 DEFERRED = ("signout.js", "BinderMemberKey")
+SYNTHETIC = {DEFERRED: "a reason, which is what admits the row"}
 
-check("every deferred capture is declared with a reason",
-      all(reason.strip()
-          for reason in check_web.DEFERRED_CAPTURES.values()))
+# The shipped table, in the one direction it can still be read. Nothing
+# is exempt here: sign-out destroys the device key's database itself
+# rather than reading a namespace two of the three pages that offer Sign
+# out never publish. A row coming back has to earn the exemption by
+# execution again, and dev/memberkey.test.mjs is where that is said.
+check("nothing in this tree is exempt from the ordering rule",
+      check_web.DEFERRED_CAPTURES == {})
+
 check("a declared deferred capture is exempt from the ordering rule",
       check_web.run_order_problems(
-          ["signout.js"], {"signout.js": {"BinderMemberKey"}}) == [])
+          ["signout.js"], {"signout.js": {"BinderMemberKey"}},
+          SYNTHETIC) == [])
 # The pair, not the namespace. Another script reading the same namespace
 # without a declaration of its own gets no exemption from this one -
 # otherwise one entry would quietly cover the whole tree.
 check("the exemption is per script, not per namespace",
       any("never loads memberkey.js" in p for p in
           check_web.run_order_problems(
-              ["submit.js"], {"submit.js": {"BinderMemberKey"}})))
+              ["submit.js"], {"submit.js": {"BinderMemberKey"}},
+              SYNTHETIC)))
+# And the same capture with nothing declared, which is what this tree
+# ships. Without this the arm above could be passing because the rule
+# exempts everything rather than because it read the table.
+check("and with nothing declared the ordering rule judges every capture",
+      any("never loads memberkey.js" in p for p in
+          check_web.run_order_problems(
+              ["signout.js"], {"signout.js": {"BinderMemberKey"}}, {})))
 
 # WHAT THIS FILE MAY AND MAY NOT ASSERT ABOUT THE EXEMPTION.
 #
@@ -1738,7 +1811,8 @@ READS = ('(function (root) { function go() { const keys = '
          'root.BinderMemberKey; if (keys) keys.forget(); } })(globalThis);')
 
 check("a declared pair whose script really reads the namespace is fine",
-      check_web.deferred_capture_problems("signout.js", READS) == [])
+      check_web.deferred_capture_problems(
+          "signout.js", READS, SYNTHETIC) == [])
 # The staleness arm, which is the one failure a registry can have on its
 # own: the code moved and the exemption outlived it. An exemption for a
 # read that is not there suppresses ordering for nothing, and the next
@@ -1746,12 +1820,14 @@ check("a declared pair whose script really reads the namespace is fine",
 check("an exemption for a namespace the script never reads is refused",
       any("guards nothing" in p for p in
           check_web.deferred_capture_problems(
-              "signout.js", "(function (root) { })(globalThis);")))
+              "signout.js", "(function (root) { })(globalThis);", SYNTHETIC)))
 check("a script with no declaration of its own is not judged here",
-      check_web.deferred_capture_problems("ui.js", READS) == [])
-check("every declared pair carries a reason somebody can review",
-      all(reason.strip() for reason in check_web.DEFERRED_CAPTURES.values()))
-check("and the shipped signout.js satisfies what this file can check",
+      check_web.deferred_capture_problems("ui.js", READS, SYNTHETIC) == [])
+check("a row admitted with no reason written down is refused",
+      any("no reason written down" in p for p in
+          check_web.deferred_capture_problems(
+              "signout.js", READS, {DEFERRED: "   "})))
+check("and the shipped tree declares no row for this file to judge",
       check_web.deferred_capture_problems(
           DEFERRED[0],
           check_web.strip_js_comments(open(

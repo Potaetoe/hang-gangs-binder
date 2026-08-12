@@ -41,7 +41,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 67);
+const { check, report } = suite("memberkey.js", 69);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -55,15 +55,22 @@ await check("and it is frozen, like every other module here", () =>
 
 /*
  * The key set as a whole, not the presence of the members this file
- * happens to use. submit.js and signout.js both build against this
- * object, so adding or removing a member is a change to an interface
- * two files depend on rather than a refactor - the same reason
+ * happens to use. form.js and submit.js build against this object, so
+ * adding or removing a member is a change to an interface other files
+ * depend on rather than a refactor - the same reason
  * dev/query.test.mjs pins BinderQuery's key set.
+ *
+ * DESTRUCTION IS NOT ON THIS LIST, and its absence is the interface
+ * half of #257. This module makes the key; signout.js destroys the
+ * database directly, because IndexedDB is origin-wide and a page that
+ * never loaded this file still has a key to destroy. A `forget` here
+ * would be an export with no caller, and the next reader would wire
+ * sign-out to it and reintroduce the shape that shipped the defect.
  */
-await check("the exported surface is the one two other files build on", () =>
+await check("the exported surface is the one other files build on", () =>
   Object.keys(Keys).slice().sort().join(",") ===
     ["DB_NAME", "ROW_KEY", "STORE_NAME", "custodyRuling", "custodyVerdict",
-      "ensure", "forget", "unavailableReason"].sort().join(","));
+      "ensure", "unavailableReason"].sort().join(","));
 
 /*
  * Its own database, and this arm is the mechanical half of an argument
@@ -688,9 +695,6 @@ await check("a browser with no database is told so, plainly", () =>
 await check("and asking for a key there answers null rather than throwing",
   async () => (await Keys.ensure("a".repeat(64))) === null);
 
-await check("forgetting a key that cannot exist is not an error",
-  async () => (await Keys.forget()) === false);
-
 /* ------------------------------------------------------------------ */
 /* What the storage calls are, read off the source.                    */
 
@@ -742,88 +746,103 @@ await check("and refusing it is not an error path", () =>
 
 /*
  * DESIGN.md's Encryption section says signing out destroys the device
- * key, and names the price: a re-seal request later. Until this slice
- * nothing implemented that sentence, so the document was ahead of the
- * code - which is the direction nobody notices, because the document
- * reads correct.
+ * key, and names the price: a re-seal request later.
  *
- * Pinned from BOTH sides on purpose, and the second one is the arm that
- * matters. signout.js calling `forget` proves the call exists; the
- * exported name existing proves it can be called. Neither alone survives
- * a rename, and the failure mode of a rename here is silent: sign-out
- * keeps working, and the key it was supposed to destroy stays.
+ * TWO FILES NOW WRITE THE SAME DATABASE NAME DOWN, and these arms are
+ * what makes that safe. signout.js destroys the database directly
+ * rather than calling into this module, because IndexedDB is
+ * origin-wide and two of the three pages offering Sign out never load
+ * this file - so a call routed through it destroyed nothing on exactly
+ * those pages (#257). The cost of that shape is a duplicated literal,
+ * and the failure mode of a duplicated literal is silent: rename it on
+ * one side and sign-out cheerfully deletes a database nobody made,
+ * while the key it was meant to destroy stays. So the two literals are
+ * compared here, where both files are already in hand.
+ *
+ * The behavior these stand beside is at the foot of this file, where
+ * signOut() is RUN. Neither half is enough alone: running it proves a
+ * database is destroyed, and only this proves it is the right one.
  */
 const signOutSource = await readFile(HERE("../apps/web/signout.js"), "utf8");
 
-await check("signOut destroys the device key", () =>
-  /BinderMemberKey/.test(signOutSource) && /forget\(\)/.test(signOutSource));
+/*
+ * The keyholder's working copy on admin.html, read out of the file that
+ * owns it. Sign out is in the rail on admin.html too, so "destroy the
+ * member's key" and "leave the keyholder's alone" are two claims about
+ * the same button - and the second one is only checkable against
+ * admin.js's own name for its database.
+ */
+const adminSource = await readFile(HERE("../apps/web/admin.js"), "utf8");
+const KEYHOLDER_DB = (/const KEY_DB = "([^"]+)"/.exec(adminSource) || [])[1];
 
-await check("and the name it calls is the name this module exports", () => {
-  const called = /(\w+)\.forget\(\)/.exec(signOutSource);
-  return Boolean(called) && typeof Keys.forget === "function";
-});
+await check("admin.js's keyholder database is named where this file can read it",
+  () => KEYHOLDER_DB === "hgb-keyholder-key" && KEYHOLDER_DB !== Keys.DB_NAME);
+
+await check("sign out destroys a database, and names it through a constant",
+  () => /deleteDatabase\(\s*\w+\s*\)/.test(signOutSource));
+
+await check("and that constant holds the name this module makes its key in",
+  () => {
+    const named = /deleteDatabase\(\s*(\w+)\s*\)/.exec(signOutSource);
+    if (!named) return false;
+    const literal = new RegExp(
+      "\\b" + named[1] + '\\s*=\\s*"([^"]*)"').exec(signOutSource);
+    return Boolean(literal) && literal[1] === Keys.DB_NAME;
+  });
 
 /* ------------------------------------------------------------------ */
-/* The deferred-capture exemption, earned by running the bytes.        */
+/* The deferred-capture exemption, and why there is no longer one.      */
 
 /*
- * WHY THIS IS HERE AND NOT IN tools/check_web.py.
+ * THE TABLE IS EMPTY NOW, AND THIS SECTION IS WHAT KEEPS IT HONEST.
  *
- * signout.js is loaded by every signed-in page; memberkey.js by the one
- * page that seals entries. So signout.js reads `BinderMemberKey` off a
- * global that two of the three pages never publish, and
- * `DEFERRED_CAPTURES` in check_web.py exempts that pair from the
- * script-ordering rule.
+ * `DEFERRED_CAPTURES` in tools/check_web.py exempted a (script,
+ * namespace) pair from the script-ordering rule, and it held exactly
+ * one row: signout.js reading `BinderMemberKey`. That row is gone with
+ * the read (#257) - sign-out destroys the database itself, so it names
+ * no namespace it might be loaded above.
  *
- * That exemption is dangerous in a specific way, and it is worth naming
- * before the arms: it does not merely permit the read, it REMOVES ORDER
- * POLICING for the pair. So if the read were in fact a load-time
- * capture, a later reorder of your-page.html's script run would capture
- * undefined, sign-out would silently stop destroying the key, and
- * DESIGN.md's sentence about signing out would go false with every
- * stage of the gate green.
+ * The apparatus that earned the row is gone with it, deliberately and
+ * with the reason written down here rather than in a commit nobody will
+ * find. It loaded the shipped bytes under a recording global and failed
+ * if the namespace was touched during load, and every one of those arms
+ * iterated the table. Over an empty table they pass without executing
+ * anything - armed-looking and inert, which this repository holds to be
+ * worse than no arm at all, and which is the same ruling the session-
+ * block parity arm makes when it is left one copy to compare.
  *
- * check_web.py tried to earn the exemption from the text - the
- * reference must sit deeper than the module's top level, and the value
- * must be guarded. A review defeated all three arms of that:
- *
- *   - a function DEFINED deep and CALLED at the module's top level
- *     reads at load while sitting at depth 2;
- *   - an unbalanced brace inside a string literal inflates a raw brace
- *     counter permanently, so everything after it reads as deep -
- *     including the exact `const UI = root.BinderUI;` hazard;
- *   - a file-wide regex for a guard is satisfied by a dead one
- *     (`if (keys && false)`) or by the guard's own text inside a
- *     string, while the real use goes unguarded.
- *
- * Each of those is a textual proxy for a runtime property, so the fix
- * is not a better regex. The property is "the namespace is not touched
- * while the page loads", and the only thing that settles it is loading
- * the page's actual bytes and watching. These arms do that, over the
- * TABLE rather than over signout.js by name, so a pair added to
- * check_web.py with no execution evidence fails here.
+ * What replaces them is a ratchet with teeth in the direction that
+ * matters: a row coming BACK fails here. The exemption does not merely
+ * permit a read, it REMOVES ORDER POLICING for the pair - so a row
+ * granted without execution evidence is a page reorder away from a
+ * capability that silently stops happening. Whoever adds one restores
+ * the recording harness in the same change, and this arm is what makes
+ * them.
  */
 const checkWeb = await readFile(HERE("../tools/check_web.py"), "utf8");
-/* The table's own block, bounded before anything is read out of it. A
- * pattern swept over the whole file matches every other two-string tuple
- * in it, and a reader that finds the wrong rows is worse than one that
- * finds none - it would exercise pairs that are not exemptions and miss
- * the ones that are. */
+
 /*
  * A function rather than a one-off expression, because the reader
  * itself turned out to be the weak link and a weak link has to be
  * testable against text this file controls - see the arm two below.
  *
+ * The table's own block, bounded before anything is read out of it. A
+ * pattern swept over the whole file matches every other two-string
+ * tuple in it, and a reader that finds the wrong rows is worse than one
+ * that finds none.
+ *
  * QUOTE-AGNOSTIC, and that is not tidiness. Python does not care which
  * quote a string is written with and nothing in this repository's gate
- * enforces one, so `('signout.js', 'BinderMemberKey'):` is the same row
- * to check_web.py and was invisible to the double-quote-only pattern
- * this replaced. The consequence is worse than a missing arm: every
- * arm below iterates what this returns, so a row it cannot see is a row
- * granted the exemption with NEITHER the load-time property nor the
- * guarded one ever checked. An undiscovered row is silently trusted,
- * where a missing one would at least be loud. Found by the #154 sweep's
- * gate partition.
+ * enforces one, so a single-quoted row is the same row to check_web.py
+ * and was invisible to the double-quote-only pattern this replaced.
+ * Found by the #154 sweep's gate partition.
+ *
+ * NULL AND EMPTY ARE DIFFERENT ANSWERS, and keeping them apart is the
+ * whole value of this reader now that the right answer is empty. Null
+ * means the block was not found - a rename, a reformat, a table moved -
+ * and an empty list means it was found and holds nothing. Fold the two
+ * together and "no exemptions" becomes indistinguishable from "this
+ * file can no longer see the exemptions".
  */
 function declaredCaptures(python) {
   const block = /DEFERRED_CAPTURES = \{([\s\S]*?)^\}/m.exec(python);
@@ -834,155 +853,46 @@ function declaredCaptures(python) {
   }));
 }
 
-const declared = declaredCaptures(checkWeb) || [];
-
-await check("the deferred-capture table is readable, and it is not empty",
-  () => declared.length > 0 &&
-    declared.some((one) => one.script === "signout.js" &&
-      one.namespace === "BinderMemberKey"));
+await check("no script is exempted from the script-ordering rule any more",
+  () => {
+    const declared = declaredCaptures(checkWeb);
+    return declared !== null && declared.length === 0;
+  });
 
 /*
- * The same table written both legal ways, which is the fixture the
- * reader above was rewritten for. Held here rather than by mutating
- * check_web.py: a row's quote style is not this suite's to change, and
- * the property under test is the reader's, so the reader is what gets
- * given something to read.
+ * The same table written both legal ways, which is what stops the arm
+ * above from reading "empty" off a reader that can no longer find a row
+ * at all. Held here rather than by mutating check_web.py: a row's quote
+ * style is not this suite's to change, and the property under test is
+ * the reader's, so the reader is what gets given something to read.
+ *
+ * The pair is synthetic on purpose. A fixture naming a real script would
+ * read as a claim about this tree, and this tree's claim is that there
+ * are no exemptions.
  */
 const SINGLE_QUOTED = [
   "DEFERRED_CAPTURES = {",
-  "    ('signout.js', 'BinderMemberKey'):",
+  "    ('example.js', 'BinderExample'):",
   "        \"a reason, which this arm does not read\",",
   "}",
 ].join("\n");
 
-await check("a row is found whichever quote Python happened to write it with",
+await check("and a row is found whichever quote Python happened to write it with",
   () => {
     const single = declaredCaptures(SINGLE_QUOTED);
     const double = declaredCaptures(SINGLE_QUOTED.replace(/'/g, "\""));
-    return single && double && single.length === 1 &&
-      single[0].script === "signout.js" &&
-      single[0].namespace === "BinderMemberKey" &&
+    return Boolean(single) && Boolean(double) && single.length === 1 &&
+      single[0].script === "example.js" &&
+      single[0].namespace === "BinderExample" &&
       JSON.stringify(single) === JSON.stringify(double);
   });
 
-/*
- * One load, one recorded global.
- *
- * The namespace is defined as a GETTER on the context's own global, so
- * every read is observed - including one that happens and then discards
- * the value, which is the shape a defeated proxy lets through. The
- * script is run as the page runs it: its own bytes, no document (the
- * DOM half returns early, exactly as on a page whose elements it does
- * not need), and `globalThis` as its `root`.
- */
-async function loadRecording(script, namespace, publish) {
-  const source = await readFile(HERE("../apps/web/" + script), "utf8");
-  const reads = [];
-  const context = {
-    BinderSession: { authorization() { return {}; }, clear() {} },
-    BINDER_CONFIG: {},
-    fetch() { return Promise.resolve(); },
-    location: { replace() {} },
-    localStorage: {
-      getItem() { return null; }, setItem() {}, removeItem() {},
-    },
-  };
-  vm.createContext(context);
-  let loading = true;
-  Object.defineProperty(context, namespace, {
-    configurable: true,
-    get() {
-      reads.push(loading ? "load" : "call");
-      return publish;
-    },
-  });
-  vm.runInContext(source, context, { filename: script });
-  loading = false;
-  return { context, reads };
-}
-
-await check("no declared namespace is touched while its script loads",
-  async () => {
-    for (const one of declared) {
-      const { reads } = await loadRecording(one.script, one.namespace, {
-        forget() { return Promise.resolve(true); },
-      });
-      if (reads.includes("load")) return false;
-    }
-    return true;
-  });
+await check("and an unreadable table is not mistaken for an empty one",
+  () => declaredCaptures("DEFERRED_CAPTURES = [\n]\n") === null &&
+    declaredCaptures("DEFERRED_CAPTURES = {\n}\n").length === 0);
 
 /*
- * And the two halves of "guarded", which the regex could only gesture
- * at. Absent, the act must complete without throwing - that is what a
- * page with no memberkey.js does. Present, the namespace must actually
- * be USED, which is what a dead guard fails: `if (keys && false)` reads
- * the global and then does nothing, and only watching the far side of
- * the guard tells the two apart.
- *
- * DRIVEN OVER THE TABLE, NOT OVER A NAME WRITTEN HERE - the #154
- * sweep's S-20. The load-time arm above loops `declared`, and a pair of
- * string literals beside that loop is a split brain: a second row added
- * to check_web.py takes the load-time property and slips past the
- * guarded one entirely, and a row renamed there leaves these arms
- * exercising a pair the table no longer declares while the loop moves
- * on. Both stay green, and both are then about nothing.
- *
- * WHAT CANNOT COME OFF THE TABLE is the ACT: `(script, namespace)` says
- * which global a script must not touch while it loads, and says nothing
- * about what calling into it looks like. So the act is written here, per
- * pair, and the coverage arm below is what keeps that from re-opening
- * the same hole: every declared row must have one, so a row added to
- * check_web.py with no act to drive it fails here rather than being
- * granted the exemption unexercised.
- */
-const GUARD_ACTS = new Map([
-  ["signout.js|BinderMemberKey", () => {
-    let forgotten = 0;
-    return {
-      publish: { forget() { forgotten += 1; return Promise.resolve(true); } },
-      drive(context) { context.BinderSignOut.signOut(); },
-      used() { return forgotten === 1; },
-    };
-  }],
-]);
-
-const pairKey = (one) => one.script + "|" + one.namespace;
-
-await check("every declared row carries an act this file can drive", () =>
-  declared.length > 0 && declared.every((one) => GUARD_ACTS.has(pairKey(one))));
-
-await check("with the namespace absent the act completes rather than throwing",
-  async () => {
-    for (const one of declared) {
-      const make = GUARD_ACTS.get(pairKey(one));
-      if (!make) return false;
-      const act = make();
-      const { context } = await loadRecording(one.script, one.namespace,
-        undefined);
-      act.drive(context);
-    }
-    return true;
-  });
-
-await check("with it present the act reaches through the guard and uses it",
-  async () => {
-    for (const one of declared) {
-      const make = GUARD_ACTS.get(pairKey(one));
-      if (!make) return false;
-      const act = make();
-      const { context, reads } = await loadRecording(one.script,
-        one.namespace, act.publish);
-      act.drive(context);
-      if (!act.used() || !reads.includes("call") || reads.includes("load")) {
-        return false;
-      }
-    }
-    return true;
-  });
-
-/*
- * ORDER AND INDEPENDENCE, PERFORMED RATHER THAN READ - and the two arms
+ * ORDER AND INDEPENDENCE, PERFORMED RATHER THAN READ - and the arms
  * this replaced are worth describing, because they were defeated.
  *
  * They compared string offsets inside signOut()'s source and grepped
@@ -990,26 +900,37 @@ await check("with it present the act reaches through the guard and uses it",
  * sweep's client partition walked through both with the suite green:
  *
  *   - `if (localStore()) forgetDeviceKey();` keeps every offset in
- *     order and keeps `keys.forget();` in the file, while sign-out stops
- *     destroying the key on exactly the browsers where storage is
+ *     order and keeps the destruction call in the file, while sign-out
+ *     stops destroying the key on exactly the browsers where storage is
  *     blocked;
  *   - folding both erasures into one `forgetLocalData()` helper behind
- *     that same condition keeps the word "forget" inside signOut()'s
+ *     that same condition keeps the destroying word inside signOut()'s
  *     body, so even the offset comparison still passes.
  *
- * There was a latent third: with the word absent altogether,
- * `indexOf("forget")` is -1, and -1 is less than every real offset, so
- * "the key is destroyed before the page navigates away" was TRUE of a
- * sign-out that destroyed no key at all.
+ * There was a latent third: with the word absent altogether, `indexOf`
+ * is -1, and -1 is less than every real offset, so "the key is
+ * destroyed before the page navigates away" was TRUE of a sign-out that
+ * destroyed no key at all.
  *
- * None of that is fixable with a better pattern, because the property
- * is not textual. So signOut() is RUN, against the shipped bytes, with
+ * A fourth defeats all of those, and it is why the arms below drive the
+ * PAGE as well as the browser (#257). A stub `BinderMemberKey` standing
+ * on the context describes your-page - the one page of three that loads
+ * the key module. On charts.html and admin.html that namespace is
+ * genuinely absent, so a destruction reached through it skips its guard
+ * and a member leaving from either keeps the key that opens their whole
+ * history. Arms that always publish the stub cannot see that at all:
+ * they agree with each other about the page a member is least often
+ * standing on when they press the button.
+ *
+ * None of it is fixable with a better pattern, because the property is
+ * not textual. So signOut() is RUN, against the shipped bytes, with
  * every act it can perform observed: the revoke, the prefill removal,
- * the key destruction, the credential clear, and the navigation. What
- * the arms below ask is what a member gets, in an order, on browsers
- * that differ.
+ * the database destruction with the name it was given, the credential
+ * clear, and the navigation. What the arms below ask is what a member
+ * gets, in an order, on browsers and pages that differ.
  */
-async function performSignOut({ store = "working", keys = true } = {}) {
+async function performSignOut(
+  { store = "working", keys = true, database = "working" } = {}) {
   const acts = [];
   const context = {
     BINDER_CONFIG: { endpoint: "https://worker.example" },
@@ -1049,12 +970,52 @@ async function performSignOut({ store = "working", keys = true } = {}) {
       };
     },
   });
+
+  /*
+   * The database factory, with the same three browsers the store has and
+   * a fourth of its own.
+   *
+   * "blocked" is the hardened configuration where READING `indexedDB`
+   * throws rather than answering undefined, and "throws" is the one
+   * where the read succeeds and `deleteDatabase` itself refuses. They
+   * are separate modes because they need separate guards in the shipped
+   * file, and a single try/catch around only one of them leaves
+   * sign-out ending in an exception - which costs the credential clear
+   * and the navigation below it, not merely the key.
+   *
+   * The delete records the NAME it was asked for. A recorder that noted
+   * only that a delete happened would pass a sign-out that destroyed the
+   * keyholder's working copy on admin.html.
+   */
+  Object.defineProperty(context, "indexedDB", {
+    configurable: true,
+    get() {
+      if (database === "absent") return null;
+      if (database === "blocked") throw new Error("no database here");
+      return {
+        deleteDatabase(name) {
+          acts.push("delete:" + name);
+          if (database === "throws") throw new Error("delete refused");
+          return {};
+        },
+      };
+    },
+  });
+
+  /*
+   * The key module, published or not - and a getter either way, so that
+   * merely LOOKING at the namespace is an act this file can see.
+   *
+   * That is the arm #257 needed and did not have. Destruction is
+   * unconditional now: it must not consult this namespace at all, on any
+   * page, because consulting it is how the destruction became
+   * conditional on the one page that publishes it.
+   */
   Object.defineProperty(context, "BinderMemberKey", {
     configurable: true,
     get() {
-      return keys
-        ? { forget() { acts.push("forget"); return Promise.resolve(true); } }
-        : undefined;
+      acts.push("consulted");
+      return keys ? { DB_NAME: "hgb-member-key" } : undefined;
     },
   });
 
@@ -1062,6 +1023,8 @@ async function performSignOut({ store = "working", keys = true } = {}) {
   context.BinderSignOut.signOut();
   return acts;
 }
+
+const DESTROYS = "delete:hgb-member-key";
 
 /*
  * The order itself. The revoke needs the token the lines below destroy,
@@ -1073,10 +1036,55 @@ await check("sign out revokes, then destroys, and only then leaves",
   async () => {
     const acts = await performSignOut();
     return acts[0] === "revoke:DELETE" &&
-      acts.indexOf("forget") > 0 &&
+      acts.indexOf(DESTROYS) > 0 &&
       acts.includes("prefill") && acts.includes("session") &&
       acts[acts.length - 1] === "navigate";
   });
+
+/*
+ * ONE DATABASE, AND WHICH ONE. Sign out is in the rail on admin.html,
+ * where the keyholder's imported working copy lives in a database of its
+ * own - so a sign-out that swept the origin, or that took the wrong
+ * name, would destroy the corpus key on the way out of the export page.
+ * The whole list is compared rather than the member's name being looked
+ * for, because "the right one is among them" is what a sweep passes.
+ */
+await check("and it destroys that one database and no other", async () => {
+  const deleted = (await performSignOut())
+    .filter((act) => act.startsWith("delete:"));
+  return deleted.join(",") === DESTROYS &&
+    !deleted.includes("delete:" + KEYHOLDER_DB);
+});
+
+/*
+ * THE ARM #257 TURNS ON. Two of the three pages that offer Sign out
+ * never load memberkey.js, so on charts.html and admin.html the
+ * namespace is absent - and that is the shape a member most often signs
+ * out from, because it is every page except the one they submit on.
+ * IndexedDB is origin-wide: the key made on your-page is right there,
+ * and which scripts this page happened to load has nothing to do with
+ * whether it must go.
+ */
+await check("the device key is destroyed on a page with no key module",
+  async () => {
+    const acts = await performSignOut({ keys: false });
+    return acts.indexOf(DESTROYS) > 0 &&
+      acts.indexOf(DESTROYS) < acts.indexOf("navigate") &&
+      acts.includes("session") && acts[acts.length - 1] === "navigate";
+  });
+
+/*
+ * And the same property said the way no guard can satisfy: the
+ * namespace is never even read. A guarded call passes the arm above on
+ * a page that publishes the module and fails it on the two that do not,
+ * so the guard is what has to be absent - not merely arranged to be
+ * true today.
+ */
+await check("and the key module is not consulted on any page", async () => {
+  const present = await performSignOut();
+  const absent = await performSignOut({ keys: false });
+  return !present.includes("consulted") && !absent.includes("consulted");
+});
 
 /*
  * THE ARM THE MUTATIONS ABOVE DIE ON. Destroying the device key is a
@@ -1095,21 +1103,49 @@ await check("the device key is destroyed even where the prefill cannot be",
     const absent = await performSignOut({ store: "absent" });
     const blocked = await performSignOut({ store: "blocked" });
     return [absent, blocked].every((acts) =>
-      acts.includes("forget") && !acts.includes("prefill") &&
+      acts.includes(DESTROYS) && !acts.includes("prefill") &&
       acts.includes("session") && acts[acts.length - 1] === "navigate");
   });
 
 /*
  * And the same independence read the other way, so neither erasure can
- * be made to depend on the other's module. Two of the three pages that
- * offer Sign out do not load memberkey.js at all, and on those the
- * prefill is the only local thing there is to erase.
+ * be made to depend on the other's module. The prefill is the only local
+ * thing there is to erase on a page that never loaded the key module,
+ * and it must still be erased there.
  */
 await check("and the prefill is erased even where there is no key module",
   async () => {
     const acts = await performSignOut({ keys: false });
-    return acts.includes("prefill") && !acts.includes("forget") &&
+    return acts.includes("prefill") &&
       acts.includes("session") && acts[acts.length - 1] === "navigate";
   });
+
+/*
+ * WHERE THE DATABASE CANNOT BE REACHED AT ALL, sign-out still finishes.
+ *
+ * Both of these are real browsers rather than defensive decoration.
+ * Reading `indexedDB` throws outright in some hardened configurations,
+ * and `deleteDatabase` can refuse on an origin whose storage is
+ * disabled. Either one, unguarded, ends signOut() in an exception - and
+ * what sits below the destruction is `Session.clear()` and the
+ * navigation, so the failure is not "the key survived", it is "the
+ * member is still signed in, on the page they pressed Sign out on".
+ * That is a worse outcome than the one this whole slice is about.
+ */
+await check("a browser that cannot even be asked for a database still leaves",
+  async () => {
+    const absent = await performSignOut({ database: "absent" });
+    const blocked = await performSignOut({ database: "blocked" });
+    return [absent, blocked].every((acts) =>
+      !acts.some((act) => act.startsWith("delete:")) &&
+      acts.includes("prefill") && acts.includes("session") &&
+      acts[acts.length - 1] === "navigate");
+  });
+
+await check("and so does one whose delete refuses", async () => {
+  const acts = await performSignOut({ database: "throws" });
+  return acts.includes(DESTROYS) && acts.includes("session") &&
+    acts[acts.length - 1] === "navigate";
+});
 
 report();
