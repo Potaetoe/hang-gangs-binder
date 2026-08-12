@@ -1174,10 +1174,28 @@
         {
           scenario: "member",
           open: "charts.html",
+          scroll: "charts",
           title: "Where everyone stands",
+          /*
+           * THE PICTURE IS BELOW THE PAGE'S OWN CONTROLS, so the stop
+           * moves to the container it is drawn into: charts.html opens
+           * on Count and Units, and the combined weight is about 574 px
+           * down a frame that is 544 px tall at a 1280x800 window.
+           * Landing on the container puts the hero - the weight, and
+           * the change since last time under it - at the top of it.
+           *
+           * AND THE SENTENCE STOPS AT THE HERO, because the hero is
+           * what lands with it. The weight-over-time chart is another
+           * four hundred pixels below that line at every size, and this
+           * stop is behind glass like the membership one - naming the
+           * lines running through it would name something the viewer
+           * cannot reach. The free stop at the end of this walk hands
+           * the page over, and the site's own navigation reaches the
+           * rest of it.
+           */
           narration: "Everybody's numbers drawn as one picture - the " +
-            "combined weight, the change since last time, and the " +
-            "lines running together. Nobody's name is in any of it.",
+            "combined weight, and under it the change since last " +
+            "time. Nobody's name is in any of it.",
         },
         {
           scenario: "member",
@@ -1245,17 +1263,22 @@
         },
         {
           scenario: "admin",
-          scroll: "membership-card",
+          scroll: "membership-admin",
           title: "Who is allowed in here",
           /*
-           * Every thing this sentence points at is on the screen the
-           * stop lands on, and the reason it names none of the rows
-           * that grant nothing is that they are the length of a screen
-           * further down the card. The stop is behind glass, so a
-           * viewer cannot go and look - which is the below-the-fold
-           * half of the promise dev/demo.test.mjs holds `scroll` to.
-           * The guard's rule is stated instead, and the free stop at
-           * the end of this walk is where it can be pressed.
+           * THE ANCHOR IS THE LIST, NOT THE CARD AROUND IT. `scroll`
+           * aligns the TOP of what it names, and this card carries an
+           * add-a-member form - two fields, a pair of radios and a
+           * button - before the list starts 568 px down it. Naming the
+           * card therefore fills the frame with an empty form and puts
+           * every element this sentence points at below the fold; the
+           * demo frame is 544 px tall at a 1280x800 window, and the
+           * stop is behind glass, so a viewer cannot go and look.
+           *
+           * The rows that grant nothing are a screen further down that
+           * same card, which is why the sentence states the guard's
+           * rule rather than naming them. The free stop at the end of
+           * this walk is where they can be pressed.
            */
           narration: "The list of people who hold admin, kept where it " +
             "can be read and changed. The last admin row cannot be " +
