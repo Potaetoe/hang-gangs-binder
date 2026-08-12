@@ -1247,14 +1247,23 @@
           scenario: "admin",
           scroll: "membership-card",
           title: "Who is allowed in here",
+          /*
+           * Every thing this sentence points at is on the screen the
+           * stop lands on, and the reason it names none of the rows
+           * that grant nothing is that they are the length of a screen
+           * further down the card. The stop is behind glass, so a
+           * viewer cannot go and look - which is the below-the-fold
+           * half of the promise dev/demo.test.mjs holds `scroll` to.
+           * The guard's rule is stated instead, and the free stop at
+           * the end of this walk is where it can be pressed.
+           */
           narration: "The list of people who hold admin, kept where it " +
             "can be read and changed. The last admin row cannot be " +
-            "removed - but the guard counts rows, not grants, and the " +
-            "row pasted in by hand grants nobody, so every admin this " +
-            "list really grants can still come off above it. What keeps " +
-            "the gang from being locked out is the line under the list: " +
-            "one admin is granted by a setting the server holds and by " +
-            "no row here.",
+            "removed - but the guard counts rows, not grants, so a row " +
+            "that grants nobody satisfies it and the admins on this " +
+            "list can all still come off. What keeps the gang from " +
+            "being locked out is the line under it: one admin is " +
+            "granted by a setting the server holds and by no row here.",
         },
         {
           scenario: "config-fallback",
