@@ -67,7 +67,7 @@ const Dashboard = globalThis.BinderDashboard;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 251);
+const { check, mustReject, report } = suite("demo", 255);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1956,16 +1956,30 @@ await check("the free drive carries admin-page cards on both sides of that line"
  */
 
 /*
- * The section the stop moves to, derived from the page rather than
- * named here: the identified div the admin list is drawn inside is the
- * membership card, the same reading `publishSection` takes.
+ * The container the admin rows are drawn into, and the card it sits in -
+ * the same reading `publishSection` takes, one level further down.
  */
-const membershipSection = sectionHolding(shipped[ADMIN_PAGE],
-  "membership-admin");
+const ADMIN_LIST = "membership-admin";
+const membershipCard = sectionHolding(shipped[ADMIN_PAGE], ADMIN_LIST);
+
+/*
+ * The stops about that card, selected by WHERE INSIDE IT they land
+ * rather than by the exact element they name.
+ *
+ * The exact element is one of the things held below, so a set selected
+ * on it would go vacuous the moment the anchor moved - and a vacuous set
+ * turns every `every()` arm under it into a sentence nothing can
+ * falsify, which is the failure the exclusion arm at the end of this
+ * section exists to stop.
+ */
+const inMembershipCard = (id) =>
+  typeof id === "string" && membershipCard !== null &&
+  (id === membershipCard ||
+    sectionHolding(shipped[ADMIN_PAGE], id) === membershipCard);
 
 const membershipStops = Demo.TOURS.flatMap((walk) => walk.stops)
   .filter(onAdminPage)
-  .filter((stop) => stop.scroll === membershipSection);
+  .filter((stop) => inMembershipCard(stop.scroll));
 
 const adminHtmlFlat = shipped[ADMIN_PAGE].replace(/\s+/g, " ");
 const adminJsFlat = webSource["admin.js"].replace(/\s+/g, " ");
@@ -2005,12 +2019,43 @@ const drivenAdmin = (() => {
   };
 })();
 
-await check("the section that stop moves to is the one holding the admin list", () =>
-  typeof membershipSection === "string" && membershipSection.length > 0 &&
-  membershipSection !== publishSection &&
-  adminHtmlFlat.indexOf('id="' + membershipSection + '"') <
-    adminHtmlFlat.indexOf('id="secret-only"') &&
-  membershipStops.length > 0);
+/*
+ * WHERE THE STOP LANDS, which is not the same question as which card it
+ * names - and the difference is a whole screen.
+ *
+ * `scroll` aligns the TOP of what it names. Naming the membership card
+ * aligned the top of an 1131 px card, so the frame filled with the
+ * card's add-a-member form and every element this stop's sentence points
+ * at was below the fold: measured on the baked build, the admin list
+ * starts 568 px into that card and the line under it ends at 764 px, so
+ * the sentence needed a frame ~765 px tall to be true. A 1280x800
+ * browser window gives the demo frame 544 px. The stop is behind glass -
+ * `elementFromPoint` at the frame centre is the glass and the wheel is
+ * dead - so the viewer could not go and look. True of the card, false of
+ * the screen.
+ *
+ * So the anchor is the FIRST thing the sentence names, and this holds
+ * the two structural facts that make the screen follow: the stop lands
+ * on the admin list itself, and between that list and the last thing the
+ * sentence names there is nothing a viewer would have to scroll past -
+ * no field, no button, no fieldset. The form that filled the frame is
+ * ABOVE the anchor now rather than inside the span, which is the whole
+ * of the fix. A layout is not measurable from Node; what is measurable
+ * is that nothing stands between the anchor and the referents, and the
+ * three-viewport measurement that settles the rest is in the commit
+ * message.
+ */
+const anchorAt = adminHtmlFlat.indexOf('id="' + ADMIN_LIST + '"');
+const floorAt = adminHtmlFlat.indexOf('id="secret-only"');
+const SOMETHING_TO_SCROLL_PAST = /<(?:input|button|fieldset|textarea|select)\b/;
+
+await check("that stop lands on the list its sentence starts with, not a screen above it", () =>
+  typeof membershipCard === "string" && membershipCard.length > 0 &&
+  membershipCard !== publishSection &&
+  membershipStops.length > 0 &&
+  membershipStops.every((stop) => stop.scroll === ADMIN_LIST) &&
+  anchorAt !== -1 && floorAt !== -1 && anchorAt < floorAt &&
+  !SOMETHING_TO_SCROLL_PAST.test(adminHtmlFlat.slice(anchorAt, floorAt)));
 
 await check("every row that really grants admin comes off in front of the viewer", () =>
   drivenAdmin.removals.length >= 2 &&
@@ -2065,7 +2110,7 @@ await check("a stop saying something cannot be removed says it is a row", () =>
 await check("the words those arms require belong to that stop and no other", () => {
   const others = Demo.TOURS.flatMap((walk) => walk.stops)
     .filter(onAdminPage)
-    .filter((stop) => stop.scroll !== membershipSection);
+    .filter((stop) => !inMembershipCard(stop.scroll));
   return membershipStops.length > 0 && others.length > 0 &&
     others.every((stop) => !/\bcounts rows\b/i.test(stop.narration) &&
       !/\bby no row\b/i.test(stop.narration));
@@ -4347,6 +4392,155 @@ await check("some stop promises it, and a staging with nothing to compare stays 
   Demo.TOURS.some((walk) => walk.stops.some((stop) =>
     PROMISES_MOVEMENT.test(stop.title + " " + stop.narration))) &&
   stagedDocument("suppressed").movement === null);
+
+/*
+ * NEVER A HAND-WRITTEN DOCUMENT - the condition the scope amendment on
+ * #259 widened this slice's file list on, and the one the five arms
+ * above cannot see.
+ *
+ * Every one of them reads the served document's SHAPE: a movement that
+ * is not null, a `since` that parses and precedes `generated`, bases
+ * non-zero in both bases and both systems, counts equal to the plain
+ * aggregation's. An object literal carrying plausible totals, spelled
+ * out beside the aggregation as the predecessor, satisfies all of it -
+ * and what the demo would then serve is a second opinion about what a
+ * snapshot contains, free to drift from the one apps/web/admin.js builds
+ * when the keyholder presses Publish. That drift is the whole reason
+ * dev/demo-corpus.js has no opinion of its own.
+ *
+ * So this drives the builder through a RECORDING aggregation and holds
+ * the mechanism instead of the output: it is asked twice, the earlier
+ * generation is the smaller one and is the one handed a date, and the
+ * predecessor the later generation carries is IDENTICALLY the object the
+ * earlier call returned. A literal cannot be identical to a return value
+ * nobody asked for, and neither can a copy of one.
+ */
+const publishedThrough = (which) => {
+  const calls = [];
+  const recording = (entries, options, now) => {
+    const made = Dashboard.snapshotOf(entries, options, now);
+    calls.push({ entries: entries, options: options, now: now, made: made });
+    return made;
+  };
+  const made = Demo.publishedFrom(which,
+    Object.assign({}, corpusDeps, { snapshotOf: recording }));
+  return { calls: calls, made: made };
+};
+
+const richThrough = publishedThrough("rich");
+
+await check("both generations come out of the aggregation, and neither is written out here", () => {
+  const calls = richThrough.calls;
+  if (calls.length !== 2) return false;
+  const earlier = calls[0];
+  const later = calls[1];
+  return earlier.entries.length > 0 &&
+    earlier.entries.length < later.entries.length &&
+    later.options.previous === earlier.made &&
+    richThrough.made === later.made;
+});
+
+/*
+ * THE ANCHOR IS THE CORPUS, NOT THE CLOCK - the other half of that
+ * design, and the half the shape arms also cannot see. A cut at a date
+ * nobody submitted in still yields two different generations and a
+ * movement to draw, so reading the clock here would leave every arm
+ * above green while "one publish ago" quietly became "some number of
+ * days before the page was opened", and the figure on screen moved
+ * because a viewer opened the demo on a different day.
+ *
+ * The corpus answers where the cut belongs. Its submissions arrive in
+ * rounds weeks apart, so the round below the newest is what one publish
+ * ago MEANS here, and the date the earlier document carries has to land
+ * on it. Nothing below names three weeks: the round is read back off the
+ * corpus, so the day the spacing changes this goes on saying the same
+ * thing rather than needing to be re-tuned.
+ *
+ * READ OFF THE ENTRIES THE BUILDER WAS HANDED, never off a second
+ * corpusInputs() call. Every call stamps the same people afresh from the
+ * clock, so a corpus fetched here to compare against is a corpus
+ * milliseconds younger than the one the document was cut from - and the
+ * comparison fails or passes depending on how long the two lines took,
+ * which is a flake rather than an arm. It failed exactly that way once,
+ * before this read the recorded entries.
+ */
+const HOUR = 3600 * 1000;
+
+await check("the date the earlier document carries is a round this corpus has, not a clock reading", () => {
+  const earlier = richThrough.calls[0];
+  const times = richThrough.calls[1].entries
+    .map((entry) => Date.parse(entry.receivedAt));
+  const newest = Math.max(...times);
+  /*
+   * An hour tells the rounds apart with room to spare in both
+   * directions: a round is stamped within milliseconds of itself, and
+   * the rounds are weeks apart.
+   */
+  const roundBelow = Math.max(...times.filter((at) => newest - at > HOUR));
+  const since = Date.parse(richThrough.made.movement.since);
+  return times.length > 0 && Number.isFinite(earlier.now) &&
+    earlier.now === since &&
+    since >= roundBelow && since - roundBelow < HOUR && since < newest &&
+    earlier.entries.length === times.filter((at) => at <= since).length;
+});
+
+/* ------------------------------------------------------------------ */
+/* #259 F4. The stop that names that line lands where it is drawn.     */
+
+/*
+ * THE MEMBERSHIP STOP'S DEFECT, one page over: a sentence naming three
+ * things on a screen that carries one.
+ *
+ * charts.html opens on its Count and Units controls and draws the
+ * picture below them, so the stop that exists to show the change-since
+ * line opened with the whole picture past the fold - measured on the
+ * baked build, the hero starts ~574 px down and a 1280x800 window gives
+ * the demo frame 544 px. The weight-over-time chart is ~400 px below the
+ * hero again, at every size measured. This stop is behind glass like the
+ * membership one, so none of it could be scrolled to.
+ *
+ * Two things make the sentence true of the screen, and both are held
+ * below. The stop moves to the container the member surface draws into,
+ * which puts the hero - the combined weight, and the change since last
+ * time under it - at the top of the frame. And the sentence stops at the
+ * hero: no window this project supports fits the hero and a chart four
+ * hundred pixels beneath it in one frame, so naming the lines is naming
+ * something the viewer cannot reach. The free stop at the end of the
+ * walk is where the rest of the page is gone and looked at.
+ *
+ * The container and the drawing order are read out of apps/web rather
+ * than asserted here, per AGENTS.md's corollary: a check computed
+ * entirely from the tour cannot notice the page reordered itself.
+ */
+const CHARTS_PAGE = "charts.html";
+const chartsContainer = (webSource["public.js"]
+  .match(/renderProgress\(\s*\$\("([^"]+)"\)/) || [])[1];
+
+const dashboardSrc = webSource["dashboard.js"];
+const progressBody = dashboardSrc.slice(
+  dashboardSrc.indexOf("function renderProgress("),
+  dashboardSrc.indexOf("function drawPanels("));
+
+const movementStops = Demo.TOURS.flatMap((walk) => walk.stops)
+  .filter((stop) => PROMISES_MOVEMENT.test(stop.title + " " + stop.narration));
+
+await check("the stop that promises that line lands where the member page draws it", () =>
+  typeof chartsContainer === "string" && chartsContainer.length > 0 &&
+  shipped[CHARTS_PAGE].includes('id="' + chartsContainer + '"') &&
+  movementStops.length > 0 &&
+  movementStops.every((stop) => stop.open === CHARTS_PAGE &&
+    stop.scroll === chartsContainer) &&
+  progressBody.includes("container.appendChild(hero)") &&
+  progressBody.indexOf("container.appendChild(hero)") <
+    progressBody.indexOf("drawPanels(container"));
+
+const BELOW_THE_HERO = /\blines?\b|\bseries\b|\bover time\b/i;
+
+await check("and its sentence stops at the hero, which is what lands with it", () =>
+  movementStops.length > 0 &&
+  dashboardSrc.indexOf('figure("Weight over time"') >
+    dashboardSrc.indexOf("function drawPanels(") &&
+  movementStops.every((stop) => !BELOW_THE_HERO.test(stop.narration)));
 
 /* ------------------------------------------------------------------ */
 /* The server serves the mirror, and only out of apps/web.             */
