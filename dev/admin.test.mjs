@@ -28,7 +28,8 @@ await load("../apps/web/form.js");
 await load("../apps/web/crypto.js");
 
 const { COLUMNS, entryFor, rowFor, csvCell, toCsv, toJson, fileName,
-  storedKeyVerdict, storedKeyNotice, MEMBERSHIP_ROLES, membershipView,
+  storedKeyVerdict, storedKeyNotice, otherKeyNotice,
+  MEMBERSHIP_ROLES, membershipView,
   secretOnlyNotice, refusalFor, addedNotice, removalStep } =
   globalThis.BinderAdmin;
 const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
@@ -429,6 +430,49 @@ await check("neither notice promises the key cannot be lost", () =>
   [true, false].every((granted) =>
     !/\b(forever|permanent(ly)?|guaranteed|always be here)\b/i.test(
       storedKeyNotice(granted))));
+
+/*
+ * The card a keyholder sees after pasting a key that is not this site's,
+ * which is two cards rather than one because only one of them is about
+ * an export that exists (#258).
+ *
+ * The page appends this notice to whatever the run ended with, so on a
+ * key that opened nothing it lands directly under "Nothing could be
+ * decrypted with this key." Any claim here that the key opens the
+ * export contradicts the line above it, and a card contradicting
+ * itself in consecutive sentences teaches a keyholder to stop reading
+ * the card - on the one page where the next thing they are asked to
+ * believe is about where their key went.
+ *
+ * The other direction is why this is a function rather than one
+ * neutral sentence: a ROTATED key is not this site's key either, and
+ * it opens every row written before the rotation. That claim is true,
+ * it is the case UAT's A7 arm drives, and flattening it to be safe
+ * would hide an export the keyholder is holding.
+ */
+const OPENING_CLAIM = /\bopens?\b|\bopened\b|\bunlocks?\b|\bdecrypt(s|ed)\b/i;
+
+await check("the wrong-key card claims no export when nothing opened", () =>
+  !OPENING_CLAIM.test(otherKeyNotice(false)));
+
+await check("the wrong-key card still names the key as not this site's",
+  () => [true, false].every((opened) =>
+    /not the private half of the key this site encrypts to/.test(
+      otherKeyNotice(opened))));
+
+/* A7.3 is driven on these words: it is why nothing is waiting on the
+ * next visit, and it is true whether or not the export came out. */
+await check("both wrong-key cards say the key is not kept on this device",
+  () => [true, false].every((opened) =>
+    /not kept on this device/.test(otherKeyNotice(opened))));
+
+/* The rotated-key half, arming the fix against a flattening: a key that
+ * did open the export must still be reported as having opened it. */
+await check("a key that opened the export still says so", () =>
+  /opens this export/.test(otherKeyNotice(true)));
+
+await check("the two wrong-key cards are not the same sentence", () =>
+  otherKeyNotice(true) !== otherKeyNotice(false));
 
 /* ------------------------------------------------------------------ */
 /* The whole pipeline.                                                 */

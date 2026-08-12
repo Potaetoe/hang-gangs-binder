@@ -527,6 +527,13 @@ async function loadAdmin(session, options = {}) {
    * CryptoKey which key it is. `opensSiteKey: false` is the key that
    * imports cleanly and belongs to a different keypair, which is the
    * one this page must use and must not keep.
+   *
+   * `opensRows: false` is the other half of that key's story - a foreign
+   * key that opens NOTHING. It is separate from `opensSiteKey` because
+   * the two facts are independent: the page examines the key first and
+   * counts the rows afterwards, and the card it writes is chosen from
+   * both. Without a scenario that can open zero rows, the branch that
+   * must not claim an export is unreachable from this file.
    */
   const PROBE = "probe-sealed-to:";
   globalThis.BinderCrypto = {
@@ -544,7 +551,7 @@ async function loadAdmin(session, options = {}) {
         return { probe: true };
       }
       keysUsed.push(key);
-      if (!RECORDS[ciphertext]) {
+      if (options.opensRows === false || !RECORDS[ciphertext]) {
         throw new Error("could not be opened with this key");
       }
       return RECORDS[ciphertext];
@@ -1039,7 +1046,35 @@ check("a key that is not the site's opens the export and is not kept",
   requestsFor(foreign, "/export", "GET").length === 1 &&
   JSON.stringify(rowIds(foreign)) === JSON.stringify([41, 99]) &&
   foreign.rows.size === 0 &&
+  /opens this export/.test(foreign.elements.status.textContent) &&
   /not kept on this device/.test(foreign.elements.status.textContent));
+
+/*
+ * The same foreign key, opening NOTHING - the other outcome the one
+ * card has to cover, and the one #258 is about.
+ *
+ * Which sentence belongs to which count is settled in
+ * dev/admin.test.mjs against the pure half. What is settled HERE is the
+ * WIRING: the card is chosen from the count this run actually produced,
+ * not from a constant. A count hardcoded truthy in finish() leaves every
+ * pure check green and puts the export claim back on a card that opened
+ * nothing, which is exactly the sentence a keyholder would act on.
+ *
+ * Both directions live in the pair: this one fails if the neutral branch
+ * claims an export, and the check above fails if the branch that did
+ * open one stops saying so.
+ */
+const foreignEmpty = await loadAdmin(ADMIN, {
+  opensSiteKey: false,
+  opensRows: false,
+});
+await foreignEmpty.elements.run.click();
+await settle();
+const emptyCard = foreignEmpty.elements.status.textContent;
+check("a foreign key that opened nothing claims no export",
+  /Nothing could be decrypted/.test(emptyCard) &&
+  !/opens this export/.test(emptyCard) &&
+  /not kept on this device/.test(emptyCard));
 
 const refused = await loadAdmin(ADMIN, { persist: false });
 await refused.elements.run.click();
