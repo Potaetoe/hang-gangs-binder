@@ -41,7 +41,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 69);
+const { check, report } = suite("memberkey.js", 71);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -954,6 +954,21 @@ await check("and an unreadable table is not mistaken for an empty one",
  * the real global inside it, and a throw from there propagates the way
  * a hardened browser's does. The host side keeps only the recorder and
  * the mode names, so what a fake does is still decided out here.
+ *
+ * TWO THINGS BESIDE THE RECORDER, both there to make an absence
+ * observable rather than assumed.
+ *
+ * The delete request is HANDED BACK to the host, because what the
+ * shipped bytes put on that object - and what those handlers then do
+ * when a browser fires them - is a property no sequence of recorded acts
+ * can show. Nothing calls a handler in a browser this test ever reaches,
+ * so the arms at the foot of this file call them.
+ *
+ * `setTimeout` and `setInterval` are published because a vm context has
+ * neither, and a sign-out that scheduled anything would fail with a
+ * TypeError that reads like a broken harness instead of like the wait it
+ * is. Recorded, a scheduled timer is an act with a name, and "sign-out
+ * never waits" becomes something an arm can ask.
  */
 const SIGN_OUT_FAKES = `
 Object.defineProperty(globalThis, "localStorage", {
@@ -980,11 +995,16 @@ Object.defineProperty(globalThis, "indexedDB", {
       deleteDatabase(name) {
         record("delete:" + name);
         if (modes.database === "throws") throw new Error("delete refused");
-        return {};
+        const request = {};
+        handed.push(request);
+        return request;
       },
     };
   },
 });
+
+globalThis.setTimeout = function () { record("timer"); return 0; };
+globalThis.setInterval = function () { record("timer"); return 0; };
 
 Object.defineProperty(globalThis, "BinderMemberKey", {
   configurable: true,
@@ -1017,9 +1037,10 @@ Object.defineProperty(globalThis, "BinderMemberKey", {
  * only that a delete happened would pass a sign-out that destroyed the
  * keyholder's working copy on admin.html.
  */
-async function performSignOut(
+function runSignOut(
   { store = "working", keys = true, database = "working" } = {}) {
   const acts = [];
+  const handed = [];
   const context = {
     BINDER_CONFIG: { endpoint: "https://worker.example" },
     BinderSession: {
@@ -1035,9 +1056,11 @@ async function performSignOut(
       return { catch() {} };
     },
     location: { replace() { acts.push("navigate"); } },
-    // The two halves the fakes above reach back through: what they may
-    // record, and which browser and page they are standing in.
+    // What the fakes above reach back through: what they may record,
+    // where they leave the delete requests they hand out, and which
+    // browser and page they are standing in.
     record(act) { acts.push(act); },
+    handed,
     modes: { store, keys, database },
   };
   vm.createContext(context);
@@ -1045,7 +1068,17 @@ async function performSignOut(
 
   vm.runInContext(signOutSource, context, { filename: "signout.js" });
   context.BinderSignOut.signOut();
-  return acts;
+  return { acts, handed };
+}
+
+/*
+ * The acts alone, which is all that every arm but the last two wants.
+ * The request objects are the answer to one narrow question and reading
+ * them costs an arm nothing, so the ordinary spelling stays the short
+ * one and the two arms that need more say so by calling the other name.
+ */
+async function performSignOut(options) {
+  return runSignOut(options).acts;
 }
 
 const DESTROYS = "delete:hgb-member-key";
@@ -1171,5 +1204,53 @@ await check("and so does one whose delete refuses", async () => {
   return acts.includes(DESTROYS) && acts.includes("session") &&
     acts[acts.length - 1] === "navigate";
 });
+
+/*
+ * THE OUTCOME HANDLERS ARE TERMINAL, which is the half of the destroying
+ * act no ordering arm above can see.
+ *
+ * `onblocked` fires when another tab holds the database open, and every
+ * tempting answer to it - retry on a timer, close the other connection,
+ * give up after a timeout - puts a wait between a member and leaving,
+ * for a delete that completes on its own the moment that tab's
+ * transaction ends. Sign-out is a navigation the member asked for; the
+ * erasure rides along with it and never gates it. The handlers exist at
+ * all so that neither outcome surfaces as an unhandled error event in a
+ * console a member has open, and that is the whole of their job.
+ *
+ * Assignment is READ and then the handlers are FIRED, because "no
+ * retry" is a claim about what a handler does and nothing in a browser
+ * this suite reaches ever calls one. A retry called straight from a
+ * handler records a second delete and hands back a second request; one
+ * scheduled from a handler records a timer. Both are silent to every
+ * other arm in this file: the acts of an unblocked sign-out are
+ * identical either way, which is exactly how a retry survived review as
+ * a compliant no-op.
+ */
+await check("the delete's outcome handlers are all that is put on it",
+  () => {
+    const { handed } = runSignOut();
+    if (handed.length !== 1) return false;
+    const request = handed[0];
+    return typeof request.onerror === "function" &&
+      typeof request.onblocked === "function" &&
+      Object.keys(request).sort().join(",") === "onblocked,onerror";
+  });
+
+/*
+ * The whole list is compared above rather than the two names being
+ * looked for, for the reason the delete list is: anything else assigned
+ * to that request is a behavior on the way out of the site that nothing
+ * here has agreed to, and "the two are among them" is what that passes.
+ */
+await check("and firing either one retries nothing and schedules nothing",
+  () => {
+    const { acts, handed } = runSignOut();
+    if (acts.some((act) => act.startsWith("timer"))) return false;
+    const settled = acts.length;
+    handed[0].onblocked({});
+    handed[0].onerror({});
+    return handed.length === 1 && acts.length === settled;
+  });
 
 report();
