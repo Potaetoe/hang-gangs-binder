@@ -1932,27 +1932,31 @@ await check("the free drive carries admin-page cards on both sides of that line"
   cardActionsOnAdmin.some((one) => !PROMISES_PUBLISHING.test(one.words)));
 
 /* ------------------------------------------------------------------ */
-/* #259 F7. The stop about the admin list narrates the guard there is. */
+/* The stop about the admin list narrates the guard there is.          */
 
 /*
- * THE DEFECT: THE NARRATION PROMISED A GUARD NOBODY HAS.
+ * A NARRATION CHECKED ONLY AGAINST ITSELF IS A SENTENCE NOTHING CAN
+ * FALSIFY, which is how this stop came to promise a guard nobody had:
+ * "the last one cannot be removed", said over a list whose every
+ * granting row came off in front of the viewer, because the guard
+ * counted `admin` rows and this staging seeds one that grants nobody
+ * (#259 found it, #260 narrowed the guard).
  *
- * "The last one cannot be removed" is narrated over a list whose every
- * granting row comes off in front of the viewer. The guard counts ADMIN
- * ROWS and not grants - the shipped Worker's subquery is
- * `WHERE role = 'admin'` with no grants test, and the stub models that
- * deployment rather than the fixed one - and this staging seeds a row
- * that grants nobody. So the rows that do grant admin can all be
- * removed while the dud keeps the count above one, and a viewer who
- * follows the sentence and presses Remove twice ends on the empty admin
- * list the sentence said was impossible.
+ * So the stop is held from two sides at once, and neither side is its
+ * own words. The DRIVE below presses Remove the way a viewer would and
+ * reads what the demo actually answers; and the phrases are pinned to
+ * sentences read out of apps/web, so a page that stops saying them
+ * takes this suite red rather than leaving the stop describing a screen
+ * that has moved on.
  *
- * What is true is on the page already, in the page's own words: the
- * malformed list says the guard "counts these too", and the notice under
- * the admin list says an admin is granted "by no row above". Both are
- * read out of apps/web below and the stop is held to saying the same two
- * things, because a narration checked only against itself is a sentence
- * nothing can falsify - which is how this one survived.
+ * WHICH PAGE SENTENCES, and why these two. The note over the dud rows
+ * says what the guard counts ("counts grants and not rows"), and the
+ * notice under the admin list names the floor that survives an empty
+ * one ("and by no row above"). Between them they are the two halves of
+ * what the stop claims, so a page that revised either without the stop
+ * following takes this red - which is the corollary AGENTS.md, "The
+ * review bar", states: a check computed from the thing it guards cannot
+ * notice the thing was rewritten.
  */
 
 /*
@@ -1985,8 +1989,9 @@ const adminHtmlFlat = shipped[ADMIN_PAGE].replace(/\s+/g, " ");
 const adminJsFlat = webSource["admin.js"].replace(/\s+/g, " ");
 
 /*
- * The guard DRIVEN rather than read - every granting admin row removed
- * in the order the pane offers them, then the row that is left.
+ * The guard DRIVEN rather than read - granting admin rows pressed in
+ * the order the pane offers them until one refuses, and then the dud
+ * the staging seeds, which is the row the guard is supposed to let go.
  *
  * Bounded by the row count it started with, because a stub that answered
  * 200 without removing anything would otherwise spin here forever, and a
@@ -2004,7 +2009,7 @@ const drivenAdmin = (() => {
     const answer = Demo.answerFor(
       { method: "DELETE", path: "/membership/admin/" + row.account_id },
       state);
-    removals.push(answer.status);
+    removals.push(answer);
     if (answer.status !== 200) break;
     state = Object.assign({}, state, answer.next);
   }
@@ -2013,7 +2018,7 @@ const drivenAdmin = (() => {
   return {
     removals: removals,
     left: left,
-    refused: survivor === undefined ? null : Demo.answerFor(
+    dud: survivor === undefined ? null : Demo.answerFor(
       { method: "DELETE", path: "/membership/admin/" + survivor.account_id },
       state),
   };
@@ -2057,30 +2062,46 @@ await check("that stop lands on the list its sentence starts with, not a screen 
   anchorAt !== -1 && floorAt !== -1 && anchorAt < floorAt &&
   !SOMETHING_TO_SCROLL_PAST.test(adminHtmlFlat.slice(anchorAt, floorAt)));
 
-await check("every row that really grants admin comes off in front of the viewer", () =>
-  drivenAdmin.removals.length >= 2 &&
-  drivenAdmin.removals.every((status) => status === 200) &&
+/*
+ * The refusal happens IN FRONT OF THE VIEWER, which is the difference
+ * between a guard and a sentence about one. Two rows grant admin in
+ * this staging, so the first press has to succeed - a mirror that
+ * refused everything would satisfy "the last one is held back" while
+ * showing a list nobody can edit - and the second has to be the
+ * refusal, in the words the pane will print.
+ */
+await check("the last row that really grants admin refuses in front of the viewer", () =>
+  drivenAdmin.removals.length === 2 &&
+  drivenAdmin.removals[0].status === 200 &&
+  drivenAdmin.removals[1].status === 409 &&
+  /last admin row/.test(drivenAdmin.removals[1].body.error) &&
   drivenAdmin.left.membership
-    .filter((row) => row.role === "admin").length === 0);
-
-await check("what the guard holds back is a row, and it is one that grants nobody", () =>
-  drivenAdmin.left.malformed.length === 1 &&
-  drivenAdmin.refused !== null && drivenAdmin.refused.status === 409 &&
-  /last admin row/.test(drivenAdmin.refused.body.error));
+    .filter((row) => row.role === "admin").length === 1);
 
 /*
- * The floor that makes the empty list survivable, and the reason the
- * stop may name one at all: the pane goes on reporting an admin the
- * secret grants after every row is gone.
+ * And the other direction in the same drive, because a mirror that
+ * simply refused more would pass the arm above. The row that grants
+ * nobody is the one the pane tells an admin to remove, so the guard
+ * that holds back the granting row must let this one go.
  */
-await check("an admin no row covers is still granted when the list is empty", () =>
+await check("while the row that grants nobody is the one it lets go", () =>
+  drivenAdmin.left.malformed.length === 1 &&
+  drivenAdmin.dud !== null && drivenAdmin.dud.status === 200);
+
+/*
+ * The floor under the guard, and the reason the stop may name one at
+ * all: the pane goes on reporting an admin the secret grants however
+ * few rows are left, so an admin list that did empty is survivable.
+ */
+await check("an admin no row covers is granted whatever the list holds", () =>
   drivenAdmin.left.secretOnly.length > 0);
 
 await check("the stop about the admin list says what the page says the guard counts", () =>
   membershipStops.length > 0 &&
-  adminHtmlFlat.includes(
-    "the guard that refuses to remove the last admin row counts these too") &&
-  membershipStops.every((stop) => /\bcounts rows\b/i.test(stop.narration)));
+  adminHtmlFlat.includes("the guard that refuses to remove the last " +
+    "admin row counts grants and not rows") &&
+  membershipStops.every((stop) =>
+    /\bcounts grants and not rows\b/i.test(stop.narration)));
 
 await check("the stop about the admin list names the floor the panel reports", () =>
   adminJsFlat.includes("and by no row above") &&
@@ -2112,7 +2133,8 @@ await check("the words those arms require belong to that stop and no other", () 
     .filter(onAdminPage)
     .filter((stop) => !inMembershipCard(stop.scroll));
   return membershipStops.length > 0 && others.length > 0 &&
-    others.every((stop) => !/\bcounts rows\b/i.test(stop.narration) &&
+    others.every((stop) =>
+      !/\bcounts grants and not rows\b/i.test(stop.narration) &&
       !/\bby no row\b/i.test(stop.narration));
 });
 

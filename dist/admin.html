@@ -325,7 +325,10 @@
           row without complaint, so this is how one arrives. They are
           worth removing before the admin list becomes the only
           authority: the guard that refuses to remove the last admin row
-          counts these too.
+          counts grants and not rows. What it holds back is the last row
+          that really grants admin; these are neither counted by it nor
+          kept by it, so a table with nothing else left in it has an
+          admin list that is already empty.
         </p>
         <div id="membership-malformed-list"></div>
       </div>

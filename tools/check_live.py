@@ -634,11 +634,30 @@ LEDGER = [
                 "refused everything would answer the first exactly the "
                 "same way"),
     },
+    # THE ONE ROW HERE WHOSE CLAIM IS NOT THE SAME SENTENCE ON BOTH
+    # SIDES OF THE NEXT `server/` DEPLOY, which is why it says which
+    # guard it describes. This repository's guard counts grants and not
+    # rows: handleDeleteMembership holds back the last `admin` row an
+    # authority read would obey, and spares a row that grants nobody
+    # anything - so a table whose only `admin` row is one of those lets
+    # go of it. A Worker deployed before that narrowing counts every
+    # `admin` row instead and refuses exactly that removal, so the
+    # second half of this claim reads 409 there. Whoever performs this
+    # row reads the guard off the deployment they are pointed at rather
+    # than off this checkout, or they file a defect against the version
+    # skew - which is the same trap OPERATIONS.md flags at the flip's
+    # first condition, arriving here because the ledger is where a live
+    # claim nobody could perform is supposed to live. Production is
+    # further back still: it carries no `/membership` routes at all
+    # until the cutover takes them.
     {
         "id": "DELETE /membership/{}/{}",
         "surface": "route",
-        "claim": "the last admin row cannot be removed, and a row "
-                 "spelled in the wrong case still can",
+        "claim": "the last `admin` row that grants cannot be removed, "
+                 "while a row that grants nothing comes off whenever an "
+                 "admin presses Remove - including when it is the only "
+                 "`admin` row the table has left, which is the half a "
+                 "Worker older than the narrowing refuses",
         "covers": ["server/worker.js"],
         "status": "never",
     },

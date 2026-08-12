@@ -54,6 +54,35 @@ const SUPERSEDES_IS_UNIQUE =
     .test(SCHEMA.replace(/--[^\n]*/g, ""));
 
 /*
+ * A REAL SQL ENGINE, LOADED HERE BECAUSE THE COUNT BELOW DEPENDS ON IT.
+ * What it is for is at "The guard as SQLite runs it" near the end of
+ * this file; it is loaded up here only because suite() takes the number
+ * of checks to expect and that number is not the same on a runtime
+ * without this module.
+ *
+ * `node:sqlite` arrived after Node 20 and the gate's runner is pinned
+ * there, so this import fails on CI and succeeds on the machine this
+ * repository is developed on. Neither outcome may be quiet. When it is
+ * missing the arms that execute the guard do not run, the expected
+ * count drops by exactly their number, and the run says so on stdout -
+ * a check that reported `pass` because it could not reach its subject
+ * is the armed-looking failure this repository holds to be worse than
+ * having no check, and a check that announces it did not run is the
+ * live ledger's `never` row wearing a suite's clothes. Moving the
+ * runner's Node forward is what makes these run everywhere; nothing
+ * here shims around the absence.
+ */
+let DatabaseSync = null;
+try {
+  ({ DatabaseSync } = await import("node:sqlite"));
+} catch {
+  console.log("note  node:sqlite is absent on " + process.version +
+    " - the guard's SQL is pinned as text below and NOT executed here. " +
+    "Its execution arms did not run and are not counted.");
+}
+const EXECUTED_GUARD_ARMS = DatabaseSync ? 6 : 0;
+
+/*
  * A D1 binding that remembers what it was asked to store.
  *
  * It reads just enough of the SQL to tell the tables apart, because
@@ -260,10 +289,39 @@ const DB = {
      * the parameter reading above cannot see it, and a stub that did
      * not model it would delete the row anyway and pass an
      * implementation carrying no guard at all.
+     *
+     * THREE THINGS READ OFF IT RATHER THAN ONE, because the guard has
+     * three moving parts and hard-coding any of them here would pass an
+     * implementation that dropped it. The count and its role come out
+     * of `guard`; `countsGrantsOnly` is whether the subquery carries
+     * the grants test, so a subquery that went back to counting every
+     * row lets the dud inflate the count here exactly as it would in
+     * D1; and `sparesADud` is whether the DELETE exempts a target that
+     * grants nothing, so an implementation dropping that arm makes the
+     * dud unremovable here rather than quietly staying green.
+     *
+     * The role and the alias are optional in the pattern on purpose:
+     * the wide guard this replaced still parses, so reverting the
+     * Worker to it is modelled rather than unrecognised - an
+     * unrecognised statement would read as "no guard" and take the
+     * arms down in the wrong direction.
      */
+    const GRANTS_IN_SQL =
+      /length\(\s*(?:\w+\.)?account_id\s*\)\s*=\s*64/i;
+    const NOT_HEX_IN_SQL = /NOT GLOB '\*\[\^0-9a-f\]\*'/i;
     const guard =
-      /AND \(SELECT COUNT\(\*\) FROM membership WHERE role = '(\w+)'\) > (\d+)/i
+      /(?:AND|OR) \(SELECT COUNT\(\*\) FROM membership(?: AS \w+)? WHERE (?:\w+\.)?role = '(\w+)'([\s\S]*?)\) > (\d+)/i
         .exec(sql);
+    const countsGrantsOnly = Boolean(guard) &&
+      GRANTS_IN_SQL.test(guard[2]) && NOT_HEX_IN_SQL.test(guard[2]);
+    const spare = /AND \(NOT \(([\s\S]*?)\) OR \(SELECT COUNT\(\*\)/i.exec(sql);
+    const sparesADud = Boolean(spare) &&
+      GRANTS_IN_SQL.test(spare[1]) && NOT_HEX_IN_SQL.test(spare[1]);
+
+    /* grantsAnything() as the statement above spells it, and the whole
+     * question the narrowed guard asks: which rows the count can see. */
+    const grantsInSql = (value) =>
+      typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 
     /*
      * A correction's two statements, neither of which looks like anything
@@ -347,9 +405,21 @@ const DB = {
           // matches no row. Nothing here reports the refusal, and
           // nothing in D1 would either - the Worker learns it by
           // looking for the row afterwards, inside the same batch.
-          const blocked = Boolean(guard) &&
-            roster.filter((r) => r.role === guard[1]).length
-              <= Number(guard[2]);
+          //
+          // Both halves read the table BEFORE the delete, because
+          // SQLite evaluates a subquery against the snapshot the delete
+          // applies to - that simultaneity is the whole reason the
+          // guard is a subquery rather than a round trip, so a stub
+          // that counted afterwards would model the race it closes.
+          let blocked = false;
+          if (guard) {
+            const counted = roster.filter((r) => r.role === guard[1] &&
+              (!countsGrantsOnly || grantsInSql(r.account_id)));
+            const target = roster.find((r) => matches(r, a));
+            const spared = sparesADud && target !== undefined &&
+              !grantsInSql(target.account_id);
+            blocked = !spared && counted.length <= Number(guard[3]);
+          }
           if (!blocked) roster = roster.filter((r) => !matches(r, a));
         } else upsert(roster, ["account_id", "role"], a);
       } else if (verb === "DELETE") {
@@ -794,8 +864,16 @@ const bearer = (t, headers = good) =>
  * as "nothing refused anybody" rather than as a missing row, and where
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
+ *
+ * The addend is the only part of this number that is not a constant,
+ * and it is a constant per runtime: on a Node carrying `node:sqlite`
+ * the guard's execution arms run and are counted, and on one without it
+ * they neither run nor count. Both worlds still catch a check that
+ * stops running, which is what this arm is for - what they cannot do is
+ * hide one, because the two totals differ by exactly the arms named
+ * above.
  */
-const { check, report } = suite("worker.js", 349);
+const { check, report } = suite("worker.js", 359 + EXECUTED_GUARD_ARMS);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -3455,6 +3533,102 @@ check("and the last admin is still the last admin",
   roster.filter((r) => r.role === "admin").length === 1,
   `${roster.length} row(s)`);
 
+/* ------------------------------------------------------------------ */
+/* A row that grants nothing cannot stand in for the last admin.       */
+
+/*
+ * WHAT THE GUARD HAS TO COUNT, WHICH IS GRANTS AND NOT ROWS.
+ *
+ * `wrangler d1 execute` writes an account id in upper-case hex without
+ * complaint and the authority read drops that row, so it sits in the
+ * table granting nobody anything. A guard counting every row whose role
+ * is `admin` counts that one: with one real admin beside one dud the
+ * count reads two, the last granting row comes off, and the list is
+ * empty with the refusal never firing. The dual-read is what keeps that
+ * latent rather than live - the secret still grants - so the day
+ * `ADMIN_TELEGRAM_IDS` goes table-only is the day it becomes a lockout
+ * with no lever inside the product. OPERATIONS.md, "Making someone an
+ * admin", is where that precondition is written down for the person who
+ * performs the flip.
+ *
+ * BOTH DIRECTIONS IN ONE STAGING, because narrowing the count on its
+ * own would trade the lockout for an unremovable dud. The row that
+ * grants nothing has to keep coming off - GET's `malformed` list hands
+ * an admin its id precisely so they can - and the refusal that says
+ * "that is the last admin row" must never be given about a row that is
+ * no admin at all.
+ */
+reset();
+
+const MIXED = (await (await signIn({ id: 99 })).clone().json()).session;
+await addMember(MIXED, { telegramId: "4242", role: "admin", label: "Alex" });
+await addMember(MIXED, { telegramId: "31337", role: "admin", label: "Sam" });
+
+/* Sixty-four correct characters in the wrong case: the one shape POST
+ * cannot produce and the database console writes without complaint. */
+const PASTED = "A".repeat(64);
+const pastedByHand = () => roster.push({
+  account_id: PASTED, role: "admin", label: "Pasted into the console",
+  added_at: "2026-08-08T00:00:00.000Z", added_by: "by hand",
+});
+pastedByHand();
+
+/* The ids are taken from the list rather than computed here, because
+ * the list is what an admin presses Remove from - a test that removed
+ * an id this file derived would be driving a door the pane does not
+ * use. */
+const mixed = await (await call("GET", "/membership",
+  { headers: bearer(MIXED) })).json();
+const samRow = mixed.membership.find((row) => row.label === "Sam");
+check("two rows grant admin and the pasted one is not among them",
+  mixed.membership.filter((row) => row.role === "admin").length === 2 &&
+  mixed.malformed.length === 1 && mixed.malformed[0].account_id === PASTED,
+  JSON.stringify({ grant: mixed.membership.length,
+    dud: mixed.malformed.length }));
+
+await statusOf("with two rows granting admin, the first still comes off",
+  call("DELETE", "/membership/admin/" + FIXTURE_4242,
+    { headers: bearer(MIXED) }), 200);
+
+const inflated = await call("DELETE",
+  "/membership/admin/" + (samRow ? samRow.account_id : UNLISTED),
+  { headers: bearer(MIXED) });
+check("but the last row that really grants admin is refused, dud or no dud",
+  inflated.status === 409, `${inflated.status}`);
+check("and it is still there to be refused again",
+  roster.filter((r) => r.role === "admin" && r.account_id !== PASTED)
+    .length === 1,
+  JSON.stringify(roster.map((r) => r.label)));
+
+/*
+ * The other direction, on the same table: the dud is what the admin was
+ * told to remove, so the narrowed guard must not have made it sticky.
+ * The id goes back in the case the list handed it out in, since that is
+ * what the pane's button carries.
+ */
+await statusOf("while the row that grants nothing comes off as it always did",
+  call("DELETE", "/membership/admin/" + PASTED.toLowerCase(),
+    { headers: bearer(MIXED) }), 200);
+check("leaving one admin row, which is the one that grants",
+  roster.length === 1 && roster[0].label === "Sam",
+  JSON.stringify(roster.map((r) => r.label)));
+
+/*
+ * And the case that has nothing to fall back on inside the table: a
+ * table whose only `admin` row grants nobody. Refusing that removal
+ * would tell an admin they are looking at the last admin row while the
+ * admin list is, in every sense the Worker honors, already empty.
+ */
+reset();
+
+const DUD_ONLY = (await (await signIn({ id: 99 })).clone().json()).session;
+pastedByHand();
+await statusOf("a table whose only admin row grants nobody lets go of it",
+  call("DELETE", "/membership/admin/" + PASTED.toLowerCase(),
+    { headers: bearer(DUD_ONLY) }), 200);
+check("and the table is empty, which is where it already stood",
+  roster.length === 0, JSON.stringify(roster.map((r) => r.label)));
+
 /*
  * The MECHANISM, and not only the outcome.
  *
@@ -3492,7 +3666,31 @@ check("carrying exactly the two statements the guard is made of",
   together.length === 2, `${together.length} statement(s) in the batch`);
 check("the first deletes with the count as a subquery, not as a round trip",
   together.length === 2 && /^\s*DELETE FROM membership/i.test(together[0].sql) &&
-  /AND \(SELECT COUNT\(\*\) FROM membership WHERE role = 'admin'\) > 1/i
+  /\(SELECT COUNT\(\*\) FROM membership AS \w+ WHERE \w+\.role = 'admin'/i
+    .test(together[0].sql) &&
+  /\) > 1\)/.test(together[0].sql),
+  together.length ? together[0].sql : "no statement");
+
+/*
+ * The statement's own words, and not only what it did to `roster`.
+ *
+ * The outcome arms above are answered by a stub that models the guard,
+ * so they hold the stub and the Worker to each other rather than either
+ * to SQLite. What SQLite is actually sent is this string, and the two
+ * clauses that matter are the ones the wide guard did not have: the
+ * count is taken over rows carrying an account id of the right length
+ * and the right alphabet, and the row being deleted is spared when it
+ * does not. A regex over the statement is the only assertion that
+ * survives the stub being wrong.
+ */
+check("the count it takes is over rows that grant, not every admin row",
+  together.length === 2 &&
+  /COUNT\(\*\)[\s\S]*length\(\w+\.account_id\) = 64[\s\S]*\w+\.account_id NOT GLOB '\*\[\^0-9a-f\]\*'/i
+    .test(together[0].sql),
+  together.length ? together[0].sql : "no statement");
+check("and the row being removed is spared that count when it grants nothing",
+  together.length === 2 &&
+  /AND \(NOT \(length\(account_id\) = 64 AND account_id NOT GLOB '\*\[\^0-9a-f\]\*'\) OR \(SELECT COUNT/i
     .test(together[0].sql),
   together.length ? together[0].sql : "no statement");
 check("the second asks for the row, which is what a count cannot answer",
@@ -3504,6 +3702,121 @@ check("and the only membership statement outside it is the authority read",
   alone.length === 1 &&
   alone[0].sql === "SELECT account_id FROM membership WHERE role = ?",
   JSON.stringify(alone.map((s) => s.sql)));
+
+/* ------------------------------------------------------------------ */
+/* The guard as SQLite runs it, and not as a string.                   */
+
+/*
+ * WHAT EVERY ARM ABOVE STILL CANNOT SEE.
+ *
+ * The outcome arms hold the Worker and the stub to each other, and the
+ * stub's model of the guard is a JavaScript re-implementation of the
+ * statement rather than the statement. The two arms after them hold the
+ * Worker to a regex over its own text. Between them nothing has asked
+ * an SQL engine anything, so every belief the statement is built on is
+ * unchecked: that GLOB takes a negated character class at all, that
+ * GLOB is case-sensitive where LIKE is not - which is the whole reason
+ * an upper-case paste reads as a dud - and that length() counts what
+ * grantsAnything() counts. If any of them were wrong, every row above
+ * would still read `pass` and the guard would be wrong in D1. That is
+ * the armed-looking shape, arriving through the one door a text pin
+ * cannot close.
+ *
+ * So these arms EXECUTE the statement the Worker actually sent -
+ * captured from the batch above - against server/schema.sql's own
+ * membership table. Neither is retyped here: a retyped statement is a
+ * test of the typing, and a hand-written table is a test of a table
+ * nothing deploys.
+ *
+ * NOT D1, AND SAYING SO IS THE POINT. D1 is SQLite with a network in
+ * front of it, so the dialect is the same and the concurrency is not.
+ * These settle the dialect half, which nothing else in this repository
+ * touches; the batch arms above settle the atomicity half, which this
+ * cannot. Neither is sufficient alone, which is why both are here.
+ *
+ * THE IDS ARE DELIBERATELY NOT CASE-VARIANTS OF EACH OTHER. The DELETE
+ * matches through COLLATE NOCASE while the primary key does not carry
+ * it, so `aaa...` and `AAA...` can both sit in the table and one press
+ * reaches both rows. That staging is a known residual and belongs to
+ * its own change; staging it here by accident would make these arms
+ * assert it silently.
+ */
+if (DatabaseSync) {
+  /*
+   * The comments come out for the reason the SUPERSEDES read at the top
+   * of this file gives at length: a regex over the raw schema cannot
+   * tell the prose explaining a statement from the statement.
+   */
+  const membershipTable =
+    /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+membership\s*\([^;]*\);/i
+      .exec(SCHEMA.replace(/--[^\n]*/g, ""));
+
+  /*
+   * THE WORKER'S OWN STATEMENT, taken off the batch it travelled in
+   * rather than typed here. Its two placeholders are the id and the
+   * role the route binds, in that order, which is why the staging
+   * below binds exactly those two and nothing else.
+   */
+  const guardStatement = together.length === 2 ? together[0].sql : "";
+
+  const GRANTS_ONE = "a".repeat(64);
+  const GRANTS_TWO = "b".repeat(64);
+  const WRONG_CASE = "C".repeat(64);
+  const TOO_SHORT = "d".repeat(63);
+  const NOT_HEX = "z".repeat(64);
+
+  /*
+   * One staging, start to finish: rows in, the captured DELETE run over
+   * the real engine, and what is left read back. A fresh database per
+   * staging, because a guard that refuses is a statement that matched
+   * no row, and a leftover row from the staging before would be
+   * indistinguishable from one the guard held back.
+   */
+  const staging = (rows, remove) => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(membershipTable[0]);
+    const insert = db.prepare(
+      "INSERT INTO membership (account_id, role, label, added_at, added_by)" +
+      " VALUES (?, 'admin', 'by hand', '2026-08-08T00:00:00.000Z', 'console')");
+    for (const id of rows) insert.run(id);
+    db.prepare(guardStatement).run(remove, "admin");
+    const left = db.prepare("SELECT account_id FROM membership").all()
+      .map((row) => row.account_id).sort();
+    db.close();
+    return left;
+  };
+
+  const held = (rows, remove) => JSON.stringify(staging(rows, remove));
+
+  check("the table is the schema's own and the statement the Worker's own",
+    membershipTable !== null &&
+    /PRIMARY KEY\s*\(\s*account_id\s*,\s*role\s*\)/i.test(membershipTable[0]) &&
+    together.length === 2 && guardStatement === together[0].sql,
+    guardStatement.slice(0, 60));
+
+  check("SQLite really deletes: of two rows that grant, the first comes off",
+    held([GRANTS_ONE, GRANTS_TWO], GRANTS_ONE) ===
+    JSON.stringify([GRANTS_TWO]),
+    held([GRANTS_ONE, GRANTS_TWO], GRANTS_ONE));
+
+  check("and the last row that grants is refused by the engine itself",
+    held([GRANTS_ONE], GRANTS_ONE) === JSON.stringify([GRANTS_ONE]),
+    held([GRANTS_ONE], GRANTS_ONE));
+
+  check("three rows that grant nothing do not add up to a second admin",
+    held([GRANTS_ONE, WRONG_CASE, TOO_SHORT, NOT_HEX], GRANTS_ONE) ===
+    JSON.stringify([WRONG_CASE, GRANTS_ONE, TOO_SHORT, NOT_HEX].sort()),
+    held([GRANTS_ONE, WRONG_CASE, TOO_SHORT, NOT_HEX], GRANTS_ONE));
+
+  check("while the engine spares the dud the same statement is refusing for",
+    held([GRANTS_ONE, WRONG_CASE], WRONG_CASE.toLowerCase()) ===
+    JSON.stringify([GRANTS_ONE]),
+    held([GRANTS_ONE, WRONG_CASE], WRONG_CASE.toLowerCase()));
+
+  check("and it empties a table whose only admin row grants nobody",
+    held([WRONG_CASE], WRONG_CASE.toLowerCase()) === JSON.stringify([]),
+    held([WRONG_CASE], WRONG_CASE.toLowerCase()));
+}
 
 /* ------------------------------------------------------------------ */
 /* A development session may not write an admin row.                   */

@@ -306,8 +306,20 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- Whatever else moves, the founding admin stays in the secret. A table
 -- that could rewrite the whole list would leave no root of trust outside
 -- itself, and an empty table would lock everybody out permanently -
--- which is why the last `admin` row cannot be deleted, guarded inside
--- the DELETE statement rather than by a count read beforehand.
+-- which is why the last `admin` row THAT GRANTS cannot be deleted,
+-- guarded inside the DELETE statement rather than by a count read
+-- beforehand.
+--
+-- GRANTS AND NOT ROWS, because this table's column types are wider than
+-- what the Worker honors. `account_id` here is any TEXT at all, while
+-- handleDeleteMembership counts only the rows an authority read would
+-- have obeyed - sixty-four lowercase hex characters - and spares the
+-- row being deleted when it is not one of them. So a row this schema
+-- accepts and the Worker cannot read grants nobody anything: it neither
+-- earns the protection nor stands in for it, and a table holding
+-- nothing else lets go of its last `admin` row rather than pretending
+-- it has an admin. Widening that column, or narrowing it to what the
+-- Worker reads, moves the guard with it.
 --
 -- TELEGRAM_GROUP_CHAT_ID does not belong here and is not coming. It has
 -- to be recoverable in the clear because groupStanding() interpolates it
