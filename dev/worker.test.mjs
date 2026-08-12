@@ -3455,6 +3455,102 @@ check("and the last admin is still the last admin",
   roster.filter((r) => r.role === "admin").length === 1,
   `${roster.length} row(s)`);
 
+/* ------------------------------------------------------------------ */
+/* A row that grants nothing cannot stand in for the last admin.       */
+
+/*
+ * WHAT THE GUARD HAS TO COUNT, WHICH IS GRANTS AND NOT ROWS.
+ *
+ * `wrangler d1 execute` writes an account id in upper-case hex without
+ * complaint and the authority read drops that row, so it sits in the
+ * table granting nobody anything. A guard counting every row whose role
+ * is `admin` counts that one: with one real admin beside one dud the
+ * count reads two, the last granting row comes off, and the list is
+ * empty with the refusal never firing. The dual-read is what keeps that
+ * latent rather than live - the secret still grants - so the day
+ * `ADMIN_TELEGRAM_IDS` goes table-only is the day it becomes a lockout
+ * with no lever inside the product. OPERATIONS.md, "Making someone an
+ * admin", is where that precondition is written down for the person who
+ * performs the flip.
+ *
+ * BOTH DIRECTIONS IN ONE STAGING, because narrowing the count on its
+ * own would trade the lockout for an unremovable dud. The row that
+ * grants nothing has to keep coming off - GET's `malformed` list hands
+ * an admin its id precisely so they can - and the refusal that says
+ * "that is the last admin row" must never be given about a row that is
+ * no admin at all.
+ */
+reset();
+
+const MIXED = (await (await signIn({ id: 99 })).clone().json()).session;
+await addMember(MIXED, { telegramId: "4242", role: "admin", label: "Alex" });
+await addMember(MIXED, { telegramId: "31337", role: "admin", label: "Sam" });
+
+/* Sixty-four correct characters in the wrong case: the one shape POST
+ * cannot produce and the database console writes without complaint. */
+const PASTED = "A".repeat(64);
+const pastedByHand = () => roster.push({
+  account_id: PASTED, role: "admin", label: "Pasted into the console",
+  added_at: "2026-08-08T00:00:00.000Z", added_by: "by hand",
+});
+pastedByHand();
+
+/* The ids are taken from the list rather than computed here, because
+ * the list is what an admin presses Remove from - a test that removed
+ * an id this file derived would be driving a door the pane does not
+ * use. */
+const mixed = await (await call("GET", "/membership",
+  { headers: bearer(MIXED) })).json();
+const samRow = mixed.membership.find((row) => row.label === "Sam");
+check("two rows grant admin and the pasted one is not among them",
+  mixed.membership.filter((row) => row.role === "admin").length === 2 &&
+  mixed.malformed.length === 1 && mixed.malformed[0].account_id === PASTED,
+  JSON.stringify({ grant: mixed.membership.length,
+    dud: mixed.malformed.length }));
+
+await statusOf("with two rows granting admin, the first still comes off",
+  call("DELETE", "/membership/admin/" + FIXTURE_4242,
+    { headers: bearer(MIXED) }), 200);
+
+const inflated = await call("DELETE",
+  "/membership/admin/" + (samRow ? samRow.account_id : UNLISTED),
+  { headers: bearer(MIXED) });
+check("but the last row that really grants admin is refused, dud or no dud",
+  inflated.status === 409, `${inflated.status}`);
+check("and it is still there to be refused again",
+  roster.filter((r) => r.role === "admin" && r.account_id !== PASTED)
+    .length === 1,
+  JSON.stringify(roster.map((r) => r.label)));
+
+/*
+ * The other direction, on the same table: the dud is what the admin was
+ * told to remove, so the narrowed guard must not have made it sticky.
+ * The id goes back in the case the list handed it out in, since that is
+ * what the pane's button carries.
+ */
+await statusOf("while the row that grants nothing comes off as it always did",
+  call("DELETE", "/membership/admin/" + PASTED.toLowerCase(),
+    { headers: bearer(MIXED) }), 200);
+check("leaving one admin row, which is the one that grants",
+  roster.length === 1 && roster[0].label === "Sam",
+  JSON.stringify(roster.map((r) => r.label)));
+
+/*
+ * And the case that has nothing to fall back on inside the table: a
+ * table whose only `admin` row grants nobody. Refusing that removal
+ * would tell an admin they are looking at the last admin row while the
+ * admin list is, in every sense the Worker honors, already empty.
+ */
+reset();
+
+const DUD_ONLY = (await (await signIn({ id: 99 })).clone().json()).session;
+pastedByHand();
+await statusOf("a table whose only admin row grants nobody lets go of it",
+  call("DELETE", "/membership/admin/" + PASTED.toLowerCase(),
+    { headers: bearer(DUD_ONLY) }), 200);
+check("and the table is empty, which is where it already stood",
+  roster.length === 0, JSON.stringify(roster.map((r) => r.label)));
+
 /*
  * The MECHANISM, and not only the outcome.
  *
