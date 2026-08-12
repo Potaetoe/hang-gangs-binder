@@ -54,6 +54,35 @@ const SUPERSEDES_IS_UNIQUE =
     .test(SCHEMA.replace(/--[^\n]*/g, ""));
 
 /*
+ * A REAL SQL ENGINE, LOADED HERE BECAUSE THE COUNT BELOW DEPENDS ON IT.
+ * What it is for is at "The guard as SQLite runs it" near the end of
+ * this file; it is loaded up here only because suite() takes the number
+ * of checks to expect and that number is not the same on a runtime
+ * without this module.
+ *
+ * `node:sqlite` arrived after Node 20 and the gate's runner is pinned
+ * there, so this import fails on CI and succeeds on the machine this
+ * repository is developed on. Neither outcome may be quiet. When it is
+ * missing the arms that execute the guard do not run, the expected
+ * count drops by exactly their number, and the run says so on stdout -
+ * a check that reported `pass` because it could not reach its subject
+ * is the armed-looking failure this repository holds to be worse than
+ * having no check, and a check that announces it did not run is the
+ * live ledger's `never` row wearing a suite's clothes. Moving the
+ * runner's Node forward is what makes these run everywhere; nothing
+ * here shims around the absence.
+ */
+let DatabaseSync = null;
+try {
+  ({ DatabaseSync } = await import("node:sqlite"));
+} catch {
+  console.log("note  node:sqlite is absent on " + process.version +
+    " - the guard's SQL is pinned as text below and NOT executed here. " +
+    "Its execution arms did not run and are not counted.");
+}
+const EXECUTED_GUARD_ARMS = DatabaseSync ? 6 : 0;
+
+/*
  * A D1 binding that remembers what it was asked to store.
  *
  * It reads just enough of the SQL to tell the tables apart, because
@@ -835,8 +864,16 @@ const bearer = (t, headers = good) =>
  * as "nothing refused anybody" rather than as a missing row, and where
  * POST /auth/dev failing open is itself the compromise. See
  * dev/harness.mjs.
+ *
+ * The addend is the only part of this number that is not a constant,
+ * and it is a constant per runtime: on a Node carrying `node:sqlite`
+ * the guard's execution arms run and are counted, and on one without it
+ * they neither run nor count. Both worlds still catch a check that
+ * stops running, which is what this arm is for - what they cannot do is
+ * hide one, because the two totals differ by exactly the arms named
+ * above.
  */
-const { check, report } = suite("worker.js", 359);
+const { check, report } = suite("worker.js", 359 + EXECUTED_GUARD_ARMS);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -3665,6 +3702,121 @@ check("and the only membership statement outside it is the authority read",
   alone.length === 1 &&
   alone[0].sql === "SELECT account_id FROM membership WHERE role = ?",
   JSON.stringify(alone.map((s) => s.sql)));
+
+/* ------------------------------------------------------------------ */
+/* The guard as SQLite runs it, and not as a string.                   */
+
+/*
+ * WHAT EVERY ARM ABOVE STILL CANNOT SEE.
+ *
+ * The outcome arms hold the Worker and the stub to each other, and the
+ * stub's model of the guard is a JavaScript re-implementation of the
+ * statement rather than the statement. The two arms after them hold the
+ * Worker to a regex over its own text. Between them nothing has asked
+ * an SQL engine anything, so every belief the statement is built on is
+ * unchecked: that GLOB takes a negated character class at all, that
+ * GLOB is case-sensitive where LIKE is not - which is the whole reason
+ * an upper-case paste reads as a dud - and that length() counts what
+ * grantsAnything() counts. If any of them were wrong, every row above
+ * would still read `pass` and the guard would be wrong in D1. That is
+ * the armed-looking shape, arriving through the one door a text pin
+ * cannot close.
+ *
+ * So these arms EXECUTE the statement the Worker actually sent -
+ * captured from the batch above - against server/schema.sql's own
+ * membership table. Neither is retyped here: a retyped statement is a
+ * test of the typing, and a hand-written table is a test of a table
+ * nothing deploys.
+ *
+ * NOT D1, AND SAYING SO IS THE POINT. D1 is SQLite with a network in
+ * front of it, so the dialect is the same and the concurrency is not.
+ * These settle the dialect half, which nothing else in this repository
+ * touches; the batch arms above settle the atomicity half, which this
+ * cannot. Neither is sufficient alone, which is why both are here.
+ *
+ * THE IDS ARE DELIBERATELY NOT CASE-VARIANTS OF EACH OTHER. The DELETE
+ * matches through COLLATE NOCASE while the primary key does not carry
+ * it, so `aaa...` and `AAA...` can both sit in the table and one press
+ * reaches both rows. That staging is a known residual and belongs to
+ * its own change; staging it here by accident would make these arms
+ * assert it silently.
+ */
+if (DatabaseSync) {
+  /*
+   * The comments come out for the reason the SUPERSEDES read at the top
+   * of this file gives at length: a regex over the raw schema cannot
+   * tell the prose explaining a statement from the statement.
+   */
+  const membershipTable =
+    /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+membership\s*\([^;]*\);/i
+      .exec(SCHEMA.replace(/--[^\n]*/g, ""));
+
+  /*
+   * WIRED TO A STATEMENT THAT IS NOT THE WORKER'S, so this commit is
+   * the contract and not the implementation: an unguarded DELETE with
+   * the collation dropped. Every promise below is one it breaks.
+   */
+  const guardStatement =
+    "DELETE FROM membership WHERE account_id = ? AND role = ?";
+
+  const GRANTS_ONE = "a".repeat(64);
+  const GRANTS_TWO = "b".repeat(64);
+  const WRONG_CASE = "C".repeat(64);
+  const TOO_SHORT = "d".repeat(63);
+  const NOT_HEX = "z".repeat(64);
+
+  /*
+   * One staging, start to finish: rows in, the captured DELETE run over
+   * the real engine, and what is left read back. A fresh database per
+   * staging, because a guard that refuses is a statement that matched
+   * no row, and a leftover row from the staging before would be
+   * indistinguishable from one the guard held back.
+   */
+  const staging = (rows, remove) => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(membershipTable[0]);
+    const insert = db.prepare(
+      "INSERT INTO membership (account_id, role, label, added_at, added_by)" +
+      " VALUES (?, 'admin', 'by hand', '2026-08-08T00:00:00.000Z', 'console')");
+    for (const id of rows) insert.run(id);
+    db.prepare(guardStatement).run(remove, "admin");
+    const left = db.prepare("SELECT account_id FROM membership").all()
+      .map((row) => row.account_id).sort();
+    db.close();
+    return left;
+  };
+
+  const held = (rows, remove) => JSON.stringify(staging(rows, remove));
+
+  check("the table is the schema's own and the statement the Worker's own",
+    membershipTable !== null &&
+    /PRIMARY KEY\s*\(\s*account_id\s*,\s*role\s*\)/i.test(membershipTable[0]) &&
+    together.length === 2 && guardStatement === together[0].sql,
+    guardStatement.slice(0, 60));
+
+  check("SQLite really deletes: of two rows that grant, the first comes off",
+    held([GRANTS_ONE, GRANTS_TWO], GRANTS_ONE) ===
+    JSON.stringify([GRANTS_TWO]),
+    held([GRANTS_ONE, GRANTS_TWO], GRANTS_ONE));
+
+  check("and the last row that grants is refused by the engine itself",
+    held([GRANTS_ONE], GRANTS_ONE) === JSON.stringify([GRANTS_ONE]),
+    held([GRANTS_ONE], GRANTS_ONE));
+
+  check("three rows that grant nothing do not add up to a second admin",
+    held([GRANTS_ONE, WRONG_CASE, TOO_SHORT, NOT_HEX], GRANTS_ONE) ===
+    JSON.stringify([WRONG_CASE, GRANTS_ONE, TOO_SHORT, NOT_HEX].sort()),
+    held([GRANTS_ONE, WRONG_CASE, TOO_SHORT, NOT_HEX], GRANTS_ONE));
+
+  check("while the row that grants nothing comes off, spared by the count",
+    held([GRANTS_ONE, WRONG_CASE], WRONG_CASE.toLowerCase()) ===
+    JSON.stringify([GRANTS_ONE]),
+    held([GRANTS_ONE, WRONG_CASE], WRONG_CASE.toLowerCase()));
+
+  check("and a table whose only admin row grants nobody lets go of it",
+    held([WRONG_CASE], WRONG_CASE.toLowerCase()) === JSON.stringify([]),
+    held([WRONG_CASE], WRONG_CASE.toLowerCase()));
+}
 
 /* ------------------------------------------------------------------ */
 /* A development session may not write an admin row.                   */
