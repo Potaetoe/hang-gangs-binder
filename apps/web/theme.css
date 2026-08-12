@@ -1094,10 +1094,27 @@ body.railed {
  * testing and out of the accessibility tree by default, and the
  * animation plays it from closed to that resting state. Written the
  * other way round - resting closed, an animation that opens it - every
- * failure mode ends with a full-screen panel sitting over the sign-in
+ * failure mode ends with an opaque panel sitting over the sign-in
  * button: no animation support, an interrupted style sheet, a browser
  * that refuses the keyframes. This way each of those fails open, which
  * on this page is the only acceptable direction.
+ *
+ * THAT PANEL IS NOT ALWAYS THE WHOLE SCREEN, and this is the one place
+ * that says what shape it is. `inset: 0` sizes the leaf to the
+ * viewport, but on index.html the leaf is a direct child of `body` and
+ * that body carries no class, so `body:not(.railed) > *` further up
+ * catches it like any other child: `max-width: var(--measure)` and
+ * `margin-inline: auto`. Above the `max-width: 52rem` block near the
+ * foot of this file the cover is therefore a CENTERED reading-column
+ * panel running the full viewport height, with page background either
+ * side of it; below that breakpoint the same block lifts the cap to
+ * 100% and it is genuinely the whole viewport. Both shapes cover the
+ * sign-in card, because the card sits in that same column - so the
+ * fail-open reasoning holds identically at every width and only the
+ * description of the shape moves. Measure before calling this leaf
+ * full-screen: a width narrower than the viewport, read back on a wide
+ * screen, is this rule doing its job - not a broken containing block
+ * and not a quirk of whatever harness took the measurement.
  *
  * `perspective()` is inside the transform rather than on an ancestor
  * because the leaf is `fixed`: a perspective on a parent would make
@@ -2116,17 +2133,20 @@ body.instrument main.stack { gap: var(--space-8); }
    * rule above is not enough for it on its own.
    *
    * At 0.01ms the keyframes still run: the browser can paint the first
-   * frame, and the first frame of this one is an opaque panel across
-   * the entire viewport. Worse, the blanket rule shortens the DURATION
-   * and says nothing about the delay, so the cover's ~200ms hold
-   * survives it whole and `backwards` fill paints the closed cover for
+   * frame, and the first frame of this one is the closed cover, opaque
+   * over the sign-in card. Worse, the blanket rule shortens the
+   * DURATION and says nothing about the delay, so the cover's ~200ms
+   * hold survives it whole and `backwards` fill paints that frame for
    * every millisecond of it. What the blanket rule leaves is therefore
-   * not a flash but a fifth of a second of full-screen panel - the
-   * specific thing a reader who has asked for reduced motion is asking
-   * not to be given, and on every machine, not just a slow one.
-   * Cancelling the animation leaves the leaf in its resting state,
-   * which is already open - so this snaps straight to the opened binder
-   * with no frame of the closed one.
+   * not a flash but a fifth of a second of HELD panel - the whole
+   * viewport below the `max-width: 52rem` block above, and a centered
+   * reading-column panel over the sign-in card above that breakpoint
+   * (the leaf's own rule higher up has the geometry). Either shape is
+   * the specific thing a reader who has asked for reduced motion is
+   * asking not to be given, and it lands on every machine, not just a
+   * slow one. Cancelling the animation leaves the leaf in its resting
+   * state, which is already open - so this snaps straight to the opened
+   * binder with no frame of the closed one.
    */
   .cover-leaf { animation: none !important; }
 }
