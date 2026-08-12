@@ -929,6 +929,94 @@ await check("and an unreadable table is not mistaken for an empty one",
  * clear, and the navigation. What the arms below ask is what a member
  * gets, in an order, on browsers and pages that differ.
  */
+
+/*
+ * THE FAKES ARE DEFINED FROM INSIDE THE CONTEXT, and that is not a
+ * style choice - it is the difference between these arms working and
+ * looking like they work.
+ *
+ * A getter defined with Object.defineProperty on the sandbox OBJECT,
+ * after vm.createContext() has contextified it, is reached through
+ * V8's global proxy when script inside the context reads the name. The
+ * proxy does not propagate a throw from that getter: the read answers
+ * undefined and the exception is swallowed. Measured on Node v24.19.0
+ * with a getter whose whole body is `throw`, read three ways
+ * (`root.x`, `globalThis.x`, bare `x`) - none of them threw.
+ *
+ * Which makes a "blocked" mode written that way a second spelling of
+ * "absent": both hand the shipped file a falsy value, both take the
+ * same branch, and an arm distinguishing them proves nothing while
+ * reading as though it proved the hardened-browser case. Removing the
+ * try/catch from signout.js's `database()` is then a mutation the suite
+ * does not notice, which is how it was found.
+ *
+ * Defining the properties by RUNNING code in the context puts them on
+ * the real global inside it, and a throw from there propagates the way
+ * a hardened browser's does. The host side keeps only the recorder and
+ * the mode names, so what a fake does is still decided out here.
+ */
+const SIGN_OUT_FAKES = `
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  get() {
+    if (modes.store === "absent") return null;
+    if (modes.store === "blocked") {
+      throw new Error("storage is unavailable here");
+    }
+    return {
+      getItem() { return null; },
+      setItem() {},
+      removeItem() { record("prefill"); },
+    };
+  },
+});
+
+Object.defineProperty(globalThis, "indexedDB", {
+  configurable: true,
+  get() {
+    if (modes.database === "absent") return null;
+    if (modes.database === "blocked") throw new Error("no database here");
+    return {
+      deleteDatabase(name) {
+        record("delete:" + name);
+        if (modes.database === "throws") throw new Error("delete refused");
+        return {};
+      },
+    };
+  },
+});
+
+Object.defineProperty(globalThis, "BinderMemberKey", {
+  configurable: true,
+  get() {
+    record("consulted");
+    return modes.keys ? { DB_NAME: "hgb-member-key" } : undefined;
+  },
+});
+`;
+
+/*
+ * The browsers and the pages, as four axes the arms below combine.
+ *
+ * `store` and `database` each have an "absent" and a "blocked", because
+ * those are two different browsers and they need two different guards
+ * in the shipped file: absent answers a falsy value, blocked throws on
+ * the READ. `database` has a third, "throws", where the read succeeds
+ * and `deleteDatabase` itself refuses - a guard around one of those two
+ * is not a guard around the other, and either one unguarded ends
+ * signOut() above the credential clear and the navigation.
+ *
+ * `keys` is the PAGE rather than the browser: your-page publishes
+ * `BinderMemberKey`, charts and admin do not. It is a getter that
+ * records the read, so "the namespace is never consulted" is an
+ * observation rather than an inference - a guarded call passes on the
+ * page that publishes the module and fails on the two that do not, so
+ * the guard has to be absent rather than merely true today.
+ *
+ * The delete records the NAME it was asked for. A recorder that noted
+ * only that a delete happened would pass a sign-out that destroyed the
+ * keyholder's working copy on admin.html.
+ */
 async function performSignOut(
   { store = "working", keys = true, database = "working" } = {}) {
   const acts = [];
@@ -947,77 +1035,13 @@ async function performSignOut(
       return { catch() {} };
     },
     location: { replace() { acts.push("navigate"); } },
+    // The two halves the fakes above reach back through: what they may
+    // record, and which browser and page they are standing in.
+    record(act) { acts.push(act); },
+    modes: { store, keys, database },
   };
   vm.createContext(context);
-
-  /*
-   * The store is a GETTER so that "blocked" can throw the way a real
-   * hardened browser does - reading `localStorage` there is not a
-   * property that answers null, it is an exception - and so that
-   * "absent" is genuinely absent rather than an object that quietly
-   * accepts calls. These are the two browsers the defeated arms let a
-   * key survive on.
-   */
-  Object.defineProperty(context, "localStorage", {
-    configurable: true,
-    get() {
-      if (store === "absent") return null;
-      if (store === "blocked") throw new Error("storage is unavailable here");
-      return {
-        getItem() { return null; },
-        setItem() {},
-        removeItem() { acts.push("prefill"); },
-      };
-    },
-  });
-
-  /*
-   * The database factory, with the same three browsers the store has and
-   * a fourth of its own.
-   *
-   * "blocked" is the hardened configuration where READING `indexedDB`
-   * throws rather than answering undefined, and "throws" is the one
-   * where the read succeeds and `deleteDatabase` itself refuses. They
-   * are separate modes because they need separate guards in the shipped
-   * file, and a single try/catch around only one of them leaves
-   * sign-out ending in an exception - which costs the credential clear
-   * and the navigation below it, not merely the key.
-   *
-   * The delete records the NAME it was asked for. A recorder that noted
-   * only that a delete happened would pass a sign-out that destroyed the
-   * keyholder's working copy on admin.html.
-   */
-  Object.defineProperty(context, "indexedDB", {
-    configurable: true,
-    get() {
-      if (database === "absent") return null;
-      if (database === "blocked") throw new Error("no database here");
-      return {
-        deleteDatabase(name) {
-          acts.push("delete:" + name);
-          if (database === "throws") throw new Error("delete refused");
-          return {};
-        },
-      };
-    },
-  });
-
-  /*
-   * The key module, published or not - and a getter either way, so that
-   * merely LOOKING at the namespace is an act this file can see.
-   *
-   * That is the arm #257 needed and did not have. Destruction is
-   * unconditional now: it must not consult this namespace at all, on any
-   * page, because consulting it is how the destruction became
-   * conditional on the one page that publishes it.
-   */
-  Object.defineProperty(context, "BinderMemberKey", {
-    configurable: true,
-    get() {
-      acts.push("consulted");
-      return keys ? { DB_NAME: "hgb-member-key" } : undefined;
-    },
-  });
+  vm.runInContext(SIGN_OUT_FAKES, context, { filename: "fakes.js" });
 
   vm.runInContext(signOutSource, context, { filename: "signout.js" });
   context.BinderSignOut.signOut();
