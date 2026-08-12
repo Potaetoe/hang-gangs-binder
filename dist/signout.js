@@ -7,6 +7,10 @@
 
   const PREFILL_KEY = "hgb-submit-prefill";
 
+  
+
+  const SIGNED_OUT_KEY = "hgb-signed-out";
+
   const Session = root.BinderSession;
 
   function localStore() {
@@ -15,6 +19,14 @@
     } catch (error) {
       return null;
     }
+  }
+
+  
+
+  function markSignedOut() {
+    try {
+      if (root.sessionStorage) root.sessionStorage.setItem(SIGNED_OUT_KEY, "1");
+    } catch (error) {}
   }
 
   function clearPrefill() {
@@ -85,6 +97,10 @@
     clearPrefill();
     forgetDeviceKey();
     if (Session) Session.clear();
+     
+     
+     
+    markSignedOut();
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("index.html");
     }
@@ -94,6 +110,7 @@
     signOut,
     clearPrefill,
     prefillKey: PREFILL_KEY,
+    signedOutKey: SIGNED_OUT_KEY,
   });
 
   if (typeof document === "undefined") return;

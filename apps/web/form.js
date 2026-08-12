@@ -506,8 +506,8 @@
     // on the wire or ciphertext nobody can open - both worse than a
     // closed form.
     const noKey = !config.publicKey
-      ? "This portal has no key published yet, so there is nothing to " +
-        "encrypt to. Submissions are closed until there is."
+      ? "This binder has no key published yet, so there is nothing to " +
+        "encrypt to. Weigh-ins are closed until there is."
       : null;
 
     /*
@@ -677,6 +677,26 @@
     }
 
     /*
+     * Where the technical half of a failure goes now - #265 rows 13 and
+     * 50.
+     *
+     * crypto.js's throws name a file, a byte count and a curve; a
+     * refused POST names a status number. All of it is exactly what
+     * somebody debugging this needs and none of it is anything a member
+     * can act on, and appending it to the sentence on screen was how
+     * "the public key in config.js is not a 65-byte uncompressed P-256
+     * point" ended up under a weigh-in form. It is not discarded -
+     * discarding it would leave the next person with a page that failed
+     * and said nothing about why - it is written where a developer
+     * looks and a member does not.
+     */
+    function logDetail(detail) {
+      if (detail && root.console && typeof root.console.warn === "function") {
+        root.console.warn("binder: " + detail);
+      }
+    }
+
+    /*
      * The height guard's memory, and it is not this file's - #172.
      *
      * submit.js owns the device-local store and announces what is in it;
@@ -840,8 +860,19 @@
         submit.disabled = false;
         // Nothing has left the browser at this point, which is worth
         // saying: a failure here is not a half-submission.
-        say("This could not be encrypted, so nothing was sent. " +
-          (error && error.message ? error.message : "Unknown error."), "bad");
+        //
+        // `record` is what tells the two failures apart, and they are
+        // not one sentence: a record this page could not assemble is a
+        // broken page, and a record it could not seal is a key. Saying
+        // "the site's key is not usable" over the first would send a
+        // member to an admin about something an admin cannot fix.
+        logDetail(error && error.message ? error.message : "send preparation " +
+          "failed with no message");
+        say(record === null
+          ? "This page could not put your entry together, so nothing was " +
+            "sent. Reload and try again."
+          : "This could not be encrypted, so nothing was sent. The site's " +
+            "key is not usable — tell an admin.", "bad");
         return;
       }
 
@@ -891,8 +922,17 @@
             const body = await response.json();
             detail = body && body.error ? " " + body.error : "";
           } catch (e) { /* a non-JSON error page says enough by its status */ }
-          throw new Error("The server refused it (" + response.status + ")." +
+          /*
+           * The number goes to the console and not to the member -
+           * #265 row 13. A status code is something an operator acts on
+           * and admin.html still quotes it; here it is a number beside
+           * a sentence about somebody's weigh-in, and there is nothing
+           * a member can do with it. The Worker's own `{error}` is
+           * written for whoever provoked it and stays.
+           */
+          logDetail("submission refused with " + response.status + "." +
             detail);
+          throw new Error("The service could not answer just now." + detail);
         }
       } catch (error) {
         submit.disabled = false;

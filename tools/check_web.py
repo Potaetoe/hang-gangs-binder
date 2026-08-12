@@ -1701,10 +1701,15 @@ def rail_aside(text):
     sign-in left .rail-links for the session block, and the wordmark
     carries it too - so the claim "this rail can always get somebody
     back to the door" is about the aside, not about the destinations
-    list inside it. Two of the three page footers also link the door,
-    but a footer is content and the rail is the shell: the shell is the
-    copy this file holds identical across pages, so the shell is the
-    copy the rule can stand on.
+    list inside it.
+
+    NO PAGE FOOTER LINKS THE DOOR ANY MORE (#265 row 22 took the last
+    two out), and the rule did not move an inch for it - which is the
+    point of where it was written. A footer is content and the rail is
+    the shell: the shell is the copy this file holds identical across
+    pages, so the shell is the copy the rule can stand on. Had this
+    ever been allowed to rest on a footer, removing a footer link would
+    have been a stranding question instead of a copy question.
     """
     match = re.search(r'<aside[^>]*class="rail[\s"].*?</aside>',
                       text, re.S | re.I)
@@ -2821,9 +2826,11 @@ def css_role_problems(css):
 # the half a rail-parity rule cannot reach: three rails agreeing with
 # each other and disagreeing with the page they open is exactly the
 # drift that issue inventoried. So are the copies that live outside the
-# destinations list - the door in each session block and in two footers,
-# which #187 put beyond the rail loop's reach and PROSE_LINKS below
-# brings back.
+# destinations list - the door in each session block, which #187 put
+# beyond the rail loop's reach and PROSE_LINKS below brings back. Two
+# footers carried a third and fourth copy of it until #265 row 22:
+# offered to somebody already inside, three inches under a rail saying
+# "Signed in as ...", which is the exact reading #187 ruled against.
 #
 # The site's own name reaches a reader by two routes - the tab strip,
 # through this constant, and the wordmark over the door - and #191 rules
@@ -2854,14 +2861,22 @@ DESTINATIONS = {
 # name, so a new sentence arrives loudly instead of widening the hole
 # #201 filed - five copies of the door label, three in the session
 # blocks and two in footers, answering to nothing while #191 renamed the
-# pages around them. A declaration nothing carries any more FAILS as
-# stale, for the reason WORDMARK_PAGES gives.
+# pages around them. Three copies now: #265 row 22 retired the footers'
+# on the owner's ruling, and the remaining three are the session
+# blocks', which are the copies #187 says the door belongs to. A
+# declaration nothing carries any more FAILS as stale, for the reason
+# WORDMARK_PAGES gives.
 #
 # What this cannot say is whether a sentence is still true after a
 # rename. "Go to sign in" is prose, and prose is the owner's to write.
 PROSE_LINKS = {
     ("404.html", "index.html"): frozenset({"Go to sign in"}),
-    ("admin.html", "charts.html"): frozenset({"Open it"}),
+    # Two links to one page from one page, saying different things
+    # because they are doing different things: the Publish card's own
+    # "Open it" beside the act it belongs to, and the footer's
+    # invitation to read what was just published (#265 row 22).
+    ("admin.html", "charts.html"): frozenset(
+        {"Open it", "See what everyone adds up to"}),
     ("charts.html", "index.html"): frozenset({"Add yours"}),
     ("index.html", "charts.html"): frozenset({"See what everyone adds up to"}),
     ("your-page.html", "charts.html"): frozenset(

@@ -435,16 +435,22 @@
    */
   function secretOnlyNotice(view) {
     if (!view || view.absent.indexOf("secretOnly") !== -1) {
-      return "This Worker did not report which admins the secret grants " +
+      // #265 rows 33 and 36. "The Worker" is a product name where "the
+      // service" is the thing; a verb and a route are what OPERATIONS.md
+      // is for, and it already carries `GET /membership` twice.
+      return "This service did not report which admins the secret grants " +
         "on its own, so nothing here can say whether the backfill is " +
-        "finished. Read GET /membership directly before acting on this.";
+        "finished. Check the membership list at the service directly " +
+        "before acting on this.";
     }
     if (!view.secretOnly.length) {
       return "Every admin the ADMIN_TELEGRAM_IDS secret grants also holds " +
         "a row above. That is the go-signal: dropping the secret arm now " +
         "would take nobody's authority away.";
     }
-    return view.secretOnly.length + " admin(s) are granted by the " +
+    const many = view.secretOnly.length !== 1;
+    return view.secretOnly.length + (many ? " admins are" : " admin is") +
+      " granted by the " +
       "ADMIN_TELEGRAM_IDS secret and by no row above, so the backfill is " +
       "not finished. Their account ids are listed below, and they name " +
       "nobody: each is a one-way hash, nothing on this page can turn one " +
@@ -753,6 +759,27 @@
    */
   const DOWNLOAD_IDS = Object.freeze(
     ["download", "download-xlsx", "download-json"]);
+
+  /*
+   * What each download is CALLED IN A SENTENCE, which is not what its
+   * button is called - #265 row 39.
+   *
+   * A label read off the element gives the sentence a verb phrase
+   * where it needs a noun - "Download CSV handed to the browser" reads
+   * as an instruction that has collided with a past tense. The labels
+   * themselves are right and UAT.md quotes all three; borrowing them
+   * for a job they were not written for is what is wrong.
+   *
+   * Keyed by id and read from here rather than from the DOM, so the
+   * sentence cannot change under a relabelling - and a fourth export
+   * arrives loudly, with an undefined noun, rather than quietly
+   * printing whatever the new button happens to say.
+   */
+  const DOWNLOAD_NOUNS = Object.freeze({
+    "download": "The CSV",
+    "download-xlsx": "The Excel file",
+    "download-json": "The JSON file",
+  });
   const PRESSED_MS = 4000;
 
   const KEY_DB = "hgb-keyholder-key";
@@ -808,10 +835,32 @@
     });
   }
 
+  /*
+   * The nameplate and the intro, which are claims about what is below
+   * them - #265 row 23.
+   *
+   * "Everything below this line is in the clear" and "Decrypts the
+   * submissions in this browser" are true of the instrument and false
+   * of every card that stands in for it: nothing is in the clear on a
+   * refusal, and nothing is being decrypted. The rail offers Admin to
+   * every member by the owner's instruction, so the refusal is the
+   * ordinary member experience of this page rather than an edge, and
+   * this pair sat over it saying otherwise.
+   *
+   * It follows #tool exactly, in one function, because four call sites
+   * each deciding for themselves is how the fourth one comes to
+   * disagree.
+   */
+  function showInstrument(visible) {
+    show($("tool"), visible);
+    show($("surface-mark"), visible);
+    show($("admin-intro"), visible);
+  }
+
   /* Same guard as form.js: a throw during setup would leave a page that
    * looks fine and a button that does nothing. */
   UI.boot(setUp, function (error) {
-    show($("tool"), false);
+    showInstrument(false);
     const closed = $("closed");
     show(closed, true);
     if (closed) {
@@ -831,11 +880,11 @@
     // tool as well in case navigation is delayed; none of its wiring or
     // requests should run without an authenticated admin in this tab.
     if (!admin) {
-      show($("tool"), false);
+      showInstrument(false);
       return;
     }
     if (!admin.isAdmin) {
-      show($("tool"), false);
+      showInstrument(false);
       const closed = $("closed");
       show(closed, true);
       closed.querySelector("[data-reason]").textContent =
@@ -851,12 +900,12 @@
         "anything. Reload, and if it persists the site is broken.";
 
     if (unavailable) {
-      show($("tool"), false);
+      showInstrument(false);
       show($("closed"), true);
       $("closed").querySelector("[data-reason]").textContent = unavailable;
       return;
     }
-    show($("tool"), true);
+    showInstrument(true);
 
     // Everything decrypted so far, held only for as long as this tab is
     // open. Clear discards it and the key; the admin session remains the
@@ -994,7 +1043,7 @@
      * downloads in a row leaves the second one lit rather than being
      * darkened by the first one's expiry.
      */
-    function acknowledge(pressed, what) {
+    function acknowledge(pressed) {
       /*
        * The other two go dark AT PRESS TIME, which is the half that was
        * missing. Until this, only the timer above cleared them - so
@@ -1016,9 +1065,9 @@
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
       }, PRESSED_MS);
       UI.setStatus($("download-status"),
-        what + " handed to the browser. Where it puts a download is the "
-        + "browser's to decide, so this page cannot say whether it "
-        + "arrived.", null);
+        DOWNLOAD_NOUNS[pressed] + " was handed to the browser. Where a "
+        + "download goes is the browser's to decide, so this page cannot "
+        + "say whether it arrived.", null);
     }
 
     // `content` is a string for the text formats and a Uint8Array for
@@ -1261,10 +1310,10 @@
     for (const id of DOWNLOAD_IDS) {
       const link = $(id);
       // The id rather than the element, because acknowledge decides the
-      // state of all three from it and comparing ids is what makes that
-      // decision independent of whether a link carries its own id.
+      // state of all three from it - and, since #265, the noun for the
+      // sentence too. Nothing here reads the button's words any more.
       link.addEventListener("click", function () {
-        acknowledge(id, link.textContent.trim());
+        acknowledge(id);
       });
     }
 
@@ -1409,7 +1458,8 @@
        * exactly what is wanted. Failures are counted and named instead
        * of being skipped quietly.
        */
-      say("Decrypting " + submissions.length + " row(s)…", null);
+      say("Decrypting " + submissions.length +
+        (submissions.length === 1 ? " row…" : " rows…"), null);
       const failures = [];
       for (const submission of submissions) {
         try {
@@ -1533,8 +1583,12 @@
         })) return;
         if (response.status === 404) {
           publishedNow = null;
-          state.textContent = "Nothing is published. The public dashboard " +
-            "shows an empty notice.";
+          // The page has one name and it is Muse's charts - #127, #191,
+          // and this card's own Publish copy already said so correctly
+          // four lines away (#265 rows 2 to 4). What it shows there is a
+          // card reading "Nothing to show", not "an empty notice".
+          state.textContent = "Nothing is published. Muse's charts has " +
+            "nothing to show.";
           show($("unpublish"), false);
           return;
         }
@@ -1578,16 +1632,23 @@
         }
       } catch (error) {
         $("unpublish").disabled = false;
+        // The SQL moved to OPERATIONS.md - #265 row 37, owner-ruled.
+        // What stays is the fact a keyholder needs at this moment: the
+        // retraction can still be done, and it is written down. A
+        // statement to type belongs in the runbook, where it can carry
+        // the database name, the environment flag and the reason the
+        // unqualified DELETE is safe - none of which fit in a status
+        // line, and all of which somebody typing it needs.
         sayUnpublish("It could not be taken down. " +
           (error && error.message ? error.message : "The connection failed.") +
-          " If this persists, the row can be removed from the D1 console: " +
-          "DELETE FROM snapshots;", "bad");
+          " If this persists, an admin can clear it by hand — the steps " +
+          "are in OPERATIONS.md, under Publishing and retracting the " +
+          "snapshot.", "bad");
         return;
       }
 
       $("unpublish").disabled = false;
-      sayUnpublish("Taken down. The public dashboard shows nothing now.",
-        null);
+      sayUnpublish("Taken down. Muse's charts shows nothing now.", null);
       await refreshPublishedState();
     });
 
@@ -1741,8 +1802,14 @@
             " (" + String(row.account_id) + ")";
         });
         if (view.dropped) {
-          notes.push(view.dropped +
-            " entrie(s) in this answer were not rows this page could read.");
+          // "entrie(s)" is not a word, and the verb has to agree too -
+          // #265 row 35. A parenthetical plural is the tell of a number
+          // pasted into a sentence rather than written into one, and it
+          // never fixes the verb.
+          notes.push(view.dropped === 1
+            ? "1 entry in this answer was not a row this page could read."
+            : view.dropped + " entries in this answer were not rows this " +
+              "page could read.");
         }
         if (view.absent.length) {
           notes.push("this answer carried no " + view.absent.join(", ") +
@@ -2004,7 +2071,7 @@
       }
 
       $("publish").disabled = false;
-      sayPublish("Published. The public dashboard now shows these numbers." +
+      sayPublish("Published. Muse's charts now shows these numbers." +
         withheldNote(sent), null);
       await refreshPublishedState();
     });
@@ -2044,8 +2111,10 @@
     const PREVIEW = 50;
 
     function render(total, failures) {
+      // #265 row 35. The noun agrees with the number it is counting -
+      // the total, which is what "N of M rows" is about.
       $("summary").textContent = rows.length + " of " + total +
-        " row(s) decrypted" +
+        (total === 1 ? " row decrypted" : " rows decrypted") +
         (rows.length > PREVIEW ? "; first " + PREVIEW + " shown below" : "") +
         ".";
 
@@ -2113,7 +2182,10 @@
       }
 
       finish(rows.length
-        ? "Done. Both files are built in this page - nothing was uploaded."
+        // Three since #174 added JSON, and this sentence stayed at two
+        // while three buttons were drawn directly under it (#265 row 1).
+        ? "Done. All three files are built in this page — nothing was " +
+          "uploaded."
         : "Nothing could be decrypted with this key.",
         rows.length ? null : "bad", rows.length);
     }

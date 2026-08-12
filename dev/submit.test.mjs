@@ -1696,7 +1696,7 @@ check("a history sealed entirely elsewhere is explained, not left blank",
   isPainted(noneOpen.elements["your-history"]) &&
   !isPainted(noneOpen.elements["history-controls"]) &&
   noneOpen.engine.sources.length === 0 &&
-  /cannot be opened on this browser/.test(
+  /None of your entries can be opened on this browser/.test(
     noneOpen.elements["history-status"].textContent));
 
 /*

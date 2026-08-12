@@ -1595,9 +1595,22 @@
    * Null at floor 0. A personal source is one member's own rows with no
    * floor at all, and a promise about groups of five printed over
    * somebody's own history would be false as well as strange.
+   *
+   * AND NULL OVER AN ANSWER WITH NO GROUPS IN IT - #265 row 27, which
+   * was found rendered rather than read. "Every group here already
+   * cleared that floor" is true and useful over an answer that has
+   * groups; printed directly above "There are too few entries here to
+   * publish a breakdown without describing individual people" it is a
+   * promise about a set the next line calls empty, and a reader has to
+   * reconcile the two before either means anything. The sentence is
+   * about what the reader can see, so it waits until there is
+   * something to see. Both empty arms, because `available: false` and
+   * an empty cell list are two states with one reading.
    */
   function floorNote(answer) {
     if (!(answer.floor > 0)) return null;
+    if (!answer.available) return null;
+    if (answer.kind !== "stat" && !answer.cells.length) return null;
     return "Groups smaller than " + answer.floor + " were folded together " +
       "before this was published, and widening or combining only adds " +
       "them up - so every group here already cleared that floor.";

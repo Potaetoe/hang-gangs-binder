@@ -78,15 +78,28 @@
      about what is on it, because a reader should never have to work
      that out from the content - and it absorbs the "keyholder only"
      line that stood above the heading, which said who may be here
-     without saying where here is. -->
-<p class="surface-mark">
+     without saying where here is.
+
+     BOTH SENTENCES ARE ABOUT WHAT IS BELOW THEM, so admin.js takes them
+     down when what is below them is a refusal - #265 row 23. The rail
+     offers Admin to every member on the owner's instruction, so the
+     ordinary member experience of this page is the UNAVAILABLE card,
+     and over that card "everything below this line is in the clear" and
+     "decrypts the submissions in this browser" are both false about the
+     screen they are standing on. The copy is unchanged; what changed is
+     that it only appears where it is true.
+
+     They ship VISIBLE, which keeps the no-script resting state exactly
+     what it was: a keyholder with scripts dead sees the page's name and
+     nothing it can do, the same as before. -->
+<p class="surface-mark" id="surface-mark">
   Admin surface — keyholder only. Everything below this line is in the
   clear.
 </p>
 
 <header class="stack-tight">
   <h1>Admin</h1>
-  <p class="muted">
+  <p class="muted" id="admin-intro">
     Decrypts the submissions in this browser. Nothing is uploaded.
   </p>
 </header>
@@ -130,8 +143,8 @@
   <div class="card narrow" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through local
-      development auth. This is not a Telegram sign-in.
+      Signed in as <strong data-dev-identity></strong> through the local
+      test sign-in. This is not a Telegram sign-in.
     </p>
   </div>
 
@@ -236,10 +249,11 @@
     -->
     <div class="tool" id="membership-card">
       <p class="runner"><span>Membership</span></p>
+      <!-- #265 row 32. The second sentence was a migration note about a
+           third-party console: it told a present-day reader nothing,
+           and named a product this site is not. -->
       <p class="muted">
         Who administers this site, and who gets past the group check.
-        These are the lists that used to live in the Cloudflare
-        dashboard.
       </p>
 
       <div class="field">
@@ -247,10 +261,15 @@
         <input type="text" id="member-telegram-id" inputmode="numeric"
                autocomplete="off" spellcheck="false"
                aria-describedby="member-telegram-id-help">
+        <!-- #265 row 33, owner-ruled. "Hashed" is trust language and
+             the claim is unchanged: one way, not reversible, not kept.
+             "The Worker" is a third-party product name doing the work
+             of "the service" - which is what every other sentence on
+             the member's side of this site already calls it. -->
         <p class="hint" id="member-telegram-id-help">
-          The numeric id, not the @handle. It is sent once, hashed by the
-          Worker, and never stored or shown again — not in the list
-          below, and not here.
+          The numeric id, not the @handle. It is sent once, scrambled
+          one-way by the service, and never stored or shown again — not
+          in the list below, and not here.
         </p>
       </div>
 
@@ -320,9 +339,9 @@
         <p class="caution">Rows that grant nothing</p>
         <p class="muted small">
           These rows are in the table and grant nothing, because their
-          account id is not the sixty-four lowercase hex characters the
-          Worker honors. <code>wrangler d1 execute</code> writes such a
-          row without complaint, so this is how one arrives. They are
+          account id is not in the form the service accepts. A row
+          written straight into the database by hand arrives like this.
+          They are
           worth removing before the admin list becomes the only
           authority: the guard that refuses to remove the last admin row
           counts grants and not rows. What it holds back is the last row
@@ -421,10 +440,15 @@
             <span>Every entry</span>
           </label>
         </div>
+        <!-- The same sentence charts.html carries, moved with it -
+             #265 row 24. Two copies of one explanation disagreeing
+             about what the thing being counted is called is the drift
+             #127 inventoried, one noun down. -->
         <p class="hint">
-          Anyone who resubmits adds a row rather than replacing one, so
-          these are different questions. Weight over time always uses
-          every entry — the repeats are what it is made of.
+          Anyone who weighs in again adds a new entry rather than
+          replacing the old one, so these are two different questions.
+          Weight over time always uses every entry — the repeats are
+          what it is made of.
         </p>
       </fieldset>
 
@@ -484,9 +508,9 @@
         </label>
         <p class="hint">
           Published as “Person 1”, “Person 2” — never handles — and each
-          point is rounded to a date and a histogram bin, so following
-          one person across two snapshots is an inference rather than a
-          join. It is not impossible: anyone who knows what someone
+          point is rounded to a date and a weight band, so following one
+          person from one publication to the next is guesswork rather
+          than a lookup. It is not impossible: anyone who knows what someone
           weighs may recognize their line, and publishing twice still
           discloses more than publishing once. Fewer than five lines
           publishes no chart at all. Off by default for those reasons.
@@ -550,8 +574,22 @@
     </div>
   </details>
 
+  <!--
+    The same correction charts.html's footer carries - #265 row 22,
+    owner-ruled, and #187's ruling finished. The door belongs to the
+    session block, which knows whether to offer it; a footer offering
+    it under a rail that says "Signed in as ..." is the copy that
+    outlived the ruling.
+
+    The invitation here is the charts, because that is where the act
+    this page performs lands: a keyholder who has just pressed Publish
+    is one click from reading what they published. It is a sentence
+    rather than the page's name, so PROSE_LINKS names it beside "Open
+    it" - the Publish card's own link to the same page, which says
+    something different because it is doing something different.
+  -->
   <p>
-    <a href="index.html">Sign in</a> ·
+    <a href="charts.html">See what everyone adds up to</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
     GitHub</a>
   </p>

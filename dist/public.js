@@ -31,6 +31,22 @@
 
   
 
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  function plainly(error, fallback) {
+    detail(error && error.message ? error.message : "refused with no message");
+    return error && typeof error.plain === "string" && error.plain
+      ? error.plain
+      : fallback;
+  }
+
+  
+
   function ageText(generated, now) {
     const at = Date.parse(generated);
     if (!Number.isFinite(at)) return "Published at an unknown time.";
@@ -56,8 +72,8 @@
 
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
-      unavailable("This site has no endpoint configured, so there is " +
-        "nothing to read a dashboard from.");
+      unavailable("This site is not set up to reach the service these " +
+        "figures come from, so there is nothing to show.");
       return;
     }
 
@@ -69,7 +85,7 @@
       if (response.status === 401) {
         Session.clear();
         unavailable("Your sign-in is no longer valid. Sign in again to " +
-          "view the dashboard.");
+          "see these charts.");
         return;
       }
       if (response.status === 404) {
@@ -78,7 +94,11 @@
         return;
       }
       if (!response.ok) {
-        throw new Error("The server answered " + response.status + ".");
+         
+         
+         
+        detail("the snapshot route answered " + response.status);
+        throw new Error("The service could not answer just now.");
       }
       payload = await response.json();
     } catch (error) {
@@ -90,8 +110,9 @@
 
     const snapshot = payload && payload.snapshot;
     if (!snapshot || !snapshot.bases) {
-      unavailable("What came back is not a dashboard this page can draw. " +
-        "It may have been published by a newer version of the site.");
+      unavailable("These figures are not in a shape this page can draw. " +
+        "They may have been published by a newer version of the site — " +
+        "tell an admin.");
       return;
     }
 
@@ -146,8 +167,8 @@
 
       show($("q-controls"), false);
       status.className = "status bad";
-      status.textContent = "This document cannot be queried. " +
-        (error && error.message ? error.message : "");
+      status.textContent = "These figures cannot be asked questions here. " +
+        plainly(error, "They are not in a shape this page can ask about.");
       return;
     }
 
@@ -195,9 +216,11 @@
       
 
       if (!shape) {
+        detail("this page offers a split the engine does not answer: " +
+          split);
         status.className = "status bad";
-        status.textContent = "This page offers a question the engine does " +
-          "not answer: " + split + ".";
+        status.textContent =
+          "That question is not one these figures can answer.";
         return;
       }
 
@@ -240,9 +263,8 @@
         
 
         status.className = "status bad";
-        status.textContent = error && error.message
-          ? error.message
-          : "That question could not be answered.";
+        status.textContent =
+          plainly(error, "That question could not be answered.");
         $("answer").textContent = "";
         return;
       }

@@ -27,6 +27,14 @@
 
   const built = new WeakSet();
 
+  
+
+  function refuse(message, plain) {
+    const error = new Error(message);
+    if (plain) error.plain = plain;
+    return error;
+  }
+
   function dashboard() {
     const api = root.BinderDashboard;
     if (!api) {
@@ -51,13 +59,15 @@
       throw new Error("a published source needs a snapshot document");
     }
     if (snapshot.snapshot !== d.SNAPSHOT_VERSION) {
-      throw new Error("snapshot version " + snapshot.snapshot + " is not " +
-        "the version this engine reads (" + d.SNAPSHOT_VERSION + ")");
+      throw refuse("snapshot version " + snapshot.snapshot + " is not " +
+        "the version this engine reads (" + d.SNAPSHOT_VERSION + ")",
+      "They were published by a newer version of the site.");
     }
     if (snapshot.identified === true) {
-      throw new Error("that is a keyholder snapshot, not a published one - " +
+      throw refuse("that is a keyholder snapshot, not a published one - " +
         "it carries handles and unsuppressed cells, and must not be " +
-        "queried as though it were published");
+        "queried as though it were published",
+      "What arrived is not the published copy this page may show.");
     }
     return makeSource(PUBLISHED, d.MIN_CELL, snapshot);
   }
@@ -75,8 +85,10 @@
         "member's own rows");
     }
     if (d.peopleCount(entries) > 1) {
-      throw new Error("a personal source is one member's own rows, and " +
-        "these belong to more than one person");
+      throw refuse("a personal source is one member's own rows, and " +
+        "these belong to more than one person",
+      "These do not all look like one person's entries, so nothing was " +
+        "drawn.");
     }
     return makeSource(PERSONAL, 0, d.snapshotOf(entries,
       { identify: true }, now));
@@ -97,8 +109,10 @@
       }
       for (const label of group.labels) {
         if (claimed.has(label)) {
-          throw new Error("merge names \"" + label + "\" twice, and two " +
-            "groups claiming one cell would count those people twice");
+          throw refuse("merge names \"" + label + "\" twice, and two " +
+            "groups claiming one cell would count those people twice",
+          "That group is named twice — the same people would be counted " +
+            "twice.");
         }
         claimed.set(label, groups.length);
       }
@@ -132,8 +146,10 @@
         MEASURES.join(", "));
     }
     if (measure !== "count" && shape.kind !== "bins") {
-      throw new Error("a " + measure + " over \"" + split + "\" is not a " +
-        "question - a middle needs numbers to take the middle of");
+      throw refuse("a " + measure + " over \"" + split + "\" is not a " +
+        "question - a middle needs numbers to take the middle of",
+      "A middle needs numbers to work with, so it is only offered for " +
+        "weight, height and BMI.");
     }
 
     
@@ -180,8 +196,9 @@
     for (const row of rows) have.add(row.label);
     for (const label of merge.claimed.keys()) {
       if (!have.has(label)) {
-        throw new Error("merge names \"" + label + "\", which is not a " +
-          "cell of " + merge.split + " in this document");
+        throw refuse("merge names \"" + label + "\", which is not a " +
+          "cell of " + merge.split + " in this document",
+        "One of those groups is not one these figures show.");
       }
     }
 

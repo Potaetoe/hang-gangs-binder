@@ -1085,6 +1085,8 @@
 
   function floorNote(answer) {
     if (!(answer.floor > 0)) return null;
+    if (!answer.available) return null;
+    if (answer.kind !== "stat" && !answer.cells.length) return null;
     return "Groups smaller than " + answer.floor + " were folded together " +
       "before this was published, and widening or combining only adds " +
       "them up - so every group here already cleared that floor.";

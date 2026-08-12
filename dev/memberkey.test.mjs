@@ -688,9 +688,24 @@ await check("nothing new is stored, and the database version does not move",
  * Node is that browser, which is what makes this testable at all here:
  * `globalThis.indexedDB` is genuinely absent rather than stubbed away.
  */
-await check("a browser with no database is told so, plainly", () =>
-  typeof Keys.unavailableReason() === "string" &&
-  /database/i.test(Keys.unavailableReason()));
+/*
+ * "PLAINLY" IS THE WHOLE OF THIS ARM, and until #265 it was checked by
+ * looking for the word "database" - which is the one word a member has
+ * no use for. The reason is appended to a sentence submit.js has
+ * already finished, so it also has to be a sentence rather than a
+ * lower-cased fragment landing mid-line.
+ *
+ * The negative half is the load-bearing one. A reason naming
+ * IndexedDB, WebCrypto or a database is a reason written for whoever
+ * wrote the file, and this is a string that goes on a member's screen.
+ */
+await check("a browser that cannot keep a key is told so, plainly", () => {
+  const reason = Keys.unavailableReason();
+  return typeof reason === "string" &&
+    /nowhere to keep one that would last past this tab/.test(reason) &&
+    /^[A-Z].*\.$/.test(reason) &&
+    !/database|indexeddb|webcrypto|crypto\.subtle/i.test(reason);
+});
 
 await check("and asking for a key there answers null rather than throwing",
   async () => (await Keys.ensure("a".repeat(64))) === null);

@@ -23,7 +23,7 @@
 
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
-      throw new Error("Sign-in is not configured for this hostname.");
+      throw new Error("Sign-in is not set up for this address.");
     }
 
     say("Signing in…", null);
@@ -46,9 +46,19 @@
     }
 
     if (!response.ok || !body || body.ok !== true) {
+       
+       
+       
+       
+       
+      if (!(body && body.error) && root.console &&
+          typeof root.console.warn === "function") {
+        root.console.warn("binder: the sign-in route answered " +
+          response.status);
+      }
       const message = body && body.error
         ? body.error
-        : "The service refused this sign-in (" + response.status + ").";
+        : "The service could not answer just now. Try again shortly.";
       say(message, "bad");
       throw new Error(message);
     }
@@ -61,7 +71,10 @@
       throw error;
     }
 
-    say("Signed in. Opening the form…", "good");
+     
+     
+     
+    say("Signed in. Opening your page…", "good");
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("your-page.html");
     }
@@ -81,12 +94,37 @@
     });
   };
 
+  
+
+  const SIGNED_OUT_KEY = "hgb-signed-out";
+
+  function acknowledgeSignOut() {
+    let marked = false;
+    try {
+      const store = root.sessionStorage;
+      if (store && store.getItem(SIGNED_OUT_KEY) !== null) {
+        marked = true;
+        store.removeItem(SIGNED_OUT_KEY);
+      }
+    } catch (error) {
+       
+       
+       
+      return;
+    }
+    if (!marked) return;
+    const line = document.getElementById("signed-out");
+    if (line && UI && typeof UI.show === "function") UI.show(line, true);
+  }
+
   if (typeof document !== "undefined" && UI) {
     UI.boot(function () {
       if (root.BinderSession.read() && root.location &&
           typeof root.location.replace === "function") {
         root.location.replace("your-page.html");
+        return;
       }
+      acknowledgeSignOut();
     }, function (error) {
       say("Sign-in did not start correctly. " +
         (error && error.message ? error.message : "Reload and try again."),
