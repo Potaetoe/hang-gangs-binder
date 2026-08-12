@@ -1127,7 +1127,31 @@ body.railed {
   visibility: hidden;
   pointer-events: none;
 
-  animation: cover-open 600ms cubic-bezier(0.22, 0.68, 0.3, 1) 1;
+  /* ~900ms in total: a ~200ms CLOSED HOLD, then a ~700ms swing. An
+     entrance nobody can see is not an entrance, and this one is the
+     site's signature.
+
+     The hold is the animation-delay with `backwards` fill, NOT a
+     keyframe stop at 22%. A keyframe there would split the
+     cubic-bezier into two segments and put a hitch in the middle of
+     the swing; `backwards` instead paints the `from` state - the
+     closed cover - for the whole delay, so the leaf holds shut and
+     then swings once, on one curve.
+
+     The delay does not touch fail-open: the resting state declared
+     just above is still the open one, so every no-animation failure
+     mode still lands on the sign-in page. It does widen the window in
+     which the leaf is painted over the form, which is survivable only
+     because the keyframes below raise `opacity` and `visibility` and
+     never mention `pointer-events` - the `none` above therefore holds
+     through the hold and the swing, and a press during either goes
+     through the leaf to the sign-in button underneath. Putting
+     `pointer-events` in the keyframes would make the leaf eat the
+     first click of the visit.
+
+     The mockup is the ruling here and this mirrors it; the numbers
+     are the owner's, not this file's to tune. */
+  animation: cover-open 700ms cubic-bezier(0.22, 0.68, 0.3, 1) 200ms 1 backwards;
 }
 
 @keyframes cover-open {
