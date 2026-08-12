@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 513
+EXPECTED = 514
 
 
 def check(label, condition):
@@ -1718,6 +1718,19 @@ check("a commented-out script tag does not satisfy the rule",
 check("and every shipped page that offers Sign out loads it",
       all(check_web.sign_out_wiring_problems(check_web.page_text(name)) == []
           for name in check_web.html_pages()))
+
+# The wiring, asked from outside. Every arm in this section calls its
+# rule function directly, so a rule dropped from loading_problems()
+# passes all of them while being absent from the gate's own walk over
+# the shipped pages - armed-looking and unarmed, which AGENTS.md's
+# review bar treats as worse than no check. Found by mutation: deleting
+# the call left this suite entirely green.
+# dev/check_comments.test.py asks its gate the same question the same
+# way, and that is where the shape comes from.
+check("the gate's page walk calls every loading rule this file defines",
+      {"page_loading_problems", "run_order_problems",
+       "deferred_capture_problems", "sign_out_wiring_problems"}
+      <= set(check_web.loading_problems.__code__.co_names))
 
 
 # The order arm. `const UI = root.BinderUI;` runs when the file does, and
