@@ -1275,18 +1275,21 @@
            * demo frame is 544 px tall at a 1280x800 window, and the
            * stop is behind glass, so a viewer cannot go and look.
            *
-           * The rows that grant nothing are a screen further down that
-           * same card, which is why the sentence states the guard's
-           * rule rather than naming them. The free stop at the end of
-           * this walk is where they can be pressed.
+           * The rows that grant nothing sit below the fold by a little
+           * rather than by a screen - the always-allow list ends inside
+           * the frame and their heading is the next thing after it - so
+           * the sentence states the guard's rule instead of pointing at
+           * them, which is what makes it true of what is showing. The
+           * free stop at the end of this walk is where they can be
+           * pressed.
            */
           narration: "The list of people who hold admin, kept where it " +
-            "can be read and changed. The last admin row cannot be " +
-            "removed - but the guard counts rows, not grants, so a row " +
-            "that grants nobody satisfies it and the admins on this " +
-            "list can all still come off. What keeps the gang from " +
-            "being locked out is the line under it: one admin is " +
-            "granted by a setting the server holds and by no row here.",
+            "can be read and changed. The last row that really grants " +
+            "admin cannot be removed - the guard counts grants and not " +
+            "rows, so a row that grants nothing neither holds this list " +
+            "open nor is stuck in it. Underneath is the floor beneath " +
+            "even that: one admin is granted by a setting the server " +
+            "holds and by no row here.",
         },
         {
           scenario: "config-fallback",
@@ -2117,20 +2120,37 @@
           String(row.account_id).toLowerCase() === wanted));
 
       /*
-       * THE LAST ADMIN ROW DOES NOT COME OFF - and this counts ALL admin
-       * rows, malformed ones included, because that is what the shipped
-       * Worker counts (the subquery is `WHERE role = 'admin'`, with no
-       * grants test). Modelling the fixed version would demonstrate a
-       * guard this deployment does not have; the runbook records the
-       * narrowing as work for the flip slice, and until then a dud row
-       * counting toward "more than one" is the live behavior.
+       * THE LAST ADMIN ROW THAT GRANTS DOES NOT COME OFF, and what the
+       * Worker counts is grants rather than rows: its subquery spells
+       * grantsAnything() in SQL, so a row whose account id is not
+       * sixty-four lowercase hex characters neither holds this list open
+       * nor is held in it. Counting every `admin` row instead would
+       * demonstrate a guard the deployment does not have, and the
+       * viewer would be taught a promise the product does not keep -
+       * which is the whole of what #259 found here.
+       *
+       * The row being removed is spared the count when it grants
+       * nothing, because taking out a row cannot empty a set it was
+       * never in. That arm is what keeps the staged dud pressable: the
+       * seed above puts one in the table precisely so the free stop can
+       * remove it, and a mirror without this arm would answer "that is
+       * the last admin row" about a row that is no admin at all.
+       *
+       * OPERATIONS.md, "Making someone an admin", carries the same rule
+       * for whoever performs the flip, and says to read it against the
+       * deployment rather than against this repository.
        *
        * Deleting nothing still succeeds, as every other deletion here
        * does: an admin who cannot tell "nothing to remove" from "not
        * allowed" goes looking for a bug that is not there.
        */
-      if (role === "admin" && survivors.length !== rows.length &&
-          rows.filter((row) => row.role === "admin").length <= 1) {
+      const removed = rows.filter((row) =>
+        row.role === role &&
+        String(row.account_id).toLowerCase() === wanted)[0];
+      if (role === "admin" && removed !== undefined &&
+          grantsAnything(removed) &&
+          rows.filter((row) =>
+            row.role === "admin" && grantsAnything(row)).length <= 1) {
         return {
           status: 409,
           body: {

@@ -459,16 +459,37 @@ makes it a revocation rather than a local clear: the row is deleted at
 the Worker, so a token captured beforehand stops opening anything
 instead of running to its natural expiry (#90).
 
-**The last `admin` row will not come off, and that is not a bug to work
-around.** The endpoint refuses it rather than emptying the table, so add
-the next admin before removing the last one. The secret is not counted
-in that guard: it is the root of trust the guard exists to fall back on.
+**The last `admin` row that grants will not come off, and that is not a
+bug to work around.** The endpoint refuses it rather than leaving the
+table with no granting admin row, so add the next admin before removing
+the last one. **What it counts is grants, not rows**: a row whose
+account id is not sixty-four lowercase hex characters grants nobody
+anything, so it neither counts toward "more than one" nor earns the
+protection — the `malformed` rows below come off whenever an admin
+presses Remove, and a table whose only `admin` row is one of those is
+already an empty admin list in every sense the Worker honors. The secret
+is not counted either: it is the root of trust the guard exists to fall
+back on.
 
 **Which admins are still only in the secret** is `secretOnly` on
 `GET /membership` — the account ids the secret grants that the table has
 no row for. Nothing outside the Worker can compute it, because the
 secret holds numeric ids and the table holds their HMACs. An empty list
-means every admin has a row.
+is the go-signal for dropping the secret arm: it means every admin the
+secret grants also holds a row, so table-only would take nobody's
+authority away.
+
+**Before `ADMIN_TELEGRAM_IDS` goes table-only, two things have to be
+true, and only one of them is about the data.** The go-signal above is
+the second. The first is that the last-admin guard counts grants rather
+than rows — and it does, which is why this is a line to check rather
+than work to schedule. A guard counting every `admin` row would count a
+`malformed` one, so a single dud beside a single real admin reads as two
+and the last real admin comes off against a count that was never
+authority; with the secret arm already dropped, the way back in is a
+dashboard login. Verify it in the same sitting as the go-signal:
+`handleDeleteMembership` in `server/worker.js` is the statement, and its
+subquery names `granting` as the copy of the table it counts.
 
 **A row written by hand that grants nothing** comes back under
 `malformed` on the same response, separately from the rows that do
@@ -479,13 +500,17 @@ this table exists to remove, arriving by the one door `POST` cannot
 guard. `DELETE /membership/:role/:accountId` takes the id exactly as
 that list gives it and removes it.
 
-`[pre-cutover]` Both of those are endpoint behavior, so both arrive
-with the next `server/` deploy and not with a merge — see the
-`[pre-cutover]` note under "Routes and who may call them" for what the
-deployed Worker is still running. Production takes them at
-`CUTOVER.md` step 5. It is tagged because it points into a tagged
-paragraph — do not untag it and leave the pointer, which is how the
-aftercare step ends up deleting a paragraph something still cites.
+`[pre-cutover]` All of that is endpoint behavior — the two lists, the
+removal, and what the guard counts — so it arrives with the next
+`server/` deploy and not with a merge; see the `[pre-cutover]` note
+under "Routes and who may call them" for what the deployed Worker is
+still running. **Read the flip's first condition against the deployment
+rather than against this repository**, because a guard that counts
+grants in `server/worker.js` and rows in production is the one shape
+where checking the source makes the flip look safe. Production takes
+them at `CUTOVER.md` step 5. It is tagged because it points into a
+tagged paragraph — do not untag it and leave the pointer, which is how
+the aftercare step ends up deleting a paragraph something still cites.
 
 If everyone is locked out — no admin id works, the bot is gone from the
 group — `ALWAYS_ALLOW_TELEGRAM_IDS` and `EXPORT_TOKEN` are the two ways
