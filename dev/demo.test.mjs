@@ -2052,14 +2052,23 @@ await check("a stop saying something cannot be removed says it is a row", () =>
     !/cannot be removed/i.test(stop.narration) ||
     /\brows?\b/i.test(stop.narration))));
 
-// Non-vacuity: the partition is real, and the admin page carries stops
-// that are not about the list at all - so the two arms above are not
-// requirements every stop happens to meet.
-await check("the admin page carries stops that are not about the list", () => {
-  const stops = Demo.TOURS.flatMap((walk) => walk.stops).filter(onAdminPage);
-  return stops.length > membershipStops.length &&
-    stops.some((stop) => stop.scroll !== membershipSection &&
-      !/\bcounts rows\b/i.test(stop.narration));
+/*
+ * Non-vacuity, and it has to be stated as an EXCLUSION rather than as
+ * "some other stop exists". admin.html is the keyholder's page as well
+ * as the admin one, so seven stops land on it and an arm asking only
+ * that some of them differ has six stops of slack - mutation could not
+ * make it fail, which is the definition of an arm that is not one. What
+ * the two arms above are worth is that those words belong to the stop
+ * about the list and to no other: add either sentence to a stop that is
+ * not about the list and this goes red.
+ */
+await check("the words those arms require belong to that stop and no other", () => {
+  const others = Demo.TOURS.flatMap((walk) => walk.stops)
+    .filter(onAdminPage)
+    .filter((stop) => stop.scroll !== membershipSection);
+  return membershipStops.length > 0 && others.length > 0 &&
+    others.every((stop) => !/\bcounts rows\b/i.test(stop.narration) &&
+      !/\bby no row\b/i.test(stop.narration));
 });
 
 /*
