@@ -25,7 +25,7 @@
 -- The real migration DROPs and recreates, because SQLite cannot add a
 -- NOT NULL column to a table with rows in it. That is destructive and
 -- deliberate; it is step 2 of archive/REDESIGN.md's build order, and it comes
--- after the dev database has been used to rehearse it.
+-- after a rehearsal of the same migration against the dev database.
 -- ---------------------------------------------------------------------
 --
 -- `account_id` is an HMAC of a Telegram numeric id under a Worker
