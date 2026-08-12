@@ -41,7 +41,7 @@ const globalsBefore = new Set(Object.keys(globalThis));
 new Function(source)();
 const Keys = globalThis.BinderMemberKey;
 
-const { check, report } = suite("memberkey.js", 71);
+const { check, report } = suite("memberkey.js", 73);
 
 /* ------------------------------------------------------------------ */
 /* The module's shape.                                                 */
@@ -890,6 +890,50 @@ await check("and a row is found whichever quote Python happened to write it with
 await check("and an unreadable table is not mistaken for an empty one",
   () => declaredCaptures("DEFERRED_CAPTURES = [\n]\n") === null &&
     declaredCaptures("DEFERRED_CAPTURES = {\n}\n").length === 0);
+
+/*
+ * WHERE THE BLOCK ENDS, which is the part of the reader that has to be
+ * right for any answer above to mean anything.
+ *
+ * An empty table is legal Python written `{}` on one line, and that
+ * shape closes with no `}` at the start of any line - so a terminator
+ * looking for one runs the body on until it finds the close of a
+ * DIFFERENT table further down. check_web.py is four thousand lines and
+ * holds several literal tables, including tuple-keyed ones; the rows
+ * such a reader finds belong to something else entirely, and "no
+ * exemptions" then depends on those rows happening not to match the row
+ * pattern rather than on the table being empty.
+ *
+ * Both directions are wrong in their own way and both are pinned. A
+ * reader that runs on reports an exemption this tree has not granted,
+ * off an edit that has nothing to do with exemptions. A reader that
+ * cannot find the close reports empty for a table it never read, which
+ * is the failure the null answer above exists to keep separate.
+ */
+const EMPTY_ABOVE_ANOTHER_TABLE = [
+  "DEFERRED_CAPTURES = {}",
+  "",
+  "",
+  "UNRELATED = {",
+  "    ('probe.js', 'BinderProbe'): 'not an exemption at all',",
+  "}",
+].join("\n");
+
+await check("an empty table does not read the next table's rows as its own",
+  () => {
+    const declared = declaredCaptures(EMPTY_ABOVE_ANOTHER_TABLE);
+    return declared !== null && declared.length === 0;
+  });
+
+const UNCLOSED_ABOVE_ANOTHER_TABLE = [
+  "DEFERRED_CAPTURES = {",
+  "    ('example.js', 'BinderExample'): 'a reason',",
+  "UNRELATED = {",
+  "}",
+].join("\n");
+
+await check("and a table with no close of its own is unreadable, not empty",
+  () => declaredCaptures(UNCLOSED_ABOVE_ANOTHER_TABLE) === null);
 
 /*
  * ORDER AND INDEPENDENCE, PERFORMED RATHER THAN READ - and the arms
