@@ -4,7 +4,15 @@
  *
  *   const key = await BinderMemberKey.ensure(accountId);
  *   if (key) seal to [BINDER_CONFIG.publicKey, key.publicKeyBase64];
- *   await BinderMemberKey.forget();          // Sign out
+ *
+ * THIS FILE MAKES THE KEY AND DOES NOT DESTROY IT. Sign out deletes the
+ * database directly, from apps/web/signout.js, and that split is
+ * deliberate: IndexedDB is origin-wide, this file is loaded by one
+ * signed-in page of three, and a destruction reached through it destroys
+ * nothing on the other two. Do not add a `forget` back here for
+ * symmetry - an export with no caller is an invitation to wire sign-out
+ * to it, which is the shape that shipped #257. The comment above
+ * `forgetDeviceKey` in signout.js carries the rest of the argument.
  *
  * WHAT IT IS FOR. Every entry seals to the keyholder, and until this
  * file that was the only recipient - so a member could not read their
@@ -478,45 +486,6 @@
     }
   }
 
-  /*
-   * Sign out, and the answer is whether there was a database to destroy.
-   *
-   * DELETING THE DATABASE, not the row. A `delete` on one key leaves the
-   * store, the database and anything else in it behind - and "anything
-   * else" is precisely the foreign records the erase rule above exists
-   * to remove. Sign out means this device retains nothing of this
-   * member's, and a deleted database is a claim a reader can check.
-   *
-   * Never throws, for the same reason the revoke beside it does not
-   * wait: the user-visible act is leaving, and a member cannot be left
-   * on a page because a storage call failed. A key that survives a
-   * failed delete is destroyed by the next sign-out or by clearing site
-   * data, and DESIGN.md's recovery path covers the rest.
-   */
-  function forget() {
-    return new Promise(function (resolve) {
-      const factory = database();
-      if (!factory) {
-        resolve(false);
-        return;
-      }
-      let request;
-      try {
-        request = factory.deleteDatabase(DB_NAME);
-      } catch (error) {
-        resolve(false);
-        return;
-      }
-      request.onsuccess = function () { resolve(true); };
-      request.onerror = function () { resolve(false); };
-      // A delete blocks while another tab holds the database open. The
-      // other tab closes its handle after every transaction, so this
-      // resolves the moment it does; reporting false here instead would
-      // tell a caller the key survived when it is about to go.
-      request.onblocked = function () { resolve(false); };
-    });
-  }
-
   // Frozen because your-page.html loads this file while holding plaintext:
   // an export a later script can rewrite is an `ensure` that can be
   // swapped for one handing back an attacker's public key, which would
@@ -537,6 +506,5 @@
     // any secret, so exporting it widens nothing a page could abuse.
     custodyRuling: custodyRuling,
     ensure: ensure,
-    forget: forget,
   });
 })(globalThis);

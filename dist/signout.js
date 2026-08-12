@@ -42,9 +42,34 @@
 
   
 
+  const KEY_DB_NAME = "hgb-member-key";
+
+  function database() {
+    try {
+      return root.indexedDB || null;
+    } catch (error) {
+       
+       
+       
+      return null;
+    }
+  }
+
+  
+
+  function unreported() {}
+
   function forgetDeviceKey() {
-    const keys = root.BinderMemberKey;
-    if (keys && typeof keys.forget === "function") keys.forget();
+    const factory = database();
+    if (!factory) return;
+    let request;
+    try {
+      request = factory.deleteDatabase(KEY_DB_NAME);
+    } catch (error) {
+      return;
+    }
+    request.onerror = unreported;
+    request.onblocked = unreported;
   }
 
   function signOut() {

@@ -362,7 +362,6 @@ function engineStubs(history) {
       engine.ensured.push(accountId);
       return key;
     },
-    async forget() { return true; },
   });
   globalThis.BinderCrypto = Object.freeze({
     async decrypt(blob, withKey) {
