@@ -174,8 +174,8 @@
     return opened
       ? "This is not the private half of the key this site encrypts to, " +
         "so it opens this export and is not kept on this device."
-      : "This is not the private half of the key this site encrypts to, " +
-        "so it opens this export and is not kept on this device.";
+      : "This is not the private half of the key this site encrypts to. " +
+        "It was used only for this attempt and is not kept on this device.";
   }
 
    
