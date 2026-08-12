@@ -3752,12 +3752,12 @@ if (DatabaseSync) {
       .exec(SCHEMA.replace(/--[^\n]*/g, ""));
 
   /*
-   * WIRED TO A STATEMENT THAT IS NOT THE WORKER'S, so this commit is
-   * the contract and not the implementation: an unguarded DELETE with
-   * the collation dropped. Every promise below is one it breaks.
+   * THE WORKER'S OWN STATEMENT, taken off the batch it travelled in
+   * rather than typed here. Its two placeholders are the id and the
+   * role the route binds, in that order, which is why the staging
+   * below binds exactly those two and nothing else.
    */
-  const guardStatement =
-    "DELETE FROM membership WHERE account_id = ? AND role = ?";
+  const guardStatement = together.length === 2 ? together[0].sql : "";
 
   const GRANTS_ONE = "a".repeat(64);
   const GRANTS_TWO = "b".repeat(64);
@@ -3808,12 +3808,12 @@ if (DatabaseSync) {
     JSON.stringify([WRONG_CASE, GRANTS_ONE, TOO_SHORT, NOT_HEX].sort()),
     held([GRANTS_ONE, WRONG_CASE, TOO_SHORT, NOT_HEX], GRANTS_ONE));
 
-  check("while the row that grants nothing comes off, spared by the count",
+  check("while the engine spares the dud the same statement is refusing for",
     held([GRANTS_ONE, WRONG_CASE], WRONG_CASE.toLowerCase()) ===
     JSON.stringify([GRANTS_ONE]),
     held([GRANTS_ONE, WRONG_CASE], WRONG_CASE.toLowerCase()));
 
-  check("and a table whose only admin row grants nobody lets go of it",
+  check("and it empties a table whose only admin row grants nobody",
     held([WRONG_CASE], WRONG_CASE.toLowerCase()) === JSON.stringify([]),
     held([WRONG_CASE], WRONG_CASE.toLowerCase()));
 }
