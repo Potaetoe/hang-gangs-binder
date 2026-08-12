@@ -1248,9 +1248,13 @@
           scroll: "membership-card",
           title: "Who is allowed in here",
           narration: "The list of people who hold admin, kept where it " +
-            "can be read and changed. The last one cannot be removed, " +
-            "because a gang with nobody holding the keys is a gang " +
-            "nobody can let back in.",
+            "can be read and changed. The last admin row cannot be " +
+            "removed - but the guard counts rows, not grants, and the " +
+            "row pasted in by hand grants nobody, so every admin this " +
+            "list really grants can still come off above it. What keeps " +
+            "the gang from being locked out is the line under the list: " +
+            "one admin is granted by a setting the server holds and by " +
+            "no row here.",
         },
         {
           scenario: "config-fallback",
@@ -2375,14 +2379,26 @@
   const DAY = 24 * 3600 * 1000;
 
   /*
-   * One person's submissions, spread backwards through time so the
-   * series has somewhere to run. The spacing is three weeks because the
+   * How far apart one person's submissions sit, and the step the two
+   * published generations are separated by. Three weeks because the
    * chart quantizes to the day and a series bunched into one week draws
    * as a vertical smudge.
+   *
+   * ONE NUMBER FOR BOTH, deliberately. publishedFrom() below anchors the
+   * earlier document a step back from the newest submission, so a
+   * spacing that drifted from the publishing step would leave the two
+   * generations either identical - no movement to draw - or separated by
+   * rounds nobody submitted in.
+   */
+  const SPACING = 21 * DAY;
+
+  /*
+   * One person's submissions, spread backwards through time so the
+   * series has somewhere to run.
    */
   function inputsFor(person) {
     return person.weights.map(function (weight, index) {
-      const back = (person.weights.length - 1 - index) * 21 * DAY;
+      const back = (person.weights.length - 1 - index) * SPACING;
       const input = {
         units: person.units,
         roles: person.roles,
@@ -2422,14 +2438,61 @@
    * does. One function either way is what stops the demo's corpus and
    * the suite's corpus being two different things.
    */
-  function entriesFrom(which, deps) {
-    return corpusInputs(which).map(function (one, index) {
+  function entriesOf(inputs, deps) {
+    return inputs.map(function (one, index) {
       const record = deps.buildRecord(one.input, one.at, one.handle);
       return deps.entryFor({
         id: index + 1,
         account_id: accountIdFor(one.handle),
         received_at: new Date(one.at).toISOString(),
       }, record);
+    });
+  }
+
+  function entriesFrom(which, deps) {
+    return entriesOf(corpusInputs(which), deps);
+  }
+
+  /*
+   * The published document a staging serves, built as a SECOND publish.
+   *
+   * A first publish has nothing to measure from: movementOf() answers
+   * null with no comparable predecessor, movementText() answers null on
+   * that, and the charts page never appends its change-since line. A
+   * journey stop promises exactly that line, so a staging seeded with a
+   * first document narrates a figure the screen does not carry - and a
+   * demo whose words outrun its screen is the false-confidence failure
+   * dev/demo.test.mjs opens on. A binder somebody has published before
+   * is also the ordinary state of the product, and the only state in
+   * which that figure exists at all.
+   *
+   * THE PREDECESSOR IS THIS CORPUS ONE PUBLISH AGO, never a second
+   * dataset: the same submissions, cut at a stated earlier date, so the
+   * movement is this demo's own people moving. Both generations go
+   * through `deps.snapshotOf` for the reason entriesFrom goes through
+   * the shipped form - a document written out here would be a second
+   * opinion about what a snapshot contains, free to drift from the one
+   * apps/web/admin.js builds when the keyholder presses Publish.
+   *
+   * THE ANCHOR IS THE CORPUS, NOT THE CLOCK. The earlier date is one
+   * spacing step back from the newest submission, and it is passed as
+   * snapshotOf's third argument so the earlier document CARRIES it as
+   * its own `generated` - which is the date the mover-count floor and
+   * the rendered line are both measured against. Reading the clock here
+   * instead would make the movement depend on when the page was opened.
+   *
+   * One corpusInputs() call feeds both generations: a second call would
+   * time-stamp the same people milliseconds later, and the cut would
+   * fall between two copies of one round.
+   */
+  function publishedFrom(which, deps) {
+    const inputs = corpusInputs(which);
+    const at = inputs[inputs.length - 1].at - SPACING;
+    const before = inputs.filter(function (one) { return one.at <= at; });
+    return deps.snapshotOf(entriesOf(inputs, deps), {
+      identify: false,
+      previous: deps.snapshotOf(
+        entriesOf(before, deps), { identify: false }, at),
     });
   }
 
@@ -2478,5 +2541,6 @@
     stagingStory: stagingStory,
     corpusInputs: corpusInputs,
     entriesFrom: entriesFrom,
+    publishedFrom: publishedFrom,
   });
 })(globalThis);

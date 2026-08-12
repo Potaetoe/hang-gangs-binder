@@ -37,19 +37,33 @@
     const Dashboard = self.BinderDashboard;
 
     try {
-      const deps = { buildRecord: Form.buildRecord, entryFor: Admin.entryFor };
-      const rich = Demo.entriesFrom("rich", deps);
-      const sparse = Demo.entriesFrom("sparse", deps);
+      const deps = {
+        buildRecord: Form.buildRecord,
+        entryFor: Admin.entryFor,
+        // The aggregation itself, passed in the same way and for the
+        // same reason as the form's two halves: what a snapshot contains
+        // is dashboard.js's answer, and this file asks for it rather
+        // than having one.
+        snapshotOf: Dashboard.snapshotOf,
+      };
+      // A SECOND publish, not a first - dev/demo-stub.js's publishedFrom
+      // says why, and it is what puts a change-since figure on the
+      // charts the journeys narrate over. identify is left off in there,
+      // so both documents go through the floor and the labelling a
+      // published document gets. The keyholder's own view is the
+      // identified one, and the admin page draws that from the rows
+      // themselves rather than from this.
+      const rich = Demo.publishedFrom("rich", deps);
+      const sparse = Demo.publishedFrom("sparse", deps);
 
       self.postMessage({
         ok: true,
-        // identify is left off, so both go through the floor and the
-        // labelling a published document gets. The keyholder's own view
-        // is the identified one, and the admin page draws that from the
-        // rows themselves rather than from this.
-        rich: Dashboard.snapshotOf(rich),
-        sparse: Dashboard.snapshotOf(sparse),
-        counts: { rich: rich.length, sparse: sparse.length },
+        rich: rich,
+        sparse: sparse,
+        // Off the documents rather than counted again here: a second
+        // count is a number free to disagree with the one the charts
+        // draw.
+        counts: { rich: rich.counts.entries, sparse: sparse.counts.entries },
       });
     } catch (error) {
       self.postMessage({
