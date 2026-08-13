@@ -49,9 +49,29 @@
     show($("member-tabs"), false);
     show($("your-entries-pane"), false);
     show($("add-entry-pane"), false);
-    setStatus("This member panel did not start correctly. " +
-      (error && error.message ? "(" + error.message + ")" : ""), true);
+    detail(error && error.message ? error.message : "boot failed with no " +
+      "message");
+    setStatus("This page did not start correctly, so what is on record " +
+      "may be missing.", true);
   });
+
+  
+
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  
+
+  function plainly(error, fallback) {
+    detail(error && error.message ? error.message : "refused with no message");
+    return error && typeof error.plain === "string" && error.plain
+      ? error.plain
+      : fallback;
+  }
 
   function localStore() {
     try {
@@ -279,7 +299,7 @@
     const at = Date.parse(payload.lastAt);
     if (!Number.isFinite(at)) {
       last.dateTime = "";
-      last.textContent = "Submission time unavailable";
+      last.textContent = "We cannot read when that was";
       return;
     }
     last.dateTime = payload.lastAt;
@@ -298,7 +318,8 @@
   async function refreshPanel() {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
-      setStatus("This site has no endpoint configured for your account.", true);
+      setStatus("This site is not set up to reach the service that keeps " +
+        "your entries.", true);
       return;
     }
 
@@ -314,12 +335,14 @@
         return;
       }
       if (!response.ok) {
-        throw new Error("The server answered " + response.status + ".");
+        detail("the /me route answered " + response.status);
+        throw new Error("");
       }
       const payload = await response.json();
       if (!payload || payload.ok !== true ||
           !Number.isInteger(payload.entries) || payload.entries < 0) {
-        throw new Error("The server returned an invalid account summary.");
+        detail("the /me route answered with no usable account summary");
+        throw new Error("");
       }
        
        
@@ -331,9 +354,13 @@
       renderAccount(payload);
       setStatus("", false);
     } catch (error) {
-      setStatus("Your account summary could not be refreshed. " +
-        (error && error.message ? error.message : "The connection failed."),
-      true);
+       
+       
+       
+      detail(error && error.message ? error.message : "the /me route " +
+        "could not be reached");
+      setStatus("Your entry count could not be refreshed. Try reloading " +
+        "the page.", true);
     }
   }
 
@@ -419,8 +446,12 @@
     try {
       answer = Query.run(source, query);
     } catch (error) {
-      historyStatus("That question could not be asked. " +
-        (error && error.message ? error.message : ""), true);
+       
+       
+       
+       
+      historyStatus(plainly(error, "That question could not be asked."),
+        true);
       return;
     }
     historyStatus("", false);
@@ -464,16 +495,22 @@
         }
         return;
       }
-      if (!response.ok) throw new Error("The server answered " +
-        response.status + ".");
+      if (!response.ok) {
+        detail("the /my-entries route answered " + response.status);
+        throw new Error("");
+      }
       const payload = await response.json();
       rows = payload && payload.ok === true && Array.isArray(payload.entries)
         ? payload.entries : null;
-      if (!rows) throw new Error("The server returned an invalid listing.");
+      if (!rows) {
+        detail("the /my-entries route answered with no usable listing");
+        throw new Error("");
+      }
     } catch (error) {
-      historyStatus("Your entries could not be fetched. " +
-        (error && error.message ? error.message : "The connection failed."),
-      true);
+      detail(error && error.message ? error.message : "the /my-entries " +
+        "route could not be reached");
+      historyStatus("Your entries could not be fetched just now. Try " +
+        "reloading the page.", true);
       return;
     }
 
@@ -498,16 +535,16 @@
 
     const sealedCount = $("history-sealed-count");
     if (sealedCount) sealedCount.textContent = String(sealed);
-    show($("history-sealed"), sealed > 0);
+    
+
+    show($("history-sealed"), sealed > 0 && entries.length > 0);
 
     if (!entries.length) {
       
 
-      historyStatus("None of your entries were sealed to this browser. " +
-        "They were stored before this browser had a key of its own, on a " +
-        "device this is not, before signing out here destroyed the key " +
-        "that would have opened them, or before this page had finished " +
-        "loading your account. Ask an admin to unlock them.", false);
+      historyStatus("None of your entries can be opened on this browser " +
+        "— they were sealed before it had a key of its own, or on " +
+        "another device. Ask an admin to unlock them.", false);
       return;
     }
 
@@ -517,7 +554,7 @@
       scrub(source.snapshot);
     } catch (error) {
       historyStatus("Your entries could not be read as a history. " +
-        (error && error.message ? error.message : ""), true);
+        plainly(error, "Try reloading the page."), true);
       return;
     }
 

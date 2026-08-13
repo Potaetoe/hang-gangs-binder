@@ -144,15 +144,22 @@
    * on a screen - or null when it can. The shape crypto.js's
    * `unavailableReason` already established, so a page asks both the
    * same way.
+   *
+   * WHOLE SENTENCES, and that is the half #265 fixed. These are appended
+   * to a sentence submit.js has already finished, so a lower-cased
+   * fragment landed mid-line on a member's screen - and the fragments
+   * named WebCrypto and a database, which are the two nouns the member
+   * has least use for. What is left says the same two facts about what
+   * this browser cannot do: it cannot do the arithmetic, or it has
+   * nowhere to put the result. "It" is this browser, named once by the
+   * sentence these follow rather than three times in four lines.
    */
   function unavailableReason() {
     if (!subtle()) {
-      return "this browser has no WebCrypto, so it cannot make a key of " +
-        "your own";
+      return "It cannot do the maths that makes a key of your own.";
     }
     if (!database()) {
-      return "this browser keeps no database for this site, so a key of " +
-        "your own would not survive the tab";
+      return "It has nowhere to keep one that would last past this tab.";
     }
     return null;
   }

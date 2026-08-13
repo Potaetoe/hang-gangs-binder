@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 514
+EXPECTED = 512
 
 
 def check(label, condition):
@@ -1238,13 +1238,24 @@ def door_drift(text, token, index, replacement):
             token.join(parts[index + 1:]))
 
 
-# The five copies #201 counted, named and mutated one at a time against
-# the pages that actually ship. This is the arm's real subject; the
-# fixtures above are its shape.
-DOORS = (("admin.html", 2), ("charts.html", 2), ("your-page.html", 1))
-check("the door copies outside the rail's destinations still number five",
+# The copies #201 counted, named and mutated one at a time against the
+# pages that actually ship. This is the arm's real subject; the fixtures
+# above are its shape.
+#
+# THREE NOW, AND NOT BECAUSE THE PIN WAS LOOSENED. #201 counted five:
+# three in the session blocks and two in the footers of charts.html and
+# admin.html. #265 row 22 retired the footers' pair on the owner's
+# ruling - a door offered to somebody already inside, three inches under
+# a rail reading "Signed in as ...", which is what #187 took out of the
+# rail for the same reason. What is left is one copy per signed-in page,
+# in the session block, which is the surface that knows whether to offer
+# the door or the exit. The count is written here rather than derived so
+# that a copy arriving anywhere fails this line before anybody has to
+# notice it.
+DOORS = (("admin.html", 1), ("charts.html", 1), ("your-page.html", 1))
+check("the door copies outside the rail's destinations still number three",
       sum(check_web.page_text(name).count(">%s</a>" % DOOR)
-          for name, _ in DOORS) == 5)
+          for name, _ in DOORS) == 3)
 for door_page, door_copies in DOORS:
     check("%s carries the door copies this arm was counted against"
           % door_page,

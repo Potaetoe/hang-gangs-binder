@@ -18,7 +18,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-eval' https://telegram.org; frame-src https://oauth.telegram.org; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Sign in — Hang Gang Binder</title>
-<meta name="description" content="Sign in to the Hang Gang's submission portal.">
+<meta name="description" content="Sign in to the Hang Gang's binder.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#120d10">
@@ -63,11 +63,37 @@
 </header>
 
 <main class="stack">
+  <!--
+    What a sign-out leaves behind, and the only thing on this page that
+    is ever about the visit before this one - #265, owner-ruled, and the
+    mockup rules its wording and this position.
+
+    It ships `hidden`, which is its honest resting state: most arrivals
+    here are not arrivals from a Sign out press, and a line saying
+    otherwise would be a page claiming to know something it does not.
+    auth.js reveals it only on the mark signout.js writes, and spends
+    that mark in the same breath, so the next ordinary load says
+    nothing.
+
+    role="status" rather than an alert: it reports something that has
+    already finished and needs nobody's attention, which is the same
+    reading #auth-status carries below.
+
+    The claim is the whole of what Sign out does - the session revoked
+    at the service, the entry prefill erased, the device key's database
+    deleted, origin-wide - said as the one fact a member cares about.
+    It must not outgrow that: anything here that is not true of every
+    sign-out is a promise this page cannot keep.
+  -->
+  <p class="status" id="signed-out" role="status" hidden>
+    Signed out. This browser now holds nothing of yours.
+  </p>
+
   <div class="card narrow" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through local
-      development auth. This is not a Telegram sign-in.
+      Signed in as <strong data-dev-identity></strong> through the local
+      test sign-in. This is not a Telegram sign-in.
     </p>
   </div>
 

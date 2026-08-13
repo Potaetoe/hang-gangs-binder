@@ -41,12 +41,10 @@
 
   function unavailableReason() {
     if (!subtle()) {
-      return "this browser has no WebCrypto, so it cannot make a key of " +
-        "your own";
+      return "It cannot do the maths that makes a key of your own.";
     }
     if (!database()) {
-      return "this browser keeps no database for this site, so a key of " +
-        "your own would not survive the tab";
+      return "It has nowhere to keep one that would last past this tab.";
     }
     return null;
   }

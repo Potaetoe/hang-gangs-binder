@@ -93,7 +93,7 @@
   <p class="runner"><span>Members</span></p>
   <h1>Your page</h1>
   <p class="muted">
-    Fill the form and you are in the binder. Your session lasts as long
+    Fill the form and you are in the binder. Your sign-in lasts as long
     as this tab.
   </p>
 </header>
@@ -103,8 +103,8 @@
   <div class="card" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through local
-      development auth. This is not a Telegram sign-in.
+      Signed in as <strong data-dev-identity></strong> through the local
+      test sign-in. This is not a Telegram sign-in.
     </p>
   </div>
 
@@ -167,10 +167,15 @@
         typo. The count itself is written by submit.js, noun included,
         because "1 corrections" is the tell of a number pasted into a
         sentence.
+
+        And "entries", not "rows" - #265 row 28. This line stood two
+        lines under "Entries stored" calling the same things by the
+        storage's noun, which is the argument above losing to itself
+        inside its own paragraph.
       -->
       <p class="muted small" id="member-corrections-line" hidden>
         Plus <strong id="member-corrections"></strong> resting behind them
-        &mdash; rows you replaced, kept rather than erased.
+        &mdash; entries you replaced, kept rather than erased.
       </p>
       <p class="muted small">
         Last submitted: <time id="member-last-at">Checking&hellip;</time>
@@ -193,9 +198,9 @@
         needed only if you are being made an admin.
       </p>
       <p class="muted small">
-        These are counts and receipt times from the service. What is in
-        each entry is opened below, in this browser, with a key only this
-        browser has.
+        These are counts, and when the service received each entry. What
+        is inside each one is opened below, in this browser, with a key
+        only this browser has.
       </p>
     </div>
 
@@ -286,8 +291,8 @@
             </label>
           </div>
           <p class="hint">
-            A middle needs numbers to take the middle of, so this only
-            offers itself for weight, height and BMI.
+            A middle needs numbers to work with, so it is only offered
+            for weight, height and BMI.
           </p>
         </fieldset>
       </div>
@@ -307,8 +312,8 @@
         already uses to ask for a deletion.
       -->
       <p class="muted small" id="history-sealed" hidden>
-        <strong id="history-sealed-count"></strong> sealed to a device
-        this browser is not &mdash; they are not in the answer above.
+        <strong id="history-sealed-count"></strong> were sealed on
+        another device, so they are not in the answer above.
         Ask an admin to unlock them.
       </p>
     </div>
@@ -514,7 +519,11 @@
         stored row.
       -->
       <fieldset class="field">
-        <legend>Feedism Affiliation(s)</legend>
+        <!-- One spelling for one name - #265 row 31. The chart panel
+             this fills has said "Feedism affiliations" since #127, and
+             dev/dashboard-render.test.mjs pins that one; this legend
+             was the copy that drifted, parenthetical plural and all. -->
+        <legend>Feedism affiliations</legend>
         <div class="choices">
           <label class="choice">
             <input type="checkbox" name="roles" value="feeder"><span>Feeder</span>
@@ -590,10 +599,22 @@
       production key outside config.js so printing an old key while using a
       replacement cannot pass the build.
     -->
+    <!--
+      Plain words, the same act - #265 row 44, owner-ruled. "Key
+      fingerprint" is the least standard-user phrase on any member page,
+      and this is the one sentence standing between a member and a
+      swapped key: the vocabulary may be simplified, the check may not
+      be weakened. So the reader is still told to compare, still told
+      what to compare it against, and still told to stop and report
+      rather than submit. The <code> element, its id, and the
+      32-character value UI.showFingerprint writes into it are security
+      parameters and did not move.
+    -->
     <p class="muted small">
-      Before submitting, compare the key fingerprint
-      <code id="key-fingerprint" hidden></code> with the one pinned in the
-      group. If they differ, do not submit and tell an administrator.
+      Before you weigh in, check that the code below matches the one
+      pinned in the group chat.
+      <code id="key-fingerprint" hidden></code>
+      If they are different, do not submit &mdash; tell an admin.
     </p>
   </div>
   </section>

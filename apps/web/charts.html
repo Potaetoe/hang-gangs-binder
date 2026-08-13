@@ -86,8 +86,8 @@
   <div class="card" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through local
-      development auth. This is not a Telegram sign-in.
+      Signed in as <strong data-dev-identity></strong> through the local
+      test sign-in. This is not a Telegram sign-in.
     </p>
   </div>
 
@@ -124,11 +124,13 @@
             <span>Every entry</span>
           </label>
         </div>
+        <!-- #265 row 24. "Adds a row" is the storage's noun for the
+             thing this reader's own page calls an entry, and the second
+             sentence explained the site's architecture to somebody who
+             came to read a number. -->
         <p class="hint">
-          Anyone who resubmits adds a row rather than replacing one, so
-          these are different questions. Both are worked out before
-          publishing, which is why this still works on a page with no
-          data behind it.
+          Anyone who weighs in again adds a new entry rather than
+          replacing the old one, so these are two different questions.
         </p>
       </fieldset>
 
@@ -170,8 +172,8 @@
       <h2>Ask a question</h2>
       <p class="muted small">
         The same published figures, asked your way. Counting and units
-        come from the two choices above, so a question here is always
-        about the same people the panels are.
+        come from the two choices above, so an answer here is about the
+        same people as the charts.
       </p>
 
       <div class="stack" id="q-controls">
@@ -204,8 +206,8 @@
             </label>
           </div>
           <p class="hint">
-            A middle needs numbers to take the middle of, so this only
-            offers itself for weight, height and BMI.
+            A middle needs numbers to work with, so it is only offered
+            for weight, height and BMI.
           </p>
         </fieldset>
 
@@ -239,7 +241,7 @@
           <p class="hint">
             Tick two or more and they are counted as one. The list fills
             in from the answer, so the only groups you can name are
-            groups this document already published.
+            groups these figures already show.
           </p>
         </fieldset>
       </div>
@@ -283,8 +285,29 @@
     </div>
   </details>
 
+  <!--
+    #187 finished - #265 row 22, owner-ruled.
+
+    That issue took the sign-in door out of the rail because it "was
+    being offered to people already inside", and the rail's own
+    anti-stranding arm in tools/check_web.py moved with it: the route
+    to the door lives in the session block and the wordmark, which are
+    the surfaces that know whether there is a session to end. This
+    footer went on offering the door anyway, three inches under a rail
+    reading "Signed in as ...", and your-page.html's footer never did -
+    so the three signed-in pages disagreed about it.
+
+    They agree now, and the shape is your-page.html's: one invitation
+    to somewhere a signed-in member would actually go, and the code.
+    This page is the charts, so the invitation is the member's own page;
+    the name is the ruled one, which is why nothing was added to
+    PROSE_LINKS for it. Nobody is stranded: the rule stands on the rail,
+    not on this paragraph, and the door is still in the session block
+    above - which is where it can be hidden from somebody who has no use
+    for it.
+  -->
   <p>
-    <a href="index.html">Sign in</a> ·
+    <a href="your-page.html">Your page</a> ·
     <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
     GitHub</a>
   </p>

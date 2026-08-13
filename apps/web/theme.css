@@ -1579,6 +1579,34 @@ code {
   font-size: 0.9em;
 }
 
+/*
+ * The key fingerprint gets a line of its own, and this rule is the only
+ * thing making the sentence above it true.
+ *
+ * your-page.html tells a member to "check that the code below matches
+ * the one pinned in the group chat" - #265 row 44, the one sentence
+ * standing between them and a swapped key. An inline <code> lands
+ * wherever the paragraph happens to wrap, so at the widths between a
+ * phone and a full desktop column it sits BESIDE the instruction on the
+ * same line, and a reader who follows "below" looks past it at the next
+ * paragraph. A deictic that is true at some widths and false at others
+ * is a weaker instruction than one that cannot be wrong, so the box is
+ * blocked rather than the word softened.
+ *
+ * The margins are what keep it reading as the thing being pointed at
+ * rather than as a run-on token: there is no punctuation on either side
+ * of the value, because it is a value and not a clause.
+ *
+ * This cannot reveal the element early. [hidden] is
+ * display:none !important near the top of this file, so the empty box
+ * stays gone until UI.showFingerprint has a public key to write into
+ * it.
+ */
+#key-fingerprint {
+  display: block;
+  margin: var(--space-2) 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* The dashboard.                                                      */
 

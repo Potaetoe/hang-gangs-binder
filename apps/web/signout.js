@@ -46,6 +46,33 @@
    */
   const PREFILL_KEY = "hgb-submit-prefill";
 
+  /*
+   * The one thing this act leaves behind, and it is a sentence rather
+   * than a credential - #265, owner-ruled, and the mockup carries the
+   * line it produces.
+   *
+   * Everything above is destruction, and a member saw none of it: the
+   * page they land on is the sign-in page exactly as it looks to
+   * somebody arriving for the first time, so signing out and never
+   * having signed in were indistinguishable. This is the mark that
+   * tells them apart, and index.html spends it on arrival.
+   *
+   * sessionStorage, for the reason the session itself uses it: the fact
+   * is about THIS TAB. A second tab of this origin signed nobody out and
+   * must not be told it did, and a mark in localStorage would greet
+   * whoever opens the site next week.
+   *
+   * The name is written down twice, here and in auth.js, because
+   * index.html does not load this file - it must not offer an act there
+   * is no session for - so the reader cannot borrow the constant the
+   * way submit.js borrows the prefill key. That is the arrangement
+   * KEY_DB_NAME already lives under, and dev/session.test.mjs compares
+   * the two literals for the same reason: a rename on one side alone
+   * leaves a sign-out marking a page nobody reads and a door waiting on
+   * a mark nobody writes, both silent.
+   */
+  const SIGNED_OUT_KEY = "hgb-signed-out";
+
   const Session = root.BinderSession;
 
   function localStore() {
@@ -54,6 +81,20 @@
     } catch (error) {
       return null;
     }
+  }
+
+  /*
+   * Guarded the way every other store access here is: reading
+   * sessionStorage throws outright in some hardened configurations, and
+   * an exception between the erasures and the navigation would leave a
+   * member signed in on the page they pressed Sign out on - which is
+   * the failure this whole file is arranged to avoid, traded for a
+   * sentence.
+   */
+  function markSignedOut() {
+    try {
+      if (root.sessionStorage) root.sessionStorage.setItem(SIGNED_OUT_KEY, "1");
+    } catch (error) {}
   }
 
   function clearPrefill() {
@@ -208,6 +249,10 @@
     clearPrefill();
     forgetDeviceKey();
     if (Session) Session.clear();
+    // Immediately before the navigation, and that order is the whole of
+    // it: location.replace() ends this page, so a mark written after it
+    // is a mark written by nobody.
+    markSignedOut();
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("index.html");
     }
@@ -217,6 +262,7 @@
     signOut,
     clearPrefill,
     prefillKey: PREFILL_KEY,
+    signedOutKey: SIGNED_OUT_KEY,
   });
 
   if (typeof document === "undefined") return;

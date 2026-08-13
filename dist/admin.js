@@ -248,22 +248,35 @@
 
   function secretOnlyNotice(view) {
     if (!view || view.absent.indexOf("secretOnly") !== -1) {
-      return "This Worker did not report which admins the secret grants " +
+       
+       
+       
+      return "This service did not report which admins the secret grants " +
         "on its own, so nothing here can say whether the backfill is " +
-        "finished. Read GET /membership directly before acting on this.";
+        "finished. Check the membership list at the service directly " +
+        "before acting on this.";
     }
     if (!view.secretOnly.length) {
       return "Every admin the ADMIN_TELEGRAM_IDS secret grants also holds " +
         "a row above. That is the go-signal: dropping the secret arm now " +
         "would take nobody's authority away.";
     }
-    return view.secretOnly.length + " admin(s) are granted by the " +
+    const many = view.secretOnly.length !== 1;
+     
+     
+     
+     
+     
+     
+     
+    return view.secretOnly.length + (many ? " admins are" : " admin is") +
+      " granted by the " +
       "ADMIN_TELEGRAM_IDS secret and by no row above, so the backfill is " +
       "not finished. Their account ids are listed below, and they name " +
-      "nobody: each is a one-way hash, nothing on this page can turn one " +
-      "back into a person, and the numeric ids behind them are inside a " +
-      "secret that is unreadable by design. Add each of those people by " +
-      "their numeric id above until this list is empty.";
+      "nobody: each is scrambled one-way, nothing on this page can turn " +
+      "one back into a person, and the numeric ids behind them are " +
+      "inside a secret that is unreadable by design. Add each of those " +
+      "people by their numeric id above until this list is empty.";
   }
 
   
@@ -420,6 +433,14 @@
 
   const DOWNLOAD_IDS = Object.freeze(
     ["download", "download-xlsx", "download-json"]);
+
+  
+
+  const DOWNLOAD_NOUNS = Object.freeze({
+    "download": "The CSV",
+    "download-xlsx": "The Excel file",
+    "download-json": "The JSON file",
+  });
   const PRESSED_MS = 4000;
 
   const KEY_DB = "hgb-keyholder-key";
@@ -477,8 +498,16 @@
 
   
 
+  function showInstrument(visible) {
+    show($("tool"), visible);
+    show($("surface-mark"), visible);
+    show($("admin-intro"), visible);
+  }
+
+  
+
   UI.boot(setUp, function (error) {
-    show($("tool"), false);
+    showInstrument(false);
     const closed = $("closed");
     show(closed, true);
     if (closed) {
@@ -498,11 +527,11 @@
      
      
     if (!admin) {
-      show($("tool"), false);
+      showInstrument(false);
       return;
     }
     if (!admin.isAdmin) {
-      show($("tool"), false);
+      showInstrument(false);
       const closed = $("closed");
       show(closed, true);
       closed.querySelector("[data-reason]").textContent =
@@ -518,12 +547,12 @@
         "anything. Reload, and if it persists the site is broken.";
 
     if (unavailable) {
-      show($("tool"), false);
+      showInstrument(false);
       show($("closed"), true);
       $("closed").querySelector("[data-reason]").textContent = unavailable;
       return;
     }
-    show($("tool"), true);
+    showInstrument(true);
 
      
      
@@ -612,7 +641,7 @@
 
     
 
-    function acknowledge(pressed, what) {
+    function acknowledge(pressed) {
       
 
       for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
@@ -622,9 +651,9 @@
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
       }, PRESSED_MS);
       UI.setStatus($("download-status"),
-        what + " handed to the browser. Where it puts a download is the "
-        + "browser's to decide, so this page cannot say whether it "
-        + "arrived.", null);
+        DOWNLOAD_NOUNS[pressed] + " was handed to the browser. Where a "
+        + "download goes is the browser's to decide, so this page cannot "
+        + "say whether it arrived.", null);
     }
 
      
@@ -811,7 +840,7 @@
        
        
       link.addEventListener("click", function () {
-        acknowledge(id, link.textContent.trim());
+        acknowledge(id);
       });
     }
 
@@ -922,7 +951,8 @@
 
       
 
-      say("Decrypting " + submissions.length + " row(s)…", null);
+      say("Decrypting " + submissions.length +
+        (submissions.length === 1 ? " row…" : " rows…"), null);
       const failures = [];
       for (const submission of submissions) {
         try {
@@ -996,8 +1026,12 @@
         })) return;
         if (response.status === 404) {
           publishedNow = null;
-          state.textContent = "Nothing is published. The public dashboard " +
-            "shows an empty notice.";
+           
+           
+           
+           
+          state.textContent = "Nothing is published. Muse's charts has " +
+            "nothing to show.";
           show($("unpublish"), false);
           return;
         }
@@ -1041,16 +1075,23 @@
         }
       } catch (error) {
         $("unpublish").disabled = false;
+         
+         
+         
+         
+         
+         
+         
         sayUnpublish("It could not be taken down. " +
           (error && error.message ? error.message : "The connection failed.") +
-          " If this persists, the row can be removed from the D1 console: " +
-          "DELETE FROM snapshots;", "bad");
+          " If this persists, an admin can clear it by hand — the steps " +
+          "are in OPERATIONS.md, under Publishing and retracting the " +
+          "snapshot.", "bad");
         return;
       }
 
       $("unpublish").disabled = false;
-      sayUnpublish("Taken down. The public dashboard shows nothing now.",
-        null);
+      sayUnpublish("Taken down. Muse's charts shows nothing now.", null);
       await refreshPublishedState();
     });
 
@@ -1170,8 +1211,14 @@
             " (" + String(row.account_id) + ")";
         });
         if (view.dropped) {
-          notes.push(view.dropped +
-            " entrie(s) in this answer were not rows this page could read.");
+           
+           
+           
+           
+          notes.push(view.dropped === 1
+            ? "1 entry in this answer was not a row this page could read."
+            : view.dropped + " entries in this answer were not rows this " +
+              "page could read.");
         }
         if (view.absent.length) {
           notes.push("this answer carried no " + view.absent.join(", ") +
@@ -1395,7 +1442,7 @@
       }
 
       $("publish").disabled = false;
-      sayPublish("Published. The public dashboard now shows these numbers." +
+      sayPublish("Published. Muse's charts now shows these numbers." +
         withheldNote(sent), null);
       await refreshPublishedState();
     });
@@ -1435,8 +1482,10 @@
     const PREVIEW = 50;
 
     function render(total, failures) {
+       
+       
       $("summary").textContent = rows.length + " of " + total +
-        " row(s) decrypted" +
+        (total === 1 ? " row decrypted" : " rows decrypted") +
         (rows.length > PREVIEW ? "; first " + PREVIEW + " shown below" : "") +
         ".";
 
@@ -1504,7 +1553,10 @@
       }
 
       finish(rows.length
-        ? "Done. Both files are built in this page - nothing was uploaded."
+         
+         
+        ? "Done. All three files are built in this page — nothing was " +
+          "uploaded."
         : "Nothing could be decrypted with this key.",
         rows.length ? null : "bad", rows.length);
     }

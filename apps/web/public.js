@@ -46,6 +46,43 @@
   }
 
   /*
+   * THE ENGINE'S OWN WORDS, KEPT AND MOVED - #265 rows 13 to 16.
+   *
+   * query.js writes its refusals for whoever is holding the document:
+   * "snapshot version 3 is not the version this engine reads (2)",
+   * "that is a keyholder snapshot ... it carries handles and
+   * unsuppressed cells", "unknown split \"x\" - it is one of gender,
+   * country, roles, bmi, weight, height". Every one of those is exactly
+   * right for its reader, and this page showed all of them, word for
+   * word, to somebody who came to read a chart. "document", "engine",
+   * "split", "cell" and a raw split id are the engine's nouns; the
+   * controls above this card say Count, Units, About and Combine.
+   *
+   * So the words are not lost, they are addressed. `detail` writes the
+   * precise half where a developer looks, and `plainly` reads the half
+   * query.js writes for a member off the refusal itself, so the two are
+   * one claim in two registers rather than two sentences that can drift
+   * apart. A refusal arriving with no plain half - a throw added there
+   * tomorrow, or a path nobody expected a member to reach - gets the
+   * caller's own sentence rather than the engine's, which is the whole
+   * point: printing whatever this page is handed is what put an id on a
+   * member's screen in the first place.
+   */
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  function plainly(error, fallback) {
+    detail(error && error.message ? error.message : "refused with no message");
+    return error && typeof error.plain === "string" && error.plain
+      ? error.plain
+      : fallback;
+  }
+
+  /*
    * How old the figures are, in the words someone would use.
    *
    * The exact timestamp is there too, because "3 days ago" is friendly
@@ -78,8 +115,8 @@
 
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
-      unavailable("This site has no endpoint configured, so there is " +
-        "nothing to read a dashboard from.");
+      unavailable("This site is not set up to reach the service these " +
+        "figures come from, so there is nothing to show.");
       return;
     }
 
@@ -91,7 +128,7 @@
       if (response.status === 401) {
         Session.clear();
         unavailable("Your sign-in is no longer valid. Sign in again to " +
-          "view the dashboard.");
+          "see these charts.");
         return;
       }
       if (response.status === 404) {
@@ -100,7 +137,11 @@
         return;
       }
       if (!response.ok) {
-        throw new Error("The server answered " + response.status + ".");
+        // The number is what an operator acts on and admin.html still
+        // quotes it; here it is a number in front of somebody who came
+        // to read a chart - #265 row 13.
+        detail("the snapshot route answered " + response.status);
+        throw new Error("The service could not answer just now.");
       }
       payload = await response.json();
     } catch (error) {
@@ -112,8 +153,9 @@
 
     const snapshot = payload && payload.snapshot;
     if (!snapshot || !snapshot.bases) {
-      unavailable("What came back is not a dashboard this page can draw. " +
-        "It may have been published by a newer version of the site.");
+      unavailable("These figures are not in a shape this page can draw. " +
+        "They may have been published by a newer version of the site — " +
+        "tell an admin.");
       return;
     }
 
@@ -197,13 +239,14 @@
     } catch (error) {
       /* The engine refuses a document it does not read - a version it
        * does not know, or a keyholder snapshot arriving where a published
-       * one belongs. Its own words are shown rather than a house
-       * paraphrase, because the refusal names which of those it was, and
-       * the controls go away rather than sitting there inert. */
+       * one belongs. Which of the two it was still reaches the card,
+       * because the refusal carries its own plain half; what does not
+       * reach it is the engine's vocabulary. The controls go away rather
+       * than sitting there inert. */
       show($("q-controls"), false);
       status.className = "status bad";
-      status.textContent = "This document cannot be queried. " +
-        (error && error.message ? error.message : "");
+      status.textContent = "These figures cannot be asked questions here. " +
+        plainly(error, "They are not in a shape this page can ask about.");
       return;
     }
 
@@ -270,9 +313,11 @@
        * normalize, because the person who reaches it is the one who
        * added an option and not the one who will read a stack trace. */
       if (!shape) {
+        detail("this page offers a split the engine does not answer: " +
+          split);
         status.className = "status bad";
-        status.textContent = "This page offers a question the engine does " +
-          "not answer: " + split + ".";
+        status.textContent =
+          "That question is not one these figures can answer.";
         return;
       }
 
@@ -322,13 +367,13 @@
         status.textContent = "";
       } catch (error) {
         /* The engine's refusals are written to be read - they name the
-         * question that is not a question, and the alternatives. Losing
-         * them for a house sentence would lose the only explanation the
-         * member gets. */
+         * question that is not a question, and the alternatives. What
+         * reaches the card is that same claim in the card's own labels;
+         * the engine's wording is on the console for whoever needs the
+         * split's name. */
         status.className = "status bad";
-        status.textContent = error && error.message
-          ? error.message
-          : "That question could not be answered.";
+        status.textContent =
+          plainly(error, "That question could not be answered.");
         $("answer").textContent = "";
         return;
       }

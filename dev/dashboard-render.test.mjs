@@ -1552,6 +1552,49 @@ await check("the same document still answers a split the floor did not empty",
     withClass(asked(ASKABLE_SPARSE, { basis: "people", split: "country" }),
       "chart-bar").length === 1);
 
+/*
+ * AND THE PROMISE IS NOT MADE OVER AN ANSWER WITH NO GROUPS IN IT -
+ * #265 row 27, found rendered rather than read.
+ *
+ * "Every group here already cleared that floor" is a true and useful
+ * sentence over an answer that has groups. Printed directly above "There
+ * are too few entries here to publish a breakdown without describing
+ * individual people", it is a promise about a set the reader is
+ * simultaneously being told is empty - two lines that a member has to
+ * reconcile before either of them means anything.
+ *
+ * Both empty arms, because they are two different states with one
+ * reading: `available: false` is a basis the keyholder published no
+ * breakdown for, and an empty cell list is a partition the floor left
+ * nothing safe to say about. The first is built by hand here because no
+ * published document in this file produces it; the second comes off the
+ * real engine, three lines up.
+ */
+await check("no floor promise is printed over an answer with no groups", () => {
+  const emptied = figures(asked(ASKABLE_SPARSE,
+    { basis: "people", split: "gender" }))[0];
+
+  /*
+   * A STAT, and that is what makes this half discriminate rather than
+   * ride on the half above it. An unavailable categorical answer has an
+   * empty cell list too, so the cells guard alone would cover it and
+   * the `available` guard could be deleted with nothing going red. A
+   * median has no cells to be empty: it is the one shape where "the
+   * keyholder published no breakdown for this basis" is the only thing
+   * saying there is nothing to promise about.
+   */
+  const unavailable = { source: "published", basis: "people", split: "weight",
+    units: "imperial", measure: "median", kind: "stat", available: false,
+    floor: D.MIN_CELL, cells: [], total: 0, value: 0 };
+  const container = makeNode("div", HTML_NS);
+  D.renderAnswer(container, unavailable, "asked: gender");
+
+  return hintOf(emptied) === null &&
+    emptyNotesOf(emptied).length === 1 &&
+    hintOf(figures(container)[0]) === null &&
+    emptyNotesOf(figures(container)[0]).length === 1;
+});
+
 await check("every published answer carries the floor in its own words", () =>
   ["gender", "country", "roles", "bmi", "weight", "height"].every((split) => {
     const hint = hintOf(figures(asked(ASKABLE, { basis: "people", split }))[0]);

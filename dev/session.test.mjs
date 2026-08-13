@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 54);
+const { check, report } = nodeTestSuite("session/auth", 58);
 
 const values = new Map();
 
@@ -599,5 +599,96 @@ check("gaining a credential is announced as much as losing one",
   railEmptied &&
   rail["session-who"].textContent === "Signed in as somehandle" &&
   rail["sign-in"].hidden === true && rail["sign-out"].hidden === false);
+
+/* ------------------------------------------------------------------ */
+/* The sign-out acknowledgement - #265, owner-ruled, mockup-gated.     */
+
+/*
+ * SIGNING OUT AND ARRIVING FRESH LOOKED IDENTICAL, and that is what
+ * this pair fixes.
+ *
+ * signOut() revokes the session, erases the prefill, deletes the device
+ * key and replaces the page with index.html - four acts, and the member
+ * was shown none of them. They landed on an unchanged sign-in page,
+ * indistinguishable from opening the site for the first time, having
+ * just been told nothing about the browser they are handing back.
+ *
+ * The mechanism is the smallest honest one: a flag in sessionStorage,
+ * written immediately before the navigation and CONSUMED by the page
+ * that reads it. Consumed, not merely read - the line is an
+ * acknowledgement of an act, so the second load of that page must show
+ * nothing, and a flag that outlived its reading would turn "you just
+ * signed out" into a permanent notice on a page nobody signed out from.
+ *
+ * sessionStorage rather than localStorage for the reason the session
+ * itself uses it: the fact is about this tab. A second tab of this
+ * origin never signed anybody out and must not be told it did.
+ *
+ * WHY ORDER IS PINNED. location.replace() ends the page, so a flag
+ * written after it is a flag written by nobody. The stub records the
+ * store as it stood at the moment of the navigation, which is the only
+ * moment that can prove it.
+ */
+const SignOut = globalThis.BinderSignOut;
+
+let flagAtNavigation = null;
+const realReplace = location.replace;
+location.replace = function (target) {
+  flagAtNavigation = values.has("hgb-signed-out")
+    ? values.get("hgb-signed-out") : null;
+  return realReplace.call(this, target);
+};
+
+Session.write(GOOD);
+redirects.length = 0;
+SignOut.signOut();
+location.replace = realReplace;
+
+check("signing out leaves a mark for the page it is sending the member to",
+  flagAtNavigation !== null && redirects.at(-1) === "index.html");
+
+/*
+ * And the door reads it exactly once. Two loads of the same file, the
+ * second differing from the first only in what the first left behind -
+ * which is the whole claim, so both halves are one arm's business.
+ */
+const ack = { hidden: true, textContent: "" };
+rail["signed-out"] = ack;
+const realShow = globalThis.BinderUI.show;
+globalThis.BinderUI.show = function (element, visible) {
+  if (element) element.hidden = !visible;
+};
+
+Session.clear();
+redirects.length = 0;
+await import("data:text/javascript," + encodeURIComponent(authSource) +
+  "#signed-out-arrival");
+const revealed = ack.hidden === false;
+const consumed = !values.has("hgb-signed-out");
+
+ack.hidden = true;
+await import("data:text/javascript," + encodeURIComponent(authSource) +
+  "#ordinary-arrival");
+
+check("the sign-in page says so on arrival from a sign-out",
+  revealed && redirects.length === 0);
+check("and the mark is spent, so an ordinary visit says nothing",
+  consumed && ack.hidden === true);
+
+/*
+ * TWO FILES, ONE NAME, AND NO IMPORT BETWEEN THEM. index.html does not
+ * load signout.js - the sign-in page must not offer an act there is no
+ * session for - so the writer and the reader cannot share a constant
+ * the way submit.js borrows the prefill key. This is the KEY_DB_NAME
+ * arrangement instead: two literals, compared here, because a rename on
+ * one side alone is a sign-out that marks a page nobody reads and a
+ * door that waits for a mark nobody writes. Both halves fail silently,
+ * and the visible result is the exact absence #265 filed.
+ */
+const signOutMark = /"(hgb-signed-out)"/.exec(signOutSource);
+check("the sign-out mark is one name written the same way in both files",
+  signOutMark !== null && authSource.includes('"' + signOutMark[1] + '"'));
+
+if (globalThis.BinderUI) globalThis.BinderUI.show = realShow;
 
 report();

@@ -61,7 +61,7 @@ const threw = (fn, fragment) => {
  * inside loops, and a loop that silently stops iterating still reports
  * every check it managed to reach as a pass.
  */
-const { check, report } = suite("query.js", 50);
+const { check, report } = suite("query.js", 54);
 
 /* ------------------------------------------------------------------ */
 /* The module shape, and the contract the UI slice builds against.     */
@@ -232,6 +232,125 @@ await check("a source this module did not build is refused", () =>
   // by the caller rather than by the source.
   threw(() => Q.run({ kind: "personal", floor: 0, snapshot: published },
     { split: "gender" }), "source"));
+
+/* ------------------------------------------------------------------ */
+/* The member's half of a refusal - #265 rows 14 to 16.                */
+
+/*
+ * WHY THIS TABLE IS IN THIS FILE AND NOT A PAGE SUITE.
+ *
+ * A refusal from this module has two readers: the console gets
+ * `message`, with the version, the split and the cell in it, and a
+ * member gets `plain`, which is the whole of what charts.html's refusal
+ * card and your-page's history pane put on screen. Every page-side
+ * suite stubs this module - dev/public.test.mjs builds its own error
+ * objects - so those suites prove that a page PREFERS `plain` and can
+ * say nothing at all about whether this file still produces one. The
+ * two halves met nowhere, which meant deleting a `plain` argument here
+ * left every suite and the whole gate green while the card silently
+ * fell back to its house sentence for every refusal a member can reach.
+ *
+ * The pairing is the contract, and it is why the table is keyed on
+ * `refuse()` rather than on a list of sentences somebody maintains:
+ * `refuse()` is the constructor for a refusal a page may show and
+ * `new Error()` is a programming fault, so a `refuse()` with no member
+ * sentence is the first kind wearing the second kind's clothes. The
+ * completeness arm below reads query.js's own bytes and fails if a
+ * seventh `throw refuse(` appears without a row here, because a new
+ * refusal added tomorrow is exactly the one nobody would think to add.
+ *
+ * The sentences are pinned verbatim rather than by fragment: they are
+ * owner-ruled copy (#265 rows 14, 15, 16 and 42), and a paraphrase that
+ * still contains the right keyword is the change this pin exists to
+ * catch.
+ */
+const REFUSALS = [
+  ["a snapshot from a newer version of the site",
+    () => Q.publishedSource(Object.assign({}, published, { snapshot: 99 })),
+    "They were published by a newer version of the site."],
+  ["a keyholder snapshot offered as a published one",
+    () => Q.publishedSource(keyholder),
+    "What arrived is not the published copy this page may show."],
+  ["rows belonging to more than one person",
+    () => Q.personalSource(corpus, 0),
+    "These do not all look like one person's entries, so nothing was " +
+      "drawn."],
+  ["one label claimed by two merge groups",
+    () => Q.run(pub, {
+      basis: "people", split: "country",
+      merge: [{ as: "A", labels: ["US"] }, { as: "B", labels: ["US"] }],
+    }),
+    "That group is named twice — the same people would be counted twice."],
+  ["a middle over a categorical split",
+    () => Q.run(pub, { split: "country", measure: "median" }),
+    "A middle needs numbers to work with, so it is only offered for " +
+      "weight, height and BMI."],
+  ["a merge naming something the figures do not show",
+    () => Q.run(pub, {
+      basis: "people", split: "country",
+      merge: [{ as: "A", labels: ["Atlantis"] }],
+    }),
+    "One of those groups is not one these figures show."],
+];
+
+const errorFrom = (fn) => {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  return null;
+};
+
+await check("every refusal a page may show carries the member's sentence",
+  () => REFUSALS.every(([label, provoke, sentence]) => {
+    const error = errorFrom(provoke);
+    const ok = error !== null && error.plain === sentence;
+    if (!ok) {
+      console.log("  " + label + ": plain is " +
+        JSON.stringify(error && error.plain));
+    }
+    return ok;
+  }));
+
+await check("the member's sentence never replaces the console's", () =>
+  // Two registers of one claim, not one sentence doing both jobs. A
+  // `plain` equal to `message` would mean the engine's nouns - split,
+  // cell, snapshot version - had reached the card after all, and a
+  // `message` equal to `plain` would mean whoever is debugging a
+  // refused query lost the only precision they get.
+  REFUSALS.every(([, provoke]) => {
+    const error = errorFrom(provoke);
+    return typeof error.message === "string" && error.message.length > 0 &&
+      error.message !== error.plain;
+  }));
+
+await check("the table names every refusal query.js raises", async () => {
+  // The arm that survives the next person's edit. Without it this table
+  // guards six call sites forever while a seventh ships unpinned, which
+  // is the shape of the gap it was written to close.
+  const source = await readFile(HERE("../apps/web/query.js"), "utf8");
+  return source.split("throw refuse(").length - 1 === REFUSALS.length;
+});
+
+await check("a programming fault carries no member sentence", () =>
+  // The deliberate other direction, stated so it cannot be "fixed" by
+  // sprinkling plain halves everywhere. An unknown basis, split,
+  // measure or unit system is this module and a page disagreeing about
+  // their own tables; a member cannot provoke one, and inventing a
+  // member's sentence for it would be inventing a member's situation.
+  // The pages say their own thing when no plain half arrives, and that
+  // is what stops a throw added here from printing itself on a chart.
+  [
+    () => Q.run(pub, { basis: "rows", split: "gender" }),
+    () => Q.run(pub, { basis: "people", split: "handle" }),
+    () => Q.run(pub, { split: "gender", measure: "mode" }),
+    () => Q.run(pub, { split: "weight", units: "furlongs" }),
+    () => Q.personalSource("rows", 0),
+  ].every((provoke) => {
+    const error = errorFrom(provoke);
+    return error !== null && error.plain === undefined;
+  }));
 
 /* ------------------------------------------------------------------ */
 /* Counts, merges, and bins.                                           */

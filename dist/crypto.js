@@ -72,11 +72,11 @@
   function unavailableReason() {
     if (!root.crypto || !root.crypto.subtle) {
       return root.isSecureContext === false
-        ? "This page is not in a secure context, so the browser withholds " +
-          "the cryptography this form needs. Open it over https:// or " +
-          "http://localhost."
-        : "This browser does not provide crypto.subtle, so nothing can be " +
-          "encrypted here.";
+        ? "This page was not opened over a secure (https) address, so the " +
+          "browser will not let it encrypt anything. Open the site from " +
+          "its usual link and try again."
+        : "This browser cannot do the encryption this form needs, so " +
+          "nothing can be sent from here.";
     }
     return null;
   }

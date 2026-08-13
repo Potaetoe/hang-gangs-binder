@@ -418,6 +418,20 @@ curl -X DELETE -H "Origin: https://potaetoe.github.io" \
 This is the only routine use left for `EXPORT_TOKEN`, and it is the
 reason to keep that token stored somewhere reachable without the site.
 
+**And if the route itself will not answer**, the row can be removed
+from the database directly. The admin page says an admin can clear it
+by hand and points here rather than printing this, because SQL in
+product copy is a thing to type shown to somebody who came to press a
+button (#265 row 37):
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "DELETE FROM snapshots;"
+```
+
+There is at most one row in that table — the Worker replaces rather
+than appends — so the unqualified `DELETE` is the whole retraction and
+not a blunt instrument. On dev, `hg_binder_db_dev` with `--env dev`.
+
 ## Making someone an admin
 
 **There are two admin lists and either one grants it** — the

@@ -390,8 +390,8 @@
      
      
     const noKey = !config.publicKey
-      ? "This portal has no key published yet, so there is nothing to " +
-        "encrypt to. Submissions are closed until there is."
+      ? "This binder has no key published yet, so there is nothing to " +
+        "encrypt to. Weigh-ins are closed until there is."
       : null;
 
     
@@ -535,6 +535,14 @@
 
     
 
+    function logDetail(detail) {
+      if (detail && root.console && typeof root.console.warn === "function") {
+        root.console.warn("binder: " + detail);
+      }
+    }
+
+    
+
     let baselineCm = null;
     document.addEventListener("binder:height-baseline", function (event) {
       baselineCm = event && event.detail ? event.detail.lastHeightCm : null;
@@ -624,8 +632,19 @@
         submit.disabled = false;
          
          
-        say("This could not be encrypted, so nothing was sent. " +
-          (error && error.message ? error.message : "Unknown error."), "bad");
+         
+         
+         
+         
+         
+         
+        logDetail(error && error.message ? error.message : "send preparation " +
+          "failed with no message");
+        say(record === null
+          ? "This page could not put your entry together, so nothing was " +
+            "sent. Reload and try again."
+          : "This could not be encrypted, so nothing was sent. The site's " +
+            "key is not usable — tell an admin.", "bad");
         return;
       }
 
@@ -653,8 +672,11 @@
             const body = await response.json();
             detail = body && body.error ? " " + body.error : "";
           } catch (e) {   }
-          throw new Error("The server refused it (" + response.status + ")." +
+          
+
+          logDetail("submission refused with " + response.status + "." +
             detail);
+          throw new Error("The service could not answer just now." + detail);
         }
       } catch (error) {
         submit.disabled = false;

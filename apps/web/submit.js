@@ -72,9 +72,38 @@
     show($("member-tabs"), false);
     show($("your-entries-pane"), false);
     show($("add-entry-pane"), false);
-    setStatus("This member panel did not start correctly. " +
-      (error && error.message ? "(" + error.message + ")" : ""), true);
+    detail(error && error.message ? error.message : "boot failed with no " +
+      "message");
+    setStatus("This page did not start correctly, so what is on record " +
+      "may be missing.", true);
   });
+
+  /*
+   * The technical half of a failure, written where a developer looks -
+   * #265 rows 13, 16, 48 and 49.
+   *
+   * "This member panel did not start correctly", "the account summary",
+   * "the server answered 404", and query.js's own refusals all named
+   * something a member has no word for: a module, a route's noun, a
+   * status code, the engine's vocabulary. None of it is discarded -
+   * a page that fails and says nothing about why is worse for everybody
+   * - it is addressed to the reader who can use it.
+   */
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  /* The card's own words, with the engine's kept for the console. The
+   * arrangement query.js's `refuse` describes, read from this side. */
+  function plainly(error, fallback) {
+    detail(error && error.message ? error.message : "refused with no message");
+    return error && typeof error.plain === "string" && error.plain
+      ? error.plain
+      : fallback;
+  }
 
   function localStore() {
     try {
@@ -402,7 +431,7 @@
     const at = Date.parse(payload.lastAt);
     if (!Number.isFinite(at)) {
       last.dateTime = "";
-      last.textContent = "Submission time unavailable";
+      last.textContent = "We cannot read when that was";
       return;
     }
     last.dateTime = payload.lastAt;
@@ -441,7 +470,8 @@
   async function refreshPanel() {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) {
-      setStatus("This site has no endpoint configured for your account.", true);
+      setStatus("This site is not set up to reach the service that keeps " +
+        "your entries.", true);
       return;
     }
 
@@ -457,12 +487,14 @@
         return;
       }
       if (!response.ok) {
-        throw new Error("The server answered " + response.status + ".");
+        detail("the /me route answered " + response.status);
+        throw new Error("");
       }
       const payload = await response.json();
       if (!payload || payload.ok !== true ||
           !Number.isInteger(payload.entries) || payload.entries < 0) {
-        throw new Error("The server returned an invalid account summary.");
+        detail("the /me route answered with no usable account summary");
+        throw new Error("");
       }
       // Validated like the count is, rather than trusted: a non-string here
       // would silently scope the prefill to nothing and read as "not my
@@ -474,9 +506,13 @@
       renderAccount(payload);
       setStatus("", false);
     } catch (error) {
-      setStatus("Your account summary could not be refreshed. " +
-        (error && error.message ? error.message : "The connection failed."),
-      true);
+      // One sentence for every way this can fail, because a member's
+      // next act is the same in all of them - #265 row 49, which found
+      // the route's own noun said twice in one line.
+      detail(error && error.message ? error.message : "the /me route " +
+        "could not be reached");
+      setStatus("Your entry count could not be refreshed. Try reloading " +
+        "the page.", true);
     }
   }
 
@@ -630,9 +666,9 @@
     if (!shape || !answerAt) return;
 
     const bins = shape.kind === "bins";
-    /* A middle needs numbers to take the middle of, so the measure only
-     * offers itself for the binned splits - the same rule the published
-     * card follows, because it is the engine's rule and not a page's. */
+    /* A middle needs numbers to work with, so the measure is offered
+     * only for the binned splits - the same rule the published card
+     * follows, because it is the engine's rule and not a page's. */
     const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
     show($("h-measure-field"), bins);
 
@@ -663,8 +699,12 @@
     try {
       answer = Query.run(source, query);
     } catch (error) {
-      historyStatus("That question could not be asked. " +
-        (error && error.message ? error.message : ""), true);
+      // The engine's own words are precise and are written in the
+      // engine's nouns; this pane's controls say About and Measure.
+      // #265 row 16 - the card gets the same claim in its own labels
+      // and the console keeps the rest.
+      historyStatus(plainly(error, "That question could not be asked."),
+        true);
       return;
     }
     historyStatus("", false);
@@ -709,16 +749,22 @@
         }
         return;
       }
-      if (!response.ok) throw new Error("The server answered " +
-        response.status + ".");
+      if (!response.ok) {
+        detail("the /my-entries route answered " + response.status);
+        throw new Error("");
+      }
       const payload = await response.json();
       rows = payload && payload.ok === true && Array.isArray(payload.entries)
         ? payload.entries : null;
-      if (!rows) throw new Error("The server returned an invalid listing.");
+      if (!rows) {
+        detail("the /my-entries route answered with no usable listing");
+        throw new Error("");
+      }
     } catch (error) {
-      historyStatus("Your entries could not be fetched. " +
-        (error && error.message ? error.message : "The connection failed."),
-      true);
+      detail(error && error.message ? error.message : "the /my-entries " +
+        "route could not be reached");
+      historyStatus("Your entries could not be fetched just now. Try " +
+        "reloading the page.", true);
       return;
     }
 
@@ -752,7 +798,17 @@
 
     const sealedCount = $("history-sealed-count");
     if (sealedCount) sealedCount.textContent = String(sealed);
-    show($("history-sealed"), sealed > 0);
+    /*
+     * The partial line belongs to an answer, so it is shown only when
+     * there is one - #265 row 17, which was only visible rendered.
+     *
+     * With nothing opened, both sentences printed together: the sealed
+     * count claiming rows are "not in the answer above" with the
+     * controls hidden and no answer above at all, directly under a
+     * sentence saying the same thing at length, and "Ask an admin to
+     * unlock them." twice in four lines. One state, one sentence.
+     */
+    show($("history-sealed"), sealed > 0 && entries.length > 0);
 
     if (!entries.length) {
       /*
@@ -777,12 +833,24 @@
        * The remedy sentence is the one the partial-history line already
        * uses, word for word: a member who reads either of them is in the
        * same position and there is no reason for two answers.
+       *
+       * TWO CAUSES ON SCREEN, FOUR IN THIS COMMENT, and that is #265
+       * row 17's ruling rather than a loss of the argument above. All
+       * four printed at once produced a paragraph a member had to parse
+       * to learn one thing they could act on, and none of the four
+       * changes what they do about it. "Sealed before this browser had
+       * a key of its own" is the first and the fourth in the member's
+       * own terms - in both, the row was sealed at a moment this
+       * browser's key was not there to seal to - and the third is a
+       * device this browser was, once, which is the reading "on another
+       * device" carries for somebody who signed out here. What the
+       * sentence must never become is a list of devices only: that
+       * blames a member's hardware for this page's own timing, and
+       * dev/submit.test.mjs pins both halves against it.
        */
-      historyStatus("None of your entries were sealed to this browser. " +
-        "They were stored before this browser had a key of its own, on a " +
-        "device this is not, before signing out here destroyed the key " +
-        "that would have opened them, or before this page had finished " +
-        "loading your account. Ask an admin to unlock them.", false);
+      historyStatus("None of your entries can be opened on this browser " +
+        "— they were sealed before it had a key of its own, or on " +
+        "another device. Ask an admin to unlock them.", false);
       return;
     }
 
@@ -792,7 +860,7 @@
       scrub(source.snapshot);
     } catch (error) {
       historyStatus("Your entries could not be read as a history. " +
-        (error && error.message ? error.message : ""), true);
+        plainly(error, "Try reloading the page."), true);
       return;
     }
 
