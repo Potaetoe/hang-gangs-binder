@@ -1,0 +1,147 @@
+/*
+ * The demo strip, and the two lines it costs the product's layout.
+ *
+ * IT CARRIES NO PALETTE OF ITS OWN, on purpose and by the opposite
+ * reasoning the old console used. The page underneath is the product
+ * and its colors are one of the things being judged; a strip painted in
+ * the product's tokens would put the two in one visual field, so this
+ * one is deliberately outside it - a plain dark rule that reads as
+ * scaffolding at every palette and cannot be mistaken for the site.
+ *
+ * It is FIXED rather than in flow because the owner's ruling is that it
+ * is always visible, and because the signed-in pages lay their body out
+ * as a grid: an element in that flow would become a grid item and move
+ * the rail. Fixed costs the two rules below instead.
+ */
+
+:root {
+  /*
+   * TWO TOKENS, AND THEY ARE NOT INTERCHANGEABLE.
+   *
+   * The floor is what a stylesheet can honestly state: the one-row
+   * case. The strip wraps onto two, three or four rows depending on the
+   * window's width and on what its own status line says, so
+   * dev/demo-toolbar.js measures the element and writes the real height
+   * over `--hgb-demo-bar` - which is what the body's top padding and
+   * the rail's sticky offset both subtract. Left at a fixed 2.5rem, a
+   * wrapped strip sits over the page's own heading, hiding the product
+   * exactly where the owner is looking at it.
+   *
+   * THE STRIP'S OWN `min-height` READS THE FLOOR, NEVER THE MEASURED
+   * ONE. One token doing both jobs makes the measurement a ratchet: the
+   * script writes 104px, the strip's minimum becomes 104px, and a strip
+   * pushed to three rows by one status line can never come back down.
+   * dev/demo.test.mjs holds the two apart.
+   */
+  --hgb-demo-bar-floor: 2.5rem;
+  --hgb-demo-bar: var(--hgb-demo-bar-floor);
+}
+
+/*
+ * Room for the strip.
+ *
+ * `!important` BECAUSE THE PRODUCT OUTRANKS THIS SELECTOR, and without
+ * it this rule silently does nothing on exactly the pages the owner
+ * spends the demo in. apps/web/theme.css says `body.railed { padding: 0 }`
+ * for the signed-in pages' grid - a class, which beats a bare element
+ * selector whatever order the sheets load in - so the offset was
+ * cancelled on every railed page and only the content's own top margin
+ * kept the strip off the heading. One row fitted under that margin, so
+ * it looked correct until the strip wrapped: measured on /demo/admin.html
+ * with a status line on the strip, the heading sat at 86.14px under a
+ * strip whose bottom was 103.77px. dev/demo.test.mjs holds theme.css to
+ * still zeroing that padding, so the day it stops, this word is reported
+ * as removable rather than left as noise.
+ *
+ * THE SECOND RULE IS NOT OPTIONAL AND IT IS COUPLED TO apps/web. The
+ * rail is `position: sticky; top: 0` in apps/web/theme.css, so without
+ * an offset it sticks under the strip and its first destination is
+ * unreadable at every scroll position but the top. dev/demo.test.mjs
+ * holds theme.css to still sticking the rail there, so a slice that
+ * stops doing it fails the gate here instead of leaving a rule that
+ * silently offsets nothing.
+ */
+body {
+  padding-top: var(--hgb-demo-bar) !important;
+}
+
+.rail {
+  top: var(--hgb-demo-bar);
+}
+
+[data-demo-toolbar] {
+  position: fixed;
+  inset: 0 0 auto 0;
+  /*
+   * Above anything the product stacks over its own page. Raising a
+   * z-index in apps/web past this one hides the strip on the page it is
+   * raised on, so dev/demo.test.mjs reads every z-index apps/web
+   * declares and fails if this number stops topping them - which is the
+   * signal to raise this one, not to lower the page's.
+   */
+  z-index: 10000;
+  box-sizing: border-box;
+  min-height: var(--hgb-demo-bar-floor);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  padding: 0.25rem 0.6rem;
+  background: #14161c;
+  color: #e8e8ea;
+  border-bottom: 1px solid #3a3d47;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+[data-demo-toolbar] .demo-title {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-demo-toolbar] .demo-honesty {
+  color: #ffb4a2;
+}
+
+[data-demo-toolbar] .demo-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid #3a3d47;
+}
+
+[data-demo-toolbar] .demo-group-name {
+  color: #9aa0ad;
+}
+
+/* Empty for the reset group, which is one control and needs no name. */
+[data-demo-toolbar] .demo-group-name:empty {
+  display: none;
+}
+
+[data-demo-toolbar] button {
+  font: inherit;
+  color: inherit;
+  background: #232631;
+  border: 1px solid #4a4f5c;
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+[data-demo-toolbar] button:hover,
+[data-demo-toolbar] button:focus-visible {
+  background: #323747;
+}
+
+/*
+ * The status line takes the rest of the row and wraps onto its own when
+ * there is no room, so a sentence about what a press did never pushes a
+ * control off the strip.
+ */
+[data-demo-toolbar] .demo-status {
+  flex: 1 1 12rem;
+  color: #cfd3dc;
+}

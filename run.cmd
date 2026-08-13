@@ -45,7 +45,7 @@ if "%~1"=="demo" (
   rem %2 %3 rather than a shift: inside a parenthesized block cmd expands
   rem the arguments when it PARSES the block, so a shift here would move
   rem nothing and --port would silently never arrive.
-  echo Open http://127.0.0.1:8126/dev/demo.html  ^(127.0.0.1, not localhost - #72^)
+  echo Open http://127.0.0.1:8126/  ^(127.0.0.1, not localhost - #72^)
   node dev\demo-server.mjs %2 %3
   exit /b
 )

@@ -54,16 +54,17 @@ await load("./demo-stub.js");
 const Demo = globalThis.BinderDemo;
 
 const {
-  IMPORT_SCRIPTS, manifestFor, webEntriesOf, refuseDirty, stampFor, bake,
+  IMPORT_SCRIPTS, DEMO_ASSETS, manifestFor, webEntriesOf, refuseDirty,
+  stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 44);
+const { check, mustReject, report } = suite("demo bake", 37);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
 
 const webEntries = await webEntriesOf(ROOT);
-const manifest = manifestFor(webEntries, Demo.BOXES);
+const manifest = manifestFor(webEntries);
 
 const emitted = manifest.map((one) => one.to);
 const pages = webEntries.filter((name) => name.endsWith(".html"));
@@ -85,16 +86,14 @@ await check("no two manifest entries write the same path", () =>
 await check("every page apps/web ships is emitted, and only under /demo/", () =>
   pages.every((page) => emitted.includes("demo/" + page)) &&
   emitted.filter((path) => path.endsWith(".html")).every((path) =>
-    path.indexOf("demo/") === 0 || path === "dev/demo.html" ||
-    path === "index.html"));
+    path.indexOf("demo/") === 0 || path === "index.html"));
 
 /*
- * The two .html files above that are not under /demo/ are the bake's
- * own: the console and the landing page. Neither is derived from
- * apps/web, and that is the property that makes them safe rather than
- * their names - so it is asserted rather than assumed.
+ * The one .html above that is not under /demo/ is the bake's own root.
+ * It is not derived from apps/web, and that is the property that makes
+ * it safe rather than its name - so it is asserted rather than assumed.
  */
-await check("the two pages outside /demo/ are not derived from apps/web", () =>
+await check("the page outside /demo/ is not derived from apps/web", () =>
   manifest.filter((one) =>
     one.to.endsWith(".html") && one.to.indexOf("demo/") !== 0
   ).every((one) =>
@@ -124,19 +123,26 @@ await check("nothing emitted under /apps/web/ is a page", () =>
     .every((path) => !path.endsWith(".html")));
 
 /*
- * The acceptance table is the screen the owner reads while deciding the
- * cutover, so a probe that 404s in the bake turns that table into a
- * column of "unreadable" - the console reporting on itself rather than
- * on the product. The URLs are asked of the console's own function.
+ * The demo's own files, spelled out rather than compared to DEMO_ASSETS:
+ * an arm that asked the list about itself would pass just as well with a
+ * file taken off it, and the one that matters is demo-boot.js - the file
+ * that replaces fetch. A build missing it is a live copy of the product
+ * on a public URL.
  */
-await check("every URL the console probes is a path the bake emits", () =>
-  Demo.BOXES.every((box) =>
-    emitted.includes(Demo.probeUrlFor(box.probe.file).slice(1))));
-
-await check("the demo's own scripts and its console are emitted", () =>
-  ["dev/demo.html", "dev/demo.css", "dev/demo-stub.js", "dev/demo-boot.js",
-    "dev/demo-console.js", "dev/demo-corpus.js", "dev/demo-telegram.js",
+await check("the demo's own scripts and the strip are emitted", () =>
+  ["dev/demo-stub.js", "dev/demo-boot.js", "dev/demo-toolbar.js",
+    "dev/demo-toolbar.css", "dev/demo-corpus.js", "dev/demo-telegram.js",
     "dev/demo-config.js"].every((path) => emitted.includes(path)));
+
+/*
+ * And no page of the console era survives on the list. A file the bake
+ * still names and the tree no longer holds fails at the copy rather than
+ * at the manifest, which is a refusal nobody can act on.
+ */
+await check("the emitted set names no file this repository does not hold", () =>
+  DEMO_ASSETS.every((name) => !name.endsWith(".html")) &&
+  !emitted.includes("dev/demo.html") &&
+  !emitted.includes("dev/demo-console.js"));
 
 await check("the throwaway sample and its key are emitted, and nothing else opens", () =>
   emitted.includes("dev/sample-submissions.json") &&
@@ -154,14 +160,11 @@ await check("no suite, fixture or document from dev/ rides along", () =>
     "dev/README.md", "AGENTS.md"].every((path) => !emitted.includes(path)));
 
 await mustReject("a source outside apps/web and off the allowlist is refused",
-  async () => manifestFor(webEntries, [
-    { id: "made-up", probe: { file: "dev/fixture.json", pattern: "x" } },
-  ]), "dev/fixture.json");
+  async () => manifestFor(webEntries, ["dev/fixture.json"]),
+  "dev/fixture.json");
 
-await check("the same manifest call with a real box is accepted", () =>
-  manifestFor(webEntries, [
-    { id: "real", probe: { file: "apps/web/theme.css", pattern: "cover-leaf" } },
-  ]).length > 0);
+await check("the same manifest call with a real source is accepted", () =>
+  manifestFor(webEntries, ["apps/web/theme.css"]).length > 0);
 
 /*
  * The crawler copy is apps/web's own robots.txt, moved to the root
@@ -174,39 +177,6 @@ await check("robots.txt is emitted at the root, from the shipped one", () =>
 
 /* ------------------------------------------------------------------ */
 /* The stamp, and the refusal behind it.                               */
-
-await check("the console carries the region a stamp replaces", async () => {
-  const html = await readFile(HERE("./demo.html"), "utf8");
-  return Demo.stampInto(html, "<p>x</p>") !== null;
-});
-
-await check("stamping replaces the region and names the commit", () => {
-  const html = "<a><!-- BAKED-AT -->UNSTAMPED<!-- /BAKED-AT --></a>";
-  const out = Demo.stampInto(html, stampFor("abc1234", "2026-08-09T00:00:00Z"));
-  return typeof out === "string" && out.includes("abc1234") &&
-    !out.includes("UNSTAMPED") && out.indexOf("<a>") === 0;
-});
-
-/*
- * And stamping is repeatable. A bake over a tree that already holds a
- * baked console must not fail for the reason that means "somebody
- * removed the region" - the two would be one error message.
- */
-await check("a stamped console can be stamped again", () => {
-  const html = "<a><!-- BAKED-AT -->UNSTAMPED<!-- /BAKED-AT --></a>";
-  const once = Demo.stampInto(html, stampFor("abc1234", "t"));
-  const twice = Demo.stampInto(once, stampFor("def5678", "t"));
-  return typeof twice === "string" && twice.includes("def5678") &&
-    !twice.includes("abc1234");
-});
-
-/*
- * A console whose markers somebody removed must stop the bake, not be
- * written unstamped. An unstamped snapshot on a public URL is read as
- * current for as long as it is up.
- */
-await check("a console with no region to stamp is refused, not stamped", () =>
-  Demo.stampInto("<a>no markers here</a>", "<p>x</p>") === null);
 
 await mustReject("a tree with uncommitted changes refuses to bake",
   async () => refuseDirty(" M dev/demo-stub.js\n?? dev/scratch.js\n"),
@@ -309,23 +279,23 @@ await check("all four declared edits are applied across the baked pages",
       Demo.mirror(shipped).applied.forEach((id) => applied.add(id));
     }
     return applied.size === 4 && applied.has("boot") &&
-      applied.has("telegram") && applied.has("config") &&
-      applied.has("links");
+      applied.has("toolbar") && applied.has("telegram") &&
+      applied.has("config");
   });
 
 /*
- * And the fourth edit where it matters most. A hosted build is the one
- * a stranger clicks around in, so the footer's link out of the product
- * has to open its own tab there too - a frame that navigates itself to
- * a host refusing to be framed leaves a white rectangle and no way back.
+ * And the strip is on the emitted bytes of every page, asked of the
+ * files rather than of the transform. A hosted build with no strip is a
+ * demo a stranger cannot stage anything in.
  */
-await check("a baked page sends a link out of the product to its own tab",
-  async () => {
-    const html = await read("demo/index.html");
-    const anchors = html.match(/<a [^>]*href="https?:\/\/[^"]*"[^>]*>/g) || [];
-    return anchors.length > 0 &&
-      anchors.every((tag) => tag.includes('target="_blank"'));
-  });
+await check("every baked page carries the demo's own strip", async () => {
+  for (const page of pages) {
+    const html = await read("demo/" + page);
+    if (!html.includes("/dev/demo-toolbar.js")) return false;
+    if (!html.includes("/dev/demo-toolbar.css")) return false;
+  }
+  return true;
+});
 
 await check("the raw copies are byte-equal to what apps/web ships", async () => {
   for (const name of IMPORT_SCRIPTS) {
@@ -336,68 +306,35 @@ await check("the raw copies are byte-equal to what apps/web ships", async () => 
   return true;
 });
 
-await check("the baked console carries the commit, and the source one does not",
-  async () => {
-    const baked = await read("dev/demo.html");
-    const source = await readFile(HERE("./demo.html"), "utf8");
-    return baked.includes("0123456789abcdef0123456789abcdef01234567") &&
-      !source.includes("0123456789abcdef0123456789abcdef01234567");
-  });
-
-await check("the baked console differs from the source only inside the stamp",
-  async () => {
-    const baked = await read("dev/demo.html");
-    const source = await readFile(HERE("./demo.html"), "utf8");
-    return Demo.stampInto(baked, "X") === Demo.stampInto(source, "X");
-  });
-
 /*
- * The footer the owner took off the console is off THIS copy too, asked
- * of the emitted bytes rather than inferred (owner, 2026-08-10).
- *
- * The hosted build is the arm a stranger is handed, and it is reached
- * through a transform that rewrites part of this very page - so "the
- * source has no footer" and "what got written has no footer" are two
- * facts, and the stamp is proof that this file is not simply copied. The
- * sibling arm in dev/demo.test.mjs asks the same question of the copy
- * the local server reads off disk.
+ * THE ROOT IS THE ENTRY, AND IT LANDS ON THE SIGN-IN PAGE. A hosted
+ * build's root is the URL somebody is handed; a root that does not open
+ * where a stranger opens is a demo that looks broken before anything has
+ * been driven. Asked of the emitted bytes, because the redirect is the
+ * only thing standing between that URL and an empty page.
  */
-await check("the baked console carries no footer either", async () => {
-  const html = await read("dev/demo.html");
-  return !/<footer[\s>]/.test(html) && !html.includes("The other arm");
+await check("the root sends a visitor to the mirrored sign-in page", async () => {
+  const html = await read("index.html");
+  const target = "/demo/" + Demo.FIRST_VISIT;
+  return new RegExp('http-equiv="refresh"[^>]*url=' + target).test(html) &&
+    html.includes('href="' + target + '"');
 });
 
 /*
- * And neither does it carry the block that explained the console, which
- * is the same ruling one section wider (owner, 2026-08-10). This copy is
- * the one that mattered most to it: a hosted URL is where a stranger
- * meets the heading, the four-walks paragraph and the sentence about
- * which commit this is.
- */
-await check("the baked console carries no block explaining itself either",
-  async () => {
-    const html = await read("dev/demo.html");
-    return ["Demo console", "Four walks through the Binder",
-      "Nothing here reaches a real endpoint", 'id="offline-note"',
-      'id="stamp"', 'class="about"']
-      .every((each) => !html.includes(each));
-  });
-
-/*
- * THE DATE SURVIVES THE REMOVAL, AND RENDERS NOTHING.
+ * THE DATE SURVIVES, AND RENDERS NOTHING.
  *
- * The stamp is why this file is baked rather than copied: a snapshot on
- * a public URL that cannot say which commit it is gets read as current
- * forever, and refuseDirty plus the missing-region refusal are both
- * built around that one sentence being true. What the owner removed is
- * the SENTENCE, so what is written now is the same fact as metadata -
- * present, checkable, and on nobody's screen. Asked of the emitted bytes
- * with the tags taken out, because "invisible" is a claim about what a
- * reader sees rather than about which element it is in.
+ * The stamp is why a bake is more than a copy: a snapshot on a public
+ * URL that cannot say which commit it is gets read as current forever,
+ * and refuseDirty is built around that one sentence being true. What the
+ * owner removed is the SENTENCE (2026-08-10), so what is written is the
+ * same fact as metadata - present, checkable, and on nobody's screen.
+ * Asked of the emitted bytes with the tags taken out, because
+ * "invisible" is a claim about what a reader sees rather than about
+ * which element it is in.
  */
-await check("the baked stamp names the commit without putting it on screen",
+await check("the root names the commit without putting it on screen",
   async () => {
-    const html = await read("dev/demo.html");
+    const html = await read("index.html");
     const commit = "0123456789abcdef0123456789abcdef01234567";
     const readable =
       new RegExp("<meta\\b[^>]*" + commit + "[^>]*>").test(html);
@@ -405,26 +342,30 @@ await check("the baked stamp names the commit without putting it on screen",
     return readable && !onScreen;
   });
 
-await check("the landing page says the data is fabricated and refuses crawlers",
+/*
+ * The root carries no console and no explanation of one. The console
+ * era's heading, its four-walks paragraph and its own footer are gone
+ * with the surface they described (owner, 2026-08-10, and #272), and
+ * this copy is the one that mattered most to that ruling: a hosted URL
+ * is where a stranger meets whatever the demo says about itself.
+ */
+await check("the root carries no console, no footer and no walk-through",
+  async () => {
+    const html = await read("index.html");
+    return !/<footer[\s>]/.test(html) &&
+      ["demo console", "Four walks", "free drive", "journey", "scenario"]
+        .every((each) => !html.toLowerCase().includes(each.toLowerCase()));
+  });
+
+await check("the root says the data is fabricated and refuses crawlers",
   async () => {
     const html = await read("index.html");
     return html.includes("noindex") && /fabricat|made up|not real/i.test(html);
   });
 
-await check("the landing page names the commit this build was taken at",
+await check("the root names the commit this build was taken at",
   async () => (await read("index.html"))
     .includes("0123456789abcdef0123456789abcdef01234567"));
-
-/*
- * #209: the landing page addresses the person judging the product, so
- * it sells the cards, not the staging. "Scenario" is the harness's
- * word; the day it comes back is the day the page started talking to
- * the auditor again.
- */
-await check("the landing page speaks in cards, not in scenarios", async () => {
-  const html = await read("index.html");
-  return /card/i.test(html) && !/scenario/i.test(html);
-});
 
 await check("the root robots.txt refuses every crawler", async () =>
   /Disallow:\s*\/\s*$/m.test(await read("robots.txt")));

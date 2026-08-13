@@ -1,10 +1,10 @@
 /*
  * The demo's browser half: replace fetch, answer from dev/demo-stub.js,
- * and refuse everything else out loud.
+ * move the clock the page reads, and refuse everything else out loud.
  *
  * All wiring, no pure half. Every decision this file makes is made in
  * demo-stub.js, which dev/demo.test.mjs drives under Node; what is left
- * here is reading sessionStorage, swapping one global, and shaping an
+ * here is reading sessionStorage, swapping two globals, and shaping an
  * answer into a Response.
  *
  * It has to run before any shipped script, so it is a classic script and
@@ -24,7 +24,7 @@
   // scans apps/web for these strings: a shipped page keyed on one would
   // be a demo hook in the published bytes. A second copy of the names is
   // a second copy that can drift out from under that scan.
-  const [SCENARIO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
+  const [WHO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
 
   /*
    * The real fetch, kept before anything can take it away. It is the
@@ -57,44 +57,104 @@
     }
   }
 
+  /*
+   * WHO IS SIGNED IN IS ITS OWN KEY, not a field of the world blob.
+   *
+   * One home per fact, and this is the fact two doors write: the
+   * toolbar's shortcut writes it directly, and the product's own
+   * sign-in route writes it through answerFor's `next`. Reading it from
+   * one place is what stops those two doors disagreeing about who is
+   * holding the tab.
+   */
   function world() {
     const stored = readJson(WORLD_KEY, {});
-    stored.scenario = root.sessionStorage.getItem(SCENARIO_KEY) || "member";
+    stored.signedInAs = root.sessionStorage.getItem(WHO_KEY) || null;
     stored.data = readJson(DATA_KEY, {});
     return stored;
   }
 
   function remember(next) {
     const keep = Object.assign({}, next);
-    // The corpus is rebuilt by the console on every load and is the
-    // largest thing here by far; writing it back on every request would
-    // spend the whole sessionStorage budget re-storing what has not
-    // changed.
+    // The corpus is built by the toolbar and is the largest thing here
+    // by far; writing it back on every request would spend the whole
+    // sessionStorage budget re-storing what has not changed.
     delete keep.data;
+    if (keep.signedInAs) {
+      root.sessionStorage.setItem(WHO_KEY, String(keep.signedInAs));
+    }
+    delete keep.signedInAs;
     writeJson(WORLD_KEY, keep);
   }
 
   /*
-   * The feed's transport. What to say is Demo.narrate's - a pure
-   * decision dev/demo.test.mjs drives - and this file only posts what
-   * comes back, when something does. The channel is named by
-   * demo-stub.js because dev/demo.test.mjs scans apps/web for the
-   * name; a second copy here could drift out from under that scan.
+   * THE CLOCK, MOVED HERE AND NOWHERE ELSE.
    *
-   * Guarded, and failing silent: this file runs before every shipped
-   * script, so anything thrown here stops fetch being replaced at all
-   * - and a page reaching real endpoints is strictly worse than a
-   * feed with nothing in it.
+   * apps/web/admin.js decides whether anybody is still at the page by
+   * reading `Date.now()` twice, ten minutes apart. That is the right
+   * design - a laptop that sleeps for an hour delivers one late
+   * interval, not an hour of them - and it is also why the timer cannot
+   * be watched: nobody sits in front of a demo for eight minutes to see
+   * a warning appear.
+   *
+   * So the demo moves the clock the page reads, at the one seam that
+   * runs before any shipped script. The offset is in sessionStorage, so
+   * it survives the sign-out an expiry performs and the navigation that
+   * follows it - which is the half a driver is actually watching.
+   *
+   * REPLACED EVEN AT ZERO, and that is the load-bearing half. The page
+   * captures its last-interaction instant when it loads, so a jump has
+   * to move the clock UNDER a page that is already running: a jump that
+   * navigated instead would be absorbed on arrival, because the page
+   * would read the shifted clock for both instants and find no idleness
+   * at all. Installing the shim only when an offset already exists
+   * leaves the first jump with nothing to bump, and the demo reports a
+   * jump that changed nothing on screen - which is the silent class this
+   * whole demo exists to refuse. Measured on the running server, not
+   * reasoned about: the first version reloaded and the warning never
+   * came.
+   *
+   * ONLY `Date.now`, DELIBERATELY. `new Date()` is what every rendered
+   * date on screen comes from, and shifting that would move the
+   * submissions, the last-seen line and the published-at stamp by the
+   * same eight minutes - a demo whose data quietly disagrees with its
+   * own corpus. The timer reads the clock through `Date.now()`; that is
+   * the whole of what has to move.
    */
-  const channel = typeof root.BroadcastChannel === "function"
-    ? new root.BroadcastChannel(Demo.EVENT_CHANNEL)
-    : null;
+  const realNow = Date.now.bind(Date);
+  let offset = Number(readJson(WORLD_KEY, {}).clock);
+  if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  Date.now = function () { return realNow() + offset; };
 
-  function tell(event) {
-    if (channel === null) return;
-    const line = Demo.narrate(event);
-    if (line !== null) channel.postMessage({ line: line });
-  }
+  /*
+   * The toolbar's own two doors, and neither is the product's.
+   *
+   * The strip rides on the same page as the product now, so its fetch
+   * is the replaced one - and the file it needs is a private key, which
+   * is exactly what no shipped page may be permitted to read. Held to
+   * demo-stub.js's TOOLBAR_FILES rather than to LOCAL_FILES, so
+   * widening one list cannot widen the other.
+   *
+   * Named on a global the product has no word for, which
+   * dev/demo.test.mjs scans apps/web to confirm: a shipped page reading
+   * this would be a demo hook in the published bytes.
+   */
+  root.BinderDemoBoot = Object.freeze({
+    read: function (path) {
+      const decided = Demo.toolbarFileKind(path);
+      if (decided.kind !== "file") return Promise.reject(new Error(decided.why));
+      return realFetch(decided.path);
+    },
+    jump: function (by) {
+      const step = Number(by);
+      if (!Number.isFinite(step) || step <= 0) return offset;
+      offset += step;
+      const stored = readJson(WORLD_KEY, {});
+      stored.clock = offset;
+      delete stored.data;
+      writeJson(WORLD_KEY, stored);
+      return offset;
+    },
+  });
 
   /*
    * Which requests belong to the Worker, and which may leave at all.
@@ -162,18 +222,6 @@
 
     const answer = Demo.answerFor(request, world());
     remember(answer.next);
-
-    // Told here, on the one path every stubbed answer passes through,
-    // so the feed narrates the traffic that happened rather than the
-    // traffic some page was expected to make. The /export answer has
-    // no body and narrates anyway - the fetch of the sealed rows is
-    // the keyholder card's visible moment.
-    tell({
-      method: request.method,
-      path: request.path,
-      status: answer.status,
-      body: answer.body,
-    });
 
     /*
      * A proxied answer goes through the SAME decision rather than

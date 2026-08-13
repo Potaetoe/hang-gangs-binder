@@ -4,9 +4,9 @@
  *     ./run bake            (or: node dev/demo-bake.mjs)
  *     node dev/demo-bake.mjs --out some/other/place
  *
- * Then serve the output directory with anything at all and drive
- * /dev/demo.html, exactly as ./run demo is driven. WHERE IT IS HOSTED
- * IS NOT THIS FILE'S BUSINESS and nothing here deploys: this writes
+ * Then serve the output directory with anything at all and open its
+ * root, exactly as ./run demo is driven. WHERE IT IS HOSTED IS NOT THIS
+ * FILE'S BUSINESS and nothing here deploys: this writes
  * files, and putting them somewhere is a separate act with a separate
  * approval. See dev/README.md, "Hosting the demo off this machine".
  *
@@ -64,11 +64,10 @@ const Demo = globalThis.BinderDemo;
  * public copy carry".
  */
 const DEMO_FILES = [
-  "demo.html",
-  "demo.css",
   "demo-stub.js",
   "demo-boot.js",
-  "demo-console.js",
+  "demo-toolbar.js",
+  "demo-toolbar.css",
   "demo-corpus.js",
   "demo-telegram.js",
   "demo-config.js",
@@ -81,10 +80,10 @@ const DEMO_FILES = [
  * sample-submissions.json is the fabricated export corpus, sealed to
  * the throwaway pair below; test-key.json is the keyholder's half of
  * that pair and test-member-key.json a member's, both committed on
- * purpose. They are here so somebody driving the hosted build can load
- * a key in the picker the way the keyholder scenario asks - the file
- * input reads from the visitor's disk, and on a hosted copy there is no
- * checkout to take one from. dev/README.md, "Two kinds of fixture",
+ * purpose. They are here so somebody driving the hosted build can open
+ * the sealed rows: the toolbar's key control reads the keyholder's half
+ * by path, and the page's own file input reads from the visitor's disk,
+ * where a hosted copy leaves them nothing to choose. dev/README.md, "Two kinds of fixture",
  * says what these are and are not.
  */
 const DEMO_DATA = [
@@ -96,7 +95,7 @@ const DEMO_DATA = [
 export const DEMO_ASSETS = DEMO_FILES.concat(DEMO_DATA);
 
 /*
- * dev/demo-corpus.js builds both published snapshots inside a Web
+ * dev/demo-corpus.js builds the published snapshot inside a Web
  * Worker, and reaches the shipped aggregation by importScripts on
  * absolute /apps/web/ paths. A worker has no document, so those files
  * run their pure halves and need no mirror edit - they are copied raw.
@@ -129,6 +128,13 @@ const WEB = "apps/web/";
 const MIRROR = "demo/";
 
 /*
+ * Where the root sends a visitor, taken from the stub rather than typed
+ * here: the local server redirects to the same address, and two copies
+ * of it is two places for the entry to move from.
+ */
+const DEMO_ENTRY = Demo.MIRROR_PATH + Demo.FIRST_VISIT;
+
+/*
  * Every file under apps/web, fonts included, as paths relative to it.
  *
  * READ, NEVER LISTED. dev/demo.test.mjs learned this the hard way as
@@ -157,15 +163,28 @@ export async function webEntriesOf(root) {
 }
 
 /*
- * The landing page, which is the only page here that is not the product
- * and not the console.
+ * The root, which is the only page here that is not the product.
  *
- * It exists because the root of a hosted build is the URL somebody is
- * handed, and an empty root is a build that looks broken. It also
- * carries the two sentences a static host has nowhere else to put: that
- * every figure in here was made up, and which commit this copy was
- * taken at. It loads nothing from apps/web - that is what makes it safe
- * to serve outside /demo/, rather than its name.
+ * IT LANDS ON THE SIGN-IN PAGE, because the demo IS the site: the URL
+ * somebody is handed has to open where a stranger opens, with the
+ * demo's own strip riding above it. A redirect rather than the page's
+ * own bytes at the root - a mirrored page resolves `theme.css` and
+ * `submit.js` against the directory it is served from, so a copy at the
+ * root would ask for /theme.css and get nothing, and the product would
+ * look broken from a shortcut nobody needed.
+ *
+ * It carries no script, so the hop is a `meta refresh` and the policy
+ * can be `default-src 'none'`. It loads nothing from apps/web at all -
+ * that is what makes it safe to serve outside /demo/, rather than its
+ * name.
+ *
+ * AND IT IS WHERE THE SNAPSHOT SAYS HOW OLD IT IS. The live server
+ * reads apps/web off disk on every request and cannot be stale; a bake
+ * is stale the moment the next slice merges, and a snapshot on a public
+ * URL that cannot name its commit is read as current for as long as it
+ * is up. refuseDirty below is built around that sentence being true.
+ * The commit is metadata rather than copy (owner, 2026-08-10): present,
+ * checkable by anybody who looks, and on nobody's screen.
  */
 function landingPage(commit, at) {
   return `<!DOCTYPE html>
@@ -177,10 +196,11 @@ function landingPage(commit, at) {
 <title>Hang Gang Binder — demo build</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
+${stampFor(commit, at)}
+<meta http-equiv="refresh" content="0; url=${DEMO_ENTRY}">
 <style>
 body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 40rem;
        padding: 3rem 1.5rem; color: #1a1a1a; background: #fbfbfb; }
-code { font-family: ui-monospace, monospace; font-size: 0.9em; }
 .warn { border-left: 4px solid #b23; padding-left: 1rem; }
 @media (prefers-color-scheme: dark) {
   body { color: #eee; background: #141414; }
@@ -199,44 +219,12 @@ code { font-family: ui-monospace, monospace; font-size: 0.9em; }
   here is recorded anywhere.
 </p>
 
-<p>
-  <a href="/dev/demo.html">Open the demo console</a> — one card per
-  feature, in plain terms. Press a card's button and the console sets up
-  everything that feature needs, then shows it happening on a real page
-  in the frame.
-</p>
-
-<p>
-  This is a snapshot, not the live site. It was baked from commit
-  <code>${commit}</code> at <code>${at}</code>, and it shows the product
-  as of that commit and no later.
-</p>
-
-<p>
-  Drive it on a desktop browser. The console has a phone-width frame for
-  looking at the narrow layout; the console itself is not built for a
-  phone.
-</p>
+<p><a href="${DEMO_ENTRY}">Open the demo</a></p>
 </body>
 </html>
 `;
 }
 
-/*
- * WHAT THE SNAPSHOT SAYS ABOUT ITS OWN AGE, AND WHY NOBODY READS IT.
- *
- * This was a paragraph on the console. The owner removed the whole block
- * of prose explaining the console, this sentence with it - whoever can
- * open the demo knows what it is - but the FACT it carried is what makes
- * baking safe: a snapshot on a public URL that cannot name its commit is
- * read as current forever, and refuseDirty below plus the
- * missing-region refusal in bake() are both built around it being true.
- *
- * So it is metadata now: present, checkable by anybody who looks, and on
- * nobody's screen. Do not turn it back into visible copy without the
- * owner - and if they ask for it back, this function and the region in
- * dev/demo.html are the whole change.
- */
 export function stampFor(commit, at) {
   return `<meta name="hgb-baked-at" content="${commit} ${at}">`;
 }
@@ -276,7 +264,7 @@ export function refuseDirty(porcelain) {
  * files and then refused the twelfth would leave a half-built directory
  * somebody could still upload.
  */
-export function manifestFor(webEntries, boxes) {
+export function manifestFor(webEntries, raw) {
   const entries = [];
   const add = (from, to, transform) => {
     if (from !== null && from.indexOf(WEB) !== 0 &&
@@ -299,52 +287,25 @@ export function manifestFor(webEntries, boxes) {
   }
 
   /*
-   * The files something loads by an absolute /apps/web/ path: the three
-   * the corpus worker imports, and every probe the console reads that
-   * is not a page. Derived from the console's own table, so a box added
-   * later brings its file along instead of 404ing in front of the owner.
+   * The three files the corpus worker loads by an absolute /apps/web/
+   * path. A worker has no document, so those files run their pure
+   * halves and need no mirror edit - they are copied raw, at the exact
+   * prefix demo-corpus.js asks for. Nothing under this prefix is a
+   * page, and the suite asserts it: a page emitted outside /demo/ is a
+   * page without dev/demo-boot.js on it.
    *
-   * Pages are absent from this list by construction - probeUrlFor sends
-   * those through the mirror - and the suite asserts nothing under this
-   * prefix ends in .html.
+   * AN ARGUMENT, so the refusal above is a checked branch rather than a
+   * described one. Everything else this function emits comes from
+   * constants in this file, and a guard whose input nobody can vary is
+   * a guard nothing can falsify - dev/demo-bake.test.mjs hands it a path
+   * off the allowlist and reads the refusal. The one caller passes
+   * nothing and gets the same list either way.
    */
-  const raw = new Set(IMPORT_SCRIPTS.map((name) => WEB + name));
-  for (const box of boxes) {
-    const url = Demo.probeUrlFor(box.probe.file);
+  const extra = new Set(raw === undefined
+    ? IMPORT_SCRIPTS.map((name) => WEB + name) : raw);
+  for (const from of [...extra].sort()) add(from, from, "copy");
 
-    /*
-     * A page probe reads back through the mirror, which the loop above
-     * already emitted, so there is nothing to add - but it must BE a
-     * page apps/web ships, or the console fetches a /demo/ path with
-     * nothing behind it.
-     */
-    if (url.indexOf("/" + MIRROR) === 0) {
-      if (box.probe.file.indexOf(WEB) !== 0) {
-        throw new Error(
-          "Refusing to bake " + box.probe.file + ": a page probe is " +
-          "read through the mirror, and the mirror only holds apps/web."
-        );
-      }
-      continue;
-    }
-
-    /*
-     * Everything else is added at the path the console will ask for,
-     * WHATEVER that path is - not filtered down to the ones under
-     * apps/web first. Filtering silently dropped a probe pointing
-     * anywhere else, so a box reading a file this build does not carry
-     * would have baked cleanly and then painted "unreadable" in the
-     * acceptance table. Routed through add(), it is a refusal at bake
-     * time instead.
-     */
-    raw.add(url.slice(1));
-  }
-  for (const from of [...raw].sort()) add(from, from, "copy");
-
-  for (const name of DEMO_ASSETS) {
-    add("dev/" + name, "dev/" + name,
-      name === "demo.html" ? "stamp" : "copy");
-  }
+  for (const name of DEMO_ASSETS) add("dev/" + name, "dev/" + name, "copy");
 
   // The crawler copy is the shipped one, moved to where a crawler reads
   // it. Not retyped: "this site is not to be found in a search result"
@@ -362,7 +323,7 @@ export async function bake(options) {
   const commit = String(opts.commit);
   const at = String(opts.at);
 
-  const manifest = manifestFor(await webEntriesOf(root), Demo.BOXES);
+  const manifest = manifestFor(await webEntriesOf(root));
   const written = [];
 
   for (const entry of manifest) {
@@ -398,17 +359,12 @@ export async function bake(options) {
       }
       await writeFile(target, mirrored, "utf8");
     } else {
-      const source = await readFile(
-        join(root, entry.from.split("/").join(sep)), "utf8");
-      const stamped = Demo.stampInto(source, stampFor(commit, at));
-      if (stamped === null) {
-        throw new Error(
-          "Refusing to bake " + entry.from + ": it carries no region " +
-          "for the baked-at stamp, and an undated snapshot on a public " +
-          "URL reads as current for as long as it is up."
-        );
-      }
-      await writeFile(target, stamped, "utf8");
+      throw new Error(
+        "Refusing to bake " + entry.to + ": the manifest asks for a " +
+        "transform called \"" + entry.transform + "\" and this file " +
+        "performs three. A transform nobody implements writes nothing " +
+        "and reports success."
+      );
     }
 
     written.push(entry.to);
@@ -448,7 +404,7 @@ if (process.argv[1] && process.argv[1].endsWith("demo-bake.mjs")) {
     console.log("Baked " + result.written.length + " files into " +
       result.out);
     console.log("From commit " + commit);
-    console.log("Serve that directory and open /dev/demo.html.");
+    console.log("Serve that directory and open its root.");
     console.log("Nothing was deployed - see dev/README.md.");
   } catch (error) {
     console.error("Refused: " + ((error && error.message) || error));
