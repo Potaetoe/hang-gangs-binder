@@ -374,8 +374,18 @@ ALLOWLIST = {
 # known to be pointing at a section that no longer exists, recorded
 # where a check can hold it, instead of a red gate on work the owner
 # ruled out of this slice.
+#
+# The two OPERATIONS.md "The keys" entries are here by a deliberate act
+# rather than by discovery, and they are the reason to distrust a short
+# quotation. Both resolved after the rewrite deleted the section they
+# name, because two unrelated words of prose elsewhere in the file spell
+# the same nine characters - a citation passing on an accident, which is
+# the quiet direction. The rewrite took that phrasing out so these fail
+# honestly and land on this list with the rest.
 CITATION_PINS = frozenset({
     ("apps/web/admin.html", "DESIGN.md", "The charts and the snapshot"),
+    ("apps/web/config.js", "OPERATIONS.md", "The keys"),
+    ("tools/check_web.py", "OPERATIONS.md", "The keys"),
     ("apps/web/admin.js", "DESIGN.md", "Key custody"),
     ("apps/web/config.js", "DESIGN.md", "Key custody"),
     ("apps/web/dashboard.js", "OPERATIONS.md", "Reading the submissions"),

@@ -335,8 +335,8 @@ levers second, and no lever counts as pulled until control is back.
 **Say the true thing about this one.** Under 0.9 the Worker holds the
 secret that opens the entries, so an attacker who held the account held
 everything needed to read them. The pre-0.9 answer — that the key was
-never in the place the data lives — died with the keys, and repeating
-it would be the largest false claim this project could make.
+never in the place the data lives — died with the key world, and
+repeating it would be the largest false claim this project could make.
 
 1. **Recognize it from the account's own record, not from the site.**
    The site can look perfect throughout. What tells the truth: a deploy
