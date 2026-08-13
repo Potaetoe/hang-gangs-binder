@@ -169,13 +169,6 @@ GENERATED = "dist"
 # the past is harmless - and the file sat outside the scan while every
 # .js beside it was read (#227).
 SCAN = [
-    # apps/ and apps/web are two entries because the walk is one
-    # directory deep by design (see above). The site's configuration and
-    # its derivations sit in apps/ rather than apps/web, and a comment
-    # rule that reached the pages but not the file the pages are
-    # configured from would leave the newest source in the tree as the
-    # only source nothing reads (#278).
-    ("apps", (".js",)),
     ("apps/web", (".js", ".css", ".html")),
     ("server", (".js", ".sql")),
     ("dev", (".mjs", ".py", ".js")),

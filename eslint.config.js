@@ -150,6 +150,38 @@ export default [
 
   {
     /*
+     * tests/ - the arms for the 0.9 spec, each one a plain `node
+     * tests/<file>` entry point that imports nothing but the files it
+     * is about.
+     *
+     * A directory of its own rather than more of dev/, and the reason
+     * is scheduling rather than taste: 0.9 retires the dev/ apparatus
+     * with the surfaces it describes, and 0.9-M0-S4 builds the runner
+     * that adopts these files. Written against the old harness they
+     * would have to be rewritten to move; written self-contained they
+     * are moved.
+     */
+    files: ["tests/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-var": "error",
+      "prefer-const": "error",
+      eqeqeq: ["error", "always", { null: "ignore" }],
+      quotes: ["error", "double", { avoidEscape: true }],
+      semi: ["error", "always"],
+      // An arm prints its results. That is its whole job.
+      "no-console": "off",
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_",
+                                    caughtErrors: "none" }],
+    },
+  },
+
+  {
+    /*
      * ui.js is DOM-only, and this is the rule that keeps it that way.
      *
      * The reason is not tidiness. tools/check_web.py's senders rule holds
