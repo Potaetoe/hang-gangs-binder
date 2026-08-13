@@ -1,12 +1,14 @@
 /*
  * The demo driver: serves this repository, and a mirror of apps/web with
- * the demo's two edits applied on the way out.
+ * the demo's declared edits applied on the way out.
  *
  *     ./run demo            (or: node dev/demo-server.mjs)
  *     node dev/demo-server.mjs --port 8160
  *
- * Then http://127.0.0.1:8126/dev/demo.html - 127.0.0.1 rather than
- * localhost, for #72's reason.
+ * Then http://127.0.0.1:8126/ - 127.0.0.1 rather than localhost, for
+ * #72's reason. The root is the sign-in page, with the demo's own strip
+ * riding above it; every other page is reached the way a visitor
+ * reaches it, through the product's own navigation.
  *
  * Why a server at all, when `./run serve-root` already serves this tree:
  * the shipped pages have to load from a real path, because
@@ -155,8 +157,9 @@ const WEB_ROOT = resolve(join(ROOT, "apps", "web"));
  * It matters because this server exists to be pointed at a checkout
  * that holds throwaway keys: "..%2f" walking out of the tree is the one
  * way a local static server becomes interesting to anybody, and through
- * the mirror it reached AGENTS.md, dev/test-key.json, and dev/demo.html
- * served back with the demo's own boot scripts injected into it.
+ * the mirror it reached AGENTS.md, dev/test-key.json, and any .html in
+ * this checkout served back with the demo's own boot scripts injected
+ * into it.
  */
 function fileFor(urlPath, within) {
   let decoded;
@@ -182,6 +185,36 @@ async function serve(request, response) {
   const urlPath = (request.url || "/").split("?")[0];
 
   /*
+   * THE ROOT IS THE SIGN-IN PAGE, because the demo IS the site: the
+   * address somebody is handed has to land where a stranger lands, not
+   * on an index of a repository.
+   *
+   * A redirect rather than serving the page's bytes at "/". The
+   * mirrored pages resolve their own `theme.css` and `submit.js`
+   * against the directory they are served from, so a page written at
+   * the root would ask for /theme.css and get nothing - a product that
+   * looks broken, from a shortcut nobody needed.
+   */
+  if (urlPath === "/") {
+    response.writeHead(302, {
+      Location: MIRROR_PREFIX + Demo.FIRST_VISIT,
+      "Cache-Control": "no-store",
+    });
+    response.end();
+    return;
+  }
+
+  /*
+   * A bare directory answers with its index page, which is the tidying
+   * an ordinary static host performs and the one the baked build is
+   * driven behind. Serving it here too is what makes that behavior
+   * reproducible without deploying anything - demo-stub.js's
+   * destinationUnder is written around this exact case.
+   */
+  const asked = urlPath.endsWith("/") ? urlPath + Demo.DIRECTORY_INDEX
+    : urlPath;
+
+  /*
    * The mirror. A request under /demo/ is answered from apps/web, and an
    * HTML answer goes through demo-stub.js's mirror() on the way out -
    * the one place any byte of the shipped site is changed, and the edits
@@ -193,10 +226,10 @@ async function serve(request, response) {
    * one directory, and injected the boot scripts into anything under it
    * ending in .html - including this demo's own console.
    */
-  const mirrored = urlPath.indexOf(MIRROR_PREFIX) === 0;
+  const mirrored = asked.indexOf(MIRROR_PREFIX) === 0;
   const target = mirrored
-    ? fileFor("/" + urlPath.slice(MIRROR_PREFIX.length), WEB_ROOT)
-    : fileFor(urlPath, ROOT);
+    ? fileFor("/" + asked.slice(MIRROR_PREFIX.length), WEB_ROOT)
+    : fileFor(asked, ROOT);
 
   if (target === null) {
     response.writeHead(400, { "Content-Type": "text/plain" });
@@ -209,7 +242,7 @@ async function serve(request, response) {
     bytes = await readFile(target);
   } catch (error) {
     response.writeHead(404, { "Content-Type": "text/plain" });
-    response.end("Not found: " + urlPath + "\n");
+    response.end("Not found: " + asked + "\n");
     return;
   }
 
@@ -262,6 +295,6 @@ if (process.argv[1] && process.argv[1].endsWith("demo-server.mjs")) {
     process.exit(2);
   }
   await start({ port });
-  console.log("Demo console: http://127.0.0.1:" + port + "/dev/demo.html");
+  console.log("Demo: http://127.0.0.1:" + port + "/");
   console.log("(127.0.0.1, not localhost - #72)");
 }

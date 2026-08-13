@@ -58,10 +58,10 @@ case "${1:-}" in
     exec $PY -m http.server 8125 --directory tools ;;
   demo)
     # Node rather than $PY: this one is not a static server. It mirrors
-    # apps/web with the demo's two edits applied on the way out, which
+    # apps/web with the demo's declared edits applied on the way out, which
     # http.server has no way to do. dev/demo-server.mjs says why the
     # mirror exists.
-    echo "Open http://127.0.0.1:8126/dev/demo.html  (127.0.0.1, not localhost - #72)"
+    echo "Open http://127.0.0.1:8126/  (127.0.0.1, not localhost - #72)"
     # Shifted so `./run demo --port 8160` passes the port through and not
     # the verb. The override exists for parallel agent sessions, whose
     # preview blocks must not take the port the owner's demo answers on.
@@ -116,7 +116,7 @@ usage: ./run <command>          (PowerShell: .\run <command>)
   serve       serve the site at http://127.0.0.1:8124
   serve-root  serve the repository root on 8124 (keycheck, browser checks)
   keygen      serve the key generator at http://127.0.0.1:8125
-  demo        drive every enhancement offline on http://127.0.0.1:8126
+  demo        drive the site offline on http://127.0.0.1:8126
               (--port N to move it)
   bake        write that same demo to _demo/ as static files, for
               hosting it elsewhere (--out PATH; deploys nothing)

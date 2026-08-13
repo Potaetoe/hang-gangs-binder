@@ -103,64 +103,81 @@ and a console cannot be deployed by accident (#181).
 
 ## The drivable demo
 
-The same idea, made walkable end to end for #122 — the demonstration the
-owner drives before the cutover:
+The demonstration the owner drives before the cutover (#122), rebuilt on
+#272 as **the site with a toolbar**:
 
 ```bash
 ./run demo
 ```
 
-then <http://127.0.0.1:8126/dev/demo.html>. `--port N` moves it, which is
-what a parallel agent session's preview block uses; the committed port is
-what `UAT.md` cites.
+then <http://127.0.0.1:8126/>. `--port N` moves it, which is what a
+parallel agent session's preview block uses; the committed port is what
+`UAT.md` cites.
 
-Pick a scenario, and the console stages the session, the prefill and the
-published corpus that scenario needs, then puts a **shipped page** in the
-frame. Nothing reaches a real endpoint: `demo-boot.js` replaces `fetch`
-before any shipped script runs and refuses any URL it has no answer for,
-and the only keys anywhere near it are the throwaway pairs above.
+The root lands on the sign-in page, and from there **the demo is the
+site**: shipped pages at real paths, laid out against the real window,
+driven the way a visitor drives them. There is no console beside it, no
+frame around it and no glass over it — resize the browser to see the
+narrow layout, and use the product's own rail to move around.
+
+What rides above the page is one slim strip: the word *Demo*, a line
+saying nothing here is real, and **only the controls a visitor could not
+produce for themselves**. That test is the whole design of it — reset,
+signing in as somebody, filling the key box, staging a published
+snapshot, seeding corrections, moving the clock. Everything a visitor
+*can* do is left to the product. `demo-stub.js` holds the table and
+`demo.test.mjs` drives every control in both directions: the press that
+acts, and the press that cannot act on this page and says so.
+
+The sign-in page's own button offers the same list of identities, which
+is the second door the owner asked for. It stands in for the widget's
+account chooser, so what happens after the press is `auth.js` posting
+the payload and `session.js` keeping what comes back — the product's own
+sign-in, watched.
+
+Nothing reaches a real endpoint: `demo-boot.js` replaces `fetch` before
+any shipped script runs and refuses any URL it has no answer for. The
+strip's own reader is a **second, separate** allowlist on a global the
+product has no name for — the file it reads is a private key, and the
+day that path joins the product's list is the day a published page may
+read key material off its own host.
+
+The clock the strip moves is `Date.now` and only `Date.now`. The admin
+page's idle timer reads the clock rather than counting intervals, which
+is right and also why it cannot be watched; the jump is computed from
+`BinderAdmin.IDLE_WINDOW` at press time, so the demo cannot drift from
+the numbers that page really measures. `new Date()` is left alone, or
+every rendered date would move with it.
 
 The pages come from a mirror at `/demo/`, read out of `apps/web` on every
 request — so a page PR 4 or PR 5 changes is a page the demo shows changed,
-with no work here. **`apps/web` still takes no hook.** The mirror applies
-three edits on the way out, every one listed in `demo-stub.js` and
-rendered by the console so nobody has to take that on trust: it adds the
-two dev scripts ahead of the page's own, it points the Telegram widget
-at a local stand-in, and it points `config.js` at a stand-in naming an
-address that cannot resolve. `demo.test.mjs` fails if a mirrored page
-differs from the shipped one in any other way, and pins the table at
-those three by name.
+with no work here. **`apps/web` still takes no hook, and the mirrored
+pages are the shipped bytes.** The mirror applies five edits on the way
+out, every one listed in `demo-stub.js`: the two dev scripts ahead of the
+page's own, the strip's stylesheet and script beside them, the Telegram
+widget pointed at a local stand-in, links out of the product sent to
+their own tab, and `config.js` pointed at a stand-in naming an address
+that cannot resolve. `demo.test.mjs` fails if a mirrored page differs
+from the shipped one in any other way, and pins the table at those five
+by name.
 
-Over the frame is a **frame size**, and the phone one narrows the frame
-to the CSS pixel size `demo-stub.js` names. An iframe's width is the
-viewport the page inside it lays out against, so the shipped pages run
-their own phone rules in it — the rail as a strip, its destinations still
-in flow — which is what makes `UAT.md`'s phone-width steps
-drivable here rather than by narrowing the window. The Theme control is
-not one of those rules: it is one disclosure at every width, so it is
-there in both. It is a width and
-nothing else: the console stays a desktop tool, no touch, user agent or
-pixel ratio is emulated, and `apps/web` is not touched to make it work.
-
-Two things the console derives rather than states, because both would go
-stale the week they were written: which acceptance box is drivable yet
-(read out of the shipped bytes, so a box flips when its slice lands), and
-which Worker routes the stub must answer (read out of `apps/web`, so a
-route a later slice adds fails the gate rather than the walk-through).
+Which Worker routes the stub must answer is derived rather than stated —
+read out of `apps/web`, so a route a later slice adds fails the gate
+rather than the walk-through.
 
 The offline arm is not the only one. `./run serve` against the dev Worker
-is the live end-to-end feel, and the console names it; what the offline
-arm adds is the states a live database cannot be asked for on demand — a
-revoked session, a corrected entry, a cell under the floor.
+is the live end-to-end feel; what the offline arm adds is the states a
+live database cannot be asked for on demand — a revoked session, a
+corrected entry, a cell under the floor.
 
 ## Hosting the demo off this machine
 
 `./run bake` writes that same demo to `_demo/` as ordinary static files
-— the mirror's output at real paths, the console, the stub, the corpus
+— the mirror's output at real paths, the strip, the stub, the corpus
 builder and the fabricated sample. Serve that directory with anything at
-all and drive `/dev/demo.html` exactly as you drive the local one.
-`--out PATH` writes somewhere else; the directory is generated on demand
-and never committed.
+all and open its root, exactly as you drive the local one. `--out PATH`
+writes somewhere else; the directory is generated on demand and never
+committed.
 
 **It writes files and does nothing else.** No upload, no wrangler, no
 deploy — where a build lands is a separate act with its own approval,
@@ -181,12 +198,12 @@ the rule with no exceptions: `demo-boot.js` is what replaces `fetch`, it
 arrives only through the mirror, and a page without it is a live copy of
 the product on a public URL calling whatever `config.js` resolves to.
 The bake re-reads the bytes it is about to write and refuses any page
-that does not undo back to the shipped file exactly. The two pages
-outside `/demo/` — the console and a landing page — load nothing from
-`apps/web` at all.
+that does not undo back to the shipped file exactly. The one page
+outside `/demo/` is the build's own root, which loads nothing from
+`apps/web` at all and redirects to the mirrored sign-in page.
 
-Hosting adds a third mirror edit, and `demo-stub.js` explains it beside
-the other two: `config.js` chooses by `location.hostname` and knows the
+Hosting is why the config edit exists at all, and `demo-stub.js`
+explains it beside the others: `config.js` chooses by `location.hostname` and knows the
 published site and localhost, so anywhere else it hands back a null key
 and no endpoint — which also turns `config.endpoint + "/me"` into the
 relative URL `undefined/me`, aimed at whichever host is serving. The
@@ -197,11 +214,12 @@ network is the case where the demo already failed.
 What is deliberately not in a build: no private key, no real endpoint,
 no real row, no secret, and nothing from `dev/` but the demo's own files
 and the throwaway pairs above. The corpus is fabricated by the shipped
-code from made-up people. The landing page says so, every page keeps the
+code from made-up people. The root page says so, every page keeps the
 `noindex` it ships with, and `apps/web`'s own `robots.txt` is emitted at
 the root where a crawler reads it.
 
-A build is a **snapshot** and says which commit it was taken at, on the
-console and on the landing page. The local demo cannot go stale because
-it re-reads `apps/web` per request; a hosted copy is stale the moment
-the next slice merges, so re-bake on each merge wave or on demand.
+A build is a **snapshot** and says which commit it was taken at, as
+metadata on that root page rather than as copy on anybody's screen. The
+local demo cannot go stale because it re-reads `apps/web` per request; a
+hosted copy is stale the moment the next slice merges, so re-bake on each
+merge wave or on demand.

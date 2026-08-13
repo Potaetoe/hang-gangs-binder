@@ -1,5 +1,5 @@
 /*
- * Builds the demo's published snapshots, in a Web Worker.
+ * Builds the demo's published snapshot, in a Web Worker.
  *
  * A worker rather than the console page itself, and the reason is the
  * pure/DOM split in AGENTS.md. apps/web/admin.js and
@@ -30,11 +30,13 @@
     "/dev/demo-stub.js"
   );
 
-  self.addEventListener("message", function () {
+  self.addEventListener("message", function (event) {
     const Demo = self.BinderDemo;
     const Form = self.BinderForm;
     const Admin = self.BinderAdmin;
     const Dashboard = self.BinderDashboard;
+
+    const asked = event.data || {};
 
     try {
       const deps = {
@@ -46,24 +48,25 @@
         // than having one.
         snapshotOf: Dashboard.snapshotOf,
       };
-      // A SECOND publish, not a first - dev/demo-stub.js's publishedFrom
-      // says why, and it is what puts a change-since figure on the
-      // charts the journeys narrate over. identify is left off in there,
-      // so both documents go through the floor and the labelling a
-      // published document gets. The keyholder's own view is the
-      // identified one, and the admin page draws that from the rows
-      // themselves rather than from this.
-      const rich = Demo.publishedFrom("rich", deps);
-      const sparse = Demo.publishedFrom("sparse", deps);
+      /*
+       * One document, for the corpus and the cut the toolbar asked for.
+       * `identify` is left off in publishedFrom, so both generations go
+       * through the floor and the labelling a published document gets.
+       * The keyholder's own view is the identified one, and the admin
+       * page draws that from the rows themselves rather than from this.
+       */
+      const rounds = asked.rounds === null || asked.rounds === undefined
+        ? Demo.roundsIn(asked.corpus) : asked.rounds;
+      const snapshot = Demo.publishedFrom(asked.corpus, deps, rounds);
 
       self.postMessage({
         ok: true,
-        rich: rich,
-        sparse: sparse,
-        // Off the documents rather than counted again here: a second
+        snapshot: snapshot,
+        rounds: rounds,
+        // Off the document rather than counted again here: a second
         // count is a number free to disagree with the one the charts
         // draw.
-        counts: { rich: rich.counts.entries, sparse: sparse.counts.entries },
+        entries: snapshot.counts.entries,
       });
     } catch (error) {
       self.postMessage({

@@ -1,0 +1,118 @@
+/*
+ * The demo strip, and the two lines it costs the product's layout.
+ *
+ * IT CARRIES NO PALETTE OF ITS OWN, on purpose and by the opposite
+ * reasoning the old console used. The page underneath is the product
+ * and its colors are one of the things being judged; a strip painted in
+ * the product's tokens would put the two in one visual field, so this
+ * one is deliberately outside it - a plain dark rule that reads as
+ * scaffolding at every palette and cannot be mistaken for the site.
+ *
+ * It is FIXED rather than in flow because the owner's ruling is that it
+ * is always visible, and because the signed-in pages lay their body out
+ * as a grid: an element in that flow would become a grid item and move
+ * the rail. Fixed costs the two rules below instead.
+ */
+
+:root {
+  /*
+   * The strip's height, in one place, because two things subtract it:
+   * the body's own top padding and the rail's sticky offset.
+   */
+  --hgb-demo-bar: 2.5rem;
+}
+
+/*
+ * Room for the strip.
+ *
+ * THE SECOND RULE IS NOT OPTIONAL AND IT IS COUPLED TO apps/web. The
+ * rail is `position: sticky; top: 0` in apps/web/theme.css, so without
+ * an offset it sticks under the strip and its first destination is
+ * unreadable at every scroll position but the top. dev/demo.test.mjs
+ * holds theme.css to still sticking the rail there, so a slice that
+ * stops doing it fails the gate here instead of leaving a rule that
+ * silently offsets nothing.
+ */
+body {
+  padding-top: var(--hgb-demo-bar);
+}
+
+.rail {
+  top: var(--hgb-demo-bar);
+}
+
+[data-demo-toolbar] {
+  position: fixed;
+  inset: 0 0 auto 0;
+  /*
+   * Above the sign-in page's cover leaf, which is `fixed` at z-index 20
+   * and covers the viewport until its animation opens it. A strip that
+   * a driver cannot see on the page the demo opens on is not always
+   * visible.
+   */
+  z-index: 100;
+  box-sizing: border-box;
+  min-height: var(--hgb-demo-bar);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  padding: 0.25rem 0.6rem;
+  background: #14161c;
+  color: #e8e8ea;
+  border-bottom: 1px solid #3a3d47;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+[data-demo-toolbar] .demo-title {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-demo-toolbar] .demo-honesty {
+  color: #ffb4a2;
+}
+
+[data-demo-toolbar] .demo-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid #3a3d47;
+}
+
+[data-demo-toolbar] .demo-group-name {
+  color: #9aa0ad;
+}
+
+/* Empty for the reset group, which is one control and needs no name. */
+[data-demo-toolbar] .demo-group-name:empty {
+  display: none;
+}
+
+[data-demo-toolbar] button {
+  font: inherit;
+  color: inherit;
+  background: #232631;
+  border: 1px solid #4a4f5c;
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+[data-demo-toolbar] button:hover,
+[data-demo-toolbar] button:focus-visible {
+  background: #323747;
+}
+
+/*
+ * The status line takes the rest of the row and wraps onto its own when
+ * there is no room, so a sentence about what a press did never pushes a
+ * control off the strip.
+ */
+[data-demo-toolbar] .demo-status {
+  flex: 1 1 12rem;
+  color: #cfd3dc;
+}

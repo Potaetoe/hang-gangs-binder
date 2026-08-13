@@ -177,8 +177,8 @@ export default [
      * `document` is real in the others, and one block covers both rather
      * than splitting four files across two.
      */
-    files: ["dev/demo-boot.js", "dev/demo-console.js", "dev/demo-corpus.js",
-            "dev/demo-stub.js", "dev/demo-telegram.js"],
+    files: ["dev/demo-boot.js", "dev/demo-corpus.js", "dev/demo-stub.js",
+            "dev/demo-telegram.js", "dev/demo-toolbar.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "script",

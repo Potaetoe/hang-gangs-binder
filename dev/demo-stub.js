@@ -47,45 +47,15 @@
   const MIRROR_PATH = "/demo/";
 
   /*
-   * The sizes the console can give the frame, in CSS pixels.
+   * The page the demo opens on, and the page a reset lands back on.
    *
-   * An iframe's width IS the viewport the page inside it lays out
-   * against, so a shipped page in a 375-pixel frame takes its own phone
-   * rules - the rail as a strip, its destinations still in flow, no
-   * sideways scroll - with nothing changed in apps/web and nothing
-   * recorded here. That is the whole feature: a width.
-   *
-   * The palette control is deliberately not in that list. It is one
-   * control at every width (#150), so it sits outside every media
-   * query and is not something narrowing the frame reveals. What
-   * narrowing the frame DOES reach it for is the flyout's flip: on a
-   * short viewport the panel has no room above the footer and opens
-   * downward instead, which is a measurement rather than a breakpoint.
-   *
-   * NOTHING HERE EMULATES A DEVICE. No touch, no user agent, no pixel
-   * ratio. The demo is never driven on a phone (the owner's ruling on
-   * #142), the console around this frame stays a desktop tool, and a
-   * faked device would put a screen in front of the owner that no
-   * browser on the machine can be asked to reproduce - which is the
-   * false-confidence direction this whole demo is built to refuse.
-   *
-   * One residual, stated rather than hidden: a desktop browser draws a
-   * classic scrollbar inside the frame, so a page here gets 375 pixels
-   * of viewport and about 360 of content, where a phone with an overlay
-   * scrollbar gives it all 375. That is the direction that makes a page
-   * look narrower than it will be, never wider, so what the owner is
-   * shown is the harder of the two cases.
-   *
-   * `desktop` carries no size of its own on purpose, and leads the list
-   * because the console opens on whichever viewport comes first. It is
-   * the frame filling the stage the way dev/demo.css sizes it, so the
-   * default cannot drift into a number nobody chose and switching back
-   * is a clear rather than a second measurement to keep in step.
+   * It is a file name rather than a path so that both users of it can
+   * put their own prefix in front: the toolbar asks for MIRROR_PATH +
+   * this, and the baked build's root page redirects to the same address.
+   * Naming the sign-in page here rather than in either of them is what
+   * keeps "a demo starts where a stranger starts" one fact.
    */
-  const VIEWPORTS = [
-    { id: "desktop", label: "Desktop", width: null, height: null },
-    { id: "phone", label: "Phone", width: 375, height: 812 },
-  ];
+  const FIRST_VISIT = "index.html";
 
   /*
    * The names the demo writes into the browser's own storage, and their
@@ -93,7 +63,7 @@
    *
    * They are here rather than beside the code that writes them because
    * dev/demo.test.mjs scans apps/web for them: a shipped page keyed on
-   * `hgb-demo-scenario` would read the staged scenario and change its
+   * `hgb-demo-who` would read the staged identity and change its
    * behavior under the demo, which is exactly the hook apps/web is
    * forbidden to carry - and a hook like that names none of the demo's
    * file or symbol names, so the scan for those cannot see it. One list,
@@ -105,19 +75,7 @@
    * putting them in this list would fail the scan on the shipped code
    * doing its job.
    */
-  const STORAGE_KEYS = ["hgb-demo-scenario", "hgb-demo-data", "hgb-demo-world"];
-
-  /*
-   * The one channel the feed's narrations travel on, named here for the
-   * same reason the keys above are: dev/demo.test.mjs scans apps/web
-   * for this name, because a shipped page listening on it would be a
-   * demo hook in the published bytes - one that names none of the
-   * demo's files, so the scan for those cannot see it. A
-   * BroadcastChannel rather than a reference between documents, because
-   * the mirrored pages run inside the console's frame AND in their own
-   * tab, and a channel reaches the console from both.
-   */
-  const EVENT_CHANNEL = "hgb-demo-events";
+  const STORAGE_KEYS = ["hgb-demo-who", "hgb-demo-data", "hgb-demo-world"];
 
   /* ---------------------------------------------------------------- */
   /* The mirror: the only bytes the demo changes, and why.             */
@@ -161,6 +119,19 @@
         "allows - the demo runs under the same policy the site ships.",
     },
     {
+      id: "toolbar",
+      what: "Adds the demo's own strip - a stylesheet and a script - " +
+        "above the page.",
+      why: "The demo IS the site now, so there is no console beside it " +
+        "to hold the controls a visitor cannot produce for themselves: " +
+        "resetting the tab, signing in as somebody else, filling the " +
+        "key box, staging a published snapshot, moving the clock. They " +
+        "ride on the page instead, from /dev/, which the page's own " +
+        "script-src and style-src 'self' already allow. Nothing here " +
+        "reads or changes the product's own markup - the strip is " +
+        "appended and the page underneath is the shipped bytes.",
+    },
+    {
       id: "telegram",
       what: "Points the Telegram widget's script at a local stand-in.",
       why: "The real widget is a third-party script from telegram.org " +
@@ -201,6 +172,27 @@
     '<script src="/dev/demo-stub.js"></script>' +
     '<script src="/dev/demo-boot.js"></script>';
 
+  /*
+   * The strip, inserted at the same seam and declared as its own edit.
+   *
+   * A SEPARATE EDIT FROM THE BOOT PAIR BECAUSE THE REASONS ARE
+   * SEPARATE. The boot pair exists so no request leaves the machine;
+   * this exists so the owner can stage what a visitor cannot. Folding
+   * them into one entry would leave the table saying a page carries
+   * these files for a reason that is only true of two of them - and the
+   * table is the whole record of how a demo page differs from the
+   * product.
+   *
+   * The stylesheet comes first so the strip is painted at its final
+   * height before the script fills it in, and the script is not
+   * deferred: it appends to the body when the document is ready, and a
+   * deferred module would arrive after the page's own scripts have
+   * already measured a layout the strip is about to change.
+   */
+  const TOOLBAR_SCRIPTS =
+    '<link rel="stylesheet" href="/dev/demo-toolbar.css">' +
+    '<script src="/dev/demo-toolbar.js"></script>';
+
   const TELEGRAM_WIDGET = /https:\/\/telegram\.org\/js\/telegram-widget\.js[^"']*/g;
   const TELEGRAM_STANDIN = "/dev/demo-telegram.js";
 
@@ -235,8 +227,9 @@
 
     const at = out.indexOf("<script");
     if (at !== -1) {
-      out = out.slice(0, at) + BOOT_SCRIPTS + out.slice(at);
+      out = out.slice(0, at) + BOOT_SCRIPTS + TOOLBAR_SCRIPTS + out.slice(at);
       applied.push("boot");
+      applied.push("toolbar");
     }
 
     if (TELEGRAM_WIDGET.test(out)) {
@@ -271,47 +264,10 @@
    */
   function unmirror(html) {
     return String(html)
-      .replace(BOOT_SCRIPTS, "")
+      .replace(BOOT_SCRIPTS + TOOLBAR_SCRIPTS, "")
       .split(CONFIG_STANDIN).join(CONFIG_TAG)
       .split(EXTERNAL_LINK_OPENED).join('<a href="')
       .split(TELEGRAM_STANDIN).join("https://telegram.org/js/telegram-widget.js?22");
-  }
-
-  /*
-   * Where a baked build writes what it is a snapshot OF.
-   *
-   * The live console cannot go stale - it reads apps/web off disk on
-   * every request - so this region says so, and a bake replaces it with
-   * the commit it was taken at. That asymmetry is the whole point: a
-   * hosted copy is stale the moment the next slice merges, and a
-   * snapshot that does not say when it was taken is read as current for
-   * as long as it is up.
-   *
-   * A console whose markers have gone answers null rather than being
-   * written through unstamped. Refusing is the safe direction here: an
-   * unstamped build on a public URL is indistinguishable from a current
-   * one, which is the failure this region exists to prevent.
-   */
-  const STAMP_OPEN = "<!-- BAKED-AT -->";
-  const STAMP_CLOSE = "<!-- /BAKED-AT -->";
-
-  /*
-   * THE MARKERS SURVIVE THE STAMP, so a stamped console is still
-   * stampable. Consuming them would make the operation one-way: a bake
-   * over a directory that already holds one would refuse for the reason
-   * that means "somebody removed the region", and the two situations
-   * would be indistinguishable from the error. It is also what lets
-   * dev/demo-bake.test.mjs assert that a baked console differs from the
-   * source in this region and nowhere else, by stamping both the same
-   * way and comparing.
-   */
-  function stampInto(html, replacement) {
-    const text = String(html);
-    const open = text.indexOf(STAMP_OPEN);
-    const close = text.indexOf(STAMP_CLOSE);
-    if (open === -1 || close === -1 || close < open) return null;
-    return text.slice(0, open) + STAMP_OPEN + String(replacement) +
-      STAMP_CLOSE + text.slice(close + STAMP_CLOSE.length);
   }
 
   /* ---------------------------------------------------------------- */
@@ -543,13 +499,14 @@
    * The keyholder's half of the throwaway pair, by path.
    *
    * IT IS DELIBERATELY NOT IN LOCAL_FILES, and the difference is the
-   * whole care of it. That list is what a page INSIDE the frame may
-   * fetch for real, and no shipped page fetches a key - adding one
-   * there would widen what the product is permitted to read to include
-   * key material, which is the opposite of what this demo exists to
-   * show. This path is fetched by the CONSOLE, which runs outside the
-   * frame with its own real fetch, and the console writes the text into
-   * the page's key box exactly as a person pasting it would.
+   * whole care of it. That list is what the PRODUCT may fetch for real,
+   * and no shipped page fetches a key - adding one there would widen
+   * what the product is permitted to read to include key material,
+   * which is the opposite of what this demo exists to show. The toolbar
+   * rides on the same page and has its own door, TOOLBAR_FILES below,
+   * held by dev/demo-boot.js to this one path; what it does with the
+   * text is write it into the page's key box exactly as a person
+   * pasting it would.
    *
    * The file is committed on purpose and says so in its own first
    * field: it protects nothing, opens nothing real, and exists so the
@@ -562,20 +519,26 @@
   const DEV_KEY_FILE = "/dev/test-key.json";
 
   /*
-   * What the console says, in the feed, the moment it puts that key in
-   * the page's box.
+   * The only paths the toolbar may read for real, and its door is not
+   * the product's.
+   *
+   * Two allowlists rather than one widened list. LOCAL_FILES says what
+   * a SHIPPED page may fetch, and the day a key file joins it is the
+   * day the product is permitted to read key material off its own host.
+   * This says what the DEMO's own strip may fetch, and it is checked by
+   * dev/demo-boot.js on a call the product has no name for.
+   */
+  const TOOLBAR_FILES = [DEV_KEY_FILE];
+
+  /*
+   * What the toolbar says the moment it puts that key in the page's box.
    *
    * THE DISCLOSURE HAS TO TRAVEL WITH THE ACT. A private key appearing
    * in a box, in front of the person deciding whether to trust this
    * design, teaches the wrong lesson unless the same moment says what
-   * kind of key it is - and a sentence carried by one stop's narration
-   * only covers the stop somebody wrote it for. Two journeys stage this
-   * key now, for different reasons, and the next one will not come with
-   * a narration about keys either.
-   *
-   * The feed is where it goes because the feed is already the place a
-   * viewer reads what just happened, and this is a thing the console
-   * really did rather than a line about what should be true.
+   * kind of key it is. Carried by the control that performs the act
+   * rather than by any surface describing it, so a later surface that
+   * forgets to mention keys cannot separate the two.
    */
   const KEY_STAGED_LINE =
     "The demo put its own key in the page's key box. It is a throwaway " +
@@ -649,8 +612,34 @@
     };
   }
 
+  /*
+   * The toolbar's own door, decided the same way and separately.
+   *
+   * SAME ORIGIN IS NOT THE TEST HERE EITHER. The toolbar reads one
+   * committed file and the list above is the whole of it, so the answer
+   * is a path match rather than an origin match - which is what keeps a
+   * hosted build from turning this door into a read of whatever else
+   * the bake emitted.
+   *
+   * It is a second function rather than a flag on requestKindOf so that
+   * neither list can widen the other by accident: what a shipped page
+   * may fetch and what the demo's strip may fetch are two questions,
+   * and a shared code path is one place for them to become one answer.
+   */
+  function toolbarFileKind(path) {
+    const asked = String(path === undefined || path === null ? "" : path);
+    if (TOOLBAR_FILES.indexOf(asked) !== -1) {
+      return { kind: "file", path: asked };
+    }
+    return {
+      kind: "refuse",
+      why: "The demo's toolbar refused to read " + asked + ". It reads " +
+        "only the files it names, and that is not one of them.",
+    };
+  }
+
   /* ---------------------------------------------------------------- */
-  /* The scenarios.                                                   */
+  /* Who the demo can be.                                             */
   /* ---------------------------------------------------------------- */
 
   /*
@@ -761,9 +750,10 @@
   }
 
   /*
-   * A numeric Telegram id on the member session, so #58's line paints on
-   * the offline arm. It is a made-up number of the right length and
-   * belongs to nobody; the live arm is where a real one appears.
+   * The numeric Telegram ids the sign-in picker offers, one per identity
+   * below. They are made-up numbers of the right length and belong to
+   * nobody; #58's line paints from whichever one signs in, so the id has
+   * to travel the whole way from the picker's press to that line.
    *
    * The opposite case - a development session, whose id is null, where
    * the line correctly stays hidden - is not staged here. POST /auth/dev
@@ -771,918 +761,416 @@
    */
   const MEMBER_TELEGRAM_ID = "6204915773";
 
-  function sessionFor(id, options) {
+  /*
+   * WHO THE DEMO CAN SIGN IN AS, AND WHY THEY ARE THREE PEOPLE RATHER
+   * THAN THREE COSTUMES ON ONE.
+   *
+   * The product has one authority flag, and a picker offering "member",
+   * "keyholder" and "admin" over a single account would be three labels
+   * for two sessions - a demo teaching a distinction the product does
+   * not make. So each row is a DIFFERENT account, and the difference
+   * each one demonstrates is a difference the deployment really has:
+   *
+   *  - the member holds no authority at all, so every admin surface
+   *    refuses them;
+   *  - the keyholder is the account MEMBERSHIP_SEED labels as the
+   *    owner, and is the one whose private half opens the sample rows;
+   *  - the second admin is the seed's other granting row, which is what
+   *    makes the last-admin guard drivable from both sides: with two
+   *    admins in the table a removal succeeds, and the survivor cannot
+   *    then be removed.
+   *
+   * `lands` is where a shortcut press opens, and it is the page that
+   * identity is FOR rather than the page they are allowed on - every
+   * page stays reachable by the product's own rail in every row, which
+   * is half of what there is to look at.
+   *
+   * `staged` marks the rows that exist because the corpus needed a
+   * second, third and fourth person: signing in as one of them is how a
+   * driver sees the site as somebody who is not the owner and not the
+   * account every other press uses.
+   */
+  const SIGN_INS = [
+    {
+      id: "member",
+      label: "Member",
+      what: "No authority. Every admin surface refuses them.",
+      handle: "demo_member",
+      telegramId: MEMBER_TELEGRAM_ID,
+      isAdmin: false,
+      lands: "your-page.html",
+    },
+    {
+      id: "keyholder",
+      label: "Keyholder",
+      what: "Admin authority, and the account the seeded membership " +
+        "table calls the owner.",
+      handle: "demo_keyholder",
+      telegramId: "5417720084",
+      isAdmin: true,
+      lands: "admin.html",
+    },
+    {
+      id: "admin",
+      label: "Second admin",
+      what: "The table's other granting row, so a removal can succeed " +
+        "before the last one refuses.",
+      handle: "demo_second_admin",
+      telegramId: "7731064920",
+      isAdmin: true,
+      lands: "admin.html",
+    },
+    {
+      id: "birch_lane",
+      label: "birch_lane",
+      what: "A submitter from the staged corpus.",
+      handle: "birch_lane",
+      telegramId: "8042117365",
+      isAdmin: false,
+      staged: true,
+      lands: "your-page.html",
+    },
+    {
+      id: "quiet_orbit",
+      label: "quiet_orbit",
+      what: "Another one, so the picker is not a list of one stranger.",
+      handle: "quiet_orbit",
+      telegramId: "5560428817",
+      isAdmin: false,
+      staged: true,
+      lands: "your-page.html",
+    },
+  ];
+
+  function signInFor(id) {
+    for (const one of SIGN_INS) {
+      if (one.id === id) return one;
+    }
+    return null;
+  }
+
+  /*
+   * The identity a sign-in payload names, or null.
+   *
+   * READ FROM THE POSTED BODY RATHER THAN FROM WHAT THE PICKER
+   * REMEMBERS, because the picker is not the only door: the shortcut
+   * buttons write a session directly, and the product's own sign-in
+   * route is the path a driver watches. A stub that answered from its
+   * own memory would hand back the last identity anybody chose no
+   * matter what the page posted, which is a sign-in that cannot fail.
+   *
+   * An id nobody staged is not refused. Anybody with a Telegram account
+   * may sign in to this product as an ordinary member, and answering a
+   * stranger with a member session is what the Worker does - authority
+   * comes from the membership table, which no unknown id is in.
+   */
+  function signInForTelegramId(id) {
+    const wanted = String(id === undefined || id === null ? "" : id);
+    for (const one of SIGN_INS) {
+      if (one.telegramId === wanted) return one;
+    }
+    return null;
+  }
+
+  /*
+   * A session of the shape apps/web/session.js accepts and nothing
+   * looser - a demo session the shipped normalizer would reject is a
+   * demo of the rejection.
+   */
+  function sessionFor(who, options) {
     const opts = options || {};
     return {
       ok: true,
-      session: "demo-" + id,
+      session: "demo-" + who.id,
       // Far enough out that a long walk-through never expires mid-demo,
       // and still a real expiry: session.js refuses a credential without
-      // one, so a demo session has to be a well-formed session.
+      // one, so a demo session has to be a well-formed session. The
+      // admin page's own idle timer is the clock this demo moves, and
+      // the toolbar moves it rather than shortening this.
       expiresAt: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
-      username: opts.username || "demo_member",
-      isAdmin: opts.isAdmin === true,
-      isDev: false,
+      username: who.handle,
+      isAdmin: who.isAdmin === true,
+      isDev: opts.isDev === true,
       telegramId: opts.telegramId === undefined
-        ? MEMBER_TELEGRAM_ID : opts.telegramId,
+        ? who.telegramId : opts.telegramId,
     };
   }
 
-  const MEMBER_SESSION = sessionFor("member", { username: "demo_member" });
-  const ADMIN_SESSION = sessionFor("admin", {
-    username: "demo_keyholder", isAdmin: true,
+  /*
+   * The development sign-in's identity, kept apart from SIGN_INS.
+   *
+   * POST /auth/dev is a route of the product, not a person the picker
+   * offers, and its whole demonstrable property is the null Telegram id
+   * that keeps #58's line hidden. Putting it in the picker's list would
+   * put a row there that the deployed site has no door for.
+   */
+  const DEV_SIGN_IN = {
+    id: "dev", label: "Development", handle: "demo_dev", isAdmin: false,
+    telegramId: null, lands: "your-page.html",
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* What the toolbar is, and what each of its controls stages.       */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * The strip's own two words.
+   *
+   * The honesty line is a word or two by the owner's ruling and it is
+   * the ONLY prose the demo puts on a product page: every other
+   * sentence a driver reads on screen is the product's own. Growing it
+   * into an explanation is how the console's teaching voice comes back,
+   * one page down from where it was removed.
+   */
+  const TOOLBAR = Object.freeze({
+    title: "Demo",
+    honesty: "Nothing here is real.",
   });
 
   /*
-   * The scenarios are the STAGING: which session the tab holds, which
-   * corpus the stubbed snapshot route serves, whether a prefill or a
-   * revocation is waiting. The person-facing half lives on the
-   * FEATURES cards below (#209); the ids are plumbing, cited by the
-   * cards' actions and by dev/demo.test.mjs and by nothing a reader
-   * sees. No walk-through belongs here: UAT.md is the one home for a
-   * scripted walk, because #192 already showed what a script kept in
-   * two homes costs.
+   * WHAT MAY BE A BUTTON UP THERE, AND THE TEST THAT DECIDES IT.
    *
-   * `start` is where a card's action lands unless the action says
-   * otherwise. Every destination stays reachable in every scenario,
-   * because half of what this demo has to show is the rail carrying
-   * somebody between them.
+   * Only what a visitor could not produce for themselves (the owner's
+   * ruling). Signing in is on the list because there is no Telegram
+   * here to sign in with; publishing eighteen entries from six people
+   * is on it because a driver would have to submit them; moving the
+   * clock is on it because the alternative is waiting eight minutes.
+   * Navigating between pages is NOT on it - the product's own rail does
+   * that, and a demo that re-implements the rail is a demo showing its
+   * own navigation working.
+   *
+   * `group` is the row the control sits in. `needs` is what the page has
+   * to carry for the control to be able to act, so the toolbar can say
+   * why a press did nothing instead of doing nothing: "key" is a page
+   * with a key box, "clock" is a page running the idle timer, and no
+   * `needs` is a control that works anywhere.
    */
-  const SCENARIOS = [
+  const ENABLERS = [
     {
-      id: "signed-out",
-      label: "Arriving for the first time, signed out",
-      start: "index.html",
-      session: null,
-      boxes: ["shell", "signin-id"],
+      id: "reset",
+      group: "state",
+      label: "Reset everything",
+      what: "Empties this tab and this origin - sessions, keys, the " +
+        "palette, every staged snapshot - and opens the sign-in page " +
+        "as a stranger would find it.",
     },
     {
-      id: "member",
-      label: "Signed in, with a history",
-      start: "your-page.html",
-      session: MEMBER_SESSION,
-      boxes: ["shell", "signin-id", "panel", "dashboard"],
+      id: "sign-in",
+      group: "who",
+      label: "Sign in as",
+      what: "Writes the chosen identity's session and opens the page " +
+        "that identity is for. The sign-in page's own button offers " +
+        "the same list, through the product's own sign-in route.",
     },
     {
-      id: "member-prefilled",
-      label: "Coming back to a form that remembers you",
-      start: "your-page.html",
-      session: MEMBER_SESSION,
-      prefill: true,
-      boxes: ["panel", "signout"],
+      id: "key",
+      group: "who",
+      label: "Key in the box",
+      needs: "key",
+      what: "Puts the committed throwaway private key into this page's " +
+        "own key box. Everything after that is the page's own code.",
     },
     {
-      id: "supersede",
-      label: "A mistake, corrected",
-      start: "your-page.html",
-      session: MEMBER_SESSION,
-      boxes: ["panel", "supersede"],
+      id: "snapshot",
+      group: "data",
+      label: "Publish",
+      what: "Stages a published snapshot for the charts to draw, built " +
+        "by the shipped aggregation from fabricated submissions.",
     },
     {
-      id: "revoked",
-      label: "Signed out somewhere else",
-      start: "your-page.html",
-      session: MEMBER_SESSION,
-      revoked: true,
-      boxes: ["signout", "revocation"],
+      id: "grow",
+      group: "data",
+      label: "Add entries",
+      what: "Publishes the same people one round later, so the " +
+        "change-since figure has something to measure.",
     },
     {
-      id: "keyholder",
-      label: "The keyholder opens the corpus",
-      start: "admin.html",
-      session: ADMIN_SESSION,
-      boxes: ["keyholder", "admin-panel"],
+      id: "corrections",
+      group: "data",
+      label: "Seed corrections",
+      what: "Marks some of the member's rows superseded, so the " +
+        "corrections line on the member panel has a count to draw.",
     },
     {
-      id: "admin",
-      label: "Running the admin panel",
-      start: "admin.html",
-      session: ADMIN_SESSION,
-      boxes: ["admin-panel", "signout"],
-    },
-    {
-      id: "config-fallback",
-      label: "Before anyone has written the site copy",
-      start: "admin.html",
-      session: ADMIN_SESSION,
-      boxes: ["config"],
-    },
-    {
-      id: "suppressed",
-      label: "Too few people to publish",
-      start: "charts.html",
-      session: MEMBER_SESSION,
-      boxes: ["dashboard", "privacy"],
+      id: "clock",
+      group: "clock",
+      label: "Jump the clock",
+      needs: "clock",
+      what: "Moves this tab's clock forward far enough that the admin " +
+        "page's own idle timer warns, then expires, in seconds rather " +
+        "than in ten minutes.",
     },
   ];
 
   /*
-   * The feature cards, and the register they are written in (#209).
+   * The key box each page carries, and the committed half that opens
+   * what that page is for.
    *
-   * A card addresses the person deciding whether the PRODUCT is good:
-   * what the thing does, in their words, and a button that shows it
-   * happening. The machinery's own vocabulary is refused on a card by
-   * dev/demo.test.mjs, word by word, because the day a card needs
-   * those words is the day the console has gone back to addressing
-   * the auditor.
+   * A TABLE OF ONE IS STILL A TABLE, because the question the toolbar
+   * asks is "does the page I am standing on have a box", and the honest
+   * answer on four of the five pages is no. Hard-coding the admin
+   * page's box would make the control silently do nothing everywhere
+   * else, which is the class of failure this whole demo is built to
+   * refuse; the toolbar reads this and says why instead.
    *
-   * Every action names a staging id from SCENARIOS and optionally a
-   * page to open instead of that staging's `start`. The suite holds
-   * the coverage two-way - no action without its staging, no staging
-   * no card can reach - and holds UAT.md to one section per card,
-   * marked `card "Title"` in its heading, titles agreeing exactly in
-   * both directions.
-   *
-   * An action may also carry the `press`, `key` and `scroll` a journey
-   * stop carries, and the console sequences them through the same
-   * errand. They are here because a card can land on the wrong tab or
-   * in front of a locked box exactly as a stop can, and a second
-   * staging path for the free drive is the drift the stops' own header
-   * warns about one surface up.
-   *
-   * `try` is the one thing to touch in the frame after the press,
-   * carried on the action itself rather than painted from a separate
-   * list, because a pointer that cannot name its action is a pointer
-   * that outlives it. Same register as the cards, held to it by the
-   * same word list.
+   * The member's own key is deliberately absent. It is generated in the
+   * browser and cannot be exported, so there is no box to paste one
+   * into - which is the custody design being demonstrated rather than a
+   * gap in this table.
    */
-  const FEATURES = [
-    {
-      title: "Sign in with Telegram",
-      blurb: "Press the Telegram button and you are in - no password, " +
-        "no account form. The demo swaps the real widget for a local " +
-        "stand-in; everything after the press is the shipped code.",
-      actions: [{
-        label: "Arrive signed out",
-        scenario: "signed-out",
-        try: "Press the Telegram button on the page - everything " +
-          "after the press is the shipped sign-in.",
-      }],
-    },
-    {
-      title: "Weigh in",
-      blurb: "Your page keeps two tabs: what is on record, and the " +
-        "form for a new weigh-in. Your numbers are sealed inside your " +
-        "browser before anything is sent, so the server only ever " +
-        "holds them locked.",
-      actions: [{
-        label: "Open Your page",
-        scenario: "member",
-        try: "Fill in a weight and submit it - what leaves the form " +
-          "is already sealed.",
-      }],
-    },
-    {
-      title: "The form remembers you",
-      blurb: "Come back and the form is already filled with your last " +
-        "measurements. They are kept on this device and keyed to your " +
-        "account - signing out wipes them.",
-      actions: [{
-        label: "Return to a filled form",
-        scenario: "member-prefilled",
-        try: "Look at the form: your last measurements are already " +
-          "in it. Sign out and watch it empty.",
-      }],
-    },
-    {
-      title: "Fix a mistake",
-      blurb: "A correction replaces its row instead of adding another, " +
-        "so the count on record only claims what stands.",
-      actions: [{
-        label: "See a corrected record",
-        scenario: "supersede",
-        try: "Read the counts on your page: four entries stand, and " +
-          "two corrections rest behind them.",
-      }],
-    },
-    {
-      title: "Signed out means signed out",
-      blurb: "Sign out on one device and every other tab finds out the " +
-        "moment it asks for anything. A token captured before sign-out " +
-        "opens nothing.",
-      actions: [{
-        label: "Arrive after signing out elsewhere",
-        scenario: "revoked",
-        try: "Touch anything on the page - the first request is " +
-          "refused and you land back at Sign in.",
-      }],
-    },
-    {
-      title: "The keyholder's desk",
-      blurb: "The export opens only for the key. Fetch the sealed " +
-        "rows, unlock them with the demo's throwaway key, store the " +
-        "key for next time, and clear both copies with one press.",
-      /*
-       * `key` for the journey's reason, on the surface the journey does
-       * not cover. The card opens the same desk and its pointer tells a
-       * viewer to unlock the rows with the demo key - and it staged
-       * none, so a tester who opened the free drive met exactly the dead
-       * end the errand was added to remove: the product answering "paste
-       * or choose your key file first" about a key that exists only as a
-       * file in this repository. UAT sends a driver here by name for
-       * every state no stop leaves live, so this is a main road.
-       */
-      actions: [{
-        label: "Sit at the desk",
-        scenario: "keyholder",
-        key: true,
-        try: "Fetch the sealed rows, unlock them with the throwaway " +
-          "demo key, then clear both copies with one press.",
-      }],
-    },
-    {
-      title: "The admin's panel",
-      blurb: "One surface for the gang's controls: publish a fresh " +
-        "snapshot, manage who counts as an admin, export the rows.",
-      /*
-       * ALL THREE, FOR THE SAME REASON THE PUBLISHING STOPS CARRY THEM.
-       *
-       * The page keeps its publishing card in the markup and hidden, and
-       * reveals it only after a successful decrypt. This card promises
-       * publishing in its blurb and in its pointer, and staged none of
-       * that - so it opened on the key box with Publish reporting
-       * `disabled: false` and rendering nothing at all. The press did
-       * nothing and nothing said so, on the one card UAT sends a driver
-       * to by name for the taken-down charts.
-       *
-       * The promise is kept rather than withdrawn, which is the owner's
-       * ruling on this class: the screen is made to show what the words
-       * say. The order is the errand's, not this list's - the key before
-       * the press, or the product asks for a key file.
-       */
-      actions: [{
-        label: "Run the panel",
-        scenario: "admin",
-        key: true,
-        press: "run",
-        scroll: "publish-card",
-        try: "Publish a fresh snapshot, then open Muse's charts and " +
-          "see it drawn.",
-      }],
-    },
-    {
-      title: "Before anything is written",
-      blurb: "A brand-new deployment has no site copy yet, and every " +
-        "page shows the words it ships with. The first run is a " +
-        "normal day, not an error.",
-      actions: [{
-        label: "Start from empty",
-        scenario: "config-fallback",
-        try: "Read the page's wording - it is the shipped fallback, " +
-          "shown because nothing is written over it yet.",
-      }],
-    },
-    {
-      title: "Muse's charts",
-      blurb: "Everyone's progress drawn as one line - the combined " +
-        "weight, the deltas, the weight-over-time chart. Muse sees " +
-        "everyone and no one.",
-      actions: [{
-        label: "See the charts",
-        scenario: "member",
-        open: "charts.html",
-        try: "Scroll the charts: the combined weight, the deltas, " +
-          "and everyone's line drawn together.",
-      }],
-    },
-    {
-      title: "Too few to show",
-      blurb: "When fewer people have weighed in than the privacy floor " +
-        "allows, the charts hold back rather than point at somebody. " +
-        "A missing cell is the promise being kept.",
-      actions: [{
-        label: "See a thin week",
-        scenario: "suppressed",
-        try: "Look for the missing cells in the charts - each one is " +
-          "the privacy floor holding.",
-      }],
-    },
+  const KEY_BOXES = [
+    { page: "admin.html", box: "keyfile", key: DEV_KEY_FILE },
   ];
 
-  /* ---------------------------------------------------------------- */
-  /* The journeys (#238).                                             */
-  /* ---------------------------------------------------------------- */
-
-  /*
-   * Four walks through the binder, and the reason they exist.
-   *
-   * The cards above answer "what does this product do", one feature at
-   * a time, and a person who already knows the product can drive them
-   * in any order. A person seeing it for the first time cannot: nine
-   * chips is a list of state names with no first press, so everybody
-   * builds their own order and the demo is a different demo every time
-   * it is shown. A journey is the order, written down.
-   *
-   * A STOP IS A CARD PRESS WITH A SENTENCE ON IT. Nothing new is
-   * staged - a stop names a staging id from SCENARIOS and optionally a
-   * page to open instead of that staging's start, exactly as a card's
-   * action does, and the console sequences the same stage()/open() the
-   * cards use. There is no second staging path to keep in step, which
-   * is the one way a scripted layer over a working console goes wrong.
-   *
-   * THE NARRATION IS THE MEMBER'S VOICE, NOT THE DRIVER'S (#192, ruled
-   * for this slice). UAT.md is the acceptance script and stays
-   * auditor-precise; it POINTS at these stops by number rather than
-   * repeating them. Two audiences reading one walk is not two homes for
-   * one fact - it is one walk described to the two people who need it,
-   * and the pointers are held to resolving by dev/demo.test.mjs so the
-   * two cannot drift apart silently.
-   *
-   * `free` is the last stop of every journey and only the last. Every
-   * earlier stop is read behind glass, because a walk whose viewer has
-   * already clicked away is a walk being narrated over the wrong page -
-   * and then the frame is handed over deliberately, which is the point
-   * the whole demo has been building to. The owner re-cut this from a
-   * per-stop toggle: one unlock per journey is a simpler promise and a
-   * better story.
-   *
-   * `press` is the one control the stop presses in the frame once the
-   * page has arrived, and it exists for a specific failure: a staging
-   * can be correct and land on the wrong TAB, so a stop promising "your
-   * last measurements are already in it" showed a list of past entries
-   * instead. dev/demo.test.mjs holds every `press` to naming a control
-   * the shipped page really carries.
-   *
-   * `scroll` is that same promise one page-shape down. A stop can land
-   * on the right page and the right tab and still narrate something
-   * below the fold: the admin page carries the key box, the publishing
-   * controls and the membership lists on one long surface, so the stop
-   * about who holds admin opened with its subject a screen and a half
-   * away. It names a section of the page and the page brings itself
-   * there. dev/demo.test.mjs holds every `scroll` to naming a section
-   * the shipped page really carries, the same way it holds `press`.
-   *
-   * `key` stages the committed throwaway key into the page's own key
-   * box, so the keyholder's headline act is performable by somebody who
-   * has never seen this repository. The stop's own words have to name
-   * it a throwaway, and that is checked rather than trusted: a key
-   * going into a box in front of the person judging this design teaches
-   * the wrong lesson unless the sentence beside it says what kind of
-   * key it is.
-   */
-  const TOURS = [
-    {
-      id: "member",
-      title: "Your first weigh-in",
-      blurb: "The whole of what a member does: arrive, sign in, put a " +
-        "number in, correct one, and see where everyone stands.",
-      first: true,
-      stops: [
-        {
-          scenario: "signed-out",
-          title: "Arriving with no account",
-          narration: "This is what a stranger sees. There is no sign-up " +
-            "form and no password to choose - one Telegram button, and " +
-            "the gang already knows who you are. Nothing else on the " +
-            "site is reachable from here, and the pages do not just " +
-            "hide themselves: they refuse to ask for anything at all.",
-        },
-        {
-          scenario: "member",
-          title: "What is on record",
-          narration: "Signed in, and Your page opens on what the binder " +
-            "already holds for you. The count is what stands right now, " +
-            "not how many times you have written something down.",
-        },
-        {
-          scenario: "member",
-          press: "add-entry-tab",
-          title: "Putting a number in",
-          narration: "The other tab is the weigh-in itself. Your " +
-            "measurements are sealed inside this browser before " +
-            "anything is sent, so what the server stores it cannot " +
-            "read - it holds your numbers locked, and only the " +
-            "keyholder's key opens them.",
-        },
-        {
-          scenario: "member-prefilled",
-          press: "add-entry-tab",
-          title: "The form remembers you",
-          narration: "Come back another week and the form is already " +
-            "filled with what you put in last time, so a weigh-in is " +
-            "one number and a press. It is kept on this device and " +
-            "tied to your account - sign out and it goes.",
-        },
-        {
-          scenario: "supersede",
-          title: "Fixing a mistake",
-          narration: "A correction replaces the row it corrects instead " +
-            "of piling up beside it. Four entries stand and two " +
-            "corrections rest behind them, so the number on your page " +
-            "is what you meant, not what you typed.",
-        },
-        {
-          scenario: "member",
-          open: "charts.html",
-          scroll: "charts",
-          title: "Where everyone stands",
-          /*
-           * THE PICTURE IS BELOW THE PAGE'S OWN CONTROLS, so the stop
-           * moves to the container it is drawn into: charts.html opens
-           * on Count and Units, and the combined weight is drawn under
-           * them - far enough down that landing on the page itself
-           * would open the frame on the controls rather than on the
-           * picture this sentence is about. Landing on the container
-           * puts the hero - the weight, and the change since last time
-           * under it - at the top of it.
-           *
-           * AND THE SENTENCE STOPS AT THE HERO, because the hero is
-           * what lands with it. The weight-over-time chart is well
-           * below that line at every size, and this stop is behind
-           * glass like the membership one - naming the lines running
-           * through it would name something the viewer cannot reach.
-           * The free stop at the end of this walk hands the page over,
-           * and the site's own navigation reaches the rest of it.
-           *
-           * WHY NONE OF THAT IS IN PIXELS: the membership stop's
-           * comment below carries the argument in full. A rendered
-           * height written into prose here has no home in the source
-           * and nothing in the gate renders this page, so nothing can
-           * ever falsify it.
-           *
-           * What that argument cannot carry for this stop is the
-           * procedure, because it names the membership blocks. Here it
-           * is: bake this commit, walk to this stop at 1280x800 with
-           * the document's fonts reporting loaded, and read the
-           * rectangles off the hero at the top of the charts container
-           * and the Weight over time figure drawn under it. Those two
-           * rectangles against the frame's own height are what the
-           * paragraphs above mean by far enough down and well below.
-           */
-          narration: "Everybody's numbers drawn as one picture - the " +
-            "combined weight, and under it the change since last " +
-            "time. Nobody's name is in any of it.",
-        },
-        {
-          scenario: "member",
-          press: "add-entry-tab",
-          free: true,
-          title: "Now you try",
-          narration: "The page is yours from here. Fill the form in and " +
-            "submit it, move around with the site's own navigation, " +
-            "sign out and back in. Everything you press is the real " +
-            "code - only the answers are staged.",
-        },
-      ],
-    },
-    {
-      id: "keyholder",
-      title: "The keyholder's desk",
-      blurb: "The one act the whole design turns on: the sealed rows " +
-        "come back, and only the key opens them.",
-      stops: [
-        {
-          scenario: "keyholder",
-          title: "Sealed, even to the people running it",
-          narration: "This is the desk the gang's numbers are read " +
-            "from. What the server hands over is locked - every row " +
-            "sealed in the browser that wrote it, and nothing here has " +
-            "ever seen a key.",
-        },
-        {
-          scenario: "keyholder",
-          key: true,
-          title: "The key goes in the box",
-          narration: "The key is in the box now, put there for you. It " +
-            "is a throwaway pair kept in this project on purpose - it " +
-            "protects nothing and opens nothing real, so it is safe to " +
-            "show. The one the gang actually uses is held offline and " +
-            "has never been anywhere near here.",
-        },
-        {
-          scenario: "keyholder",
-          key: true,
-          free: true,
-          title: "Now you try",
-          narration: "Press Fetch and decrypt. The rows arrive sealed " +
-            "and open in front of you, and Clear takes both copies " +
-            "away again - the one on screen and the one this browser " +
-            "was keeping for next time.",
-        },
-      ],
-    },
-    {
-      id: "admin",
-      title: "Running the gang",
-      blurb: "Publishing the figures, deciding who counts as an admin, " +
-        "and what the site does on its very first day.",
-      stops: [
-        {
-          scenario: "admin",
-          key: true,
-          press: "run",
-          scroll: "publish-card",
-          title: "One surface for the gang's controls",
-          narration: "Publishing a fresh set of figures is one press, " +
-            "and what goes out carries no names and no rows - only the " +
-            "totals the charts draw.",
-        },
-        {
-          scenario: "admin",
-          scroll: "membership-admin",
-          title: "Who is allowed in here",
-          /*
-           * THE ANCHOR IS THE LIST, NOT THE CARD AROUND IT. `scroll`
-           * aligns the TOP of what it names, and this card carries an
-           * add-a-member form - two fields, a pair of radios and a
-           * button - ahead of the list. Naming the card therefore
-           * opens the frame on that empty form rather than on the
-           * rows this sentence is about, and the stop is behind glass,
-           * so a viewer cannot scroll down to them.
-           *
-           * The rows that grant nothing are just past the fold rather
-           * than a screen beyond it, so the sentence states the
-           * guard's rule instead of pointing at them - which is what
-           * keeps it true of what is on the screen rather than only of
-           * the card.
-           *
-           * THE PROPERTY, AND NOT A PIXEL COUNT. What "just past"
-           * means, in the only form worth trusting: the always-allow
-           * list ends inside the frame, and no row that grants nothing
-           * is on screen at all. That second half is the load-bearing
-           * one - the sentence may not point at a row a viewer cannot
-           * see - and it holds with room to spare under every
-           * measurement this stop has been given.
-           *
-           * WHERE THE HEADING OVER THOSE ROWS FALLS IS NOT PART OF THE
-           * CLAIM, and deliberately so: two careful sessions measuring
-           * this one stop, on one commit at one frame size, disagree
-           * about whether the fold cuts that heading or leaves it
-           * whole. This comment asserts neither answer, because the
-           * narration does not depend on one - and a reader who
-           * measures a third time and gets a third answer has found
-           * nothing that contradicts anything written here.
-           *
-           * Re-establish the two claims that ARE made the way they are
-           * found: bake this commit, walk to this stop at 1280x800
-           * with the document's fonts reporting loaded, and read the
-           * rectangles off the membership-always_allow and
-           * membership-malformed blocks. That is the same procedure
-           * the two sessions ran, which is exactly why the heading is
-           * left out of the claim and the two wide-margin facts are
-           * not.
-           *
-           * A figure written here instead would be a number nothing
-           * can falsify - the geometry arm in dev/demo.test.mjs reads
-           * markup rather than rendered height, and nothing else in
-           * the gate renders this page at all - and it would not even
-           * be stable: the two sessions above disagree, so a figure
-           * here would have to pick one of them and call it settled.
-           * That is the trap, and it is why this paragraph carries no
-           * figure of its own.
-           *
-           * The free stop at the end of this walk is where the rows
-           * that grant nothing can be pressed.
-           */
-          narration: "The list of people who hold admin, kept where it " +
-            "can be read and changed. The last row that really grants " +
-            "admin cannot be removed - the guard counts grants and not " +
-            "rows, so a row that grants nothing neither holds this list " +
-            "open nor is stuck in it. Underneath is the floor beneath " +
-            "even that: one admin is granted by a setting the server " +
-            "holds and by no row here.",
-        },
-        {
-          scenario: "config-fallback",
-          open: "charts.html",
-          title: "The first day, before anyone has written anything",
-          narration: "A brand-new binder has no words written into it " +
-            "yet, and this is what it shows: the words every page ships " +
-            "with, standing in until somebody writes their own. The " +
-            "first run is an ordinary day, not an error. Editing them " +
-            "from the admin panel is still being built.",
-        },
-        {
-          scenario: "admin",
-          title: "It closes itself if you walk away",
-          narration: "This page holds everybody's numbers open, so it " +
-            "watches the clock: two minutes' warning, and after ten " +
-            "minutes with nobody touching it, it signs itself out and " +
-            "throws away what it had decrypted. The console has been " +
-            "keeping this page awake while we talked. From the next " +
-            "stop it stops, and the clock is the real one.",
-        },
-        {
-          scenario: "admin",
-          key: true,
-          press: "run",
-          scroll: "publish-card",
-          free: true,
-          title: "Now you try",
-          narration: "Publish a set of figures, then open Muse's charts " +
-            "and find them drawn. Add somebody to the admin list and " +
-            "watch the panel read the list back rather than trusting " +
-            "what it just sent.",
-        },
-      ],
-    },
-    {
-      id: "refuses",
-      title: "What the binder will not hand over",
-      blurb: "Two refusals, and both of them are the promise being " +
-        "kept rather than something going wrong.",
-      stops: [
-        {
-          scenario: "revoked",
-          title: "Signed out somewhere else",
-          narration: "You signed out on your phone, and this tab still " +
-            "holds what looks like a valid pass. It is not: the first " +
-            "thing this page asks for comes back refused and you land " +
-            "at sign-in. A pass copied before you signed out opens " +
-            "nothing afterwards.",
-        },
-        {
-          scenario: "suppressed",
-          title: "Too few people to show",
-          narration: "The same charts, on a week when hardly anyone " +
-            "weighed in. Cells are missing, and that is the point - " +
-            "with few enough people a total stops being everybody and " +
-            "starts being somebody. The binder holds those back rather " +
-            "than pointing at a person.",
-        },
-        {
-          scenario: "suppressed",
-          free: true,
-          title: "Now you try",
-          narration: "Go looking for the gaps. Every one of them is a " +
-            "figure the binder could have drawn and decided not to.",
-        },
-      ],
-    },
-  ];
-
-  /* ---------------------------------------------------------------- */
-  /* Reading the shipped bytes for what a box needs.                  */
-  /* ---------------------------------------------------------------- */
-
-  /*
-   * A source file with its comments removed, so a probe cannot be
-   * satisfied by somebody writing about the feature.
-   *
-   * WHY THIS IS A SCANNER AND NOT TWO REGULAR EXPRESSIONS. Stripping
-   * `//` to end of line would delete the line holding
-   * "https://telegram.org", and deleting real code is how a probe
-   * arrives at "not yet" for a feature that shipped. So string, template
-   * and comment state are tracked together: whichever opens first wins,
-   * which is also how the language reads it. A `//` inside a string
-   * stays; a quote inside a comment cannot open a string.
-   *
-   * Regex literals are not tracked, and that is a bounded gamble rather
-   * than an oversight: a regular expression cannot contain an unescaped
-   * `//` or `/*` without ending itself, so the sequences this scanner
-   * reacts to cannot appear inside one.
-   */
-  function withoutComments(source, extension) {
-    const text = String(source);
-
-    if (extension === ".html") {
-      return text.replace(/<!--[\s\S]*?-->/g, " ");
+  function keyBoxFor(file) {
+    for (const one of KEY_BOXES) {
+      if (one.page === file) return one;
     }
-
-    let out = "";
-    let index = 0;
-    let quote = null;
-    const block = extension === ".css";
-
-    while (index < text.length) {
-      const here = text[index];
-      const next = text[index + 1];
-
-      if (quote !== null) {
-        out += here;
-        if (here === "\\") {
-          out += next === undefined ? "" : next;
-          index += 2;
-          continue;
-        }
-        if (here === quote) quote = null;
-        index += 1;
-        continue;
-      }
-
-      if (here === "/" && next === "*") {
-        const end = text.indexOf("*/", index + 2);
-        out += " ";
-        index = end === -1 ? text.length : end + 2;
-        continue;
-      }
-
-      if (!block && here === "/" && next === "/") {
-        const end = text.indexOf("\n", index);
-        out += " ";
-        index = end === -1 ? text.length : end;
-        continue;
-      }
-
-      if (!block && (here === '"' || here === "'" || here === "`")) {
-        quote = here;
-      }
-
-      out += here;
-      index += 1;
-    }
-
-    return out;
+    return null;
   }
 
   /*
-   * Only what is inside a tag - attributes, element names - with text
-   * content dropped.
+   * The snapshot rows: three whole worlds, and the step between them.
    *
-   * The second half of the same problem. "instrument" is an ordinary
-   * English word, and a page describing the panel in a paragraph carries
-   * it just as readily as a page implementing one. Markup is where a
-   * feature actually lands: a class, an id, an element. Prose is not.
+   * The counts are NOT written here. "Eighteen entries from six people"
+   * is a fact about the corpus tables at the bottom of this file, and a
+   * label carrying its own copy of that number is a label free to
+   * disagree with the charts underneath it - which is the demo lying
+   * with every one of its own checks green. countsFor() reads the
+   * corpus; the toolbar renders what it answers.
    *
-   * This can report "not yet" for a panel whose only occurrence of the
-   * word is a heading, and that is the direction to be wrong in. A box
-   * reading "not yet" when the work landed costs somebody a second look;
-   * a box reading "drivable" when nothing landed is a false PASS handed
-   * to the person deciding the cutover.
+   * `rounds` is how many of each person's weigh-ins the snapshot
+   * carries, and `null` means all of them. It is what "Add entries"
+   * advances, so the presets and the incremental button are one
+   * mechanism rather than two.
    */
-  function markupOf(html) {
-    return (String(html).match(/<[^>]*>/g) || []).join("\n");
-  }
-
-  function extensionOf(file) {
-    const at = String(file).lastIndexOf(".");
-    return at === -1 ? "" : String(file).slice(at).toLowerCase();
-  }
-
-  /*
-   * Whether the shipped bytes carry what a box needs. The console paints
-   * this answer and dev/demo.test.mjs drives it, so the verdict the owner
-   * reads and the verdict the gate reasons about are one function.
-   */
-  function probeHit(source, probe) {
-    const extension = extensionOf(probe.file);
-    let text = withoutComments(source, extension);
-    if (probe.markup === true) text = markupOf(text);
-    return text.indexOf(probe.pattern) !== -1;
-  }
-
-  /*
-   * Where the console fetches a probe's bytes from, and how it gets the
-   * SHIPPED bytes back out of them.
-   *
-   * A page probe is read through the mirror, and the reason is the one
-   * rule a hosted build cannot bend: an apps/web page served at a path
-   * the mirror did not produce carries no dev/demo-boot.js, so its own
-   * scripts call fetch for real. So a bake emits no page anywhere but
-   * /demo/, and the console reads the mirrored copy and undoes the
-   * edits - which returns the shipped file byte for byte, the round
-   * trip dev/demo.test.mjs already holds the mirror to.
-   *
-   * Everything else is read from its own path: unmirror is a no-op on a
-   * stylesheet, and routing it through /demo/ would only add a way for
-   * the two paths to disagree.
-   *
-   * One rule for both arms, so what the local server serves and what a
-   * bake emits are answering the same question.
-   */
-  function probeUrlFor(file) {
-    const path = String(file);
-    if (extensionOf(path) !== ".html") return "/" + path;
-    return "/demo/" + path.slice(path.lastIndexOf("/") + 1);
-  }
-
-  function probeSourceOf(file, text) {
-    return extensionOf(String(file)) === ".html"
-      ? unmirror(text) : String(text);
-  }
-
-  /*
-   * The acceptance boxes from #122, and how the console decides whether
-   * each one is drivable yet.
-   *
-   * A probe reads the shipped bytes for the thing the box needs. It is
-   * derived rather than written down for the reason #122 states: boxes
-   * whose UI slices have not landed block the demo exactly as long as
-   * they block the cutover, so the demo has to report that state rather
-   * than assert one. When PR 5 adds the pane, the pane's own bytes flip
-   * its box to drivable and nobody edits this file.
-   *
-   * A PATTERN IS CHOSEN FOR WHAT ONLY THE IMPLEMENTATION CAN CONTAIN.
-   * The three boxes still waiting on a slice are the three whose probes
-   * were plain enough to be satisfied by a sentence - one TODO comment
-   * mentioning "instrument" flipped admin-panel to drivable with nothing
-   * built. Comments no longer count anywhere; `instrument` is anchored to
-   * markup on top of that; and the config probe asks for the quoted path
-   * as the call sites write it rather than for the four characters
-   * `/content` wherever they fall.
-   *
-   * dev/demo.test.mjs pins the mechanism - every box has a probe, every
-   * probe names a file that exists, and none of them can be satisfied
-   * from a comment - and deliberately does not pin the answers. A gate
-   * that failed the day PR 5 landed would be a gate asking the project
-   * to stand still.
-   */
-  const BOXES = [
+  const PRESETS = [
     {
-      id: "shell",
-      title: "The identity and shell",
-      probe: { file: "apps/web/theme.css", pattern: "cover-leaf" },
+      id: "full",
+      corpus: "rich",
+      rounds: null,
+      label: "Full group",
+      what: "Everybody, every round. Over the floor the published " +
+        "series needs, so the charts draw.",
     },
     {
-      id: "signin-id",
-      title: "Sign-in surfaces the member's own numeric id (#58)",
-      probe: { file: "apps/web/submit.js", pattern: "showTelegramId" },
+      id: "thin",
+      corpus: "sparse",
+      rounds: null,
+      label: "Thin week",
+      what: "Under that floor on purpose, so the suppression is the " +
+        "thing on screen.",
     },
     {
-      id: "revocation",
-      title: "Sign-out revokes server-side (#90)",
-      probe: { file: "apps/web/signout.js", pattern: "\"DELETE\"" },
-    },
-    {
-      id: "keyholder",
-      title: "Import the key once, return without a paste; Clear (#70)",
-      probe: { file: "apps/web/admin.js", pattern: "storedKeyVerdict" },
-    },
-    {
-      id: "panel",
-      title: "The member panel and its prefill (#56)",
-      probe: { file: "apps/web/submit.js", pattern: "restorePrefill" },
-    },
-    {
-      id: "supersede",
-      title: "A correction supersedes; /me counts effective entries (#84)",
-      probe: { file: "apps/web/submit.js", pattern: "superseded" },
-    },
-    {
-      id: "config",
-      title: "Admin edits site content through the config routes (#87)",
-      // The quoted path, because that is how every call site in apps/web
-      // writes one: `config.endpoint + "/content"`. The bare four
-      // characters also occur in any sentence naming the route.
-      probe: { file: "apps/web/admin.js", pattern: "\"/content\"" },
-    },
-    {
-      id: "dashboard",
-      title: "The dashboard payoff: hero, deltas, marquee series",
-      probe: { file: "apps/web/dashboard.js", pattern: "lineChart" },
-    },
-    {
-      id: "admin-panel",
-      title: "The admin instrument panel reads as the admin surface (#68)",
-      // Anchored to markup: the word is ordinary English, and #68's own
-      // text uses it. A class or an id carrying it is the panel; a
-      // paragraph carrying it is a plan.
-      probe: {
-        file: "apps/web/admin.html", pattern: "instrument", markup: true,
-      },
-    },
-    {
-      id: "signout",
-      title: "Sign-out everywhere",
-      probe: { file: "apps/web/signout.js", pattern: "BinderSignOut" },
-    },
-    {
-      id: "privacy",
-      title: "No handles, no rows, no sub-floor cells in anything published",
-      probe: { file: "apps/web/dashboard.js", pattern: "MIN_CELL" },
+      id: "empty",
+      corpus: null,
+      rounds: 0,
+      label: "Empty",
+      what: "Nothing published at all, which is what a binder looks " +
+        "like before anybody presses Publish.",
     },
   ];
 
+  function presetFor(id) {
+    for (const one of PRESETS) {
+      if (one.id === id) return one;
+    }
+    return null;
+  }
+
+  /*
+   * WHAT RESET TAKES, AND WHY IT IS EVERYTHING IT IS HANDED.
+   *
+   * The owner's word for this button is EVERYTHING: the tab has to read
+   * like a stranger's first arrival, which means the session, the
+   * palette a driver chose three presses ago, the entry prefill, the
+   * key databases both pages keep, and every world this demo staged.
+   * The temptation is to clear the demo's own three keys and call it
+   * reset - and that leaves a signed-in tab in the chosen palette with
+   * a key still in the browser, which looks reset and is not.
+   *
+   * So this takes an INVENTORY of what the browser is actually holding
+   * and hands all of it back. It names nothing itself: the product's
+   * storage keys and its database names belong to apps/web, and a copy
+   * of them here would be a second home for a fact that moves. The
+   * browser half enumerates - `Object.keys` on both stores and
+   * `indexedDB.databases()` - and this decides, so dev/demo.test.mjs
+   * can hold the decision to sparing nothing.
+   */
+  function resetPlan(inventory) {
+    const held = inventory || {};
+    const all = (list) => (Array.isArray(list) ? list.slice() : []);
+    return {
+      session: all(held.session),
+      local: all(held.local),
+      databases: all(held.databases),
+      open: MIRROR_PATH + FIRST_VISIT,
+    };
+  }
+
+  /*
+   * How far the toolbar moves this tab's clock, given the window the
+   * page it is standing on actually measures.
+   *
+   * THE BOUNDS ARE AN ARGUMENT, AND THAT IS THE WHOLE HONESTY OF IT.
+   * Ten minutes and two are apps/web/admin.js's numbers, and the
+   * browser half reads them off `BinderAdmin.IDLE_WINDOW` at press
+   * time. Written here instead, this file would carry a second copy of
+   * a constant that page is free to change - and the demo would jump to
+   * a warning the page is no longer showing, in front of the person
+   * deciding whether the timer is right.
+   *
+   * A second past the boundary rather than exactly on it: the page
+   * reads its own clock on a one-second tick, so landing on the edge is
+   * a jump whose outcome depends on which side of a tick it arrives.
+   *
+   * Null for bounds it cannot read, so the caller says "this page runs
+   * no idle timer" rather than moving a clock by a made-up amount.
+   */
+  function clockJumpFor(step, bounds) {
+    const window = bounds || {};
+    if (!Number.isFinite(window.idleMs) || !Number.isFinite(window.warnMs)) {
+      return null;
+    }
+    if (step === "warning") return window.idleMs - window.warnMs + 1000;
+    if (step === "expiry") return window.idleMs + 1000;
+    return null;
+  }
+
+  const CLOCK_STEPS = [
+    { id: "warning", label: "to the warning" },
+    { id: "expiry", label: "past it" },
+  ];
+
   /* ---------------------------------------------------------------- */
-  /* Where the frame really is.                                        */
+  /* Which page of the product this is.                                */
   /* ---------------------------------------------------------------- */
 
   /*
-   * What the console should say, given the address the FRAME reports.
+   * What the toolbar is standing on, given the address the browser
+   * reports.
    *
-   * THE ADDRESS IS DERIVED FROM THE FRAME, NEVER FROM THE PRESS, and
-   * this function plus the load listener that feeds it are the whole of
-   * that. Compute either value from the file the console ASKED for and
-   * the console names a page nobody is looking at: the pages in the
-   * frame are real, live JavaScript, so an already-signed-in visitor at
-   * Sign in is redirected to Your page, a revoked session bounces back
-   * to Sign in on load, an auth guard refuses a gated page, and the
-   * product's own rail carries somebody anywhere at any time. None of
-   * that goes through the console.
+   * THE ADDRESS IS READ, NEVER REMEMBERED. The toolbar rides on the
+   * product's own pages and the product moves itself: an
+   * already-signed-in visitor at Sign in is redirected to Your page, a
+   * revoked session bounces back to Sign in on load, an auth guard
+   * refuses a gated page, and the rail carries somebody anywhere at any
+   * time. A strip that decided where it was from the last press it
+   * handled would offer the key box on a page that has none.
    *
-   * Pure here for frameStyleFor's reason: the hazard is a readout that
-   * disagrees with the screen, and a value dev/demo.test.mjs can assert
-   * is the only version of this the suite can hold. The browser half
-   * reads a location and assigns.
-   *
-   * A null href is the frame refusing to be read - a cross-origin
-   * location throws rather than answering. The mirror's link edit is
-   * what stops the frame ever leaving, so arriving here means something
-   * got past it, and the honest answer is to say the frame is gone. The
-   * alternative is keeping the last page the console asked for on
-   * screen, which is the same lie this function exists to end, told
-   * about a blank frame.
+   * Pure so dev/demo.test.mjs can assert it: the hazard is a control
+   * that acts on the wrong page, and the browser half only reads
+   * location and hands the string over.
    *
    * `inside` and `file` are two facts, not one. 404.html is a real page
-   * of the product, reachable in the frame, and no destination: it is
-   * inside the demo with none of the four rail buttons current, and
-   * lighting one for it would be this lie in a quieter place.
+   * of the product, reachable and named by no destination, so a page
+   * can be inside the demo and still be none of the four.
    */
-  const FRAME_AWAY =
-    "The frame has left the demo - this is not one of its pages.";
+  const AWAY =
+    "This is not one of the demo's pages.";
 
-  function frameAddressOf(href) {
-    const away = { shown: FRAME_AWAY, file: null, inside: false };
+  function pageAddressOf(href) {
+    const away = { shown: AWAY, file: null, inside: false };
     if (typeof href !== "string" || href === "") return away;
 
     const there = resolved(href, undefined);
@@ -1740,6 +1228,13 @@
   const DIRECTORY_INDEX = "index.html";
 
   /*
+   * The demo's own server serves it too, so that the local arm and a
+   * static host answer a bare directory the same way - the tidying this
+   * function exists to recognize is one a driver should be able to
+   * reproduce without deploying anything.
+   */
+
+  /*
    * THE DESTINATIONS ARE AN ARGUMENT, AND THAT IS WHAT MAKES THE ROOT'S
    * FOLD A CHECKED BRANCH RATHER THAN A DESCRIBED ONE.
    *
@@ -1772,53 +1267,8 @@
   }
 
   /* ---------------------------------------------------------------- */
-  /* The frame's size.                                                 */
-  /* ---------------------------------------------------------------- */
-
-  function viewportFor(id) {
-    for (const one of VIEWPORTS) {
-      if (one.id === id) return one;
-    }
-    return null;
-  }
-
-  /*
-   * What the console writes onto the frame element, and why the two
-   * assignments are computed here rather than there.
-   *
-   * The hazard this control carries is a frame that LOOKS phone-shaped
-   * around a page still laid out at desktop width - a screen that reads
-   * as evidence and is not, shown to the person deciding the cutover.
-   * Sizing anything other than the frame itself produces it, so the size
-   * is a value dev/demo.test.mjs can assert and the browser half only
-   * assigns.
-   *
-   * An unknown id is refused rather than answered with the default. A
-   * silent fall back to desktop paints a desktop page under a control
-   * reading Phone, which is the same lie an unstaged scenario id told
-   * before it was made to refuse.
-   *
-   * The empty strings are a clear, not a size: assigning "" removes the
-   * inline declaration and hands the frame back to dev/demo.css, so
-   * there is one place that says how big the desktop frame is.
-   */
-  function frameStyleFor(id) {
-    const view = viewportFor(id);
-    if (view === null) return null;
-    if (view.width === null) return { width: "", height: "" };
-    return { width: view.width + "px", height: view.height + "px" };
-  }
-
-  /* ---------------------------------------------------------------- */
   /* The stubbed Worker.                                              */
   /* ---------------------------------------------------------------- */
-
-  function scenarioFor(id) {
-    for (const scenario of SCENARIOS) {
-      if (scenario.id === id) return scenario;
-    }
-    return null;
-  }
 
   const REFUSED = {
     status: 401,
@@ -1845,33 +1295,32 @@
     const next = Object.assign({}, state);
 
     /*
-     * A staged id that names no scenario refuses, loudly, naming the id.
+     * A staged id that names nobody refuses, loudly, naming the id.
      *
-     * Falling through to `{}` here would answer as a generic member:
-     * a plausible screen built from a world nobody staged, which is the
-     * exact failure this file's own suite header calls the way demos
-     * fail. The state that produces it is ordinary rather than exotic -
-     * a scenario renamed while a tab still holds the old id in
+     * Falling through to a generic member would answer with a plausible
+     * screen built from a world nobody staged, which is the exact
+     * failure this file's own suite header calls the way demos fail.
+     * The state that produces it is ordinary rather than exotic - an
+     * identity renamed while a tab still holds the old id in
      * sessionStorage.
      *
-     * An absent id is not an error. The console has not staged anything
-     * yet at first paint, and dev/demo.test.mjs drives routing with no
-     * world at all.
+     * An absent id is not an error. A first arrival is signed out, and
+     * dev/demo.test.mjs drives routing with no world at all.
      */
-    if (state.scenario !== undefined && state.scenario !== null &&
-        String(state.scenario) !== "" &&
-        scenarioFor(state.scenario) === null) {
+    if (state.signedInAs !== undefined && state.signedInAs !== null &&
+        String(state.signedInAs) !== "" &&
+        signInFor(state.signedInAs) === null) {
       return {
         status: 500,
         body: {
-          error: "The demo has no scenario \"" + state.scenario + "\". " +
-            "It was probably renamed - reset the demo and pick one again.",
+          error: "The demo has nobody called \"" + state.signedInAs +
+            "\". Press Reset everything and sign in again.",
         },
         next: next,
       };
     }
 
-    const scenario = scenarioFor(state.scenario) || {};
+    const who = signInFor(state.signedInAs);
 
     if (route === null) {
       return {
@@ -1886,39 +1335,66 @@
 
     // Every gated route refuses once the row is gone, because that is
     // what revocation is: the token is still well formed and names
-    // nothing. Two ways to arrive here - the `revoked` scenario stages it
-    // directly, and pressing Sign out in any scenario sets it below,
-    // which is what makes #90 drivable rather than described.
+    // nothing. Pressing the product's own Sign out is what sets it,
+    // below, which is what makes #90 drivable rather than described -
+    // and it is deliberately not a toolbar button, because a visitor
+    // can produce it themselves.
     //
-    // READING site copy is the one exemption, and it is the read alone:
-    // handleReadContent takes no credential and every write on that path
-    // is an admin session like all the others, so exempting the whole
-    // path would demonstrate an unauthenticated write the Worker refuses.
-    if (scenario.revoked === true || state.revoked === true) {
-      const openRead = route === "/content" && method === "GET";
-      if (!openRead) {
+    // Two exemptions, and both are routes that take no credential at
+    // all. READING site copy is the first, and it is the read alone:
+    // handleReadContent takes none, and every write on that path is an
+    // admin session like all the others, so exempting the whole path
+    // would demonstrate an unauthenticated write the Worker refuses.
+    // SIGNING IN is the second, and leaving it out made Sign out a
+    // one-way door: the tab that had just revoked itself could never
+    // sign in again, which is a dead end reached by pressing the one
+    // control this demo most wants driven.
+    if (state.revoked === true) {
+      const noCredential = (route === "/content" && method === "GET") ||
+        route === "/auth/telegram" || route === "/auth/dev";
+      if (!noCredential) {
         return { status: REFUSED.status, body: REFUSED.body, next: next };
       }
     }
 
+    /*
+     * The sign-in routes, answered from what the page POSTED.
+     *
+     * The demo's picker chooses an identity and hands the page a widget
+     * payload; auth.js posts it; this reads the id back out. That order
+     * is the whole reason the picker is worth having - the session a
+     * driver ends up holding is one the product's own sign-in produced,
+     * not one the demo wrote into storage behind it.
+     *
+     * The development route answers a null Telegram id by construction,
+     * which is what keeps #58's line correctly hidden on that arm.
+     */
     if (route === "/auth/telegram" || route === "/auth/dev") {
+      const posted = route === "/auth/dev"
+        ? null : signInForTelegramId((request.body || {}).id);
+      const chosen = route === "/auth/dev" ? DEV_SIGN_IN
+        : (posted || signInFor("member"));
       const session = route === "/auth/dev"
-        ? sessionFor("dev", { username: "demo_dev", telegramId: null })
-        : sessionFor("member", { username: "demo_member" });
+        ? sessionFor(DEV_SIGN_IN, { telegramId: null, isDev: true })
+        : sessionFor(chosen, {
+          telegramId: String((request.body || {}).id || chosen.telegramId),
+        });
       next.session = session;
+      next.signedInAs = chosen.id;
+      // A sign-in is a live credential again, whatever the last one did.
+      next.revoked = false;
       return { status: 200, body: session, next: next };
     }
 
     if (route === "/session") {
-      // Signing out deletes the row. The scenario that demonstrates what
-      // that costs a captured token is `revoked`; here it is enough that
-      // the answer is the Worker's.
+      // Signing out deletes the row, and what that costs a captured
+      // token is the next request on any gated route.
       next.revoked = true;
       return { status: 200, body: { ok: true }, next: next };
     }
 
     if (route === "/me") {
-      return { status: 200, body: meFor(scenario), next: next };
+      return { status: 200, body: meFor(who, state), next: next };
     }
 
     /*
@@ -1932,20 +1408,30 @@
      * story the driver never walked.
      */
     if (route === "/my-entries") {
+      /*
+       * The rows and the counts on /me are one model, not two.
+       *
+       * A tombstone is a row that is still stored: the corrections seed
+       * makes /me report two of them, so this listing has to carry two
+       * more rows than the effective count and mark exactly those. A
+       * listing that answered the effective count would let the panel
+       * and the history disagree about how many times this member has
+       * written, with nothing to say which one is right.
+       */
+      const mine = meFor(who, state);
+      const rows = mine.entries + mine.superseded;
       return {
         status: 200,
         body: {
           ok: true,
-          entries: (meFor(scenario).entries
-            ? Array.from({ length: meFor(scenario).entries }, function (_, i) {
-              return {
-                id: 100 + i,
-                receivedAt: new Date(Date.UTC(2026, 6, 1 + i)).toISOString(),
-                superseded: false,
-                ciphertext: "AmRlbW8tcm93LW5vdC1zZWFsZWQtdG8tYW55LWtleQ==",
-              };
-            })
-            : []),
+          entries: Array.from({ length: rows }, function (_, i) {
+            return {
+              id: 100 + i,
+              receivedAt: new Date(Date.UTC(2026, 6, 1 + i)).toISOString(),
+              superseded: i < mine.superseded,
+              ciphertext: "AmRlbW8tcm93LW5vdC1zZWFsZWQtdG8tYW55LWtleQ==",
+            };
+          }),
         },
         next: next,
       };
@@ -1980,20 +1466,23 @@
       /*
        * A TAKEDOWN IS NOT THE SAME WORLD AS ONE NOBODY HAS PUBLISHED IN.
        *
-       * This was `state.published || <the corpus this staging carries>`,
-       * and `||` reads the null DELETE writes as "nothing staged yet":
-       * the press answered 200, the world honestly reported
-       * `published: null`, and the very next read handed back the same
-       * eighteen entries from six people. Unpublish was
-       * indistinguishable from never having pressed it, which is the one
-       * thing UAT A10.1 exists to accept.
+       * Written as an `undefined` test rather than as `state.published
+       * || <the staged corpus>`, because `||` reads the null a DELETE
+       * writes as "nothing staged yet": the press answers 200, the
+       * world honestly reports `published: null`, and the very next
+       * read hands back the same entries from the same people.
+       * Unpublish is then indistinguishable from never having pressed
+       * it, which is the one thing UAT A10.1 exists to accept.
        *
        * `undefined` is never-touched and `null` is taken-down, and the
        * two survive the trip through this demo's sessionStorage because
-       * JSON keeps a null and drops an undefined.
+       * JSON keeps a null and drops an undefined. The toolbar's Publish
+       * row writes the staged document into `data` and leaves
+       * `published` alone, so a snapshot preset and a takedown stay two
+       * different facts about the same world.
        */
       const published = state.published === undefined
-        ? (scenario.id === "suppressed" ? data.sparse : data.rich)
+        ? data.staged
         : state.published;
       /*
        * And the refusal is the WORKER's, word for word. server/worker.js
@@ -2231,194 +1720,29 @@
   }
 
   /*
-   * What GET /me says in each scenario.
+   * What GET /me says about whoever is signed in.
    *
    * `entries` is the effective count and `superseded` sits beside it,
-   * exactly as the Worker computes them - the supersede scenario is the
-   * one that makes the difference visible, and it is only visible if the
-   * two numbers are staged as two numbers.
+   * exactly as the Worker computes them. The two are staged as two
+   * numbers because that is the only way the difference is visible: the
+   * corrections seed moves the tombstone count and leaves the effective
+   * count where it is, so the number the panel leads with does not
+   * change and the only thing that appears on screen is the corrections
+   * line beside it. Six rows written, four claimed, is what a member who
+   * corrected twice sees.
    */
-  function meFor(scenario) {
-    const supersede = scenario.id === "supersede";
+  function meFor(who, state) {
+    const signedIn = who || signInFor("member");
+    const world = state || {};
     return {
       ok: true,
-      accountId: scenario.session && scenario.session.isAdmin
-        ? ADMIN_ACCOUNT : MEMBER_ACCOUNT,
-      // Four effective entries in both, so the number the panel leads
-      // with does not move between the two scenarios and the only
-      // difference on screen is the tombstone count beside it. Six rows
-      // written, four claimed, is what a member who corrected twice sees.
+      accountId: accountIdFor(signedIn.handle),
       entries: 4,
-      superseded: supersede ? 2 : 0,
+      superseded: world.corrections === true ? 2 : 0,
       lastAt: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
-      isAdmin: Boolean(scenario.session && scenario.session.isAdmin),
+      isAdmin: signedIn.isAdmin === true,
       isDev: false,
     };
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* The feed: one line per thing that actually happened.             */
-  /* ---------------------------------------------------------------- */
-
-  /*
-   * Both halves of the console's feed, pure so dev/demo.test.mjs can
-   * drive every line under Node.
-   *
-   * The lines are computed from what occurred - the staging a press
-   * just wrote, the status and body the stubbed Worker just answered -
-   * never from a script of what a press should do. A scripted feed
-   * would be the false-confidence lie dev/demo.test.mjs's header
-   * names, told in the one place built to dispel it.
-   *
-   * narrate() turns one answer into one line of the driver's language,
-   * or into null. Null is load-bearing: every page asks for site copy
-   * on load, so narrating that read would bury the press being watched
-   * under a line per page view - and a route nobody taught this
-   * function stays silent rather than guessing, because a guessed
-   * sentence in the feed is a plausible screen with no event under it.
-   */
-  function narrate(event) {
-    const method = String(event.method || "GET").toUpperCase();
-    const path = String(event.path || "").split("?")[0];
-    const status = event.status;
-    const body = event.body || {};
-
-    /*
-     * Refusals come first, and they carry the Worker's own words:
-     * those words are the product behavior being demonstrated, and a
-     * paraphrase would put a second opinion between the driver and the
-     * thing they are judging. The 401 arm adds where the page goes,
-     * because the bounce to Sign in is all the screen itself shows -
-     * and it is one arm for every path, because every gated route
-     * refuses a dead session the same way.
-     */
-    if (status === 401) {
-      return "Refused: " + (body.error || "the session is gone.") +
-        " Every gated page answers this by returning you to Sign in.";
-    }
-    if (status >= 400) {
-      return "The Worker said no: " +
-        (body.error || "status " + status + ".");
-    }
-
-    if (path === "/me" && method === "GET") {
-      const line = "Your record came back: " + body.entries +
-        " entries stand";
-      return body.superseded > 0
-        ? line + ", with " + body.superseded +
-          " corrections resting behind them."
-        : line + ".";
-    }
-
-    if (path === "/my-entries" && method === "GET") {
-      const listed = (body.entries || []).length;
-      return "Your own rows came back, still sealed: " + listed +
-        " of them, ciphertext the Worker cannot read and this demo has " +
-        "no key for. On a real device the page opens the ones that " +
-        "browser sealed and names the rest.";
-    }
-
-    if (path === "/session" && method === "DELETE") {
-      return "Signed out - the Worker deleted the session row, so a " +
-        "token captured before this press opens nothing.";
-    }
-
-    if (path === "/submit" && method === "POST") {
-      return "A weigh-in landed, sealed in the browser before it was " +
-        "sent" + (body.id ? " - row " + body.id + " holds it." : ".");
-    }
-
-    if (path === "/export" && method === "GET") {
-      return "The export rows arrived, still sealed - nothing in " +
-        "them opens without the key.";
-    }
-
-    if (path === "/snapshot") {
-      if (method === "POST") {
-        return "A fresh snapshot is published - the charts draw from " +
-          "it on their next load.";
-      }
-      if (method === "DELETE") {
-        return "The published snapshot is taken down.";
-      }
-      return "The published snapshot arrived and the charts drew it.";
-    }
-
-    if (path === "/membership" && method === "GET") {
-      const rows = Array.isArray(body.membership)
-        ? body.membership.length : 0;
-      return "The membership list came back: " + rows +
-        " rows that grant access.";
-    }
-    if (path === "/membership" && method === "POST") {
-      return "A membership row was written; the pane reads the list " +
-        "back rather than trusting what it sent.";
-    }
-    if (path.indexOf("/membership/") === 0 && method === "DELETE") {
-      return "A membership row came off, and the pane reads the " +
-        "list back to prove it.";
-    }
-
-    if (path === "/content" && method === "POST") {
-      return "Site copy saved - every page reads it from here on.";
-    }
-
-    return null;
-  }
-
-  /*
-   * The press's own half: what the staging just did to this tab, told
-   * from the staging's fields rather than from a description written
-   * beside them.
-   *
-   * The session line is unconditional because every staging decides
-   * what the tab holds, including deciding it holds nothing - and
-   * "nothing" is the line a driver most needs said out loud, because
-   * a signed-out tab looks exactly like a tab nobody staged.
-   *
-   * WHICH IS ALSO WHY THIS FUNCTION CANNOT BE HELD TO "IT SAID
-   * SOMETHING". That line is there for every scenario, so a length test
-   * passes for a staging this function has never heard of, and the
-   * staging then lands silent in the feed with the whole gate green.
-   * dev/demo.test.mjs holds it two ways instead, and both are worth
-   * knowing before adding to SCENARIOS above: a field outside the
-   * plumbing set has to change what comes back, proven by taking it
-   * away; and the stagings whose whole story IS the session line are
-   * named there as literals, so a new one fails until somebody says
-   * out loud that it stages nothing a driver can see.
-   */
-  function stagingStory(scenario) {
-    const staged = scenario || {};
-    const lines = [];
-
-    lines.push(staged.session
-      ? "This tab is signed in as " + staged.session.username +
-        (staged.session.isAdmin ? ", who holds admin." : ".")
-      : "This tab is not signed in, so the pages treat you as a " +
-        "stranger.");
-
-    if (staged.prefill) {
-      lines.push("Your last measurements are already saved on this " +
-        "device, keyed to your account, so the form arrives filled in.");
-    }
-    if (staged.revoked) {
-      lines.push("The session was signed out somewhere else - the " +
-        "next thing this page asks for is refused.");
-    }
-    if (staged.id === "supersede") {
-      lines.push("The record holds a correction: one row is replaced " +
-        "rather than added beside.");
-    }
-    if (staged.id === "suppressed") {
-      lines.push("Too few people have weighed in for every chart to " +
-        "publish - the held-back cells are the point.");
-    }
-    if (staged.id === "config-fallback") {
-      lines.push("No site copy is written yet, so every page shows " +
-        "the words it ships with.");
-    }
-
-    return lines;
   }
 
   /* ---------------------------------------------------------------- */
@@ -2502,6 +1826,11 @@
   function inputsFor(person) {
     return person.weights.map(function (weight, index) {
       const back = (person.weights.length - 1 - index) * SPACING;
+      // Which weigh-in this is for this person, counted from their
+      // first. It is what the toolbar's snapshot rows cut on, and it is
+      // carried rather than recomputed from the date because two people
+      // with different histories do not share a calendar.
+      const round = index + 1;
       const input = {
         units: person.units,
         roles: person.roles,
@@ -2517,17 +1846,59 @@
         input.weightKg = String(weight);
         input.heightCm = String(person.heightCm);
       }
-      return { input: input, handle: person.handle, at: Date.now() - back };
+      return {
+        input: input,
+        handle: person.handle,
+        round: round,
+        at: Date.now() - back,
+      };
     });
   }
 
+  function peopleOf(which) {
+    return which === "sparse" ? SPARSE_PEOPLE : RICH_PEOPLE;
+  }
+
   function corpusInputs(which) {
-    const people = which === "sparse" ? SPARSE_PEOPLE : RICH_PEOPLE;
     const out = [];
-    people.forEach(function (person) {
+    peopleOf(which).forEach(function (person) {
       inputsFor(person).forEach(function (one) { out.push(one); });
     });
     return out.sort(function (a, b) { return a.at - b.at; });
+  }
+
+  /*
+   * How many weigh-ins the longest history in a corpus holds, which is
+   * the ceiling "Add entries" counts up to.
+   */
+  function roundsIn(which) {
+    return peopleOf(which).reduce(function (most, person) {
+      return Math.max(most, person.weights.length);
+    }, 0);
+  }
+
+  /*
+   * What a snapshot row is offering, in numbers read off the corpus.
+   *
+   * The toolbar renders these; nothing writes "eighteen entries from
+   * six people" anywhere, because a label carrying its own copy of a
+   * count is a label free to disagree with the charts underneath it.
+   */
+  function countsFor(which, rounds) {
+    if (which === null || which === undefined) {
+      return { entries: 0, people: 0, rounds: 0, of: 0 };
+    }
+    const top = rounds === null || rounds === undefined
+      ? roundsIn(which) : rounds;
+    const inputs = corpusInputs(which).filter(function (one) {
+      return one.round <= top;
+    });
+    return {
+      entries: inputs.length,
+      people: new Set(inputs.map(function (one) { return one.handle; })).size,
+      rounds: top,
+      of: roundsIn(which),
+    };
   }
 
   /*
@@ -2587,35 +1958,62 @@
    * One corpusInputs() call feeds both generations: a second call would
    * time-stamp the same people milliseconds later, and the cut would
    * fall between two copies of one round.
+   *
+   * `rounds` is how much of the corpus this publish carries, and it is
+   * what makes the toolbar's Add-entries button a real second publish
+   * rather than a relabelling: the cut moves up by one, the document
+   * that was current becomes the predecessor, and the change-since
+   * figure is this demo's own people moving. Absent, it is the whole
+   * corpus - the shape the snapshot presets ask for.
+   *
+   * THE CUT IS BY ROUND RATHER THAN BY DATE, because a corpus whose
+   * people have unequal histories has no single date that means "one
+   * publish ago". Nothing about the full-corpus case changes: every
+   * person's rounds sit on the same spacing, so the newest round's
+   * cut and one step back off the clock select the same submissions.
+   *
+   * A first publish carries no predecessor and says so by leaving it
+   * undefined, rather than by comparing against an empty document: a
+   * movement measured from nobody is a figure with no meaning, and the
+   * charts correctly draw no change-since line without one.
    */
-  function publishedFrom(which, deps) {
-    const inputs = corpusInputs(which);
-    const at = inputs[inputs.length - 1].at - SPACING;
-    const before = inputs.filter(function (one) { return one.at <= at; });
-    return deps.snapshotOf(entriesOf(inputs, deps), {
-      identify: false,
-      previous: deps.snapshotOf(
-        entriesOf(before, deps), { identify: false }, at),
-    });
+  function publishedFrom(which, deps, rounds) {
+    const all = corpusInputs(which);
+    const top = rounds === null || rounds === undefined
+      ? roundsIn(which) : rounds;
+    const inputs = all.filter(function (one) { return one.round <= top; });
+    const before = all.filter(function (one) { return one.round <= top - 1; });
+    const options = { identify: false };
+    if (before.length > 0) {
+      const at = before[before.length - 1].at;
+      options.previous = deps.snapshotOf(
+        entriesOf(before, deps), { identify: false }, at);
+    }
+    return deps.snapshotOf(entriesOf(inputs, deps), options);
   }
 
   root.BinderDemo = Object.freeze({
     DESTINATIONS: DESTINATIONS,
     MIRROR_PATH: MIRROR_PATH,
-    VIEWPORTS: VIEWPORTS,
+    FIRST_VISIT: FIRST_VISIT,
+    DIRECTORY_INDEX: DIRECTORY_INDEX,
     MIRROR_EDITS: MIRROR_EDITS,
     BOOT_SCRIPTS: BOOT_SCRIPTS,
+    TOOLBAR_SCRIPTS: TOOLBAR_SCRIPTS,
     TELEGRAM_STANDIN: TELEGRAM_STANDIN,
     CONFIG_STANDIN: CONFIG_STANDIN,
     LOCAL_FILES: LOCAL_FILES,
+    TOOLBAR_FILES: TOOLBAR_FILES,
     STORAGE_KEYS: STORAGE_KEYS,
-    EVENT_CHANNEL: EVENT_CHANNEL,
-    SCENARIOS: SCENARIOS,
-    FEATURES: FEATURES,
-    TOURS: TOURS,
+    TOOLBAR: TOOLBAR,
+    ENABLERS: ENABLERS,
+    SIGN_INS: SIGN_INS,
+    DEV_SIGN_IN: DEV_SIGN_IN,
+    KEY_BOXES: KEY_BOXES,
+    PRESETS: PRESETS,
+    CLOCK_STEPS: CLOCK_STEPS,
     DEV_KEY_FILE: DEV_KEY_FILE,
     KEY_STAGED_LINE: KEY_STAGED_LINE,
-    BOXES: BOXES,
     ROUTES: ROUTES,
     PREFIX_ROUTES: PREFIX_ROUTES,
     MEMBER_ACCOUNT: MEMBER_ACCOUNT,
@@ -2624,24 +2022,25 @@
     accountIdFor: accountIdFor,
     mirror: mirror,
     unmirror: unmirror,
-    stampInto: stampInto,
     endpointCallsIn: endpointCallsIn,
     routeFor: routeFor,
-    probeHit: probeHit,
-    probeUrlFor: probeUrlFor,
-    probeSourceOf: probeSourceOf,
     sameOriginAs: sameOriginAs,
     workerPathOf: workerPathOf,
     requestKindOf: requestKindOf,
-    frameAddressOf: frameAddressOf,
+    toolbarFileKind: toolbarFileKind,
+    pageAddressOf: pageAddressOf,
     destinationUnder: destinationUnder,
-    viewportFor: viewportFor,
-    frameStyleFor: frameStyleFor,
-    scenarioFor: scenarioFor,
+    signInFor: signInFor,
+    signInForTelegramId: signInForTelegramId,
+    sessionFor: sessionFor,
+    keyBoxFor: keyBoxFor,
+    presetFor: presetFor,
+    resetPlan: resetPlan,
+    clockJumpFor: clockJumpFor,
+    countsFor: countsFor,
+    roundsIn: roundsIn,
     answerFor: answerFor,
     meFor: meFor,
-    narrate: narrate,
-    stagingStory: stagingStory,
     corpusInputs: corpusInputs,
     entriesFrom: entriesFrom,
     publishedFrom: publishedFrom,
