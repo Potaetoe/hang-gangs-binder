@@ -398,13 +398,14 @@ check("every page pinned to carry the wordmark exists",
       set(check_web.WORDMARK_PAGES) <= pages)
 # Spelled out rather than derived from SHELLS. A pin computed as "the
 # rail pages" could not fail when a rail page dropped its copy, which is
-# the hole this arm exists to hold shut; the sign-in page is named on the
-# other side for the same reason, since it is a plain page that once
-# carried one and the leaf it lived in is gone (#273).
-check("the pin covers the rail pages and no plain one",
+# the hole this arm exists to hold shut - and it would not reach the
+# sign-in page at all, which is PLAIN in SHELLS and carries the mark
+# outside any rail (#273). 404.html is named on the other side: it is
+# the plain page that stays plain, and the page a copied shell would
+# hand the name to next.
+check("the pin covers the rail pages and the sign-in page",
       set(check_web.WORDMARK_PAGES) ==
-      {"admin.html", "charts.html", "your-page.html"} and
-      "index.html" not in check_web.WORDMARK_PAGES and
+      {"admin.html", "charts.html", "index.html", "your-page.html"} and
       "404.html" not in check_web.WORDMARK_PAGES)
 
 MARK = ('<span class="wordmark-owner">Hang Gang</span>'

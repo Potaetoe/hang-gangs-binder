@@ -184,7 +184,8 @@ day a check is added:
 
     The wordmark is the shell's other hand-kept copy, and WORDMARK_PAGES
     rather than this table is what says which pages carry one - the two
-    rosters agree today and are not the same claim, which is half of
+    rosters cut the site along different lines, since the sign-in page
+    is PLAIN here and carries the name anyway, which is half of
     why nothing was comparing it. The paragraph above says the rail
     "carries the wordmark" while the parity arms read .rail-links and
     the session block and stop there; the name tables read titles,
@@ -2021,19 +2022,21 @@ def shell_problems():
     return problems
 
 
-# Which pages write the site's own name out by hand. The rails, and
-# nothing else: the sign-in page's copy lived inside the cover leaf and
-# went out with it (#273), so this arm no longer crosses both shells -
-# but it is still pinned outside the markup, because the day a plain
-# page grows a wordmark again is the day nothing would be comparing it.
+# Which pages write the site's own name out by hand. The three rails,
+# and the sign-in page, which carries the name with no rail around it
+# to hold it (#273, the owner's addendum): the mark is the first thing
+# in that page's flow. So this roster is NOT "the rail pages" under
+# another name, and it cannot be derived from SHELLS - the sign-in page
+# is PLAIN there and carries the wordmark anyway, which is exactly the
+# combination a membership rule would miss.
 #
 # Pinned outside the markup for the reason SHELLS gives, and the ABSENT
 # direction is the one with teeth: a page carrying the wordmark and
 # named by no pin is a copy nothing compares, and a page arriving is
 # exactly when somebody copies a shell from whichever page they had
-# open. index.html and 404.html deliberately carry none.
+# open. 404.html deliberately carries none.
 WORDMARK_PAGES = frozenset({
-    "admin.html", "charts.html", "your-page.html",
+    "admin.html", "charts.html", "index.html", "your-page.html",
 })
 
 # The two lines, by the classes theme.css paints them with. Read as
