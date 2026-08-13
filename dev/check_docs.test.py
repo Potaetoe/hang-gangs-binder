@@ -1,8 +1,8 @@
 """Contract checks for the documentation gate.
 
-`tools/check_docs.py` holds two registries - the five operative
-documents, and the `security/` folder - plus the falsified-claim
-tripwires and the American-spelling rule. It is what makes AGENTS.md's
+`tools/check_docs.py` holds two registries - the operative documents,
+and the `security/` folder - plus the falsified-claim tripwires and the
+American-spelling rule. It is what makes AGENTS.md's
 claim true that adding either kind of document "cannot happen by
 accident", so it is the stage standing between this repository and an
 unapproved document or an unregistered security record.
@@ -18,7 +18,7 @@ So the rules are exercised on strings rather than on the documents
 they happen to guard, and then the real tree is tested, including the
 decisive arm: a real document's real bytes go through the rules and a
 planted claim comes back with the right line number. A pass on the
-five documents means they are clean, not that they went unread.
+operative documents means they are clean, not that they went unread.
 
 Each rule is watched from both sides: an arm that sees it fire, and an
 arm that sees it stay silent. A widened pattern is only as good as the
@@ -123,6 +123,13 @@ RECORDED = {
     "all eleven",
     "cannot be lined up",
     "share no exact series point",
+    # The four the keyless ruling falsified at once (0.9-M0-S2). They
+    # are the project's largest published promises, so they are the
+    # ones a rewrite is most likely to reintroduce by reflex.
+    "the service that stores them cannot read them",
+    "the storage provider cannot read the data",
+    "read access is a file, not an account",
+    "nobody's entries were read",
 }
 
 check("no falsified claim has dropped off the tripwire list",
@@ -371,40 +378,40 @@ check("the report says that editing REGISTRY is the approval",
 check("every registered document is accepted by name",
       check_docs.registry_problems(check_docs.REGISTRY) == [])
 
-# The other direction, added with UAT.md (#126). Until it existed,
-# registration only caught a document ARRIVING: one could be deleted and
-# the gate printed a clean tree, because absence had been made
-# unremarkable for CUTOVER.md's sake and nothing separated the document
-# that leaves by design from the ones whose loss is silent. Measured
-# before the arm was written - UAT.md moved out of the tree, whole run
-# still green.
+# The other direction (#126). Until it existed, registration only
+# caught a document ARRIVING: one could be deleted and the gate printed
+# a clean tree, because absence had been made unremarkable for the
+# self-deleting document's sake and nothing separated it from the ones
+# whose loss is silent. Measured before the arm was written - a
+# registered document moved out of the tree, whole run still green.
 check("a registered document missing from the root is reported",
       len(check_docs.missing_document_problems(
-          check_docs.REGISTRY - {"UAT.md"})) == 1)
+          check_docs.REGISTRY - {"DESIGN.md"})) == 1)
 
 check("a complete set of documents is not",
       check_docs.missing_document_problems(check_docs.REGISTRY) == [])
 
-# The exemption, and it is a fact about CUTOVER.md rather than a special
-# case: it deletes itself in its own aftercare, so it is left out of
-# REQUIRED instead of written in and skipped.
-check("CUTOVER.md is the one document allowed to be gone",
-      check_docs.missing_document_problems(
-          check_docs.REGISTRY - {"CUTOVER.md"}) == []
-      and "CUTOVER.md" not in check_docs.REQUIRED)
+# There is no exemption now, and that is a fact to hold rather than a
+# state to notice: a document that deletes itself in its own aftercare
+# is declared by being left out of REQUIRED, and one has existed before
+# (CUTOVER.md, until it was executed). This arm is what makes the next
+# such declaration deliberate - it fails the moment a name is taken out
+# of REQUIRED without this file being edited to say which and why.
+check("every registered document is required to exist",
+      check_docs.REQUIRED == check_docs.REGISTRY)
 
 check("the report says that editing REGISTRY records the removal",
       "REGISTRY" in only(check_docs.missing_document_problems(
-          check_docs.REGISTRY - {"UAT.md"})))
+          check_docs.REGISTRY - {"DESIGN.md"})))
 
 # Membership, the same shape RECORDED gives the tripwires and for the
 # same reason: a set read from the file it guards cannot notice its own
-# entry going missing (AGENTS.md, "The review bar"). UAT.md is the
-# document this arm was built for - the cutover is gated on the script
-# it holds - so it is named from outside rather than trusted from in.
-check("UAT.md is registered and required to exist",
-      "UAT.md" in check_docs.REGISTRY
-      and "UAT.md" in check_docs.REQUIRED)
+# entry going missing (AGENTS.md, "The review bar"). Written out by
+# name rather than counted, so a document leaving is a failure here
+# rather than an arithmetic nobody re-does.
+check("the operative documents are exactly these, named from outside",
+      check_docs.REGISTRY == {"README.md", "AGENTS.md",
+                              "DESIGN.md", "OPERATIONS.md"})
 
 check("every required document is a registered one",
       check_docs.REQUIRED <= check_docs.REGISTRY)
@@ -414,14 +421,15 @@ check("every required document is a registered one",
 # is absent however well it behaves when called directly, so the reader
 # is replaced and the real problems() is made to report through it.
 saved_documents = check_docs.top_level_documents
-check_docs.top_level_documents = lambda: set(check_docs.REGISTRY) - {"UAT.md"}
+check_docs.top_level_documents = (
+    lambda: set(check_docs.REGISTRY) - {"DESIGN.md"})
 try:
     WIRED_MISSING = check_docs.problems()
 finally:
     check_docs.top_level_documents = saved_documents
 
 check("the missing-document arm is wired into problems()",
-      any("UAT.md" in problem and "missing" in problem
+      any("DESIGN.md" in problem and "missing" in problem
           for problem in WIRED_MISSING))
 
 REGISTERED = set(check_docs.SECURITY)
@@ -550,10 +558,11 @@ finally:
 check("the floor is wired into problems(), not merely defined",
       only(check_docs.null_scan_problems([])) in WIRED)
 
-# The floor sits on the empty list and nowhere else. CUTOVER.md deletes
-# itself in its own aftercare, so one registered document going absent
-# has to stay unremarkable.
-check("one absent registered document is still not an error",
+# The floor sits on the empty list and nowhere else, which is what
+# keeps it a statement about the READER. A short scan is a question
+# about the tree, and the tree has its own arm above; a floor that
+# fired on both would report one fault twice and neither precisely.
+check("the floor sits on the empty list and nowhere else",
       check_docs.registry_problems({"README.md"}) == []
       and check_docs.null_scan_problems(["README.md"]) == [])
 
