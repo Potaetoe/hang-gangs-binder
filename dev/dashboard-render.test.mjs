@@ -789,6 +789,22 @@ await check("two handles on one account are listed, newest spelling first",
     return list.tagName === "pre" && list.textContent === "@member2new, @member2";
   });
 
+/*
+ * THE CAPTION, pinned by equality - the register bar's rules 1 and 4
+ * (#275), and the sharpest case in the pass.
+ *
+ * This panel's twin on admin.html had "Worth checking before assuming
+ * they are damaged." DELETED as a rule-1 violation, and the same idiom
+ * stood here on the member-facing page because nothing in this file
+ * read this caption at all. Every other caption on this page is pinned
+ * by equality; this one was the hole, and a compression nothing holds
+ * is a sentence that grows back.
+ */
+await check("the height panel's caption names the cause and stops", () =>
+  hintOf(figureNamed(KEY_PEOPLE, "Heights that changed between entries"))
+  === "These are typos or a unit mix-up — height does not change in "
+    + "adults.");
+
 await check("a height that moved is listed in the units on screen", () => {
   const imperial = withClass(
     figureNamed(KEY_PEOPLE, "Heights that changed between entries"),
