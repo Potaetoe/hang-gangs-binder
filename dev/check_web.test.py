@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 515
+EXPECTED = 531
 
 
 def check(label, condition):
@@ -3177,6 +3177,86 @@ check("and the same line outside a comment is one",
 
 check("nothing shipped is styled by anything but the one stylesheet",
       check_web.styling_exclusivity_problems() == [])
+
+
+# ------------------------------------------------------------------
+# Check 27: the owner's register bar (#275).
+#
+# The arm that matters is EQUALITY, and it is tested against the very
+# sentence the ruling removed: "Signed out. This browser now holds
+# nothing of yours." contains "Signed out." exactly, so a containment
+# test would report the vetoed line as ruled copy. Every other check
+# here is the parser that has to find the element before the comparison
+# can be made at all - which is this suite's whole reason for existing.
+
+RULED = '<p class="status" id="signed-out">%s</p>'
+
+check("the ruled line is read off the element that renders it",
+      check_web.ruled_line_problems(RULED % "Signed out.", "index.html")
+      == [])
+check("and the sentence the ruling removed is not the ruled line",
+      check_web.ruled_line_problems(
+          RULED % "Signed out. This browser now holds nothing of yours.",
+          "index.html") != [])
+check("a paragraph broken over lines still reads as one sentence",
+      check_web.ruled_line_problems(
+          '<p id="signed-out">\n  Signed out.\n</p>', "index.html") == [])
+check("an id nothing renders is a missing ruling, not a passing one",
+      len(check_web.ruled_line_problems("<p>Signed out.</p>",
+                                        "index.html")) == 1)
+check("a page with no ruled line of its own has nothing to say",
+      check_web.ruled_line_problems("<p>anything at all</p>", "404.html")
+      == [])
+
+# The runtime slot. submit.js writes the count, so the pin is over the
+# sentence around it - and an EMPTY element is what stands in, because a
+# filled one is a page shipping a number.
+#
+# your-page.html carries two ruled lines, so both stand in every fixture
+# here: a page missing one of them is a real problem, and a fixture that
+# omitted it would make every assertion below read off that absence
+# instead of off the sentence under test.
+KEY_CHECK = ('<p id="key-check">Compare with the group\'s pinned code '
+             "before submitting.</p>")
+SEALED = ('<p class="muted small" id="history-sealed">'
+          '<strong id="history-sealed-count"></strong> '
+          "can't be opened here. Ask an admin.</p>")
+
+check("an element the page fills at runtime is read as a slot",
+      check_web.ruled_line_problems(KEY_CHECK + SEALED, "your-page.html")
+      == [])
+check("and a slot standing empty of its sentence still fails",
+      len(check_web.ruled_line_problems(
+          KEY_CHECK + '<p id="history-sealed"><strong '
+          'id="history-sealed-count"></strong> were sealed on another '
+          "device.</p>", "your-page.html")) == 1)
+check("one ruled line missing does not excuse the page's others",
+      len(check_web.ruled_line_problems(SEALED, "your-page.html")) == 1)
+
+MORE = ('<details class="more"><summary>More</summary><p>why</p></details>')
+
+check("the ruled disclosure passes on a product page",
+      check_web.more_disclosure_problems(MORE, "charts.html") == [])
+check("a product page with no disclosure fails",
+      len(check_web.more_disclosure_problems("<p>prose</p>", "charts.html"))
+      == 1)
+check("a page outside MORE_PAGES is not asked for one",
+      check_web.more_disclosure_problems("<p>prose</p>", "404.html") == [])
+check("a disclosure shipped open is prose with a control around it",
+      any("open" in p for p in check_web.more_disclosure_problems(
+          MORE.replace("<details ", "<details open "), "charts.html")))
+check("a disclosure that is not the one shape fails",
+      any(check_web.MORE_CLASS in p
+          for p in check_web.more_disclosure_problems(
+              MORE.replace('class="more"', 'class="panel"'), "charts.html")))
+check("a disclosure called something else fails",
+      any("Details" in p for p in check_web.more_disclosure_problems(
+          MORE.replace("<summary>More", "<summary>Details"), "charts.html")))
+check("a disclosure with no summary at all fails",
+      any("<summary>" in p for p in check_web.more_disclosure_problems(
+          '<details class="more"><p>why</p></details>', "charts.html")))
+check("the pages themselves meet the bar's two readable rules",
+      check_web.register_problems() == [])
 
 
 if failures:

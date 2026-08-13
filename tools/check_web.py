@@ -5907,6 +5907,195 @@ def styling_exclusivity_problems():
     return sorted(problems)
 
 
+# ------------------------------------------------------------------
+# Check 27: the owner's register bar (#275, ruled on #265).
+#
+# The bar is nine rules and only two of them can be read off a file.
+# "One clause per message" and "no voice survivors" are judgements a
+# person makes; what a check can hold is the handful of lines the owner
+# dictated WORD FOR WORD, and the mechanism the ruling names for
+# everything those lines stopped saying.
+#
+# Both halves are here because either alone fails open. A ruled sentence
+# with nowhere for its old explanation to go comes back lengthened by
+# the next person who misses the missing fact; a disclosure with no
+# ruled sentence in front of it is a page that hid its prose and changed
+# nothing. The pair is the ruling.
+#
+# READ AS THE WHOLE OF WHAT THE ELEMENT RENDERS, never as a substring.
+# "Signed out." is inside "Signed out. This browser now holds nothing of
+# yours." - the exact sentence the ruling removed - so a containment
+# test passes on the text it was written to refuse. That is the shape of
+# this arm's only real failure mode, and it is why the comparison is
+# equality against the element's own text.
+
+# The lines the owner ruled, keyed by the page and the id of the element
+# that renders each one.
+#
+# `{}` stands for an element the page fills at runtime: the count in the
+# sealed-rows line is written by submit.js, so the pin is over the
+# sentence around it rather than over a number no file holds. Every
+# other slot in these pages is a whole element too, so the marker needs
+# no escape.
+RULED_LINES = {
+    "index.html": {
+        "signed-out": "Signed out.",
+    },
+    "your-page.html": {
+        "history-sealed": "{} can't be opened here. Ask an admin.",
+        "key-check": "Compare with the group's pinned code before "
+                     "submitting.",
+    },
+    "charts.html": {
+        "charts-intro":
+            "Counts and averages — no names, no individual entries.",
+    },
+}
+
+# The disclosure the whys moved behind, and the three things about it
+# that are not a matter of taste.
+#
+# The class is what theme.css lays out; the word is what a member reads
+# and is the same word on every card, because a disclosure that is
+# called something different on each page is four controls rather than
+# one. And it ships CLOSED: `open` in the markup is the prose back on
+# the page with a control drawn around it, which is the whole of what
+# this ruling removed.
+MORE_CLASS = "more"
+MORE_SUMMARY = "More"
+
+# The product pages the ruling names. admin.html is one of them - the
+# instrument's allowance under rule 7 is ONE short explanatory sentence
+# per card, not a page-wide exemption from the mechanism.
+MORE_PAGES = frozenset({"admin.html", "charts.html", "your-page.html"})
+
+DETAILS_OPEN = re.compile(r"<details\b([^>]*)>", re.I)
+
+# An element the page fills at runtime, matched as a tag pair with
+# nothing between it. Backreferenced to its own tag name so that a pair
+# of different elements cannot be read as one empty one.
+EMPTY_ELEMENT = re.compile(r"<(\w+)\b[^>]*>\s*</\1\s*>")
+
+ENTITIES = (("&mdash;", "—"), ("&hellip;", "…"),
+            ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"))
+
+
+def paragraph_by_id(text, element_id):
+    """The inner markup of the <p> carrying `element_id`, or None.
+
+    Restricted to <p> for the reason LABEL_MARKUP gives: <p> cannot
+    nest, so a non-greedy match to the next </p> cannot swallow a
+    paragraph standing inside something else. Every ruled line is one
+    paragraph, and a ruling that lands somewhere else should have to
+    say so here rather than arrive through a reader that was general
+    enough not to notice.
+    """
+    found = re.search(
+        r'<p\b[^>]*\bid\s*=\s*["\']%s["\'][^>]*>(.*?)</p\s*>'
+        % re.escape(element_id), text, re.S | re.I)
+    return None if found is None else found.group(1)
+
+
+def rendered_text(markup):
+    """What one element's markup puts on screen, spacing collapsed."""
+    text = EMPTY_ELEMENT.sub("{}", markup)
+    text = TAG.sub("", text)
+    for entity, character in ENTITIES:
+        text = text.replace(entity, character)
+    return " ".join(text.split())
+
+
+def ruled_line_problems(text, page):
+    """[problem] for one page's ruled lines against what it renders."""
+    problems = []
+    for element_id, ruled in sorted(RULED_LINES.get(page, {}).items()):
+        markup = paragraph_by_id(text, element_id)
+        if markup is None:
+            problems.append(
+                "carries no <p id=\"%s\">, which is where the owner's ruled "
+                "line \"%s\" renders. RULED_LINES in tools/check_web.py is "
+                "the record of the ruling (#275); an id renamed out from "
+                "under it takes the sentence with it" % (element_id, ruled))
+            continue
+        shown = rendered_text(markup)
+        if shown != ruled:
+            problems.append(
+                "renders \"%s\" where the owner ruled \"%s\" (#275). The "
+                "comparison is the WHOLE of what that element shows, "
+                "because every sentence the ruling removed had the ruled "
+                "one inside it" % (shown, ruled))
+    return problems
+
+
+def more_disclosure_problems(text, page):
+    """[problem] for one page's More disclosures against the ruled shape."""
+    problems = []
+    opens = DETAILS_OPEN.findall(text)
+    summaries = [label_text(words) for words in SUMMARY.findall(text)]
+
+    for attributes in opens:
+        classes = (tag_attribute("<details%s>" % attributes, "class")
+                   or "").split()
+        if MORE_CLASS not in classes:
+            problems.append(
+                "carries a <details> that is not a .%s. One disclosure "
+                "shape on every product card is what makes the reveal read "
+                "as the same control twice - a second shape is a second "
+                "control the stylesheet does not lay out" % MORE_CLASS)
+        if re.search(r"\bopen\b", attributes, re.I):
+            problems.append(
+                "ships a <details> with `open` on it. A disclosure that is "
+                "already open is the prose back on the page with a control "
+                "drawn around it, which is what #275 moved behind it")
+
+    for words in summaries:
+        if words != MORE_SUMMARY:
+            problems.append(
+                "labels a disclosure \"%s\". The word is \"%s\" on every "
+                "page - MORE_SUMMARY in tools/check_web.py - because a "
+                "reveal named differently on each card is four controls "
+                "rather than one" % (words, MORE_SUMMARY))
+
+    if page in MORE_PAGES and not opens:
+        problems.append(
+            "is a product page with no <details class=\"%s\"> on it. #275 "
+            "ruled the whys behind a native disclosure; a page that "
+            "carries none either kept its explanations in front of the "
+            "reader or deleted facts the ruling only asked it to move"
+            % MORE_CLASS)
+
+    if len(opens) != len(summaries):
+        problems.append(
+            "carries %d <details> and %d <summary>. A disclosure with no "
+            "summary opens through the browser's own default word, which "
+            "is not the ruled one and is not the same word twice"
+            % (len(opens), len(summaries)))
+
+    return problems
+
+
+def register_problems():
+    """[(page, problem)] for the pages against the owner's register bar."""
+    problems = []
+    for page in sorted(set(RULED_LINES) | MORE_PAGES):
+        if page not in html_pages():
+            problems.append((
+                page,
+                "is named in RULED_LINES or MORE_PAGES in "
+                "tools/check_web.py and is not a page in apps/web. Delete "
+                "the entry, or restore the page it was written for - a pin "
+                "with no page behind it is a check that cannot fail"))
+
+    for page in html_pages():
+        text = page_text(page)
+        for problem in ruled_line_problems(text, page):
+            problems.append((page, problem))
+        for problem in more_disclosure_problems(text, page):
+            problems.append((page, problem))
+
+    return sorted(problems)
+
+
 def main():
     problems = []
     environments, config_problems = config_environments()
@@ -6027,6 +6216,9 @@ def main():
 
     for subject, problem in styling_exclusivity_problems():
         problems.append("%s %s." % (subject, problem))
+
+    for page, problem in register_problems():
+        problems.append("%s %s." % (page, problem))
 
     for where in ("apps/web", "dist"):
         root_dir = WEB if where == "apps/web" else PUBLISHED

@@ -1837,6 +1837,25 @@ await exports_.elements.download.click();
 check("a press lights the button that was pressed, and only it",
   lit().join(",") === "download");
 
+/*
+ * The words on the press, pinned VERBATIM and as the whole of what the
+ * line says - the owner ruled them at the delta sitting (#126 R5, and
+ * the register bar on #265 names them again).
+ *
+ * Equality rather than a fragment, for this sentence in particular: the
+ * line it replaced opened with the same act and then explained at
+ * length what the page cannot know about a download, so every fragment
+ * worth matching on is inside the copy the ruling removed.
+ *
+ * It says nothing about WHICH file, and that is the honesty floor
+ * working rather than a gap: a short line may omit, and the one thing
+ * it must never do is claim the file arrived - which is why the pointer
+ * sends the reader to the browser's own shelf instead.
+ */
+check("the press is acknowledged in the owner's words and no others",
+  exports_.elements["download-status"].textContent ===
+    "Downloaded — check your downloads.");
+
 await exports_.elements["download-xlsx"].click();
 check("a second press inside the window moves the light rather than adding one",
   lit().join(",") === "download-xlsx");
