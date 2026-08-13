@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 531
+EXPECTED = 569
 
 
 def check(label, condition):
@@ -426,13 +426,18 @@ check("every page pinned to carry the wordmark exists",
 # rail pages" could not fail when a rail page dropped its copy, which is
 # the hole this arm exists to hold shut - and it would not reach the
 # sign-in page at all, which is PLAIN in SHELLS and carries the mark
-# outside any rail (#273). 404.html is named on the other side: it is
-# the plain page that stays plain, and the page a copied shell would
-# hand the name to next.
+# outside any rail (#273). 404.html is absent because it is the plain
+# page that stays plain, and the page a copied shell would hand the name
+# to next.
+#
+# ONE equality, not an equality plus "and 404.html is not in it". The
+# second conjunct was here and could not fail on its own: the equality
+# already entails it, so nothing could redden it that had not reddened
+# the equality first. An assertion that cannot fail reads to the next
+# person as a guard, which is worse than no line at all.
 check("the pin covers the rail pages and the sign-in page",
       set(check_web.WORDMARK_PAGES) ==
-      {"admin.html", "charts.html", "index.html", "your-page.html"} and
-      "404.html" not in check_web.WORDMARK_PAGES)
+      {"admin.html", "charts.html", "index.html", "your-page.html"})
 
 MARK = ('<span class="wordmark-owner">Hang Gang</span>'
         '<span class="wordmark-name">Binder</span>')
@@ -500,6 +505,68 @@ check("a single wordmark leaves the arm nothing to compare",
 check("no shipped page's wordmark disagrees with another's",
       check_web.wordmark_problems() == [])
 
+# THE ORDER OF THE TWO LINES. WORDMARK_LINES is a sequence and its
+# positions are the words "first" and "second", but nothing read it as
+# an order: wordmark_line() runs an independent search per component
+# over the whole document, so the spans carried no positional
+# information and the mark could be drawn inverted - "Binder" in italic
+# display over "HANG GANG" in gold - with the whole of check 10 green.
+# Confirmed by mutation on all four pages at once, which is also why
+# parity cannot cover it: four copies agreeing on the wrong mark satisfy
+# a comparison between copies.
+check("the two lines in the ruled order raise nothing",
+      check_web.wordmark_order_problems(MARK) == [])
+check("the two lines swapped are refused",
+      any("above the" in p for p in check_web.wordmark_order_problems(
+          '<span class="wordmark-name">Binder</span>'
+          '<span class="wordmark-owner">Hang Gang</span>')))
+# A half-read mark is page_wordmark_problems()'s to report, and saying
+# it twice is how one of the two gets weakened.
+check("a mark with one line missing is left to the arm above",
+      check_web.wordmark_order_problems(
+          '<span class="wordmark-owner">Hang Gang</span>') == [])
+
+# WHERE the mark sits, which is the owner's one ruled fact about it
+# (#273's addendum) and had no arm at all: the roster pins THAT a page
+# carries the mark and parity pins WHAT it says, so the whole thing
+# could be moved below the sign-in form and the footer with three suites
+# green. Confirmed by mutation before this arm was written.
+#
+# Containment inside body's first element, not a line number, because
+# this site draws the mark two ways - standing first itself on the
+# sign-in page, and standing first INSIDE the rail on the other three -
+# and a positional rule that knew one of them would have to name pages.
+RAILED = ('<body class="railed"><aside class="rail">'
+          '<a class="wordmark" href="index.html">%s</a></aside>'
+          "<main>page</main></body>" % MARK)
+PLAIN_TOP = ('<body><p class="wordmark">%s</p><header><h1>Sign in</h1>'
+             "</header></body>" % MARK)
+
+check("the mark standing first inside the rail raises nothing",
+      check_web.wordmark_placement_problems(RAILED) == [])
+check("the mark standing first in the body itself raises nothing",
+      check_web.wordmark_placement_problems(PLAIN_TOP) == [])
+check("the mark moved below the page's content is refused",
+      any("outside the first element" in p
+          for p in check_web.wordmark_placement_problems(
+              '<body><header><h1>Sign in</h1></header><main>form</main>'
+              '<p class="wordmark">%s</p></body>' % MARK)))
+# A comment or a stray newline before the mark is not the mark moving,
+# and an arm that read raw offsets would say it was.
+check("a comment before the mark is not the mark moving",
+      check_web.wordmark_placement_problems(
+          "<body>\n<!-- why the mark is here -->\n" +
+          PLAIN_TOP[len("<body>"):]) == [])
+check("a page carrying no mark is left to the roster arm",
+      check_web.wordmark_placement_problems(
+          "<body><main>Not found</main></body>") == [])
+# Loud rather than quiet when the body cannot be read at all: a reader
+# that returns nothing for markup it could not parse prints the same OK
+# as one that found nothing wrong.
+check("markup with no body is reported rather than passed",
+      any("no <body>" in p for p in check_web.wordmark_placement_problems(
+          '<p class="wordmark">%s</p>' % MARK)))
+
 
 # ------------------------------------------------------------------ #
 # Check 19 - the palette control, one shape on every page that offers  #
@@ -515,8 +582,60 @@ check("no shipped page's wordmark disagrees with another's",
 check("every page but the error page offers a palette",
       check_web.THEMED_PAGES ==
       {"index.html", "your-page.html", "charts.html", "admin.html"})
+# NAMED on the other side rather than merely absent, and that is the
+# whole of what UNTHEMED_PAGES is for. Before #274, absence from the
+# first table meant "this page offers no palette"; since the ruling it
+# also means "this page carries no footer", because the footer IS the
+# row - so a page nobody remembers to add shipped with neither while the
+# arm that would have said so read the table to decide whether to look.
+# SHELLS closes exactly this asymmetry one table up.
 check("the error page is pinned to offer no palette at all",
+      check_web.UNTHEMED_PAGES == {"404.html"} and
       "404.html" not in check_web.THEMED_PAGES)
+
+
+def with_untheme(pinned, read):
+    """`read()` with UNTHEMED_PAGES swapped for `pinned`."""
+    shipped = check_web.UNTHEMED_PAGES
+    try:
+        check_web.UNTHEMED_PAGES = frozenset(pinned)
+        return read()
+    finally:
+        check_web.UNTHEMED_PAGES = shipped
+
+
+def palette_pins_over(names):
+    """theme_control_page_problems() against a directory of empty pages."""
+    with tempfile.TemporaryDirectory() as folder:
+        for name in names:
+            with open(os.path.join(folder, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write("<!doctype html><body><main>page</main></body>")
+        shipped = check_web.WEB
+        try:
+            check_web.WEB = folder
+            return check_web.theme_control_page_problems()
+        finally:
+            check_web.WEB = shipped
+
+
+# THE ABSENCE DIRECTION. A page in neither table is the one that prints
+# OK with no palette AND no footer, because the arm reads the table to
+# decide whether to look.
+check("a published page in neither table is refused",
+      any("named in neither THEMED_PAGES nor UNTHEMED_PAGES" in problem
+          for page, problem in palette_pins_over(["new.html"])
+          if page == "new.html"))
+check("and a page named on one side is not",
+      not any(page == "404.html" and "neither" in problem
+              for page, problem in palette_pins_over(["404.html"])))
+# A page in BOTH answers one question twice, and whichever arm reads
+# first becomes the answer.
+check("a page pinned in both tables is refused",
+      any("BOTH THEMED_PAGES and UNTHEMED_PAGES" in problem
+          for _page, problem in with_untheme(
+              check_web.THEMED_PAGES | {"404.html"},
+              lambda: palette_pins_over(["404.html"]))))
 
 # And the pins have to match what actually ships.
 check("no shipped page's palette control differs from its pin",
@@ -687,6 +806,55 @@ check("a page that offers no palette and carries a footer is refused",
 check("a second footer is refused",
       any("2 <footer> elements" in p for p in check_web.footer_problems(
           FOOTER_OK + "<footer><p>Also</p></footer>", True)))
+
+# THE ROW MISSING FROM THE FOOTER, which is a failure here rather than
+# a silent return. The arm one function down searches the WHOLE page for
+# the row, so a footer arm that says nothing about the row's absence
+# leaves "the row is on the page but not in the footer, and the footer
+# is full of nav" with no reader at all - the owner's ruling reversed on
+# one page with the gate green.
+check("a themed page whose footer holds no swatch row is refused",
+      any("no .theme-swatches row inside it" in p
+          for p in check_web.footer_problems(
+              '<footer><p><a href="your-page.html">Your page</a></p>'
+              "</footer>" + SWATCH_MARKUP, True)))
+# and the failure is the one a reader can act on: it says where to look
+# for the row rather than only that the footer is wrong.
+check("and it says the arm below owns where the row went",
+      any("the arm below" in p for p in check_web.footer_problems(
+          "<footer><p>nothing</p></footer>" + SWATCH_MARKUP, True)))
+
+# INSIDE the row, which element_span() cuts out before the arms above
+# read - so a reader that cut it out and never looked in it had moved
+# the hiding place rather than closed it. `.theme-swatches` is
+# `display: flex`, so a paragraph in there paints as a flex item beside
+# the dots: a footer with prose links in it.
+check("a link inside the swatch row is refused",
+      any("INSIDE its .theme-swatches row" in p
+          for p in check_web.footer_problems(
+              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
+                  "</div>",
+                  '<p><a href="https://example.com">Read the code</a></p>'
+                  "</div>"), True)))
+check("markup inside the swatch row is refused with no link in it",
+      any("INSIDE its .theme-swatches row" in p
+          for p in check_web.footer_problems(
+              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
+                  "</div>", "<p><strong>Nearly</strong></p></div>"), True)))
+check("bare words inside the swatch row are refused",
+      any("words INSIDE its .theme-swatches row" in p
+          for p in check_web.footer_problems(
+              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
+                  "</div>", "Nearly nothing</div>"), True)))
+# The swatches themselves are what the row is FOR, so they are cut out
+# at depth and what is left is what is read - the same move one level
+# down from the footer arm's.
+check("the swatch buttons themselves are not read as intruders",
+      check_web.swatch_row_problems(SWATCH_MARKUP) == [])
+check("a swatch button that never closes is reported rather than assumed",
+      any("never closes" in p for p in check_web.swatch_row_problems(
+          '<div class="theme-swatches"><button data-set-theme="pink">'
+          "</div>")))
 
 
 # ------------------------------------------------------------------ #
@@ -3152,6 +3320,30 @@ check("and the report quotes the import it found",
 check("a stylesheet that imports nothing is clean",
       check_web.stylesheet_import_problems(".card { padding: 1rem; }") == [])
 
+# THE ANIMATION, refused rather than merely absent. #273 removed the
+# entrance animation and retired the live-verification ledger's
+# reduced-motion row on the grounds that there was nothing left for the
+# setting to reduce - which grounded a permanent retirement on a
+# property nothing enforced. Every mention of @keyframes in tools/ and
+# dev/ before this was a parser explicitly SKIPPING the block, so an
+# animation could come back with the gate green and the row that would
+# have asked somebody to sit with it already gone.
+check("a stylesheet declaring an animation is refused",
+      any("@keyframes" in p for p in check_web.keyframes_problems(
+          "@keyframes rise { from { opacity: 0; } }\n")))
+check("a vendor-prefixed one is the same animation",
+      len(check_web.keyframes_problems(
+          "@-webkit-keyframes rise { from { opacity: 0; } }\n")) == 1)
+# What this does NOT hold, said here rather than left to be discovered:
+# a transition animates without a keyframe, and the blanket
+# prefers-reduced-motion block is what covers it. The retired row was
+# about an ENTRANCE, and an entrance needs a keyframe.
+check("a transition is not an entrance and is not refused",
+      check_web.keyframes_problems(
+          ".card { transition: color 120ms; }") == [])
+check("the shipped stylesheet declares none",
+      check_web.keyframes_problems(check_web.stylesheet_text()) == [])
+
 
 def imports_over(css):
     """styling_exclusivity_problems() against a stylesheet holding `css`."""
@@ -3255,6 +3447,88 @@ check("a disclosure called something else fails",
 check("a disclosure with no summary at all fails",
       any("<summary>" in p for p in check_web.more_disclosure_problems(
           '<details class="more"><p>why</p></details>', "charts.html")))
+
+# THE STYLESHEET, which the three markup arms above cannot see - and
+# this slice put `.more` rules in it. Two declarations undo the ruling's
+# central mechanic across every card with `open` still absent and the
+# marker still reading "More", confirmed by mutation in a browser on the
+# built dist.
+MORE_CSS = (".more > summary { font-size: 12px; color: grey; "
+            "cursor: pointer; }\n"
+            ".more > :not(summary) { margin-block-start: 4px; }\n")
+
+check("the shipped .more rules raise nothing",
+      check_web.more_style_problems(MORE_CSS) == [])
+check("the two-line reveal is refused",
+      any("content-visibility" in p for p in check_web.more_style_problems(
+          MORE_CSS + "details.more::details-content { "
+                     "content-visibility: visible; block-size: auto; }\n")))
+# An ALLOWLIST rather than a list of dangerous properties, because a
+# blocklist is a guess about which lever the next person reaches for.
+check("a property outside the allowlist is refused whatever it does",
+      any("block-size" in p for p in check_web.more_style_problems(
+          MORE_CSS + ".more > :not(summary) { block-size: auto; }\n")))
+# The TYPE selector as well as the class: `details > :not(summary)`
+# reaches every card on this site without ever saying "more".
+check("a rule reaching the disclosure by its element is read too",
+      any("details" in p for p in check_web.more_style_problems(
+          MORE_CSS + "details > :not(summary) { display: block; }\n")))
+# And the two properties refused whatever carries them, which is the
+# reach the allowlist has not got: a rule naming neither the class nor
+# the element still cannot turn a closed disclosure on.
+check("the reveal properties are refused under any selector at all",
+      any("content-visibility" in p for p in check_web.more_style_problems(
+          MORE_CSS + ".why-prose { content-visibility: visible; }\n")))
+check("and the pseudo-element is refused the same way",
+      any("::details-content" in p for p in check_web.more_style_problems(
+          MORE_CSS + "::details-content { color: red; }\n")))
+check("the shipped stylesheet passes both",
+      check_web.more_style_problems(check_web.stylesheet_text()) == [])
+
+# THE REGION, not only the element. Check 27 pins each ruled line as the
+# whole of what its own element renders, which closes the substring hole
+# and leaves the sibling hole open - the pinned paragraph untouched and
+# the sentence the ruling vetoed added as the next one in the same
+# <header>, both on screen, whole gate green. AGENTS.md's corollary
+# exactly.
+HEADER_OK = ('<header class="stack-tight"><p class="runner">'
+             "<span>Members</span></p><h1>Muse's charts</h1>"
+             '<p class="muted" id="charts-intro">Counts and averages — no '
+             "names, no individual entries.</p></header>")
+
+check("a masthead that matches its pin raises nothing",
+      check_web.page_header_problems(HEADER_OK, "charts.html") == [])
+check("a sentence added beside the ruled line is refused",
+      any("REGION is pinned" in p for p in check_web.page_header_problems(
+          HEADER_OK.replace(
+              "</header>",
+              '<p class="muted">Getting heavier? Muse certainly hopes so.'
+              "</p></header>"), "charts.html")))
+check("a page with no pinned masthead is refused",
+      any("no PAGE_HEADERS entry" in p
+          for p in check_web.page_header_problems(HEADER_OK, "new.html")))
+check("a second masthead is a region nothing compares",
+      any("2 <header> elements" in p for p in check_web.page_header_problems(
+          HEADER_OK * 2, "charts.html")))
+check("every shipped page's masthead is pinned",
+      set(check_web.PAGE_HEADERS) == set(check_web.html_pages()))
+
+# The refusal list, which is the reach the region pin has not got: the
+# vetoed sign-out inventory coming back beside #signed-out in <main> is
+# the same defect one element further down the page. It catches the
+# sentences the ruling NAMES; the region pin is what catches one nobody
+# wrote down. Neither is claimed to be the other.
+check("a page rendering none of the vetoed sentences raises nothing",
+      check_web.vetoed_line_problems("<p>Signed out.</p>") == [])
+check("a vetoed sentence coming back anywhere on the page is refused",
+      any("removed" in p for p in check_web.vetoed_line_problems(
+          '<p id="signed-out">Signed out.</p><p class="muted">This browser '
+          "now holds nothing of yours.</p>")))
+check("a vetoed sentence quoted in a comment is not on the page",
+      check_web.vetoed_line_problems(
+          "<!-- was: Getting heavier? Muse certainly hopes so. -->"
+          "<p>Counts and averages.</p>") == [])
+
 check("the pages themselves meet the bar's two readable rules",
       check_web.register_problems() == [])
 

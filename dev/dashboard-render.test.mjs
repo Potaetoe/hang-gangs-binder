@@ -557,8 +557,8 @@ await check("the multi-select panel prints counts and no share", () =>
 
 await check("the multi-select caption says why there is no share", () =>
   hintOf(figureNamed(KEY_PEOPLE, "Feedism affiliations")) ===
-  "Multi-select, so these do not add up to the number of entries — " +
-  "which is why no share is shown beside them.");
+  "These do not add up to the number of entries — no share is shown " +
+  "beside them.");
 
 await check("the country panel is capped at twelve and says so only then",
   () => {
@@ -956,8 +956,8 @@ await check("a breakdown suppressed to nothing says so instead of drawing",
   });
 
 await check("a suppressed breakdown's caption goes with its chart", () => {
-  // "Multi-select, so these do not add up" over a panel holding nothing
-  // describes a drawing that is not there - the same rule the band
+  // "These do not add up to the number of entries" over a panel holding
+  // nothing describes a drawing that is not there - the same rule the band
   // caption obeys, and the roles panel is where it shows, because it is
   // the only breakdown carrying a caption on every corpus.
   const roles = figureNamed(SUPPRESSED, "Feedism affiliations");
@@ -1087,8 +1087,8 @@ await check("a group too small to describe gets a sentence, not a blank page",
     TOO_FEW.children[0].className === "muted");
 
 await check("that sentence names the floor the module actually enforces", () =>
-  TOO_FEW.textContent.includes("at least " + D.MIN_CELL + ".") &&
-  TOO_FEW.textContent.startsWith("There are too few entries here"));
+  TOO_FEW.textContent.includes("at least " + D.MIN_CELL + " are needed.") &&
+  TOO_FEW.textContent.startsWith("Too few entries here"));
 
 await check("nothing else is drawn beside it", () =>
   withTag(TOO_FEW, "svg").length === 0 &&
@@ -1526,7 +1526,7 @@ await check("an answer over a basis below the floor says so rather than blank",
         .available === false &&
       withClass(container, "chart-bar").length === 0 &&
       emptyNotesOf(drawn).length === 1 &&
-      /too few entries here/.test(emptyNotesOf(drawn)[0]) &&
+      /Too few entries here/.test(emptyNotesOf(drawn)[0]) &&
       emptyNotesOf(drawn)[0].includes("at least 5");
   });
 
@@ -1541,7 +1541,7 @@ await check("an answer the floor emptied says so, and names the order", () => {
   return result.available === true && result.cells.length === 0 &&
     withClass(drawn, "chart-bar").length === 0 &&
     emptyNotesOf(drawn).length === 1 &&
-    /before anything here is combined/.test(emptyNotesOf(drawn)[0]);
+    /before anything is combined/.test(emptyNotesOf(drawn)[0]);
 });
 
 await check("the same document still answers a split the floor did not empty",
@@ -1557,11 +1557,10 @@ await check("the same document still answers a split the floor did not empty",
  * #265 row 27, found rendered rather than read.
  *
  * "Every group here already cleared that floor" is a true and useful
- * sentence over an answer that has groups. Printed directly above "There
- * are too few entries here to publish a breakdown without describing
- * individual people", it is a promise about a set the reader is
- * simultaneously being told is empty - two lines that a member has to
- * reconcile before either of them means anything.
+ * sentence over an answer that has groups. Printed directly above "Too
+ * few entries here to show a breakdown", it is a promise about a set the
+ * reader is simultaneously being told is empty - two lines that a member
+ * has to reconcile before either of them means anything.
  *
  * Both empty arms, because they are two different states with one
  * reading: `available: false` is a basis the keyholder published no

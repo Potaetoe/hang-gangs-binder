@@ -761,9 +761,14 @@ body.railed {
   padding: var(--space-8) var(--space-6);
 }
 
-/* Two lines, two faces, one link home. The gold line is the possessive
-   and the italic display face is the noun, which is how the wordmark is
-   drawn in the approved mockup. */
+/* Two lines, two faces. The gold line is the possessive and the italic
+   display face is the noun, which is how the wordmark is drawn in the
+   approved mockup, and check 10 reads them in that order.
+
+   `text-decoration: none` because the rails' copies are anchors home;
+   the sign-in page's copy is a <p>, since home is the page somebody is
+   already standing on, and index.html says why beside it. Both wear
+   this rule, so it cannot assume either. */
 .wordmark {
   display: block;
   text-decoration: none;

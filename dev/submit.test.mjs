@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 104;
+const EXPECTED = 106;
 
 function check(label, condition) {
   performed++;
@@ -403,6 +403,20 @@ function engineStubs(history) {
      * asks.
      */
     personalSource(entries, now) {
+      /*
+       * The seam rule 5 names, reachable from this side. submit.js wraps
+       * this call in a try/catch whose whole job is to render the plain
+       * half ALONE - and nothing exercised that catch, so a house
+       * sentence put back in front of `plainly()` there passed the
+       * suite, check_web.py and the full gate. Shaped like
+       * dev/public.test.mjs's `runThrows`, because it is the same
+       * arrangement on the other page.
+       */
+      if (history.sourceThrows) {
+        const failure = new Error(history.sourceThrows.message);
+        failure.plain = history.sourceThrows.plain;
+        throw failure;
+      }
       const source = {
         personal: true, entries: entries, now: now,
         /*
@@ -504,6 +518,12 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill,
   };
 
   scenario++;
+  // The console, captured: rule 5's other half is that the engine's own
+  // words are not lost, only moved, and an arm reading the member's line
+  // alone passes over a page that deleted them.
+  const logged = [];
+  const warn = console.warn;
+  console.warn = (...parts) => { logged.push(parts.join(" ")); };
   /*
    * In the page's own order: signout.js before submit.js, because
    * your-page.html loads them that way and submit.js reads the prefill key
@@ -521,7 +541,8 @@ async function loadSubmit({ member = MEMBER, replies = [], prefill,
   // a personal arm that never runs.
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
-  return { ...page, requests, bootErrors, engine };
+  console.warn = warn;
+  return { ...page, requests, bootErrors, engine, logged };
 }
 
 function isPainted(element) {
@@ -1825,6 +1846,45 @@ check("a listing the page cannot read is reported, not drawn as empty",
   broken.elements["history-status"].className === "status bad" &&
   /could not be fetched/.test(
     broken.elements["history-status"].textContent));
+
+/*
+ * THE SEAM RULE 5 NAMES, and the one nothing reached.
+ *
+ * The rows opened, and the ENGINE refused to build a history out of
+ * them. submit.js catches that and renders the plain half; its comment
+ * says "The member sentence renders alone - the register bar's rule 5",
+ * and nothing exercised the catch, so a house sentence put back in
+ * front of `plainly()` there passed this suite, check_web.py and the
+ * whole gate. Confirmed by mutation before this arm was written.
+ *
+ * EQUALITY, not a containment test, for the reason dev/public.test.mjs
+ * gives at its own copy of this arm: a prefix is exactly what a
+ * containment test cannot see, and a prefix is the whole of what the
+ * rule forbids.
+ */
+const unreadable = await loadSubmit({
+  replies: [response(200, SUMMARY), response(200, { ok: true, entries: [
+    { id: 1, ciphertext: "open-1" },
+  ] })],
+  history: {
+    opens: ["open-1"],
+    sourceThrows: {
+      message: "a personal source needs at least one entry with a weight " +
+        "on it - this member has none the engine can plot",
+      plain: "Your entries could not be read as a history.",
+    },
+  },
+});
+
+check("a history the engine refuses renders the member's sentence alone",
+  unreadable.elements["history-status"].className === "status bad" &&
+  unreadable.elements["history-status"].textContent ===
+    "Your entries could not be read as a history." &&
+  unreadable.engine.drawn.length === 0);
+check("and the engine's own words go to the console, not to the member",
+  !/personal source|plot/.test(
+    unreadable.elements["history-status"].textContent) &&
+  unreadable.logged.some((line) => /a personal source needs/.test(line)));
 
 /*
  * Nothing decrypted survives the frame that opened it. The rule is

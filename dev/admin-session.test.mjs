@@ -684,14 +684,28 @@ async function loadAdmin(session, options = {}) {
   const revokeObjectURL = URL.revokeObjectURL;
   URL.createObjectURL = () => "blob:admin-session-test";
   URL.revokeObjectURL = () => {};
+
+  /*
+   * The console, captured - the other half of the register bar's rule 5
+   * (#275). The rule is that ONE short member sentence renders and the
+   * engine's precise text survives in code, tests and the console; a
+   * suite that asserted only the first half would pass just as well over
+   * a page that had DELETED the technical wording, and losing it is the
+   * failure that leaves whoever is debugging with nothing at all.
+   */
+  const logged = [];
+  const warn = console.warn;
+  console.warn = (...parts) => { logged.push(parts.join(" ")); };
+
   scenario++;
   await import("data:text/javascript," + encodeURIComponent(adminSource) +
     "#admin-session-" + scenario);
   await settle();
+  console.warn = warn;
   URL.createObjectURL = createObjectURL;
   URL.revokeObjectURL = revokeObjectURL;
   return {
-    ...page, requests, snapshots, imported, keysUsed,
+    ...page, requests, snapshots, imported, keysUsed, logged,
     timers: timers.slice(),
     pending: () => pending,
     rows: storage ? storage.rows : null,
@@ -799,10 +813,26 @@ check("publish carries the admin session",
    ever makes has nothing to measure from. A fabricated anchor would
    report the whole group's weight as its first month's gain (#73). */
 const firstEverAnchor = admin.snapshots.at(-1).options.previous;
+/*
+ * THE ROW IS NAMED; THE ENGINE'S REASON IS NOT ON SCREEN - #275's rule 5
+ * and rule 1 read together.
+ *
+ * "row 73: none of this row's recipient blocks opened with this key" put
+ * crypto.js's own vocabulary in front of a keyholder, in the middle of a
+ * list. The id is the half they can act on - it is what they look up,
+ * what they quote to whoever holds the other key - and the card around
+ * this list already explains the mechanism behind its More. The reason
+ * goes where a developer looks, and is asserted there rather than
+ * dropped, because a page that says nothing about why is worse for
+ * everybody.
+ */
 check("an undecryptable submission is listed by id without shifting rows",
-  admin.elements["failure-list"].textContent.includes(
-    "row 73: could not be opened with this key") &&
+  admin.elements["failure-list"].textContent.trim() === "row 73" &&
   JSON.stringify(rowIds(admin)) === JSON.stringify([41, 99]));
+check("and the reason it would not open reaches the console, not the list",
+  !/recipient blocks/.test(admin.elements["failure-list"].textContent) &&
+  admin.logged.some((line) => /row 73/.test(line) &&
+    /recipient blocks/.test(line)));
 
 /*
  * The identity has to make the whole journey - fetched as a column,
