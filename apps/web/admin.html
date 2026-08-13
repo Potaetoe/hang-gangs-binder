@@ -557,42 +557,26 @@
 </main>
 
 <footer>
-  <!-- The Theme control, at the foot of every signed-in page alike -
-       the owner's direction on #187. Its panel floats over the
-       instrument rather than pushing its sections down; see the longer
-       note in your-page.html's footer, and index.html's for why the
-       sign-in page is the one page that may not have this. -->
-  <details class="theme-picker">
-    <summary>Theme</summary>
-    <div class="theme-flyout" role="group" aria-label="Color theme">
-      <button type="button" data-set-theme="midnight">Midnight</button>
-      <button type="button" data-set-theme="pink">Pink</button>
-      <!-- The word may be ruled and the id may not. See the note in
-           your-page.html; nothing here is renamed on its own. -->
-      <button type="button" data-set-theme="daylight">Daylight</button>
-      <button type="button" data-set-theme="contrast">Contrast</button>
-    </div>
-  </details>
+  <!-- The four palettes as swatches, and the whole of what a footer
+       holds on any page here - the owner's ruling on #274, which made
+       every footer identical and gave navigation back to the rail. The
+       longer note is in your-page.html's footer; the word may be ruled
+       and the id may not, and nothing here is renamed on its own.
 
-  <!--
-    The same correction charts.html's footer carries - #265 row 22,
-    owner-ruled, and #187's ruling finished. The door belongs to the
-    session block, which knows whether to offer it; a footer offering
-    it under a rail that says "Signed in as ..." is the copy that
-    outlived the ruling.
-
-    The invitation here is the charts, because that is where the act
-    this page performs lands: a keyholder who has just pressed Publish
-    is one click from reading what they published. It is a sentence
-    rather than the page's name, so PROSE_LINKS names it beside "Open
-    it" - the Publish card's own link to the same page, which says
-    something different because it is doing something different.
-  -->
-  <p>
-    <a href="charts.html">See what everyone adds up to</a> ·
-    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
-    GitHub</a>
-  </p>
+       A keyholder who has just pressed Publish still reaches the
+       charts in one press: the Publish card's own "Open it" is beside
+       the act it belongs to, which is where a link to the result of an
+       act belongs and is why PROSE_LINKS names it. -->
+  <div class="theme-swatches" role="group" aria-label="Color theme">
+    <button type="button" data-set-theme="midnight" aria-label="Midnight"
+      ><span class="swatch-dot" data-palette="midnight"></span></button>
+    <button type="button" data-set-theme="pink" aria-label="Pink"
+      ><span class="swatch-dot" data-palette="pink"></span></button>
+    <button type="button" data-set-theme="daylight" aria-label="Daylight"
+      ><span class="swatch-dot" data-palette="daylight"></span></button>
+    <button type="button" data-set-theme="contrast" aria-label="Contrast"
+      ><span class="swatch-dot" data-palette="contrast"></span></button>
+  </div>
 </footer>
 
 </div>

@@ -123,24 +123,20 @@
   </div>
 </main>
 
-<!--
-  This page's only way onward, and it is deliberately one line rather
-  than a rail. A member who is already signed in and has come back to
-  this page gets the page they actually wanted; a signed-out visitor is
-  returned here by public.js, which requires a session before it draws
-  anything. That round trip is the right answer rather than a broken
-  link - the numbers are for members - but it is why this says what the
-  dashboard is instead of just naming it.
--->
 <footer>
   <!--
-    The four palettes as swatches, with nothing to reveal. The three
-    signed-in pages open a floating Theme panel; this page may not, and
-    that is the sign-in page's standing rule rather than a layout
-    preference: a control with no hidden state cannot be open over the
-    Telegram widget, which is the only thing here that signs anybody
-    in. A dead theme.js, a dead stylesheet and a layout that lands
-    somewhere unexpected all leave the door reachable.
+    The four palettes as swatches, with nothing to reveal, and the whole
+    of what a footer holds on any page here - the owner's ruling on
+    #274. A control with no hidden state cannot be open over the
+    Telegram widget, which is the only thing on this page that signs
+    anybody in, and it cannot be open over a form or a chart either. A
+    dead theme.js, a dead stylesheet and a layout that lands somewhere
+    unexpected all leave everything on the page reachable.
+
+    This page has no way onward and needs none: everything else here
+    wants a session, and public.js returns a visitor without one to
+    this page. tools/check_web.py's anti-stranding arm exempts the
+    entrance by name for that reason, rather than being weakened.
 
     The palette a visitor already chose is painted before any of this
     runs, by theme-init.js in the head. Each dot shows the palette it
@@ -159,12 +155,6 @@
     <button type="button" data-set-theme="contrast" aria-label="Contrast"
       ><span class="swatch-dot" data-palette="contrast"></span></button>
   </div>
-
-  <p>
-    <a href="charts.html">See what everyone adds up to</a> ·
-    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
-    GitHub</a>
-  </p>
 </footer>
 
 <script src="config.js"></script>
@@ -172,8 +162,8 @@
 <script src="session.js"></script>
 <script src="auth.js"></script>
 <!-- nav.js is not loaded here: it marks the current entry in the rail,
-     and this page has no rail. The swatches above need no opening, so
-     theme.js is the whole of what this page's palette costs it. -->
+     and this page has no rail. The swatches need no opening, so theme.js
+     is the whole of what a palette costs any page here. -->
 <script src="theme.js"></script>
 </body>
 </html>

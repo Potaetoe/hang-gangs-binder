@@ -65,6 +65,12 @@
     <span class="wordmark-name">Binder</span>
   </a>
 
+  <!-- admin.html is in this list on instruction, and it costs nothing:
+       the page is public and useless without both secrets - DESIGN.md
+       has said so since the beginning under "Key custody". What it
+       gains is the keyholder not having to remember a URL nothing
+       links to. The entry says what it needs, so nobody follows it
+       expecting a page they can use. -->
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
@@ -620,68 +626,47 @@
   </section>
 </main>
 
-<!-- Muse's charts is linked here as well as in the rail: this link is
-     at the end of the form, which is where somebody who has just
-     submitted actually is.
-
-     It says what that page is rather than naming it, which is the one
-     deliberate departure from the site's one-name-per-destination rule
-     (#127) on this page. The reason is that this is an invitation at
-     the end of an act, not a way of getting somewhere: somebody who has
-     just typed their weight in is being told what it joins.
-
-     admin.html is in the rail, on instruction, and it costs nothing:
-     the page is public and useless without both secrets - DESIGN.md has
-     said so since the beginning under "Key custody". What it gains is
-     the keyholder not having to remember a URL nothing links to. The
-     rail entry says what it needs, so nobody follows it expecting a
-     page they can use. -->
 <footer>
   <!--
-    The Theme control, at the foot of every signed-in page - the
-    owner's direction on #187 for where it sits, and the ruling of
-    2026-08-10 for what it is. The panel FLOATS: this element's own box
-    is the width of the word whether it is open or shut, so reaching
-    for a palette never pushes this page's form or its history pane
-    around. That is what a signed-in page can afford. index.html cannot
-    and does not - it offers the same four as swatches in flow, because
-    nothing there may ever be open over the Telegram widget.
+    The four palettes as swatches, and the whole of what a footer holds
+    on any page here - the owner's ruling on #274, which made every
+    footer identical and gave navigation back to the rail. This
+    replaced a floating Theme panel, and what the row is worth over it
+    is that there is no hidden state left to fail open: a control that
+    covers nothing however its script, its stylesheet or its layout
+    goes wrong is the property index.html was always built around, and
+    it costs a signed-in page nothing because the row is in flow at the
+    foot of the document where there is nothing left to push.
 
-    <details> is what opens this with no script running, which is why
-    the element and not a class is what check 19 pins. theme.js only
-    adds the manners a floating panel owes: Escape, outside click,
-    close on pick, and the flip when the room above runs out. The
-    palette a visitor already chose is painted before any of it, by
-    theme-init.js in the head.
+    The palette a visitor already chose is painted before any of this
+    runs, by theme-init.js in the head. Each dot shows the palette it
+    offers; why those colors are written on the dot instead of taken
+    from a token is in theme.css beside them. The words are in
+    aria-label because a dot has none - check 23 reads a chip's name
+    that way when there is nothing to see.
+
+    The word is "Daylight" and the id is `daylight`, and only one of
+    them is safe to change. The id is what gets stored, so renaming it
+    returns every member who has already chosen this palette to the
+    default without telling them - and the same string keys theme.js's
+    chrome map, two theme.css palette blocks that must go on declaring
+    identical colors, and check_contrast.py's table.
+
+    The words answer to two checks and neither is optional: check 23
+    holds the copies on these pages identical (#152), and check 24
+    holds the word itself to the one the mockup rules (#203). A rename
+    reaches every copy in one slice or it fails.
   -->
-  <details class="theme-picker">
-    <summary>Theme</summary>
-    <div class="theme-flyout" role="group" aria-label="Color theme">
-      <button type="button" data-set-theme="midnight">Midnight</button>
-      <button type="button" data-set-theme="pink">Pink</button>
-      <!--
-        The word is "Daylight" and the id is `daylight`, and only one of
-        them is safe to change. The id is what gets stored, so renaming
-        it returns every member who has already chosen this palette to
-        the default without telling them - and the same string keys
-        theme.js's chrome map, two theme.css palette blocks that must go
-        on declaring identical colors, and check_contrast.py's table.
-
-        The words answer to two checks and neither is optional: check 23
-        holds the copies on these pages identical (#152), and check 24
-        holds the word itself to the one the mockup rules (#203). A
-        rename reaches every copy in one slice or it fails.
-      -->
-      <button type="button" data-set-theme="daylight">Daylight</button>
-      <button type="button" data-set-theme="contrast">Contrast</button>
-    </div>
-  </details>
-
-  <p>
-    <a href="charts.html">See what everyone adds up to</a> ·
-    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
-    GitHub</a>
-  </p>
+  <div class="theme-swatches" role="group" aria-label="Color theme">
+    <button type="button" data-set-theme="midnight" aria-label="Midnight"
+      ><span class="swatch-dot" data-palette="midnight"></span></button>
+    <button type="button" data-set-theme="pink" aria-label="Pink"
+      ><span class="swatch-dot" data-palette="pink"></span></button>
+    <button type="button" data-set-theme="daylight" aria-label="Daylight"
+      ><span class="swatch-dot" data-palette="daylight"></span></button>
+    <button type="button" data-set-theme="contrast" aria-label="Contrast"
+      ><span class="swatch-dot" data-palette="contrast"></span></button>
+  </div>
 </footer>
 
 </div>
