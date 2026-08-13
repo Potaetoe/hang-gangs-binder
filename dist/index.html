@@ -33,11 +33,28 @@
   sign-in. tools/check_web.py pins this page as plain and fails if rail
   markup appears on it.
 
-  Nothing precedes the header either. The page carries no wordmark of its
-  own - WORDMARK_PAGES in tools/check_web.py names the pages that do, and
-  this is not one - so the first thing painted is the sign-in card, with
-  no frame of anything else before it (#273).
+  The name greets from the top of the page anyway - the owner's addendum
+  on #273 - and this mark is the sign-in page's only copy of it, which is
+  why WORDMARK_PAGES in tools/check_web.py names this page and check 10
+  holds these two lines to the rails' copies. Nothing here is
+  aria-hidden: the heading below is the name of the ACT, not of the site,
+  so a reader who cannot see this mark would meet a page that never says
+  what it is.
+
+  A paragraph rather than the rails' anchor, and that is the one way this
+  copy differs from theirs. There the mark is the route home; here home
+  is the page somebody is already standing on, and the reason this page
+  carries no rail is the reason it carries no link to itself.
+
+  It is painted with the first frame and never moves. apps/web declares
+  no @keyframes at all, so there is nothing for this mark to arrive in -
+  it greets, and the sign-in card under it is reachable in the same
+  frame (#273).
 -->
+<p class="wordmark">
+  <span class="wordmark-owner">Hang Gang</span>
+  <span class="wordmark-name">Binder</span>
+</p>
 
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>

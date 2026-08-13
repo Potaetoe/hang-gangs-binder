@@ -5,13 +5,13 @@
 
 Issue #85. The vendored Playfair Display italic carries a wordmark's
 inventory rather than a full latin subset, because the only text it
-draws is one word - "Binder", in the rail wordmark. A full latin subset
-of a display face is 23,204 gzipped bytes, and theme.css names it from
-every page, so the difference is paid wherever that word is drawn.
-WORDMARK_PAGES in tools/check_web.py is the roster that says which
-pages draw it; do not read this check as covering only the rail, since
-a plain page is free to grow a wordmark and this arm would have to see
-it the day it did.
+draws is one word - "Binder", the second line of the wordmark. A full
+latin subset of a display face is 23,204 gzipped bytes, and theme.css
+names it from every page, so the difference is paid wherever that word
+is drawn. WORDMARK_PAGES in tools/check_web.py is the roster that says
+which pages draw it, and it is not the rail roster: the sign-in page
+carries the mark with no rail around it (#273). Reading this check as
+covering only the rail would understate it by a page.
 
 WHY THIS CHECK HAS TO EXIST, AND WHY IT HAD TO EXIST FIRST
 ----------------------------------------------------------
@@ -249,8 +249,9 @@ def class_text(text, name):
     OPENING TAGS ARE MATCHED, AND THE BODY IS WALKED SEPARATELY, which
     is not a stylistic choice. One expression spanning the whole element
     consumes the element it matched, so `re.finditer` resumes AFTER it
-    and never sees anything nested inside - and the wordmark is nested,
-    inside the rail aside on every page that carries one. A
+    and never sees anything nested inside - and the wordmark is nested
+    on every page that carries one, inside the wrapper its two lines
+    hang off, inside the rail aside as well wherever there is a rail. A
     whole-element pattern therefore matches the wrapper, finds the
     wrong class on it, and reports that no page asks anything of this
     face: a green check over an empty demand, which is the exact failure
