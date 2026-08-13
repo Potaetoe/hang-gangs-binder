@@ -2019,17 +2019,19 @@ def shell_problems():
     return problems
 
 
-# Which pages write the site's own name out by hand. Three rails and
-# the sign-in cover, so it crosses both shells and neither shell rule
-# could state it - which is half of why nothing was comparing it.
+# Which pages write the site's own name out by hand. The rails, and
+# nothing else: the sign-in page's copy lived inside the cover leaf and
+# went out with it (#273), so this arm no longer crosses both shells -
+# but it is still pinned outside the markup, because the day a plain
+# page grows a wordmark again is the day nothing would be comparing it.
 #
 # Pinned outside the markup for the reason SHELLS gives, and the ABSENT
 # direction is the one with teeth: a page carrying the wordmark and
-# named by no pin is a fifth copy nothing compares, and a page arriving
-# is exactly when somebody copies a shell from whichever page they had
-# open. 404.html deliberately carries none.
+# named by no pin is a copy nothing compares, and a page arriving is
+# exactly when somebody copies a shell from whichever page they had
+# open. index.html and 404.html deliberately carry none.
 WORDMARK_PAGES = frozenset({
-    "admin.html", "charts.html", "index.html", "your-page.html",
+    "admin.html", "charts.html", "your-page.html",
 })
 
 # The two lines, by the classes theme.css paints them with. Read as
