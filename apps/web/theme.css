@@ -1079,121 +1079,6 @@ body.railed {
   border-color: #f08090;
 }
 
-/* ------------------------------------------------------------------ */
-/* The cover, and the way it opens.                                    */
-
-/*
- * index.html arrives as the binder's closed cover and opens once - the
- * owner's signature entrance on #73. CSS only: no library, and no
- * script either, which matters more than the byte count. This is the
- * sign-in page, and an entrance animation that a script has to start is
- * an entrance that never finishes on a page whose script failed, over
- * content nobody can then reach.
- *
- * THE RESTING STATE IS OPEN. The leaf is transparent, hidden from hit
- * testing and out of the accessibility tree by default, and the
- * animation plays it from closed to that resting state. Written the
- * other way round - resting closed, an animation that opens it - every
- * failure mode ends with an opaque panel sitting over the sign-in
- * button: no animation support, an interrupted style sheet, a browser
- * that refuses the keyframes. This way each of those fails open, which
- * on this page is the only acceptable direction.
- *
- * THAT PANEL IS NOT ALWAYS THE WHOLE SCREEN, and this is the one place
- * that says what shape it is. `inset: 0` sizes the leaf to the
- * viewport, but on index.html the leaf is a direct child of `body` and
- * that body carries no class, so `body:not(.railed) > *` further up
- * catches it like any other child: `max-width: var(--measure)` and
- * `margin-inline: auto`. Above the `max-width: 52rem` block near the
- * foot of this file the cover is therefore a CENTERED reading-column
- * panel running the full viewport height, with page background either
- * side of it; below that breakpoint the same block lifts the cap to
- * 100% and it is genuinely the whole viewport. Both shapes cover the
- * sign-in card, because the card sits in that same column - so the
- * fail-open reasoning holds identically at every width and only the
- * description of the shape moves. Measure before calling this leaf
- * full-screen: a width narrower than the viewport, read back on a wide
- * screen, is this rule doing its job - not a broken containing block
- * and not a quirk of whatever harness took the measurement.
- *
- * `perspective()` is inside the transform rather than on an ancestor
- * because the leaf is `fixed`: a perspective on a parent would make
- * that parent the containing block and the leaf would stop covering the
- * viewport.
- */
-.cover-leaf {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  background:
-    linear-gradient(150deg,
-                    var(--color-surface) 0%,
-                    var(--color-bg) 62%);
-  border-right: 2px solid var(--color-gold);
-  transform-origin: left center;
-  backface-visibility: hidden;
-
-  /* The open state, and therefore the fallback for every browser that
-     never runs the animation below. */
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-
-  /* ~900ms in total: a ~200ms CLOSED HOLD, then a ~700ms swing. An
-     entrance nobody can see is not an entrance, and this one is the
-     site's signature.
-
-     The hold is the animation-delay with `backwards` fill, NOT a
-     keyframe stop at 22%. A keyframe there would split the
-     cubic-bezier into two segments and put a hitch in the middle of
-     the swing; `backwards` instead paints the `from` state - the
-     closed cover - for the whole delay, so the leaf holds shut and
-     then swings once, on one curve.
-
-     The delay does not touch fail-open: the resting state declared
-     just above is still the open one, so every no-animation failure
-     mode still lands on the sign-in page. It does widen the window in
-     which the leaf is painted over the form, which is survivable only
-     because the keyframes below raise `opacity` and `visibility` and
-     never mention `pointer-events` - the `none` above therefore holds
-     through the hold and the swing, and a press during either goes
-     through the leaf to the sign-in button underneath. Putting
-     `pointer-events` in the keyframes would make the leaf eat the
-     first click of the visit.
-
-     The mockup is the ruling here and this mirrors it; the numbers
-     are the owner's, not this file's to tune. */
-  animation: cover-open 700ms cubic-bezier(0.22, 0.68, 0.3, 1) 200ms 1 backwards;
-}
-
-@keyframes cover-open {
-  from {
-    transform: perspective(1600px) rotateY(0deg);
-    opacity: 1;
-    visibility: visible;
-  }
-
-  /* Opacity is held almost to the end so the leaf reads as a cover
-     swinging away rather than as a panel dissolving. */
-  70% { opacity: 1; }
-
-  to {
-    transform: perspective(1600px) rotateY(-105deg);
-    opacity: 0;
-    visibility: hidden;
-  }
-}
-
-.cover-leaf .wordmark-owner,
-.cover-leaf .wordmark-name { text-align: center; }
-
-.cover-leaf .wordmark-name { font-size: clamp(2.2rem, 1.6rem + 3vw, 3.4rem); }
-
 /* The CHIP family: a segmented control of four, plus the summary that
    folds them away. The border is what makes each one a separate target
    - same 1.4.11 reasoning as the form fields - and the pill and the
@@ -2146,6 +2031,13 @@ body.instrument main.stack { gap: var(--space-8); }
   .stats { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* The transition lines are what this block does today: no page here
+   declares @keyframes, so the two animation lines currently govern
+   nothing. They stay anyway, and not for symmetry - a blanket rule is
+   the only kind that covers an animation nobody has written yet, and
+   the alternative is a stylesheet where honoring this setting becomes
+   something each new rule has to remember. Deleting them as dead would
+   be correct about today and wrong about the next animation. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2155,26 +2047,4 @@ body.instrument main.stack { gap: var(--space-8); }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
-  /*
-   * The cover is removed rather than merely shortened, and the blanket
-   * rule above is not enough for it on its own.
-   *
-   * At 0.01ms the keyframes still run: the browser can paint the first
-   * frame, and the first frame of this one is the closed cover, opaque
-   * over the sign-in card. Worse, the blanket rule shortens the
-   * DURATION and says nothing about the delay, so the cover's ~200ms
-   * hold survives it whole and `backwards` fill paints that frame for
-   * every millisecond of it. What the blanket rule leaves is therefore
-   * not a flash but a fifth of a second of HELD panel - the whole
-   * viewport below the `max-width: 52rem` block above, and a centered
-   * reading-column panel over the sign-in card above that breakpoint
-   * (the leaf's own rule higher up has the geometry). Either shape is
-   * the specific thing a reader who has asked for reduced motion is
-   * asking not to be given, and it lands on every machine, not just a
-   * slow one. Cancelling the animation leaves the leaf in its resting
-   * state, which is already open - so this snaps straight to the opened
-   * binder with no frame of the closed one.
-   */
-  .cover-leaf { animation: none !important; }
 }

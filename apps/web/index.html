@@ -29,33 +29,23 @@
 <body>
 
 <!--
-  The closed cover, which opens once on arrival. Decoration and nothing
-  else: aria-hidden because the wordmark it carries is repeated in the
-  heading below, and a screen reader announcing it twice would describe
-  a visual event as content.
-
-  It is inert by default and the animation plays it OPEN - the reasoning
-  is in theme.css beside the keyframes, and the short version is that
-  this is the sign-in page, so every way the animation can fail has to
-  fail with the content reachable rather than behind a panel.
-
   There is no rail here, by the owner's decision on #73: no rail before
   sign-in. tools/check_web.py pins this page as plain and fails if rail
   markup appears on it.
+
+  Nothing precedes the header either. The page carries no wordmark of its
+  own - WORDMARK_PAGES in tools/check_web.py names the pages that do, and
+  this is not one - so the first thing painted is the sign-in card, with
+  no frame of anything else before it (#273).
 -->
-<div class="cover-leaf" aria-hidden="true">
-  <span class="wordmark-owner">Hang Gang</span>
-  <span class="wordmark-name">Binder</span>
-</div>
 
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>
   <h1>Sign in</h1>
-  <!-- The cover above has just opened, so this is the first sentence
-       anybody reads. It still says the two things the old one said - one
-       sign-in, this tab only - and says them as an invitation rather
-       than as a notice. The pinned name is the heading above it; this
-       line is free to be warm (#73). -->
+  <!-- The first sentence anybody reads. It carries the two facts a
+       reader needs - one sign-in, this tab only - as an invitation
+       rather than as a notice. The pinned name is the heading above it;
+       this line is free to be warm (#73). -->
   <p class="muted">
     Sign in once for this tab. Then it is your page to fill in, and
     everyone's numbers to read.

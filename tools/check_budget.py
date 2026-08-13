@@ -256,12 +256,12 @@ WEB = os.path.join(REPO, "dist")
 #   index.html      119,494 -> 122,401   (+2.4%)
 #   your-page.html  148,875 -> 155,656   (+4.6%)
 #
-# Two sources, and they land differently. theme.css carries the rail,
-# the mobile strip, the cover's keyframes, the runner and a --color-gold
-# per palette, and the stylesheet is in all five totals - which is the
-# whole of what 404.html and index.html paid, and they paid it while
-# LOSING a file each, because a plain page no longer loads nav.js. The
-# three rail pages additionally carry the rail markup itself and the new
+# Two sources, and they land differently. That diff put the rail, the
+# mobile strip, an entrance animation, the runner and a --color-gold per
+# palette into theme.css, and the stylesheet is in all five totals -
+# which is the whole of what 404.html and index.html paid, and they paid
+# it while LOSING a file each, because a plain page loads no nav.js. The
+# three rail pages additionally carry the rail markup itself and
 # apps/web/signout.js, which is why they moved twice as far.
 #
 # Every ceiling is re-pinned at HEADROOM over what its page measures

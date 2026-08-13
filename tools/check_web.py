@@ -165,11 +165,12 @@ day a check is added:
       bottom. Compared against each other and failing if they differ.
       The Theme disclosure is NOT part of this shell any more and is
       check 19's, because the sign-in page carries one without a rail.
-    - PLAIN. The pages a signed-out visitor meets - the cover, which
-      the owner decided carries no rail before sign-in, and the error
-      page, which goes plain on principle. These must NOT carry rail
-      markup, which is the copy-paste direction: a session home on the
-      cover would offer Sign out to somebody who has not signed in.
+    - PLAIN. The pages a signed-out visitor meets - the sign-in page,
+      which the owner decided carries no rail before sign-in, and the
+      error page, which goes plain on principle. These must NOT carry
+      rail markup, which is the copy-paste direction: a session home on
+      the sign-in page would offer Sign out to somebody who has not
+      signed in.
 
     The anti-stranding rule survives both shells rather than being
     spent on the rail. A rail aside must carry the route to the
@@ -181,14 +182,15 @@ day a check is added:
     its own HTML, which is what stops "plain" from becoming "a dead
     end with nice typography".
 
-    The wordmark is the shell's other hand-kept copy, and it crosses
-    both shells - three rails and the sign-in cover - which is half of
+    The wordmark is the shell's other hand-kept copy, and WORDMARK_PAGES
+    rather than this table is what says which pages carry one - the two
+    rosters agree today and are not the same claim, which is half of
     why nothing was comparing it. The paragraph above says the rail
     "carries the wordmark" while the parity arms read .rail-links and
     the session block and stop there; the name tables read titles,
     headings and the links a page writes a name into; the chip arm
-    reads chips. So the site's own name could be renamed on
-    three copies of four with the whole gate green, which is #152's
+    reads chips. So the site's own name could be renamed on every copy
+    but one with the whole gate green, which is #152's
     disease with a different subject. WORDMARK_PAGES pins which pages
     carry one, outside the markup and in both directions, for the
     reason SHELLS gives - and the copy-paste direction has the teeth
@@ -2892,7 +2894,7 @@ PROSE_PIN = "PROSE_LINKS in tools/check_web.py"
 # One anchor, split into its attributes and what it shows, so the arm
 # can read a class off it. The wordmark is an anchor to index.html whose
 # words are the site's name rather than that page's, and check 10 holds
-# its four copies to each other - held here too it would answer to two
+# its copies to each other - held here too it would answer to two
 # tables at once, and the next rename would have to satisfy both.
 ANCHOR = re.compile(r"<a\b([^>]*)>(.*?)</a>", re.S | re.I)
 ANCHOR_HREF = re.compile(r'href\s*=\s*["\']([^"\']*)["\']', re.I)

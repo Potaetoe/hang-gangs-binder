@@ -5,12 +5,13 @@
 
 Issue #85. The vendored Playfair Display italic carries a wordmark's
 inventory rather than a full latin subset, because the only text it
-draws is one word - "Binder", in the rail wordmark and on index.html's
-cover leaf. A full latin subset of a display face is 23,204 gzipped
-bytes, and theme.css names it from every page, so the difference is
-paid wherever that word is drawn: every rail page, plus index.html,
-which is not one. SHELLS in tools/check_web.py is the roster that says
-which pages those are.
+draws is one word - "Binder", in the rail wordmark. A full latin subset
+of a display face is 23,204 gzipped bytes, and theme.css names it from
+every page, so the difference is paid wherever that word is drawn.
+WORDMARK_PAGES in tools/check_web.py is the roster that says which
+pages draw it; do not read this check as covering only the rail, since
+a plain page is free to grow a wordmark and this arm would have to see
+it the day it did.
 
 WHY THIS CHECK HAS TO EXIST, AND WHY IT HAD TO EXIST FIRST
 ----------------------------------------------------------
@@ -124,9 +125,10 @@ WEB = os.path.join(REPO, "dist")
 # on why this is a hand list rather than a walk of the cascade.
 #
 # One entry today. .wordmark-name is the only rule in theme.css carrying
-# font-style: italic, and index.html's cover leaf restyles that same
-# class rather than introducing another - so the rail wordmark and the
-# cover are one row, not two.
+# font-style: italic. A second place that wants the face restyles that
+# same class rather than introducing another, which is what keeps this
+# a one-row table; a new class given the italic face is what the
+# unnamed-class arm below is for.
 FACES = {
     "fonts/playfair-display-600-italic-latin.woff2": ("wordmark-name",),
 }
@@ -248,11 +250,11 @@ def class_text(text, name):
     is not a stylistic choice. One expression spanning the whole element
     consumes the element it matched, so `re.finditer` resumes AFTER it
     and never sees anything nested inside - and the wordmark is nested,
-    inside `.cover-leaf` on index.html and inside the rail elsewhere. A
-    whole-element pattern therefore matched the wrapper, found the
-    wrong class on it, and reported that no page asks anything of this
+    inside the rail aside on every page that carries one. A
+    whole-element pattern therefore matches the wrapper, finds the
+    wrong class on it, and reports that no page asks anything of this
     face: a green check over an empty demand, which is the exact failure
-    the empty-demand arm below exists to catch. It caught this one.
+    the empty-demand arm below exists to catch. It caught that one.
     """
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
     found = []
@@ -425,11 +427,11 @@ def italic_selectors(css):
 def subject_classes(selector):
     """The classes on the element a selector styles.
 
-    Its rightmost compound, not every class in it. `.cover-leaf
+    Its rightmost compound, not every class in it. `.rail
     .wordmark-name` styles the wordmark and says nothing about what
-    `.cover-leaf` is drawn in, so collecting both would demand a roster
-    line for a class that takes no face - friction with no cause behind
-    it, which is the kind that gets a check deleted.
+    `.rail` is drawn in, so collecting both would demand a roster line
+    for a class that takes no face - friction with no cause behind it,
+    which is the kind that gets a check deleted.
     """
     compound = re.split(r"[\s>+~]+", selector.strip())[-1]
     return set(re.findall(r"\.([A-Za-z0-9_-]+)", compound))
