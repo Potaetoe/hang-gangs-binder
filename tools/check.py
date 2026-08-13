@@ -104,6 +104,13 @@ PYTHON_SUITE_SUFFIX = ".test.py"
 # departing, and says nothing about one arriving. A dev/*.test.mjs
 # nobody added here was never run and the gate was green (#204).
 NODE_SUITES = [
+    # First, because everything under it is downstream of the answer to
+    # "what does the form ask, and what is this group called": the spec
+    # in apps/site.config.js and the derivations in apps/fields.js
+    # (#278). A drift between the spec and the shipped modules makes
+    # several of the suites below fail for reasons that read as their
+    # own, so this one names it before they do.
+    ("form-as-data spec + its derivations", "dev/fields.test.mjs"),
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
     ("member device key custody", "dev/memberkey.test.mjs"),
     ("form record building", "dev/form.test.mjs"),
