@@ -117,8 +117,8 @@
    *
    * The name is a second literal rather than a borrowed constant
    * because this page does not load signout.js, and it must not: the
-   * cover offers no act there is no session for. dev/session.test.mjs
-   * compares the two literals.
+   * sign-in page offers no act there is no session for.
+   * dev/session.test.mjs compares the two literals.
    *
    * Nothing here runs without scripts, and that costs nothing: sign-out
    * itself is a script, so a browser that cannot show this line is one
