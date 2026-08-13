@@ -449,14 +449,21 @@
         "would take nobody's authority away.";
     }
     const many = view.secretOnly.length !== 1;
+    // #265 row 33's vocabulary, held to one word for one operation. The
+    // Telegram-id hint a few cards up this same page says "scrambled
+    // one-way by the service"; a "one-way hash" here would be two names
+    // for one thing on one screen, which is the CONSISTENCY class the
+    // copy audit opened with. The claim is the same either way -
+    // irreversible, and nothing here turns one back into a person - and
+    // "hash" is the half of it a reader cannot act on.
     return view.secretOnly.length + (many ? " admins are" : " admin is") +
       " granted by the " +
       "ADMIN_TELEGRAM_IDS secret and by no row above, so the backfill is " +
       "not finished. Their account ids are listed below, and they name " +
-      "nobody: each is a one-way hash, nothing on this page can turn one " +
-      "back into a person, and the numeric ids behind them are inside a " +
-      "secret that is unreadable by design. Add each of those people by " +
-      "their numeric id above until this list is empty.";
+      "nobody: each is scrambled one-way, nothing on this page can turn " +
+      "one back into a person, and the numeric ids behind them are " +
+      "inside a secret that is unreadable by design. Add each of those " +
+      "people by their numeric id above until this list is empty.";
   }
 
   /*

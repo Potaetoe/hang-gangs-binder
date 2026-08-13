@@ -262,14 +262,21 @@
         "would take nobody's authority away.";
     }
     const many = view.secretOnly.length !== 1;
+     
+     
+     
+     
+     
+     
+     
     return view.secretOnly.length + (many ? " admins are" : " admin is") +
       " granted by the " +
       "ADMIN_TELEGRAM_IDS secret and by no row above, so the backfill is " +
       "not finished. Their account ids are listed below, and they name " +
-      "nobody: each is a one-way hash, nothing on this page can turn one " +
-      "back into a person, and the numeric ids behind them are inside a " +
-      "secret that is unreadable by design. Add each of those people by " +
-      "their numeric id above until this list is empty.";
+      "nobody: each is scrambled one-way, nothing on this page can turn " +
+      "one back into a person, and the numeric ids behind them are " +
+      "inside a secret that is unreadable by design. Add each of those " +
+      "people by their numeric id above until this list is empty.";
   }
 
   
