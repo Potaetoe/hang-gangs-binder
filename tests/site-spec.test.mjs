@@ -49,7 +49,7 @@ const F = globalThis.BinderFields;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
-const EXPECTED = 43;
+const EXPECTED = 44;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -62,6 +62,16 @@ function check(label, condition) {
 /* 1. The data file is a data file.                                    */
 
 check("the spec is one object", SITE && typeof SITE === "object");
+
+// In the order the pages will load them - the config's <script> tag
+// first - the spec is frozen before anything reads it at all. This is
+// the narrower of the two guarantees and the reason apps/fields.js
+// still freezes at load as well as on the read: the gap it closes is
+// between that file evaluating and the page's first derivation, which
+// is a whole page render. Nothing above this line reads the spec, so
+// what is asserted here is genuinely the state at load.
+check("the config loaded first is frozen before anything reads it",
+  Object.isFrozen(SITE) && Object.isFrozen(SITE.fields));
 
 // Frozen all the way down, by the first READ of it. A page will hold
 // this object for a whole session, so a same-origin script that could

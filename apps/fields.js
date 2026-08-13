@@ -26,13 +26,30 @@
  * it had been rendered. So the reader freezes what it reads, and the
  * table stays a table.
  *
+ * AND IT FREEZES ON THE READ, NOT AT LOAD. 0.9-M2 loads these two
+ * files with two <script> tags, and two tags have two orders. Freezing
+ * once while this file evaluates worked in one of them and silently
+ * did not in the other: with this file first, root.BINDER_SITE is not
+ * there yet, deepFreeze returns on its first guard, every derivation
+ * still works when the spec arrives a moment later, and the form stays
+ * editable for the life of the page with nothing thrown and nothing
+ * logged. Freezing inside spec() cannot be ordered wrong - whatever a
+ * derivation is about to read is frozen before it reads it, whichever
+ * tag came first - and it costs one Object.isFrozen after the first
+ * call. Restoring the load-time freeze as the only one restores the
+ * silent order.
+ *
  * ARITHMETIC IS CODE AND STAYS CODE. A computed field in the spec
  * names a `derivation`; DERIVATIONS below is the list of the ones that
  * exist, and an unknown name throws rather than yielding a measure
  * that quietly computes nothing. Letting the table carry a formula
  * would mean evaluating a string a fork owner typed, on the page that
  * handles cleartext - which is the one thing this project's CSP is
- * written to prevent.
+ * written to prevent. A `kind` this file does not implement is refused
+ * the same way and for the same reason: nothing downstream can ask
+ * which unit table applies or what shape of chart it makes, so
+ * answering would mean a histogram with no band width drawn from a
+ * field the form never asked for.
  *
  * Pure. No document, no fetch, no storage: the wiring that will draw
  * these fields belongs to the pages, and 0.9-M2 is where they get it.
@@ -99,17 +116,49 @@
     return value;
   }
 
+  /*
+   * The spec, frozen, whichever <script> tag came first.
+   *
+   * Every read in this file goes through here, which is what makes the
+   * freeze a property of the spec rather than of the load order (see
+   * the header). deepFreeze returns immediately on an object it has
+   * already frozen, so this is one type check per call after the first.
+   *
+   * The throw is the loud half. A page whose tags are in the wrong
+   * order and reads a field before the spec has run gets this sentence
+   * rather than a measure list built out of undefineds - a spec that
+   * will not load beats a form that quietly asks nothing.
+   */
   function spec(given) {
     const site = given || root.BINDER_SITE;
     if (!site) {
       throw new Error("apps/site.config.js has not been loaded, so " +
-        "nothing knows what this form asks.");
+        "nothing knows what this form asks: it goes in a <script> tag " +
+        "before this file, or it is passed in.");
     }
-    return site;
+    return deepFreeze(site);
   }
 
+  /*
+   * The fields, with every kind held to the list above.
+   *
+   * Checked here rather than where a measure is built because a kind
+   * with a typo in it is a spec that cannot be rendered, not a field
+   * that is merely never charted: a guard living in measureFor would
+   * hand out names, labels and limits for "girth" and refuse only where
+   * a chart asked for it. One guard on the one read path is also the
+   * only place that catches it once rather than per consumer.
+   */
   function fields(given) {
-    return spec(given).fields;
+    const all = spec(given).fields;
+    all.forEach(function (one) {
+      if (KINDS.indexOf(one.kind) === -1) {
+        throw new Error('The spec gives field "' + one.name + '" the kind "' +
+          one.kind + '", and apps/fields.js implements only: ' +
+          KINDS.join(", ") + ".");
+      }
+    });
+    return all;
   }
 
   function field(name, given) {
@@ -346,7 +395,14 @@
     return measures(given).map(function (one) { return one.name; });
   }
 
-  deepFreeze(root.BINDER_SITE);
+  // The shipped spec, frozen now if it is already here. This is NOT
+  // what guarantees the freeze - spec() is, on every read - and it must
+  // not be read as the guarantee: on its own it holds in one <script>
+  // order and silently not in the other, which is the defect this line
+  // used to be. It stays because in the order where the spec is already
+  // loaded it closes the gap between this file evaluating and the
+  // page's first derivation, and that gap is a whole page render.
+  if (root.BINDER_SITE) deepFreeze(root.BINDER_SITE);
 
   // Frozen for the reason every export here is: a page holds this
   // module for a session, and a helper another page could redefine is

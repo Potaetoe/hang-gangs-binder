@@ -40,10 +40,13 @@
  *
  * WHAT MAY BE WRITTEN HERE. Text, numbers, true/false, lists and
  * tables of them - and comments, as many as are useful. No functions,
- * no arithmetic, nothing computed: tools/site_config.py reads this
- * same file so the gate can hold the pages to it, and it reads DATA.
- * Anything cleverer than a value fails the gate rather than being
- * quietly ignored.
+ * no arithmetic, nothing computed: apps/fields.js reads this file as
+ * DATA, and 0.9-M2 loads it with a <script> tag into the page that
+ * handles cleartext, where anything cleverer than a value is code
+ * running beside the encryption. Nothing refuses it for you yet - a
+ * function written here is quietly ignored rather than rejected until
+ * the new testing apparatus (0.9-M0-S4, #281) gives this file an arm -
+ * so until then the discipline is yours, and it is worth keeping.
  *
  * CHANGING A `name` OR A CHOICE `value` REWRITES HISTORY, and changing
  * a `label` does not. The name and the value are what stored rows
@@ -128,8 +131,8 @@ globalThis.BINDER_SITE = {
         enter: { metric: "cm", imperial: "ft" },
         chart: { metric: "cm", imperial: "in" },
         base: "cm",
-        // `with` is the second box beside the first: feet are typed
-        // with inches next to them, and the pair is one answer.
+        // `compound` is the second box beside the first: feet are
+        // typed with inches next to them, and the pair is one answer.
         compound: { ft: "in" },
         units: {
           cm: { per: 1, min: 100, max: 250, bin: 5, band: "5 cm bands",
