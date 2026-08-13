@@ -76,7 +76,7 @@ const Form = globalThis.BinderForm;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 180);
+const { check, mustReject, report } = suite("demo", 181);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -868,9 +868,9 @@ await check("the clock steps are the warning and the expiry, in that order", () 
 
 /*
  * The jump is computed from the window the PAGE measures, so the two
- * cannot drift. Driven against admin.js's own frozen constant rather
- * than against numbers typed here: a demo carrying its own copy would
- * jump to a warning the page has stopped showing.
+ * cannot drift. Driven against admin.js's own frozen constant, and the
+ * verdict asked of admin.js's own function - a demo with an opinion
+ * about either would jump to a warning the page has stopped showing.
  */
 await check("the warning jump lands inside the page's own warning band", () => {
   const by = Demo.clockJumpFor("warning", Admin.IDLE_WINDOW);
@@ -881,6 +881,23 @@ await check("the warning jump lands inside the page's own warning band", () => {
 await check("the expiry jump lands past the page's own limit", () => {
   const by = Demo.clockJumpFor("expiry", Admin.IDLE_WINDOW);
   return Admin.idleVerdict(0, by).state === "expired";
+});
+
+/*
+ * AND IT TRACKS A WINDOW IT HAS NEVER SEEN, which is the arm that makes
+ * the two above mean something. Every number that lands in today's band
+ * satisfies them, including a constant typed into the demo - so the
+ * jump is driven against a window nobody has ever shipped, and only a
+ * value computed from the argument can land in it. Found by mutation:
+ * replacing the arithmetic with a literal left both arms above green.
+ */
+await check("the jump follows a window the demo has never seen", () => {
+  const invented = { idleMs: 60000, warnMs: 10000 };
+  const warning = Demo.clockJumpFor("warning", invented);
+  const expiry = Demo.clockJumpFor("expiry", invented);
+  return Admin.idleVerdict(0, warning, invented).state === "warning" &&
+    Admin.idleVerdict(0, expiry, invented).state === "expired" &&
+    warning !== Demo.clockJumpFor("warning", Admin.IDLE_WINDOW);
 });
 
 await check("a page with no idle window gets no jump, rather than a made-up one", () =>
