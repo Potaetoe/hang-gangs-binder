@@ -388,18 +388,24 @@ check("every railed page ships a session block for the arm to compare",
           for name in RAILED) and len(RAILED) >= 2)
 
 
-# The wordmark, which crosses both shells and is the one hand-kept copy
-# nothing compares. Check 10's own docstring says the rail "carries the
-# wordmark" while the comparison reads .rail-links and stops; the name
-# tables read titles, headings and rail entries, and the chip arm reads
-# chips. So the site's own name can be changed on three of its four
-# copies with the whole gate green - #152's disease with a different
-# subject, found while #191 renamed all four.
+# The wordmark, the one hand-kept copy nothing compares. Check 10's own
+# docstring says the rail "carries the wordmark" while the comparison
+# reads .rail-links and stops; the name tables read titles, headings and
+# rail entries, and the chip arm reads chips. So the site's own name can
+# be changed on all but one of its copies with the whole gate green -
+# #152's disease with a different subject, found while #191 renamed them.
 check("every page pinned to carry the wordmark exists",
       set(check_web.WORDMARK_PAGES) <= pages)
-check("the pin covers the rail pages and the cover",
+# Spelled out rather than derived from SHELLS. A pin computed as "the
+# rail pages" could not fail when a rail page dropped its copy, which is
+# the hole this arm exists to hold shut; the sign-in page is named on the
+# other side for the same reason, since it is a plain page that once
+# carried one and the leaf it lived in is gone (#273).
+check("the pin covers the rail pages and no plain one",
       set(check_web.WORDMARK_PAGES) ==
-      {"admin.html", "charts.html", "index.html", "your-page.html"})
+      {"admin.html", "charts.html", "your-page.html"} and
+      "index.html" not in check_web.WORDMARK_PAGES and
+      "404.html" not in check_web.WORDMARK_PAGES)
 
 MARK = ('<span class="wordmark-owner">Hang Gang</span>'
         '<span class="wordmark-name">Binder</span>')
