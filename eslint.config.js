@@ -106,6 +106,82 @@ export default [
 
   {
     /*
+     * The site's configuration and what derives from it (#278):
+     * apps/site.config.js, which a fork edits, and apps/fields.js,
+     * which reads it.
+     *
+     * Classic scripts under the same rules as apps/web, and that is
+     * the point rather than an accident of copying: 0.9-M2 rebuilds
+     * the member pages to load these two with a <script> tag, and a
+     * file that had been linted as a module until then would acquire
+     * its real rules on the day it started shipping. They sit one
+     * level up rather than inside apps/web because `./run build`
+     * takes apps/web whole into the published dist/, and a file no
+     * page loads yet is not something to publish.
+     */
+    files: ["apps/*.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "script",
+      globals: {
+        ...globals.browser,
+        BINDER_SITE: "readonly",
+        BinderFields: "readonly",
+      },
+    },
+    rules: {
+      strict: ["error", "function"],
+      "no-var": "error",
+      "prefer-const": "error",
+      eqeqeq: ["error", "always", { null: "ignore" }],
+      "no-implicit-globals": "error",
+      "no-eval": "error",
+      "no-implied-eval": "error",
+      "no-new-func": "error",
+      "no-console": "error",
+      quotes: ["error", "double", { avoidEscape: true }],
+      semi: ["error", "always"],
+      "no-unused-vars": ["error", {
+        argsIgnorePattern: "^_",
+        caughtErrors: "none",
+      }],
+    },
+  },
+
+  {
+    /*
+     * tests/ - the arms for the 0.9 spec, each one a plain `node
+     * tests/<file>` entry point that imports nothing but the files it
+     * is about.
+     *
+     * A directory of its own rather than more of dev/, and the reason
+     * is scheduling rather than taste: 0.9 retires the dev/ apparatus
+     * with the surfaces it describes, and 0.9-M0-S4 builds the runner
+     * that adopts these files. Written against the old harness they
+     * would have to be rewritten to move; written self-contained they
+     * are moved.
+     */
+    files: ["tests/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-var": "error",
+      "prefer-const": "error",
+      eqeqeq: ["error", "always", { null: "ignore" }],
+      quotes: ["error", "double", { avoidEscape: true }],
+      semi: ["error", "always"],
+      // An arm prints its results. That is its whole job.
+      "no-console": "off",
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_",
+                                    caughtErrors: "none" }],
+    },
+  },
+
+  {
+    /*
      * ui.js is DOM-only, and this is the rule that keeps it that way.
      *
      * The reason is not tidiness. tools/check_web.py's senders rule holds
