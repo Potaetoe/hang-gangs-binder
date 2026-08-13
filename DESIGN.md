@@ -265,10 +265,10 @@ cost buying nothing.
 gender, an affiliation, a country. **The measures derive from the
 form's field spec** — every numeric field charts, weight and height and
 computed BMI today — so a fork that edits its fields gets matching
-charts with no chart code to write. The field spec carries kind and
-unit metadata, which is what lets conversion and computed fields derive
-too; that spec is 0.9-M0-S1 (#278) and this page is one of the two
-things it exists for.
+charts with no chart code to write. The spec carries kind and unit
+metadata, which is what lets conversion and computed fields derive too;
+it is `apps/site.config.js` and this page is one of the two things it
+exists for.
 
 - **Both pictures behind one toggle**: the trend over time, and the
   distribution now.
@@ -361,20 +361,27 @@ suppression floor, the purge window's length, and bot health —
 The line is not static against dynamic. It is **whether a wrong value
 gets written into a row.**
 
-**The form's field spec is a repository data file** — which fields
-exist, of what kind, in what units, within what bounds — because a bad
+**The form's field spec is a repository data file, and it exists:**
+`apps/site.config.js`, read by `apps/fields.js` and by nothing else. It
+carries which fields there are, of what kind, in what units and within
+what bounds — a repository file rather than a runtime one because a bad
 bound produces a plausible record, stores it, and is discovered much
 later. No Worker check could catch that: the Worker has no opinion
-about meaning, deliberately. So the gate reads the spec before it
-ships, and an admin-editable form means a surface that composes a spec,
-with shipping it still a release.
+about meaning, deliberately. So the spec ships in a release that
+somebody read, and an admin-editable form means a surface that
+*composes* a spec rather than one that bypasses this.
 
-**The group's name lives in exactly one place**, and every wordmark,
-title and sentence derives from it. That is the forkability rule with
-teeth: the class of trap where four wordmarks are kept by hand and one
-of them is wrong dies structurally rather than by vigilance. **The
-bot's username lives in that same place**, for the reason under "The
-bot is temporary" — a fork points at its own bot by editing one line.
+*The pages do not render from it yet.* Deriving the form's own fields
+from the spec is a 0.9-M2 requirement; what exists today is the spec,
+its reader, and the chartable-measure list Charts is built on.
+
+**The group's name lives in exactly one place** — the same file — and
+every wordmark, title and sentence derives from it. That is the
+forkability rule with teeth: the class of trap where four wordmarks are
+kept by hand and one of them is wrong dies structurally rather than by
+vigilance. **The bot's username lives in that same place**, for the
+reason under "The bot is temporary" — a fork points at its own bot by
+editing one line.
 
 **Site copy and the group settings are runtime state** the Worker
 serves, with each page's shipped HTML as the fallback. A site that

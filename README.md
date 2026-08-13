@@ -36,12 +36,13 @@ history of every decision is `git log` and `archive/`.
 
 ## What gets collected
 
-The fields are a data file, not a paragraph: which fields exist, of
-what kind, in what units and within what bounds, all in one place a
-non-expert can edit (0.9-M0-S1, #278). The site's form, its charts and
-the checks that guard them all derive from it, so a fork edits that file
-and everything follows. Reading it is how to answer "what does this
-collect" without trusting a copy.
+**[apps/site.config.js](apps/site.config.js) is the answer, and it is a
+data file rather than a paragraph**: the group's name, and one row per
+field saying what kind it is, in what units and within what bounds.
+`apps/fields.js` is the only thing that reads it, and everything that
+needs to know about a field asks that. So a fork edits one file and the
+rest follows, and "what does this collect" is answered by reading it
+rather than by trusting a copy of it.
 
 The Telegram username comes from the sign-in rather than being typed.
 
@@ -94,13 +95,20 @@ transition; `AGENTS.md`, "Verification", is the rule.
 ## Repository layout
 
 ```
-apps/web/   the site you edit - the source every fix belongs in
-dist/       the site that is published - ./run build writes it (#181)
-server/     the Cloudflare Worker and its schema, deployed by hand
-tools/      the checks; never published
-dev/        test harness and the drivable demo; never published
-archive/    the pre-2026-08-08 documentation system, frozen
+apps/site.config.js  the one data file - the group's name and its fields
+apps/fields.js       the only reader of it; everything else asks this
+apps/web/            the site you edit - the source every fix belongs in
+dist/                the site that is published - ./run build writes it (#181)
+server/              the Cloudflare Worker and its schema, deployed by hand
+tests/               0.9's test apparatus (#281); never published
+tools/               the transitional gate's checks; never published
+dev/                 the transitional harness and the demo; never published
+archive/             the pre-2026-08-08 documentation system, frozen
 ```
+
+The two files at the top of `apps/` are source and are **not** part of
+the published site: `apps/web/` is what ships, and the pair beside it is
+what 0.9's pages will derive from.
 
 `dist/` is copied verbatim to GitHub Pages, and it is committed rather
 than produced during the release — so what ships is in a diff somebody
@@ -110,12 +118,13 @@ the scripts (`./run build`, #181); the gate refuses a `dist/` that is
 not what `apps/web` builds to, in either direction. Anything that
 should not be public simply does not live in either directory.
 
-[apps/web/config.js](apps/web/config.js) is the file a fork or a new
-owner changes: the endpoint each environment talks to. Changing an
-endpoint means also changing the `connect-src` of every page that loads
-it — do one without the other and requests drop silently at the
-browser's security check. The gate fails the build rather than letting
-that ship.
+**A fork edits `apps/site.config.js`** — its own name and its own
+fields — and one more thing that has not moved yet:
+[apps/web/config.js](apps/web/config.js) still holds the endpoint each
+environment talks to. Changing an endpoint means also changing the
+`connect-src` of every page that loads it — do one without the other
+and requests drop silently at the browser's security check. The gate
+fails the build rather than letting that ship.
 
 ## Deploying
 

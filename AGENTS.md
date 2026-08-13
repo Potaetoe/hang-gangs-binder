@@ -175,6 +175,15 @@ guards, never as the pattern for a new one.
   the handoff. `tools/check.py` is the old runner's single registry,
   which CI runs whole as one step; a retirement edits it in the same
   change that removes the surface.
+- **`tests/` is deliberately unregistered until #281 wires its
+  runner**, and that is the one place the registration rule is
+  suspended rather than met. Its suites are plain `node tests/<file>`
+  entry points that import nothing from `dev/`, run by hand, and the
+  slice that builds the runner adopts them by moving a file. Registering
+  them in the dying runner would be the re-use the owner ruled against,
+  so a 0.9 suite states in its handoff that it was run by hand and how
+  — an unregistered check reported as gated is the failure this bullet
+  exists to prevent.
 - Mutation is necessary and not sufficient. A mutation only asks "does
   this check enforce what it says?", never "is this the right thing to
   enforce?" — the review bar below is what answers that.
@@ -238,6 +247,12 @@ implemented it. Say which it is.
   direction (#181). **Never edit `dist/` by hand.** Neither directory
   takes a test hook, a fixture, a development-only global or a
   `?sample=` hook.
+- **`apps/` also holds source that is neither the site nor published.**
+  `apps/site.config.js` and `apps/fields.js` sit beside `apps/web/`,
+  not inside it, and nothing in either directory above is derived from
+  them yet — 0.9-M2 is what moves the spec into the shipped tree and
+  loads it there. Adding a file at the top of `apps/` is therefore a
+  decision about what a page may read, not a tidying choice.
 - **A push to `main` is a release**; work goes to `accounts` until the
   cutover. The hotfix procedure is in `README.md`, which is on `main`
   when you need it.
