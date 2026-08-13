@@ -10,9 +10,9 @@ Three checks, all born from the same week of failures (issue #77):
     AGENTS.md names, and the files in security/ are exactly the ones
     named here. Adding one is an owner decision and so is removing one,
     so both directions fail the gate until the list here is edited -
-    and editing it is the act that records the approval. CUTOVER.md is
-    the single document allowed to leave on its own, which REQUIRED
-    below states by omitting it.
+    and editing it is the act that records the approval. Every
+    registered document is required to exist; REQUIRED below is where a
+    document that deletes itself would be excused, and nothing is.
  2. TRIPWIRES - phrases this project has falsified must never reappear
     in an operative document. Three corrections in one week each
     missed at least one hand-made copy of the fact they corrected, so
@@ -57,34 +57,38 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # is checked in both directions - an unregistered presence here, and a
 # registered absence through REQUIRED below.
 #
-# UAT.md is here by the owner's directive on #126, and this line is
-# where that approval is recorded - editing this set IS the act, which
-# is why nothing else in the repository needs to assert it.
+# UAT.md and CUTOVER.md left on the owner's directive of 2026-08-13
+# (0.9-M0-S2), and this line is where that approval is recorded -
+# editing this set IS the act, which is why nothing else in the
+# repository needs to assert it. Acceptance now ships as a section on
+# each milestone's own issue, and the 1.0 cutover document is written
+# fresh against the system that exists then.
 REGISTRY = {
     "README.md",
     "AGENTS.md",
     "DESIGN.md",
     "OPERATIONS.md",
-    "UAT.md",
-    "CUTOVER.md",
 }
 
-# The registered documents that have no story for leaving.
+# The registered documents that have no story for leaving, which is now
+# all of them.
 #
-# CUTOVER.md is the one that does - it deletes itself in its own
-# aftercare - so it is absent from this set rather than written in and
-# exempted, which keeps the exemption a fact about CUTOVER.md instead of
-# a special case somebody has to remember.
+# This set is kept as a separate name rather than folded into REGISTRY
+# because it is where a document that deletes itself in its own
+# aftercare would be excused, and one has existed before: CUTOVER.md was
+# out of here for exactly that reason until it was executed. Writing
+# `REGISTRY - {"THAT.md"}` is how the next such document is declared,
+# and the difference between the two sets is the whole statement.
 #
 # Without this arm, registration only ever caught a document ARRIVING.
 # A registered document could be deleted and the gate printed a clean
-# tree, because absence was made unremarkable for CUTOVER.md's sake and
-# nothing distinguished the one document that leaves by design from the
-# ones that would be a silent loss. Measured on #126: with UAT.md moved
-# out of the tree the whole run still passed, and the acceptance script
-# the cutover is gated on had simply stopped existing. Same reasoning as
-# SECURITY below, which has always been checked in both directions.
-REQUIRED = REGISTRY - {"CUTOVER.md"}
+# tree, because absence had been made unremarkable for the
+# self-deleting document's sake and nothing distinguished it from the
+# ones whose loss is silent. Measured on #126: with a registered
+# document moved out of the tree, the whole run still passed. Same
+# reasoning as SECURITY below, which has always been checked in both
+# directions.
+REQUIRED = set(REGISTRY)
 
 # Directory guides: scanned for content, not part of the top-level
 # registry.
@@ -105,10 +109,8 @@ ALSO_SCANNED = [
 # A registered file that is ABSENT also fails. A record here is what one
 # reviewer found on one date; it is superseded by a later record beside
 # it rather than corrected, so nothing in this folder has a reason to
-# disappear. CUTOVER.md's absence is allowed because it deletes itself
-# in its own aftercare - there is no counterpart to that here, and a
-# vanished assessment reads as a passing gate on evidence nobody can
-# see.
+# disappear, and a vanished assessment reads as a passing gate on
+# evidence nobody can see.
 SECURITY_DIR = "security"
 SECURITY = {
     "README.md",
@@ -131,6 +133,15 @@ TRIPWIRES = [
      "renumbering never prevented linkage - DESIGN.md has the claim"),
     ("share no exact series point",
      "unachievable by rounding - the honest claim is ambiguity"),
+    ("the service that stores them cannot read them",
+     "falsified 2026-08-13 by the keyless ruling - the Worker reads"),
+    ("the storage provider cannot read the data",
+     "falsified 2026-08-13 by the keyless ruling - the Worker reads"),
+    ("read access is a file, not an account",
+     "falsified 2026-08-13 - a role on an account is what reads now"),
+    ("nobody's entries were read",
+     "falsified 2026-08-13 - the secret that opens them is in the "
+     "Worker, so an account compromise reaches plaintext"),
 ]
 
 # British spellings the 2026-08-06 decision settled against, as
@@ -316,8 +327,9 @@ def missing_document_problems(present):
         "%s: registered as an operative document and missing from the "
         "repository root. Removing one is an owner decision on the same "
         "terms as adding one; recording it IS editing REGISTRY in "
-        "tools/check_docs.py. Only CUTOVER.md leaves on its own, and it "
-        "is kept out of REQUIRED for exactly that reason." % name
+        "tools/check_docs.py. A document that deletes itself in its own "
+        "aftercare is declared by keeping it out of REQUIRED, and none "
+        "is." % name
         for name in sorted(REQUIRED - present)
     ]
 
@@ -394,16 +406,19 @@ def null_scan_problems(scanned):
     helper, an early return, a filter that matches nothing. In that
     state the tree is complete, no other arm has anything to say, and a
     scan that read not one byte would otherwise print exactly like a
-    clean one. CUTOVER.md is why absence of a single document is still
-    unremarkable HERE: it deletes itself in its own aftercare, so the
-    floor sits on the empty list and nowhere else.
+    clean one.
+
+    The floor sits on the EMPTY list and nowhere else, which is what
+    keeps it a statement about the reader rather than a duplicate of
+    the tree arm: a short scan is a tree question, and the tree has its
+    own arm above.
     """
     if scanned:
         return []
-    return ["no document was read at all. Absence of any one "
-            "registered document is not an error (CUTOVER.md deletes "
-            "itself), so nothing else here reports an empty scan - and "
-            "a scan of nothing prints exactly like a clean tree."]
+    return ["no document was read at all. The tree arm above answers a "
+            "document that is MISSING; nothing else here answers a "
+            "reader that returned nothing while the tree was whole - "
+            "and a scan of nothing prints exactly like a clean tree."]
 
 
 def problems():

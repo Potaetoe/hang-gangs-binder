@@ -116,10 +116,40 @@ than a ratchet.
 
 What that narrowness costs is stated rather than hidden, and it is the
 same gap the phrase list has: a comment that describes another file
-without quoting it - "the keyholder note under Admin", the sentence
-#217 was filed for - is not a citation and is not checked. Quoting the
+without quoting it is not a citation and is not checked. Quoting the
 thing you are relying on is what makes the reliance checkable. This
 catches the shape that can be caught, not the class.
+
+AND ONE RATCHET UNDER IT, FOR THE DOCUMENTS THAT MOVED FIRST
+------------------------------------------------------------
+The documentation was rewritten to the 0.9 design ahead of the code, by
+owner ruling: the documents describe the system being built, while the
+pages and the Worker still implement the one being replaced, and their
+comments are rewritten by the milestone that reaches each file rather
+than by a separate hunt. So a set of citations was falsified by a
+change that was correct - the sections they name are gone because the
+design they described is.
+
+CITATION_PINS below is that set, and it is a ratchet on the same terms
+as ALLOWLIST, counts included - {(file, cited path, quotation): count}.
+A pinned citation that starts resolving fails, a pin whose comment is
+gone fails, a pin whose count is higher than the number of comments
+carrying it fails, a SECOND comment repeating a pinned citation fails,
+and anything not pinned fails as before. The list shrinks by edits to
+this file and grows by nothing else. Its entries are also the derived
+work list - every comment in the pre-0.9 code that the rewrite
+falsified, named by file, so the slice that rewrites a file can see
+what it owes without reading a document to find out.
+
+The count is not decoration, and this list shipped without one. As a
+bare set of triples it read "every occurrence of this citation is
+fine", which is not what a pin records: a pin records the comments that
+were already there when the documents moved. A comment written today,
+repeating a pinned quotation word for word, is new work pointing at a
+section that does not exist - and both this gate and the suite that
+arms it went green over exactly that, proven by mutation in the review
+of the change that added the list (#279, 2026-08-13). Counting closes
+it, for the same reason ALLOWLIST counts.
 
 The two files that define and test the rule are EXEMPT, because a file
 has to be able to name the phrases it forbids - the same reason
@@ -340,6 +370,62 @@ ALLOWLIST = {
     ("apps/web/dashboard.js", "used to"): 1,
     ("dev/dashboard.test.mjs", "used to"): 2,
     ("dev/ui.test.mjs", "used to"): 1,
+}
+
+# {(file, cited path, quotation): count} for every citation the 0.9
+# documentation rewrite falsified. Keyed by the quotation rather than by
+# a line number, so an edit above an entry does not churn the list; the
+# count is what makes a second comment repeating a pinned citation fail,
+# exactly as ALLOWLIST's count makes a second offense in a pinned file
+# fail. A count comes DOWN as comments are trued and the entry goes when
+# it reaches zero. Raising one is an edit to this file with a reason in
+# the pull request, which is the only way a pin should ever grow.
+#
+# THE RETIREMENT CONDITION IS THE MILESTONE, NOT A DATE: an entry comes
+# off in the slice that rewrites its file to the 0.9 design, which is
+# the same slice that rewrites the comment. The set empties when the
+# pre-0.9 pages and Worker are gone, and this block goes with it - a pin
+# list that has outlived its cause is the stale roster this repository
+# keeps deleting.
+#
+# Nothing here is an exemption from the rule. Each entry is a comment
+# known to be pointing at a section that no longer exists, recorded
+# where a check can hold it, instead of a red gate on work the owner
+# ruled out of this slice.
+#
+# The two OPERATIONS.md "The keys" entries are here by a deliberate act
+# rather than by discovery, and they are the reason to distrust a short
+# quotation. Both resolved after the rewrite deleted the section they
+# name, because two unrelated words of prose elsewhere in the file spell
+# the same nine characters - a citation passing on an accident, which is
+# the quiet direction. The rewrite took that phrasing out so these fail
+# honestly and land on this list with the rest.
+#
+# THE TWO ENTRIES READING 2 ARE WHY THIS IS COUNTED. apps/web/dashboard.js
+# and server/worker.js each cite DESIGN.md, "The charts and the snapshot"
+# from two different comments, and while this list was a bare set of
+# triples one pin apiece silently covered both - so twelve entries were
+# standing for FOURTEEN falsified comments, and the derived work order
+# under-counted the work by two. Counting found them the moment it was
+# added. Neither is a new offense; both were already in the tree when the
+# documents moved.
+CITATION_PINS = {
+    ("apps/web/admin.html", "DESIGN.md",
+     "The charts and the snapshot"): 1,
+    ("apps/web/config.js", "OPERATIONS.md", "The keys"): 1,
+    ("tools/check_web.py", "OPERATIONS.md", "The keys"): 1,
+    ("apps/web/admin.js", "DESIGN.md", "Key custody"): 1,
+    ("apps/web/config.js", "DESIGN.md", "Key custody"): 1,
+    ("apps/web/dashboard.js", "OPERATIONS.md",
+     "Reading the submissions"): 1,
+    ("apps/web/dashboard.js", "DESIGN.md",
+     "The charts and the snapshot"): 2,
+    ("apps/web/memberkey.js", "DESIGN.md", "Members hold a key too"): 1,
+    ("server/schema.sql", "DESIGN.md", "The charts and the snapshot"): 1,
+    ("server/worker.js", "DESIGN.md",
+     "The prefill is scoped to the account"): 1,
+    ("server/worker.js", "DESIGN.md", "The charts and the snapshot"): 2,
+    ("dev/crypto.test.mjs", "DESIGN.md", "Key custody"): 1,
 }
 
 
@@ -749,8 +835,8 @@ def all_citations(scan=None, repo=None):
     return out
 
 
-def citation_problems(scan=None, repo=None):
-    """A problem per quotation the file it names does not contain.
+def unresolved_citations(scan=None, repo=None):
+    """[(file, line, cited path, quotation, message)] that do not resolve.
 
     THIS IS THE ONE RULE HERE THAT READS OUTSIDE THE FILE IT GUARDS, and
     that is the whole point of it (#217). AGENTS.md, "The review bar":
@@ -770,9 +856,14 @@ def citation_problems(scan=None, repo=None):
     where the full reasoning lives when a root document compresses a
     decision to a sentence.
 
+    Separate from the two rules below because both need this answer:
+    one reports what is not pinned, the other reports a pin that is no
+    longer true of it.
+
     The parameters exist so dev/check_comments.test.py can drive this
-    over trees it builds. The real tree is clean, and a rule exercised
-    only against a clean tree cannot be shown to fire.
+    over trees it builds. The real tree's remaining failures are all
+    pinned, and a rule exercised only against a tree it passes cannot
+    be shown to fire.
     """
     repo = REPO if repo is None else repo
     contents = {}
@@ -790,20 +881,105 @@ def citation_problems(scan=None, repo=None):
                           errors="replace") as handle:
                     contents[path] = anchor(handle.read())
         if contents[path] is None:
-            out.append(
+            out.append((
+                relpath, line, path, quote,
                 "%s:%d: the comment cites %s, which is not a file here. "
                 "Point it at the file that holds this now, or drop the "
                 "reference - a pointer to nothing is worse than none"
-                % (relpath, line, path))
+                % (relpath, line, path)))
         elif anchor(quote) not in contents[path]:
-            out.append(
+            out.append((
+                relpath, line, path, quote,
                 "%s:%d: the comment quotes %r out of %s, and %s does not "
                 "contain it. Either the quotation is wrong or what it "
                 "named has moved: true the comment against the file as "
                 "it stands now, or cite the file that carries the "
                 "wording today (archive/ keeps the pre-2026-08-08 one)"
-                % (relpath, line, quote, path, path))
+                % (relpath, line, quote, path, path)))
     return out
+
+
+def broken_by_citation(scan=None, repo=None):
+    """{(file, cited path, quotation): [(line, message)]} of what is broken.
+
+    Both rules below compare COUNTS rather than asking whether a triple
+    appears at all, so the grouping is done once here for both of them.
+    """
+    out = {}
+    for relpath, line, path, quote, message in unresolved_citations(
+            scan, repo):
+        out.setdefault((relpath, path, quote), []).append((line, message))
+    return out
+
+
+def citation_problems(scan=None, repo=None, pinned=None):
+    """A problem per broken quotation beyond the count pinned for it.
+
+    Membership alone would say "every occurrence of this citation is
+    forgiven", and that is not what an entry in CITATION_PINS records:
+    it records the comments that were already there when the documents
+    moved. A comment written after them, repeating a pinned quotation
+    word for word, is new work pointing at a section that does not
+    exist, and it is reported here rather than covered.
+    """
+    pinned = CITATION_PINS if pinned is None else pinned
+    broken = broken_by_citation(scan, repo)
+    problems = []
+    for key in sorted(broken):
+        relpath, path, quote = key
+        places = broken[key]
+        allowed = pinned.get(key, 0)
+        if len(places) <= allowed:
+            continue
+        if allowed:
+            problems.append(
+                "%s: %d comments cite %s, %r and the pin covers %d of "
+                "them (lines %s). One is new, and it points at wording "
+                "that is not there: true it against the file as it stands "
+                "now, or cite the file that carries the wording today. "
+                "A pin covers the comments that were already here when "
+                "the documents moved, never one written after them"
+                % (relpath, len(places), path, quote, allowed,
+                   ", ".join(str(line) for line, _m in places)))
+        else:
+            problems.extend(message for _line, message in places)
+    return problems
+
+
+def citation_pin_problems(scan=None, repo=None, pinned=None):
+    """A problem per pin that no longer describes what is broken.
+
+    The half that makes CITATION_PINS a ratchet rather than a list of
+    excuses. Three ways an entry stops being true and all three fail
+    here: the document grew the wording back, so the citation resolves
+    and the pin is a claim about nothing; the comment was rewritten by
+    the milestone that reached its file, which is the retirement this
+    list is written to have; or one of several comments carrying a
+    pinned citation was trued and the count is now too high. The entry
+    comes off or comes down, and the list cannot go stale the way an
+    unchecked roster does.
+    """
+    pinned = CITATION_PINS if pinned is None else pinned
+    broken = broken_by_citation(scan, repo)
+    problems = []
+    for key in sorted(pinned):
+        relpath, path, quote = key
+        count = pinned[key]
+        actual = len(broken.get(key, []))
+        if actual == 0:
+            problems.append(
+                "CITATION_PINS pins %r out of %s in %s, and that "
+                "citation is not broken any more - the comment was "
+                "rewritten, or the wording came back. Delete the entry; "
+                "the list is a ratchet and only shrinks"
+                % (quote, path, relpath))
+        elif actual < count:
+            problems.append(
+                "CITATION_PINS pins %d occurrence(s) of %r out of %s in "
+                "%s and the number still broken is %d. Lower the count "
+                "to %d; the list is a ratchet and only shrinks"
+                % (count, quote, path, relpath, actual, actual))
+    return problems
 
 
 def problems():
@@ -816,6 +992,7 @@ def problems():
     )
     out.extend(control_byte_problems())
     out.extend(citation_problems())
+    out.extend(citation_pin_problems())
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 
@@ -834,10 +1011,12 @@ def main():
     # citation resolves". The counts are what make the line worth
     # printing.
     print("check_comments: comments explain why, every scanned file is "
-          "text and every quotation of another file is still in it "
-          "(%d files scanned, %d cross-file citation(s) resolved, %d "
-          "pinned occurrence(s) left to clean up)."
-          % (len(scanned), len(all_citations()), sum(ALLOWLIST.values())))
+          "text and every quotation of another file is still in it or "
+          "pinned (%d files scanned, %d cross-file citation(s) checked, "
+          "%d phrase occurrence(s) and %d citation(s) pinned for the "
+          "slice that rewrites their file)."
+          % (len(scanned), len(all_citations()), sum(ALLOWLIST.values()),
+             sum(CITATION_PINS.values())))
     return 0
 
 

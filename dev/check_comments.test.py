@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 108
+EXPECTED = 123
 
 
 def check(label, condition):
@@ -719,7 +719,7 @@ check("and that report says the file is missing rather than the "
 
 # The real tree, both directions. The count is the null-result guard:
 # every arm above passes on an extractor that finds nothing at all.
-check("the real tree's citations resolve",
+check("every unpinned citation in the real tree resolves",
       check_comments.citation_problems() == [])
 
 check("and the extractor found real ones to resolve",
@@ -729,6 +729,119 @@ check("including citations of documents outside the scanned tree",
       {path for _rel, _line, path, _quote
        in check_comments.all_citations()} >= {"DESIGN.md", "AGENTS.md",
                                               "OPERATIONS.md"})
+
+# THE PIN RATCHET, and the arm above is why it needs its own. Once a
+# broken citation may be pinned, "the real tree's citations resolve"
+# stops being the whole question: a pin list nothing checks would let
+# the gate go green over comments pointing at sections that no longer
+# exist, which is the shape this repository holds to be worse than red.
+# So both directions are asked of the real tree, and the equality is
+# what makes the pin list a statement rather than a place things go to
+# be forgotten.
+#
+# COUNTS, not membership. These two arms were written over sets of
+# triples and duplicates collapsed into one, so a file citing the same
+# dead section twice satisfied both directions with a single pin - the
+# hole F1 proved by mutation, and the reason the real tree's own two
+# doubled citations went unrecorded. The counted form is one equality
+# and it holds the multiplicity too.
+BROKEN = {}
+for _relpath, _line, _path, _quote, _message in (
+        check_comments.unresolved_citations()):
+    key = (_relpath, _path, _quote)
+    BROKEN[key] = BROKEN.get(key, 0) + 1
+
+check("every pinned citation is really broken now, as many times as "
+      "the pin says",
+      all(BROKEN.get(key) == count
+          for key, count in check_comments.CITATION_PINS.items()))
+
+check("and nothing is broken that is not pinned, at any multiplicity",
+      all(check_comments.CITATION_PINS.get(key) == count
+          for key, count in BROKEN.items()))
+
+check("and the tree really does hold a citation pinned more than once",
+      max(check_comments.CITATION_PINS.values()) > 1)
+
+# The half that makes it shrink. A pin dies three ways - the comment
+# gets rewritten by the milestone that reaches its file, the wording
+# comes back into the document, or one of several comments carrying it
+# is trued and the count is left standing - and none of them leaves a
+# trace anywhere else, so the entry has to be what fails.
+INVENTED = ("tools/check_docs.py", "AGENTS.md", "The review bar")
+OVERCOUNTED = ("apps/web/memberkey.js", "DESIGN.md",
+               "Members hold a key too")
+
+check("a pin whose citation is not broken is reported",
+      len(check_comments.citation_pin_problems(
+          pinned={INVENTED: 1})) == 1)
+
+check("and the report says to delete the entry",
+      "Delete the entry" in check_comments.citation_pin_problems(
+          pinned={INVENTED: 1})[0])
+
+check("a pin counting more occurrences than are broken is reported",
+      len(check_comments.citation_pin_problems(
+          pinned={OVERCOUNTED: 2})) == 1)
+
+check("and that report says to lower the count rather than delete it",
+      "Lower the count to 1" in check_comments.citation_pin_problems(
+          pinned={OVERCOUNTED: 2})[0])
+
+check("the pins as they stand raise nothing",
+      check_comments.citation_pin_problems() == [])
+
+# The other side of the pin, over a tree this builds: the same broken
+# citation reports when it is not pinned and stays quiet when it is,
+# which is the only arm that shows the pin doing any work at all.
+STALE_PIN = ("dev/suite.test.mjs", "DESIGN.md", "Key custody")
+
+
+def pinning(pins, comments=1):
+    """citation_problems() over N broken citations, under a pin count."""
+    root = tempfile.mkdtemp(prefix="check-comments-pins-")
+    os.makedirs(os.path.join(root, "dev"))
+    with open(os.path.join(root, "dev", "suite.test.mjs"), "w",
+              encoding="utf-8") as handle:
+        handle.write('/* See DESIGN.md, "Key custody". */\n' * comments)
+    with open(os.path.join(root, "DESIGN.md"), "w",
+              encoding="utf-8") as handle:
+        handle.write("## Sessions\n")
+    return check_comments.citation_problems(
+        scan=[("dev", (".mjs",))], repo=root, pinned=pins)
+
+
+check("a broken citation nobody pinned is reported",
+      len(pinning({})) == 1)
+
+check("and the same one pinned is not",
+      pinning({STALE_PIN: 1}) == [])
+
+# Keyed by the quotation, not by the line, so an edit above an entry
+# does not churn the list - and a pin of a DIFFERENT quotation in the
+# same file is not a blanket exemption for that file.
+check("a pin of another quotation in the same file does not cover it",
+      len(pinning({("dev/suite.test.mjs", "DESIGN.md", "Sessions"): 1}))
+      == 1)
+
+# MULTIPLICITY, which is the dimension the pin list shipped blind to.
+# The arm above asks it at the file level - a different quotation is
+# not covered - and that is the question the original suite answered.
+# The one it could not was the same quotation twice: a pin recording
+# the comment that was there does not forgive the comment somebody
+# writes tomorrow, and while both sides were sets it did.
+check("a second comment repeating a pinned citation is reported",
+      len(pinning({STALE_PIN: 1}, comments=2)) == 1)
+
+check("and the report names both lines and says one is new",
+      all(part in pinning({STALE_PIN: 1}, comments=2)[0]
+          for part in ("2 comments cite", "lines 1, 2", "One is new")))
+
+check("raising the count to two is what covers both",
+      pinning({STALE_PIN: 2}, comments=2) == [])
+
+check("and a third under that count is reported again",
+      len(pinning({STALE_PIN: 2}, comments=3)) == 1)
 
 # The exemption carries here, and unlike the byte rule it carries for
 # the reason it was written: a file explaining what an unresolvable
@@ -767,7 +880,8 @@ check("and the same comment in the file beside it is",
 # the one question none of those arms can answer about itself.
 check("the gate's problems() calls every rule this file defines",
       {"generated_tree_problems", "missing_directories",
-       "control_byte_problems", "citation_problems", "ratchet_problems"}
+       "control_byte_problems", "citation_problems",
+       "citation_pin_problems", "ratchet_problems"}
       <= set(check_comments.problems.__code__.co_names))
 
 

@@ -1,488 +1,530 @@
 # Hang Gang's Binder — design
 
-Why the architecture is what it is. Decisions here are settled: do not
-re-derive them and do not re-litigate them without a new reason. Each
-section states the current rule and its load-bearing reasoning; the
-full history of how each was reached — including every correction,
-recorded as a correction — is in [archive/DESIGN.md](archive/DESIGN.md).
+**Read this before changing the architecture.** It says why the system
+is the shape it is; `README.md` says what it is, `OPERATIONS.md` says
+how to run it. Decisions here are settled — do not re-derive them and
+do not re-litigate them without a new reason.
+
+The 0.9 design was ruled by the owner on 2026-08-13 in five elicitation
+sittings, and the record of that ruling is issue #228, comment
+5287071398. This file is that record turned into the shape a builder
+reads. Where the shipped code still implements the pre-0.9 key world, a
+line says so and names the milestone that ends it; the full history of
+every decision is `git log` and `archive/`.
+
+## The core ideology
+
+> "we want our product to be easily forkable, user modifiable, and user
+> friendly" — the owner, 2026-08-13.
+
+Every ruling below was made under that lens, and every build decision
+this file does not cover is judged by it.
 
 ## The constraint that shapes everything
 
-GitHub Pages serves static files. There is no server, so there is no
-place to keep a secret: whatever the page needs in order to store a
-submission is visible in View Source. So security does not come from
-hiding a credential — it comes from the browser encrypting each
-submission before it leaves the page.
+GitHub Pages serves static files. There is no server on the page, so
+there is no place on the page to keep a secret and no place on the page
+to enforce anything: whatever the page holds is in View Source, and a
+static site cannot gate a static page. Everything that needs either is
+the Worker.
 
 ```
-  member's browser             Cloudflare Worker + D1       keyholder's browser
-  ────────────────             ──────────────────────       ───────────────────
-  signs in with     ── HTTPS ─> verifies the payload
-  Telegram                     against the bot token,
-                               issues a session, and
-                               keeps no handle
+  member's browser            Cloudflare Worker + D1        admin's browser
+  ────────────────            ──────────────────────        ───────────────
+  signs in with    ── HTTPS ─> asks the bot whether this
+  Telegram                     account is in the group,
+                               issues a session
 
-  fills the form               one row per submission:
-  encrypts to the   ── HTTPS ─> an opaque base64 blob,  <──  fetches the rows
-  keyholder's                  an account id, and a          decrypts with the
-  PUBLIC key                   receipt timestamp             PRIVATE key, held
-  (in the public repo)                                       only on this machine
-                                                             exports CSV
+  fills the form   ── HTTPS ─> one row per entry, stored
+                               encrypted at rest under a
+  reads their own  <─────────  secret only the Worker      <─  reads the
+  history                      holds                           directory and
+                                                               any member's
+  reads the group  <─────────  aggregates on request           entries
+  charts
 ```
 
-Four properties fall out:
+## Trust model: the Worker reads
 
-1. **The storage provider cannot read the data.** A breach, a leaked
-   token, a subpoena — all yield ciphertext.
-2. **The public key being public is fine.** It encrypts; it cannot
-   decrypt.
-3. **Read access is a file, not an account** — which is what makes the
-   project transferable. An account authorizes *writing*; no flag in a
-   database can hand anybody the ability to decrypt.
-4. **The account id derives from nothing about the person.** It is an
-   HMAC of the Telegram numeric id under a secret only the Worker
-   holds — see "The identifier" below, the most dangerous part of the
-   design.
+- **The Worker enforces roles and serves plaintext to signed-in
+  users.** It is the only place enforcement is possible, so it is the
+  only place enforcement lives.
+- **Rows are encrypted at rest under a secret only the Worker holds**,
+  so a raw database dump alone reveals nothing.
+- **The host can technically read entries, and the site says so rather
+  than implying otherwise.** The "we cannot read it" pitch is retired.
+  Whoever runs the Worker is trusted; that is the trade, ruled
+  knowingly.
+- **All client-side crypto is gone**: sealing before send, member
+  device keys, the admin key box, the key fingerprint, the key files
+  and their sign-out destruction. There is no key for an end user to
+  think about, which was the owner's opening requirement.
+
+What the trade buys is the product: a member reads their own history
+back, corrects it and deletes it; an admin can backfill honestly and
+answer a takedown; charts are live rather than a ceremony. Every one of
+those was impossible while only a key file could read a row.
+
+**0.9 starts empty.** No migration and no final ceremony — the old
+sealed rows are discarded, because nobody has used the site yet. The
+new privacy copy ships with no announcement.
 
 ## Encryption
 
-Native WebCrypto, no library, no CDN. Per submission: an ephemeral
-P-256 keypair, ECDH against the keyholder's public key, HKDF to an
-AES-256-GCM key; the stored bytes are a **format version byte**, the
-ephemeral public key, the nonce, then ciphertext+tag, with the header
-passed as additional data so it cannot be edited without the tag
-failing. Vendoring libsodium's `crypto_box_seal` — the more foolproof
-primitive — was rejected as ~200 KB of third-party code that sees
-plaintext before encryption.
+At rest, and only at rest. The rows and the directory are stored
+encrypted under a Worker-held secret; the algorithm and the wire layout
+are the Worker's and are settled in 0.9-M1. Two properties are ruled
+now and constrain whatever M1 picks:
 
-The costs of composing by hand are paid in `dev/`: a round-trip test
-and a **committed fixture ciphertext** that must always decrypt. The
-HKDF label and the wire layout are part of the stored format — change
-either and every stored row goes silently unreadable, which is exactly
-what the fixture exists to catch. **If the fixture fails, never
-regenerate it**; add a version byte and a decoder for both formats.
+- the secret never leaves the Worker, and no page, fork or backup
+  carries it;
+- a raw database dump alone reveals nothing — which is a property of
+  the **whole** store and not of the entry rows alone, for the reason
+  under "The identifier is the whole problem" below.
 
-**Key custody.** The public half is a raw P-256 point in base64, in
-`config.js`. The private half is generated by `tools/keygen.html` on the
-keyholder's own machine and exists in two forms. The **root copy** is
-the JWK in its self-describing envelope, held offline in two copies and
-never in this repository; it is the only thing a key is recovered from,
-and **there is no recovery from losing it.** The **working copy** is
-device-bound: `admin.html` imports the root copy once and keeps the
-resulting `CryptoKey` in IndexedDB, non-extractable, so an export needs
-no file and the key is never again a string that a script reaching that
-page could read. Losing the working copy costs one import.
+One rule survives from the key world unchanged, because it is about
+storage rather than about keys: **the format is part of the stored
+data.** Change the layout and every stored row goes silently
+unreadable, so a stored format carries a version byte and a committed
+fixture that must always decode. **If the fixture fails, never
+regenerate it**; add a version byte and a decoder for both.
 
-That second form moves a boundary, deliberately and with the owner's
-decision behind it. Before it, a compromised keyholder browser yielded
-ciphertext the attacker still could not open, because the file was
-somewhere else; after it, **the keyholder's browser profile is
-sufficient to read the submissions**, and protecting that profile is
-part of this design rather than a personal habit. What the trade buys is
-that the raw key stops being handled by hand on every export — and in
-the browser it stops existing as a string at all, which is the one
-respect in which it is also strictly safer than what it replaces.
-**Clear** on the export page destroys the working copy, which is why the
-departure and compromise procedures name it. Generation, checking and
-rotation procedures: [OPERATIONS.md](OPERATIONS.md).
-
-**Members hold a key too.** An entry seals to the keyholder always, and
-to a second recipient wherever the browser can offer one: a keypair the
-submitting member's browser generates silently and cannot export, so a
-member can read their own history back. Frictionless was the constraint
-that chose the mechanism, and a key nobody types is bound to the device
-that made it — so durability comes from the keyholder, who can re-seal a
-member's rows to a new device key in the one session where the plaintext
-already exists. Recovery is "ask an admin", which is how deletion
-already works. Signing out destroys the device key, on the prefill's
-erasure reasoning below and with more at stake, since the key opens a
-history rather than one measurement; the price is that re-seal request.
-A member key opens only its own account's rows.
-
-**The second recipient fails open, deliberately.** A browser that cannot
-offer a device key — no IndexedDB, storage blocked, private browsing, a
-page that never loaded the key module, a script cache holding a
-`crypto.js` that cannot seal to two, or a page that has not yet been
-told which account it is — seals to the keyholder alone and stores the
-entry exactly as it did before member keys existed. Nobody is refused a
-measurement because a convenience key was unavailable, and that trade is
-the whole reason the key is frictionless in the first place. What those
-rows cost is the member's own copy of them, silently and for good: they
-stand where rows sealed before a member had a key stand, and the remedy
-is the same re-seal by the keyholder (#85).
-
-**Export is two-factor, and the factors are different in kind:** an
-admin session gets the ciphertext and can be revoked; the private key
-gets the plaintext and cannot. The session gate is not what keeps data
-confidential — the rows are ciphertext either way — it stops the corpus
-being casually harvestable, and that is all it is for.
+*Until 0.9-M1 lands the shipped code still seals in the browser to a
+public key.* That code and its fixtures are the pre-0.9 world and die
+with M1.
 
 ## Accounts
 
-Members sign in with Telegram before submitting; entries are tied to an
-account so they can be grouped, updated by resubmission, and deleted on
-request. This reversed the original "no accounts" design because three
-open problems shared one shape — junk, withdrawal, correction all
-needed *telling one submitter from another* — and junk turned out to be
-architectural, not operational: nothing built could undo it.
+**Membership truth is the Telegram group, whole.** Signing in requires
+current membership in the gang's group, checked with the bot; the
+roster syncs from it; leaving the group removes site access. There is
+no site-side ban machinery and there will not be one — removing
+somebody means removing them in Telegram, which is where the group
+already does it.
+
+**Admins mirror Telegram admins.** Whoever administers the Telegram
+group is a site Admin, automatically. All admins are equal and hold
+full powers including deletion. There are no tiers: Telegram's own
+owner-and-admin distinction is Telegram's, and the site neither models
+it nor mentions it. The casual-promotion risk — a group that hands out
+admin lightly hands out the directory with it — was put to the owner
+adversarially, and the mirror stands.
+
+**The directory** holds one row per user: handle, display name, role,
+joined date, last-active date. It is visible to admins only; members
+never see a roster.
+
+**Bot failure stance: last-known-good cache.** When Telegram will not
+answer, the Worker trusts the last verified roster for a bounded
+window. Members never bounce off an API hiccup, and **"cannot check" is
+never treated as "not a member"** — that sentence governs every place
+the roster is consulted, including the leaver countdown under "Admin
+accounts and deletion".
 
 ### The identifier is the whole problem
 
-`account_id = HMAC-SHA256(ACCOUNT_SECRET, telegram_numeric_id)`,
-computed by the Worker, stored in the clear beside the ciphertext.
+A row is keyed to the Telegram **numeric id**, not the handle. The
+numeric id is what makes an account survive a rename; the handle is a
+label the person can change and is display only. What the Worker stores
+is that id under an HMAC, **and the key of that HMAC is a secret of its
+own** — see "The bot is temporary" below for the trap that rule exists
+to kill.
 
-The obvious design — a hash of the handle — is the dangerous one. The
-relevant handles are the few dozen in the group's member list, so a
-clear-text hashed handle is a **membership oracle**: anyone holding the
-database answers "did @foo submit?" without decrypting a row. That is
-most of the harm the encryption exists to prevent, for a form about
-feedism sitting next to real handles. The HMAC under a Worker-side
-secret is what makes the oracle impossible; the *numeric id* rather
-than the handle is what makes an account survive a rename.
+The reason this is the dangerous part of the design has not changed
+with the keys. The relevant handles are the few dozen in one group's
+member list, so anything that names them in the clear beside the data
+is a **membership oracle**: it answers "did @foo submit?" without
+reading an entry. That is most of the harm the storage encryption
+exists to prevent, for a binder about feedism sitting next to real
+handles.
 
-**`ACCOUNT_SECRET` is configuration in appearance and part of the
-stored format in fact** — its operational consequences are in
-`OPERATIONS.md`. The same oracle logic governs the id lists, even
-though ids are not credentials, and it governs them as a prohibition
-rather than a location: never a `[vars]` block, which would commit the
-group's membership to a public repo, and never raw numeric ids in a
-table either, because a number resolves to a person for anyone who can
-point a bot at it. In a table they are the same HMAC that the rows
-beside them already carry.
+0.9's answer is the store rather than a hash. **The directory is inside
+what is encrypted at rest, not beside it** — derived directly from the
+record's ruled property that a raw dump reveals nothing, because a
+clear-text roster is the oracle by a shorter route than any hash of a
+handle would be.
 
-A row has two identities and they are not equally good: the account id
-is set server-side from a verified sign-in and cannot be forged by the
-page; the handle inside the encrypted blob is a label written by the
-client. Two handles under one account id is a rename or a lie, and is
-detectable — treat the id as identity and the handle as display.
+A row has two identities and they are not equally good: the id is set
+server-side from a verified sign-in and cannot be forged by the page;
+anything the client typed is a claim. Treat the id as identity.
+
+### The bot is temporary
+
+The bot that checks membership is provided for 0.9-M1 and is expected
+to be replaced. Moving to another one must stay a cheap, documented
+act, which puts four requirements on every slice that touches
+authentication:
+
+1. **Member identity is never keyed to the bot token.** The account id
+   HMACs the numeric id under its **own** Worker secret. HMACing under
+   the bot token — the convenient secret already in hand — orphans
+   every row the moment the bot rotates, silently and with no way back.
+   This is the trap the rule exists to kill.
+2. **The bot's username lives in the one config place**, beside the
+   group's name, and the Telegram login widget names its bot from
+   there. A hard-typed username is a second place to change.
+3. **Sessions and the roster cache are the Worker's, not the bot's.**
+   A rotation gap signs nobody out, and the last-known-good cache
+   covers sign-ins while a new bot settles.
+4. **The rotation procedure ships with 0.9-M1**, in `OPERATIONS.md`,
+   written against the Worker that exists then.
 
 ### Sessions
 
 A session is a random token issued when a Telegram payload verifies,
-held in `sessionStorage` for the life of the tab; the Worker stores
-only `SHA-256(token)`. Member sessions live seven days, admin sessions
-two hours (they open the whole corpus's ciphertext), and an admin
-session also ends after a much shorter run of minutes in which no
-request reaches the Worker — all three constants are in
-`server/worker.js`. The first two bound a session that is in use; the
-third bounds one that is not, because `admin.html` is the only place
-the corpus exists in the clear and a two-hour clock runs whether
-anybody is at the machine or not. The window is the row's `expires_at`
-moving forward on use and never past the two-hour cap, so it needs no
-column and no second sweep: expired rows are still cleared
-opportunistically on lookup, a scheduled job's failure mode is silence,
-and nothing here is worth a moving part. Payload verification is
-Telegram's HMAC scheme plus a **300-second freshness window** — without
-it a captured payload is a permanent credential.
+held for the life of the tab; the Worker stores only its hash. Payload
+verification is Telegram's HMAC scheme plus a freshness window —
+without one, a captured payload is a permanent credential. Every
+lifetime and window is a constant in `server/worker.js`; this document
+does not repeat numbers the code already carries.
 
-**Member sessions are deliberately not idled**, recorded here as a
-decision rather than left as a gap. A member session appends rows for
-one account and reads a document carrying no handles and no rows, so
-there is no plaintext behind it to leave on a screen, and seven days of
-tolerance on a form people are meant to come back to costs less than
-signing somebody out mid-entry. What the Worker can measure is requests
-and not attention, which is also why the admin window is wider than a
-DoD baseline would set it: the timer that sees real interaction belongs
-on the page, and since any authenticated request slides the server-side
-window, that timer needs no route of its own to hold one open. That
-timer is `IDLE_WINDOW` in `apps/web/admin.js`, described next.
+**Idle expiry is one rule everywhere.** Member pages carry the same
+warn-then-expire timer the admin pages do. The pre-0.9 exemption for
+member sessions was argued from a member page that held no history and
+no plaintext worth leaving on a screen — 0.9's your-page shows the
+member their whole history, so the argument is gone and the exemption
+with it. The page warns before it acts, visibly and counting down,
+because a page that simply stopped working mid-read sends the reader
+back to sign in and re-open everything, which discloses more than the
+timer saves.
 
-**`admin.html` also ends itself when nobody is there**, and that half is
-the page's rather than the Worker's. Ten minutes of no interaction ends
-the tab; the last two of them are spent warning, visibly and counting
-down. Both numbers are the owner's own, ratified on #91 rather than
-settled here.
-Ten is the ASD STIG's own figure for a privileged session (V-222390),
-adopted verbatim rather than argued from this site, because a number
-nobody here invented is a number nobody here has to defend. The warning
-is not a courtesy: a page that simply stopped working mid-read would
-send the keyholder back to sign in and decrypt the whole corpus a second
-time, which discloses more than the timer saves. When it fires, the page
-discards the decrypted rows and the files built from them, then signs
-out through `signout.js` — so the credential is revoked at the Worker
-and not merely dropped in the tab.
+The page's window is deliberately shorter than the Worker's, and the
+ordering carries the design rather than either value: at the shorter
+one the page always acts first, on its own initiative; reversed, the
+page timer is unreachable and plaintext sits on screen until some
+request happens to be refused. What counts as interaction is device
+events — pointer, key, wheel, touch — and never `scroll`, which the
+page produces itself when it moves focus to its own warning.
 
-**The page's window is deliberately shorter than the Worker's**, and the
-ordering is what carries the design rather than either value. At ten
-against fifteen the page always acts first, on its own initiative;
-reversed, this timer is unreachable, because the credential would die
-first and the plaintext would sit on screen until some request happened
-to be refused. What counts as interaction is device events — pointer,
-key, wheel, touch — and never `scroll`, which this page produces itself
-when it moves focus to the warning. The keyholder's stored key is
-untouched by any of it: the key is not authority, and **Clear** stays
-its only lever.
-
-Those seven days therefore bound more than a lifetime. Somebody who has
-left the group is refused at their next sign-in and every session that
-account holds ends there, so a leaver who never attempts again is
-bounded by the cap and by nothing else — `revokeAccountSessions()` in
-`server/worker.js` is where that residual is stated, along with why an
-idle window would close only the half of it the cap already closes.
-
-**The page is not the gate.** A static site cannot gate a static page;
-the form page bouncing signed-out visitors is a courtesy. The gate is
-the Worker refusing `POST /submit` without a valid session — the one
-place enforcement is possible.
-
-**The prefill is scoped to the account.** `your-page.html` keeps the last
-entry in `localStorage` — measurements, gender, country, affiliations,
-the 18+ confirmation, and the height the last stored row carried; the
-stored value carries the account id, and any stored value the page will
-not read — wrong account, wrong shape, unreadable units — is *erased*
-rather than skipped, because on a shared browser the next member would
-otherwise see the previous member's entry (#56, #65, #172). The id is
-safe to store precisely because it is the HMAC — it cannot be tested
-against a guessed handle and authorizes nothing.
-
-**A member cannot read their own previous entry**, which is why that
-store exists at all. Every submission is sealed to the keyholder before
-it leaves the browser, so no route can answer "what did I say last
-time"; `GET /me` returns counts and `lastAt` and no values. The prefill
-is therefore the *only* memory a member has, and it is a device's
-memory rather than an account's: a new phone opens a blank form, and the
-implausible-height guard that compares against the remembered height
-does not exist there rather than being lenient there. Every sentence on
-the page says "this browser" for that reason. The durable version — a
-member who can open their own history — needs key material a member
-holds, and is #173 rather than a thing this store grows into.
+**The page is not the gate.** A form page bouncing signed-out visitors
+is a courtesy; the gate is the Worker refusing the write.
 
 ### Admin accounts and deletion
 
-Admins are compared by the same HMAC. The **founding** admin is a
-numeric id in a Worker secret and stays there: a page that could
-rewrite the whole list would leave no root of trust outside itself.
-The rest of the list is configuration — see "Where configuration lives"
-below. `EXPORT_TOKEN` remains as break-glass only — the way in when
-sign-in itself is broken — and is no longer typed into any page.
+There is no admin list to maintain, no founding-admin secret and no
+last-admin guard: the root of trust is the Telegram group, and every
+one of those mechanisms existed to hold a list the site no longer
+keeps.
 
-Deletion is an admin action; a member asks, which in a Telegram group
-is one message. **Member self-deletion is cheap and deliberately not
-built** — a delete button on a member's own page is a thing to press by
-accident; first thing to add if the group outgrows asking. There is
-still no `UPDATE` path: a correction is a new row that names the row it
-supersedes, and the repeats are the weight-over-time history. The
-pointer is a clear column rather than a field inside the blob, because
-a pointer the Worker cannot read is one it can neither check against
-the caller's own account nor subtract from what a member is told they
-have. The superseded row stays as a tombstone — erasing it is the
-deletion above — and resolution happens where the plaintext does, in
-the keyholder's browser. An edit does not oblige a republish: it leaves
-the published snapshot stale, which is that document's normal
-condition, where republishing is a fresh disclosure of the whole
-corpus (#84).
+**Deletion is deletion.** A member corrects and deletes their own rows,
+in full self-service — no trace, no admin notice, and the charts move
+with it. Their data, their delete. A member owns **every** row about
+them, including one an admin backfilled (derived by Prime, reversible:
+the record rules self-service without carving out backfilled rows, and
+the ideology reads a row about a person as theirs).
 
-## The sign-in page and the CSP
+A correction is a new row naming the row it supersedes rather than an
+edit in place, so the repeats are the history the binder exists to
+accumulate. The list shows current values only, with a reveal for the
+replaced ones. The pointer is a column the Worker can read, because a
+pointer it cannot read is one it can neither check against the caller
+nor subtract from what a member is told they have.
 
-Every page carries `default-src 'none'` with `script-src 'self'` in a
-`<meta>` policy — nothing loads on a page that its own policy does
-not name, enforced by the browser in the window that matters: between
-the form being filled and the ciphertext leaving. That is a per-page
-boundary, not a project-wide ban on third-party code — #75 records
-the correction after it was over-read as one. The positional rule is
-what holds: nothing third-party runs where plaintext is in reach, and
-`apps/web/` ships only what this repository vouches for. The Telegram
-widget is third-party script, so sign-in is a page of its own and the
-exception is confined there:
+Admins can open any member's entries. That is not a convenience: an
+admin who cannot see the rows cannot backfill honestly, cannot fix a
+mistyped entry and cannot answer a takedown. **It is deliberately not
+stated to members** — an explicit owner ruling, taken over the
+recommendation to state it at the form, and a security review should
+read it as ruled rather than overlooked.
 
-```
-index.html:  script-src 'self' 'unsafe-eval' https://telegram.org;
-             frame-src https://oauth.telegram.org
-```
+**Leaver data purges after a window, guarded.** A confirmed departure
+starts a visible countdown on the member's row; an admin may delete
+sooner; re-adding the person in Telegram inside the window restores
+them and their data reattaches. Two guards, both of them about the
+failure modes rather than the happy path: **"cannot check" never starts
+a clock**, and a mass-departure anomaly freezes the countdowns rather
+than arming them all at once. The window's length is a group setting;
+its ruled default is 30 days, stated with the other Settings defaults
+under **Admin surfaces** below.
 
-`'unsafe-eval'` is not negotiable and not laziness: Telegram's widget
-puts `data-onauth` through `eval`, and callback mode cannot work
-without it. Redirect mode needs no eval and was **rejected** because it
-returns the signed payload — numeric id and handle — in a URL query
-string, into browser history, `Referer` headers and access logs on
-every sign-in: the membership oracle relocated into a log file.
+## Your page
 
-What each page may load is a security boundary, not a convenience:
+**One page, stacked: form → personal trend → entries list.** The tabs
+die, and so does the pane they held — the counts card, the corrections
+count, the Telegram-id line, the custody cards, the sealed-rows line.
 
-| Page | `crypto.js` | `telegram.org` | Holds plaintext |
-| --- | --- | --- | --- |
-| `index.html` | **no** | **yes** | no (but holds the session after sign-in) |
-| `your-page.html` | yes | no | yes |
-| `charts.html` | no | no | no |
-| `admin.html` | yes | no | yes — all of it |
-| `404.html` | no | no | no |
+- **Rows are date, weight, height, BMI, newest first.** Corrections
+  show current-only with a reveal, the replaced ones muted in place.
+- **A personal trend line sits above the list.** A history in mixed
+  units converts to the member's current units choice and says so. The
+  old pick-a-system-and-never-convert rule yields to the one-line
+  picture: a chart that refuses to draw is worth less than a labeled
+  conversion.
+- **No member backdating.** The form has no date field. Admins add
+  dated entries per member, and a bulk import follows as its own slice.
+- **A download button exports the member's own rows** in the existing
+  spreadsheet format.
 
-The gate pins the whole policy of every page — both that the exception
-does not spread and that it stays exactly this narrow where it lives.
-If the exception ever has to widen, the answer is the bot deep-link
-flow (rejected once, on familiarity), not a wider policy.
+The device-memory prefill dies with the reason it existed (**derived,
+not ruled** — the record's list of what this pane loses does not name
+it; this follows from the ruled design rather than from a sentence in
+it, and is reversible on an argument). It was the only memory a member
+had while no route could answer "what did I say last time"; the server
+answers that now, so a store of one member's last entry sitting in a
+shared browser's `localStorage` is a privacy cost buying nothing.
+
+## Charts
+
+**One filter and one measure.** The filter is one of: everyone, a
+gender, an affiliation, a country. **The measures derive from the
+form's field spec** — every numeric field charts, weight and height and
+computed BMI today — so a fork that edits its fields gets matching
+charts with no chart code to write. The spec carries kind and unit
+metadata, which is what lets conversion and computed fields derive too;
+it is `apps/site.config.js` and this page is one of the two things it
+exists for.
+
+- **Both pictures behind one toggle**: the trend over time, and the
+  distribution now.
+- **The line is the mean and it is called "average".** No statistics
+  vocabulary anywhere on the page.
+- **Members only.** Charts require a session; the public URL shows the
+  door and nothing else.
+- **A member may draw their own line over the group trend.**
+- Of the pre-0.9 controls, **units survive and nothing else does**:
+  basis, widen and combine die. The page is exactly filter, measure,
+  picture toggle, units, show-me, download, and honest empty states.
+
+**The Worker aggregates on request.** Publish, unpublish, the published
+snapshot document and its freshness line are all gone, along with the
+class of failure where the figures on screen were as old as the last
+time somebody remembered to press a button.
+
+The disclosure rules that governed the published document govern the
+live one, because they were always about what a **reader** can
+reconstruct rather than about publishing:
+
+- **A drawn cell describes at least the floor's number of people**, and
+  the floor is a group setting rather than a constant — on by default
+  and starting at 5, stated with the other Settings defaults under
+  **Admin surfaces** below. Suppression is by subtraction, not
+  redaction — removed cells fold into an `Other` bucket that itself
+  clears the floor, so within a single view the remainder cannot be
+  differenced back. Histograms merge adjacent bins.
+  A cut below the floor says "not enough people for this view", which
+  is the honest sentence and not an error.
+- **One partition, not two.** Both unit systems report the same groups
+  under converted edges. Two independently-binned partitions can be
+  differenced back into sub-floor cells — demonstrated in 2899 of 3000
+  random groups, which is why this is a rule rather than a caution.
+- **A trend of one line is a chart of one person**, so the floor
+  applies to lines as it does to cells.
+- **A weight and a height and a country is a person to anyone who knows
+  her**, with or without a name column. That sentence is the reason for
+  every rule above and is the test to apply to a new view.
+
+**Live aggregation changes when the old cumulative-disclosure channel
+is open, not whether.** A count and a mean multiply back to a total,
+so a reader who keeps two views taken at different times can compute
+the movement between them whatever the floor declined to print; the
+owner ruled on #153 to accept that channel rather than charge every
+member the mean's real value to close it. What live charts change is
+that the reader no longer waits for a publish. The ruling's premise is
+untouched — it is argued from a members-only readership, which the
+members-only rule above preserves — and it is the premise to re-take
+if that readership ever widens.
+
+## Roles and vocabulary
+
+- **Exactly two user-facing types: Member and Admin.** The collective
+  noun is **the group**. Keyholder, always-allow, second admin and
+  owner are gone as user-facing words.
+- **The charts page is named Charts.** Muse dies everywhere: no voice,
+  no characters, two roles.
+- **The wordmark stays** — "Hang Gang" over "Binder", the ruled static
+  form. A gang's name on its own door outs no individual.
+- **The outsider door is a plain refusal.** A real Telegram account
+  outside the group sees one sentence saying this binder belongs to a
+  private group. No join hint, no application, no next step.
+- **Telegram mechanics appear on admin surfaces only** — "membership
+  and admin status follow the Telegram group" is an admin's sentence.
+  Member surfaces never mention the machinery.
+- **The privacy line is one sentence on the door**, with More cards
+  carrying the rest on member pages. The owner authors the exact
+  sentences at the 0.9 register sitting, scheduled for 0.9-M4; until
+  then the surviving pre-0.9 sentences are "Signed out." and the
+  download acknowledgment, and every sentence about key checks and
+  sealed rows is dead with the keys.
+
+## Admin surfaces
+
+Two pages. The pre-0.9 `admin.html` dies with the keys and with
+Publish, and nothing inherits its shape.
+
+**Members** is the directory as a table — handle, display name, role,
+joined, last-active, leaver countdown — with per-row actions: add an
+entry as a backfill, delete their data, edit their display name, open
+their entries. One line explains that membership and admin status
+follow the Telegram group. Bulk import arrives as its own slice.
+
+**Settings** is its own page with room to grow, and it carries exactly
+the three facts this design makes an admin responsible for: the
+suppression floor, the purge window's length, and bot health —
+"membership last verified N minutes ago".
+
+Its two editable controls ship with **ruled defaults**, and they are
+written here because a builder implements this page from this document.
+Both come from the design record (#228 comment 5287071398): the floor
+from Part 3 and its open-items list, the window from Part 4.
+
+- **The suppression floor is on by default, and it starts at 5.** The
+  5 is not invented here: it is what `MIN_CELL` holds in
+  `apps/web/dashboard.js`, and the setting inherits that rather than
+  picking a new one — the record schedules the value itself as an open
+  item, to be re-taken when this page ships it as editable and not
+  before. The number is written out rather than only pointed at
+  because the file holding it today is one the 0.9 rebuild deletes:
+  whoever writes the Worker's copy carries the 5 across, and this line
+  is what they carry it from. A group never starts with the floor off —
+  turning it off is an admin's deliberate act.
+- **The purge window is 30 days by default.** It is the length of the
+  countdown a confirmed departure starts, and the two guards stated
+  with it above — a "cannot check" never starts a clock, a
+  mass-departure anomaly freezes rather than arms — hold whatever an
+  admin sets it to.
 
 ## Where configuration lives
 
 The line is not static against dynamic. It is **whether a wrong value
-gets sealed into a row.**
+gets written into a row.**
 
-The form definition — which fields `your-page.html` renders, in what units
-and within what bounds — is part of the stored format the way
-`ACCOUNT_SECRET` is, so it stays a repo file that the gate reads before
-it ships: a bad bound produces a plausible record, seals it, and is
-discovered on export day, and no Worker check could have caught it,
-because the Worker has no opinion about meaning and deliberately so.
-Admin-configurable therefore means a surface that *composes* a
-definition; shipping one is still a release. Serving it at runtime
-would also put the form behind the Worker's availability, where today a
-failed send leaves the typed values in the boxes.
+**The form's field spec is a repository data file, and it exists:**
+`apps/site.config.js`, read by `apps/fields.js` and by nothing else. It
+carries which fields there are, of what kind, in what units and within
+what bounds — a repository file rather than a runtime one because a bad
+bound produces a plausible record, stores it, and is discovered much
+later. No Worker check could catch that: the Worker has no opinion
+about meaning, deliberately. So the spec ships in a release that
+somebody read, and an admin-editable form means a surface that
+*composes* a spec rather than one that bypasses this.
 
-Site content and the membership lists seal nothing, so they are D1 rows
-served by the Worker, with each page's shipped HTML as the fallback — a
-site that looks like last week is a failure somebody notices and nobody
-is harmed by. The alternative hands an admin repository write to change
-a label, which is the first capability the threat model below says this
-design does not protect against. Membership could not be a repo file in
-any case, and takes the form "The identifier" gives it (#87).
+*The pages do not render from it yet.* Deriving the form's own fields
+from the spec is a 0.9-M2 requirement; what exists today is the spec,
+its reader, and the chartable-measure list Charts is built on.
 
-## The charts and the snapshot
+**The group's name lives in exactly one place** — the same file — and
+every wordmark, title and sentence derives from it. That is the
+forkability rule with teeth: the class of trap where four wordmarks are
+kept by hand and one of them is wrong dies structurally rather than by
+vigilance. **The bot's username lives in that same place**, for the
+reason under "The bot is temporary" — a fork points at its own bot by
+editing one line.
 
-The aggregation happens in the keyholder's browser and only the result
-is published — nothing new ever holds the private key. The published
-document has **no rows and no handles**: counts, medians and histogram
-bins only, because `female, GB, 241 lb, 5 ft 8 in` is a person to
-anyone who knows her, with or without a name column. One render
-function draws both the keyholder's view and the published one, so
-Publish is a preview rather than a leap.
+**Site copy and the group settings are runtime state** the Worker
+serves, with each page's shipped HTML as the fallback. A site that
+looks like last week is a failure somebody notices and nobody is harmed
+by; the alternative hands an admin repository write to change a label,
+which is the first thing the threat model below says this design does
+not protect against.
 
-Since the redesign the snapshot is members-only — and that gate changed
-*who reads it*, not *what may go in it*. The audience is now exactly
-the people who might recognize somebody, so the content rules matter
-more, not less:
+**Membership is not configuration at all.** It is the Telegram group.
 
-- **A published cell describes at least five people** (`MIN_CELL`).
-  Suppression is by **subtraction, not redaction** — removed cells fold
-  into an `Other` bucket that itself clears the floor, so *within a
-  single document* the remainder cannot be differenced back to a
-  suppressed cell. Histograms merge adjacent bins instead.
-- **One partition, not two.** Both unit systems report the same groups
-  under converted edges; two independently-binned partitions can be
-  differenced back into sub-floor cells (demonstrated in 2899 of 3000
-  random groups).
-- **Weight-over-time is opt-in, off by default, and needs at least
-  `MIN_CELL` lines** — a chart of one line is a chart of one person.
-- **Published points are quantized** to a date and a histogram bin
-  edge. The honest claim, and only this claim: quantization makes
-  following a person across snapshots an **inference rather than a
-  join**. It does not make it impossible — quantization is
-  deterministic, so unchanged entries still land on the same point —
-  and publishing twice still discloses cumulatively. The opt-in is the
-  load-bearing control. (An earlier claim that renumbering prevented
-  linkage was false; `dev/dashboard.test.mjs` pins the corrected one.)
-- The height-discrepancy panel is never published — it is a tool for
-  the keyholder, and published it would be a list of strangers'
-  heights. BMI is a number, never a clinical label.
+## The sign-in page and the CSP
 
-**Every floor above bounds what a document *states*, not what the
-corpus *discloses*.** The distinction is real and it is accepted
-deliberately. Each published document carries a count and a mean weight
-per basis, and their product is the combined weight to within rounding
-— so a reader who has kept two documents can compute the movement
-between them whatever the floor in `movementOf()` declined to print.
-The owner ruled on 2026-08-09 (#153) to accept that channel rather than
-close it, on three grounds. Deriving the figure takes two saved
-snapshots and arithmetic done by somebody already entitled to read both
-floored documents, which makes it disclosure among people who can each
-already see the data rather than leakage outward. The mean is a number
-members use for its own sake, so suppressing it to close the channel
-would charge every member real value. And it buys less than it looks:
-count multiplied by mean is not the only pair of published figures that
-reconstructs a third, so shutting this door leaves the room with
-several. **Re-take this ruling if the readership widens** — it is
-argued entirely from a members-only audience, and published snapshots
-reaching anyone beyond the membership changes the calculus rather than
-merely enlarging it.
+Every page carries `default-src 'none'` with `script-src 'self'` in a
+`<meta>` policy — nothing loads on a page its own policy does not name,
+enforced by the browser in the window that matters. That is a per-page
+boundary and not a project-wide ban on third-party code; #75 records
+the correction after it was over-read as one. The positional rule is
+what holds: **nothing third-party runs where plaintext is in reach.**
+
+The Telegram widget is third-party script, so sign-in is a page of its
+own and the exception is confined there. `'unsafe-eval'` on that page
+is not negotiable and not laziness: the widget puts `data-onauth`
+through `eval`. Redirect mode needs no eval and was **rejected** —
+it returns the signed payload, numeric id and handle, in a URL query
+string, into browser history, `Referer` headers and access logs on
+every sign-in. That is the membership oracle relocated into a log file.
+
+The policy of every page is pinned in `tools/check_web.py`, page by
+page, and the gate refuses one that does not match — both that the
+exception does not spread and that it stays exactly this narrow where
+it lives. Read the pin rather than a table here; a table here would be
+a second copy of a machine-checked fact. If the exception ever has to
+widen, the answer is the bot deep-link flow, not a wider policy.
 
 ## Threat model, honestly stated
 
-Protected against: a breach of the storage provider, a leaked export
-token, a curious Cloudflare employee, anyone reading the repo, an
-unauthenticated stranger writing rows, and a future admin inheriting
-the site without inheriting the data.
+Protected against: a raw dump of the database, an unauthenticated
+stranger writing rows, anyone outside the Telegram group, anyone
+reading this repository, and a leaked backup separated from the
+Worker's secret.
 
 **Not** protected against, most likely first:
 
+- **Whoever runs the Worker.** It reads plaintext in order to serve it,
+  so its operator — and anyone who takes the account it runs in — can
+  read every entry. This is the ruled trade, it is the largest item on
+  this list, and no sentence anywhere in the product may imply
+  otherwise.
 - **Anyone who can write to the repository or the Pages deployment.**
-  They swap `publicKey` and every later submission encrypts to them,
-  silently. Mitigations raise effort and make it detectable, not
-  impossible: the gate pins the production key and endpoint as
-  literals, `main` is a protected branch with admins included, and the
-  key's fingerprint is **pinned out-of-band in the Telegram group**
-  while `your-page.html` displays the key it is actually using, so one
-  member glancing can catch a swap. Rotation must update the pinned
-  message in the same sitting — a stale anchor teaches everyone to
-  ignore the one alarm this produces.
-- **The keyholder's own machine while the key is in use.**
-- **A member lying**, including about the handle inside their own
-  sealed blob. Sign-in verifies who is writing, not what they write.
-- **Telegram and Cloudflare learning who participates.** The Worker
-  sees numeric ids at sign-in (stores and logs neither); the account id
-  makes rows groupable, so a leak reveals *that* some account submitted
-  twelve times, never who. Both accepted knowingly as the price of
-  accounts.
-- **Traffic analysis** — when submissions arrive, not what they say.
-- **Somebody at a signed-in member's own browser**, for the prefill
-  described above. It holds gender, country, affiliations and an age
-  confirmation in the clear in that origin's `localStorage` — precisely
-  the fields the encryption exists to protect — so a shared or seized
-  device exposes one member's last entry without touching the sealed
-  rows. Recorded rather than assumed harmless, on the owner's ruling for
-  #172, and bounded three ways: the account id in the value means the
-  next member to sign in gets it erased rather than shown, Sign out
-  erases it, and it is one key so the erase cannot miss a field. What
-  remains is the member who closes the tab instead of signing out and
-  hands the laptop over — accepted as the price of a form that does not
-  ask the same six questions every week, and the reason the page says
-  out loud that signing out erases it.
+  They change what the page does, silently. Mitigations raise effort
+  and make it detectable, not impossible: `main` is a protected branch
+  with admins included, and the published directory is committed so
+  what ships arrives in a diff somebody read.
+- **A member lying**, including about their own measurements. Sign-in
+  verifies who is writing, not what they write.
+- **A Telegram group that hands out admin lightly.** Admin mirrors the
+  group, so the group's own hygiene is the site's access control. Put
+  adversarially to the owner; accepted.
+- **Telegram and Cloudflare learning who participates.**
+- **Traffic analysis** — when entries arrive, not what they say.
+- **Somebody at a signed-in member's own browser.** A live session
+  shows that member their whole history; a live admin session shows the
+  directory and any member's entries. The unified idle timer is what
+  bounds it, and it bounds a tab left open rather than a machine handed
+  over.
+- **A member sampling the charts over time**, per the #153 channel
+  above.
 
 ## What is deliberately not here
 
-- **No bot check** — a session costs a Telegram account, which is the
-  lock; junk from a member is a moderation problem and deletable now.
-- **No framework and no bundler, and one build step that meets the test
-  below.** The test is the durable part: *can this tooling change what
-  ships without the repository noticing?* Linters cannot — nothing they
-  run rewrites a file, and a failure refuses a release rather than
-  producing one. `tools/build_web.mjs` does write a file, and still
+- **No site-side ban list.** Removing somebody means removing them in
+  Telegram; a second roster is a second thing to get wrong.
+- **No always-allow bypass.** A list that skips the membership check is
+  a way in that outlives the reason it was added.
+- **No published snapshot.** The Worker aggregates on request, so there
+  is nothing to be stale.
+- **No member backdating.** Admins backfill; a member typing an old
+  date is a correctness problem nobody can check.
+- **No framework and no bundler, and one build step that meets the
+  test below.** The test is the durable part: *can this tooling change
+  what ships without the repository noticing?* Linters cannot — nothing
+  they run rewrites a file, and a failure refuses a release rather than
+  producing one. `tools/build_web.mjs` does write a file and still
   cannot: it generates `dist/` from `apps/web` by removing comments and
   nothing else, `dist/` is **committed** so what ships arrives in a diff
   somebody reviews, and the gate rebuilds and byte-compares it in both
-  directions — a source edited without rebuilding and an artifact edited
-  by hand are the same failing check. It refuses a release rather than
-  quietly producing one, which is what the rule was protecting.
-  Everything a bundler would add — a step that runs at release time,
-  output nobody read, source no longer recoverable from what shipped —
-  is still refused. #181 has the measurements: the design record was
-  16,013 gzipped bytes of `theme.css` on every page, and it is kept in
-  full where it is read rather than sent to browsers that cannot use it.
+  directions. A source edited without rebuilding and an artifact edited
+  by hand are the same failing check.
 - **No service worker, no manifest** — offline queueing of writes it
   cannot confirm, and a home-screen icon naming this project is a
   privacy cost.
-- **No webfont** — third-party code on the page that handles plaintext.
+- **No webfont** — third-party code on a page that handles plaintext.
 - **No staging branch** — the build is a committed directory in the
-  same commit as its source, so there is nothing to promote. The development *environment* (second Worker, second D1,
-  `config.js` choosing by hostname, with an unknown hostname getting
-  **no** endpoint rather than a production fallback) answers the need a
-  staging branch would have pretended to.
-- **No chart library** — `admin.html` is the one page where the whole
-  corpus is in the clear at once.
-- **No rate limiting** — a session costs a Telegram account; enough at
-  this size.
+  same commit as its source, so there is nothing to promote. The
+  development *environment* answers what a staging branch would have
+  pretended to.
+- **No chart library** — the pages that draw are the pages where real
+  data is on screen.
+- **No rate limiting** — writing costs membership of one Telegram
+  group, which is a stronger lock than an account was.
 
 ## Rejected alternatives, so they are not re-proposed
 
 | Alternative | Why it lost |
 | --- | --- |
-| Google Apps Script + Sheet | data in a Google product; CORS hack was the project's only open risk |
+| Client-side sealing to a key file | an end user thinking about a physical key; no history, no self-service, no live charts. The 0.9 ruling |
+| A published snapshot with a publish button | figures as old as the last press; live aggregation costs nothing here |
+| A site-side member or ban list | a second roster beside the Telegram group, wrong the first time they disagree |
+| Admin tiers | describes Telegram's own reality; the site modeling it invents authority the group did not grant |
+| Member backdating | an unverifiable date on a measurement nobody witnessed |
+| Google Apps Script + Sheet | data in a Google product; the CORS hack was the project's only open risk |
 | Supabase | free projects pause when quiet — a dead form, silently |
-| No endpoint (paste the blob) | moves work onto every submitter; the fallback if the Worker becomes a burden |
-| Vendored libsodium | 200 KB of third-party code that sees plaintext |
-| Passkey-derived member keys (WebAuthn PRF) | an OS prompt on the ordinary act of submitting, to spare a step taken once per device — and it cannot serve every browser, so the device key stays underneath it either way; re-spike with a date if that changes |
-| Form definition served from the Worker | a wrong field is silent until export day; see "Where configuration lives" |
-| `SHA-256(handle)` account ids | the membership oracle, above |
-| Oblivious PRF (RFC 9497) | unprovable-by-test complexity for this team; same reason as libsodium, more so |
-| Invite codes | bearer credentials people paste in chats; verify nothing |
+| No endpoint (paste the blob) | moves work onto every member; the fallback if the Worker becomes a burden |
+| Form spec served from the Worker | a wrong field is silent until somebody reads the data; see "Where configuration lives" |
+| A hash of the handle as the row's identity | the membership oracle, above |
+| Invite codes | bearer credentials people paste in chats; they verify nothing |
 | Widget redirect mode | signed payload in URLs — the oracle in a log file |
 | Bot deep-link sign-in | better on the merits, lost on familiarity; the recorded way out if the CSP exception must ever widen |
-| Second render function for the public page | two things that look alike until one is wrong |
+| A second render function for a second audience | two things that look alike until one is wrong |
