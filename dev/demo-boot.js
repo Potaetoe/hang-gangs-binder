@@ -98,8 +98,20 @@
    *
    * So the demo moves the clock the page reads, at the one seam that
    * runs before any shipped script. The offset is in sessionStorage, so
-   * it survives the sign-out the expiry performs and the navigation
-   * that follows it - which is the half a driver is actually watching.
+   * it survives the sign-out an expiry performs and the navigation that
+   * follows it - which is the half a driver is actually watching.
+   *
+   * REPLACED EVEN AT ZERO, and that is the load-bearing half. The page
+   * captures its last-interaction instant when it loads, so a jump has
+   * to move the clock UNDER a page that is already running: a jump that
+   * navigated instead would be absorbed on arrival, because the page
+   * would read the shifted clock for both instants and find no idleness
+   * at all. Installing the shim only when an offset already exists
+   * leaves the first jump with nothing to bump, and the demo reports a
+   * jump that changed nothing on screen - which is the silent class this
+   * whole demo exists to refuse. Measured on the running server, not
+   * reasoned about: the first version reloaded and the warning never
+   * came.
    *
    * ONLY `Date.now`, DELIBERATELY. `new Date()` is what every rendered
    * date on screen comes from, and shifting that would move the
@@ -108,18 +120,13 @@
    * own corpus. The timer reads the clock through `Date.now()`; that is
    * the whole of what has to move.
    */
-  function installClock() {
-    const stored = readJson(WORLD_KEY, {});
-    const offset = Number(stored.clock);
-    if (!Number.isFinite(offset) || offset <= 0) return;
-    const realNow = Date.now.bind(Date);
-    Date.now = function () { return realNow() + offset; };
-  }
-
-  installClock();
+  const realNow = Date.now.bind(Date);
+  let offset = Number(readJson(WORLD_KEY, {}).clock);
+  if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  Date.now = function () { return realNow() + offset; };
 
   /*
-   * The toolbar's own reader, and it is not the product's.
+   * The toolbar's own two doors, and neither is the product's.
    *
    * The strip rides on the same page as the product now, so its fetch
    * is the replaced one - and the file it needs is a private key, which
@@ -136,6 +143,16 @@
       const decided = Demo.toolbarFileKind(path);
       if (decided.kind !== "file") return Promise.reject(new Error(decided.why));
       return realFetch(decided.path);
+    },
+    jump: function (by) {
+      const step = Number(by);
+      if (!Number.isFinite(step) || step <= 0) return offset;
+      offset += step;
+      const stored = readJson(WORLD_KEY, {});
+      stored.clock = offset;
+      delete stored.data;
+      writeJson(WORLD_KEY, stored);
+      return offset;
     },
   });
 

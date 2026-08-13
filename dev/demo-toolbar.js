@@ -357,8 +357,19 @@
         "move. The admin page is the one that has one.");
       return;
     }
-    patchWorld({ clock: (Number(readWorld().clock) || 0) + by });
-    again();
+    /*
+     * THE ONE CONTROL THAT DOES NOT NAVIGATE, and the reason is the
+     * whole mechanism. The page captured its last-interaction instant
+     * when it loaded, so the clock has to move UNDER a page that is
+     * already running - reload and the page reads the shifted clock for
+     * both instants and finds no idleness, which is a press that
+     * reports a jump and changes nothing on screen.
+     */
+    Boot.jump(by);
+    say("The clock this tab reads is " + Math.round(by / 1000) +
+      " seconds further on. The page's own timer notices on its next " +
+      "tick - it reads the clock rather than counting, so this is the " +
+      "same event as walking away.");
   }
 
   /* ------------------------------------------------------------------ */
@@ -458,6 +469,35 @@
     // become a grid item and move the rail. Fixed positioning is what
     // puts it at the top, and dev/demo-toolbar.css makes room for it.
     document.body.appendChild(bar);
+    measure(bar);
+  }
+
+  /*
+   * THE ROOM THE STRIP TAKES IS MEASURED, NOT DECLARED.
+   *
+   * dev/demo-toolbar.css reserves a floor for it, and a floor is all a
+   * stylesheet can honestly state: the strip wraps onto two, three or
+   * four rows depending on the window's width and on how many identities
+   * the demo offers, and a fixed height that is too small puts the strip
+   * over the page's own heading - hiding the product exactly where the
+   * owner is looking at it. Read back off the element and written onto
+   * the custom property both rules already use, so the body's padding
+   * and the rail's sticky offset move together.
+   *
+   * Re-measured on resize because the wrap point is a width, and the
+   * whole design of this demo is that a driver resizes the browser like
+   * a real user.
+   */
+  function measure(bar) {
+    const apply = function () {
+      const height = bar.getBoundingClientRect().height;
+      if (height > 0) {
+        document.documentElement.style
+          .setProperty("--hgb-demo-bar", height + "px");
+      }
+    };
+    apply();
+    root.addEventListener("resize", apply);
   }
 
   if (document.readyState === "loading") {

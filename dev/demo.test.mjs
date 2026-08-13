@@ -76,7 +76,7 @@ const Form = globalThis.BinderForm;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 174);
+const { check, mustReject, report } = suite("demo", 180);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1086,6 +1086,8 @@ function recordedNode(tag) {
       (it.listeners[type] = it.listeners[type] || []).push(fn);
     },
     click() { (it.listeners.click || []).slice().forEach((fn) => fn({})); },
+    getBoundingClientRect() { return { height: it.laidOutAt }; },
+    laidOutAt: 0,
   };
   let text = "";
   Object.defineProperty(it, "textContent", {
@@ -1111,9 +1113,12 @@ function toolbarInRecordedBrowser(options) {
   const built = [];
   const dropped = [];
   const body = recordedNode("body");
+  const rootStyle = {};
   const pageNodes = {};
   const absent = new Set(opts.absent || []);
   const databases = (opts.databases || []).slice();
+  const listened = [];
+  const jumped = [];
 
   const storeFor = (kept) => ({
     getItem: (key) => (key in kept ? kept[key] : null),
@@ -1126,6 +1131,7 @@ function toolbarInRecordedBrowser(options) {
   const context = {
     BinderDemo: Demo,
     BinderDemoBoot: {
+      jump: (by) => { jumped.push(by); return by; },
       read: (path) => {
         read.push(String(path));
         const decided = Demo.toolbarFileKind(path);
@@ -1138,6 +1144,11 @@ function toolbarInRecordedBrowser(options) {
     document: {
       readyState: "complete",
       body: body,
+      documentElement: {
+        style: {
+          setProperty(name, value) { rootStyle[name] = String(value); },
+        },
+      },
       createElement: (tag) => recordedNode(tag),
       getElementById: (id) => {
         if (absent.has(id)) return null;
@@ -1151,6 +1162,9 @@ function toolbarInRecordedBrowser(options) {
       assign(url) { went.push(String(url)); },
       reload() { reloads.push(true); },
     },
+    // The strip re-measures on resize, because the wrap point is a
+    // width and this demo is driven by resizing the window.
+    addEventListener(type) { listened.push(String(type)); },
     sessionStorage: storeFor(store.session),
     localStorage: storeFor(store.local),
     /*
@@ -1198,6 +1212,18 @@ function toolbarInRecordedBrowser(options) {
     },
     BinderAdmin: opts.noIdleTimer === true ? undefined : Admin,
     setTimeout: (fn) => { fn(); return 0; },
+    Date: Date,
+  };
+
+  // The height the browser lays the strip out at, answered by this
+  // recording so the measurement the file takes is one an arm chose.
+  const plain = context.document.createElement;
+  context.document.createElement = (tag) => {
+    const node = plain(tag);
+    if (tag === "div") {
+      node.laidOutAt = opts.barHeight === undefined ? 40 : opts.barHeight;
+    }
+    return node;
   };
 
   vm.createContext(context);
@@ -1233,7 +1259,8 @@ function toolbarInRecordedBrowser(options) {
 
   return {
     bar, body, everyButton, press, startsWith, said, worldNow, settled,
-    went, reloads, read, built, dropped, store, pageNodes,
+    went, reloads, read, built, dropped, store, pageNodes, rootStyle,
+    listened, jumped,
     labels: () => everyButton.map((one) => one.textContent),
   };
 }
@@ -1275,6 +1302,9 @@ await check("every snapshot row has a control, with the counts on it", () => {
     return control.textContent.includes(counts.entries + "/" + counts.people);
   });
 });
+
+await check("the strip re-measures itself when the window changes width", () =>
+  toolbarInRecordedBrowser().listened.includes("resize"));
 
 await check("both clock steps have a control", () => {
   const labels = toolbarInRecordedBrowser().labels();
@@ -1469,21 +1499,25 @@ await check("the clock control moves this tab's clock by the page's own window",
   () => {
     const browser = toolbarInRecordedBrowser({ page: "admin.html" });
     browser.press(Demo.CLOCK_STEPS[0].label);
-    return browser.worldNow().clock ===
-      Demo.clockJumpFor("warning", Admin.IDLE_WINDOW) &&
-      browser.reloads.length === 1;
+    return browser.jumped[0] ===
+      Demo.clockJumpFor("warning", Admin.IDLE_WINDOW);
   });
 
-await check("two jumps accumulate rather than replacing each other", () => {
-  const first = Demo.clockJumpFor("warning", Admin.IDLE_WINDOW);
-  const browser = toolbarInRecordedBrowser({
-    page: "admin.html",
-    session: { [Demo.STORAGE_KEYS[2]]: JSON.stringify({ clock: first }) },
+/*
+ * AND IT DOES NOT NAVIGATE, which is the half the running server
+ * taught. Every other control reloads, because the product's pages read
+ * their world on load; this one must not, because the page captured its
+ * last-interaction instant on that same load. Reload and the page reads
+ * the shifted clock for both instants and finds no idleness at all - a
+ * press that reports a jump and changes nothing on screen.
+ */
+await check("the clock control leaves the page standing, alone among them",
+  () => {
+    const browser = toolbarInRecordedBrowser({ page: "admin.html" });
+    browser.press(Demo.CLOCK_STEPS[1].label);
+    return browser.reloads.length === 0 && browser.went.length === 0 &&
+      /next tick/i.test(browser.said());
   });
-  browser.press(Demo.CLOCK_STEPS[1].label);
-  return browser.worldNow().clock ===
-    first + Demo.clockJumpFor("expiry", Admin.IDLE_WINDOW);
-});
 
 await check("a page running no idle timer is told so, and its clock is left",
   () => {
@@ -1492,7 +1526,7 @@ await check("a page running no idle timer is told so, and its clock is left",
     });
     browser.press(Demo.CLOCK_STEPS[0].label);
     return /no idle timer/i.test(browser.said()) &&
-      browser.worldNow().clock === undefined &&
+      browser.jumped.length === 0 &&
       browser.reloads.length === 0;
   });
 
@@ -1504,16 +1538,43 @@ await check("a page running no idle timer is told so, and its clock is left",
  */
 await check("the boot file shifts the clock the page reads, and only that",
   () => {
-    const jumped = bootInRecordedBrowser({
-      world: { clock: 480000 },
-    });
+    const jumped = bootInRecordedBrowser({ world: { clock: 480000 } });
     const drift = jumped.context.Date.now() - jumped.realNow;
-    return drift >= 470000 && drift <= 490000;
+    const constructor = new jumped.context.Date().getTime() - jumped.realNow;
+    return drift >= 470000 && drift <= 490000 && Math.abs(constructor) < 5000;
   });
 
 await check("a tab nobody jumped reads the real clock", () => {
   const plain = bootInRecordedBrowser({ world: {} });
   return Math.abs(plain.context.Date.now() - plain.realNow) < 5000;
+});
+
+/*
+ * A JUMP MOVES A TAB THAT WAS NEVER JUMPED. Installing the shim only
+ * when an offset already exists leaves the first press with nothing to
+ * bump: the demo reports a jump, the page's clock does not move, and
+ * nothing on screen says so.
+ */
+await check("a first jump moves a clock nothing had shifted yet", () => {
+  const boot = bootInRecordedBrowser({ world: {} });
+  boot.context.BinderDemoBoot.jump(480000);
+  const drift = boot.context.Date.now() - boot.realNow;
+  return drift >= 470000 && drift <= 490000;
+});
+
+await check("jumps accumulate, and survive into the next page", () => {
+  const boot = bootInRecordedBrowser({ world: { clock: 100000 } });
+  boot.context.BinderDemoBoot.jump(50000);
+  boot.context.BinderDemoBoot.jump(25000);
+  const stored = JSON.parse(boot.kept[Demo.STORAGE_KEYS[2]]);
+  return stored.clock === 175000 &&
+    boot.context.Date.now() - boot.realNow >= 170000;
+});
+
+await check("a jump of nothing is refused rather than corrupting the offset", () => {
+  const boot = bootInRecordedBrowser({ world: { clock: 100000 } });
+  return boot.context.BinderDemoBoot.jump("soon") === 100000 &&
+    boot.context.BinderDemoBoot.jump(-5000) === 100000;
 });
 
 /* -- Reset --------------------------------------------------------- */
@@ -1720,6 +1781,24 @@ await check("the rail apps/web sticks to the top is the one the strip offsets", 
 await check("the strip makes room for itself rather than covering the page", () =>
   /body\s*\{[^}]*padding-top:\s*var\(--hgb-demo-bar\)/.test(toolbarCss) &&
   /--hgb-demo-bar:\s*[0-9.]+/.test(toolbarCss));
+
+/*
+ * And the room is MEASURED rather than declared. The strip wraps onto
+ * several rows at ordinary window widths, so a stylesheet's single
+ * number is a floor - left as the answer, the strip sits over the
+ * page's own heading, which is the product being hidden exactly where
+ * the owner is looking at it. Driven rather than read: the recording
+ * lays the strip out at a height and the arm asks what was written back.
+ */
+await check("the strip measures its own height and writes it back", () => {
+  const browser = toolbarInRecordedBrowser({ barHeight: 96 });
+  return browser.rootStyle["--hgb-demo-bar"] === "96px";
+});
+
+await check("a strip that has not been laid out yet writes no height", () => {
+  const browser = toolbarInRecordedBrowser({ barHeight: 0 });
+  return browser.rootStyle["--hgb-demo-bar"] === undefined;
+});
 
 /*
  * Above the sign-in page's cover leaf, which is `fixed` at z-index 20
