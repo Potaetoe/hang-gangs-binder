@@ -190,20 +190,20 @@
   const CONFIG_STANDIN = '<script src="/dev/demo-config.js"></script>';
 
   /*
-   * THERE IS NO ANCHOR EDIT, AND ADDING ONE BACK WOULD BE A MISTAKE.
+   * THERE IS NO ANCHOR EDIT, AND ADDING ONE WOULD BE A MISTAKE.
    *
-   * The mirror used to rewrite every anchor leaving the product to open
-   * its own tab. Both reasons for that are gone. The demo is the site in
-   * the whole window now rather than a page inside a frame, so a link
-   * that leaves is a link that leaves, exactly as it would on the real
-   * site; and apps/web ships no off-site anchor for it to act on, so the
-   * edit matched nothing and declared itself anyway. An edit that
-   * applies to no page is worse than a missing one: it reads on the
-   * table as a difference somebody accounted for.
+   * Rewriting anchors that leave the product so they open their own tab
+   * is a frame's problem: a frame that navigates itself to a host
+   * refusing to be framed goes white with no way back. The demo is the
+   * site in the whole window, so a link that leaves is a link that
+   * leaves, exactly as it is on the real site. And apps/web ships no
+   * off-site anchor for such an edit to act on, so declaring one puts a
+   * difference on the table that applies to no page - worse than a
+   * missing edit, because it reads as something somebody accounted for.
    *
    * dev/demo.test.mjs drives an anchor that leaves the product through
-   * the mirror and asks for it back byte for byte, so re-adding the
-   * rewrite is red rather than quiet.
+   * the mirror and asks for it back byte for byte, so adding the rewrite
+   * is red rather than quiet.
    */
 
   /*

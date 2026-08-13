@@ -266,11 +266,8 @@ await check("a page that loads no config.js gets no config edit", () =>
 
 /*
  * THE MIRROR TOUCHES NO ANCHOR AT ALL, AND THIS IS WHAT HOLDS THAT.
- *
- * It used to rewrite every anchor leaving the product so the link opened
- * its own tab, which mattered while the demo was a page inside a frame.
- * There is no frame, and apps/web ships no off-site anchor either, so
- * the edit declared a difference that applied to nothing.
+ * Why anchors are left alone is stated in dev/demo-stub.js, beside the
+ * mirror itself.
  *
  * Driven against a page written here rather than asked of apps/web,
  * deliberately: no shipped page carries an anchor that leaves, so an arm
@@ -291,8 +288,8 @@ await check("an anchor that leaves the product comes back exactly as written", (
 /*
  * And the product's own anchors survive, asked of the shipped bytes.
  * Moving around the site is half of what there is to see, and the round
- * trip above this cannot catch a mirror that rewrote an anchor and undid
- * it again - which is exactly what the retired edit did. The pages are
+ * trip above this cannot catch a mirror that rewrites an anchor and
+ * undoes it again - an exactly-inverted pair passes it. The pages are
  * filtered rather than named, so a page losing its last in-page link is
  * not a failure, but every page losing them all is: this arm is not
  * allowed to end up with nothing to check.
@@ -1849,19 +1846,18 @@ await check("a strip that has not been laid out yet writes no height", () => {
  * ABOVE EVERYTHING THE PRODUCT STACKS - ASKED OF THE PRODUCT, NOT
  * PINNED TO ONE ELEMENT.
  *
- * This named the sign-in page's cover leaf and compared the strip to its
- * literal 20. The cover was cut by owner ruling and the arm went red for
- * a reason that had nothing to do with the strip, which is the tell that
- * it was keyed to an element rather than to the property. The property
- * is that a driver can always see the strip: it has to out-stack
- * whatever the product paints over the page.
+ * The property is that a driver can always see the strip: it has to
+ * out-stack whatever the product paints over the page. Naming one page
+ * element and comparing the strip to that element's literal keys the arm
+ * to a piece of furniture instead of to the property, so removing the
+ * furniture turns the arm red for a reason that has nothing to do with
+ * the strip.
  *
  * So every z-index apps/web declares is read out and the strip is
- * required to top all of them. That set is empty today - the product
- * stacks nothing - and it is READ rather than pinned for exactly that
- * reason: the day a page element declares one, it is measured against
- * the strip by this arm rather than by whoever notices the strip has
- * gone missing.
+ * required to top all of them. That set is allowed to be empty, and it
+ * is READ rather than pinned for exactly that reason: the day a page
+ * element declares one, it is measured against the strip by this arm
+ * rather than by whoever notices the strip has gone missing.
  *
  * A floor of its own, because topping an empty set is free: the strip's
  * number has to be positive. Most of what the product paints is stacked
