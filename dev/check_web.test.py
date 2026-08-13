@@ -259,26 +259,52 @@ check("a page still carrying the retired hamburger ids is refused",
       any("nav-toggle" in p for p in check_web.rail_page_problems(
           RAIL + '<button id="nav-toggle"></button>')))
 
-# The plain rules, both directions.
+# The plain rules, both directions. The second argument is whether this
+# is the entrance; False is every plain page but one.
 PLAIN = '<main><a href="index.html">Sign in</a></main>'
 check("a plain page with a way off it raises nothing",
-      check_web.plain_page_problems(PLAIN) == [])
+      check_web.plain_page_problems(PLAIN, False) == [])
 check("a plain page carrying a rail is refused",
       any("session home" in p
-          for p in check_web.plain_page_problems(PLAIN + RAIL)))
+          for p in check_web.plain_page_problems(PLAIN + RAIL, False)))
 
 # The arm that stops "plain" from becoming "a dead end with nice
 # typography". A fragment and an off-site link both leave a visitor
 # where they started, so neither counts.
+DEAD_END = "<main>Sorry.</main>"
 check("a plain page with no way off it is refused",
       any("no way off it" in p
-          for p in check_web.plain_page_problems("<main>Sorry.</main>")))
+          for p in check_web.plain_page_problems(DEAD_END, False)))
 check("a fragment is not a way off a page",
       any("no way off it" in p for p in check_web.plain_page_problems(
-          '<a href="#top">back to top</a>')))
+          '<a href="#top">back to top</a>', False)))
 check("an off-site link is not a way through the site",
       any("no way off it" in p for p in check_web.plain_page_problems(
-          '<a href="https://example.com">away</a>')))
+          '<a href="https://example.com">away</a>', False)))
+
+# The entrance, exempt since #274 took the footers' nav off every page.
+# It is the page every dead end already leads to - public.js returns a
+# visitor with no session there and 404.html points at it - so there is
+# nowhere it could strand somebody that they were not already going.
+#
+# The exemption is narrow on purpose, and this pair is what says so: the
+# rail refusal still applies to it, because a session home on the page
+# that signs people in is the copy-paste failure the shell table exists
+# for and has nothing to do with stranding.
+check("the entrance may carry no way off itself",
+      check_web.plain_page_problems(DEAD_END, True) == [])
+check("and is still refused a rail",
+      any("session home" in p
+          for p in check_web.plain_page_problems(RAIL, True)))
+
+# Both directions on the pin that grants the exemption, which is the
+# arm with teeth: an exemption whose subject is not published, or is
+# published behind a rail, is an exemption belonging to no page while
+# whichever plain page took its place strands people quietly.
+check("the entrance is a page this site publishes",
+      check_web.SIGN_IN_PAGE in check_web.html_pages())
+check("and is the plain page it is excused as",
+      check_web.SHELLS.get(check_web.SIGN_IN_PAGE) == "plain")
 
 # The session block, the other half of the shell nothing was comparing
 # (#200). The rail arm above reads .rail-links, so the block holding the
@@ -476,37 +502,38 @@ check("no shipped page's wordmark disagrees with another's",
 
 
 # ------------------------------------------------------------------ #
-# Check 19 - the palette control, in the shape each page is pinned to  #
-# carry, and absent everywhere else.                                  #
+# Check 19 - the palette control, one shape on every page that offers  #
+# one, in a footer that holds it and nothing else.                     #
 
-# The pins first, because every rule below describes whichever pages
-# they name. The pair that matters is index.html against the other
-# three: the sign-in page offers its palettes in flow because a panel
-# opening there would open over the widget that signs people in, and
-# the signed-in pages float theirs because a panel that displaced a
-# form or a grid would be paid for on every page view.
-check("the sign-in page is pinned to the swatch shape",
-      check_web.SWATCH_PAGES == {"index.html"})
-check("the three signed-in pages are pinned to the flyout shape",
-      check_web.FLYOUT_PAGES ==
-      {"your-page.html", "charts.html", "admin.html"})
+# The pin first, because every rule below describes whichever pages it
+# names. There is one table since #274: the owner ruled the floating
+# Theme <details> off the signed-in pages and made every footer the row
+# of swatches index.html has always carried, so the split #187
+# introduced is gone and the property the row was chosen for - a
+# control with no hidden state cannot be open over anything, however it
+# fails - now belongs to every page.
+check("every page but the error page offers a palette",
+      check_web.THEMED_PAGES ==
+      {"index.html", "your-page.html", "charts.html", "admin.html"})
 check("the error page is pinned to offer no palette at all",
       "404.html" not in check_web.THEMED_PAGES)
-# The union is derived, so a page cannot be in a shape table and out of
-# the set every chip arm reads.
-check("every page in a shape table offers a palette",
-      check_web.THEMED_PAGES ==
-      check_web.FLYOUT_PAGES | check_web.SWATCH_PAGES)
-check("no page is pinned to two shapes at once",
-      not (check_web.FLYOUT_PAGES & check_web.SWATCH_PAGES))
 
 # And the pins have to match what actually ships.
 check("no shipped page's palette control differs from its pin",
       check_web.theme_control_page_problems() == [])
 
-# The rules on strings, both directions on each. FLYOUT_MARKUP is the whole
-# signed-in control: the disclosure element, the word on its summary,
-# and one chip inside the panel it opens.
+# The rules on strings, both directions on each. SWATCH_MARKUP is the
+# whole control: a row in flow, and a dot named by its aria-label
+# because there are no words in a dot.
+SWATCH_MARKUP = (
+    '<div class="theme-swatches" role="group" aria-label="Color theme">'
+    '<button data-set-theme="midnight" aria-label="Midnight">'
+    '<span class="swatch-dot" data-palette="midnight"></span></button>'
+    '</div>'
+)
+
+# The control #274 removed, kept here as the thing every arm below
+# refuses rather than as a shape any page may carry.
 FLYOUT_MARKUP = (
     '<details class="theme-picker">'
     '<summary>Theme</summary>'
@@ -515,138 +542,151 @@ FLYOUT_MARKUP = (
     '</details>'
 )
 
-# And SWATCH_MARKUP is the sign-in page's: a row in flow, and a dot named by
-# its aria-label because there are no words in a dot.
-SWATCH_MARKUP = (
-    '<div class="theme-swatches" role="group" aria-label="Color theme">'
-    '<button data-set-theme="midnight" aria-label="Midnight">'
-    '<span class="swatch-dot" data-palette="midnight"></span></button>'
-    '</div>'
-)
-
-check("a complete flyout on a page pinned to one raises nothing",
-      check_web.theme_control_problems(FLYOUT_MARKUP, check_web.FLYOUT) == [])
-check("a complete swatch row on a page pinned to one raises nothing",
-      check_web.theme_control_problems(SWATCH_MARKUP, check_web.SWATCH) == [])
+check("a complete swatch row on a page that offers a palette raises "
+      "nothing",
+      check_web.theme_control_problems(SWATCH_MARKUP, True) == [])
 check("a page pinned to offer none, carrying none, raises nothing",
-      check_web.theme_control_problems('<main>Sorry.</main>', None) == [])
+      check_web.theme_control_problems('<main>Sorry.</main>', False) == [])
 
-# The element, not the class. A control assembled out of a <div> and a
-# script is a palette that disappears on the first script failure, and
-# the class alone would certify it.
-DIV_PICKER = FLYOUT_MARKUP.replace(
-    "<details", "<div").replace("</details>", "</div>")
-check("a flyout page whose disclosure is not a <details> is refused",
-      any("<details" in p for p in check_web.theme_control_problems(
-          DIV_PICKER, check_web.FLYOUT)))
-check("a flyout page whose summary lost the word Theme is refused",
-      any("summary" in p for p in check_web.theme_control_problems(
-          FLYOUT_MARKUP.replace("<summary>Theme</summary>",
-                                "<summary>Colors</summary>"),
-          check_web.FLYOUT)))
-check("a disclosure with no chip behind it is refused",
-      any("empty panel" in p for p in check_web.theme_control_problems(
-          FLYOUT_MARKUP.replace("data-set-theme", "data-something"),
-          check_web.FLYOUT)))
-# Chips beside the control rather than inside it stand open in the
-# footer forever, and every arm above survives that untouched.
-check("chips outside the disclosure are refused",
-      any("OUTSIDE" in p for p in check_web.theme_control_problems(
-          '<details class="theme-picker"><summary>Theme</summary></details>'
-          '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
-# The arm is a COUNT, not a "does the panel hold any chip". One chip
-# left beside a disclosure that still holds three answers yes to that
-# question and ships a button standing open in the footer forever -
-# which is how the first version of this arm passed a live mutation.
-check("ONE chip outside a disclosure that still holds others is refused",
-      any("1 of its 2" in p for p in check_web.theme_control_problems(
-          '<details class="theme-picker"><summary>Theme</summary>'
-          '<button data-set-theme="midnight">Midnight</button></details>'
-          '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
-# A <details> that never closes swallows the rest of the page into the
-# panel, and a reader that stopped at the first close tag would have
-# reported the chips as loose instead.
-check("a disclosure that never closes is refused as unreadable",
-      any("never closes" in p for p in check_web.theme_control_problems(
-          '<details class="theme-picker"><summary>Theme</summary>'
-          '<button data-set-theme="pink">Pink</button>', check_web.FLYOUT)))
-check("a nested <details> does not end the panel early",
-      check_web.theme_control_problems(
-          '<details class="theme-picker"><summary>Theme</summary>'
-          '<details><summary>More</summary></details>'
-          '<button data-set-theme="pink">Pink</button></details>',
-          check_web.FLYOUT) == [])
-check("a flyout page carrying the swatch row as well is refused",
-      any("swatch row" in p for p in check_web.theme_control_problems(
-          FLYOUT_MARKUP + SWATCH_MARKUP, check_web.FLYOUT)))
+# The ruling reversed rather than drifting, and it is refused on a page
+# that offers a palette and on one that does not alike - because the
+# hazard is the hidden state, not which page inherited it.
+check("a disclosure on a themed page is refused",
+      any("hides its palette" in p for p in check_web.theme_control_problems(
+          SWATCH_MARKUP + FLYOUT_MARKUP, True)))
+check("a disclosure on a page that offers no palette is refused too",
+      any("hides its palette" in p for p in check_web.theme_control_problems(
+          FLYOUT_MARKUP, False)))
+# The class is the half a rebuild drops first, so the word is refused
+# beside the element: a <summary> still reading "Theme" is the same
+# control arriving without the name this file finds it by.
+check("a bare Theme summary is refused even with no theme-picker class",
+      any("hides its palette" in p for p in check_web.theme_control_problems(
+          SWATCH_MARKUP + "<summary>Theme</summary>", True)))
 
-# The sign-in page's direction, and it is the one with a name. This is
-# the ruling being reversed rather than drifting.
-check("a disclosure on the sign-in page is refused",
-      any("Telegram widget" in p for p in check_web.theme_control_problems(
-          FLYOUT_MARKUP, check_web.SWATCH)))
-check("a bare Theme summary on the sign-in page is refused too",
-      any("Telegram widget" in p for p in check_web.theme_control_problems(
-          SWATCH_MARKUP + "<summary>Theme</summary>", check_web.SWATCH)))
-check("a sign-in page with chips and no swatch row is refused",
+check("a themed page with chips and no swatch row is refused",
       any("theme-swatches" in p for p in check_web.theme_control_problems(
-          '<button data-set-theme="pink" aria-label="Pink"></button>',
-          check_web.SWATCH)))
-check("a sign-in page with a swatch row and no chip is refused",
+          '<button data-set-theme="pink" aria-label="Pink"></button>', True)))
+check("a themed page with a swatch row and no chip is refused",
       any("data-set-theme" in p for p in check_web.theme_control_problems(
-          '<div class="theme-swatches"></div>', check_web.SWATCH)))
+          '<div class="theme-swatches"></div>', True)))
+
+# Chips beside the row rather than inside it are missed by the spacing,
+# the target size and the pressed mark alike. The arm is a COUNT, not a
+# "does the row hold any chip": one chip left outside a row that still
+# holds three answers yes to that question, which is how the same arm's
+# previous shape passed a live mutation.
+check("ONE chip outside a row that still holds others is refused",
+      any("1 of its 2" in p for p in check_web.theme_control_problems(
+          '<div class="theme-swatches">'
+          '<button data-set-theme="midnight" aria-label="Midnight"></button>'
+          '</div>'
+          '<button data-set-theme="pink" aria-label="Pink"></button>', True)))
+# A row that never closes swallows the rest of the page, and a reader
+# that stopped at the first close tag would have reported the chips as
+# loose instead.
+check("a swatch row that never closes is refused as unreadable",
+      any("never closes" in p for p in check_web.theme_control_problems(
+          '<div class="theme-swatches">'
+          '<button data-set-theme="midnight" aria-label="M"></button>'
+          '<button data-set-theme="pink" aria-label="P"></button>', True)))
+check("a nested element does not end the row early",
+      check_web.theme_control_problems(
+          '<div class="theme-swatches">'
+          '<div><button data-set-theme="midnight" aria-label="M"></button>'
+          '</div>'
+          '<button data-set-theme="pink" aria-label="P"></button></div>',
+          True) == [])
 
 # The retired hooks, refused on every page rather than merely absent.
-# Nothing reads them: the disclosure opens itself and the sign-in page
-# has none, so an id left behind is what the next page copied from this
-# one inherits.
+# Nothing reads them - no page has a disclosure at all now - so an id
+# left behind is what the next page copied from this one inherits.
 for RETIRED in ("theme-toggle", "theme-chips"):
-    check("id=%s is refused on a flyout page" % RETIRED,
+    check("id=%s is refused on a themed page" % RETIRED,
           any(RETIRED in p for p in check_web.theme_control_problems(
-              FLYOUT_MARKUP.replace("<summary>",
-                             '<summary id="%s">' % RETIRED),
-              check_web.FLYOUT)))
+              SWATCH_MARKUP + '<div id="%s"></div>' % RETIRED, True)))
     check("id=%s is refused on a page that offers no palette" % RETIRED,
           any(RETIRED in p for p in check_web.theme_control_problems(
-              '<div id="%s"></div>' % RETIRED, None)))
+              '<div id="%s"></div>' % RETIRED, False)))
 
 # The absent direction, which is what stops a control landing on the
 # error page the way every other copy-paste failure here lands.
 check("a page pinned to offer no palette, carrying a chip, is refused",
       any("stored preference" in p
           for p in check_web.theme_control_problems(
-              '<button data-set-theme="pink">P</button>', None)))
-check("a page pinned to offer no palette, carrying a disclosure, "
-      "is refused",
-      any("pinned in neither" in p
-          for p in check_web.theme_control_problems(FLYOUT_MARKUP, None)))
+              '<button data-set-theme="pink">P</button>', False)))
 check("a page pinned to offer no palette, carrying a swatch row, "
       "is refused",
-      any("pinned in neither" in p
+      any("not pinned in THEMED_PAGES" in p
           for p in check_web.theme_control_problems(
-              '<div class="theme-swatches"></div>', None)))
+              '<div class="theme-swatches"></div>', False)))
 
 # The stale-pin arm. A roster entry with no page behind it is a check
 # that cannot fail, which is the failure #114 paid for - so it is
 # exercised here rather than assumed, by pinning a page that does not
 # ship and putting the real set back immediately.
-SHIPPING_FLYOUT = check_web.FLYOUT_PAGES
 SHIPPING_THEMED = check_web.THEMED_PAGES
 check_web.THEMED_PAGES = SHIPPING_THEMED | {"nowhere.html"}
 check("a themed-page pin with no page behind it is refused",
       any(page == "nowhere.html"
           for page, _problem in check_web.theme_control_page_problems()))
 check_web.THEMED_PAGES = SHIPPING_THEMED
-
-# And a page pinned to both shapes, which would be read against one of
-# them while the other's refusals quietly stopped being reachable.
-check_web.FLYOUT_PAGES = SHIPPING_FLYOUT | {"index.html"}
-check("a page pinned to both shapes at once is refused",
-      any("BOTH" in problem
-          for _page, problem in check_web.theme_control_page_problems()))
-check_web.FLYOUT_PAGES = SHIPPING_FLYOUT
-check("the real pins are back after the stale-pin arms",
+check("the real pin is back after the stale-pin arm",
       check_web.theme_control_page_problems() == [])
+
+
+# ------------------------------------------------------------------ #
+# Check 19's footer arm - the owner's ruling on #274, which is that    #
+# every footer is the swatch row and nothing else.                    #
+
+# This is the arm with reach, and the reason it had to exist is the
+# two cases nothing else in check_web.py can see: an off-site href is
+# not a destination, so DESTINATIONS and the anti-stranding arm are
+# both blind to it by construction; and an on-site link that spells
+# its destination's own name satisfies the name table exactly. Before
+# this, two of the four footers could have taken their nav back with
+# the whole gate green.
+FOOTER_OK = "<footer>%s</footer>" % SWATCH_MARKUP
+
+check("a footer holding the swatch row and nothing else raises nothing",
+      check_web.footer_problems(FOOTER_OK, True) == [])
+check("a page that offers no palette and has no footer raises nothing",
+      check_web.footer_problems("<main>Sorry.</main>", False) == [])
+
+# The link, both spellings, because the ruling is about navigation and
+# not about where it points.
+check("an on-site link in a footer is refused",
+      any("link in its footer" in p for p in check_web.footer_problems(
+          "<footer>%s<p><a href=\"charts.html\">Muse's charts</a></p>"
+          "</footer>" % SWATCH_MARKUP, True)))
+check("an off-site link in a footer is refused",
+      any("link in its footer" in p for p in check_web.footer_problems(
+          '<footer>%s<p><a href="https://example.com">Read the code</a></p>'
+          "</footer>" % SWATCH_MARKUP, True)))
+# A link INSIDE the row would be cut out with it, so the arm reads what
+# is left rather than the whole footer - and that is the direction this
+# says out loud rather than leaving to the reader.
+check("markup beside the row is refused even with no link in it",
+      any("markup in its footer" in p for p in check_web.footer_problems(
+          "<footer>%s<p><strong>Nearly</strong></p></footer>"
+          % SWATCH_MARKUP, True)))
+check("bare words beside the row are refused",
+      any("words in its footer" in p for p in check_web.footer_problems(
+          "<footer>%s Nearly nothing</footer>" % SWATCH_MARKUP, True)))
+
+# The two directions on the element itself.
+check("a themed page with no footer at all is refused",
+      any("carries no <footer>" in p
+          for p in check_web.footer_problems(SWATCH_MARKUP, True)))
+check("a page that offers no palette and carries a footer is refused",
+      any("offers no palette and carries a <footer>" in p
+          for p in check_web.footer_problems("<footer><p>Hi</p></footer>",
+                                             False)))
+# Two footers would leave this arm reading one and the ruling describing
+# neither.
+check("a second footer is refused",
+      any("2 <footer> elements" in p for p in check_web.footer_problems(
+          FOOTER_OK + "<footer><p>Also</p></footer>", True)))
 
 
 # ------------------------------------------------------------------ #
