@@ -76,7 +76,7 @@ const Form = globalThis.BinderForm;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 185);
+const { check, mustReject, report } = suite("demo", 186);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1987,6 +1987,28 @@ await check("the strip makes room for itself rather than covering the page", () 
   /body\s*\{[^}]*padding-top:\s*var\(--hgb-demo-bar\)/.test(toolbarCss) &&
   /--hgb-demo-bar-floor:\s*[0-9.]+/.test(toolbarCss) &&
   /--hgb-demo-bar:\s*var\(--hgb-demo-bar-floor\)/.test(toolbarCss));
+
+/*
+ * AND THE ROOM IS ACTUALLY MADE, WHICH IS A DIFFERENT CLAIM FROM THE
+ * RULE EXISTING. Found by driving, not by reading: on /demo/admin.html
+ * the strip's height reached the custom property correctly and the
+ * heading was still behind it, because apps/web/theme.css says
+ * `body.railed { padding: 0 }` for the signed-in pages' grid and a class
+ * beats a bare element selector in every sheet order. The demo's offset
+ * was cancelled on every page the owner spends the demo in; one row
+ * fitted under the content's own top margin, so it looked right until
+ * the strip wrapped. Measured: heading top 86.14px, strip bottom
+ * 103.77px, on the first press of a ruled enabler.
+ *
+ * Both halves are asked, the product's and the demo's, so the day
+ * theme.css stops zeroing that padding this arm reds and says the
+ * `!important` can come out - rather than leaving a word nobody dares
+ * remove.
+ */
+await check("the room the strip makes survives the product's own body rule", () =>
+  /body\.[a-z-]+\s*\{[^}]*padding:\s*0/.test(webSource["theme.css"]) &&
+  /body\s*\{[^}]*padding-top:\s*var\(--hgb-demo-bar\)\s*!important/
+    .test(toolbarCss));
 
 /*
  * THE STRIP'S OWN MINIMUM IS THE FLOOR, NEVER THE HEIGHT IT LAST

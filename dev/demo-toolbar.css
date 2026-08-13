@@ -40,6 +40,19 @@
 /*
  * Room for the strip.
  *
+ * `!important` BECAUSE THE PRODUCT OUTRANKS THIS SELECTOR, and without
+ * it this rule silently does nothing on exactly the pages the owner
+ * spends the demo in. apps/web/theme.css says `body.railed { padding: 0 }`
+ * for the signed-in pages' grid - a class, which beats a bare element
+ * selector whatever order the sheets load in - so the offset was
+ * cancelled on every railed page and only the content's own top margin
+ * kept the strip off the heading. One row fitted under that margin, so
+ * it looked correct until the strip wrapped: measured on /demo/admin.html
+ * with a status line on the strip, the heading sat at 86.14px under a
+ * strip whose bottom was 103.77px. dev/demo.test.mjs holds theme.css to
+ * still zeroing that padding, so the day it stops, this word is reported
+ * as removable rather than left as noise.
+ *
  * THE SECOND RULE IS NOT OPTIONAL AND IT IS COUPLED TO apps/web. The
  * rail is `position: sticky; top: 0` in apps/web/theme.css, so without
  * an offset it sticks under the strip and its first destination is
@@ -49,7 +62,7 @@
  * silently offsets nothing.
  */
 body {
-  padding-top: var(--hgb-demo-bar);
+  padding-top: var(--hgb-demo-bar) !important;
 }
 
 .rail {
