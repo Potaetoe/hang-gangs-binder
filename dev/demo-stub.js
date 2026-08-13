@@ -1199,6 +1199,15 @@
            * height written into prose here has no home in the source
            * and nothing in the gate renders this page, so nothing can
            * ever falsify it.
+           *
+           * What that argument cannot carry for this stop is the
+           * procedure, because it names the membership blocks. Here it
+           * is: bake this commit, walk to this stop at 1280x800 with
+           * the document's fonts reporting loaded, and read the
+           * rectangles off the hero at the top of the charts container
+           * and the Weight over time figure drawn under it. Those two
+           * rectangles against the frame's own height are what the
+           * paragraphs above mean by far enough down and well below.
            */
           narration: "Everybody's numbers drawn as one picture - the " +
             "combined weight, and under it the change since last " +
@@ -1317,10 +1326,10 @@
            * can falsify - the geometry arm in dev/demo.test.mjs reads
            * markup rather than rendered height, and nothing else in
            * the gate renders this page at all - and it would not even
-           * be stable: the two sessions above came back far enough
-           * apart to move that heading from wholly inside the frame to
-           * cut by the fold. That is the trap, and it is why this
-           * paragraph carries no figure of its own.
+           * be stable: the two sessions above disagree, so a figure
+           * here would have to pick one of them and call it settled.
+           * That is the trap, and it is why this paragraph carries no
+           * figure of its own.
            *
            * The free stop at the end of this walk is where the rows
            * that grant nothing can be pressed.

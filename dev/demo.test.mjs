@@ -2029,15 +2029,24 @@ const drivenAdmin = (() => {
  * names - and the difference is a whole screen.
  *
  * `scroll` aligns the TOP of what it names. Naming the membership card
- * aligned the top of an 1131 px card, so the frame filled with the
- * card's add-a-member form and every element this stop's sentence points
- * at was below the fold: measured on the baked build, the admin list
- * starts 568 px into that card and the line under it ends at 764 px, so
- * the sentence needed a frame ~765 px tall to be true. A 1280x800
- * browser window gives the demo frame 544 px. The stop is behind glass -
+ * aligned the top of a card taller than the frame it is drawn into, so
+ * the frame filled with the card's add-a-member form and every element
+ * this stop's sentence points at sat below the fold: the admin list
+ * starts well down inside that card and the line under it ends further
+ * down still, so the sentence needed a taller frame than a 1280x800
+ * browser window leaves the demo. The stop is behind glass -
  * `elementFromPoint` at the frame centre is the glass and the wheel is
  * dead - so the viewer could not go and look. True of the card, false of
  * the screen.
+ *
+ * NO RENDERED HEIGHT IS WRITTEN INTO THAT PARAGRAPH, for the reason the
+ * sibling comment in dev/demo-stub.js gives at length. The arm below
+ * reads markup rather than rendered height and nothing in this gate
+ * renders the page, so a figure here is a number nothing can falsify -
+ * and two careful sessions measuring this one stop, at one frame size
+ * on one commit, disagree about where the fold falls across it. The
+ * window size stays because it is not a measurement: 1280x800 is what
+ * the procedure is run at, an input rather than a result.
  *
  * So the anchor is the FIRST thing the sentence names, and this holds
  * the two structural facts that make the screen follow: the stop lands
@@ -4515,20 +4524,28 @@ await check("the date the earlier document carries is a round this corpus has, n
  *
  * charts.html opens on its Count and Units controls and draws the
  * picture below them, so the stop that exists to show the change-since
- * line opened with the whole picture past the fold - measured on the
- * baked build, the hero starts ~574 px down and a 1280x800 window gives
- * the demo frame 544 px. The weight-over-time chart is ~400 px below the
- * hero again, at every size measured. This stop is behind glass like the
- * membership one, so none of it could be scrolled to.
+ * line opened with the whole picture past the fold: the hero alone is
+ * drawn far enough under those controls to clear the frame a 1280x800
+ * window leaves the demo, and the weight-over-time chart is a further
+ * stretch below the hero again, at every size measured. This stop is
+ * behind glass like the membership one, so none of it could be scrolled
+ * to.
+ *
+ * NO RENDERED HEIGHT IS WRITTEN INTO THAT PARAGRAPH EITHER, and for the
+ * same reason as the membership stop above: the arms below read markup
+ * and drawing order out of apps/web, nothing in this gate renders this
+ * page, and the one stop two sessions have measured carefully came back
+ * disputed. The window size is an input to that measurement rather than
+ * a result of one, which is why it is the only figure left standing.
  *
  * Two things make the sentence true of the screen, and both are held
  * below. The stop moves to the container the member surface draws into,
  * which puts the hero - the combined weight, and the change since last
  * time under it - at the top of the frame. And the sentence stops at the
- * hero: no window this project supports fits the hero and a chart four
- * hundred pixels beneath it in one frame, so naming the lines is naming
- * something the viewer cannot reach. The free stop at the end of the
- * walk is where the rest of the page is gone and looked at.
+ * hero: no window this project supports fits the hero and the
+ * weight-over-time chart beneath it in one frame, so naming the lines is
+ * naming something the viewer cannot reach. The free stop at the end of
+ * the walk is where the rest of the page is gone and looked at.
  *
  * The container and the drawing order are read out of apps/web rather
  * than asserted here, per AGENTS.md's corollary: a check computed
