@@ -58,7 +58,7 @@ const {
   stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 38);
+const { check, mustReject, report } = suite("demo bake", 37);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -271,16 +271,16 @@ await check("the baked sign-in page loads no third-party widget", async () => {
  * asks, so what differs from the product in them is exactly the thing
  * that cannot be allowed to grow quietly.
  */
-await check("all five declared edits are applied across the baked pages",
+await check("all four declared edits are applied across the baked pages",
   async () => {
     const applied = new Set();
     for (const page of pages) {
       const shipped = await readFile(join(ROOT, "apps", "web", page), "utf8");
       Demo.mirror(shipped).applied.forEach((id) => applied.add(id));
     }
-    return applied.size === 5 && applied.has("boot") &&
+    return applied.size === 4 && applied.has("boot") &&
       applied.has("toolbar") && applied.has("telegram") &&
-      applied.has("config") && applied.has("links");
+      applied.has("config");
   });
 
 /*
@@ -296,20 +296,6 @@ await check("every baked page carries the demo's own strip", async () => {
   }
   return true;
 });
-
-/*
- * And the fourth edit where it matters most. A hosted build is the one
- * a stranger clicks around in, so the footer's link out of the product
- * has to open its own tab there too - a frame that navigates itself to
- * a host refusing to be framed leaves a white rectangle and no way back.
- */
-await check("a baked page sends a link out of the product to its own tab",
-  async () => {
-    const html = await read("demo/index.html");
-    const anchors = html.match(/<a [^>]*href="https?:\/\/[^"]*"[^>]*>/g) || [];
-    return anchors.length > 0 &&
-      anchors.every((tag) => tag.includes('target="_blank"'));
-  });
 
 await check("the raw copies are byte-equal to what apps/web ships", async () => {
   for (const name of IMPORT_SCRIPTS) {

@@ -89,8 +89,8 @@
    * development-only global, and this demo adds none: a hook here would
    * be a hook in the published bytes, the stripping notwithstanding.
    * What the demo does instead is serve a MIRROR of the apps/web files,
-   * read off disk on every request, with the three edits below applied
-   * on the way out.
+   * read off disk on every request, with the edits below applied on the
+   * way out.
    *
    * That distinction is the whole design. The prohibition in
    * dev/README.md is on hooks in the shipped bytes; the reason for the
@@ -104,10 +104,12 @@
    * the demo shows changed, with no work here.
    *
    * Every edit is listed here rather than applied inline, because a demo
-   * that quietly differs from the product is worse than no demo. The
-   * console renders this table so the owner can see what is not the real
-   * thing, and dev/demo.test.mjs asserts that a mirrored page differs
-   * from the shipped one in exactly these ways and no others.
+   * that quietly differs from the product is worse than no demo. This
+   * table is the whole record of how a demo page differs from the
+   * product, and dev/demo.test.mjs asserts that a mirrored page differs
+   * from the shipped one in exactly these ways and no others - including
+   * that every entry here really fires on some page, so an edit that has
+   * stopped applying to anything cannot sit here reading as coverage.
    */
   const MIRROR_EDITS = [
     {
@@ -139,18 +141,6 @@
         "reaches the network and then renders nothing. The stand-in " +
         "draws a button and calls the page's own data-onauth, which is " +
         "the one thing the widget contributes.",
-    },
-    {
-      id: "links",
-      what: "Sends a link that leaves the product to its own tab.",
-      why: "Every page ships a footer link to the source on GitHub, " +
-        "with no target - right on the real site, and inside this " +
-        "frame a live escape hatch. Clicking it navigates the FRAME to " +
-        "github.com, which refuses to be framed, so the stage goes " +
-        "white and the only way back is pressing another card. A new " +
-        "tab keeps the link working and keeps the walk in the frame. " +
-        "Links inside the product are deliberately untouched: moving " +
-        "around the site in the frame is half of what there is to see.",
     },
     {
       id: "config",
@@ -200,19 +190,21 @@
   const CONFIG_STANDIN = '<script src="/dev/demo-config.js"></script>';
 
   /*
-   * The link edit, spelled as an exact pair so unmirror can undo it.
+   * THERE IS NO ANCHOR EDIT, AND ADDING ONE BACK WOULD BE A MISTAKE.
    *
-   * Anchored on `<a href="` rather than on any anchor carrying an
-   * absolute href, because the undo has to be exact and a looser match
-   * would have to guess where to put the attributes back. If a page
-   * ever writes its external link with another attribute first, this
-   * stops matching it - and dev/demo.test.mjs asks the emitted bytes
-   * whether EVERY external anchor is contained, so that page fails the
-   * gate instead of quietly shipping an escape hatch.
+   * The mirror used to rewrite every anchor leaving the product to open
+   * its own tab. Both reasons for that are gone. The demo is the site in
+   * the whole window now rather than a page inside a frame, so a link
+   * that leaves is a link that leaves, exactly as it would on the real
+   * site; and apps/web ships no off-site anchor for it to act on, so the
+   * edit matched nothing and declared itself anyway. An edit that
+   * applies to no page is worse than a missing one: it reads on the
+   * table as a difference somebody accounted for.
+   *
+   * dev/demo.test.mjs drives an anchor that leaves the product through
+   * the mirror and asks for it back byte for byte, so re-adding the
+   * rewrite is red rather than quiet.
    */
-  const EXTERNAL_LINK = /<a href="(https?:\/\/)/g;
-  const EXTERNAL_LINK_OPENED =
-    '<a target="_blank" rel="noopener noreferrer" href="';
 
   /*
    * Inserted before the first <script>, which on every page in apps/web
@@ -239,13 +231,6 @@
     }
     TELEGRAM_WIDGET.lastIndex = 0;
 
-    if (EXTERNAL_LINK.test(out)) {
-      EXTERNAL_LINK.lastIndex = 0;
-      out = out.replace(EXTERNAL_LINK, EXTERNAL_LINK_OPENED + "$1");
-      applied.push("links");
-    }
-    EXTERNAL_LINK.lastIndex = 0;
-
     // 404.html loads no config.js, so this edit does not apply to every
     // page and the console's table would be wrong to imply it does.
     if (out.indexOf(CONFIG_TAG) !== -1) {
@@ -266,7 +251,6 @@
     return String(html)
       .replace(BOOT_SCRIPTS + TOOLBAR_SCRIPTS, "")
       .split(CONFIG_STANDIN).join(CONFIG_TAG)
-      .split(EXTERNAL_LINK_OPENED).join('<a href="')
       .split(TELEGRAM_STANDIN).join("https://telegram.org/js/telegram-widget.js?22");
   }
 

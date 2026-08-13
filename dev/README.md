@@ -152,14 +152,16 @@ every rendered date would move with it.
 The pages come from a mirror at `/demo/`, read out of `apps/web` on every
 request — so a page PR 4 or PR 5 changes is a page the demo shows changed,
 with no work here. **`apps/web` still takes no hook, and the mirrored
-pages are the shipped bytes.** The mirror applies five edits on the way
+pages are the shipped bytes.** The mirror applies four edits on the way
 out, every one listed in `demo-stub.js`: the two dev scripts ahead of the
 page's own, the strip's stylesheet and script beside them, the Telegram
-widget pointed at a local stand-in, links out of the product sent to
-their own tab, and `config.js` pointed at a stand-in naming an address
-that cannot resolve. `demo.test.mjs` fails if a mirrored page differs
-from the shipped one in any other way, and pins the table at those five
-by name.
+widget pointed at a local stand-in, and `config.js` pointed at a stand-in
+naming an address that cannot resolve. Anchors are not among them — the
+demo is the whole window rather than a page in a frame, so a link that
+leaves the product is left to leave. `demo.test.mjs` fails if a mirrored
+page differs from the shipped one in any other way, pins the table at
+those four by name, and fails on a declared edit that has stopped
+applying to any page.
 
 Which Worker routes the stub must answer is derived rather than stated —
 read out of `apps/web`, so a route a later slice adds fails the gate

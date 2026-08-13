@@ -76,7 +76,7 @@ const Form = globalThis.BinderForm;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 181);
+const { check, mustReject, report } = suite("demo", 180);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -231,15 +231,15 @@ await check("unmirroring a mirrored page returns the shipped bytes", () =>
 /*
  * Every declared edit is one that really fires somewhere, and the count
  * is spelled out rather than compared to the table: an arm that asked
- * the table about itself would hold just as well for four edits or for
- * six, so an edit added without anybody deciding to add one would pass
+ * the table about itself would hold just as well for three edits or for
+ * five, so an edit added without anybody deciding to add one would pass
  * it. What differs from the product is exactly the thing that cannot be
  * allowed to grow quietly.
  */
-await check("the mirror declares exactly five edits, and they are these five", () => {
+await check("the mirror declares exactly four edits, and they are these four", () => {
   const ids = Demo.MIRROR_EDITS.map((one) => one.id).sort();
-  return ids.length === 5 &&
-    ids.join(",") === "boot,config,links,telegram,toolbar" &&
+  return ids.length === 4 &&
+    ids.join(",") === "boot,config,telegram,toolbar" &&
     Demo.MIRROR_EDITS.every((one) =>
       typeof one.what === "string" && one.what.length > 10 &&
       typeof one.why === "string" && one.why.length > 40);
@@ -264,22 +264,50 @@ await check("a page that loads no config.js gets no config edit", () =>
   PAGES.filter((page) => !shipped[page].includes('<script src="config.js">'))
     .every((page) => !Demo.mirror(shipped[page]).applied.includes("config")));
 
-await check("the mirror sends a link out of the product to its own tab", () => {
-  const html = Demo.mirror(shipped["index.html"]).html;
-  const anchors = html.match(/<a [^>]*href="https?:\/\/[^"]*"[^>]*>/g) || [];
-  return anchors.length > 0 &&
-    anchors.every((tag) => tag.includes('target="_blank"') &&
-      tag.includes('rel="noopener noreferrer"'));
+/*
+ * THE MIRROR TOUCHES NO ANCHOR AT ALL, AND THIS IS WHAT HOLDS THAT.
+ *
+ * It used to rewrite every anchor leaving the product so the link opened
+ * its own tab, which mattered while the demo was a page inside a frame.
+ * There is no frame, and apps/web ships no off-site anchor either, so
+ * the edit declared a difference that applied to nothing.
+ *
+ * Driven against a page written here rather than asked of apps/web,
+ * deliberately: no shipped page carries an anchor that leaves, so an arm
+ * keyed on the shipped bytes would pass by having nothing to look at -
+ * which is the failure this retirement exists to remove, reintroduced
+ * one level up.
+ */
+await check("an anchor that leaves the product comes back exactly as written", () => {
+  const page = '<head><script src="config.js"></script></head>' +
+    '<body><a href="https://example.invalid/source">Read the code</a></body>';
+  const out = Demo.mirror(page);
+  return out.html.includes('<a href="https://example.invalid/source">') &&
+    !/target="_blank"/.test(out.html) &&
+    !/rel="noopener/.test(out.html) &&
+    out.applied.indexOf("links") === -1;
 });
 
-await check("an in-page link is left alone, because moving around is the point", () => {
-  const html = Demo.mirror(shipped["index.html"]).html;
-  return html.includes('<a href="charts.html">');
+/*
+ * And the product's own anchors survive, asked of the shipped bytes.
+ * Moving around the site is half of what there is to see, and the round
+ * trip above this cannot catch a mirror that rewrote an anchor and undid
+ * it again - which is exactly what the retired edit did. The pages are
+ * filtered rather than named, so a page losing its last in-page link is
+ * not a failure, but every page losing them all is: this arm is not
+ * allowed to end up with nothing to check.
+ */
+await check("every in-page link the product writes survives mirroring untouched", () => {
+  const seen = [];
+  const held = PAGES.every((page) => {
+    const anchors =
+      shipped[page].match(/<a [^>]*href="(?!https?:)[^"]*"[^>]*>/g) || [];
+    anchors.forEach((tag) => seen.push(tag));
+    const html = Demo.mirror(shipped[page]).html;
+    return anchors.every((tag) => html.includes(tag));
+  });
+  return seen.length > 0 && held;
 });
-
-await check("every page carries the link edit, so no page is an escape", () =>
-  PAGES.filter((page) => /<a href="https?:\/\//.test(shipped[page]))
-    .every((page) => Demo.mirror(shipped[page]).applied.includes("links")));
 
 /* ------------------------------------------------------------------ */
 /* apps/web has paid nothing for the demo.                             */
@@ -1818,16 +1846,32 @@ await check("a strip that has not been laid out yet writes no height", () => {
 });
 
 /*
- * Above the sign-in page's cover leaf, which is `fixed` at z-index 20
- * and covers the viewport until its animation opens it. A strip a driver
- * cannot see on the page the demo opens on is not always visible. The
- * number is read out of theme.css rather than typed here.
+ * ABOVE EVERYTHING THE PRODUCT STACKS - ASKED OF THE PRODUCT, NOT
+ * PINNED TO ONE ELEMENT.
+ *
+ * This named the sign-in page's cover leaf and compared the strip to its
+ * literal 20. The cover was cut by owner ruling and the arm went red for
+ * a reason that had nothing to do with the strip, which is the tell that
+ * it was keyed to an element rather than to the property. The property
+ * is that a driver can always see the strip: it has to out-stack
+ * whatever the product paints over the page.
+ *
+ * So every z-index apps/web declares is read out and the strip is
+ * required to top all of them. That set is empty today - the product
+ * stacks nothing - and it is READ rather than pinned for exactly that
+ * reason: the day a page element declares one, it is measured against
+ * the strip by this arm rather than by whoever notices the strip has
+ * gone missing. The strip must still declare its own, so the half that
+ * is about the strip cannot pass by absence.
  */
-await check("the strip sits above the cover the sign-in page opens with", () => {
-  const leaf = /\.cover-leaf\s*\{[^}]*z-index:\s*(\d+)/.exec(
-    webSource["theme.css"]);
-  const bar = /\[data-demo-toolbar\]\s*\{[^}]*z-index:\s*(\d+)/.exec(toolbarCss);
-  return leaf !== null && bar !== null && Number(bar[1]) > Number(leaf[1]);
+await check("the strip's stacking tops every z-index the product declares", () => {
+  const bar = /\[data-demo-toolbar\]\s*\{[^}]*z-index:\s*(-?\d+)/.exec(toolbarCss);
+  if (bar === null) return false;
+  const declared = Object.keys(webSource)
+    .filter((name) => /\.(css|html)$/.test(name))
+    .flatMap((name) => webSource[name].match(/z-index:\s*-?\d+/g) || [])
+    .map((one) => Number(/-?\d+/.exec(one)[0]));
+  return declared.every((value) => Number(bar[1]) > value);
 });
 
 /*

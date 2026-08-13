@@ -53,12 +53,13 @@ body {
   position: fixed;
   inset: 0 0 auto 0;
   /*
-   * Above the sign-in page's cover leaf, which is `fixed` at z-index 20
-   * and covers the viewport until its animation opens it. A strip that
-   * a driver cannot see on the page the demo opens on is not always
-   * visible.
+   * Above anything the product stacks over its own page. Raising a
+   * z-index in apps/web past this one hides the strip on the page it is
+   * raised on, so dev/demo.test.mjs reads every z-index apps/web
+   * declares and fails if this number stops topping them - which is the
+   * signal to raise this one, not to lower the page's.
    */
-  z-index: 100;
+  z-index: 10000;
   box-sizing: border-box;
   min-height: var(--hgb-demo-bar);
   display: flex;
