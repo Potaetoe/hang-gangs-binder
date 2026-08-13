@@ -3803,20 +3803,28 @@ if (DatabaseSync) {
    * THE TWO THINGS THE STAGING ASSUMES, ASSERTED BEFORE IT RUNS.
    *
    * That the table came out of the schema at all and carries the
-   * composite key - a table keyed on account_id alone would refuse the
-   * second of two rows the arms below stage, so every one of them would
-   * be answering a question about a table nothing deploys.
+   * composite key. Nothing below would notice it going: the rows these
+   * arms stage carry pairwise distinct account ids, so a table keyed on
+   * account_id alone accepts every one of them and all six stagings
+   * still pass - while the guard's DELETE names a role that such a
+   * table can hold only one of per account, which makes every one of
+   * those arms a question about a table nothing deploys. This conjunct
+   * is the only thing in this file that reds when the key changes.
    *
    * And that the Worker's statement takes exactly the two binds the
-   * staging hands it. Nothing else here says so, and the failure it
-   * catches is otherwise unreadable: node:sqlite throws on a bind count
-   * that does not match, so a third placeholder in the Worker's DELETE
-   * would come out of this file as a raw exception with no label on it.
-   * This arm is that exception's diagnosis, which is why it stands
-   * first. What it deliberately does NOT assert is that the captured
-   * string is the one captured - the line above defines it that way, and
-   * a conjunct restating its own definition reds for no reason that
-   * ships.
+   * staging hands it. Nothing else here says so, and node:sqlite will
+   * not say it either: handed fewer values than the statement has
+   * placeholders, it binds the rest NULL and runs the statement anyway.
+   * A third placeholder in the Worker's DELETE therefore runs down
+   * there as a quietly different statement that the arms below can
+   * still pass, and this arm is the sole detector of it - which is why
+   * it stands first. The throw runs the other way: more values than
+   * placeholders raises "column index out of range", so a placeholder
+   * taken OUT of the DELETE reds this arm by name and then crashes the
+   * staging, and that crash arrives already diagnosed. What this arm
+   * deliberately does NOT assert is that the captured string is the one
+   * captured - the line above defines it that way, and a conjunct
+   * restating its own definition reds for no reason that ships.
    */
   check("the table is the schema's own and the statement takes two binds",
     membershipTable !== null &&
