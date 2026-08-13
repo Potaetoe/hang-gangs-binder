@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 116
+EXPECTED = 123
 
 
 def check(label, condition):
@@ -738,29 +738,55 @@ check("including citations of documents outside the scanned tree",
 # So both directions are asked of the real tree, and the equality is
 # what makes the pin list a statement rather than a place things go to
 # be forgotten.
-BROKEN = {(relpath, path, quote)
-          for relpath, _line, path, quote, _message
-          in check_comments.unresolved_citations()}
+#
+# COUNTS, not membership. These two arms were written over sets of
+# triples and duplicates collapsed into one, so a file citing the same
+# dead section twice satisfied both directions with a single pin - the
+# hole F1 proved by mutation, and the reason the real tree's own two
+# doubled citations went unrecorded. The counted form is one equality
+# and it holds the multiplicity too.
+BROKEN = {}
+for _relpath, _line, _path, _quote, _message in (
+        check_comments.unresolved_citations()):
+    key = (_relpath, _path, _quote)
+    BROKEN[key] = BROKEN.get(key, 0) + 1
 
-check("every pinned citation is one that is really broken now",
-      check_comments.CITATION_PINS <= BROKEN)
+check("every pinned citation is really broken now, as many times as "
+      "the pin says",
+      all(BROKEN.get(key) == count
+          for key, count in check_comments.CITATION_PINS.items()))
 
-check("and nothing is broken that is not pinned",
-      BROKEN <= check_comments.CITATION_PINS)
+check("and nothing is broken that is not pinned, at any multiplicity",
+      all(check_comments.CITATION_PINS.get(key) == count
+          for key, count in BROKEN.items()))
 
-# The half that makes it shrink. A pin dies two ways - the comment gets
-# rewritten by the milestone that reaches its file, or the wording
-# comes back into the document - and neither leaves a trace anywhere
-# else, so the entry has to be what fails.
+check("and the tree really does hold a citation pinned more than once",
+      max(check_comments.CITATION_PINS.values()) > 1)
+
+# The half that makes it shrink. A pin dies three ways - the comment
+# gets rewritten by the milestone that reaches its file, the wording
+# comes back into the document, or one of several comments carrying it
+# is trued and the count is left standing - and none of them leaves a
+# trace anywhere else, so the entry has to be what fails.
 INVENTED = ("tools/check_docs.py", "AGENTS.md", "The review bar")
+OVERCOUNTED = ("apps/web/memberkey.js", "DESIGN.md",
+               "Members hold a key too")
 
 check("a pin whose citation is not broken is reported",
       len(check_comments.citation_pin_problems(
-          pinned=frozenset({INVENTED}))) == 1)
+          pinned={INVENTED: 1})) == 1)
 
 check("and the report says to delete the entry",
       "Delete the entry" in check_comments.citation_pin_problems(
-          pinned=frozenset({INVENTED}))[0])
+          pinned={INVENTED: 1})[0])
+
+check("a pin counting more occurrences than are broken is reported",
+      len(check_comments.citation_pin_problems(
+          pinned={OVERCOUNTED: 2})) == 1)
+
+check("and that report says to lower the count rather than delete it",
+      "Lower the count to 1" in check_comments.citation_pin_problems(
+          pinned={OVERCOUNTED: 2})[0])
 
 check("the pins as they stand raise nothing",
       check_comments.citation_pin_problems() == [])
@@ -771,13 +797,13 @@ check("the pins as they stand raise nothing",
 STALE_PIN = ("dev/suite.test.mjs", "DESIGN.md", "Key custody")
 
 
-def pinning(pins):
-    """citation_problems() over one broken citation, under a pin set."""
+def pinning(pins, comments=1):
+    """citation_problems() over N broken citations, under a pin count."""
     root = tempfile.mkdtemp(prefix="check-comments-pins-")
     os.makedirs(os.path.join(root, "dev"))
     with open(os.path.join(root, "dev", "suite.test.mjs"), "w",
               encoding="utf-8") as handle:
-        handle.write('/* See DESIGN.md, "Key custody". */\n')
+        handle.write('/* See DESIGN.md, "Key custody". */\n' * comments)
     with open(os.path.join(root, "DESIGN.md"), "w",
               encoding="utf-8") as handle:
         handle.write("## Sessions\n")
@@ -786,17 +812,36 @@ def pinning(pins):
 
 
 check("a broken citation nobody pinned is reported",
-      len(pinning(frozenset())) == 1)
+      len(pinning({})) == 1)
 
 check("and the same one pinned is not",
-      pinning(frozenset({STALE_PIN})) == [])
+      pinning({STALE_PIN: 1}) == [])
 
 # Keyed by the quotation, not by the line, so an edit above an entry
 # does not churn the list - and a pin of a DIFFERENT quotation in the
 # same file is not a blanket exemption for that file.
 check("a pin of another quotation in the same file does not cover it",
-      len(pinning(frozenset({
-          ("dev/suite.test.mjs", "DESIGN.md", "Sessions")}))) == 1)
+      len(pinning({("dev/suite.test.mjs", "DESIGN.md", "Sessions"): 1}))
+      == 1)
+
+# MULTIPLICITY, which is the dimension the pin list shipped blind to.
+# The arm above asks it at the file level - a different quotation is
+# not covered - and that is the question the original suite answered.
+# The one it could not was the same quotation twice: a pin recording
+# the comment that was there does not forgive the comment somebody
+# writes tomorrow, and while both sides were sets it did.
+check("a second comment repeating a pinned citation is reported",
+      len(pinning({STALE_PIN: 1}, comments=2)) == 1)
+
+check("and the report names both lines and says one is new",
+      all(part in pinning({STALE_PIN: 1}, comments=2)[0]
+          for part in ("2 comments cite", "lines 1, 2", "One is new")))
+
+check("raising the count to two is what covers both",
+      pinning({STALE_PIN: 2}, comments=2) == [])
+
+check("and a third under that count is reported again",
+      len(pinning({STALE_PIN: 2}, comments=3)) == 1)
 
 # The exemption carries here, and unlike the byte rule it carries for
 # the reason it was written: a file explaining what an unresolvable
