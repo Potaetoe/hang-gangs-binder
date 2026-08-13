@@ -1179,19 +1179,35 @@
           /*
            * THE PICTURE IS BELOW THE PAGE'S OWN CONTROLS, so the stop
            * moves to the container it is drawn into: charts.html opens
-           * on Count and Units, and the combined weight is about 574 px
-           * down a frame that is 544 px tall at a 1280x800 window.
-           * Landing on the container puts the hero - the weight, and
-           * the change since last time under it - at the top of it.
+           * on Count and Units, and the combined weight is drawn under
+           * them - far enough down that landing on the page itself
+           * would open the frame on the controls rather than on the
+           * picture this sentence is about. Landing on the container
+           * puts the hero - the weight, and the change since last time
+           * under it - at the top of it.
            *
            * AND THE SENTENCE STOPS AT THE HERO, because the hero is
-           * what lands with it. The weight-over-time chart is another
-           * four hundred pixels below that line at every size, and this
-           * stop is behind glass like the membership one - naming the
-           * lines running through it would name something the viewer
-           * cannot reach. The free stop at the end of this walk hands
-           * the page over, and the site's own navigation reaches the
-           * rest of it.
+           * what lands with it. The weight-over-time chart is well
+           * below that line at every size, and this stop is behind
+           * glass like the membership one - naming the lines running
+           * through it would name something the viewer cannot reach.
+           * The free stop at the end of this walk hands the page over,
+           * and the site's own navigation reaches the rest of it.
+           *
+           * WHY NONE OF THAT IS IN PIXELS: the membership stop's
+           * comment below carries the argument in full. A rendered
+           * height written into prose here has no home in the source
+           * and nothing in the gate renders this page, so nothing can
+           * ever falsify it.
+           *
+           * What that argument cannot carry for this stop is the
+           * procedure, because it names the membership blocks. Here it
+           * is: bake this commit, walk to this stop at 1280x800 with
+           * the document's fonts reporting loaded, and read the
+           * rectangles off the hero at the top of the charts container
+           * and the Weight over time figure drawn under it. Those two
+           * rectangles against the frame's own height are what the
+           * paragraphs above mean by far enough down and well below.
            */
           narration: "Everybody's numbers drawn as one picture - the " +
             "combined weight, and under it the change since last " +
@@ -1269,11 +1285,10 @@
            * THE ANCHOR IS THE LIST, NOT THE CARD AROUND IT. `scroll`
            * aligns the TOP of what it names, and this card carries an
            * add-a-member form - two fields, a pair of radios and a
-           * button - before the list starts 568 px down it. Naming the
-           * card therefore fills the frame with an empty form and puts
-           * every element this sentence points at below the fold; the
-           * demo frame is 544 px tall at a 1280x800 window, and the
-           * stop is behind glass, so a viewer cannot go and look.
+           * button - ahead of the list. Naming the card therefore
+           * opens the frame on that empty form rather than on the
+           * rows this sentence is about, and the stop is behind glass,
+           * so a viewer cannot scroll down to them.
            *
            * The rows that grant nothing are just past the fold rather
            * than a screen beyond it, so the sentence states the
@@ -1283,24 +1298,38 @@
            *
            * THE PROPERTY, AND NOT A PIXEL COUNT. What "just past"
            * means, in the only form worth trusting: the always-allow
-           * list ends inside the frame, the heading over the rows that
-           * grant nothing is cut by the fold, and no row beneath that
-           * heading is on screen at all. The last part is the
-           * load-bearing one - the sentence may not point at a row a
-           * viewer cannot see. Re-establish it the way it is found:
-           * bake this commit, walk to this stop at 1280x800 with the
-           * document's fonts reporting loaded, and read the rectangles
-           * off the membership-always_allow and membership-malformed
-           * blocks.
+           * list ends inside the frame, and no row that grants nothing
+           * is on screen at all. That second half is the load-bearing
+           * one - the sentence may not point at a row a viewer cannot
+           * see - and it holds with room to spare under every
+           * measurement this stop has been given.
+           *
+           * WHERE THE HEADING OVER THOSE ROWS FALLS IS NOT PART OF THE
+           * CLAIM, and deliberately so: two careful sessions measuring
+           * this one stop, on one commit at one frame size, disagree
+           * about whether the fold cuts that heading or leaves it
+           * whole. This comment asserts neither answer, because the
+           * narration does not depend on one - and a reader who
+           * measures a third time and gets a third answer has found
+           * nothing that contradicts anything written here.
+           *
+           * Re-establish the two claims that ARE made the way they are
+           * found: bake this commit, walk to this stop at 1280x800
+           * with the document's fonts reporting loaded, and read the
+           * rectangles off the membership-always_allow and
+           * membership-malformed blocks. That is the same procedure
+           * the two sessions ran, which is exactly why the heading is
+           * left out of the claim and the two wide-margin facts are
+           * not.
            *
            * A figure written here instead would be a number nothing
            * can falsify - the geometry arm in dev/demo.test.mjs reads
            * markup rather than rendered height, and nothing else in
-           * the gate renders this page at all - and it is not even
-           * stable across the sessions that measure it: two of them
-           * have come back 81 px apart on one commit at one frame
-           * size. That is the trap, and it is why this paragraph
-           * carries no figure of its own.
+           * the gate renders this page at all - and it would not even
+           * be stable: the two sessions above disagree, so a figure
+           * here would have to pick one of them and call it settled.
+           * That is the trap, and it is why this paragraph carries no
+           * figure of its own.
            *
            * The free stop at the end of this walk is where the rows
            * that grant nothing can be pressed.

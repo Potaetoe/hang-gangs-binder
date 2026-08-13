@@ -60,22 +60,32 @@ const SUPERSEDES_IS_UNIQUE =
  * of checks to expect and that number is not the same on a runtime
  * without this module.
  *
- * `node:sqlite` arrived after Node 20 and the gate's runner is pinned
- * there, so this import fails on CI and succeeds on the machine this
- * repository is developed on. Neither outcome may be quiet. When it is
- * missing the arms that execute the guard do not run, the expected
- * count drops by exactly their number, and the run says so on stdout -
- * a check that reported `pass` because it could not reach its subject
- * is the armed-looking failure this repository holds to be worse than
- * having no check, and a check that announces it did not run is the
- * live ledger's `never` row wearing a suite's clothes. Moving the
- * runner's Node forward is what makes these run everywhere; nothing
- * here shims around the absence.
+ * `node:sqlite` arrived after Node 20, so this import fails on any
+ * runner still pinned there and succeeds on the machine this repository
+ * is developed on. Neither outcome may be quiet. When it is missing the
+ * arms that execute the guard do not run, the expected count drops by
+ * exactly their number, and the run says so on stdout - a check that
+ * reported `pass` because it could not reach its subject is the
+ * armed-looking failure this repository holds to be worse than having
+ * no check, and a check that announces it did not run is the live
+ * ledger's `never` row wearing a suite's clothes. Nothing here shims
+ * around the absence.
+ *
+ * THE NOTE IS GATED ON THE VALUE, NOT ON THE THROW, because the arms
+ * below are: `EXECUTED_GUARD_ARMS` reads `DatabaseSync`, so any absence
+ * that leaves it unset skips six arms, and an absence that does not
+ * throw would skip them without a word. Importing a module that loads
+ * fine and does not export this name is exactly that third outcome, and
+ * "neither outcome may be quiet" is an absolute the catch alone cannot
+ * keep.
  */
 let DatabaseSync = null;
 try {
   ({ DatabaseSync } = await import("node:sqlite"));
 } catch {
+  /* The note below covers this absence and every quieter one. */
+}
+if (!DatabaseSync) {
   console.log("note  node:sqlite is absent on " + process.version +
     " - the guard's SQL is pinned as text below and NOT executed here. " +
     "Its execution arms did not run and are not counted.");
@@ -3758,6 +3768,7 @@ if (DatabaseSync) {
    * below binds exactly those two and nothing else.
    */
   const guardStatement = together.length === 2 ? together[0].sql : "";
+  const binds = (guardStatement.match(/\?/g) || []).length;
 
   const GRANTS_ONE = "a".repeat(64);
   const GRANTS_TWO = "b".repeat(64);
@@ -3788,11 +3799,38 @@ if (DatabaseSync) {
 
   const held = (rows, remove) => JSON.stringify(staging(rows, remove));
 
-  check("the table is the schema's own and the statement the Worker's own",
+  /*
+   * THE TWO THINGS THE STAGING ASSUMES, ASSERTED BEFORE IT RUNS.
+   *
+   * That the table came out of the schema at all and carries the
+   * composite key. Nothing below would notice it going: the rows these
+   * arms stage carry pairwise distinct account ids, so a table keyed on
+   * account_id alone accepts every one of them and all six stagings
+   * still pass - while the guard's DELETE names a role that such a
+   * table can hold only one of per account, which makes every one of
+   * those arms a question about a table nothing deploys. This conjunct
+   * is the only thing in this file that reds when the key changes.
+   *
+   * And that the Worker's statement takes exactly the two binds the
+   * staging hands it. Nothing else here says so, and node:sqlite will
+   * not say it either: handed fewer values than the statement has
+   * placeholders, it binds the rest NULL and runs the statement anyway.
+   * A third placeholder in the Worker's DELETE therefore runs down
+   * there as a quietly different statement that the arms below can
+   * still pass, and this arm is the sole detector of it - which is why
+   * it stands first. The throw runs the other way: more values than
+   * placeholders raises "column index out of range", so a placeholder
+   * taken OUT of the DELETE reds this arm by name and then crashes the
+   * staging, and that crash arrives already diagnosed. What this arm
+   * deliberately does NOT assert is that the captured string is the one
+   * captured - the line above defines it that way, and a conjunct
+   * restating its own definition reds for no reason that ships.
+   */
+  check("the table is the schema's own and the statement takes two binds",
     membershipTable !== null &&
     /PRIMARY KEY\s*\(\s*account_id\s*,\s*role\s*\)/i.test(membershipTable[0]) &&
-    together.length === 2 && guardStatement === together[0].sql,
-    guardStatement.slice(0, 60));
+    binds === 2,
+    `${binds} bind(s): ` + guardStatement.slice(0, 60));
 
   check("SQLite really deletes: of two rows that grant, the first comes off",
     held([GRANTS_ONE, GRANTS_TWO], GRANTS_ONE) ===

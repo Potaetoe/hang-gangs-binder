@@ -317,27 +317,29 @@ PHRASES = [
 # used to encrypt the payload" has a subject and would be reported.
 # That failure is loud and rephrases to "the key that encrypts the
 # payload"; the opposite failure is silent.
+#
+# The exemption stays this narrow on purpose. Widening it to spare a
+# form of "be" in front of the phrase would clear the passive reading
+# without any argument about subjects - "has been used to rehearse the
+# migration" - but it clears "the flag was used to gate the beta" with
+# it, and that one narrates. Reporting the passive reading and
+# rephrasing it in a line is the trade this makes, in that direction,
+# every time.
 NEEDS_SUBJECT = frozenset({"used to"})
 
 # What the scan set holds, pinned so the ratchet starts closed against
 # each file on the day that file enters it. {(file, phrase): count}. An
 # entry comes OFF this list in the pull request that next touches its
-# file - never by raising a count.
-#
-# server/schema.sql's entry is the passive reading NEEDS_SUBJECT cannot
-# separate: "after the dev database has been used to rehearse it" is
-# "employed to", present tense and correct. It is pinned rather than
-# rewritten because the exemption that would clear it - a form of "be"
-# in front of the phrase - also clears "the flag was used to gate the
-# beta", and that one narrates. A false report is loud and rephrases in
-# a line; the silence is what nothing recovers from. The honest cleanup
-# is that rephrase, in the change that next edits the schema.
+# file - never by raising a count. That sentence is the half of the
+# ratchet nothing here enforces: a count that does not rise satisfies
+# the check, so a change can edit a pinned file, walk past its entry,
+# and pass. Whoever edits a file named below reads its entry first and
+# either clears it or says in the commit why it survived the visit.
 ALLOWLIST = {
     ("apps/web/dashboard.js", "originally"): 1,
     ("apps/web/dashboard.js", "used to"): 1,
     ("dev/dashboard.test.mjs", "used to"): 2,
     ("dev/ui.test.mjs", "used to"): 1,
-    ("server/schema.sql", "used to"): 1,
 }
 
 
