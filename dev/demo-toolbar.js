@@ -33,14 +33,14 @@
   const [WHO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
 
   /*
-   * The product's own two keys, written out here because they are the
-   * PRODUCT'S: apps/web names them because they are its own, and
+   * The product's own session key, written out here because it is the
+   * PRODUCT'S: apps/web names it because it is its own, and
    * demo-stub.js's list is deliberately the demo's names only, so that
    * the scan for demo hooks in shipped bytes does not fail on the
    * shipped code doing its job.
    *
-   * Reset does not read this pair - it empties both stores whole - and
-   * that is the point of naming them nowhere else: a reset built from a
+   * Reset does not read this key - it empties both stores whole - and
+   * that is the point of naming it nowhere else: a reset built from a
    * list is a reset that misses whatever the next slice stores.
    */
   const SESSION_KEY = "hgb-session";
@@ -484,9 +484,20 @@
    * the custom property both rules already use, so the body's padding
    * and the rail's sticky offset move together.
    *
-   * Re-measured on resize because the wrap point is a width, and the
-   * whole design of this demo is that a driver resizes the browser like
-   * a real user.
+   * THE STRIP IS WHAT IS WATCHED, NOT THE WINDOW, and the difference is
+   * a defect somebody drove rather than a preference. The status line
+   * below lives INSIDE the strip, so one sentence about what a press did
+   * wraps it onto another row at a window nobody touched: the first
+   * press of an enabler took the strip from 60px to 104px while this
+   * property stayed at 60, and the page's own heading went behind it.
+   * A `resize` listener cannot see that; the element can, and observing
+   * the element also covers the width, a font arriving late, and
+   * whatever the next slice puts on the strip.
+   *
+   * The window listener is kept for a browser with no observer, where
+   * the width is the one cause still visible - the alternative there is
+   * a strip that silently stops measuring at all, with the offset frozen
+   * at the stylesheet's floor and nothing on screen saying so.
    */
   function measure(bar) {
     const apply = function () {
@@ -497,7 +508,11 @@
       }
     };
     apply();
-    root.addEventListener("resize", apply);
+    if (typeof root.ResizeObserver === "function") {
+      new root.ResizeObserver(apply).observe(bar);
+    } else {
+      root.addEventListener("resize", apply);
+    }
   }
 
   if (document.readyState === "loading") {

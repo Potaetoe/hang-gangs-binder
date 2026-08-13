@@ -16,18 +16,25 @@
 
 :root {
   /*
-   * The strip's height, in one place, because two things subtract it:
-   * the body's own top padding and the rail's sticky offset.
+   * TWO TOKENS, AND THEY ARE NOT INTERCHANGEABLE.
    *
-   * A FLOOR, NOT THE ANSWER. The strip wraps onto two, three or four
-   * rows depending on the window's width, so the height a stylesheet
-   * can state is only the one-row case; dev/demo-toolbar.js measures
-   * the element and writes the real value over this one, on paint and
-   * on every resize. Left at a fixed 2.5rem, a wrapped strip sits over
-   * the page's own heading - hiding the product exactly where the owner
-   * is looking at it.
+   * The floor is what a stylesheet can honestly state: the one-row
+   * case. The strip wraps onto two, three or four rows depending on the
+   * window's width and on what its own status line says, so
+   * dev/demo-toolbar.js measures the element and writes the real height
+   * over `--hgb-demo-bar` - which is what the body's top padding and
+   * the rail's sticky offset both subtract. Left at a fixed 2.5rem, a
+   * wrapped strip sits over the page's own heading, hiding the product
+   * exactly where the owner is looking at it.
+   *
+   * THE STRIP'S OWN `min-height` READS THE FLOOR, NEVER THE MEASURED
+   * ONE. One token doing both jobs makes the measurement a ratchet: the
+   * script writes 104px, the strip's minimum becomes 104px, and a strip
+   * pushed to three rows by one status line can never come back down.
+   * dev/demo.test.mjs holds the two apart.
    */
-  --hgb-demo-bar: 2.5rem;
+  --hgb-demo-bar-floor: 2.5rem;
+  --hgb-demo-bar: var(--hgb-demo-bar-floor);
 }
 
 /*
@@ -61,7 +68,7 @@ body {
    */
   z-index: 10000;
   box-sizing: border-box;
-  min-height: var(--hgb-demo-bar);
+  min-height: var(--hgb-demo-bar-floor);
   display: flex;
   flex-wrap: wrap;
   align-items: center;

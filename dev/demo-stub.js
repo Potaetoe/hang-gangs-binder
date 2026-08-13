@@ -207,17 +207,50 @@
    */
 
   /*
-   * Inserted before the first <script>, which on every page in apps/web
-   * puts it after the Content-Security-Policy meta tag. Deliberately
-   * after: a script inserted above the policy would not be governed by
-   * it, and the demo would stop being evidence that the shipped policy
-   * permits what the pages do.
+   * WHERE THE FIRST <script> REALLY IS, WHICH IS NOT WHERE THE FIRST
+   * "<script" IS.
+   *
+   * A script commented out ahead of the page's own - parked work, an
+   * ordinary thing to find in a head - swallows an insertion made at the
+   * first textual match: the boot pair and the strip land inside the
+   * comment, so the demo serves a product page with fetch untouched and
+   * no controls on it. Nothing else notices. The policy still precedes
+   * the insertion, so the CSP arm holds; unmirror() removes the literal
+   * wherever it sits, so the round trip holds; and both suites stay
+   * green over a demo that has silently stopped being one.
+   *
+   * The rule is textual and says so: a "<script" whose nearest preceding
+   * "<!--" has no "-->" between them is inside a comment. It does not
+   * parse HTML and does not need to - the only way it can be wrong is by
+   * skipping a tag it should have taken, and a page where it skips every
+   * one gets no insertion at all, which dev/demo.test.mjs reds on by
+   * asking every page for the emitted paths.
+   */
+  function firstRealScriptIn(html) {
+    let from = 0;
+    for (;;) {
+      const at = html.indexOf("<script", from);
+      if (at === -1) return -1;
+      const opened = html.lastIndexOf("<!--", at);
+      if (opened === -1) return at;
+      const closed = html.indexOf("-->", opened);
+      if (closed !== -1 && closed < at) return at;
+      from = at + "<script".length;
+    }
+  }
+
+  /*
+   * Inserted before that script, which on every page in apps/web puts it
+   * after the Content-Security-Policy meta tag. Deliberately after: a
+   * script inserted above the policy would not be governed by it, and
+   * the demo would stop being evidence that the shipped policy permits
+   * what the pages do.
    */
   function mirror(html) {
     const applied = [];
     let out = String(html);
 
-    const at = out.indexOf("<script");
+    const at = firstRealScriptIn(out);
     if (at !== -1) {
       out = out.slice(0, at) + BOOT_SCRIPTS + TOOLBAR_SCRIPTS + out.slice(at);
       applied.push("boot");
@@ -246,6 +279,15 @@
    * a mirrored page and asserts the result is the shipped file byte for
    * byte. A check that only looked for the inserted script would pass on
    * a mirror that had also quietly changed a heading.
+   *
+   * IT IS NOT THE ONLY CHECK ON THAT, AND IT CANNOT BE. The round trip
+   * is computed from this pair, so an edit applied here and undone here
+   * passes it however undeclared it is - a <title> rewritten on the way
+   * out survived every mirror arm in both suites. dev/demo.test.mjs
+   * therefore also rebuilds the mirrored page from the shipped bytes
+   * with the declared edits written out in the suite itself, calling
+   * neither of these functions. Do not delete that arm as a duplicate of
+   * this one: it is the only one outside this file.
    */
   function unmirror(html) {
     return String(html)

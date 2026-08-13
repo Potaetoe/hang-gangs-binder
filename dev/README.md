@@ -161,7 +161,11 @@ demo is the whole window rather than a page in a frame, so a link that
 leaves the product is left to leave. `demo.test.mjs` fails if a mirrored
 page differs from the shipped one in any other way, pins the table at
 those four by name, and fails on a declared edit that has stopped
-applying to any page.
+applying to any page. That first arm rebuilds the mirrored page from the
+shipped bytes with the four edits written out in the suite, rather than
+undoing the mirror and comparing — undoing it is computed from the same
+file, so an edit applied and unapplied by the same pair passes it while
+never appearing on the table.
 
 Which Worker routes the stub must answer is derived rather than stated —
 read out of `apps/web`, so a route a later slice adds fails the gate
