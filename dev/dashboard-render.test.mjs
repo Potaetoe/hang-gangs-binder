@@ -585,8 +585,8 @@ await check("a histogram's band is named in the caption's hint", () =>
 
 await check("the BMI panel refuses to label the number it draws", () =>
   hintOf(figureNamed(KEY_PEOPLE, "BMI")) ===
-  "Weight over height squared, and nothing more — the clinical " +
-  "category labels are deliberately not shown.");
+  "Weight over height squared — the clinical category labels are not "
+  + "shown.");
 
 /*
  * Ten people spread over 200 lb with a gap in the middle: eleven bins,

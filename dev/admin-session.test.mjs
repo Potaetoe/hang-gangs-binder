@@ -474,6 +474,24 @@ const storedRecord = (over) => Object.assign({
 const START = Date.parse("2026-08-09T12:00:00.000Z");
 
 let scenario = 0;
+/*
+ * The console, captured - the other half of the register bar's rule 5
+ * (#275). The rule is that ONE short member sentence renders and the
+ * engine's precise text survives in code, tests and the console; a suite
+ * asserting only the first half passes just as well over a page that
+ * DELETED the technical wording, and losing it leaves whoever is
+ * debugging with nothing at all.
+ *
+ * Swapped once for the whole file rather than around each load, and
+ * emptied per scenario. Every scenario here presses its controls AFTER
+ * loadAdmin returns - `run`, `unpublish`, `publish` - so a capture that
+ * ended with the import would be listening during the one stretch when
+ * the page has not been touched yet.
+ */
+const logged = [];
+console.warn = (...parts) => { logged.push(parts.join(" ")); };
+
+
 async function loadAdmin(session, options = {}) {
   const page = makePage();
   const requests = [];
@@ -685,23 +703,11 @@ async function loadAdmin(session, options = {}) {
   URL.createObjectURL = () => "blob:admin-session-test";
   URL.revokeObjectURL = () => {};
 
-  /*
-   * The console, captured - the other half of the register bar's rule 5
-   * (#275). The rule is that ONE short member sentence renders and the
-   * engine's precise text survives in code, tests and the console; a
-   * suite that asserted only the first half would pass just as well over
-   * a page that had DELETED the technical wording, and losing it is the
-   * failure that leaves whoever is debugging with nothing at all.
-   */
-  const logged = [];
-  const warn = console.warn;
-  console.warn = (...parts) => { logged.push(parts.join(" ")); };
-
+  logged.length = 0;
   scenario++;
   await import("data:text/javascript," + encodeURIComponent(adminSource) +
     "#admin-session-" + scenario);
   await settle();
-  console.warn = warn;
   URL.createObjectURL = createObjectURL;
   URL.revokeObjectURL = revokeObjectURL;
   return {
@@ -817,9 +823,11 @@ const firstEverAnchor = admin.snapshots.at(-1).options.previous;
  * THE ROW IS NAMED; THE ENGINE'S REASON IS NOT ON SCREEN - #275's rule 5
  * and rule 1 read together.
  *
- * "row 73: none of this row's recipient blocks opened with this key" put
- * crypto.js's own vocabulary in front of a keyholder, in the middle of a
- * list. The id is the half they can act on - it is what they look up,
+ * "row 73: could not be opened with this key" put crypto.js's own
+ * vocabulary in front of a keyholder, in the middle of a list - and the
+ * shipped module's real wording is longer than this stub's ("none of
+ * this row's recipient blocks opened with this key"). The id is the
+ * half a keyholder acts on - it is what they look up,
  * what they quote to whoever holds the other key - and the card around
  * this list already explains the mechanism behind its More. The reason
  * goes where a developer looks, and is asserted there rather than
@@ -830,9 +838,10 @@ check("an undecryptable submission is listed by id without shifting rows",
   admin.elements["failure-list"].textContent.trim() === "row 73" &&
   JSON.stringify(rowIds(admin)) === JSON.stringify([41, 99]));
 check("and the reason it would not open reaches the console, not the list",
-  !/recipient blocks/.test(admin.elements["failure-list"].textContent) &&
+  !/opened with this key/.test(
+    admin.elements["failure-list"].textContent) &&
   admin.logged.some((line) => /row 73/.test(line) &&
-    /recipient blocks/.test(line)));
+    /could not be opened with this key/.test(line)));
 
 /*
  * The identity has to make the whole journey - fetched as a column,

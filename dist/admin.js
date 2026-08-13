@@ -431,6 +431,21 @@
 
   
 
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  
+
+  function why(error) {
+    return error && error.message ? error.message : "failed with no message";
+  }
+
+  
+
   
 
   const DOWNLOAD_IDS = Object.freeze(
@@ -506,12 +521,12 @@
 
   UI.boot(setUp, function (error) {
     showInstrument(false);
+    detail(why(error));
     const closed = $("closed");
     show(closed, true);
     if (closed) {
       closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so it is not safe to use. " +
-        (error && error.message ? "(" + error.message + ")" : "");
+        "This page did not start up correctly, so it is not safe to use.";
     }
   });
 
@@ -901,8 +916,8 @@
           say("Reading the key…", null);
           key = await root.BinderCrypto.importPrivateKey(keyText);
         } catch (error) {
-          say("That key was not usable. " +
-            (error && error.message ? error.message : ""), "bad");
+          detail(why(error));
+          say("That key was not usable.", "bad");
           return;
         }
         storedKey = key;
@@ -931,9 +946,8 @@
         payload = await response.json();
       } catch (error) {
         $("run").disabled = false;
-        finish("The rows could not be fetched. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        finish("The rows could not be fetched.", "bad");
         return;
       }
 
@@ -955,10 +969,14 @@
             submission.ciphertext, key);
           entries.push(entryFor(submission, record));
         } catch (error) {
-          failures.push({
-            id: submission.id,
-            why: error && error.message ? error.message : "unknown error",
-          });
+           
+           
+           
+           
+           
+           
+          detail("row " + submission.id + ": " + why(error));
+          failures.push({ id: submission.id });
         }
       }
 
@@ -1047,8 +1065,8 @@
         show($("unpublish"), true);
       } catch (error) {
         publishedNow = null;
-        state.textContent = "Could not check what is published. " +
-          (error && error.message ? error.message : "The connection failed.");
+        detail(why(error));
+        state.textContent = "Could not check what is published.";
          
          
          
@@ -1077,11 +1095,18 @@
          
          
          
-        sayUnpublish("It could not be taken down. " +
-          (error && error.message ? error.message : "The connection failed.") +
-          " If this persists, an admin can clear it by hand — the steps " +
-          "are in OPERATIONS.md, under Publishing and retracting the " +
-          "snapshot.", "bad");
+         
+         
+         
+         
+         
+         
+         
+         
+        detail(why(error));
+        sayUnpublish("It could not be taken down — an admin can clear it "
+          + "by hand, under Publishing and retracting the snapshot in "
+          + "OPERATIONS.md.", "bad");
         return;
       }
 
@@ -1257,9 +1282,8 @@
         }
         payload = await response.json();
       } catch (error) {
-        sayMembership("The membership lists could not be read. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("The membership lists could not be read.", "bad");
         return;
       }
       drawMembership(membershipView(payload));
@@ -1299,9 +1323,8 @@
         }
       } catch (error) {
         $("member-add").disabled = false;
-        sayMembership("That could not be sent. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be sent.", "bad");
         return;
       }
 
@@ -1342,9 +1365,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        sayMembership("That could not be removed. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be removed.", "bad");
         return;
       }
 
@@ -1430,9 +1452,8 @@
         }
       } catch (error) {
         $("publish").disabled = false;
-        sayPublish("It could not be published. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayPublish("It could not be published.", "bad");
         return;
       }
 
@@ -1459,9 +1480,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        say("Row " + entry.id + " could not be deleted. " +
-          (error && error.message ? error.message : "The connection failed."),
-        "bad");
+        detail(why(error));
+        say("Row " + entry.id + " could not be deleted.", "bad");
         return;
       }
 
@@ -1525,7 +1545,7 @@
       if (failures.length) {
         show($("failures"), true);
         $("failure-list").textContent = failures.map(function (f) {
-          return "row " + f.id + ": " + f.why;
+          return "row " + f.id;
         }).join("\n");
       }
 

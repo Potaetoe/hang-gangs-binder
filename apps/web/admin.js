@@ -726,6 +726,38 @@
   const show = UI.show;
 
   /*
+   * The technical half of a failure, written where a developer looks -
+   * the register bar's rules 1 and 5 (#275), the arrangement submit.js
+   * and public.js already use.
+   *
+   * A thrown Error's message is written for somebody who is not on this
+   * page: "Failed to fetch" is the browser's own wording for a network
+   * that did not answer, "The server answered 502." is a status code,
+   * crypto.js says "none of this row's recipient blocks opened with
+   * this key". Pasted into the middle of a keyholder's sentence, each
+   * one is a clause between two that they can act on - and rule 3 says
+   * an operator warning meets the same bar as anything else, so the
+   * instrument gets no exemption from this.
+   *
+   * None of it is discarded. A page that fails and says nothing about
+   * why is worse for everybody; it is addressed to the reader who can
+   * use it, and dev/admin-session.test.mjs asserts it arrives here
+   * rather than only that it left the screen.
+   */
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  /* An Error's own words, for the console, with a fallback for a throw
+   * that carries none - a bare `throw` still has to leave a trace. */
+  function why(error) {
+    return error && error.message ? error.message : "failed with no message";
+  }
+
+  /*
    * Where the keyholder's key lives between visits.
    *
    * The stored value is the `CryptoKey` object itself, structure-cloned
@@ -867,12 +899,12 @@
    * looks fine and a button that does nothing. */
   UI.boot(setUp, function (error) {
     showInstrument(false);
+    detail(why(error));
     const closed = $("closed");
     show(closed, true);
     if (closed) {
       closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so it is not safe to use. " +
-        (error && error.message ? "(" + error.message + ")" : "");
+        "This page did not start up correctly, so it is not safe to use.";
     }
   });
 
@@ -1412,8 +1444,8 @@
           say("Reading the key…", null);
           key = await root.BinderCrypto.importPrivateKey(keyText);
         } catch (error) {
-          say("That key was not usable. " +
-            (error && error.message ? error.message : ""), "bad");
+          detail(why(error));
+          say("That key was not usable.", "bad");
           return;
         }
         storedKey = key;
@@ -1442,9 +1474,8 @@
         payload = await response.json();
       } catch (error) {
         $("run").disabled = false;
-        finish("The rows could not be fetched. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        finish("The rows could not be fetched.", "bad");
         return;
       }
 
@@ -1472,10 +1503,14 @@
             submission.ciphertext, key);
           entries.push(entryFor(submission, record));
         } catch (error) {
-          failures.push({
-            id: submission.id,
-            why: error && error.message ? error.message : "unknown error",
-          });
+          // The id is the half a keyholder acts on - it is what they
+          // look up and what they quote to whoever holds the other key.
+          // crypto.js's own reason for refusing goes to the console:
+          // "none of this row's recipient blocks opened with this key"
+          // is the engine's vocabulary, and the card around this list
+          // already explains the mechanism behind its More (#275).
+          detail("row " + submission.id + ": " + why(error));
+          failures.push({ id: submission.id });
         }
       }
 
@@ -1614,8 +1649,8 @@
         show($("unpublish"), true);
       } catch (error) {
         publishedNow = null;
-        state.textContent = "Could not check what is published. " +
-          (error && error.message ? error.message : "The connection failed.");
+        detail(why(error));
+        state.textContent = "Could not check what is published.";
         // Offered anyway. If the check failed because the network is
         // unreliable rather than because nothing is published, hiding
         // the button would remove the way out at the worst moment.
@@ -1644,11 +1679,18 @@
         // the database name, the environment flag and the reason the
         // unqualified DELETE is safe - none of which fit in a status
         // line, and all of which somebody typing it needs.
-        sayUnpublish("It could not be taken down. " +
-          (error && error.message ? error.message : "The connection failed.") +
-          " If this persists, an admin can clear it by hand — the steps " +
-          "are in OPERATIONS.md, under Publishing and retracting the " +
-          "snapshot.", "bad");
+        //
+        // ONE CLAUSE AND A POINTER AFTER THE DASH - the register bar's
+        // rule 1 (#275). This is the shape that rule describes, and the
+        // pointer is the fact rule 7's allowance is for: a keyholder
+        // who cannot retract a published document needs to know the
+        // retraction is still reachable, or they act as though it is
+        // not. The engine's own wording sat between the two halves and
+        // is in the console.
+        detail(why(error));
+        sayUnpublish("It could not be taken down — an admin can clear it "
+          + "by hand, under Publishing and retracting the snapshot in "
+          + "OPERATIONS.md.", "bad");
         return;
       }
 
@@ -1867,9 +1909,8 @@
         }
         payload = await response.json();
       } catch (error) {
-        sayMembership("The membership lists could not be read. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("The membership lists could not be read.", "bad");
         return;
       }
       drawMembership(membershipView(payload));
@@ -1916,9 +1957,8 @@
         }
       } catch (error) {
         $("member-add").disabled = false;
-        sayMembership("That could not be sent. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be sent.", "bad");
         return;
       }
 
@@ -1959,9 +1999,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        sayMembership("That could not be removed. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be removed.", "bad");
         return;
       }
 
@@ -2069,9 +2108,8 @@
         }
       } catch (error) {
         $("publish").disabled = false;
-        sayPublish("It could not be published. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayPublish("It could not be published.", "bad");
         return;
       }
 
@@ -2098,9 +2136,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        say("Row " + entry.id + " could not be deleted. " +
-          (error && error.message ? error.message : "The connection failed."),
-        "bad");
+        detail(why(error));
+        say("Row " + entry.id + " could not be deleted.", "bad");
         return;
       }
 
@@ -2164,7 +2201,7 @@
       if (failures.length) {
         show($("failures"), true);
         $("failure-list").textContent = failures.map(function (f) {
-          return "row " + f.id + ": " + f.why;
+          return "row " + f.id;
         }).join("\n");
       }
 
