@@ -76,7 +76,7 @@ const Form = globalThis.BinderForm;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 180);
+const { check, mustReject, report } = suite("demo", 185);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -227,6 +227,104 @@ await check("the mirrored sign-in page loads no third-party script", () => {
 await check("unmirroring a mirrored page returns the shipped bytes", () =>
   PAGES.every((page) =>
     Demo.unmirror(Demo.mirror(shipped[page]).html) === shipped[page]));
+
+/*
+ * THE SAME QUESTION ASKED FROM OUTSIDE demo-stub.js, BECAUSE THE ROUND
+ * TRIP ABOVE CANNOT ANSWER IT.
+ *
+ * `unmirror(mirror(x)) === x` is computed entirely from the pair it
+ * guards, so an edit that mirror() applies and unmirror() undoes passes
+ * it however undeclared it is - and so do the count pin and the
+ * every-declared-edit-fires arm, which read the same table and the same
+ * `applied` list. AGENTS.md's own corollary: a check computed entirely
+ * from the file it guards cannot detect that the file was rearranged;
+ * something outside the file has to say what it may contain.
+ *
+ * So this file says it. The four declared edits are written out HERE,
+ * from the table's record, and the mirrored page is rebuilt from the
+ * shipped bytes without calling mirror() or unmirror() at all. A
+ * mirrored page that differs from that rebuild by one byte is an
+ * undeclared difference between the demo and the product, which is the
+ * one thing this whole design exists to refuse. A `<title>` rewritten on
+ * the way out and undone on the way back reds here and nowhere else.
+ *
+ * It is deliberately a DUPLICATE of the literals in demo-stub.js: the
+ * duplication is the mechanism. A path legitimately renamed there is a
+ * two-file change on purpose, so the rename is a decision somebody made
+ * rather than one that happened.
+ */
+const OUR_INSERTION =
+  '<script src="' + STUB_SRC + '"></script>' +
+  '<script src="' + BOOT_SRC + '"></script>' +
+  '<link rel="stylesheet" href="' + BAR_CSS + '">' +
+  '<script src="' + BAR_SRC + '"></script>';
+const OUR_CONFIG_TAG = '<script src="config.js"></script>';
+const OUR_CONFIG_STANDIN = '<script src="/dev/demo-config.js"></script>';
+const OUR_WIDGET = /https:\/\/telegram\.org\/js\/telegram-widget\.js[^"']*/g;
+const OUR_WIDGET_STANDIN = "/dev/demo-telegram.js";
+
+/*
+ * Where the demo's own scripts belong, decided here rather than asked of
+ * the mirror: before the page's first script that a browser would
+ * actually run. A "<script" whose nearest preceding "<!--" has no "-->"
+ * between them is inside a comment and is not that script.
+ */
+function ourSeamIn(html) {
+  let from = 0;
+  for (;;) {
+    const at = html.indexOf("<script", from);
+    if (at === -1) return -1;
+    const opened = html.lastIndexOf("<!--", at);
+    if (opened === -1) return at;
+    const closed = html.indexOf("-->", opened);
+    if (closed !== -1 && closed < at) return at;
+    from = at + "<script".length;
+  }
+}
+
+function ourMirrorOf(html) {
+  let out = String(html);
+  const at = ourSeamIn(out);
+  if (at !== -1) out = out.slice(0, at) + OUR_INSERTION + out.slice(at);
+  OUR_WIDGET.lastIndex = 0;
+  out = out.replace(OUR_WIDGET, OUR_WIDGET_STANDIN);
+  OUR_WIDGET.lastIndex = 0;
+  return out.split(OUR_CONFIG_TAG).join(OUR_CONFIG_STANDIN);
+}
+
+await check("a mirrored page is the shipped bytes plus the four declared edits, byte for byte", () =>
+  PAGES.every((page) =>
+    Demo.mirror(shipped[page]).html === ourMirrorOf(shipped[page])));
+
+/*
+ * And the seam is the first script the BROWSER runs, not the first one
+ * the file spells. A script commented out ahead of the page's own -
+ * parked work, an ordinary thing to find in a head - would otherwise
+ * take the boot pair and the strip into the comment with it: fetch
+ * untouched, no strip, and every arm still green, because the policy
+ * still precedes the insertion and unmirror() removes the literal
+ * wherever it sits.
+ *
+ * Driven against a page written here rather than asked of apps/web,
+ * because no shipped page carries one today - which is exactly why an
+ * arm keyed on the shipped bytes would prove nothing.
+ */
+await check("a script commented out ahead of the page's own does not swallow the demo's", () => {
+  const page = "<head>" +
+    '<meta http-equiv="Content-Security-Policy" content="script-src \'self\'">' +
+    "<!-- parked while the palette work lands:\n" +
+    '<script src="theme-probe.js"></script>\n-->\n' +
+    OUR_CONFIG_TAG + "</head><body></body>";
+  const out = Demo.mirror(page);
+  const closed = out.html.indexOf("-->");
+  return closed !== -1 &&
+    out.html.indexOf(STUB_SRC) > closed &&
+    out.html.indexOf(BAR_SRC) > closed &&
+    out.html.indexOf(BAR_SRC) < out.html.indexOf(OUR_CONFIG_STANDIN) &&
+    out.html.includes('<script src="theme-probe.js"></script>\n-->') &&
+    out.applied.includes("boot") && out.applied.includes("toolbar") &&
+    Demo.unmirror(out.html) === page;
+});
 
 /*
  * Every declared edit is one that really fires somewhere, and the count
@@ -1161,6 +1259,8 @@ function toolbarInRecordedBrowser(options) {
   const databases = (opts.databases || []).slice();
   const listened = [];
   const jumped = [];
+  const observed = [];
+  const observers = [];
 
   const storeFor = (kept) => ({
     getItem: (key) => (key in kept ? kept[key] : null),
@@ -1204,9 +1304,20 @@ function toolbarInRecordedBrowser(options) {
       assign(url) { went.push(String(url)); },
       reload() { reloads.push(true); },
     },
-    // The strip re-measures on resize, because the wrap point is a
-    // width and this demo is driven by resizing the window.
+    // The window's own listener, which the strip registers only where
+    // there is no observer to watch the element itself.
     addEventListener(type) { listened.push(String(type)); },
+    /*
+     * The observer, recorded rather than run. `noResizeObserver` takes
+     * it away, which is the browser the window listener exists for -
+     * both branches are driven, so neither is a path nobody enters.
+     */
+    ResizeObserver: opts.noResizeObserver === true ? undefined
+      : function (fn) {
+        observers.push(fn);
+        this.observe = (node) => { observed.push(node); };
+        this.disconnect = () => {};
+      },
     sessionStorage: storeFor(store.session),
     localStorage: storeFor(store.local),
     /*
@@ -1299,10 +1410,17 @@ function toolbarInRecordedBrowser(options) {
   };
   const settled = () => new Promise((done) => { setTimeout(done, 0); });
 
+  // The browser laying the strip out at a new height - a status line
+  // wrapping it onto another row, a narrower window, a font arriving.
+  const laidOutAt = (height) => {
+    if (bar) bar.laidOutAt = height;
+    observers.forEach((fn) => fn([{ target: bar }]));
+  };
+
   return {
     bar, body, everyButton, press, startsWith, said, worldNow, settled,
     went, reloads, read, built, dropped, store, pageNodes, rootStyle,
-    listened, jumped,
+    listened, jumped, observed, laidOutAt,
     labels: () => everyButton.map((one) => one.textContent),
   };
 }
@@ -1345,8 +1463,53 @@ await check("every snapshot row has a control, with the counts on it", () => {
   });
 });
 
-await check("the strip re-measures itself when the window changes width", () =>
-  toolbarInRecordedBrowser().listened.includes("resize"));
+/*
+ * IT WATCHES THE STRIP, NOT THE WINDOW - and that difference is a
+ * defect somebody drove. The status line lives INSIDE the strip, so one
+ * sentence about what a press did wraps it onto another row at a window
+ * nobody touched: the strip grew from 60px to 104px on the first press
+ * of an enabler while the offset the page uses stayed at 60px, and the
+ * page's own heading went behind it. A window `resize` listener cannot
+ * see that. The element can, so the element is what is observed - which
+ * also covers the width, the font arriving late, and whatever the next
+ * slice puts on the strip.
+ */
+await check("the strip watches its own box, and follows it both ways", () => {
+  const browser = toolbarInRecordedBrowser({ barHeight: 60 });
+  if (browser.observed[0] !== browser.bar) return false;
+  if (browser.rootStyle["--hgb-demo-bar"] !== "60px") return false;
+  browser.laidOutAt(104);
+  if (browser.rootStyle["--hgb-demo-bar"] !== "104px") return false;
+  browser.laidOutAt(60);
+  return browser.rootStyle["--hgb-demo-bar"] === "60px" &&
+    !browser.listened.includes("resize");
+});
+
+/*
+ * The defect's own path, driven end to end: a press writes a status
+ * line, the browser lays the strip out taller for it, and the room the
+ * page makes moves with it rather than staying at the height the strip
+ * had before anybody pressed anything.
+ */
+await check("a status line that grows the strip moves the room the page makes", async () => {
+  const browser = toolbarInRecordedBrowser({ page: "admin.html", barHeight: 60 });
+  browser.press(Demo.ENABLERS.find((one) => one.id === "key").label);
+  await browser.settled();
+  if (browser.said().length < 40) return false;
+  browser.laidOutAt(104);
+  return browser.rootStyle["--hgb-demo-bar"] === "104px";
+});
+
+/*
+ * And a browser with no observer still re-measures on the one cause it
+ * can see. Kept because the alternative is a strip that silently stops
+ * measuring at all there - the offset frozen at the stylesheet's floor,
+ * with nothing on screen saying so.
+ */
+await check("a browser with no observer falls back to the window's own resize", () => {
+  const browser = toolbarInRecordedBrowser({ noResizeObserver: true });
+  return browser.listened.includes("resize") && browser.observed.length === 0;
+});
 
 await check("both clock steps have a control", () => {
   const labels = toolbarInRecordedBrowser().labels();
@@ -1822,7 +1985,24 @@ await check("the rail apps/web sticks to the top is the one the strip offsets", 
 
 await check("the strip makes room for itself rather than covering the page", () =>
   /body\s*\{[^}]*padding-top:\s*var\(--hgb-demo-bar\)/.test(toolbarCss) &&
-  /--hgb-demo-bar:\s*[0-9.]+/.test(toolbarCss));
+  /--hgb-demo-bar-floor:\s*[0-9.]+/.test(toolbarCss) &&
+  /--hgb-demo-bar:\s*var\(--hgb-demo-bar-floor\)/.test(toolbarCss));
+
+/*
+ * THE STRIP'S OWN MINIMUM IS THE FLOOR, NEVER THE HEIGHT IT LAST
+ * MEASURED - and this arm exists because the two were one token, which
+ * made the measurement a ratchet. The script writes the measured height
+ * onto `--hgb-demo-bar`; a strip whose `min-height` read the same token
+ * could never come back down, so a status line that pushed it to three
+ * rows left the page permanently offset for three rows after the line
+ * was gone. Two tokens: one the stylesheet states, one the script
+ * writes.
+ */
+await check("the strip's own minimum is the floor, not the height it last measured", () =>
+  /\[data-demo-toolbar\]\s*\{[^}]*min-height:\s*var\(--hgb-demo-bar-floor\)/
+    .test(toolbarCss) &&
+  !/\[data-demo-toolbar\]\s*\{[^}]*min-height:\s*var\(--hgb-demo-bar\)/
+    .test(toolbarCss));
 
 /*
  * And the room is MEASURED rather than declared. The strip wraps onto
@@ -1859,19 +2039,42 @@ await check("a strip that has not been laid out yet writes no height", () => {
  * element declares one, it is measured against the strip by this arm
  * rather than by whoever notices the strip has gone missing.
  *
+ * A STYLESHEET IS NOT THE ONLY PLACE A PRODUCT DECLARES ONE. A scan
+ * that read the pages and the stylesheets and dropped the scripts went
+ * green with a shipped script raising the rail to 99999 - ten times the
+ * strip - so the scripts are read too, in the three forms they can take
+ * it: the CSS property, the DOM property, and setProperty by name. A
+ * value computed at run time is out of reach of any source scan and
+ * says so here rather than being implied.
+ *
  * A floor of its own, because topping an empty set is free: the strip's
  * number has to be positive. Most of what the product paints is stacked
  * by paint order rather than by a declared z-index, and a positive one
  * on a `fixed` element beats all of it, where zero or a negative would
  * put the strip under the page while satisfying every comparison above.
  */
+const Z_FORMS = [
+  /z-index:\s*(-?\d+)/g,
+  /zIndex\s*[:=]\s*["']?\s*(-?\d+)/g,
+  /setProperty\(\s*["']z-index["']\s*,\s*["']?\s*(-?\d+)/g,
+];
+
 await check("the strip's stacking tops every z-index the product declares", () => {
   const bar = /\[data-demo-toolbar\]\s*\{[^}]*z-index:\s*(-?\d+)/.exec(toolbarCss);
   if (bar === null || Number(bar[1]) <= 0) return false;
-  const declared = Object.keys(webSource)
-    .filter((name) => /\.(css|html)$/.test(name))
-    .flatMap((name) => webSource[name].match(/z-index:\s*-?\d+/g) || [])
-    .map((one) => Number(/-?\d+/.exec(one)[0]));
+  const declared = [];
+  // Every top-level .js, .html and .css in apps/web, which is what
+  // webSource is built from - deliberately unfiltered here.
+  Object.values(webSource).forEach((src) => {
+    Z_FORMS.forEach((form) => {
+      form.lastIndex = 0;
+      let found = form.exec(src);
+      while (found !== null) {
+        declared.push(Number(found[1]));
+        found = form.exec(src);
+      }
+    });
+  });
   return declared.every((value) => Number(bar[1]) > value);
 });
 
