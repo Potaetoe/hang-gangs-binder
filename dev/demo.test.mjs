@@ -1861,12 +1861,17 @@ await check("a strip that has not been laid out yet writes no height", () => {
  * stacks nothing - and it is READ rather than pinned for exactly that
  * reason: the day a page element declares one, it is measured against
  * the strip by this arm rather than by whoever notices the strip has
- * gone missing. The strip must still declare its own, so the half that
- * is about the strip cannot pass by absence.
+ * gone missing.
+ *
+ * A floor of its own, because topping an empty set is free: the strip's
+ * number has to be positive. Most of what the product paints is stacked
+ * by paint order rather than by a declared z-index, and a positive one
+ * on a `fixed` element beats all of it, where zero or a negative would
+ * put the strip under the page while satisfying every comparison above.
  */
 await check("the strip's stacking tops every z-index the product declares", () => {
   const bar = /\[data-demo-toolbar\]\s*\{[^}]*z-index:\s*(-?\d+)/.exec(toolbarCss);
-  if (bar === null) return false;
+  if (bar === null || Number(bar[1]) <= 0) return false;
   const declared = Object.keys(webSource)
     .filter((name) => /\.(css|html)$/.test(name))
     .flatMap((name) => webSource[name].match(/z-index:\s*-?\d+/g) || [])
