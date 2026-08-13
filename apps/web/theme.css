@@ -1116,6 +1116,52 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   padding: var(--space-2) var(--space-3);
 }
 
+/*
+ * THE "MORE" DISCLOSURE: where a card's why-prose lives now.
+ *
+ * The owner's register bar (#265, applied by #275) rules that a card
+ * says what it is and offers its explanation behind a reveal. It is a
+ * native <details> and not a scripted panel for the reason the swatch
+ * row above records from the other direction: a control the browser
+ * owns cannot be left half-open by a dead script, and its keyboard and
+ * screen-reader behaviour is the platform's rather than this file's.
+ *
+ * FOUR PROPERTIES, and each of them is why this is six rules rather
+ * than none:
+ *
+ *   - It is the last thing in its card, so it takes no space in the
+ *     reading order until it is opened and pushes only itself.
+ *   - The summary reads at hint size in the muted color, because it is
+ *     a way IN to prose rather than a thing to be read - a full-size
+ *     link at the foot of every card is a row of controls competing
+ *     with the ones that do something.
+ *   - The marker stays. It is the only thing on screen saying this word
+ *     opens rather than navigates, and the browser draws it correctly
+ *     in both writing directions for free.
+ *   - The revealed prose keeps the muted small voice it had while it
+ *     was in front of the reader, so opening a card is the same
+ *     sentences moved rather than a different-looking page.
+ *
+ * tools/check_web.py's check 27 pins the class, the word and the
+ * absence of `open`; nothing here can express those, and nothing there
+ * can express these.
+ */
+.more > summary {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.more > summary:hover {
+  color: var(--color-text);
+}
+
+.more > :not(summary) {
+  margin-block-start: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 /* ------------------------------------------------------------------ */
 /* Controls.                                                           */
 
@@ -1341,15 +1387,15 @@ code {
  * The key fingerprint gets a line of its own, and this rule is the only
  * thing making the sentence above it true.
  *
- * your-page.html tells a member to "check that the code below matches
- * the one pinned in the group chat" - #265 row 44, the one sentence
- * standing between them and a swapped key. An inline <code> lands
- * wherever the paragraph happens to wrap, so at the widths between a
- * phone and a full desktop column it sits BESIDE the instruction on the
- * same line, and a reader who follows "below" looks past it at the next
- * paragraph. A deictic that is true at some widths and false at others
- * is a weaker instruction than one that cannot be wrong, so the box is
- * blocked rather than the word softened.
+ * your-page.html tells a member to "Compare with the group's pinned
+ * code before submitting." - the owner's ruling on #275, and the one
+ * sentence standing between them and a swapped key. The sentence names
+ * no direction now, which makes this rule MORE load-bearing rather than
+ * less: an inline <code> lands wherever the paragraph happens to wrap,
+ * so at the widths between a phone and a full desktop column it sits
+ * beside the instruction on the same line and reads as part of it. The
+ * value a member is asked to compare has to be a thing they can see is
+ * a thing, so the box is blocked.
  *
  * The margins are what keep it reading as the thing being pointed at
  * rather than as a run-on token: there is no punctuation on either side

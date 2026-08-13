@@ -129,9 +129,9 @@
   
 
   const STORED_KEY_WRONG = "The key stored on this device is not the one " +
-    "this site encrypts to, so it has been removed. Choose your key file.";
+    "this site encrypts to, so it has been removed — choose your key file.";
   const STORED_KEY_DAMAGED = "What was stored on this device is not a " +
-    "usable key, so it has been removed. Choose your key file.";
+    "usable key, so it has been removed — choose your key file.";
 
   function storedKeyVerdict(record, expectedPublicKey) {
     if (record === null || record === undefined) {
@@ -158,24 +158,27 @@
   
 
   function storedKeyNotice(persisted) {
+     
+     
+     
+     
+     
+     
+     
     return persisted
-      ? "Your key is kept on this device, and the browser has marked " +
-        "this site's storage persistent, so ordinary cleanup leaves it " +
-        "alone. Clearing this site's data removes it, and so does Clear."
-      : "Your key is kept on this device, but the browser did not mark " +
-        "this site's storage persistent, so it can be evicted - some " +
-        "browsers drop it after about a week without a visit. Keep your " +
-        "key file: it is what puts the key back.";
+      ? "Your key is kept on this device — Clear is what removes it."
+      : "Your key is kept on this device, but the browser may drop it — " +
+        "keep your key file.";
   }
 
   
 
   function otherKeyNotice(opened) {
     return opened
-      ? "This is not the private half of the key this site encrypts to, " +
-        "so it opens this export and is not kept on this device."
-      : "This is not the private half of the key this site encrypts to. " +
-        "It was used only for this attempt and is not kept on this device.";
+      ? "This is not this site's key — it opens this export and is not " +
+        "kept on this device."
+      : "This is not this site's key — it was used only for this attempt " +
+        "and is not kept on this device.";
   }
 
    
@@ -294,15 +297,14 @@
     if (status === REFUSED) {
       return {
         action: "signed-out",
-        message: "The admin session was not accepted, so it has been " +
-          "discarded. Sign in again.",
+        message: "The admin session was not accepted — sign in again.",
       };
     }
     if (status === 409) {
       return {
         action: "show",
-        message: (said || "The Worker refused that removal.") +
-          " Nothing was removed; the lists below are what it holds now.",
+        message: (said || "That removal was refused.") +
+          " Nothing was removed — the lists below are what it holds now.",
       };
     }
     return {
@@ -436,11 +438,7 @@
 
   
 
-  const DOWNLOAD_NOUNS = Object.freeze({
-    "download": "The CSV",
-    "download-xlsx": "The Excel file",
-    "download-json": "The JSON file",
-  });
+  const DOWNLOAD_ACK = "Downloaded — check your downloads.";
   const PRESSED_MS = 4000;
 
   const KEY_DB = "hgb-keyholder-key";
@@ -650,10 +648,7 @@
       pressedTimer = setTimeout(function () {
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
       }, PRESSED_MS);
-      UI.setStatus($("download-status"),
-        DOWNLOAD_NOUNS[pressed] + " was handed to the browser. Where a "
-        + "download goes is the browser's to decide, so this page cannot "
-        + "say whether it arrived.", null);
+      UI.setStatus($("download-status"), DOWNLOAD_ACK, null);
     }
 
      

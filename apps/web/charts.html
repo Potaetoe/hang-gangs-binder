@@ -64,20 +64,19 @@
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>
   <h1>Muse's charts</h1>
-  <!-- The warm half and the exact half, in that order and in one
-       sentence each. The second half is not softened: what this page
-       does not show is the thing a member is trusting it about, and #73
-       names "nothing that makes the serious parts less clear" as the
-       constraint the voice pass does not bend.
+  <!-- Ruled word for word (#275, from the register bar on #265). Two
+       things left with the old line and neither is a loss the page can
+       recover on its own: the flirt, because rule 4 admits no voice
+       survivors and says so over #191's third rule explicitly; and
+       "middles", because a coinage compresses like all prose and this
+       one had a plain word waiting.
 
-       #191's third rule draws the line the two halves sit either side
-       of: Muse flirts in prose and the data never does. The first
-       sentence is the one place on this page she is allowed to have an
-       opinion about the numbers; every label, unit and count below is
-       literal, and so is the sentence naming what is withheld. -->
-  <p class="muted">
-    Getting heavier? Muse certainly hopes so. Counts, middles and
-    distributions — no names, and no individual entries.
+       What the page does NOT show is the half a member is trusting it
+       about, so it is still here, still literal, and now the second
+       half of the only sentence rather than the fourth clause of it.
+       tools/check_web.py's RULED_LINES pins the whole of it. -->
+  <p class="muted" id="charts-intro">
+    Counts and averages — no names, no individual entries.
   </p>
 </header>
 
@@ -87,7 +86,7 @@
     <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in. This is not a Telegram sign-in.
+      test sign-in — not a Telegram sign-in.
     </p>
   </div>
 
@@ -148,7 +147,7 @@
         </div>
         <p class="hint">
           Both systems are published, so this picks one rather than
-          converting. BMI is metric by definition either way.
+          converting.
         </p>
       </fieldset>
 
@@ -171,9 +170,8 @@
     <div class="card" id="question" hidden>
       <h2>Ask a question</h2>
       <p class="muted small">
-        The same published figures, asked your way. Counting and units
-        come from the two choices above, so an answer here is about the
-        same people as the charts.
+        The same published figures, asked your way — counting and units
+        come from the two choices above.
       </p>
 
       <div class="stack" id="q-controls">
@@ -205,9 +203,12 @@
               <span>The mean</span>
             </label>
           </div>
+          <!-- "Middle" was a coinage and rule 4 admits no voice
+               survivors (#275). The word the owner's own ruled header
+               uses for this family is "averages", and it is true of
+               both radios above. -->
           <p class="hint">
-            A middle needs numbers to work with, so it is only offered
-            for weight, height and BMI.
+            Only weight, height and BMI can be averaged.
           </p>
         </fieldset>
 
@@ -228,7 +229,7 @@
             </label>
           </div>
           <p class="hint">
-            Wider bands are the published bands added together. Nothing
+            Wider bands are the published bands added together — nothing
             here splits one.
           </p>
         </fieldset>
@@ -239,9 +240,8 @@
           <label for="q-merge-name">Call them</label>
           <input type="text" id="q-merge-name" autocomplete="off">
           <p class="hint">
-            Tick two or more and they are counted as one. The list fills
-            in from the answer, so the only groups you can name are
-            groups these figures already show.
+            Tick two or more and they are counted as one — the list only
+            offers groups these figures already show.
           </p>
         </fieldset>
       </div>
@@ -253,16 +253,26 @@
     <div class="card">
       <p class="runner"><span>What this is</span></p>
       <p class="muted small">
-        These figures are worked out from the submissions and published
-        as totals. Nothing on this page identifies anybody: there are no
-        Telegram handles in it, and no individual entries — only how
-        many, how much on average, and how the answers are spread. Where
-        a weight history is shown, the people in it are numbered rather
-        than named, and renumbered every time this is republished.
-      </p>
-      <p class="muted small">
         <a href="index.html">Add yours</a>, if you have not.
       </p>
+      <!-- The long form of the header's second half, behind the ruled
+           reveal (#275). The heading already carries the claim a member
+           is trusting this page about - "no names, no individual
+           entries" - and this is the same claim spelled out for whoever
+           wants to see how it is kept. Not deleted: a privacy claim
+           moves, it does not evaporate. -->
+      <details class="more">
+        <summary>More</summary>
+        <p>
+          These figures are worked out from the submissions and
+          published as totals. Nothing on this page identifies anybody:
+          there are no Telegram handles in it, and no individual
+          entries — only how many, how much on average, and how the
+          answers are spread. Where a weight history is shown, the
+          people in it are numbered rather than named, and renumbered
+          every time this is republished.
+        </p>
+      </details>
     </div>
   </div>
 </main>

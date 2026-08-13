@@ -758,6 +758,24 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   padding: var(--space-2) var(--space-3);
 }
 
+
+
+.more > summary {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.more > summary:hover {
+  color: var(--color-text);
+}
+
+.more > :not(summary) {
+  margin-block-start: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
  
  
 

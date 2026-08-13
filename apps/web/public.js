@@ -145,9 +145,14 @@
       }
       payload = await response.json();
     } catch (error) {
-      unavailable("The figures could not be fetched. " +
-        (error && error.message ? error.message : "The connection failed.") +
-        " Try again shortly.");
+      // The thrown message goes to the console, not into the sentence.
+      // It is a fetch failure's own wording - "Failed to fetch", or
+      // whatever a proxy put there - and pasting it between two clauses
+      // gave a member three, of which the middle one was written for
+      // nobody on this page (#275, rule 1).
+      detail(error && error.message ? error.message : "the snapshot could " +
+        "not be fetched");
+      unavailable("The figures could not be fetched — try again shortly.");
       return;
     }
 
@@ -242,11 +247,18 @@
        * one belongs. Which of the two it was still reaches the card,
        * because the refusal carries its own plain half; what does not
        * reach it is the engine's vocabulary. The controls go away rather
-       * than sitting there inert. */
+       * than sitting there inert.
+       *
+       * THE MEMBER SENTENCE RENDERS ALONE - the register bar's rule 5
+       * (#275). A house sentence in front of it would say the refusal
+       * happened here, which the card the reader is standing in already
+       * says, and would leave a member two clauses of which only the
+       * second one told them anything. The fallback is that sentence
+       * rather than a prefix, so the line is one clause on every path. */
       show($("q-controls"), false);
       status.className = "status bad";
-      status.textContent = "These figures cannot be asked questions here. " +
-        plainly(error, "They are not in a shape this page can ask about.");
+      status.textContent =
+        plainly(error, "These figures cannot be asked questions here.");
       return;
     }
 

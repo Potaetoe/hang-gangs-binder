@@ -234,9 +234,9 @@
    * nothing, under a message announcing that something was removed.
    */
   const STORED_KEY_WRONG = "The key stored on this device is not the one " +
-    "this site encrypts to, so it has been removed. Choose your key file.";
+    "this site encrypts to, so it has been removed — choose your key file.";
   const STORED_KEY_DAMAGED = "What was stored on this device is not a " +
-    "usable key, so it has been removed. Choose your key file.";
+    "usable key, so it has been removed — choose your key file.";
 
   function storedKeyVerdict(record, expectedPublicKey) {
     if (record === null || record === undefined) {
@@ -275,14 +275,17 @@
    * day the file is not in reach. The measurements are in #85's spike.
    */
   function storedKeyNotice(persisted) {
+    // One clause and a pointer, both arms (#275). Rule 7's allowance
+    // buys the "but" in the refused arm and nothing more: a keyholder
+    // who reads "stored" as "safe" is the one who finds out otherwise
+    // on the day the file is not in reach, so that arm keeps the fact
+    // that the key can go and sends them to the thing that brings it
+    // back. The granted arm has nothing to warn about, so it warns
+    // about nothing.
     return persisted
-      ? "Your key is kept on this device, and the browser has marked " +
-        "this site's storage persistent, so ordinary cleanup leaves it " +
-        "alone. Clearing this site's data removes it, and so does Clear."
-      : "Your key is kept on this device, but the browser did not mark " +
-        "this site's storage persistent, so it can be evicted - some " +
-        "browsers drop it after about a week without a visit. Keep your " +
-        "key file: it is what puts the key back.";
+      ? "Your key is kept on this device — Clear is what removes it."
+      : "Your key is kept on this device, but the browser may drop it — " +
+        "keep your key file.";
   }
 
   /*
@@ -305,10 +308,10 @@
    */
   function otherKeyNotice(opened) {
     return opened
-      ? "This is not the private half of the key this site encrypts to, " +
-        "so it opens this export and is not kept on this device."
-      : "This is not the private half of the key this site encrypts to. " +
-        "It was used only for this attempt and is not kept on this device.";
+      ? "This is not this site's key — it opens this export and is not " +
+        "kept on this device."
+      : "This is not this site's key — it was used only for this attempt " +
+        "and is not kept on this device.";
   }
 
   /* ---------------------------------------------------------------- */
@@ -508,15 +511,14 @@
     if (status === REFUSED) {
       return {
         action: "signed-out",
-        message: "The admin session was not accepted, so it has been " +
-          "discarded. Sign in again.",
+        message: "The admin session was not accepted — sign in again.",
       };
     }
     if (status === 409) {
       return {
         action: "show",
-        message: (said || "The Worker refused that removal.") +
-          " Nothing was removed; the lists below are what it holds now.",
+        message: (said || "That removal was refused.") +
+          " Nothing was removed — the lists below are what it holds now.",
       };
     }
     return {
@@ -768,25 +770,22 @@
     ["download", "download-xlsx", "download-json"]);
 
   /*
-   * What each download is CALLED IN A SENTENCE, which is not what its
-   * button is called - #265 row 39.
+   * WHAT A PRESS SAYS, ruled word for word by the owner (#126 R5, and
+   * the register bar on #265 names it again).
    *
-   * A label read off the element gives the sentence a verb phrase
-   * where it needs a noun - "Download CSV handed to the browser" reads
-   * as an instruction that has collided with a past tense. The labels
-   * themselves are right and UAT.md quotes all three; borrowing them
-   * for a job they were not written for is what is wrong.
+   * It does not say which of the three was pressed, and that is the
+   * honesty floor working rather than a gap in it: the lit button
+   * beside the line already says which, a short line may omit, and the
+   * one thing this sentence must never do is claim the file arrived.
+   * The browser never tells this page that. So the pointer sends the
+   * reader to the browser's own shelf, which is the only place the
+   * answer exists.
    *
-   * Keyed by id and read from here rather than from the DOM, so the
-   * sentence cannot change under a relabelling - and a fourth export
-   * arrives loudly, with an undefined noun, rather than quietly
-   * printing whatever the new button happens to say.
+   * The per-format nouns this replaced are gone rather than kept
+   * unused: a table naming three exports, read by nothing, is the first
+   * thing a fourth export would be added to.
    */
-  const DOWNLOAD_NOUNS = Object.freeze({
-    "download": "The CSV",
-    "download-xlsx": "The Excel file",
-    "download-json": "The JSON file",
-  });
+  const DOWNLOAD_ACK = "Downloaded — check your downloads.";
   const PRESSED_MS = 4000;
 
   const KEY_DB = "hgb-keyholder-key";
@@ -1042,9 +1041,11 @@
      * WHAT IT MUST NOT SAY is that the file arrived, because the
      * browser never tells this page that. Both halves are worded
      * against that: the class is spent on the press and cleared on a
-     * timer, and the sentence says the export was handed over rather
-     * than saved. A timer that lies is worse than no acknowledgement,
-     * since the second one is at least honest about knowing nothing.
+     * timer, and the sentence sends the reader to look rather than
+     * reporting a result. A timer that lies is worse than no
+     * acknowledgement, since the second one is at least honest about
+     * knowing nothing. The words themselves are ruled - see
+     * DOWNLOAD_ACK.
      *
      * The timer is cleared before it is set again so that pressing two
      * downloads in a row leaves the second one lit rather than being
@@ -1071,10 +1072,7 @@
       pressedTimer = setTimeout(function () {
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
       }, PRESSED_MS);
-      UI.setStatus($("download-status"),
-        DOWNLOAD_NOUNS[pressed] + " was handed to the browser. Where a "
-        + "download goes is the browser's to decide, so this page cannot "
-        + "say whether it arrived.", null);
+      UI.setStatus($("download-status"), DOWNLOAD_ACK, null);
     }
 
     // `content` is a string for the text formats and a Uint8Array for

@@ -1080,7 +1080,13 @@ const refused = await loadAdmin(ADMIN, { persist: false });
 await refused.elements.run.click();
 await settle();
 check("a refused persistence request says the key can go, and how to return",
-  /evict/i.test(refused.elements.status.textContent) &&
+  // "Evicted" was the browser's word for this and it went with the
+  // compression (#275): the fact a keyholder acts on is that the key
+  // can disappear, not the name of the mechanism that takes it. Both
+  // halves are still pinned - the loss and the way back - because a
+  // notice carrying only one of them is the notice this arm exists to
+  // refuse.
+  /may drop it/i.test(refused.elements.status.textContent) &&
   /key file/i.test(refused.elements.status.textContent));
 
 /*
@@ -1359,8 +1365,13 @@ await settle();
 check("a membership call the session cannot make ends the session and leaves",
   Session.read() === null && redirects.includes("index.html") &&
   // And it says so rather than leaving a blank pane behind while the
-  // navigation is still in flight.
-  /discarded/.test(expired.elements["membership-status"].textContent));
+  // navigation is still in flight. What it says is the session and the
+  // way back - the compression to one clause (#275) took out the middle
+  // clause naming what was done with the credential, which is a fact
+  // about this page's housekeeping rather than about the admin.
+  /session was not accepted/.test(
+    expired.elements["membership-status"].textContent) &&
+  /sign in again/i.test(expired.elements["membership-status"].textContent));
 
 /* The go-signal, which is the one thing on this pane that a missing
  * field could turn into a lie. */

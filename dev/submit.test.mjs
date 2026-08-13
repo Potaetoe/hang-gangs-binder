@@ -36,7 +36,7 @@ let performed = 0;
 // behind an early return or a renamed helper, still prints a confident
 // "OK" for every check that remains. dev/check_budget.test.py argues this
 // at length and is where the pattern comes from.
-const EXPECTED = 103;
+const EXPECTED = 104;
 
 function check(label, condition) {
   performed++;
@@ -1683,9 +1683,21 @@ const partly = await loadSubmit({
 });
 
 check("rows this browser cannot open are counted rather than dropped",
+  // The noun travels with the number (#275): the ruled sentence reads
+  // "4 rows can't be opened here", and a slot holding a bare digit puts
+  // "1 rows" in front of the one member who has exactly one.
   isPainted(partly.elements["history-sealed"]) &&
-  partly.elements["history-sealed-count"].textContent === "2" &&
+  partly.elements["history-sealed-count"].textContent === "2 rows" &&
   partly.engine.sources[0].entries.length === 1);
+
+const justOne = await loadSubmit({
+  replies: [response(200, SUMMARY),
+    listing([row(1, "one"), row(2, "elsewhere")])],
+  history: { opens: ["one"] },
+});
+
+check("and a single unopened row is a row, not rows",
+  justOne.elements["history-sealed-count"].textContent === "1 row");
 
 const noneOpen = await loadSubmit({
   replies: [response(200, SUMMARY), listing([row(1, "elsewhere")])],
@@ -1696,37 +1708,33 @@ check("a history sealed entirely elsewhere is explained, not left blank",
   isPainted(noneOpen.elements["your-history"]) &&
   !isPainted(noneOpen.elements["history-controls"]) &&
   noneOpen.engine.sources.length === 0 &&
-  /None of your entries can be opened on this browser/.test(
-    noneOpen.elements["history-status"].textContent));
+  noneOpen.elements["history-status"].textContent ===
+    "None of your entries can be opened here. Ask an admin.");
 
 /*
- * THE CAUSE A MEMBER CANNOT POSSIBLY DEDUCE, pinned so the copy cannot
- * fall back to blaming a device.
+ * NO CAUSE IS NAMED, AND THAT IS THE ARM.
  *
  * #85's seal widens to an account this module announces once /me
  * answers, and nothing gates Send on that answer - deliberately, since
  * blocking a submission on a request that may never return is the worse
  * failure. So an entry sent in the first moments of a slow load is
  * keyholder-only for good, on a browser holding a perfectly good key.
- * A sentence listing only devices blames the member's hardware for the
- * page's own timing.
+ * A sentence listing devices blames the member's hardware for the
+ * page's own timing, and that is the sentence this arm has always been
+ * pointed at.
  *
- * The MECHANISM is no longer spelled out on screen - #265's copy pass
- * (row 17, owner-ruled) collapsed four mechanisms into two causes a
- * member can act on, because all four printed at once, twice, in four
- * lines. What survives is the property the arm was written for: the
- * sentence must name a cause that happened on THIS browser as well as
- * one that happened elsewhere. "Sealed before it had a key of its own"
- * is the timing case in the member's terms - the row was sealed at a
- * moment this browser's key was not there to seal to - and it is what
- * this now pins, in both halves, so a rewrite back to a devices-only
- * sentence still fails here.
+ * The register bar (#275, rule 1) leaves no cause on screen at all:
+ * there are four mechanisms, none of them changes what the member does,
+ * and the shortest honest line names none of them. So this arm is
+ * pointed at its own property from the other side - the sentence must
+ * not put a device in front of a member at all - together with the
+ * remedy, which is the whole of what they can act on. A rewrite that
+ * reaches for a device to explain itself fails here either way.
  */
-check("and the cause on this browser is named, not only the devices",
-  /before it had a key of its own/.test(
+check("and no cause is named, so no device is blamed for the page's timing",
+  !/device|browser had|hardware/i.test(
     noneOpen.elements["history-status"].textContent) &&
-  /on another device/.test(
-    noneOpen.elements["history-status"].textContent));
+  /Ask an admin/.test(noneOpen.elements["history-status"].textContent));
 
 /*
  * And the partial line does not print underneath it - #265 row 17.
@@ -1760,10 +1768,21 @@ const noKey = await loadSubmit({
  * and exposure bought for nothing.
  */
 check("a browser with no key of its own asks the route for nothing",
+  // The store's own reason no longer renders - it goes to the console
+  // through the same `detail` seam every other route failure here uses
+  // (#275, rule 1), because it names IndexedDB and private browsing and
+  // there is one thing a member does either way. What is asserted is
+  // the pair: the state on screen, and that reason NOT on screen. This
+  // harness captures no console, so the other half is unpinned here and
+  // deliberately so - a second stub for one string would be a stub
+  // asserting itself.
   noKey.requests.length === 1 &&
   isPainted(noKey.elements["your-history"]) &&
   !isPainted(noKey.elements["history-controls"]) &&
-  /nowhere to keep one/.test(noKey.elements["history-status"].textContent));
+  /cannot keep a key of your own/.test(
+    noKey.elements["history-status"].textContent) &&
+  !/nowhere to keep one/.test(
+    noKey.elements["history-status"].textContent));
 
 const noRows = await loadSubmit({
   replies: [response(200, { ok: true, entries: 0, superseded: 0,
@@ -1773,7 +1792,8 @@ const noRows = await loadSubmit({
 
 check("a member with no entries is invited rather than told nothing",
   noRows.engine.sources.length === 0 &&
-  /no entries yet/.test(noRows.elements["history-status"].textContent));
+  /No entries yet/.test(noRows.elements["history-status"].textContent) &&
+  /weigh in/i.test(noRows.elements["history-status"].textContent));
 
 /*
  * A refused credential ends the tab's session here exactly as it does on

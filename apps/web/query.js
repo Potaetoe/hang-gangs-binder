@@ -144,6 +144,13 @@
    * sentence for it would be inventing a member's situation. The pages
    * say their own thing when no plain half arrives, which is what keeps
    * a throw added here tomorrow from printing itself on a chart.
+   *
+   * THE PLAIN HALF IS THE WHOLE OF WHAT RENDERS - the owner's register
+   * bar, rule 5 (#275). Nothing downstream prefixes it, so each of
+   * these sentences carries no context of its own either: one clause,
+   * and the card it lands in is the context. A sentence written here
+   * that opens by naming where the refusal happened is a second clause
+   * no page can take back off.
    */
   function refuse(message, plain) {
     const error = new Error(message);
@@ -194,7 +201,7 @@
       throw refuse("that is a keyholder snapshot, not a published one - " +
         "it carries handles and unsuppressed cells, and must not be " +
         "queried as though it were published",
-      "What arrived is not the published copy this page may show.");
+      "These are not the published figures.");
     }
     return makeSource(PUBLISHED, d.MIN_CELL, snapshot);
   }
@@ -223,8 +230,7 @@
     if (d.peopleCount(entries) > 1) {
       throw refuse("a personal source is one member's own rows, and " +
         "these belong to more than one person",
-      "These do not all look like one person's entries, so nothing was " +
-        "drawn.");
+      "These are not all one person's entries.");
     }
     return makeSource(PERSONAL, 0, d.snapshotOf(entries,
       { identify: true }, now));
@@ -284,8 +290,7 @@
     if (measure !== "count" && shape.kind !== "bins") {
       throw refuse("a " + measure + " over \"" + split + "\" is not a " +
         "question - a middle needs numbers to take the middle of",
-      "A middle needs numbers to work with, so it is only offered for " +
-        "weight, height and BMI.");
+      "Only weight, height and BMI can be averaged.");
     }
 
     /*

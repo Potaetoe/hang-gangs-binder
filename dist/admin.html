@@ -100,7 +100,7 @@
 <header class="stack-tight">
   <h1>Admin</h1>
   <p class="muted" id="admin-intro">
-    Decrypts the submissions in this browser. Nothing is uploaded.
+    Decrypts the submissions in this browser — nothing is uploaded.
   </p>
 </header>
 
@@ -144,7 +144,7 @@
     <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in. This is not a Telegram sign-in.
+      test sign-in — not a Telegram sign-in.
     </p>
   </div>
 
@@ -174,8 +174,8 @@
                   aria-describedby="key-help"
                   placeholder="Paste the key file, or choose it below"></textarea>
         <p class="hint" id="key-help">
-          The file <code>tools/keygen.html</code> saved. It is read in
-          this page and never sent anywhere.
+          The file <code>tools/keygen.html</code> saved — read in this
+          page and never sent anywhere.
         </p>
         <input type="file" id="keyfile-picker" accept=".json,application/json"
                aria-label="Choose the key file">
@@ -210,9 +210,7 @@
         <a href="charts.html" class="secondary-link">Open it</a>
       </div>
       <p class="hint">
-        Unpublishing needs the admin session — not the key. It
-        takes the page down immediately and leaves the submissions
-        untouched; publishing again rebuilds it.
+        Takes the page down immediately — the submissions are untouched.
       </p>
       <p class="status" id="unpublish-status" role="status"
          aria-live="polite" hidden></p>
@@ -266,10 +264,13 @@
              "The Worker" is a third-party product name doing the work
              of "the service" - which is what every other sentence on
              the member's side of this site already calls it. -->
+        <!-- The claim is unchanged and is still the whole reason this
+             hint exists: one way, not reversible, not kept. What went
+             is the inventory of the two places it is not shown, which
+             a reader can see for themselves (#275). -->
         <p class="hint" id="member-telegram-id-help">
-          The numeric id, not the @handle. It is sent once, scrambled
-          one-way by the service, and never stored or shown again — not
-          in the list below, and not here.
+          The numeric id, not the @handle — scrambled one-way by the
+          service and never shown again.
         </p>
       </div>
 
@@ -278,10 +279,8 @@
         <input type="text" id="member-label" autocomplete="off"
                aria-describedby="member-label-help">
         <p class="hint" id="member-label-help">
-          What you will recognize this row by afterwards. Nothing
-          verifies it — it is a name you typed, the way the handle on a
-          submission is. Adding an id that is already listed only
-          changes its label.
+          What you will recognize this row by — adding an id that is
+          already listed just changes its label.
         </p>
       </div>
 
@@ -298,8 +297,8 @@
           </label>
         </div>
         <p class="hint">
-          Admin grants this whole page. Always allow only lets somebody
-          past the group check, and grants nothing else.
+          Admin grants this whole page — Always allow only gets somebody
+          past the group check.
         </p>
       </fieldset>
 
@@ -337,27 +336,38 @@
 
       <div class="stack-tight" id="membership-malformed" hidden>
         <p class="caution">Rows that grant nothing</p>
+        <!-- The allowance (#275 rule 7): the sentence in front is the
+             one a keyholder acts on, because a table holding only these
+             is a table with no admins in it and the last-admin guard
+             will not say so.
+
+             "Counts grants and not rows" survives the compression word
+             for word, and deliberately: the demo console teaches this
+             stop against this sentence, and dev/demo.test.mjs holds the
+             two to each other. A paraphrase here is a lesson elsewhere
+             that no longer matches its screen. -->
         <p class="muted small">
-          These rows are in the table and grant nothing, because their
-          account id is not in the form the service accepts. A row
-          written straight into the database by hand arrives like this.
-          They are
-          worth removing before the admin list becomes the only
-          authority: the guard that refuses to remove the last admin row
-          counts grants and not rows. What it holds back is the last row
-          that really grants admin; these are neither counted by it nor
-          kept by it, so a table with nothing else left in it has an
-          admin list that is already empty.
+          These rows grant nothing, and the guard that refuses to remove
+          the last admin row counts grants and not rows.
         </p>
+        <details class="more">
+          <summary>More</summary>
+          <p>
+            Their account id is not in the form the service accepts — a
+            row written straight into the database by hand arrives like
+            this. What the guard holds back is the last row that really
+            grants admin; these are neither counted by it nor kept by
+            it, so a table with nothing else left in it has an admin
+            list that is already empty.
+          </p>
+        </details>
         <div id="membership-malformed-list"></div>
       </div>
 
       <div class="stack-tight" id="membership-other" hidden>
         <p class="muted small">
-          This answer also carried something this page cannot draw. It is
-          shown as it arrived rather than dropped: a row here still
-          grants whatever its role says, and a grant no screen shows is
-          the failure this pane exists to end.
+          This answer carried something this page cannot draw — a row
+          here still grants whatever its role says.
         </p>
         <pre class="failure-list" id="membership-other-body"></pre>
       </div>
@@ -367,8 +377,7 @@
       <p class="caution">Rows that would not open</p>
       <p class="muted small">
         Usually the key has been rotated and these predate it — the old
-        key still reads them. Worth checking before assuming they are
-        damaged.
+        key still reads them.
       </p>
       <pre class="failure-list" id="failure-list"></pre>
     </div>
@@ -399,13 +408,21 @@
       </div>
       <p class="status" id="download-status" role="status" aria-live="polite"
          hidden></p>
-      <p class="hint">
-        Excel keeps the numbers as numbers, so a weight sorts as a weight
-        and a handle of digits stays a handle. CSV is plain text that
-        anything can read. JSON keeps the nesting the other two have to
-        flatten — use it if something other than a person is going to
-        read this.
-      </p>
+      <!-- Which format to pick, behind the ruled reveal (#275). Nothing
+           here is protective and nothing here is urgent: three buttons
+           labelled with their formats are already the answer for
+           whoever knows which they want, and this is the paragraph for
+           whoever does not. -->
+      <details class="more">
+        <summary>More</summary>
+        <p>
+          Excel keeps the numbers as numbers, so a weight sorts as a
+          weight and a handle of digits stays a handle. CSV is plain
+          text that anything can read. JSON keeps the nesting the other
+          two have to flatten — use it if something other than a person
+          is going to read this.
+        </p>
+      </details>
       <div class="table-scroll">
         <table class="tabular">
           <thead id="thead"></thead>
@@ -447,8 +464,6 @@
         <p class="hint">
           Anyone who weighs in again adds a new entry rather than
           replacing the old one, so these are two different questions.
-          Weight over time always uses every entry — the repeats are
-          what it is made of.
         </p>
       </fieldset>
 
@@ -475,8 +490,7 @@
           </label>
         </div>
         <p class="hint">
-          Charts only. Both downloads always carry both systems, and BMI
-          is metric by definition either way.
+          Charts only — the downloads always carry both systems.
         </p>
       </fieldset>
 
@@ -496,9 +510,9 @@
     <div class="tool" id="publish-card" hidden>
       <p class="runner"><span>Publish</span></p>
       <p>
-        Sends the charts above — as counts and medians, with no handles
-        and no rows — to the public <a href="charts.html">Muse's
-        charts</a> page. It replaces whatever is there now.
+        Sends the charts above to <a href="charts.html">Muse's
+        charts</a>, replacing what is there now — counts and medians,
+        no handles and no rows.
       </p>
 
       <div class="field">
@@ -506,15 +520,28 @@
           <input type="checkbox" id="publish-series">
           <span>Include weight over time</span>
         </label>
+        <!-- The allowance again (#275 rule 7), and this is the card it
+             exists for: ticking this box publishes something about
+             individual people, and a keyholder who does it without
+             reading cannot take it back. So the sentence that stays in
+             front is the one that says the risk is real - the
+             measurements of how small it is are what moves behind the
+             reveal, because they are the half nobody acts on. -->
         <p class="hint">
-          Published as “Person 1”, “Person 2” — never handles — and each
-          point is rounded to a date and a weight band, so following one
-          person from one publication to the next is guesswork rather
-          than a lookup. It is not impossible: anyone who knows what someone
-          weighs may recognize their line, and publishing twice still
-          discloses more than publishing once. Fewer than five lines
-          publishes no chart at all. Off by default for those reasons.
+          Someone who knows what a person weighs may recognize their
+          line — off by default for that reason.
         </p>
+        <details class="more">
+          <summary>More</summary>
+          <p>
+            Published as “Person 1”, “Person 2” — never handles — and
+            each point is rounded to a date and a weight band, so
+            following one person from one publication to the next is
+            guesswork rather than a lookup. Publishing twice still
+            discloses more than publishing once. Fewer than five lines
+            publishes no chart at all.
+          </p>
+        </details>
       </div>
 
       <div class="row">
@@ -542,16 +569,27 @@
     -->
     <div class="card narrow">
       <p class="caution">Before you close this</p>
+      <!-- THE INSTRUMENT'S ONE ALLOWANCE, spent here (#275 rule 7).
+           Acting wrong on this card means walking away from a browser
+           holding the key that opens every submission, so the one
+           sentence in front of the reader is the act and the thing that
+           makes it urgent - and nothing else, because five sentences
+           are what a keyholder in a hurry skips whole. -->
       <p class="muted small">
-        This page is the only place the submissions exist in the clear.
-        Closing the tab discards everything decrypted here, and the admin
-        session is tab-scoped too — but the key is not. Once you import
-        it, it stays on this device so later exports need no file, and
-        <strong>Clear</strong> is what removes it. Press Clear before you
-        leave this browser on a machine someone else can reach. Keep your
-        key file as well: the browser may drop stored data, and the file
-        is what puts the key back.
+        Press <strong>Clear</strong> before you leave this browser —
+        the key stays on this device until you do.
       </p>
+      <details class="more">
+        <summary>More</summary>
+        <p>
+          This page is the only place the submissions exist in the
+          clear. Closing the tab discards everything decrypted here, and
+          the admin session is tab-scoped too — but the key is not. Once
+          you import it, it stays on this device so later exports need
+          no file. Keep your key file as well: the browser may drop
+          stored data, and the file is what puts the key back.
+        </p>
+      </details>
     </div>
   </div>
 </main>

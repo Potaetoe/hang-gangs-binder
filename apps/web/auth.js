@@ -62,7 +62,7 @@
       }
       const message = body && body.error
         ? body.error
-        : "The service could not answer just now. Try again shortly.";
+        : "The service could not answer — try again shortly.";
       say(message, "bad");
       throw new Error(message);
     }
@@ -78,7 +78,7 @@
     // The page this opens lands on "On record", not on the form -
     // submit.js chooses that tab - so "Opening the form" told a member
     // to expect something they do not get (#265 row 20).
-    say("Signed in. Opening your page…", "good");
+    say("Signed in — opening your page…", "good");
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("your-page.html");
     }
@@ -154,9 +154,14 @@
       }
       acknowledgeSignOut();
     }, function (error) {
-      say("Sign-in did not start correctly. " +
-        (error && error.message ? error.message : "Reload and try again."),
-      "bad");
+      // The boot error goes to the console, not into the sentence
+      // (#275, rule 1): it names a module a signed-out visitor has
+      // never heard of, and there is one thing to do either way.
+      if (root.console && typeof root.console.warn === "function") {
+        root.console.warn("binder: " +
+          (error && error.message ? error.message : "sign-in boot failed"));
+      }
+      say("Sign-in did not start correctly — reload and try again.", "bad");
     });
   }
 })(globalThis);

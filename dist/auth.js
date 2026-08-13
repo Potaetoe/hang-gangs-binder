@@ -58,7 +58,7 @@
       }
       const message = body && body.error
         ? body.error
-        : "The service could not answer just now. Try again shortly.";
+        : "The service could not answer — try again shortly.";
       say(message, "bad");
       throw new Error(message);
     }
@@ -74,7 +74,7 @@
      
      
      
-    say("Signed in. Opening your page…", "good");
+    say("Signed in — opening your page…", "good");
     if (root.location && typeof root.location.replace === "function") {
       root.location.replace("your-page.html");
     }
@@ -126,9 +126,14 @@
       }
       acknowledgeSignOut();
     }, function (error) {
-      say("Sign-in did not start correctly. " +
-        (error && error.message ? error.message : "Reload and try again."),
-      "bad");
+       
+       
+       
+      if (root.console && typeof root.console.warn === "function") {
+        root.console.warn("binder: " +
+          (error && error.message ? error.message : "sign-in boot failed"));
+      }
+      say("Sign-in did not start correctly — reload and try again.", "bad");
     });
   }
 })(globalThis);

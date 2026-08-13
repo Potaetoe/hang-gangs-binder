@@ -64,7 +64,7 @@
        rather than as a notice. The pinned name is the heading above it;
        this line is free to be warm (#73). -->
   <p class="muted">
-    Sign in once for this tab. Then it is your page to fill in, and
+    Sign in once for this tab — then it is your page to fill in, and
     everyone's numbers to read.
   </p>
 </header>
@@ -86,21 +86,26 @@
     already finished and needs nobody's attention, which is the same
     reading #auth-status carries below.
 
-    The claim is the whole of what Sign out does - the session revoked
-    at the service, the entry prefill erased, the device key's database
-    deleted, origin-wide - said as the one fact a member cares about.
-    It must not outgrow that: anything here that is not true of every
-    sign-out is a promise this page cannot keep.
+    TWO WORDS, RULED (#275, from the register bar on #265). The second
+    sentence - "This browser now holds nothing of yours." - was accurate
+    and was vetoed anyway: an acknowledgement is the act, and the
+    inventory of what the act cleared is a fact nobody standing on this
+    page has to do anything with. What was omitted was never claimed
+    away, which is the floor rule the shorter line still meets.
+
+    tools/check_web.py's RULED_LINES pins this as the WHOLE of what the
+    element renders, because the ruled words are the front of the
+    sentence they replaced.
   -->
   <p class="status" id="signed-out" role="status" hidden>
-    Signed out. This browser now holds nothing of yours.
+    Signed out.
   </p>
 
   <div class="card narrow" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in. This is not a Telegram sign-in.
+      test sign-in — not a Telegram sign-in.
     </p>
   </div>
 
@@ -112,8 +117,8 @@
          more: a threshold is not the place to be charming at the
          expense of being followed. -->
     <p>
-      Use the Telegram account this group knows you by. Your sign-in is
-      kept only for this browser tab.
+      Use the Telegram account this group knows you by — the sign-in is
+      kept only for this tab.
     </p>
     <script async src="https://telegram.org/js/telegram-widget.js?22"
             data-telegram-login="hanggangbinder_bot" data-size="large"

@@ -796,7 +796,7 @@ const refused = await loadPublic(MEMBER, response(200, SNAPSHOT), {
   sourceRefuses: {
     message: "that is a keyholder snapshot, not a published one - it " +
       "carries handles and unsuppressed cells",
-    plain: "What arrived is not the published copy this page may show.",
+    plain: "These are not the published figures.",
   },
 });
 
@@ -807,12 +807,16 @@ check("a document the engine refuses takes the controls away and says why",
   // "document", "queried", "engine", "unsuppressed cells" are the
   // engine's nouns, and this is a member's screen. Inert controls would
   // invite a member to keep clicking, so they still go away.
+  //
+  // THE MEMBER SENTENCE IS THE WHOLE LINE - the register bar's rule 5
+  // (#275). Equality rather than a containment test, because what this
+  // arm now refuses is a house sentence in front of the plain half, and
+  // a containment test cannot see one.
   refused.elements.question.hidden === false &&
   refused.elements["q-controls"].hidden === true &&
   refused.elements["q-status"].className === "status bad" &&
   refused.elements["q-status"].textContent ===
-    "These figures cannot be asked questions here. What arrived is not " +
-    "the published copy this page may show." &&
+    "These are not the published figures." &&
   refused.answers.length === 0 &&
   refused.renders.length === 1);
 
@@ -828,8 +832,7 @@ const throwing = await loadPublic(MEMBER, response(200, SNAPSHOT), {
   runThrows: {
     message: "a median over \"gender\" is not a question - a middle needs " +
       "numbers to take the middle of",
-    plain: "A middle needs numbers to work with, so it is only offered " +
-      "for weight, height and BMI.",
+    plain: "Only weight, height and BMI can be averaged.",
   },
 });
 
@@ -840,8 +843,7 @@ check("a question the engine refuses is reported in the card's own words",
   // in the words the controls above it use.
   throwing.elements["q-status"].className === "status bad" &&
   throwing.elements["q-status"].textContent ===
-    "A middle needs numbers to work with, so it is only offered for " +
-    "weight, height and BMI." &&
+    "Only weight, height and BMI can be averaged." &&
   throwing.logged.some((line) => /is not a question/.test(line)) &&
   throwing.answers.length === 0 &&
   // and the page is still a page
