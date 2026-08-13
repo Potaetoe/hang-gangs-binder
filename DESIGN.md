@@ -233,7 +233,9 @@ sooner; re-adding the person in Telegram inside the window restores
 them and their data reattaches. Two guards, both of them about the
 failure modes rather than the happy path: **"cannot check" never starts
 a clock**, and a mass-departure anomaly freezes the countdowns rather
-than arming them all at once. The window's length is a group setting.
+than arming them all at once. The window's length is a group setting;
+its ruled default is 30 days, stated with the other Settings defaults
+under **Admin surfaces** below.
 
 ## Your page
 
@@ -253,11 +255,13 @@ count, the Telegram-id line, the custody cards, the sealed-rows line.
 - **A download button exports the member's own rows** in the existing
   spreadsheet format.
 
-The device-memory prefill dies with the reason it existed. It was the
-only memory a member had while no route could answer "what did I say
-last time"; the server answers that now, so a store of one member's
-last entry sitting in a shared browser's `localStorage` is a privacy
-cost buying nothing.
+The device-memory prefill dies with the reason it existed (**derived,
+not ruled** — the record's list of what this pane loses does not name
+it; this follows from the ruled design rather than from a sentence in
+it, and is reversible on an argument). It was the only memory a member
+had while no route could answer "what did I say last time"; the server
+answers that now, so a store of one member's last entry sitting in a
+shared browser's `localStorage` is a privacy cost buying nothing.
 
 ## Charts
 
@@ -291,10 +295,12 @@ live one, because they were always about what a **reader** can
 reconstruct rather than about publishing:
 
 - **A drawn cell describes at least the floor's number of people**, and
-  the floor is a group setting rather than a constant. Suppression is
-  by subtraction, not redaction — removed cells fold into an `Other`
-  bucket that itself clears the floor, so within a single view the
-  remainder cannot be differenced back. Histograms merge adjacent bins.
+  the floor is a group setting rather than a constant — on by default
+  and starting at 5, stated with the other Settings defaults under
+  **Admin surfaces** below. Suppression is by subtraction, not
+  redaction — removed cells fold into an `Other` bucket that itself
+  clears the floor, so within a single view the remainder cannot be
+  differenced back. Histograms merge adjacent bins.
   A cut below the floor says "not enough people for this view", which
   is the honest sentence and not an error.
 - **One partition, not two.** Both unit systems report the same groups
@@ -355,6 +361,27 @@ follow the Telegram group. Bulk import arrives as its own slice.
 the three facts this design makes an admin responsible for: the
 suppression floor, the purge window's length, and bot health —
 "membership last verified N minutes ago".
+
+Its two editable controls ship with **ruled defaults**, and they are
+written here because a builder implements this page from this document.
+Both come from the design record (#228 comment 5287071398): the floor
+from Part 3 and its open-items list, the window from Part 4.
+
+- **The suppression floor is on by default, and it starts at 5.** The
+  5 is not invented here: it is what `MIN_CELL` holds in
+  `apps/web/dashboard.js`, and the setting inherits that rather than
+  picking a new one — the record schedules the value itself as an open
+  item, to be re-taken when this page ships it as editable and not
+  before. The number is written out rather than only pointed at
+  because the file holding it today is one the 0.9 rebuild deletes:
+  whoever writes the Worker's copy carries the 5 across, and this line
+  is what they carry it from. A group never starts with the floor off —
+  turning it off is an admin's deliberate act.
+- **The purge window is 30 days by default.** It is the length of the
+  countdown a confirmed departure starts, and the two guards stated
+  with it above — a "cannot check" never starts a clock, a
+  mass-departure anomaly freezes rather than arms — hold whatever an
+  admin sets it to.
 
 ## Where configuration lives
 

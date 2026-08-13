@@ -43,10 +43,15 @@ a system that is being replaced, which is how it went stale.
 
 **Model tier is part of the slice, not a habit.** Builders run on
 Sonnet; a slice that reaches production or does anything irreversible
-runs on a specialist; refactor runs on Opus; anything touching
-authentication, stored formats or credentials runs on Opus whatever
-else it is. Review depth keys to the builder's tier. The tier lives in
-the agent definitions, so a brief that names one is quoting them.
+runs on a specialist; refactor runs on Opus; and the ruled list is
+carried word for word — **crypto, auth and money slices build on Opus
+regardless**. Read that list as written rather than as translated:
+this project has no money surface today and its client-side crypto is
+dead with the keys, so what it reaches in 0.9 is authentication, the
+stored formats a Worker encrypts and anything holding a credential —
+but a surface that comes back is covered by the list already, without
+a new ruling. Review depth keys to the builder's tier. The tier lives
+in the agent definitions, so a brief that names one is quoting them.
 
 ## The documentation system
 
