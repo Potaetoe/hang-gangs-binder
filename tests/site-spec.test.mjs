@@ -19,16 +19,25 @@
  * mistake that does not throw and does not look wrong: it produces a
  * plausible number, stores it, and shows up on export day when every
  * row is quietly off by 2.2. Same for a histogram band, a rounding
- * place, or a measure that silently computes nothing because its
- * derivation is spelled wrong.
+ * place, a measure that silently computes nothing because its
+ * derivation is spelled wrong, a field whose kind nothing implements,
+ * and - section 5 - a spec that is never frozen at all because the two
+ * <script> tags were written in the other order.
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
-const load = async (path) => {
+
+/* `tag` is not decoration: a data: URL is its own module specifier, so
+   the same file imported twice with the same bytes is served from the
+   module cache and evaluated once. Section 5 needs a SECOND, ignorant
+   copy of apps/fields.js in this process, and the tag is what makes the
+   specifier differ. */
+const load = async (path, tag) => {
   const source = await readFile(HERE(path), "utf8");
-  await import("data:text/javascript," + encodeURIComponent(source));
+  await import("data:text/javascript," +
+    encodeURIComponent(tag ? source + "\n//" + tag : source));
 };
 
 await load("../apps/site.config.js");
@@ -40,7 +49,7 @@ const F = globalThis.BinderFields;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
-const EXPECTED = 37;
+const EXPECTED = 43;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -54,13 +63,33 @@ function check(label, condition) {
 
 check("the spec is one object", SITE && typeof SITE === "object");
 
-// Frozen all the way down. A page will hold this object for a whole
-// session, so a same-origin script that could push a choice onto a
-// list or move a limit would be editing the form after it rendered.
-check("the spec is frozen all the way down",
+// Frozen all the way down, by the first READ of it. A page will hold
+// this object for a whole session, so a same-origin script that could
+// push a choice onto a list or move a limit would be editing the form
+// after it rendered. The read is written out rather than left to the
+// checks below it: what freezes the spec is reading it, and a check
+// that happened to run after some other check had read it would pass
+// without saying so. Section 5 asserts the same property with the two
+// files loaded the other way round.
+F.names();
+check("the spec is frozen all the way down once anything reads it",
   Object.isFrozen(SITE) && Object.isFrozen(SITE.group) &&
   Object.isFrozen(SITE.fields) &&
-  SITE.fields.every((field) => Object.isFrozen(field)));
+  SITE.fields.every((field) => Object.isFrozen(field)) &&
+  Object.isFrozen(SITE.units.kinds.weight.units.kg));
+
+// The property behind the criterion above, stated as what an injected
+// script actually tries: not "is it frozen" but "can the form still be
+// edited after it rendered".
+check("a same-origin push onto a choice list changes nothing",
+  (() => {
+    const choices = F.field("gender").choices;
+    const before = choices.map((choice) => choice.value).join(",");
+    try {
+      choices.push({ value: "injected", label: "Injected" });
+    } catch (error) { /* a frozen list throws here, which is the point */ }
+    return choices.map((choice) => choice.value).join(",") === before;
+  })());
 
 check("the derivations are frozen", Object.isFrozen(F));
 
@@ -192,6 +221,53 @@ check("a computed field naming an unknown derivation is refused loudly",
     }
   })());
 
+/*
+ * The same doctrine one step earlier, and the case that matters to a
+ * fork rather than to this repository: a KIND nothing implements.
+ *
+ * The shipped spec cannot have this typo - the check in section 1 holds
+ * its six fields to the list - so the only spec that can is the one
+ * somebody edits, which is the whole audience of these two files. Left
+ * unguarded, "girth" fell through every branch of measureFor into the
+ * unitless one and produced a histogram measure with an undefined band:
+ * a chart with no bin width, drawn from a field the form never asked
+ * for, and no error anywhere. A spec that will not load beats that.
+ */
+const BAD_KIND = Object.freeze({
+  ...SITE,
+  fields: [{ name: "waist", kind: "girth", label: "Waist", term: "waist",
+    chart: true }],
+});
+check("a field of a kind nothing implements is refused, not measured",
+  (() => {
+    try {
+      F.measures(BAD_KIND);
+      return false;
+    } catch (error) {
+      return String(error.message).includes("girth") &&
+        String(error.message).includes("waist");
+    }
+  })());
+
+// And refused on the read rather than only on the chart path: an
+// unknown kind on a field nobody charts is the same unrenderable spec,
+// and a guard living in the measure list would hand out names, labels
+// and limits for it and refuse only where a chart asked.
+const BAD_KIND_UNCHARTED = Object.freeze({
+  ...SITE,
+  fields: [{ name: "waist", kind: "girth", label: "Waist", term: "waist",
+    chart: false }],
+});
+check("an unknown kind is refused even where nothing would chart it",
+  (() => {
+    try {
+      F.names(BAD_KIND_UNCHARTED);
+      return false;
+    } catch (error) {
+      return String(error.message).includes("girth");
+    }
+  })());
+
 /* ------------------------------------------------------------------ */
 /* 4. Conversion, derived from the unit table rather than restated.    */
 
@@ -207,6 +283,73 @@ check("converting a unit to itself changes nothing",
   F.convert(200, "lb", "lb") === 200);
 check("converting across kinds is refused rather than answered",
   F.convert(1, "lb", "cm") === null && F.factor("lb", "cm") === null);
+
+/* ------------------------------------------------------------------ */
+/* 5. Both <script> orders, because two tags have two of them.         */
+
+/*
+ * 0.9-M2 loads these two files with two <script> tags, and nothing in
+ * either file pins which comes first. Everything above loads the config
+ * first, which is the safe order and therefore the one that cannot
+ * catch this: with the reader first, the freeze used to happen while
+ * apps/fields.js evaluated and root.BINDER_SITE was not there yet, so
+ * deepFreeze returned on its first guard, nothing threw, every
+ * derivation went on working, and the spec stayed editable for the life
+ * of the page. A conditional property with no error behind it is the
+ * shape of failure the review bar names: the criterion (Object.isFrozen
+ * on the shipped order) held while the property (the form cannot be
+ * edited after it renders) did not.
+ *
+ * So this section loads them the other way round in this same process.
+ * The shipped pair is put aside, a second copy of apps/fields.js is
+ * evaluated with no spec in sight, and both halves are asserted: a read
+ * before any spec exists is refused loudly, and a read after the spec
+ * arrives freezes it exactly as the shipped order does.
+ */
+const SHIPPED_SITE = globalThis.BINDER_SITE;
+const SHIPPED_FIELDS = globalThis.BinderFields;
+delete globalThis.BINDER_SITE;
+delete globalThis.BinderFields;
+
+await load("../apps/fields.js", "reader-first");
+const EARLY = globalThis.BinderFields;
+
+check("the reader loaded first derives nothing, and says so loudly",
+  (() => {
+    try {
+      EARLY.measures();
+      return false;
+    } catch (error) {
+      return String(error.message).includes("apps/site.config.js");
+    }
+  })());
+
+await load("../apps/site.config.js", "reader-first");
+const LATE = globalThis.BINDER_SITE;
+EARLY.names();
+
+check("the spec is frozen all the way down in that order too",
+  Object.isFrozen(LATE) && Object.isFrozen(LATE.group) &&
+  Object.isFrozen(LATE.fields) &&
+  LATE.fields.every((field) => Object.isFrozen(field)) &&
+  Object.isFrozen(LATE.units.kinds.weight.units.kg));
+
+check("and a same-origin push onto its choice list changes nothing either",
+  (() => {
+    const choices = EARLY.field("gender").choices;
+    const before = choices.map((choice) => choice.value).join(",");
+    try {
+      choices.push({ value: "injected", label: "Injected" });
+    } catch (error) { /* a frozen list throws here, which is the point */ }
+    return choices.map((choice) => choice.value).join(",") === before;
+  })());
+
+/* Back to the shipped pair. A file that leaves a second copy of the
+   module in the globals is a file the next one inherits - and this
+   directory's arms are written to be run together by 0.9-M0-S4's
+   runner as much as one at a time. */
+globalThis.BINDER_SITE = SHIPPED_SITE;
+globalThis.BinderFields = SHIPPED_FIELDS;
 
 console.log(failures
   ? `\nsite-spec FAILED ${failures} of ${performed} check(s)`
