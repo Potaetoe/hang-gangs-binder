@@ -397,7 +397,7 @@ await check("the stored event exists only on the successful network path",
       'document.dispatchEvent(new CustomEvent("binder:submitted"';
     const occurrences = formSrc.split(dispatch).length - 1;
     const failureMessage = formSrc.indexOf(
-      '" Nothing was stored - try again.", "bad");');
+      'say("Nothing was stored — try again.", "bad");');
     const failureReturn = formSrc.indexOf("return;", failureMessage);
     const dispatchAt = formSrc.indexOf(dispatch);
     const successUi = formSrc.indexOf("show(form, false);", dispatchAt);

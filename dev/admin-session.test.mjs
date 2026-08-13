@@ -474,6 +474,24 @@ const storedRecord = (over) => Object.assign({
 const START = Date.parse("2026-08-09T12:00:00.000Z");
 
 let scenario = 0;
+/*
+ * The console, captured - the other half of the register bar's rule 5
+ * (#275). The rule is that ONE short member sentence renders and the
+ * engine's precise text survives in code, tests and the console; a suite
+ * asserting only the first half passes just as well over a page that
+ * DELETED the technical wording, and losing it leaves whoever is
+ * debugging with nothing at all.
+ *
+ * Swapped once for the whole file rather than around each load, and
+ * emptied per scenario. Every scenario here presses its controls AFTER
+ * loadAdmin returns - `run`, `unpublish`, `publish` - so a capture that
+ * ended with the import would be listening during the one stretch when
+ * the page has not been touched yet.
+ */
+const logged = [];
+console.warn = (...parts) => { logged.push(parts.join(" ")); };
+
+
 async function loadAdmin(session, options = {}) {
   const page = makePage();
   const requests = [];
@@ -684,6 +702,8 @@ async function loadAdmin(session, options = {}) {
   const revokeObjectURL = URL.revokeObjectURL;
   URL.createObjectURL = () => "blob:admin-session-test";
   URL.revokeObjectURL = () => {};
+
+  logged.length = 0;
   scenario++;
   await import("data:text/javascript," + encodeURIComponent(adminSource) +
     "#admin-session-" + scenario);
@@ -691,7 +711,7 @@ async function loadAdmin(session, options = {}) {
   URL.createObjectURL = createObjectURL;
   URL.revokeObjectURL = revokeObjectURL;
   return {
-    ...page, requests, snapshots, imported, keysUsed,
+    ...page, requests, snapshots, imported, keysUsed, logged,
     timers: timers.slice(),
     pending: () => pending,
     rows: storage ? storage.rows : null,
@@ -799,10 +819,29 @@ check("publish carries the admin session",
    ever makes has nothing to measure from. A fabricated anchor would
    report the whole group's weight as its first month's gain (#73). */
 const firstEverAnchor = admin.snapshots.at(-1).options.previous;
+/*
+ * THE ROW IS NAMED; THE ENGINE'S REASON IS NOT ON SCREEN - #275's rule 5
+ * and rule 1 read together.
+ *
+ * "row 73: could not be opened with this key" put crypto.js's own
+ * vocabulary in front of a keyholder, in the middle of a list - and the
+ * shipped module's real wording is longer than this stub's ("none of
+ * this row's recipient blocks opened with this key"). The id is the
+ * half a keyholder acts on - it is what they look up,
+ * what they quote to whoever holds the other key - and the card around
+ * this list already explains the mechanism behind its More. The reason
+ * goes where a developer looks, and is asserted there rather than
+ * dropped, because a page that says nothing about why is worse for
+ * everybody.
+ */
 check("an undecryptable submission is listed by id without shifting rows",
-  admin.elements["failure-list"].textContent.includes(
-    "row 73: could not be opened with this key") &&
+  admin.elements["failure-list"].textContent.trim() === "row 73" &&
   JSON.stringify(rowIds(admin)) === JSON.stringify([41, 99]));
+check("and the reason it would not open reaches the console, not the list",
+  !/opened with this key/.test(
+    admin.elements["failure-list"].textContent) &&
+  admin.logged.some((line) => /row 73/.test(line) &&
+    /could not be opened with this key/.test(line)));
 
 /*
  * The identity has to make the whole journey - fetched as a column,
@@ -1080,7 +1119,13 @@ const refused = await loadAdmin(ADMIN, { persist: false });
 await refused.elements.run.click();
 await settle();
 check("a refused persistence request says the key can go, and how to return",
-  /evict/i.test(refused.elements.status.textContent) &&
+  // "Evicted" was the browser's word for this and it went with the
+  // compression (#275): the fact a keyholder acts on is that the key
+  // can disappear, not the name of the mechanism that takes it. Both
+  // halves are still pinned - the loss and the way back - because a
+  // notice carrying only one of them is the notice this arm exists to
+  // refuse.
+  /may drop it/i.test(refused.elements.status.textContent) &&
   /key file/i.test(refused.elements.status.textContent));
 
 /*
@@ -1359,8 +1404,13 @@ await settle();
 check("a membership call the session cannot make ends the session and leaves",
   Session.read() === null && redirects.includes("index.html") &&
   // And it says so rather than leaving a blank pane behind while the
-  // navigation is still in flight.
-  /discarded/.test(expired.elements["membership-status"].textContent));
+  // navigation is still in flight. What it says is the session and the
+  // way back - the compression to one clause (#275) took out the middle
+  // clause naming what was done with the credential, which is a fact
+  // about this page's housekeeping rather than about the admin.
+  /session was not accepted/.test(
+    expired.elements["membership-status"].textContent) &&
+  /sign in again/i.test(expired.elements["membership-status"].textContent));
 
 /* The go-signal, which is the one thing on this pane that a missing
  * field could turn into a lie. */
@@ -1836,6 +1886,25 @@ check("no download is lit before anything is pressed", lit().length === 0);
 await exports_.elements.download.click();
 check("a press lights the button that was pressed, and only it",
   lit().join(",") === "download");
+
+/*
+ * The words on the press, pinned VERBATIM and as the whole of what the
+ * line says - the owner ruled them at the delta sitting (#126 R5, and
+ * the register bar on #265 names them again).
+ *
+ * Equality rather than a fragment, for this sentence in particular: the
+ * line it replaced opened with the same act and then explained at
+ * length what the page cannot know about a download, so every fragment
+ * worth matching on is inside the copy the ruling removed.
+ *
+ * It says nothing about WHICH file, and that is the honesty floor
+ * working rather than a gap: a short line may omit, and the one thing
+ * it must never do is claim the file arrived - which is why the pointer
+ * sends the reader to the browser's own shelf instead.
+ */
+check("the press is acknowledged in the owner's words and no others",
+  exports_.elements["download-status"].textContent ===
+    "Downloaded — check your downloads.");
 
 await exports_.elements["download-xlsx"].click();
 check("a second press inside the window moves the light rather than adding one",

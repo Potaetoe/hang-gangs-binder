@@ -234,9 +234,9 @@
    * nothing, under a message announcing that something was removed.
    */
   const STORED_KEY_WRONG = "The key stored on this device is not the one " +
-    "this site encrypts to, so it has been removed. Choose your key file.";
+    "this site encrypts to, so it has been removed — choose your key file.";
   const STORED_KEY_DAMAGED = "What was stored on this device is not a " +
-    "usable key, so it has been removed. Choose your key file.";
+    "usable key, so it has been removed — choose your key file.";
 
   function storedKeyVerdict(record, expectedPublicKey) {
     if (record === null || record === undefined) {
@@ -275,14 +275,17 @@
    * day the file is not in reach. The measurements are in #85's spike.
    */
   function storedKeyNotice(persisted) {
+    // One clause and a pointer, both arms (#275). Rule 7's allowance
+    // buys the "but" in the refused arm and nothing more: a keyholder
+    // who reads "stored" as "safe" is the one who finds out otherwise
+    // on the day the file is not in reach, so that arm keeps the fact
+    // that the key can go and sends them to the thing that brings it
+    // back. The granted arm has nothing to warn about, so it warns
+    // about nothing.
     return persisted
-      ? "Your key is kept on this device, and the browser has marked " +
-        "this site's storage persistent, so ordinary cleanup leaves it " +
-        "alone. Clearing this site's data removes it, and so does Clear."
-      : "Your key is kept on this device, but the browser did not mark " +
-        "this site's storage persistent, so it can be evicted - some " +
-        "browsers drop it after about a week without a visit. Keep your " +
-        "key file: it is what puts the key back.";
+      ? "Your key is kept on this device — Clear is what removes it."
+      : "Your key is kept on this device, but the browser may drop it — " +
+        "keep your key file.";
   }
 
   /*
@@ -305,10 +308,10 @@
    */
   function otherKeyNotice(opened) {
     return opened
-      ? "This is not the private half of the key this site encrypts to, " +
-        "so it opens this export and is not kept on this device."
-      : "This is not the private half of the key this site encrypts to. " +
-        "It was used only for this attempt and is not kept on this device.";
+      ? "This is not this site's key — it opens this export and is not " +
+        "kept on this device."
+      : "This is not this site's key — it was used only for this attempt " +
+        "and is not kept on this device.";
   }
 
   /* ---------------------------------------------------------------- */
@@ -508,15 +511,14 @@
     if (status === REFUSED) {
       return {
         action: "signed-out",
-        message: "The admin session was not accepted, so it has been " +
-          "discarded. Sign in again.",
+        message: "The admin session was not accepted — sign in again.",
       };
     }
     if (status === 409) {
       return {
         action: "show",
-        message: (said || "The Worker refused that removal.") +
-          " Nothing was removed; the lists below are what it holds now.",
+        message: (said || "That removal was refused.") +
+          " Nothing was removed — the lists below are what it holds now.",
       };
     }
     return {
@@ -724,6 +726,38 @@
   const show = UI.show;
 
   /*
+   * The technical half of a failure, written where a developer looks -
+   * the register bar's rules 1 and 5 (#275), the arrangement submit.js
+   * and public.js already use.
+   *
+   * A thrown Error's message is written for somebody who is not on this
+   * page: "Failed to fetch" is the browser's own wording for a network
+   * that did not answer, "The server answered 502." is a status code,
+   * crypto.js says "none of this row's recipient blocks opened with
+   * this key". Pasted into the middle of a keyholder's sentence, each
+   * one is a clause between two that they can act on - and rule 3 says
+   * an operator warning meets the same bar as anything else, so the
+   * instrument gets no exemption from this.
+   *
+   * None of it is discarded. A page that fails and says nothing about
+   * why is worse for everybody; it is addressed to the reader who can
+   * use it, and dev/admin-session.test.mjs asserts it arrives here
+   * rather than only that it left the screen.
+   */
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  /* An Error's own words, for the console, with a fallback for a throw
+   * that carries none - a bare `throw` still has to leave a trace. */
+  function why(error) {
+    return error && error.message ? error.message : "failed with no message";
+  }
+
+  /*
    * Where the keyholder's key lives between visits.
    *
    * The stored value is the `CryptoKey` object itself, structure-cloned
@@ -768,25 +802,22 @@
     ["download", "download-xlsx", "download-json"]);
 
   /*
-   * What each download is CALLED IN A SENTENCE, which is not what its
-   * button is called - #265 row 39.
+   * WHAT A PRESS SAYS, ruled word for word by the owner (#126 R5, and
+   * the register bar on #265 names it again).
    *
-   * A label read off the element gives the sentence a verb phrase
-   * where it needs a noun - "Download CSV handed to the browser" reads
-   * as an instruction that has collided with a past tense. The labels
-   * themselves are right and UAT.md quotes all three; borrowing them
-   * for a job they were not written for is what is wrong.
+   * It does not say which of the three was pressed, and that is the
+   * honesty floor working rather than a gap in it: the lit button
+   * beside the line already says which, a short line may omit, and the
+   * one thing this sentence must never do is claim the file arrived.
+   * The browser never tells this page that. So the pointer sends the
+   * reader to the browser's own shelf, which is the only place the
+   * answer exists.
    *
-   * Keyed by id and read from here rather than from the DOM, so the
-   * sentence cannot change under a relabelling - and a fourth export
-   * arrives loudly, with an undefined noun, rather than quietly
-   * printing whatever the new button happens to say.
+   * The per-format nouns this replaced are gone rather than kept
+   * unused: a table naming three exports, read by nothing, is the first
+   * thing a fourth export would be added to.
    */
-  const DOWNLOAD_NOUNS = Object.freeze({
-    "download": "The CSV",
-    "download-xlsx": "The Excel file",
-    "download-json": "The JSON file",
-  });
+  const DOWNLOAD_ACK = "Downloaded — check your downloads.";
   const PRESSED_MS = 4000;
 
   const KEY_DB = "hgb-keyholder-key";
@@ -868,12 +899,12 @@
    * looks fine and a button that does nothing. */
   UI.boot(setUp, function (error) {
     showInstrument(false);
+    detail(why(error));
     const closed = $("closed");
     show(closed, true);
     if (closed) {
       closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so it is not safe to use. " +
-        (error && error.message ? "(" + error.message + ")" : "");
+        "This page did not start up correctly, so it is not safe to use.";
     }
   });
 
@@ -1042,9 +1073,11 @@
      * WHAT IT MUST NOT SAY is that the file arrived, because the
      * browser never tells this page that. Both halves are worded
      * against that: the class is spent on the press and cleared on a
-     * timer, and the sentence says the export was handed over rather
-     * than saved. A timer that lies is worse than no acknowledgement,
-     * since the second one is at least honest about knowing nothing.
+     * timer, and the sentence sends the reader to look rather than
+     * reporting a result. A timer that lies is worse than no
+     * acknowledgement, since the second one is at least honest about
+     * knowing nothing. The words themselves are ruled - see
+     * DOWNLOAD_ACK.
      *
      * The timer is cleared before it is set again so that pressing two
      * downloads in a row leaves the second one lit rather than being
@@ -1071,10 +1104,7 @@
       pressedTimer = setTimeout(function () {
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
       }, PRESSED_MS);
-      UI.setStatus($("download-status"),
-        DOWNLOAD_NOUNS[pressed] + " was handed to the browser. Where a "
-        + "download goes is the browser's to decide, so this page cannot "
-        + "say whether it arrived.", null);
+      UI.setStatus($("download-status"), DOWNLOAD_ACK, null);
     }
 
     // `content` is a string for the text formats and a Uint8Array for
@@ -1414,8 +1444,8 @@
           say("Reading the key…", null);
           key = await root.BinderCrypto.importPrivateKey(keyText);
         } catch (error) {
-          say("That key was not usable. " +
-            (error && error.message ? error.message : ""), "bad");
+          detail(why(error));
+          say("That key was not usable.", "bad");
           return;
         }
         storedKey = key;
@@ -1444,9 +1474,8 @@
         payload = await response.json();
       } catch (error) {
         $("run").disabled = false;
-        finish("The rows could not be fetched. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        finish("The rows could not be fetched.", "bad");
         return;
       }
 
@@ -1474,10 +1503,14 @@
             submission.ciphertext, key);
           entries.push(entryFor(submission, record));
         } catch (error) {
-          failures.push({
-            id: submission.id,
-            why: error && error.message ? error.message : "unknown error",
-          });
+          // The id is the half a keyholder acts on - it is what they
+          // look up and what they quote to whoever holds the other key.
+          // crypto.js's own reason for refusing goes to the console:
+          // "none of this row's recipient blocks opened with this key"
+          // is the engine's vocabulary, and the card around this list
+          // already explains the mechanism behind its More (#275).
+          detail("row " + submission.id + ": " + why(error));
+          failures.push({ id: submission.id });
         }
       }
 
@@ -1616,8 +1649,8 @@
         show($("unpublish"), true);
       } catch (error) {
         publishedNow = null;
-        state.textContent = "Could not check what is published. " +
-          (error && error.message ? error.message : "The connection failed.");
+        detail(why(error));
+        state.textContent = "Could not check what is published.";
         // Offered anyway. If the check failed because the network is
         // unreliable rather than because nothing is published, hiding
         // the button would remove the way out at the worst moment.
@@ -1646,11 +1679,18 @@
         // the database name, the environment flag and the reason the
         // unqualified DELETE is safe - none of which fit in a status
         // line, and all of which somebody typing it needs.
-        sayUnpublish("It could not be taken down. " +
-          (error && error.message ? error.message : "The connection failed.") +
-          " If this persists, an admin can clear it by hand — the steps " +
-          "are in OPERATIONS.md, under Publishing and retracting the " +
-          "snapshot.", "bad");
+        //
+        // ONE CLAUSE AND A POINTER AFTER THE DASH - the register bar's
+        // rule 1 (#275). This is the shape that rule describes, and the
+        // pointer is the fact rule 7's allowance is for: a keyholder
+        // who cannot retract a published document needs to know the
+        // retraction is still reachable, or they act as though it is
+        // not. The engine's own wording sat between the two halves and
+        // is in the console.
+        detail(why(error));
+        sayUnpublish("It could not be taken down — an admin can clear it "
+          + "by hand, under Publishing and retracting the snapshot in "
+          + "OPERATIONS.md.", "bad");
         return;
       }
 
@@ -1869,9 +1909,8 @@
         }
         payload = await response.json();
       } catch (error) {
-        sayMembership("The membership lists could not be read. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("The membership lists could not be read.", "bad");
         return;
       }
       drawMembership(membershipView(payload));
@@ -1918,9 +1957,8 @@
         }
       } catch (error) {
         $("member-add").disabled = false;
-        sayMembership("That could not be sent. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be sent.", "bad");
         return;
       }
 
@@ -1961,9 +1999,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        sayMembership("That could not be removed. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be removed.", "bad");
         return;
       }
 
@@ -2071,9 +2108,8 @@
         }
       } catch (error) {
         $("publish").disabled = false;
-        sayPublish("It could not be published. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayPublish("It could not be published.", "bad");
         return;
       }
 
@@ -2100,9 +2136,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        say("Row " + entry.id + " could not be deleted. " +
-          (error && error.message ? error.message : "The connection failed."),
-        "bad");
+        detail(why(error));
+        say("Row " + entry.id + " could not be deleted.", "bad");
         return;
       }
 
@@ -2166,7 +2201,7 @@
       if (failures.length) {
         show($("failures"), true);
         $("failure-list").textContent = failures.map(function (f) {
-          return "row " + f.id + ": " + f.why;
+          return "row " + f.id;
         }).join("\n");
       }
 

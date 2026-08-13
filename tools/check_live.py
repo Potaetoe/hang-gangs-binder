@@ -705,27 +705,6 @@ LEDGER = [
                 "that this page reaches a live Worker at all and that "
                 "what it mints is accepted by the next page"),
     },
-    # The retest of the arm below starts by restarting the browser, and
-    # the reading is worth nothing without it: the operating system
-    # setting does not reach a browser that is already running, so
-    # matchMedia goes on answering false, the page paints the animation
-    # it would have painted anyway, and what looks like a pass is a
-    # pass for the wrong reason. Ten seconds, in the right order.
-    {
-        "id": "index.html, the reduced-motion arm",
-        "surface": "page",
-        "claim": "a reader asking for reduced motion is given no frame "
-                 "of the closed cover at all, the stylesheet "
-                 "cancelling that animation outright rather than "
-                 "shortening it - at 0.01ms the keyframes still run and "
-                 "the blanket rule leaves the delay alone, so what is "
-                 "left is not one frame but the closed cover held "
-                 "opaque for about 200ms: the whole viewport at a "
-                 "phone width, a centered reading-column panel over "
-                 "the sign-in card at a desktop one",
-        "covers": ["apps/web/index.html", "apps/web/theme.css"],
-        "status": "never",
-    },
     # `form.js` stands under this row because form.js is the file that
     # does the sealing the `how` describes. Left out, a change to what an
     # entry seals to would leave this claim reading fresh against a page
@@ -758,8 +737,14 @@ LEDGER = [
     # never asks it to, so "the key a real browser filed away opens what
     # an earlier visit sealed" is a browser claim and Node may not make
     # it. Node-honest and browser-unperformed is exactly the shape #157
-    # says belongs here rather than in a pull request body, and the
-    # reduced-motion row above is the precedent.
+    # says belongs here rather than in a pull request body.
+    #
+    # The rule is stated here in full rather than by pointing at the row
+    # above it. A row is retired the moment its subject leaves - the
+    # reduced-motion row went out with the entrance animation - so a
+    # pointer to "the row above" resolves to nothing the first time a
+    # neighbor is retired, and a reader following it finds no such row
+    # and no way to learn what the precedent was.
     {
         "id": "your-page.html, the member's own seal",
         "surface": "page",

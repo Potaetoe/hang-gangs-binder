@@ -511,8 +511,8 @@
       // the route's own noun said twice in one line.
       detail(error && error.message ? error.message : "the /me route " +
         "could not be reached");
-      setStatus("Your entry count could not be refreshed. Try reloading " +
-        "the page.", true);
+      setStatus("Your entry count could not be refreshed — reload the " +
+        "page.", true);
     }
   }
 
@@ -729,8 +729,13 @@
 
     const key = await Keys.ensure(account);
     if (!key) {
+      // The store's own reason goes to the console rather than onto the
+      // end of the sentence (#275, rule 1): it names IndexedDB and
+      // private browsing, and a member who cannot keep a key does the
+      // same thing either way.
+      detail(Keys.unavailableReason() || "this browser keeps no key");
       historyStatus("This browser cannot keep a key of your own, so your " +
-        "entries stay sealed here. " + (Keys.unavailableReason() || ""), false);
+        "entries stay sealed here.", false);
       return;
     }
 
@@ -763,14 +768,13 @@
     } catch (error) {
       detail(error && error.message ? error.message : "the /my-entries " +
         "route could not be reached");
-      historyStatus("Your entries could not be fetched just now. Try " +
-        "reloading the page.", true);
+      historyStatus("Your entries could not be fetched — reload the page.",
+        true);
       return;
     }
 
     if (!rows.length) {
-      historyStatus("You have no entries yet. Weigh in and this fills up.",
-        false);
+      historyStatus("No entries yet — weigh in and this fills up.", false);
       return;
     }
 
@@ -796,8 +800,17 @@
       }
     }
 
+    /*
+     * The noun travels with the number - the same move the corrections
+     * line makes two cards up, for the same reason. The ruled sentence
+     * is "4 rows can't be opened here" (#275), and a slot filled with a
+     * bare digit renders "1 rows" on the one member who has exactly one
+     * of these, which is the tell of a number pasted into a sentence.
+     */
     const sealedCount = $("history-sealed-count");
-    if (sealedCount) sealedCount.textContent = String(sealed);
+    if (sealedCount) {
+      sealedCount.textContent = sealed === 1 ? "1 row" : sealed + " rows";
+    }
     /*
      * The partial line belongs to an answer, so it is shown only when
      * there is one - #265 row 17, which was only visible rendered.
@@ -830,27 +843,22 @@
        * immediately gets a keyholder-only row, permanently, on a browser
        * that holds a perfectly good key.
        *
-       * The remedy sentence is the one the partial-history line already
-       * uses, word for word: a member who reads either of them is in the
-       * same position and there is no reason for two answers.
        *
-       * TWO CAUSES ON SCREEN, FOUR IN THIS COMMENT, and that is #265
-       * row 17's ruling rather than a loss of the argument above. All
-       * four printed at once produced a paragraph a member had to parse
-       * to learn one thing they could act on, and none of the four
-       * changes what they do about it. "Sealed before this browser had
-       * a key of its own" is the first and the fourth in the member's
-       * own terms - in both, the row was sealed at a moment this
-       * browser's key was not there to seal to - and the third is a
-       * device this browser was, once, which is the reading "on another
-       * device" carries for somebody who signed out here. What the
-       * sentence must never become is a list of devices only: that
-       * blames a member's hardware for this page's own timing, and
-       * dev/submit.test.mjs pins both halves against it.
+       * NO CAUSES ON SCREEN, FOUR IN THIS COMMENT, and that is #275's
+       * ruling rather than a loss of the argument above. Two of them
+       * printed until now, and the pair was already a compromise: all
+       * four produced a paragraph a member had to parse to learn one
+       * thing they could act on, and none of the four - not one -
+       * changes what they do about it. A cause a reader cannot act on
+       * is the definition of the clause rule 1 takes out.
+       *
+       * What the sentence keeps is the effect and the remedy, in the
+       * words its sibling above uses for the partial case, because a
+       * member who reads either of them is in the same position and
+       * there is no reason for two answers.
        */
-      historyStatus("None of your entries can be opened on this browser " +
-        "— they were sealed before it had a key of its own, or on " +
-        "another device. Ask an admin to unlock them.", false);
+      historyStatus("None of your entries can be opened here. " +
+        "Ask an admin.", false);
       return;
     }
 
@@ -859,8 +867,13 @@
       source = Query.personalSource(entries, Date.now());
       scrub(source.snapshot);
     } catch (error) {
-      historyStatus("Your entries could not be read as a history. " +
-        plainly(error, "Try reloading the page."), true);
+      // The member sentence renders alone - the register bar's rule 5
+      // (#275). The house sentence that stood in front of it named the
+      // pane the reader is already looking at, and pushed the half they
+      // could act on into second place.
+      historyStatus(
+        plainly(error, "Your entries could not be read as a history."),
+        true);
       return;
     }
 

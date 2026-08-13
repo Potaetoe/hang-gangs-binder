@@ -359,8 +359,8 @@
        
       detail(error && error.message ? error.message : "the /me route " +
         "could not be reached");
-      setStatus("Your entry count could not be refreshed. Try reloading " +
-        "the page.", true);
+      setStatus("Your entry count could not be refreshed — reload the " +
+        "page.", true);
     }
   }
 
@@ -475,8 +475,13 @@
 
     const key = await Keys.ensure(account);
     if (!key) {
+       
+       
+       
+       
+      detail(Keys.unavailableReason() || "this browser keeps no key");
       historyStatus("This browser cannot keep a key of your own, so your " +
-        "entries stay sealed here. " + (Keys.unavailableReason() || ""), false);
+        "entries stay sealed here.", false);
       return;
     }
 
@@ -509,14 +514,13 @@
     } catch (error) {
       detail(error && error.message ? error.message : "the /my-entries " +
         "route could not be reached");
-      historyStatus("Your entries could not be fetched just now. Try " +
-        "reloading the page.", true);
+      historyStatus("Your entries could not be fetched — reload the page.",
+        true);
       return;
     }
 
     if (!rows.length) {
-      historyStatus("You have no entries yet. Weigh in and this fills up.",
-        false);
+      historyStatus("No entries yet — weigh in and this fills up.", false);
       return;
     }
 
@@ -533,8 +537,12 @@
       }
     }
 
+    
+
     const sealedCount = $("history-sealed-count");
-    if (sealedCount) sealedCount.textContent = String(sealed);
+    if (sealedCount) {
+      sealedCount.textContent = sealed === 1 ? "1 row" : sealed + " rows";
+    }
     
 
     show($("history-sealed"), sealed > 0 && entries.length > 0);
@@ -542,9 +550,8 @@
     if (!entries.length) {
       
 
-      historyStatus("None of your entries can be opened on this browser " +
-        "— they were sealed before it had a key of its own, or on " +
-        "another device. Ask an admin to unlock them.", false);
+      historyStatus("None of your entries can be opened here. " +
+        "Ask an admin.", false);
       return;
     }
 
@@ -553,8 +560,13 @@
       source = Query.personalSource(entries, Date.now());
       scrub(source.snapshot);
     } catch (error) {
-      historyStatus("Your entries could not be read as a history. " +
-        plainly(error, "Try reloading the page."), true);
+       
+       
+       
+       
+      historyStatus(
+        plainly(error, "Your entries could not be read as a history."),
+        true);
       return;
     }
 

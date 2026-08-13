@@ -1411,8 +1411,8 @@
    * group has no rows at all. Only the first is a withholding.
    *
    * The caption goes with the chart, for the reason the band caption
-   * does below: "Multi-select, so these do not add up" over a panel with
-   * nothing in it describes a drawing that is not there.
+   * does below: "These do not add up to the number of entries" over a
+   * panel with nothing in it describes a drawing that is not there.
    *
    * A null `total` is how a panel says it has no denominator (#182).
    */
@@ -1552,11 +1552,18 @@
   /* What the floor leaves when it leaves nothing, in one place. The
    * panels say it about a whole basis and the question card says it
    * about one answer, and two copies of a sentence promising what is
-   * hidden and why is two promises that can drift apart. */
+   * hidden and why is two promises that can drift apart.
+   *
+   * One clause and the number after the dash - the register bar's rule
+   * 1 (#275). The floor's SIZE is the half a member can act on: it tells
+   * them the breakdown appears when the group grows, which is the
+   * difference between an empty panel and a broken one. Why the floor
+   * exists - that a smaller group describes individual people - is the
+   * privacy long-form, and on this page that sits behind charts.html's
+   * More. */
   function tooFewNote() {
-    return "There are too few entries here to publish a breakdown without " +
-      "describing individual people. Nothing is shown until there are " +
-      "at least " + MIN_CELL + ".";
+    return "Too few entries here to show a breakdown — at least " +
+      MIN_CELL + " are needed.";
   }
 
   /* BMI is an index and carries no unit in either system, so its figures
@@ -1599,10 +1606,10 @@
    * AND NULL OVER AN ANSWER WITH NO GROUPS IN IT - #265 row 27, which
    * was found rendered rather than read. "Every group here already
    * cleared that floor" is true and useful over an answer that has
-   * groups; printed directly above "There are too few entries here to
-   * publish a breakdown without describing individual people" it is a
-   * promise about a set the next line calls empty, and a reader has to
-   * reconcile the two before either means anything. The sentence is
+   * groups; printed directly above "Too few entries here to show a
+   * breakdown" it is a promise about a set the next line calls empty,
+   * and a reader has to reconcile the two before either means anything.
+   * The sentence is
    * about what the reader can see, so it waits until there is
    * something to see. Both empty arms, because `available: false` and
    * an empty cell list are two states with one reading.
@@ -1650,10 +1657,12 @@
         statText(answer.value, answerSpec(answer))));
       wrap.appendChild(strip);
     } else if (!answer.cells.length) {
-      emptyNote(wrap, "No group in this answer was large enough to " +
-        "publish, and pooling the small ones still described too few " +
-        "people. The floor is applied before anything here is combined, " +
-        "so there is nothing this document can say about it.");
+      // One clause and the fact after the dash - rule 1 (#275). The
+      // ORDER of operations is what a member has to be told, or they
+      // read an empty answer as an invitation to widen their way past
+      // the floor; the two clauses that went said the same thing twice.
+      emptyNote(wrap, "No group in this answer was large enough to show " +
+        "— the floor is applied before anything is combined.");
     } else if (answer.kind === "categorical") {
       wrap.appendChild(barChart(answer.cells, answer.total));
     } else {
@@ -1797,8 +1806,8 @@
         }
       } else {
         emptyNote(timeWrap,
-          "Nobody has submitted twice yet, so there is no history to plot. " +
-          "This fills in as people resubmit.");
+          "Nobody has submitted twice yet — this fills in as people " +
+          "resubmit.");
       }
       container.appendChild(timeWrap);
     } else if (snapshot.seriesWithheld === true) {
@@ -1845,9 +1854,13 @@
 
     const heightMoved = snapshot.quality ? snapshot.quality.heightChanges : [];
     if (heightMoved.length) {
+      // "Worth checking before trusting the height figures." went: it is
+      // the same idiom the pass deleted from admin.html as a rule-1
+      // violation, and a caption that has already named the cause does
+      // not also need to tell a reader to think about it (#275).
       const wrap = figure("Heights that changed between entries",
-        "Height does not change in adults, so these are typos or a unit " +
-        "mix-up. Worth checking before trusting the height figures.");
+        "These are typos or a unit mix-up — height does not change in " +
+        "adults.");
       wrap.classList.add("chart-wide");   // a list, not a chart
       const list = document.createElement("pre");
       list.className = "failure-list";
@@ -1875,8 +1888,8 @@
       "No heights recorded.", floored));
 
     container.appendChild(distribution("BMI",
-      "Weight over height squared, and nothing more — the clinical " +
-      "category labels are deliberately not shown.",
+      "Weight over height squared — the clinical category labels are "
+      + "not shown.",
       view.bmi.bins, "BMI", null,
       "Not enough data to compute BMI.", floored));
 
@@ -1891,8 +1904,8 @@
      * had nothing to be a share of, so it is gone rather than relabelled.
      */
     container.appendChild(breakdown("Feedism affiliations",
-      "Multi-select, so these do not add up to the number of entries — " +
-      "which is why no share is shown beside them.",
+      "These do not add up to the number of entries — no share is shown " +
+      "beside them.",
       view.roles, null, floored));
 
     container.appendChild(breakdown("Country",

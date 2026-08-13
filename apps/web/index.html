@@ -29,35 +29,42 @@
 <body>
 
 <!--
-  The closed cover, which opens once on arrival. Decoration and nothing
-  else: aria-hidden because the wordmark it carries is repeated in the
-  heading below, and a screen reader announcing it twice would describe
-  a visual event as content.
-
-  It is inert by default and the animation plays it OPEN - the reasoning
-  is in theme.css beside the keyframes, and the short version is that
-  this is the sign-in page, so every way the animation can fail has to
-  fail with the content reachable rather than behind a panel.
-
   There is no rail here, by the owner's decision on #73: no rail before
   sign-in. tools/check_web.py pins this page as plain and fails if rail
   markup appears on it.
+
+  The name greets from the top of the page anyway - the owner's addendum
+  on #273 - and this mark is the sign-in page's only copy of it, which is
+  why WORDMARK_PAGES in tools/check_web.py names this page and check 10
+  holds these two lines to the rails' copies. Nothing here is
+  aria-hidden: the heading below is the name of the ACT, not of the site,
+  so a reader who cannot see this mark would meet a page that never says
+  what it is.
+
+  A paragraph rather than the rails' anchor, and that is the one way this
+  copy differs from theirs. There the mark is the route home; here home
+  is the page somebody is already standing on, and the reason this page
+  carries no rail is the reason it carries no link to itself.
+
+  It is painted with the first frame and never moves. apps/web declares
+  no @keyframes at all, so there is nothing for this mark to arrive in -
+  it greets, and the sign-in card under it is reachable in the same
+  frame (#273).
 -->
-<div class="cover-leaf" aria-hidden="true">
+<p class="wordmark">
   <span class="wordmark-owner">Hang Gang</span>
   <span class="wordmark-name">Binder</span>
-</div>
+</p>
 
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>
   <h1>Sign in</h1>
-  <!-- The cover above has just opened, so this is the first sentence
-       anybody reads. It still says the two things the old one said - one
-       sign-in, this tab only - and says them as an invitation rather
-       than as a notice. The pinned name is the heading above it; this
-       line is free to be warm (#73). -->
+  <!-- The first sentence anybody reads. It carries the two facts a
+       reader needs - one sign-in, this tab only - as an invitation
+       rather than as a notice. The pinned name is the heading above it;
+       this line is free to be warm (#73). -->
   <p class="muted">
-    Sign in once for this tab. Then it is your page to fill in, and
+    Sign in once for this tab — then it is your page to fill in, and
     everyone's numbers to read.
   </p>
 </header>
@@ -79,21 +86,26 @@
     already finished and needs nobody's attention, which is the same
     reading #auth-status carries below.
 
-    The claim is the whole of what Sign out does - the session revoked
-    at the service, the entry prefill erased, the device key's database
-    deleted, origin-wide - said as the one fact a member cares about.
-    It must not outgrow that: anything here that is not true of every
-    sign-out is a promise this page cannot keep.
+    TWO WORDS, RULED (#275, from the register bar on #265). The second
+    sentence - "This browser now holds nothing of yours." - was accurate
+    and was vetoed anyway: an acknowledgement is the act, and the
+    inventory of what the act cleared is a fact nobody standing on this
+    page has to do anything with. What was omitted was never claimed
+    away, which is the floor rule the shorter line still meets.
+
+    tools/check_web.py's RULED_LINES pins this as the WHOLE of what the
+    element renders, because the ruled words are the front of the
+    sentence they replaced.
   -->
   <p class="status" id="signed-out" role="status" hidden>
-    Signed out. This browser now holds nothing of yours.
+    Signed out.
   </p>
 
   <div class="card narrow" data-dev-session hidden>
     <p class="caution">Development session</p>
     <p class="muted small">
       Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in. This is not a Telegram sign-in.
+      test sign-in — not a Telegram sign-in.
     </p>
   </div>
 
@@ -105,8 +117,8 @@
          more: a threshold is not the place to be charming at the
          expense of being followed. -->
     <p>
-      Use the Telegram account this group knows you by. Your sign-in is
-      kept only for this browser tab.
+      Use the Telegram account this group knows you by — the sign-in is
+      kept only for this tab.
     </p>
     <script async src="https://telegram.org/js/telegram-widget.js?22"
             data-telegram-login="hanggangbinder_bot" data-size="large"
@@ -116,24 +128,20 @@
   </div>
 </main>
 
-<!--
-  The cover's only way onward, and it is deliberately one line rather
-  than a rail. A member who is already signed in and has come back to
-  this page gets the page they actually wanted; a signed-out visitor is
-  returned here by public.js, which requires a session before it draws
-  anything. That round trip is the right answer rather than a broken
-  link - the numbers are for members - but it is why this says what the
-  dashboard is instead of just naming it.
--->
 <footer>
   <!--
-    The four palettes as swatches, with nothing to reveal. The three
-    signed-in pages open a floating Theme panel; this page may not, and
-    that is the sign-in page's standing rule rather than a layout
-    preference: a control with no hidden state cannot be open over the
-    Telegram widget, which is the only thing here that signs anybody
-    in. A dead theme.js, a dead stylesheet and a layout that lands
-    somewhere unexpected all leave the door reachable.
+    The four palettes as swatches, with nothing to reveal, and the whole
+    of what a footer holds on any page here - the owner's ruling on
+    #274. A control with no hidden state cannot be open over the
+    Telegram widget, which is the only thing on this page that signs
+    anybody in, and it cannot be open over a form or a chart either. A
+    dead theme.js, a dead stylesheet and a layout that lands somewhere
+    unexpected all leave everything on the page reachable.
+
+    This page has no way onward and needs none: everything else here
+    wants a session, and public.js returns a visitor without one to
+    this page. tools/check_web.py's anti-stranding arm exempts the
+    entrance by name for that reason, rather than being weakened.
 
     The palette a visitor already chose is painted before any of this
     runs, by theme-init.js in the head. Each dot shows the palette it
@@ -152,12 +160,6 @@
     <button type="button" data-set-theme="contrast" aria-label="Contrast"
       ><span class="swatch-dot" data-palette="contrast"></span></button>
   </div>
-
-  <p>
-    <a href="charts.html">See what everyone adds up to</a> ·
-    <a href="https://github.com/Potaetoe/hang-gangs-binder">Read the code on
-    GitHub</a>
-  </p>
 </footer>
 
 <script src="config.js"></script>
@@ -165,8 +167,8 @@
 <script src="session.js"></script>
 <script src="auth.js"></script>
 <!-- nav.js is not loaded here: it marks the current entry in the rail,
-     and this page has no rail. The swatches above need no opening, so
-     theme.js is the whole of what this page's palette costs it. -->
+     and this page has no rail. The swatches need no opening, so theme.js
+     is the whole of what a palette costs any page here. -->
 <script src="theme.js"></script>
 </body>
 </html>

@@ -5,13 +5,13 @@
  * palette buttons, keeps the browser-chrome color (meta theme-color) in
  * step with the palette, and persists the choice.
  *
- * There are two controls to wire and one of them opens itself. The
- * signed-in pages carry a <details class="theme-picker"> whose panel
- * floats; index.html carries four swatches that are simply there. Both
- * are the same [data-set-theme] buttons underneath, which is why one
- * file still serves both - and the disclosure needs NO script to open,
- * so everything this file does to it is enhancement over a control that
- * already works.
+ * There is one control to wire and it does not open: four swatches that
+ * are simply there, in every page's footer, on the owner's ruling
+ * (#274). That is why this file is as short as it is. A disclosure owes
+ * manners - a flip when the room above runs out, Escape, outside click,
+ * close on pick - and every one of them is code that exists to undo a
+ * reveal. A control with no reveal owes none, so the whole of what a
+ * palette costs here is: read a choice, paint it, store it.
  */
 (function () {
   "use strict";
@@ -75,9 +75,8 @@
   /*
    * The error page is the one page here with no palette control, so it
    * reaches this file with nothing to wire. Every other page offers the
-   * four palettes - the sign-in page included, as swatches rather than
-   * behind a disclosure - and tools/check_web.py's check 19 is what
-   * pins which pages those are and in which shape.
+   * four palettes as swatches, and tools/check_web.py's check 19 is
+   * what pins which pages those are.
    *
    * It still has browser chrome to keep honest: theme-init.js paints
    * the saved palette before first paint, and without this the address
@@ -100,70 +99,19 @@
   // system setting into storage.
   apply(stored || preferred());
 
-  /*
-   * The disclosure, on the three pages that carry one. Everything below
-   * is enhancement: <details> opens, closes, takes Tab through its
-   * buttons and reports its own expanded state with this file deleted,
-   * which is why aria-expanded is NOT mirrored onto the summary. A
-   * mirrored attribute is a second copy of one fact, and the copy this
-   * file would keep goes stale in exactly the case the element still
-   * works - scripts dead, panel open, attribute saying shut.
-   */
-  const picker = document.querySelector("details.theme-picker");
-  const panel = picker && picker.querySelector(".theme-flyout");
-  const summary = picker && picker.querySelector("summary");
-
-  // Which way there is room to open. Measured rather than assumed,
-  // because how much room is above the footer depends on where the page
-  // is scrolled - and taken with the flip cleared first, so what gets
-  // measured is the default direction and not the last answer.
-  function place() {
-    if (!panel) return;
-    picker.removeAttribute("data-flip");
-    if (panel.getBoundingClientRect().top < 0) {
-      picker.setAttribute("data-flip", "down");
-    }
-  }
-
-  // Closing puts focus back on the summary. Without that half, focus is
-  // left inside a panel that is not on screen any more and the next Tab
-  // starts from the top of the document.
-  function close() {
-    if (!picker || !picker.open) return;
-    picker.open = false;
-    summary.focus();
-  }
-
-  if (picker) {
-    picker.addEventListener("toggle", function () {
-      if (picker.open) place();
-    });
-
-    // Outside click and Escape both belong to a panel that floats:
-    // something IS covered while it is open, so there is an outside to
-    // be dismissed from, and a reader who has moved on has said they
-    // are done with it. Neither would be right for a control that
-    // covers nothing - taking a visible list away for a reason nobody
-    // can observe - which is why index.html's swatches have neither.
-    document.addEventListener("click", function (event) {
-      if (picker.open && !picker.contains(event.target)) picker.open = false;
-    });
-
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") close();
-    });
-  }
-
+  // No document-level listener here, and that is the whole difference
+  // the ruling on #274 made. Escape and outside-click both belonged to
+  // a panel that covered something: there was an outside to dismiss
+  // from, and a reader who had moved on had said they were done. A row
+  // that covers nothing owes neither - taking a visible control away
+  // for a reason nobody can observe is worse than leaving it - so the
+  // press is all there is to wire, and the button the member pressed
+  // is still under their finger when it is over.
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
       const name = b.getAttribute("data-set-theme");
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
-      // A pick is an answer, so the panel has nothing left to show -
-      // and it closes through close() rather than by itself, because
-      // the button just pressed is about to stop being on screen and
-      // focus has to have somewhere to go.
-      close();
     });
   });
 })();

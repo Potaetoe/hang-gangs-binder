@@ -1058,9 +1058,8 @@
   
 
   function tooFewNote() {
-    return "There are too few entries here to publish a breakdown without " +
-      "describing individual people. Nothing is shown until there are " +
-      "at least " + MIN_CELL + ".";
+    return "Too few entries here to show a breakdown — at least " +
+      MIN_CELL + " are needed.";
   }
 
   
@@ -1107,10 +1106,12 @@
         statText(answer.value, answerSpec(answer))));
       wrap.appendChild(strip);
     } else if (!answer.cells.length) {
-      emptyNote(wrap, "No group in this answer was large enough to " +
-        "publish, and pooling the small ones still described too few " +
-        "people. The floor is applied before anything here is combined, " +
-        "so there is nothing this document can say about it.");
+       
+       
+       
+       
+      emptyNote(wrap, "No group in this answer was large enough to show " +
+        "— the floor is applied before anything is combined.");
     } else if (answer.kind === "categorical") {
       wrap.appendChild(barChart(answer.cells, answer.total));
     } else {
@@ -1200,8 +1201,8 @@
         }
       } else {
         emptyNote(timeWrap,
-          "Nobody has submitted twice yet, so there is no history to plot. " +
-          "This fills in as people resubmit.");
+          "Nobody has submitted twice yet — this fills in as people " +
+          "resubmit.");
       }
       container.appendChild(timeWrap);
     } else if (snapshot.seriesWithheld === true) {
@@ -1237,9 +1238,13 @@
 
     const heightMoved = snapshot.quality ? snapshot.quality.heightChanges : [];
     if (heightMoved.length) {
+       
+       
+       
+       
       const wrap = figure("Heights that changed between entries",
-        "Height does not change in adults, so these are typos or a unit " +
-        "mix-up. Worth checking before trusting the height figures.");
+        "These are typos or a unit mix-up — height does not change in " +
+        "adults.");
       wrap.classList.add("chart-wide");    
       const list = document.createElement("pre");
       list.className = "failure-list";
@@ -1267,8 +1272,8 @@
       "No heights recorded.", floored));
 
     container.appendChild(distribution("BMI",
-      "Weight over height squared, and nothing more — the clinical " +
-      "category labels are deliberately not shown.",
+      "Weight over height squared — the clinical category labels are "
+      + "not shown.",
       view.bmi.bins, "BMI", null,
       "Not enough data to compute BMI.", floored));
 
@@ -1278,8 +1283,8 @@
     
 
     container.appendChild(breakdown("Feedism affiliations",
-      "Multi-select, so these do not add up to the number of entries — " +
-      "which is why no share is shown beside them.",
+      "These do not add up to the number of entries — no share is shown " +
+      "beside them.",
       view.roles, null, floored));
 
     container.appendChild(breakdown("Country",

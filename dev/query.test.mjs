@@ -260,9 +260,14 @@ await check("a source this module did not build is refused", () =>
  * refusal added tomorrow is exactly the one nobody would think to add.
  *
  * The sentences are pinned verbatim rather than by fragment: they are
- * owner-ruled copy (#265 rows 14, 15, 16 and 42), and a paraphrase that
- * still contains the right keyword is the change this pin exists to
- * catch.
+ * owner-ruled copy (#265 rows 14, 15, 16 and 42, re-cut to the register
+ * bar by #275), and a paraphrase that still contains the right keyword
+ * is the change this pin exists to catch.
+ *
+ * Each is ONE CLAUSE now, and that is the bar's rule 1 rather than a
+ * house style: the plain half is the whole of what a card renders, so
+ * a sentence carrying its own context here is a second clause nothing
+ * downstream can take back off.
  */
 const REFUSALS = [
   ["a snapshot from a newer version of the site",
@@ -270,11 +275,10 @@ const REFUSALS = [
     "They were published by a newer version of the site."],
   ["a keyholder snapshot offered as a published one",
     () => Q.publishedSource(keyholder),
-    "What arrived is not the published copy this page may show."],
+    "These are not the published figures."],
   ["rows belonging to more than one person",
     () => Q.personalSource(corpus, 0),
-    "These do not all look like one person's entries, so nothing was " +
-      "drawn."],
+    "These are not all one person's entries."],
   ["one label claimed by two merge groups",
     () => Q.run(pub, {
       basis: "people", split: "country",
@@ -283,8 +287,7 @@ const REFUSALS = [
     "That group is named twice — the same people would be counted twice."],
   ["a middle over a categorical split",
     () => Q.run(pub, { split: "country", measure: "median" }),
-    "A middle needs numbers to work with, so it is only offered for " +
-      "weight, height and BMI."],
+    "Only weight, height and BMI can be averaged."],
   ["a merge naming something the figures do not show",
     () => Q.run(pub, {
       basis: "people", split: "country",

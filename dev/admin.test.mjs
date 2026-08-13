@@ -416,8 +416,12 @@ await check("both notices say where the key is", () =>
 
 await check("a refused persistence request warns, and names the way back",
   () => {
+    // "Evicted" was the browser's word for it and went with the
+    // compression (#275). What a keyholder acts on is that the key can
+    // disappear and that the file brings it back, so both halves are
+    // still pinned and the mechanism's name is not.
     const notice = storedKeyNotice(false);
-    return /evict/i.test(notice) && /key file/i.test(notice);
+    return /may drop it/i.test(notice) && /key file/i.test(notice);
   });
 
 /* A grant is not a guarantee, and the copy must not read as one: the
@@ -456,9 +460,13 @@ await check("the wrong-key card claims no export when nothing opened", () =>
   !OPENING_CLAIM.test(otherKeyNotice(false)));
 
 await check("the wrong-key card still names the key as not this site's",
+  // The claim is the same and the vocabulary is a member's rather than
+  // a cryptographer's (#275): "the private half of the key this site
+  // encrypts to" was the longest noun phrase on this page, and what a
+  // keyholder holding the wrong file needs to read is that it is the
+  // wrong file.
   () => [true, false].every((opened) =>
-    /not the private half of the key this site encrypts to/.test(
-      otherKeyNotice(opened))));
+    /not this site's key/.test(otherKeyNotice(opened))));
 
 /* A7.3 is driven on these words: it is why nothing is waiting on the
  * next visit, and it is true whether or not the export came out. */

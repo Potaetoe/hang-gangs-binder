@@ -129,9 +129,9 @@
   
 
   const STORED_KEY_WRONG = "The key stored on this device is not the one " +
-    "this site encrypts to, so it has been removed. Choose your key file.";
+    "this site encrypts to, so it has been removed — choose your key file.";
   const STORED_KEY_DAMAGED = "What was stored on this device is not a " +
-    "usable key, so it has been removed. Choose your key file.";
+    "usable key, so it has been removed — choose your key file.";
 
   function storedKeyVerdict(record, expectedPublicKey) {
     if (record === null || record === undefined) {
@@ -158,24 +158,27 @@
   
 
   function storedKeyNotice(persisted) {
+     
+     
+     
+     
+     
+     
+     
     return persisted
-      ? "Your key is kept on this device, and the browser has marked " +
-        "this site's storage persistent, so ordinary cleanup leaves it " +
-        "alone. Clearing this site's data removes it, and so does Clear."
-      : "Your key is kept on this device, but the browser did not mark " +
-        "this site's storage persistent, so it can be evicted - some " +
-        "browsers drop it after about a week without a visit. Keep your " +
-        "key file: it is what puts the key back.";
+      ? "Your key is kept on this device — Clear is what removes it."
+      : "Your key is kept on this device, but the browser may drop it — " +
+        "keep your key file.";
   }
 
   
 
   function otherKeyNotice(opened) {
     return opened
-      ? "This is not the private half of the key this site encrypts to, " +
-        "so it opens this export and is not kept on this device."
-      : "This is not the private half of the key this site encrypts to. " +
-        "It was used only for this attempt and is not kept on this device.";
+      ? "This is not this site's key — it opens this export and is not " +
+        "kept on this device."
+      : "This is not this site's key — it was used only for this attempt " +
+        "and is not kept on this device.";
   }
 
    
@@ -294,15 +297,14 @@
     if (status === REFUSED) {
       return {
         action: "signed-out",
-        message: "The admin session was not accepted, so it has been " +
-          "discarded. Sign in again.",
+        message: "The admin session was not accepted — sign in again.",
       };
     }
     if (status === 409) {
       return {
         action: "show",
-        message: (said || "The Worker refused that removal.") +
-          " Nothing was removed; the lists below are what it holds now.",
+        message: (said || "That removal was refused.") +
+          " Nothing was removed — the lists below are what it holds now.",
       };
     }
     return {
@@ -429,6 +431,21 @@
 
   
 
+  function detail(technical) {
+    if (technical && root.console &&
+        typeof root.console.warn === "function") {
+      root.console.warn("binder: " + technical);
+    }
+  }
+
+  
+
+  function why(error) {
+    return error && error.message ? error.message : "failed with no message";
+  }
+
+  
+
   
 
   const DOWNLOAD_IDS = Object.freeze(
@@ -436,11 +453,7 @@
 
   
 
-  const DOWNLOAD_NOUNS = Object.freeze({
-    "download": "The CSV",
-    "download-xlsx": "The Excel file",
-    "download-json": "The JSON file",
-  });
+  const DOWNLOAD_ACK = "Downloaded — check your downloads.";
   const PRESSED_MS = 4000;
 
   const KEY_DB = "hgb-keyholder-key";
@@ -508,12 +521,12 @@
 
   UI.boot(setUp, function (error) {
     showInstrument(false);
+    detail(why(error));
     const closed = $("closed");
     show(closed, true);
     if (closed) {
       closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so it is not safe to use. " +
-        (error && error.message ? "(" + error.message + ")" : "");
+        "This page did not start up correctly, so it is not safe to use.";
     }
   });
 
@@ -650,10 +663,7 @@
       pressedTimer = setTimeout(function () {
         for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
       }, PRESSED_MS);
-      UI.setStatus($("download-status"),
-        DOWNLOAD_NOUNS[pressed] + " was handed to the browser. Where a "
-        + "download goes is the browser's to decide, so this page cannot "
-        + "say whether it arrived.", null);
+      UI.setStatus($("download-status"), DOWNLOAD_ACK, null);
     }
 
      
@@ -906,8 +916,8 @@
           say("Reading the key…", null);
           key = await root.BinderCrypto.importPrivateKey(keyText);
         } catch (error) {
-          say("That key was not usable. " +
-            (error && error.message ? error.message : ""), "bad");
+          detail(why(error));
+          say("That key was not usable.", "bad");
           return;
         }
         storedKey = key;
@@ -936,9 +946,8 @@
         payload = await response.json();
       } catch (error) {
         $("run").disabled = false;
-        finish("The rows could not be fetched. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        finish("The rows could not be fetched.", "bad");
         return;
       }
 
@@ -960,10 +969,14 @@
             submission.ciphertext, key);
           entries.push(entryFor(submission, record));
         } catch (error) {
-          failures.push({
-            id: submission.id,
-            why: error && error.message ? error.message : "unknown error",
-          });
+           
+           
+           
+           
+           
+           
+          detail("row " + submission.id + ": " + why(error));
+          failures.push({ id: submission.id });
         }
       }
 
@@ -1052,8 +1065,8 @@
         show($("unpublish"), true);
       } catch (error) {
         publishedNow = null;
-        state.textContent = "Could not check what is published. " +
-          (error && error.message ? error.message : "The connection failed.");
+        detail(why(error));
+        state.textContent = "Could not check what is published.";
          
          
          
@@ -1082,11 +1095,18 @@
          
          
          
-        sayUnpublish("It could not be taken down. " +
-          (error && error.message ? error.message : "The connection failed.") +
-          " If this persists, an admin can clear it by hand — the steps " +
-          "are in OPERATIONS.md, under Publishing and retracting the " +
-          "snapshot.", "bad");
+         
+         
+         
+         
+         
+         
+         
+         
+        detail(why(error));
+        sayUnpublish("It could not be taken down — an admin can clear it "
+          + "by hand, under Publishing and retracting the snapshot in "
+          + "OPERATIONS.md.", "bad");
         return;
       }
 
@@ -1262,9 +1282,8 @@
         }
         payload = await response.json();
       } catch (error) {
-        sayMembership("The membership lists could not be read. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("The membership lists could not be read.", "bad");
         return;
       }
       drawMembership(membershipView(payload));
@@ -1304,9 +1323,8 @@
         }
       } catch (error) {
         $("member-add").disabled = false;
-        sayMembership("That could not be sent. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be sent.", "bad");
         return;
       }
 
@@ -1347,9 +1365,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        sayMembership("That could not be removed. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayMembership("That could not be removed.", "bad");
         return;
       }
 
@@ -1435,9 +1452,8 @@
         }
       } catch (error) {
         $("publish").disabled = false;
-        sayPublish("It could not be published. " +
-          (error && error.message ? error.message : "The connection failed."),
-          "bad");
+        detail(why(error));
+        sayPublish("It could not be published.", "bad");
         return;
       }
 
@@ -1464,9 +1480,8 @@
         }
       } catch (error) {
         button.disabled = false;
-        say("Row " + entry.id + " could not be deleted. " +
-          (error && error.message ? error.message : "The connection failed."),
-        "bad");
+        detail(why(error));
+        say("Row " + entry.id + " could not be deleted.", "bad");
         return;
       }
 
@@ -1530,7 +1545,7 @@
       if (failures.length) {
         show($("failures"), true);
         $("failure-list").textContent = failures.map(function (f) {
-          return "row " + f.id + ": " + f.why;
+          return "row " + f.id;
         }).join("\n");
       }
 

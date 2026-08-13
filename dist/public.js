@@ -102,9 +102,14 @@
       }
       payload = await response.json();
     } catch (error) {
-      unavailable("The figures could not be fetched. " +
-        (error && error.message ? error.message : "The connection failed.") +
-        " Try again shortly.");
+       
+       
+       
+       
+       
+      detail(error && error.message ? error.message : "the snapshot could " +
+        "not be fetched");
+      unavailable("The figures could not be fetched — try again shortly.");
       return;
     }
 
@@ -167,8 +172,8 @@
 
       show($("q-controls"), false);
       status.className = "status bad";
-      status.textContent = "These figures cannot be asked questions here. " +
-        plainly(error, "They are not in a shape this page can ask about.");
+      status.textContent =
+        plainly(error, "These figures cannot be asked questions here.");
       return;
     }
 

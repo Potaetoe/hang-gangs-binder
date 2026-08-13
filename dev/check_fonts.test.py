@@ -306,11 +306,19 @@ check("a class given a reason is not reported as unnamed",
 # A prose class that is styled italic somewhere else in the cascade is
 # still a demand on the face, so the roster has to hold every subject -
 # but only the subject. A descendant selector styles its rightmost
-# compound, and reporting `.cover-leaf` too would be friction with no
-# cause behind it.
+# compound, and reporting `.rail` too would be friction with no cause
+# behind it.
+#
+# The selector is the one tools/check_fonts.py's own docstring
+# illustrates this rule with, deliberately: a rule and the suite that
+# mirrors it teaching the same behavior through two different selectors
+# is how a reader ends up believing they are two behaviors. It also has
+# to be a selector that exists: an illustration naming a class no page
+# and no stylesheet carries teaches the rule against a subject nobody
+# can go and look at.
 check("only the rightmost compound of a selector is the subject",
       check_fonts.italic_problems(
-          FACE_RULE + ".cover-leaf .wordmark-name { font-style: italic; }\n",
+          FACE_RULE + ".rail .wordmark-name { font-style: italic; }\n",
           PINNED, {}, FACE) == [])
 
 comma = check_fonts.italic_problems(

@@ -115,16 +115,16 @@
       problems.push({
         field: "telegram",
         message: fromSession
-          ? "Your session no longer has a Telegram username. Sign in again " +
-            "before submitting."
-          : "Your Telegram username is needed - it is how you are " +
+          ? "Your session no longer has a Telegram username — sign in " +
+            "again."
+          : "Your Telegram username is needed — it is how you are " +
             "identified here.",
       });
     } else if (!fromSession && !HANDLE.test(handle)) {
       problems.push({
         field: "telegram",
-        message: "That does not look like a Telegram username. They are 5 to " +
-          "32 characters, using only letters, numbers and underscores.",
+        message: "That does not look like a Telegram username — 5 to 32 " +
+          "letters, numbers and underscores.",
       });
     }
 
@@ -140,7 +140,7 @@
         field: "weight",
         message: "That weight is outside what this form accepts (" +
           LIMITS[weightUnit].min + " to " + LIMITS[weightUnit].max + " " +
-          weightUnit + "). Check the units.",
+          weightUnit + ") — check the units.",
       });
     }
 
@@ -156,8 +156,8 @@
       } else if (inches === null) {
         problems.push({
           field: "height",
-          message: "The inches part is not a number. Leave it empty for a " +
-            "round number of feet.",
+          message: "The inches part is not a number — leave it empty for " +
+            "a round number of feet.",
         });
       } else if (inches < 0 || inches >= IN_PER_FT) {
         problems.push({
@@ -182,7 +182,8 @@
         problems.push({
           field: "height",
           message: "That height is outside what this form accepts (" +
-            LIMITS.cm.min + " to " + LIMITS.cm.max + " cm). Check the units.",
+            LIMITS.cm.min + " to " + LIMITS.cm.max + " cm) — check the " +
+            "units.",
         });
       }
     }
@@ -192,7 +193,7 @@
     if (input.over18 !== true) {
       problems.push({
         field: "over18",
-        message: "This form is 18+ only. Please confirm.",
+        message: "This form is 18+ only — tick the box to confirm.",
       });
     }
 
@@ -241,11 +242,16 @@
     const imperial = input.units === "imperial";
     return {
       field: "height",
-      message: "This browser remembers your last height here as " +
+       
+       
+       
+       
+       
+      message: "This browser remembers your last height as " +
         spellHeight(heightFromCm(previousCm), imperial) +
         ", and this entry says " +
         spellHeight(heightFromCm(entered), imperial) +
-        ". If that is right, add it again to confirm.",
+        " — add it again to confirm.",
     };
   }
 
@@ -352,9 +358,9 @@
     show(closed, true);
     if (closed) {
       closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so the form is not safe " +
-        "to use and has been hidden. Nothing you type would be sent. " +
-        (error && error.message ? "(" + error.message + ")" : "");
+        "This page did not start up correctly, so the form is hidden — " +
+        "nothing you type would be sent." +
+        (error && error.message ? " (" + error.message + ")" : "");
     }
   });
 
@@ -383,15 +389,14 @@
     const unavailable = root.BinderCrypto
       ? root.BinderCrypto.unavailableReason()
       : "This page did not load its encryption, so nothing can be sent " +
-        "safely. Reload, and if it persists the site is broken.";
+        "— reload.";
 
      
      
      
      
     const noKey = !config.publicKey
-      ? "This binder has no key published yet, so there is nothing to " +
-        "encrypt to. Weigh-ins are closed until there is."
+      ? "Weigh-ins are closed until this binder publishes a key."
       : null;
 
     
@@ -641,10 +646,9 @@
         logDetail(error && error.message ? error.message : "send preparation " +
           "failed with no message");
         say(record === null
-          ? "This page could not put your entry together, so nothing was " +
-            "sent. Reload and try again."
-          : "This could not be encrypted, so nothing was sent. The site's " +
-            "key is not usable — tell an admin.", "bad");
+          ? "Nothing was sent — reload and try again."
+          : "Nothing was sent — the site's key is not usable, so tell an " +
+            "admin.", "bad");
         return;
       }
 
@@ -662,8 +666,8 @@
         if (response.status === 401) {
           root.BinderSession.clear();
           submit.disabled = false;
-          say("Your sign-in is no longer valid, so nothing was stored. " +
-            "Sign in again.", "bad");
+          say("Nothing was stored — your sign-in is no longer valid, so " +
+            "sign in again.", "bad");
           return;
         }
         if (!response.ok) {
@@ -680,9 +684,13 @@
         }
       } catch (error) {
         submit.disabled = false;
-        say("It was encrypted, but it could not be sent. " +
-          (error && error.message ? error.message : "The connection failed.") +
-          " Nothing was stored - try again.", "bad");
+         
+         
+         
+         
+        logDetail(error && error.message ? error.message
+          : "the submission could not be sent");
+        say("Nothing was stored — try again.", "bad");
         return;
       }
 

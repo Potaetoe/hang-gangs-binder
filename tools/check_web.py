@@ -163,13 +163,14 @@ day a check is added:
     - RAIL. The signed-in pages. Each carries the wordmark, the same
       destinations in the same order, and the session home at the
       bottom. Compared against each other and failing if they differ.
-      The Theme disclosure is NOT part of this shell any more and is
-      check 19's, because the sign-in page carries one without a rail.
-    - PLAIN. The pages a signed-out visitor meets - the cover, which
-      the owner decided carries no rail before sign-in, and the error
-      page, which goes plain on principle. These must NOT carry rail
-      markup, which is the copy-paste direction: a session home on the
-      cover would offer Sign out to somebody who has not signed in.
+      The palette control is NOT part of this shell and is check 19's,
+      because every page carries one and only three carry a rail.
+    - PLAIN. The pages a signed-out visitor meets - the sign-in page,
+      which the owner decided carries no rail before sign-in, and the
+      error page, which goes plain on principle. These must NOT carry
+      rail markup, which is the copy-paste direction: a session home on
+      the sign-in page would offer Sign out to somebody who has not
+      signed in.
 
     The anti-stranding rule survives both shells rather than being
     spent on the rail. A rail aside must carry the route to the
@@ -179,16 +180,22 @@ day a check is added:
     among the destinations is refused in the same breath. And a plain
     page must still carry at least one local link out of itself, in
     its own HTML, which is what stops "plain" from becoming "a dead
-    end with nice typography".
+    end with nice typography" - the entrance excepted, since #274 took
+    the footers' nav off every page and the entrance is the page every
+    dead end already leads back to. Which page that is is pinned as
+    SIGN_IN_PAGE, and the pin answers for the exemption in both
+    directions.
 
-    The wordmark is the shell's other hand-kept copy, and it crosses
-    both shells - three rails and the sign-in cover - which is half of
+    The wordmark is the shell's other hand-kept copy, and WORDMARK_PAGES
+    rather than this table is what says which pages carry one - the two
+    rosters cut the site along different lines, since the sign-in page
+    is PLAIN here and carries the name anyway, which is half of
     why nothing was comparing it. The paragraph above says the rail
     "carries the wordmark" while the parity arms read .rail-links and
     the session block and stop there; the name tables read titles,
     headings and the links a page writes a name into; the chip arm
-    reads chips. So the site's own name could be renamed on
-    three copies of four with the whole gate green, which is #152's
+    reads chips. So the site's own name could be renamed on every copy
+    but one with the whole gate green, which is #152's
     disease with a different subject. WORDMARK_PAGES pins which pages
     carry one, outside the markup and in both directions, for the
     reason SHELLS gives - and the copy-paste direction has the teeth
@@ -364,40 +371,50 @@ day a check is added:
     announcing itself as the admin surface is a page somebody stops
     trusting.
 
-19. Every page that offers a palette carries the control it is pinned
-    to carry, in that SHAPE, and every page that does not carries no
-    chip at all. There are two shapes and the split is the whole of the
-    rule: the signed-in pages open a floating panel from a Theme
-    <details>, and the sign-in page offers four always-visible swatches
-    with nothing to reveal.
+19. Every page that offers a palette offers it as a row of swatches,
+    in a footer that holds that row and nothing else; every page that
+    does not carries no chip at all and no footer.
 
-    Which page gets which is pinned in FLYOUT_PAGES and SWATCH_PAGES,
-    outside the markup, for the reason SHELLS and CSP_PAGES give. Two
-    of the directions here have teeth rather than one:
+    The owner's ruling of 2026-08-13 (#274) is that all footers are
+    identical, that nav belongs to the rail, and that the palette is
+    offered the way index.html has always offered it. So there is one
+    shape where there were two: the floating Theme <details> is gone
+    from the signed-in pages, and with it the split #187 introduced.
+    Which pages offer a palette is pinned in THEMED_PAGES, outside the
+    markup, for the reason SHELLS and CSP_PAGES give.
 
-    - A swatch row on a signed-in page, or a disclosure that has lost
-      its <details> for markup a script has to open, is ordinary drift
-      arriving the ordinary way - somebody copies whichever page was
-      open.
-    - A disclosure on the SIGN-IN page is the ruling reversed. A panel
-      that opens there opens over the Telegram widget, which is the
-      only thing on that page that signs anybody in, and every failure
-      of a script, a stylesheet or a layout is a way for it to stay
-      open. Four swatches in flow cannot cover anything, however they
-      fail. That is the same fail-open intent index.html has always
-      carried, reached by a route with nothing to get wrong.
+    Three directions have teeth:
+
+    - A disclosure ANYWHERE is the ruling reversed, and it is refused
+      by element and by the word "Theme" on a <summary> alike, so a
+      panel that comes back having lost its class is still refused.
+      The property it costs was never a preference: a control with no
+      hidden state cannot be open over the Telegram widget on the page
+      that signs anybody in, however its script, its stylesheet or its
+      layout fails - and after the ruling every page has it.
+    - A LINK in a footer is the nav the ruling removed. It is refused
+      whether it points at this site or off it, because the rail is
+      what carries nav and an outbound link is nav that leaves. That
+      direction is the one nothing else in this file can reach: an
+      off-site href is invisible to the name table and to the
+      anti-stranding arm by construction, and an on-site link that
+      happens to spell the destination's own name satisfies the name
+      table exactly.
+    - A chip OUTSIDE the swatch row is a palette button standing loose
+      in the footer. It was worth an arm while the row was a panel
+      that folded, and it is worth the same arm now that the footer is
+      supposed to hold the row and nothing else.
 
     404.html is the one page with no palette control at all, that is
     deliberate, and a chip arriving on it by the usual route would
-    change a stored preference from an error page and fail nothing.
+    change a stored preference from an error page and fail nothing. It
+    is therefore also the one page with no footer: the footer is the
+    palette row, and a page with no palette has no row to put in one.
 
     What it pins is presence and shape, on purpose. Whether the copies
     agree about a chip's LABEL is #152's, and two checks making the
     same claim in different places is how one of them gets quietly
-    weakened. The one word this check does hold is "Theme" itself, on
-    the <summary>: the summary IS the button, it is written out by hand
-    on three pages, and #201 is the ticket for a label answering to
-    nothing.
+    weakened.
 
 20. A width block that turns `body.railed` into a flex column states
     its own `align-items`, and states `align-self` on `.rail`, rather
@@ -586,10 +603,10 @@ day a check is added:
     failure with a different cause. Three things hold it open:
     theme.js wires `[data-set-theme]` on ANY element, so this reads
     any element rather than <button>; a chip's name is its visible
-    words or, where it has none, its aria-label, because the sign-in
-    page offers its palettes as colored dots and a reader that saw
-    only words would compare three pages while the fourth went
-    unread; and the count of chips it pairs with a name is reconciled
+    words or, where it has none, its aria-label, because a palette is
+    offered as a colored dot and a reader that saw only words would
+    find no names to compare at all; and the count of chips it pairs
+    with a name is reconciled
     against CHIP_MARKUP, which is what check 19 counts a chip by. A
     chip that check can see and this one cannot read is REPORTED,
     never skipped - so the two arms cannot drift into disagreeing
@@ -633,11 +650,14 @@ day a check is added:
     being the reference.
 
     One arm reads a component rather than the token layer, and it is
-    the exception that proves where the seam is. The sign-in page's
-    swatches show the four palettes at once, and a dot cannot ask CSS
-    for a palette other than the one the page is wearing - the tokens
-    are scoped to :root. So those eight colors are written on the dot,
-    and held here to the palette the mockup rules, in both directions.
+    the exception that proves where the seam is. The swatch row - in
+    every page's footer since #274 - shows the four palettes at once,
+    and a dot cannot ask CSS for a palette other than the one the page
+    is wearing, because the tokens are scoped to :root. So those eight
+    colors are written on the dot, and held here to the palette the
+    mockup rules, in both directions. One stylesheet serves every page,
+    so widening the row to four footers widened what this arm is worth
+    without moving a line of it.
     Left uncompared they would be four colors that stop meaning the
     palettes they offer the moment one is retuned, and the row would
     go on looking exactly as deliberate as before.
@@ -1653,8 +1673,9 @@ def column_branch_alignment_problems():
 # is exactly when a shell gets copied from whichever page was open.
 #
 # RAIL is the signed-in surface. PLAIN is what a signed-out visitor
-# meets: the cover, which the owner decided carries no rail before
-# sign-in (#73), and the error page, which goes plain on principle.
+# meets: the sign-in page, which the owner decided carries no rail
+# before sign-in (#73), and the error page, which goes plain on
+# principle.
 SHELLS = {
     "404.html": "plain",
     "admin.html": "rail",
@@ -1664,10 +1685,10 @@ SHELLS = {
 }
 
 # The hamburger the rail replaced. The destinations are visible at
-# every width now - the owner's decision on #73 - and the only thing a
-# disclosure opens here is the theme chips, so a page still carrying
-# nav-toggle or nav-menu is a page that kept the hamburger. Those names
-# are refused below rather than merely unused.
+# every width now - the owner's decision on #73 - and since #274 no
+# disclosure opens anything on this site at all, so a page still
+# carrying nav-toggle or nav-menu is a page that kept the hamburger.
+# Those names are refused below rather than merely unused.
 RETIRED_IDS = ("nav-toggle", "nav-menu")
 
 RAIL_MARKUP = re.compile(r'class="rail[\s"]', re.I)
@@ -1841,17 +1862,18 @@ def local_links(text):
             if not re.match(r"^(?:https?:)?//|^mailto:|^#|^data:", href)]
 
 
-def plain_page_problems(text):
+def plain_page_problems(text, entrance):
     """[problem] for one page that is pinned plain.
 
-    Takes the markup rather than a filename so the rules can be
-    exercised on strings. That is #34's lesson applied here: a mutation
-    written against the five files tests today's markup, and what has to
-    hold is the shape of the failure.
+    `entrance` is whether this is the page every dead end on this site
+    leads back to. Takes the markup rather than a filename so the rules
+    can be exercised on strings. That is #34's lesson applied here: a
+    mutation written against the five files tests today's markup, and
+    what has to hold is the shape of the failure.
     """
     problems = []
 
-    # The copy-paste direction. A rail on the cover would offer the
+    # The copy-paste direction. A rail on a plain page would offer the
     # session home - signed-in state and Sign out - to somebody who has
     # not signed in yet.
     if RAIL_MARKUP.search(text) or rail_links(text) is not None:
@@ -1860,12 +1882,22 @@ def plain_page_problems(text):
             "session home, and a signed-out visitor has no session for it "
             "to be the home of")
 
-    # Plain is a treatment, not a dead end.
-    if not local_links(text):
+    # Plain is a treatment, not a dead end - EXCEPT on the entrance,
+    # which is where being at a dead end stops. #274 took the footers'
+    # nav off every page on the owner's ruling, and the sign-in page's
+    # footer link was the whole of what this arm was reading there. It
+    # is not a hole the ruling opened: every other page on this site
+    # needs a session, public.js returns anybody without one to the
+    # entrance, and 404.html's own way off points at it. The one page
+    # nothing can strand you on is the one every route already ends at,
+    # so the requirement is stated where it means something instead of
+    # being dropped.
+    if not entrance and not local_links(text):
         problems.append(
             "is pinned plain and carries no link to anywhere else on this "
             "site, so a visitor who lands here with scripts blocked has no "
-            "way off it")
+            "way off it. The one page exempt from this is the entrance, "
+            "pinned as SIGN_IN_PAGE in tools/check_web.py")
 
     return problems
 
@@ -1926,8 +1958,8 @@ def rail_page_problems(text):
     for retired in [i for i in RETIRED_IDS if 'id="%s"' % i in text]:
         problems.append(
             "still carries id=\"%s\" from the hamburger the rail replaced. "
-            "The destinations are visible now and the disclosure opens the "
-            "theme chips instead" % retired)
+            "The destinations are visible now, and since #274 nothing on "
+            "this site opens at all" % retired)
 
     return problems
 
@@ -1954,6 +1986,30 @@ def shell_problems():
             "is pinned in SHELLS in tools/check_web.py and is not a page "
             "in apps/web. Delete the entry, or restore the page"))
 
+    # The entrance is the one page excused from carrying a way off
+    # itself, so the pin naming it has to answer for that exemption in
+    # both directions. An entrance that is not published excuses
+    # nothing and hides the fact; an entrance pinned to the rail
+    # excuses a page that has a rail full of destinations anyway, and
+    # would leave whatever plain page took its place stranding people
+    # with the gate green.
+    if SIGN_IN_PAGE not in pages:
+        problems.append((
+            SIGN_IN_PAGE,
+            "is pinned as the entrance in SIGN_IN_PAGE in "
+            "tools/check_web.py and is not a page in apps/web. Every "
+            "other page here needs a session and returns a visitor "
+            "without one to that page, so an entrance nothing publishes "
+            "is a site whose dead ends lead nowhere"))
+    elif SHELLS.get(SIGN_IN_PAGE) != "plain":
+        problems.append((
+            SIGN_IN_PAGE,
+            "is pinned as the entrance in SIGN_IN_PAGE in "
+            "tools/check_web.py and is not pinned plain in SHELLS. The "
+            "entrance is excused from carrying a link off itself; a page "
+            "with a rail is not excused from anything, and the exemption "
+            "would then belong to no page at all"))
+
     rails = {}
     sessions = {}
     for name in pages:
@@ -1964,7 +2020,7 @@ def shell_problems():
                       flags=re.S)
 
         if SHELLS[name] == "plain":
-            for problem in plain_page_problems(text):
+            for problem in plain_page_problems(text, name == SIGN_IN_PAGE):
                 problems.append((name, problem))
             continue
 
@@ -2019,14 +2075,18 @@ def shell_problems():
     return problems
 
 
-# Which pages write the site's own name out by hand. Three rails and
-# the sign-in cover, so it crosses both shells and neither shell rule
-# could state it - which is half of why nothing was comparing it.
+# Which pages write the site's own name out by hand. The three rails,
+# and the sign-in page, which carries the name with no rail around it
+# to hold it (#273, the owner's addendum): the mark is the first thing
+# in that page's flow. So this roster is NOT "the rail pages" under
+# another name, and it cannot be derived from SHELLS - the sign-in page
+# is PLAIN there and carries the wordmark anyway, which is exactly the
+# combination a membership rule would miss.
 #
 # Pinned outside the markup for the reason SHELLS gives, and the ABSENT
 # direction is the one with teeth: a page carrying the wordmark and
-# named by no pin is a fifth copy nothing compares, and a page arriving
-# is exactly when somebody copies a shell from whichever page they had
+# named by no pin is a copy nothing compares, and a page arriving is
+# exactly when somebody copies a shell from whichever page they had
 # open. 404.html deliberately carries none.
 WORDMARK_PAGES = frozenset({
     "admin.html", "charts.html", "index.html", "your-page.html",
@@ -2046,12 +2106,81 @@ WORDMARK_LINES = (
 WORDMARK_PIN = "WORDMARK_PAGES in tools/check_web.py"
 
 
-def wordmark_line(text, component):
-    """The words one wordmark line shows, or None if the page has none."""
-    found = re.search(
+def wordmark_span(text, component):
+    """The match for one wordmark line's <span>, or None."""
+    return re.search(
         r'<span\b[^>]*class\s*=\s*["\'][^"\']*\b%s\b[^"\']*["\'][^>]*>'
         r'(.*?)</span>' % re.escape(component), text, re.S | re.I)
+
+
+def wordmark_line(text, component):
+    """The words one wordmark line shows, or None if the page has none."""
+    found = wordmark_span(text, component)
     return label_text(found.group(1)) if found else None
+
+
+# The element the site's name has to be inside. Not a position in the
+# markup and not a page list: on the rail pages the mark is the first
+# thing in <aside class="rail">, and on the sign-in page it IS the first
+# thing in <body> (#273's addendum, the owner's one ruled fact about the
+# mark - "the name greets from the top of the page and never moves").
+# Both satisfy "inside body's first element", which is why one arm holds
+# both shapes and no page needs naming here.
+BODY = re.compile(r"<body\b[^>]*>", re.I)
+
+# The first ELEMENT after <body>, so a comment, a stray newline or a
+# text node before it does not read as the mark being out of place.
+FIRST_ELEMENT = re.compile(r"<(\w+)\b[^>]*>")
+
+WORDMARK_ELEMENT = re.compile(
+    r'<(\w+)\b[^>]*class\s*=\s*["\'][^"\']*\bwordmark\b[^"\']*["\']', re.I)
+
+
+def body_first_element(text):
+    """((start, end), problem) for the first element inside <body>."""
+    body = BODY.search(text)
+    if body is None:
+        return None, ("carries no <body>, so where anything sits on it "
+                      "cannot be read at all")
+    found = FIRST_ELEMENT.search(text, body.end())
+    if found is None:
+        return None, "carries a <body> with no element in it"
+    return element_span(text, found)
+
+
+def wordmark_placement_problems(text):
+    """[problem] for where one page puts the site's name.
+
+    The ruled fact is that the name greets from the top and never moves
+    (#273's addendum). Nothing held it: WORDMARK_PAGES pins THAT a page
+    carries the mark and check 10's parity pins WHAT it says, so the
+    whole mark could be moved below the sign-in form and the footer with
+    the gate green - confirmed by mutation before this arm was written.
+
+    Read as containment inside body's first element rather than as a
+    line number, because the two shapes on this site are the mark itself
+    standing first and the mark standing first inside the rail, and a
+    positional rule that knew only one of them would have to name pages.
+    """
+    mark = WORDMARK_ELEMENT.search(text)
+    if mark is None:
+        return []  # a page with no mark is page_wordmark_problems()'s
+
+    span, unreadable = body_first_element(text)
+    if unreadable:
+        return [unreadable]
+
+    if not span[0] <= mark.start() < span[1]:
+        return [
+            "carries the site's name outside the first element in its "
+            "<body>. The name greets from the top of the page and never "
+            "moves - the owner's addendum on #273 - and that is the one "
+            "thing about the mark nothing else here holds: the roster "
+            "pins that a page carries it and check 10's parity pins what "
+            "it says, so a mark moved below the form and the footer "
+            "reads identically to both"]
+
+    return []
 
 
 def page_wordmark(text):
@@ -2106,7 +2235,46 @@ def page_wordmark_problems(text, carries):
                 "class still paints, so this reads on the page as a gap "
                 "above or below the half that survived" % position)
 
+    problems.extend(wordmark_order_problems(text))
     return problems
+
+
+def wordmark_order_problems(text):
+    """[problem] for a wordmark whose two lines are in the wrong order.
+
+    WORDMARK_LINES is a sequence and the positions in it are the words
+    "first" and "second", but nothing read them as an order until now:
+    wordmark_line() runs an INDEPENDENT search per component over the
+    whole document, so the two spans carry no positional information at
+    all and swapping them changes nothing any arm can see. Confirmed by
+    mutation: the pages rendered "Binder" in italic display above "HANG
+    GANG" in gold - the mark inverted from the approved mockup - with
+    check 10 whole and green.
+
+    The parity arm cannot cover this, and that is the point: it compares
+    the pages to EACH OTHER, so a swap applied to all four copies is
+    four pages agreeing on the wrong mark.
+    """
+    spans = [wordmark_span(text, component)
+             for component, _ in WORDMARK_LINES]
+    if any(found is None for found in spans):
+        return []  # a half-read mark is the arm above's to report
+
+    for (earlier, (_, before)), (later, (_, after)) in zip(
+            zip(spans, WORDMARK_LINES), zip(spans[1:], WORDMARK_LINES[1:])):
+        if earlier.start() > later.start():
+            return [
+                "draws the %s wordmark line above the %s one. The order "
+                "is the mark: the gold possessive sits over the italic "
+                "display noun, which is how the approved mockup draws it "
+                "- and WORDMARK_LINES in tools/check_web.py is a sequence "
+                "for that reason. Nothing else can see this. Each line is "
+                "found by its own search, so the two are the same to every "
+                "other arm, and parity compares the copies to each other, "
+                "which four identically-inverted pages satisfy"
+                % (after, before)]
+
+    return []
 
 
 def wordmark_parity_problems(marks):
@@ -2166,6 +2334,12 @@ def wordmark_problems():
         carries = name in WORDMARK_PAGES
         own = page_wordmark_problems(text, carries)
         problems.extend((name, problem) for problem in own)
+        # Kept out of `own` on purpose: a mark in the wrong PLACE is
+        # still a mark this arm can read, so the page stays in the
+        # comparison below rather than dropping out of it and taking its
+        # evidence about the other copies with it.
+        problems.extend((name, problem)
+                        for problem in wordmark_placement_problems(text))
         # A page whose own wordmark could not be read whole is no
         # evidence about another page's, so it is left out of the
         # comparison - but it is REPORTED above, never skipped, which is
@@ -2177,49 +2351,39 @@ def wordmark_problems():
     return problems
 
 
-# Which pages offer a palette, and IN WHICH SHAPE. Two tables rather
-# than one because the owner's ruling of 2026-08-10 splits what #150
-# kept as a single control, and the shape is the substance of the split:
+# Which pages offer a palette. One table, because there is one shape:
+# the owner's ruling of 2026-08-13 (#274) took the floating Theme
+# <details> off the signed-in pages and made every footer the row of
+# swatches index.html has always carried. What #187 split by page and
+# the ruling of 2026-08-10 wrote down as two shapes is one shape again,
+# and the property the swatch row was chosen for now belongs to every
+# page: a control with no hidden state has nothing that can be open over
+# anything, however its script, its stylesheet or its layout fails.
 #
-#  - FLYOUT. A signed-in page opens a panel that FLOATS over the page
-#    from a Theme <details>. Nothing it does moves the layout, which is
-#    what earns it the footer on a page whose content is a form or a
-#    grid.
-#  - SWATCH. The sign-in page offers the same four palettes as
-#    always-visible dots, in flow, with nothing to reveal. A control
-#    with no hidden state cannot cover the Telegram widget however its
-#    script, its stylesheet or its layout fails - which is the property
-#    that page has always been built around, reached here by a route
-#    with nothing to get wrong.
-#
-# Pinned outside the markup for the reason SHELLS gives. 404.html is in
-# neither set: it offers no palette, that is deliberate, and the way a
-# chip lands on it is the way every copy-paste failure in this file
-# lands - somebody builds the next page from whichever one they had
-# open. A chip there writes a stored preference from an error page and
-# fails nothing.
-FLYOUT_PAGES = frozenset({"admin.html", "charts.html", "your-page.html"})
-SWATCH_PAGES = frozenset({"index.html"})
+# Pinned outside the markup for the reason SHELLS gives. 404.html is not
+# in it: it offers no palette, that is deliberate, and the way a chip
+# lands on it is the way every copy-paste failure in this file lands -
+# somebody builds the next page from whichever one they had open. A chip
+# there writes a stored preference from an error page and fails nothing.
+THEMED_PAGES = frozenset(
+    {"admin.html", "charts.html", "index.html", "your-page.html"})
 
-# Every page that offers a palette at all, which is what the arms about
-# chips and their labels read. Derived rather than written out a third
-# time: a page in one shape table and missing from a hand-kept union is
-# a page half the gate stops looking at.
-THEMED_PAGES = FLYOUT_PAGES | SWATCH_PAGES
+# The other side of that table, and it is not decoration. Before #274,
+# absence from THEMED_PAGES meant one thing - "this page offers no
+# palette". Since the ruling it ALSO means "this page carries no
+# footer", because the footer IS the row. So a page nobody remembers to
+# add to the set ships with no palette AND no footer, and the arm that
+# would have said so reads the set to decide whether to look. SHELLS
+# closes exactly this asymmetry one table up by naming every published
+# page; this does the same, so a new page has to be written into one
+# side or the other and cannot arrive in neither.
+UNTHEMED_PAGES = frozenset({"404.html"})
 
-FLYOUT, SWATCH = "flyout", "swatch"
-
-# What the disclosure is called. Held here rather than left to the
-# markup for the reason DESTINATIONS gives: it is written out by hand on
-# three pages, and #201 is the ticket for a label that answered to
-# nothing while the pages around it were renamed.
-THEME_CONTROL_NAME = "Theme"
-
-# The disclosure, read as an ELEMENT and not as a class alone. <details>
-# is what opens the panel with no script running; a page that kept the
-# class and lost the element would be a page whose palette is
-# unreachable the moment theme.js fails, which is the failure this shape
-# was chosen to make impossible.
+# The disclosure the ruling removed, read as an ELEMENT and not as a
+# class alone - refused now rather than pinned to three pages, the way
+# RETIRED_THEME_IDS and RETIRED_LABEL are refused. Reading the element
+# is what makes the refusal hold: a panel rebuilt out of markup a script
+# has to open would keep the hazard and lose the only tag naming it.
 #
 # `[^>]*` for the attributes, the same simplification CHIP_OPEN makes:
 # a ">" inside a quoted attribute value ends the tag as far as this
@@ -2229,24 +2393,46 @@ THEME_CONTROL_NAME = "Theme"
 PICKER_DETAILS = re.compile(
     r"<details\b[^>]*\bclass\s*=\s*[\"'][^\"']*\btheme-picker\b[^>]*>", re.I)
 
-DETAILS_OPEN = re.compile(r"<details\b[^>]*>", re.I)
-DETAILS_CLOSE = re.compile(r"</details\s*>", re.I)
+# The word the disclosure's button carried. Refused with the element,
+# because the class is the half a rebuild drops first: a <summary> that
+# still says "Theme" is the same control arriving without the name this
+# file finds it by.
+THEME_CONTROL_NAME = "Theme"
 
 SUMMARY = re.compile(r"<summary\b[^>]*>(.*?)</summary>", re.S | re.I)
 
-# The sign-in page's row of dots, read the same way. The class is what
-# the stylesheet lays out in flow, and it is what tells this row apart
-# from a panel that happens to hold the same four buttons.
+# The row of dots, read by its class and with its tag CAPTURED. The
+# class is what the stylesheet lays out in flow; the tag is what
+# element_span() below needs to find where the row ends, which is how
+# the footer arm tells the row apart from anything standing beside it.
 SWATCH_GROUP = re.compile(
-    r"<\w+\b[^>]*\bclass\s*=\s*[\"'][^\"']*\btheme-swatches\b[^>]*>", re.I)
+    r"<(\w+)\b[^>]*\bclass\s*=\s*[\"'][^\"']*\btheme-swatches\b[^>]*>", re.I)
+
+# One page's footer, read whole. Non-greedy to the first closing tag
+# rather than depth-aware, because a footer cannot nest a footer - and
+# a page carrying two of them is refused by the arm rather than read.
+FOOTER = re.compile(r"<footer\b[^>]*>(.*?)</footer\s*>", re.S | re.I)
+
+# What a footer is allowed to hold besides the swatch row: nothing. Kept
+# as a marker for the sentence rather than as a table, because the whole
+# content of the rule is that there is no list.
+ANY_TAG = re.compile(r"<\w+\b")
+
+# The link the ruling took out, read WITHOUT regard to where it points.
+# On-site and off-site alike: the rail carries navigation, and an
+# outbound link is navigation that leaves. This is the direction nothing
+# else in this file can reach - an off-site href is invisible to
+# DESTINATIONS and to the anti-stranding arm by construction, and an
+# on-site link spelling its destination's own name satisfies the name
+# table exactly.
+FOOTER_ANCHOR = re.compile(r"<a\b[^>]*>", re.I)
 
 # The ids the control was opened through while a script owned its open
 # state. Refused rather than merely absent, the way RETIRED_IDS and
-# RETIRED_LABEL are: the disclosure opens itself now and the sign-in
-# page has no disclosure at all, so nothing reads either id - and an id
-# left behind is a hook the next page copied from this one inherits,
-# plus an aria-controls pointing at a relationship the page does not
-# have.
+# RETIRED_LABEL are: no page has a disclosure now, so nothing reads
+# either id - and an id left behind is a hook the next page copied from
+# this one inherits, plus an aria-controls pointing at a relationship
+# the page does not have.
 RETIRED_THEME_IDS = ("theme-toggle", "theme-chips")
 
 # What theme.js wires a chip by. The button's own text is not read here:
@@ -2255,50 +2441,211 @@ RETIRED_THEME_IDS = ("theme-toggle", "theme-chips")
 CHIP_MARKUP = re.compile(r"\bdata-set-theme\s*=", re.I)
 
 
-def picker_body(text):
-    """(markup inside the palette <details>, problem) for one page.
+def element_span(text, found):
+    """((start, end), problem) for the whole element `found` opened.
 
-    Depth-aware rather than a match to the first "</details>", because a
-    nested one inside the panel would end the body at the wrong tag and
-    every chip would then read as sitting outside the control - a
-    failure that points the reader at markup which is perfectly correct.
+    `found` is a match whose first group is the tag name. The span runs
+    from the opening tag to the end of the matching closing one, so a
+    caller can cut the element out and read what was standing beside it.
 
-    (None, None) is "there is no such element", and (None, problem) is
-    "there is one and this reader could not read it whole". They are
-    kept apart for the reason chip_roster_problems() gives: a reader
-    that quietly drops what it cannot parse prints the same OK as one
-    that found nothing wrong.
+    Depth-aware rather than a match to the first closing tag, because a
+    nested element of the same name would end the span early and
+    everything after it would then read as sitting outside - a failure
+    that points the reader at markup which is perfectly correct.
+
+    (None, problem) is "there is one and this reader could not read it
+    whole", kept apart from a clean span for the reason
+    chip_roster_problems() gives: a reader that quietly drops what it
+    cannot parse prints the same OK as one that found nothing wrong.
     """
-    found = PICKER_DETAILS.search(text)
-    if not found:
-        return None, None
+    tag = found.group(1)
+    opener = re.compile(r"<%s\b[^>]*>" % re.escape(tag), re.I)
+    closer = re.compile(r"</%s\s*>" % re.escape(tag), re.I)
 
     depth, index = 1, found.end()
     while depth:
-        opener = DETAILS_OPEN.search(text, index)
-        closer = DETAILS_CLOSE.search(text, index)
-        if closer is None:
+        nested = opener.search(text, index)
+        end = closer.search(text, index)
+        if end is None:
             return None, (
-                "carries a <details class=\"theme-picker\"> that never "
-                "closes, so what is inside the control and what is merely "
-                "after it cannot be told apart - and everything below it "
-                "on the page is inside the panel")
-        if opener is not None and opener.start() < closer.start():
+                "carries a <%s> that never closes, so what is inside it "
+                "and what is merely after it cannot be told apart - and "
+                "everything below it on the page is inside the element"
+                % tag)
+        if nested is not None and nested.start() < end.start():
             depth += 1
-            index = opener.end()
+            index = nested.end()
             continue
         depth -= 1
-        index = closer.end()
+        index = end.end()
+    return (found.start(), index), None
+
+
+def footer_problems(text, themed):
+    """[problem] for one page's footer against the owner's ruling on #274.
+
+    The footer is the swatch row and nothing else, so this reads what is
+    left after the row is cut out. That is the arm with reach: an
+    off-site href is invisible to DESTINATIONS and to the anti-stranding
+    arm alike, and an on-site link spelling its destination's own name
+    satisfies the name table exactly - so before this, two of the four
+    footers could take their nav back with the whole gate green.
+    """
+    problems = []
+    footers = FOOTER.findall(text)
+
+    if len(footers) > 1:
+        problems.append(
+            "carries %d <footer> elements. This arm reads one, so a second "
+            "is a footer nothing looks at - and the ruling is that every "
+            "page's footer is the same row" % len(footers))
+        return problems
+
+    if not themed:
+        if footers:
+            problems.append(
+                "offers no palette and carries a <footer>. The footer IS "
+                "the palette row since #274, so a page with no row has "
+                "nothing to put in one and an empty element is a rule "
+                "painting a line under nothing")
+        return problems
+
+    if not footers:
+        problems.append(
+            "offers a palette and carries no <footer>. That is where the "
+            "swatch row lives on every other page, and a row somewhere "
+            "else is the identical-footers ruling broken on one page")
+        return problems
+
+    inside = footers[0]
+
+    found = SWATCH_GROUP.search(inside)
+    if not found:
+        # NOT a silent return. The arm below searches the WHOLE page for
+        # the row, so a footer arm that says nothing when the row is not
+        # in the footer leaves "the row is on the page but not in the
+        # footer, and the footer is full of nav" with no reader at all -
+        # the owner's ruling reversed on one page with the whole gate
+        # green, found by mutation. A themed
+        # page whose footer holds no row is the same failure as a themed
+        # page with no footer, and it says so in the same words.
+        problems.append(
+            "carries a <footer> with no .theme-swatches row inside it. "
+            "The footer IS the palette row since #274, so a footer "
+            "holding anything else - or nothing - is the identical-"
+            "footers ruling broken on this page. Where the row went is "
+            "the arm below; that it is not HERE is this one")
+        return problems
+
+    span, unreadable = element_span(inside, found)
+    if unreadable:
+        problems.append(unreadable)
+        return problems
+
+    rest = inside[:span[0]] + inside[span[1]:]
+    within = inside[span[0]:span[1]]
+
+    for _ in FOOTER_ANCHOR.findall(rest):
+        problems.append(
+            "carries a link in its footer. #274 removed the footers' nav "
+            "on the owner's ruling - the rail is what carries navigation, "
+            "and an outbound link is navigation that leaves. Nothing else "
+            "in this file reaches this: an off-site href is not a "
+            "destination, and an on-site one spelling its page's own name "
+            "passes the name table")
+        break
+
+    if ANY_TAG.search(rest):
+        problems.append(
+            "carries markup in its footer beside the swatch row. The "
+            "footer is the row and nothing else, on every page alike, so "
+            "an element standing next to it is the drift that made the "
+            "four footers disagree in the first place")
+
+    if TAG.sub("", rest).strip():
+        problems.append(
+            "carries words in its footer beside the swatch row. A "
+            "sentence there is the footers' old prose arriving without "
+            "its link, and the ruling is that the footer says nothing")
+
+    problems.extend(swatch_row_problems(within))
+
+    return problems
+
+
+# What the swatch row itself is allowed to hold: swatch buttons. The row
+# is `display: flex`, so anything else put inside it paints as a flex
+# item BESIDE the dots - which renders as exactly the footer the ruling
+# forbids while sitting in the one place the arm above cuts out before
+# reading. Confirmed by mutation: both retired links restored inside the
+# row, whole gate green.
+SWATCH_BUTTON = re.compile(r"<(/?)(button)\b[^>]*>", re.I)
+
+
+def swatch_row_problems(within):
+    """[problem] for what one page put INSIDE its swatch row.
+
+    `within` is the row's own markup, opening and closing tags included.
+    Read rather than skipped, because element_span() cutting the row out
+    is what makes the footer arm able to tell the row from what stands
+    beside it - and a reader that cuts something out and never looks in
+    it has moved the hiding place rather than closed it.
+
+    The buttons are cut out the same way the row is, so this is the same
+    sentence one level down: the row is its swatches and nothing else.
+    """
+    rest = SWATCH_ROW_OPEN.sub("", within, count=1)
+    rest = re.sub(r"</\w+\s*>\s*$", "", rest)
+
+    # The buttons cut out at DEPTH, the way element_span() cuts the row
+    # out of the footer: a <button> inside a <button> is not markup this
+    # site writes, and a reader that assumed it away would read the
+    # second closing tag as ending the first control.
+    depth, index, kept = 0, 0, []
+    for found in SWATCH_BUTTON.finditer(rest):
+        if found.group(1):
+            depth -= 1
+            if not depth:
+                index = found.end()
+            continue
         if not depth:
-            return text[found.end():closer.start()], None
-    return None, None
+            kept.append(rest[index:found.start()])
+        depth += 1
+
+    problems = []
+    if depth:
+        problems.append(
+            "carries a <button> in its .theme-swatches row that never "
+            "closes, so what is a swatch and what is standing beside one "
+            "cannot be told apart")
+        return problems
+    kept.append(rest[index:])
+    outside = "".join(kept)
+
+    if FOOTER_ANCHOR.search(outside) or ANY_TAG.search(outside):
+        problems.append(
+            "carries markup INSIDE its .theme-swatches row that is not a "
+            "swatch. The row lays its children out in a flex line, so "
+            "anything else in it paints beside the dots - a footer with "
+            "prose links in it, arriving in the one place the arm above "
+            "cuts out before it reads")
+    if TAG.sub("", outside).strip():
+        problems.append(
+            "carries words INSIDE its .theme-swatches row. The row is "
+            "its swatches and nothing else, for the same reason the "
+            "footer is the row and nothing else")
+    return problems
 
 
-def theme_control_problems(text, shape):
-    """[problem] for one page's palette control against its pinned shape.
+SWATCH_ROW_OPEN = re.compile(
+    r"<\w+\b[^>]*\bclass\s*=\s*[\"'][^\"']*\btheme-swatches\b[^>]*>", re.I)
 
-    `shape` is FLYOUT, SWATCH, or None for a page that offers no
-    palette. Takes markup rather than a filename for the reason
+
+def theme_control_problems(text, themed):
+    """[problem] for one page's palette control against the ruled shape.
+
+    `themed` is whether the page is pinned to offer a palette at all.
+    Takes markup rather than a filename for the reason
     plain_page_problems() gives: a rule exercised only on the files that
     ship today is a rule tested against today's markup, and what has to
     hold is the shape of the failure.
@@ -2309,77 +2656,29 @@ def theme_control_problems(text, shape):
         problems.append(
             "carries id=\"%s\", which is the hook the palette control was "
             "opened through while a script owned its open state. Nothing "
-            "reads it - the disclosure opens itself, and the sign-in page "
-            "has no disclosure - so what is left is an id the next page "
-            "copied from this one inherits" % retired)
+            "reads it - no page has a disclosure - so what is left is an "
+            "id the next page copied from this one inherits" % retired)
 
-    body, unreadable = picker_body(text)
-    if unreadable:
-        problems.append(unreadable)
+    # The disclosure, refused on every page rather than pinned to three.
+    # Both halves: the element #274 removed, and the word its button
+    # carried - because the class is what a rebuild drops first, and a
+    # <summary> still reading "Theme" is the same control arriving
+    # without the name this file finds it by.
+    if PICKER_DETAILS.search(text) or any(
+            label_text(words) == THEME_CONTROL_NAME
+            for words in SUMMARY.findall(text)):
+        problems.append(
+            "hides its palette behind a disclosure, and #274 ruled the "
+            "flyout off every page. A control with hidden state is one "
+            "that can be open over something - over the Telegram widget "
+            "on the page that signs anybody in - and the swatches have no "
+            "reveal to fail. The word is pinned in THEME_CONTROL_NAME in "
+            "tools/check_web.py")
 
-    disclosure = body is not None or unreadable is not None
-    named = any(label_text(words) == THEME_CONTROL_NAME
-                for words in SUMMARY.findall(text))
-    swatch_row = SWATCH_GROUP.search(text) is not None
-    chips = CHIP_MARKUP.search(text) is not None
-    inside = len(CHIP_MARKUP.findall(body)) if body is not None else 0
+    swatch_row = SWATCH_GROUP.search(text)
+    chips = CHIP_MARKUP.findall(text)
 
-    if shape == FLYOUT:
-        if not disclosure:
-            problems.append(
-                "offers a palette and carries no "
-                "<details class=\"theme-picker\">. <details> is what opens "
-                "the panel with nothing running, so a control assembled "
-                "out of anything else is a palette that goes unreachable "
-                "on the first script failure")
-        elif body is not None and not any(
-                label_text(words) == THEME_CONTROL_NAME
-                for words in SUMMARY.findall(body)):
-            problems.append(
-                "carries the palette disclosure and no <summary> reading "
-                "\"%s\" inside it. The summary IS the button: without one "
-                "the browser paints its own marker and there is nothing "
-                "for a reader to press by name. The word is pinned in "
-                "THEME_CONTROL_NAME in tools/check_web.py"
-                % THEME_CONTROL_NAME)
-        if not chips:
-            problems.append(
-                "offers a palette and carries no data-set-theme chip, so "
-                "its disclosure opens an empty panel. theme.js wires the "
-                "chips by that attribute and finds nothing to wire")
-        elif body is not None and inside < len(CHIP_MARKUP.findall(text)):
-            # COUNTED rather than asked whether any chip is inside. One
-            # chip left beside the disclosure while the others stay in it
-            # is the shape this arm is for, and "does the panel contain a
-            # chip" answers yes to it - which is how a stray palette
-            # button ends up standing open in the footer forever with the
-            # gate green. Found by mutation, which is what mutation is
-            # for.
-            problems.append(
-                "carries %d of its %d data-set-theme chips OUTSIDE the "
-                "palette disclosure. The panel floats from inside that "
-                "element, so a chip left beside it is a button standing "
-                "open in the footer that no press ever folds away"
-                % (len(CHIP_MARKUP.findall(text)) - inside,
-                   len(CHIP_MARKUP.findall(text))))
-        if swatch_row:
-            problems.append(
-                "carries the sign-in page's always-visible swatch row as "
-                "well as the disclosure. The two shapes are one ruling "
-                "split by page rather than a pair - a page offering both "
-                "offers each palette twice and marks the pressed one in "
-                "two places that can disagree")
-        return problems
-
-    if shape == SWATCH:
-        if disclosure or named:
-            problems.append(
-                "hides its palette behind a disclosure. This is the "
-                "sign-in page: a panel that opens here opens over the "
-                "Telegram widget, which is the only thing on the page "
-                "that signs anybody in. The swatches stay in flow and "
-                "visible so that no failure of a script, a stylesheet or "
-                "a layout can put anything over the door")
+    if themed:
         if not swatch_row:
             problems.append(
                 "offers a palette and carries no .theme-swatches row, so "
@@ -2390,37 +2689,42 @@ def theme_control_problems(text, shape):
                 "offers a palette and carries no data-set-theme swatch. "
                 "theme.js wires the palettes by that attribute and finds "
                 "nothing to wire")
+        elif swatch_row:
+            # COUNTED rather than asked whether any chip is inside the
+            # row. One chip left beside it while the others stay in is
+            # the shape this arm is for, and "does the row contain a
+            # chip" answers yes to it - which is how a stray palette
+            # button ends up standing loose in the footer forever with
+            # the gate green. Found by mutation on the shape this
+            # replaced, which is what mutation is for.
+            span, unreadable = element_span(text, swatch_row)
+            if unreadable:
+                problems.append(unreadable)
+            else:
+                held = len(CHIP_MARKUP.findall(text[span[0]:span[1]]))
+                if held < len(chips):
+                    problems.append(
+                        "carries %d of its %d data-set-theme chips OUTSIDE "
+                        "the .theme-swatches row. The stylesheet lays the "
+                        "row out, so a chip beside it is a control the "
+                        "spacing, the target size and the pressed mark all "
+                        "miss" % (len(chips) - held, len(chips)))
         return problems
 
-    if disclosure or named:
-        problems.append(
-            "carries a palette disclosure and is pinned in neither "
-            "FLYOUT_PAGES nor SWATCH_PAGES in tools/check_web.py. Either "
-            "this page now offers a palette and the pin is stale, or it "
-            "inherited the control from whichever page it was copied "
-            "from - say which")
     if swatch_row:
         problems.append(
-            "carries a .theme-swatches row and is pinned in neither "
-            "FLYOUT_PAGES nor SWATCH_PAGES in tools/check_web.py. Say "
-            "which of those two it is, or take the row out")
+            "carries a .theme-swatches row and is not pinned in "
+            "THEMED_PAGES in tools/check_web.py. Either this page now "
+            "offers a palette and the pin is stale, or it inherited the "
+            "row from whichever page it was copied from - say which")
     if chips:
         problems.append(
-            "carries a data-set-theme chip and is pinned in neither "
-            "FLYOUT_PAGES nor SWATCH_PAGES in tools/check_web.py. A chip "
-            "writes a stored preference, and this page is not one the "
-            "site offers that from")
+            "carries a data-set-theme chip and is not pinned in "
+            "THEMED_PAGES in tools/check_web.py. A chip writes a stored "
+            "preference, and this page is not one the site offers that "
+            "from")
 
     return problems
-
-
-def page_shape(name):
-    """Which palette control one page is pinned to carry, or None."""
-    if name in FLYOUT_PAGES:
-        return FLYOUT
-    if name in SWATCH_PAGES:
-        return SWATCH
-    return None
 
 
 def theme_control_page_problems():
@@ -2428,28 +2732,38 @@ def theme_control_page_problems():
     problems = []
     pages = html_pages()
 
-    for name in sorted(THEMED_PAGES - set(pages)):
+    for name in sorted((THEMED_PAGES | UNTHEMED_PAGES) - set(pages)):
         problems.append((
             name,
-            "is pinned in FLYOUT_PAGES or SWATCH_PAGES in "
+            "is pinned in THEMED_PAGES or UNTHEMED_PAGES in "
             "tools/check_web.py and is not a page in apps/web. Delete the "
             "entry, or restore the page it was written for - a pin with "
             "no page behind it is a check that cannot fail"))
 
-    # A page in both tables would be scored by whichever branch
-    # theme_control_problems() reaches first, and the other shape's
-    # refusals would then be dead code wearing a live check's clothes.
-    for name in sorted(FLYOUT_PAGES & SWATCH_PAGES):
+    for name in sorted(THEMED_PAGES & UNTHEMED_PAGES):
         problems.append((
             name,
-            "is pinned in BOTH FLYOUT_PAGES and SWATCH_PAGES in "
-            "tools/check_web.py. A page carries one shape; pinned to two, "
-            "it is read against one of them and the other's arms stop "
-            "being able to fail"))
+            "is pinned in BOTH THEMED_PAGES and UNTHEMED_PAGES in "
+            "tools/check_web.py. The two tables answer one question and "
+            "a page in both makes whichever arm is read first the answer"))
+
+    for name in sorted(set(pages) - THEMED_PAGES - UNTHEMED_PAGES):
+        problems.append((
+            name,
+            "is published and is named in neither THEMED_PAGES nor "
+            "UNTHEMED_PAGES in tools/check_web.py. Since #274 the footer "
+            "IS the palette row, so absence from the first table no "
+            "longer means only \"no palette\" - it also means \"no "
+            "footer\", and a page nobody adds ships with neither while "
+            "this arm reads the table to decide whether to look. Say "
+            "which side this page is on"))
 
     for name in pages:
-        for problem in theme_control_problems(page_text(name),
-                                              page_shape(name)):
+        text = page_text(name)
+        themed = name in THEMED_PAGES
+        for problem in theme_control_problems(text, themed):
+            problems.append((name, problem))
+        for problem in footer_problems(text, themed):
             problems.append((name, problem))
 
     return problems
@@ -2827,18 +3141,19 @@ def css_role_problems(css):
 # each other and disagreeing with the page they open is exactly the
 # drift that issue inventoried. So are the copies that live outside the
 # destinations list - the door in each session block, which #187 put
-# beyond the rail loop's reach and PROSE_LINKS below brings back. Two
-# footers carried a third and fourth copy of it until #265 row 22:
-# offered to somebody already inside, three inches under a rail saying
-# "Signed in as ...", which is the exact reading #187 ruled against.
+# beyond the rail loop's reach and PROSE_LINKS below brings back. The
+# footers carried copies of it too until #265 row 22 took the door out
+# of them and #274 took every link out of them, so the only copies left
+# are the session blocks'.
 #
 # The site's own name reaches a reader by two routes - the tab strip,
 # through this constant, and the wordmark over the door - and #191 rules
 # them to one string, because a site whose tab and whose masthead
 # disagree is #127's complaint one level up. This constant holds the
-# five titles to it; the wordmark arm on check 10 holds the four
-# hand-kept copies of the masthead to each other. Neither reads the
-# other, and the pair of them is what the words below are worth.
+# titles to it; the wordmark arm on check 10 holds the hand-kept copies
+# of the masthead to each other, and WORDMARK_PAGES is where to read
+# which pages those are. Neither reads the other, and the pair of them
+# is what the words below are worth.
 SITE_TITLE = "Hang Gang Binder"
 
 DESTINATIONS = {
@@ -2859,28 +3174,25 @@ DESTINATIONS = {
 # Pinned for the reason SHELLS gives, and the ABSENT direction is again
 # the one with teeth: a link this table does not name is held to the
 # name, so a new sentence arrives loudly instead of widening the hole
-# #201 filed - five copies of the door label, three in the session
-# blocks and two in footers, answering to nothing while #191 renamed the
-# pages around them. Three copies now: #265 row 22 retired the footers'
-# on the owner's ruling, and the remaining three are the session
-# blocks', which are the copies #187 says the door belongs to. A
-# declaration nothing carries any more FAILS as stale, for the reason
-# WORDMARK_PAGES gives.
+# #201 filed - copies of the door label in session blocks and in footers
+# answering to nothing while #191 renamed the pages around them. The
+# footers' copies are gone: #265 row 22 retired the door's on the
+# owner's ruling and #274 retired every link they had left, so what
+# remains is the session blocks', which are the copies #187 says the
+# door belongs to. A declaration nothing carries any more FAILS as
+# stale, for the reason WORDMARK_PAGES gives.
 #
 # What this cannot say is whether a sentence is still true after a
 # rename. "Go to sign in" is prose, and prose is the owner's to write.
 PROSE_LINKS = {
     ("404.html", "index.html"): frozenset({"Go to sign in"}),
-    # Two links to one page from one page, saying different things
-    # because they are doing different things: the Publish card's own
-    # "Open it" beside the act it belongs to, and the footer's
-    # invitation to read what was just published (#265 row 22).
-    ("admin.html", "charts.html"): frozenset(
-        {"Open it", "See what everyone adds up to"}),
+    # The Publish card's own link, beside the act it belongs to: a
+    # keyholder who has just pressed Publish is one press from reading
+    # what they published. It said something different from the footer's
+    # invitation to the same page while the footers had one (#265
+    # row 22); #274 left it the only link on this page that does.
+    ("admin.html", "charts.html"): frozenset({"Open it"}),
     ("charts.html", "index.html"): frozenset({"Add yours"}),
-    ("index.html", "charts.html"): frozenset({"See what everyone adds up to"}),
-    ("your-page.html", "charts.html"): frozenset(
-        {"See what everyone adds up to"}),
 }
 
 # What a stale prose declaration is attributed to, for the reason
@@ -2890,7 +3202,7 @@ PROSE_PIN = "PROSE_LINKS in tools/check_web.py"
 # One anchor, split into its attributes and what it shows, so the arm
 # can read a class off it. The wordmark is an anchor to index.html whose
 # words are the site's name rather than that page's, and check 10 holds
-# its four copies to each other - held here too it would answer to two
+# its copies to each other - held here too it would answer to two
 # tables at once, and the next rename would have to satisfy both.
 ANCHOR = re.compile(r"<a\b([^>]*)>(.*?)</a>", re.S | re.I)
 ANCHOR_HREF = re.compile(r'href\s*=\s*["\']([^"\']*)["\']', re.I)
@@ -4136,18 +4448,18 @@ CHIP_PIN = "THEMED_PAGES in tools/check_web.py"
 def page_chips(text):
     """[(id, name)] for one page's palette chips, in document order.
 
-    `name` is what a member is offered the palette BY, and there are two
-    ways a chip carries one. The flyout's buttons say the word; the
-    sign-in page's swatches are a colored dot with the word in
-    aria-label, because a row of four dots is the shape that cannot
-    cover the widget and a dot has no words in it. Reading only the
-    visible ones would leave every swatch nameless here, and then
-    check 23's parity and check 24's ruled-word arm would both be
-    comparing three pages while the fourth went unread.
+    `name` is what a member is offered the palette BY, and a swatch
+    carries one in its aria-label: a row of four dots is the shape that
+    cannot cover anything however it fails, and a dot has no words in
+    it. Reading only visible words would leave every swatch nameless
+    here, and then check 23's parity and check 24's ruled-word arm
+    would both have nothing left to compare.
 
-    Visible words WIN where a chip has both. They are what a sighted
-    member acts on, and a label that disagreed with them would be the
-    two-names-for-one-palette failure #152 exists for, one layer down.
+    Visible words still WIN where a chip has both, and the branch is
+    kept for that reason rather than for a page that uses it today.
+    They are what a sighted member acts on, and a label that disagreed
+    with them would be the two-names-for-one-palette failure #152
+    exists for, one layer down.
 
     `name` is None for a chip whose element never closes, which says
     something different from a chip carrying no name at all - the two
@@ -4358,7 +4670,7 @@ def chip_problems():
 #    jsdom for exactly this, so these are declared values, the same
 #    limit check_contrast.py states about itself. Which token paints
 #    which element is outside all of it.
-#  - Taste: visual weight, the cover's easing, the sample figures.
+#  - Taste: visual weight, the rail's proportions, the sample figures.
 #
 # HOW THIS SITS BESIDE check_contrast.py, which reads the same hexes.
 # That file asks whether a palette is LEGIBLE, and whether anything
@@ -4767,8 +5079,8 @@ def font_stack_problems(css):
     return problems
 
 
-# The sign-in page's swatches, and the one place in this stylesheet
-# where a palette's colors are written out on a component.
+# The swatch dots, and the one place in this stylesheet where a
+# palette's colors are written out on a component.
 #
 # It is forced rather than chosen. A palette's tokens live under
 # `:root[data-theme="pink"]`, so from inside whatever palette the page
@@ -4799,13 +5111,13 @@ SWATCH_TOKENS = {
 
 
 def swatch_problems(css):
-    """[problem] for the sign-in swatches drifting from the ruled palettes.
+    """[problem] for the swatch dots drifting from the ruled palettes.
 
     Both directions, the DESTINATIONS way. A dot for a palette the
-    mockup does not rule is a palette offered on the door of a site the
-    design gate has never seen; a ruled palette with no dot is the row
-    quietly dropping one, which nothing else here would notice because
-    three dots look exactly as intentional as four.
+    mockup does not rule is a palette the design gate has never seen,
+    offered in every footer on the site; a ruled palette with no dot is
+    the row quietly dropping one, which nothing else here would notice
+    because three dots look exactly as intentional as four.
     """
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
@@ -4819,14 +5131,14 @@ def swatch_problems(css):
 
     for palette in sorted(set(painted) - set(MOCKUP_PALETTES)):
         problems.append(
-            "paints a sign-in swatch for the palette \"%s\", and %s rules "
-            "four: %s. A dot nobody has drawn is a palette the door offers "
-            "and the design gate has never seen"
+            "paints a swatch for the palette \"%s\", and %s rules "
+            "four: %s. A dot nobody has drawn is a palette every footer "
+            "offers and the design gate has never seen"
             % (palette, MOCKUP, ", ".join(sorted(MOCKUP_PALETTES))))
 
     for palette in sorted(set(MOCKUP_PALETTES) - set(painted)):
         problems.append(
-            "paints no sign-in swatch for the \"%s\" palette, and %s rules "
+            "paints no swatch for the \"%s\" palette, and %s rules "
             "it. The dot is the whole of what tells that button apart from "
             "the ones beside it, so an unpainted one is a control with "
             "nothing on it" % (palette, MOCKUP))
@@ -5806,6 +6118,42 @@ def stylesheet_import_problems(css):
     ]
 
 
+# Every animation this stylesheet could run, named where a reader will
+# look for it. Refused rather than merely absent, the way RETIRED_IDS
+# and PICKER_DETAILS are.
+#
+# #273 removed the entrance animation and retired the reduced-motion row
+# from the live-verification ledger on the grounds that "there are no
+# keyframes and no animated element left on the page, so there is
+# nothing for the setting to reduce." That grounded a PERMANENT ledger
+# retirement on a property nothing enforced: every mention of @keyframes
+# in tools/ and dev/ is a parser explicitly SKIPPING the block, so an
+# entrance animation could come back with the gate green, the row that
+# would have demanded a reduced-motion sitting gone, and nothing to
+# re-add it. This is the half of that pair a file can hold.
+#
+# What it does NOT hold: a transition, which animates without a keyframe
+# and which the blanket @media (prefers-reduced-motion) block below is
+# already written to cover. The retired row was about an ENTRANCE - an
+# element arriving under its own steam - and that is what needs a
+# keyframe.
+KEYFRAMES = re.compile(r"@(?:-\w+-)?keyframes\b", re.I)
+
+
+def keyframes_problems(css):
+    """[problem] for a stylesheet that declares an animation."""
+    return [
+        "declares %s. The entrance animation went out with the cover "
+        "(#273), and the live-verification ledger's reduced-motion row "
+        "went with it because there was nothing left for the setting to "
+        "reduce. An animation arriving now would restore the hazard with "
+        "the row that asked somebody to sit with it already retired - so "
+        "a keyframe is refused here, and re-adding one is the change "
+        "that puts that ledger row back" % found.group(0)
+        for found in [KEYFRAMES.search(css)] if found
+    ]
+
+
 def styling_exclusivity_problems():
     """[(subject, problem)] for styling that reaches past the design gate."""
     problems = list(pinned_style_problems())
@@ -5816,6 +6164,396 @@ def styling_exclusivity_problems():
     css = stylesheet_text()
     if css is not None:
         for problem in stylesheet_import_problems(css):
+            problems.append((STYLESHEET, problem))
+        for problem in keyframes_problems(css):
+            problems.append((STYLESHEET, problem))
+
+    return sorted(problems)
+
+
+# ------------------------------------------------------------------
+# Check 27: the owner's register bar (#275, ruled on #265).
+#
+# The bar is nine rules and only two of them can be read off a file.
+# "One clause per message" and "no voice survivors" are judgements a
+# person makes; what a check can hold is the handful of lines the owner
+# dictated WORD FOR WORD, and the mechanism the ruling names for
+# everything those lines stopped saying.
+#
+# Both halves are here because either alone fails open. A ruled sentence
+# with nowhere for its old explanation to go comes back lengthened by
+# the next person who misses the missing fact; a disclosure with no
+# ruled sentence in front of it is a page that hid its prose and changed
+# nothing. The pair is the ruling.
+#
+# READ AS THE WHOLE OF WHAT THE ELEMENT RENDERS, never as a substring.
+# "Signed out." is inside "Signed out. This browser now holds nothing of
+# yours." - the exact sentence the ruling removed - so a containment
+# test passes on the text it was written to refuse. That is the shape of
+# this arm's only real failure mode, and it is why the comparison is
+# equality against the element's own text.
+
+# The lines the owner ruled, keyed by the page and the id of the element
+# that renders each one.
+#
+# `{}` stands for an element the page fills at runtime: the count in the
+# sealed-rows line is written by submit.js, so the pin is over the
+# sentence around it rather than over a number no file holds. Every
+# other slot in these pages is a whole element too, so the marker needs
+# no escape.
+RULED_LINES = {
+    "index.html": {
+        "signed-out": "Signed out.",
+    },
+    "your-page.html": {
+        "history-sealed": "{} can't be opened here. Ask an admin.",
+        "key-check": "Compare with the group's pinned code before "
+                     "submitting.",
+    },
+    "charts.html": {
+        "charts-intro":
+            "Counts and averages — no names, no individual entries.",
+    },
+}
+
+# The disclosure the whys moved behind, and the three things about it
+# that are not a matter of taste.
+#
+# The class is what theme.css lays out; the word is what a member reads
+# and is the same word on every card, because a disclosure that is
+# called something different on each page is four controls rather than
+# one. And it ships CLOSED: `open` in the markup is the prose back on
+# the page with a control drawn around it, which is the whole of what
+# this ruling removed.
+MORE_CLASS = "more"
+MORE_SUMMARY = "More"
+
+# The product pages the ruling names. admin.html is one of them - the
+# instrument's allowance under rule 7 is ONE short explanatory sentence
+# per card, not a page-wide exemption from the mechanism.
+MORE_PAGES = frozenset({"admin.html", "charts.html", "your-page.html"})
+
+DETAILS_OPEN = re.compile(r"<details\b([^>]*)>", re.I)
+
+# An element the page fills at runtime, matched as a tag pair with
+# nothing between it. Backreferenced to its own tag name so that a pair
+# of different elements cannot be read as one empty one.
+EMPTY_ELEMENT = re.compile(r"<(\w+)\b[^>]*>\s*</\1\s*>")
+
+ENTITIES = (("&mdash;", "—"), ("&hellip;", "…"),
+            ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"))
+
+
+def paragraph_by_id(text, element_id):
+    """The inner markup of the <p> carrying `element_id`, or None.
+
+    Restricted to <p> for the reason LABEL_MARKUP gives: <p> cannot
+    nest, so a non-greedy match to the next </p> cannot swallow a
+    paragraph standing inside something else. Every ruled line is one
+    paragraph, and a ruling that lands somewhere else should have to
+    say so here rather than arrive through a reader that was general
+    enough not to notice.
+    """
+    found = re.search(
+        r'<p\b[^>]*\bid\s*=\s*["\']%s["\'][^>]*>(.*?)</p\s*>'
+        % re.escape(element_id), text, re.S | re.I)
+    return None if found is None else found.group(1)
+
+
+def rendered_text(markup):
+    """What one element's markup puts on screen, spacing collapsed."""
+    text = EMPTY_ELEMENT.sub("{}", markup)
+    text = TAG.sub("", text)
+    for entity, character in ENTITIES:
+        text = text.replace(entity, character)
+    return " ".join(text.split())
+
+
+def ruled_line_problems(text, page):
+    """[problem] for one page's ruled lines against what it renders."""
+    problems = []
+    for element_id, ruled in sorted(RULED_LINES.get(page, {}).items()):
+        markup = paragraph_by_id(text, element_id)
+        if markup is None:
+            problems.append(
+                "carries no <p id=\"%s\">, which is where the owner's ruled "
+                "line \"%s\" renders. RULED_LINES in tools/check_web.py is "
+                "the record of the ruling (#275); an id renamed out from "
+                "under it takes the sentence with it" % (element_id, ruled))
+            continue
+        shown = rendered_text(markup)
+        if shown != ruled:
+            problems.append(
+                "renders \"%s\" where the owner ruled \"%s\" (#275). The "
+                "comparison is the WHOLE of what that element shows, "
+                "because every sentence the ruling removed had the ruled "
+                "one inside it" % (shown, ruled))
+    return problems
+
+
+def more_disclosure_problems(text, page):
+    """[problem] for one page's More disclosures against the ruled shape."""
+    problems = []
+    opens = DETAILS_OPEN.findall(text)
+    summaries = [label_text(words) for words in SUMMARY.findall(text)]
+
+    for attributes in opens:
+        classes = (tag_attribute("<details%s>" % attributes, "class")
+                   or "").split()
+        if MORE_CLASS not in classes:
+            problems.append(
+                "carries a <details> that is not a .%s. One disclosure "
+                "shape on every product card is what makes the reveal read "
+                "as the same control twice - a second shape is a second "
+                "control the stylesheet does not lay out" % MORE_CLASS)
+        if re.search(r"\bopen\b", attributes, re.I):
+            problems.append(
+                "ships a <details> with `open` on it. A disclosure that is "
+                "already open is the prose back on the page with a control "
+                "drawn around it, which is what #275 moved behind it")
+
+    for words in summaries:
+        if words != MORE_SUMMARY:
+            problems.append(
+                "labels a disclosure \"%s\". The word is \"%s\" on every "
+                "page - MORE_SUMMARY in tools/check_web.py - because a "
+                "reveal named differently on each card is four controls "
+                "rather than one" % (words, MORE_SUMMARY))
+
+    if page in MORE_PAGES and not opens:
+        problems.append(
+            "is a product page with no <details class=\"%s\"> on it. #275 "
+            "ruled the whys behind a native disclosure; a page that "
+            "carries none either kept its explanations in front of the "
+            "reader or deleted facts the ruling only asked it to move"
+            % MORE_CLASS)
+
+    if len(opens) != len(summaries):
+        problems.append(
+            "carries %d <details> and %d <summary>. A disclosure with no "
+            "summary opens through the browser's own default word, which "
+            "is not the ruled one and is not the same word twice"
+            % (len(opens), len(summaries)))
+
+    return problems
+
+
+# The whole of what a rule reaching the More disclosure may declare.
+#
+# Check 27 above enforces three MARKUP facts - the class, the word, and
+# the absence of `open` - and it cannot see the stylesheet. Two lines of
+# CSS put every card's prose back on the page with `open` still false
+# and the marker still reading "More":
+#
+#     details.more::details-content { content-visibility: visible;
+#                                     block-size: auto; }
+#
+# Confirmed by mutation, in a browser, on the built dist: the ruling's
+# central mechanic undone across all nine cards with nothing red.
+#
+# An ALLOWLIST rather than a list of dangerous properties, for the
+# reason AGENTS.md's corollary gives: a blocklist is a guess about which
+# lever the next person reaches for, and this one has to hold against
+# levers nobody has thought of. What the shipped rules need is
+# typography and one margin.
+MORE_STYLE_PROPERTIES = frozenset({
+    "color", "cursor", "font-size", "margin-block-start",
+})
+
+# The selector shapes that reach a More disclosure or its contents. The
+# type selector is in it as well as the class: `details > :not(summary)`
+# reaches every card on the site without ever saying "more".
+MORE_SELECTOR = re.compile(r"\.more\b|\bdetails\b|::details-content", re.I)
+
+# Two properties refused WHATEVER selector carries them, because both
+# exist to decide whether a box that is not being displayed paints
+# anyway, and this site has no other use for either. This is the reach
+# the allowlist above does not have: a rule that names neither the class
+# nor the element still cannot turn a closed disclosure on.
+REVEAL_PROPERTIES = ("content-visibility", "::details-content")
+
+
+def more_style_problems(css):
+    """[problem] for stylesheet rules that could open a closed disclosure.
+
+    WHAT THIS CANNOT CATCH, stated rather than implied. A rule reaching
+    the moved prose through a selector naming neither `.more`, `details`
+    nor `::details-content` - a class on the paragraph itself - is
+    outside both arms unless it uses one of the two refused properties.
+    So is anything a script does, and so is the browser's own behavior.
+    Those need a check that reads what RENDERS with the disclosure shut,
+    which needs a layout engine; #75 rejected jsdom for exactly that and
+    the rendered half is post-cutover work. This arm is the strongest
+    one a reader of text can be.
+    """
+    problems = []
+
+    for name in REVEAL_PROPERTIES:
+        if name in css:
+            problems.append(
+                "uses %s. It decides whether the contents of a closed "
+                "<details> are laid out and painted anyway, and #275 put "
+                "the whys behind a disclosure that ships CLOSED. Nothing "
+                "on this site has another use for it, so it is refused "
+                "here whatever selector carries it - which is the reach "
+                "the allowlist below does not have" % name)
+
+    for rule in CSS_RULE.finditer(css):
+        selectors = [" ".join(part.split())
+                     for part in rule.group(1).split(",")]
+        reaching = [part for part in selectors if MORE_SELECTOR.search(part)]
+        if not reaching:
+            continue
+        for name, _ in DECLARATION.findall(rule.group(2)):
+            if name.lower() not in MORE_STYLE_PROPERTIES:
+                problems.append(
+                    "declares %s on %s. MORE_STYLE_PROPERTIES in "
+                    "tools/check_web.py is the whole of what a rule "
+                    "reaching the More disclosure may set - an allowlist, "
+                    "because check 27's markup arms cannot see the "
+                    "stylesheet and two declarations put every card's "
+                    "prose back on the page with `open` still absent"
+                    % (name.lower(), ", ".join(reaching)))
+
+    return problems
+
+
+# What each page's masthead renders, whole.
+#
+# Check 27 pins the ruled lines as the whole of what their ELEMENT
+# shows, which closes the substring hole and leaves the sibling hole
+# open: the pinned <p id="charts-intro"> untouched, and the sentence the
+# ruling vetoed under rule 4 added as the next paragraph in the same
+# <header>. Both on screen, whole gate green - AGENTS.md's corollary
+# exactly, a check computed entirely from the element it guards cannot
+# see that a sentence was added beside it.
+#
+# The header is the region because it is where the ruled line on
+# charts.html lives, it is bounded, and rule 8 says the names in it are
+# identifiers rather than prose - so pinning it whole costs nothing that
+# is supposed to move and refuses everything that is not.
+PAGE_HEADERS = {
+    "404.html": "Not found The link may be old, or the address mistyped.",
+    "admin.html":
+        "Admin Decrypts the submissions in this browser — nothing is "
+        "uploaded.",
+    "charts.html":
+        "Members Muse's charts Counts and averages — no names, no "
+        "individual entries.",
+    "index.html":
+        "Members Sign in Sign in once for this tab — then it is your page "
+        "to fill in, and everyone's numbers to read.",
+    "your-page.html":
+        "Members Your page Fill the form and you are in the binder — your "
+        "sign-in lasts as long as this tab.",
+}
+
+PAGE_HEADER = re.compile(r"<header\b[^>]*>(.*?)</header\s*>", re.S | re.I)
+
+
+def region_text(markup):
+    """What a region of several elements puts on screen, as words.
+
+    rendered_text() one function up drops each tag and keeps what is
+    around it, which is right for ONE element: the slot markers and the
+    inline <strong> inside a ruled sentence have to close up. Over a
+    region it is wrong - two block elements written with no whitespace
+    between them run their last and first words together, so the pin
+    would be a pin on how the file happens to be wrapped, and rewrapping
+    a line would redden the gate on markup nobody changed.
+    """
+    text = EMPTY_ELEMENT.sub(" {} ", markup)
+    text = TAG.sub(" ", text)
+    for entity, character in ENTITIES:
+        text = text.replace(entity, character)
+    return " ".join(text.split())
+
+
+def page_header_problems(text, page):
+    """[problem] for one page's masthead against what PAGE_HEADERS pins."""
+    ruled = PAGE_HEADERS.get(page)
+    if ruled is None:
+        return ["is published and is named in no PAGE_HEADERS entry in "
+                "tools/check_web.py. The masthead is where the ruling's "
+                "own header line lives; a page arriving with an unpinned "
+                "one is a region nothing reads"]
+
+    found = PAGE_HEADER.findall(text)
+    if len(found) != 1:
+        return ["carries %d <header> elements. This arm reads one, and a "
+                "second masthead is a region nothing compares" % len(found)]
+
+    shown = region_text(found[0])
+    if shown != ruled:
+        return ["renders \"%s\" in its <header> where PAGE_HEADERS in "
+                "tools/check_web.py pins \"%s\". The REGION is pinned, not "
+                "only the ruled line inside it: a check computed from the "
+                "element it guards cannot see a sentence added beside it, "
+                "and the vetoed flirt went back on charts.html that way "
+                "with the whole gate green" % (shown, ruled)]
+
+    return []
+
+
+# Sentences the ruling took out, refused wherever they come back.
+#
+# The header pin above holds one region whole; this holds these exact
+# words across the entire page, which is the reach a region pin does not
+# have - the vetoed sign-out inventory returning beside #signed-out in
+# <main> is the same defect one element lower down.
+#
+# A refusal list is a guess about which sentences return and is not
+# claimed to be more: it catches the ones the ruling names, and the
+# header pin is what catches a sentence nobody wrote down.
+VETOED_LINES = (
+    "This browser now holds nothing of yours.",
+    "Getting heavier? Muse certainly hopes so.",
+    "Worth checking before assuming they are damaged.",
+)
+
+
+def vetoed_line_problems(text):
+    """[problem] for a page rendering a sentence the ruling removed."""
+    # region_text() rather than rendered_text(), for the reason it gives:
+    # over a whole page the one that drops tags without a space in their
+    # place runs one element's last word into the next element's first,
+    # and a refusal that reads a joined-up word finds nothing.
+    shown = region_text(text)
+    return [
+        "renders \"%s\", which #275 removed. VETOED_LINES in "
+        "tools/check_web.py refuses it wherever it comes back, because "
+        "the arms that took it out read one element each and a vetoed "
+        "sentence returns as the element NEXT to that one" % ruled
+        for ruled in VETOED_LINES if ruled in shown
+    ]
+
+
+def register_problems():
+    """[(page, problem)] for the pages against the owner's register bar."""
+    problems = []
+    for page in sorted(set(RULED_LINES) | MORE_PAGES | set(PAGE_HEADERS)):
+        if page not in html_pages():
+            problems.append((
+                page,
+                "is named in RULED_LINES, MORE_PAGES or PAGE_HEADERS in "
+                "tools/check_web.py and is not a page in apps/web. Delete "
+                "the entry, or restore the page it was written for - a pin "
+                "with no page behind it is a check that cannot fail"))
+
+    for page in html_pages():
+        text = page_text(page)
+        for problem in ruled_line_problems(text, page):
+            problems.append((page, problem))
+        for problem in more_disclosure_problems(text, page):
+            problems.append((page, problem))
+        for problem in page_header_problems(text, page):
+            problems.append((page, problem))
+        for problem in vetoed_line_problems(text):
+            problems.append((page, problem))
+
+    css = stylesheet_text()
+    if css is not None:
+        for problem in more_style_problems(css):
             problems.append((STYLESHEET, problem))
 
     return sorted(problems)
@@ -5941,6 +6679,9 @@ def main():
 
     for subject, problem in styling_exclusivity_problems():
         problems.append("%s %s." % (subject, problem))
+
+    for page, problem in register_problems():
+        problems.append("%s %s." % (page, problem))
 
     for where in ("apps/web", "dist"):
         root_dir = WEB if where == "apps/web" else PUBLISHED
