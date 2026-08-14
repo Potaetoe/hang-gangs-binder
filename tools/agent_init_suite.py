@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 98
+EXPECTED = 103
 
 
 def check(label, condition):
@@ -386,6 +386,33 @@ try:
         check("agent-init refuses rather than installing through it", False)
         check("an entry point that resolves through the link is present",
               False)
+
+    # ------------------------------------------------------------------
+    # C2. A repo root with no package.json is not installed into.
+    # ------------------------------------------------------------------
+    # Field note, 0.9-M0-S6 (#286): a worktree spawned at a tip with no
+    # package.json let `npm ci` walk UP the directory tree and reinstall
+    # a DIFFERENT checkout's node_modules before this verb went on to
+    # refuse for its real reason - no damage that time, only because the
+    # shared install verified intact afterwards. build_repo() never
+    # writes a package.json, so a second instance of it already IS the
+    # rootless case; it gets its own state directory so its PRIMARY_BLOCK
+    # lease cannot collide with `repo`'s in `state`.
+    no_pkg_state = os.path.join(base, "no-pkg-state")
+    rootless = build_repo(os.path.join(base, "rootless"))
+    check("the rootless fixture really has no package.json",
+          not os.path.isfile(os.path.join(rootless, "package.json")))
+    code, out = run_verb(["init", "--repo", rootless,
+                          "--state", no_pkg_state])
+    check("agent-init still succeeds - the readiness probe here needs no "
+          "install",
+          code == 0)
+    check("and it never reaches the installing line",
+          "installing" not in out)
+    check("and it says why, naming the file that is missing",
+          "no package.json" in out and "skipping the install" in out)
+    check("and node_modules was never created",
+          not os.path.exists(os.path.join(rootless, "node_modules")))
 
     # ------------------------------------------------------------------
     # D. The readiness probe, in both directions.
