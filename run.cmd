@@ -24,8 +24,15 @@ rem
 rem A label costs neither. A line outside a parenthesized block is
 rem parsed as it executes, so `exit /b %ERRORLEVEL%` on a line of its
 rem own reads the value the line above it set.
+rem
+rem RUN_CMD_REPO is captured here, once, before anything below can move
+rem it: :agent_init below re-invokes this file from a COPY sitting
+rem outside this directory, and %~dp0 inside that copy resolves to
+rem wherever the copy lives, not to this checkout. Every verb sets it
+rem harmlessly; only agent-init reads it back.
 setlocal EnableExtensions
 cd /d "%~dp0"
+if not defined RUN_CMD_REPO set "RUN_CMD_REPO=%CD%"
 
 set "PY="
 call py -3 --version >nul 2>nul && set "PY=py -3"
@@ -40,6 +47,7 @@ if not defined PY (
 if "%~1"=="agent-init" goto :agent_init
 if "%~1"=="agent-park" goto :agent_park
 if "%~1"=="check" goto :check
+if "%~1"=="gate" goto :gate
 if "%~1"=="docs" goto :docs
 if "%~1"=="build" goto :build
 if "%~1"=="live" goto :live
@@ -64,6 +72,45 @@ rem The exit code matters more here than anywhere else in this file:
 rem `agent-init --verify` is what the gate's first stage asks, and a
 rem refusal that reports success is a gate that runs on an
 rem uninitialized worktree.
+rem
+rem SELF-RENORMALIZATION HAZARD. This file is itself eol-pinned
+rem (`*.cmd text eol=crlf`, .gitattributes), so on a stale worktree the
+rem call below can renormalize THIS FILE - delete it and re-check it
+rem out - while cmd.exe is still reading it to run the next line.
+rem Reproduced in a throwaway harness on 2026-08-13: cmd.exe's read
+rem position desynced against the new bytes, which duplicated one
+rem line's execution and truncated another into a bogus command
+rem ("'ER-REWRITE' is not recognized"). The fix routes the actual work
+rem through a disposable COPY of this file, so the copy of cmd.exe
+rem interpreting the script is never the file agent_init.py might
+rem rewrite; git only knows this checkout's run.cmd, so the copy is
+rem never itself a renormalization target.
+rem
+rem Delayed expansion is switched on for THIS LABEL ONLY, never for the
+rem file (see the top comment for why not) - the call-and-report line
+rem below has to stay on one line to get the same read-ahead protection
+rem a parenthesized block gets (measured there too), and on one line
+rem `%ERRORLEVEL%` reads the value from BEFORE that line ran, not
+rem after; `!ERRORLEVEL!` is the one that reads it fresh. The verb's
+rem own arguments never reach that line un-substituted, so the `!`-eats
+rem -arguments trap the top comment describes does not apply here.
+if defined RUN_CMD_AGENT_INIT_VIA_COPY goto :agent_init_run
+setlocal EnableDelayedExpansion
+set "RUN_CMD_AGENT_INIT_VIA_COPY=1"
+set "RUN_CMD_AGENT_INIT_COPY=%TEMP%\hgb-run-agent-init-copy.cmd"
+copy /y "%~f0" "%RUN_CMD_AGENT_INIT_COPY%" >nul
+if errorlevel 1 (
+  echo Could not stage a safe copy of run.cmd for agent-init - refusing
+  echo rather than risk this file rewriting itself while still read.
+  exit /b 1
+)
+call "%RUN_CMD_AGENT_INIT_COPY%" agent-init %2 %3 %4 & exit /b !ERRORLEVEL!
+
+:agent_init_run
+rem Reached only inside the copy, which is never a renormalization
+rem target, so plain %ERRORLEVEL% is correct and safe here as
+rem everywhere else in this file.
+cd /d "%RUN_CMD_REPO%"
 %PY% tools\agent_init.py init %2 %3 %4
 exit /b %ERRORLEVEL%
 
@@ -77,6 +124,15 @@ exit /b %ERRORLEVEL%
 
 :check
 %PY% tools\check.py
+exit /b %ERRORLEVEL%
+
+:gate
+rem The 0.9 gate (tests/run.mjs) - see its own header, including the
+rem preflight seam that is its stage zero. `check` above is the OLD
+rem gate; the two run side by side under the #228 ruling until `check`
+rem has no surfaces left to guard. node rather than %PY%: tests/run.mjs
+rem is what every arm here answers to, and it is JavaScript.
+node tests\run.mjs
 exit /b %ERRORLEVEL%
 
 :docs
@@ -146,7 +202,7 @@ exit /b %ERRORLEVEL%
 
 :usage
 echo usage: .\run ^<command^>
-echo   agent-init ^| agent-park ^| bootstrap ^| build ^| check ^| docs ^| live
-echo   serve ^| serve-root ^| keygen ^| demo ^| bake
+echo   agent-init ^| agent-park ^| bootstrap ^| build ^| check ^| gate ^| docs
+echo   live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2

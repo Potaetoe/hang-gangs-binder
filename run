@@ -25,6 +25,16 @@ PY=$(find_python) || {
 case "${1:-}" in
   check)
     exec $PY tools/check.py ;;
+  gate)
+    # The 0.9 gate (tests/run.mjs) - see its own header for the whole
+    # argument, including the preflight seam that is its stage zero.
+    # `check` above is the OLD gate (tools/check.py): the two run side
+    # by side under the #228 ruling until `check` has no surfaces left
+    # to guard, and each is its own verb rather than one calling the
+    # other so a red in either names itself without guessing which
+    # apparatus it came from. Node rather than $PY: tests/run.mjs is
+    # the runner every arm here answers to, and it is JavaScript.
+    exec node tests/run.mjs ;;
   docs)
     exec $PY tools/check_docs.py ;;
   build)
@@ -148,6 +158,8 @@ usage: ./run <command>          (PowerShell: .\run <command>)
               is what the deploy job publishes (committed; `check`
               refuses a stale one)
   check       run every check the project has - the same set CI runs
+  gate        the 0.9 gate (tests/run.mjs) - the new apparatus under
+              #228, running beside `check` until it retires
   docs        run only the documentation checks
   live        what has never been exercised against a running system,
               what never can be before production, and what is due

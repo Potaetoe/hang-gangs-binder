@@ -74,6 +74,38 @@
  * to argue against them.
  *
  * ------------------------------------------------------------------
+ * PYTHON ARMS: THE SHIM IS THE CONVENTION. tests/worktree-contract.
+ * test.mjs is the template - five lines that find an interpreter and
+ * shell out to a suite living beside the module it tests (tools/
+ * agent_init_suite.py here). This runner does not learn *.test.py
+ * natively: "an arm is a program this runner starts and grades by its
+ * exit code" already covers a shim, with zero lines added here, and a
+ * shim is proof of that on its own - it was adopted the same way the
+ * three site-* arms were, without an edit to this file. Teaching the
+ * runner a second suffix and a second interpreter would buy nothing a
+ * shim does not already buy, and it would cost this file staying
+ * single-language: the stray sweep's message ("name it *.test.mjs")
+ * would need to know to say something else for a stray .py, discovery
+ * would need a second execution path, and both would exist to save
+ * five lines a shim already is. 0.9-M0-S8's reaper arms, next in the
+ * queue and Python too, get the same five lines over their own suite.
+ *
+ * UNTRACKED FILES UNDER tests/ STAY STRICT-RED - no leniency added
+ * here for a file `git status` calls untracked. The sweep already
+ * does not care whether a file is tracked; it is filesystem discovery
+ * over what is checked out, on purpose (see DERIVE, DO NOT PIN above),
+ * and teaching it to skip untracked strays would mean shelling out to
+ * git from the one file in this repository that currently does not
+ * need to, to buy leniency for a state the environment contract
+ * already has an answer to: `./run agent-init` hands every worktree a
+ * scratch directory OUTSIDE the tree for exactly this - the lint stage
+ * reads what is in the tree, so a new arm mid-work belongs in scratch
+ * until its name and shape are the ones this gate should see, not in
+ * tests/ wearing a wrong name so leniency can wave it through. Landing
+ * it under tests/ at all, tracked or not, is the point where the
+ * naming decision is supposed to already be made.
+ *
+ * ------------------------------------------------------------------
  * RETIRING AN OLD ARM WITH ITS SURFACE - the M2/M3/M4 pattern, one
  * line, in the rebuild slice's own pull request:
  *
@@ -89,15 +121,17 @@
  * existing. The old runner's final removal is its own M4-era slice,
  * not something that falls out of the last retirement.
  *
- * THE FIRST STAGE IS A SEAM, and it is deliberately empty. If
- * tests/preflight.mjs exists it runs before any arm and a red stops
- * the gate there, arms unrun: 0.9-M0-S5 (#283) is building the
- * uninitialized-worktree detection that belongs in it, and the reason
- * it short-circuits is that a worktree with no node_modules reds
- * every arm for one cause and buries it. Absent, the gate runs and
- * says the stage is missing rather than passing over it in silence.
- * Adopting it means landing that path and nothing else; hardening the
- * absence into a red is S5's to make once the file is real.
+ * THE FIRST STAGE IS THE SEAM, and it is wired: tests/preflight.mjs
+ * exists, runs before any arm, and a red there stops the gate with no
+ * arm run. 0.9-M0-S5 (#283) built the detection - the exit status of
+ * `./run agent-init --verify`, reading .gitattributes' end-of-line
+ * state directly rather than waiting for some later stage to trip
+ * over a stale worktree and bury the cause. 0.9-M0-S7 (#287) is what
+ * calls it from here. Its absence is graded the same way an empty
+ * arms directory is below: a red, not a note, because tests/
+ * preflight.mjs is expected to always be present from here on, and a
+ * gate that quietly runs without it is the "armed-looking-but-not"
+ * failure this file already refuses for the empty-directory case.
  */
 import { readdir, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -198,8 +232,11 @@ if (await exists(ROOT + PREFLIGHT)) {
   }
   console.log("    " + verdictLine(result.output));
 } else {
-  console.log("no preflight stage: " + PREFLIGHT + " is absent " +
-    "(0.9-M0-S5, #283, is what lands it)");
+  console.log(PREFLIGHT + " is missing. It is expected to always be " +
+    "present - 0.9-M0-S7 (#287) wired it to tools/agent_init.py's " +
+    "--verify - so a gate that runs without it is graded the same as " +
+    "one that finds no arms: a red, not a note.");
+  process.exit(1);
 }
 
 /* Stage one onward: the arms. */
