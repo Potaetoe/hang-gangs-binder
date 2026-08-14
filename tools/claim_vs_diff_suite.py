@@ -55,7 +55,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 25
+EXPECTED = 28
 
 
 def check(label, condition):
@@ -240,6 +240,34 @@ try:
           claim_vs_diff.parse_declared("tools\\x.py\n") == {"tools/x.py"})
     check("a leading ./ is stripped",
           claim_vs_diff.parse_declared("./tools/x.py\n") == {"tools/x.py"})
+
+    print("\n--- a plain, undecorated line is not truncated at its "
+          "first space (S13-F1) ---")
+    # Review finding B1 (2026-08-14): parse_declared fell through to
+    # line.split()[0] for any undecorated line, breaking the tool's own
+    # documented "one path per line" contract for any space-containing
+    # path. The backtick-quoted form (the fleet's actual comment shape)
+    # was never affected - this fixture targets the plain form
+    # specifically, since that is the form the contract names.
+    git(primary, "checkout", "accounts")
+    git(primary, "checkout", "-b", "slice-space")
+    write(os.path.join(primary, "a path with spaces.txt"), "spacey\n")
+    git(primary, "add", "-A")
+    git(primary, "commit", "-m", "add a path with spaces.txt")
+
+    check("parse_declared keeps a whole undecorated line as one path, "
+          "not just its first token",
+          claim_vs_diff.parse_declared("a path with spaces.txt\n")
+          == {"a path with spaces.txt"})
+    code, said = run_tool(["slice-space", "accounts", "--repo", primary],
+                          stdin_text="a path with spaces.txt\n")
+    check("a plain (undecorated) declared line containing a space "
+          "matches, not a phantom truncated pair",
+          code == 0 and "MATCH" in said)
+    code, said = run_tool(["slice-space", "accounts", "--repo", primary],
+                          stdin_text="`a path with spaces.txt`\n")
+    check("the backtick-wrapped form still matches too (never broken)",
+          code == 0 and "MATCH" in said)
 
     print("\n--- --declared reads a real file, not only stdin ---")
     declared_path = os.path.join(root, "declared.txt")
