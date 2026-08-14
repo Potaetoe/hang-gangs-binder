@@ -503,6 +503,24 @@ def lease_reclaimable(lease, repo, state=None):
     return None
 
 
+def current_lease(repo, state=None):
+    """The block this worktree already holds, or None.
+
+    Asked BEFORE any allocation, and that order is the fix for a real
+    defect: the scan below walks the blocks in order and recognizes this
+    worktree's own lease when it reaches it, so a worktree holding the
+    third block and asking again was handed the first one as well. Two
+    leases, one agent, and a block nobody could take because its holder
+    was not using it.
+    """
+    mine = os.path.abspath(repo)
+    for block in [*PORT_BLOCKS, PRIMARY_BLOCK]:
+        lease = read_json(lease_path(block, state))
+        if lease and os.path.abspath(lease.get("worktree", "")) == mine:
+            return block
+    return None
+
+
 def take_lease(repo, branch, state=None, requested=None, reclaim=False):
     """(block, note) for the port block this worktree holds, or (None, why).
 
@@ -515,11 +533,28 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
     os.makedirs(leases_dir(state), exist_ok=True)
     mine = os.path.abspath(repo)
     blocks = [PRIMARY_BLOCK] if requested == "primary" else PORT_BLOCKS
+    wanted = PRIMARY_BLOCK[0] if requested == "primary" else requested
     if isinstance(requested, int):
         blocks = [block for block in PORT_BLOCKS if block[0] == requested]
         if not blocks:
             return None, ("%d starts no block this fleet allocates. The "
                           "blocks are %s." % (requested, blocks_as_text()))
+
+    already = current_lease(repo, state)
+    if already and (wanted is None or wanted == already[0]):
+        return already, "already leased to this worktree"
+
+    def hand_over(block, note):
+        """Give back the block this worktree was on, once on the new one.
+
+        Once, and not before: releasing first and then failing to take
+        the requested block would leave the agent holding nothing, which
+        is worse than holding the block it asked to leave.
+        """
+        if already and already != block:
+            os.remove(lease_path(already, state))
+            return block, note + ", releasing %d-%d it held" % already
+        return block, note
 
     held = []
     for block in blocks:
@@ -527,15 +562,15 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
         existing = read_json(path)
         if existing and os.path.abspath(
                 existing.get("worktree", "")) == mine:
-            return block, "already leased to this worktree"
+            return hand_over(block, "already leased to this worktree")
         if existing:
             why = lease_reclaimable(existing, repo, state)
             if why or reclaim:
                 superseded = existing.get("worktree", "an unnamed worktree")
                 write_lease(path, mine, branch, block)
-                return block, ("reclaimed from %s, because %s"
-                               % (superseded,
-                                  why or "--reclaim was passed"))
+                return hand_over(block, "reclaimed from %s, because %s"
+                                 % (superseded,
+                                    why or "--reclaim was passed"))
             held.append((block, existing))
             continue
         try:
@@ -547,7 +582,7 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
             continue
         os.close(handle)
         write_lease(path, mine, branch, block)
-        return block, "newly leased"
+        return hand_over(block, "newly leased")
 
     return None, lease_refusal(held)
 
@@ -599,14 +634,10 @@ def lease_refusal(held):
 
 def release_lease(repo, state=None):
     """The block this worktree held, dropped. Idempotent."""
-    mine = os.path.abspath(repo)
-    for block in [*PORT_BLOCKS, PRIMARY_BLOCK]:
-        path = lease_path(block, state)
-        lease = read_json(path)
-        if lease and os.path.abspath(lease.get("worktree", "")) == mine:
-            os.remove(path)
-            return block
-    return None
+    block = current_lease(repo, state)
+    if block:
+        os.remove(lease_path(block, state))
+    return block
 
 
 def take_scratch(branch, existing=None):
@@ -901,14 +932,20 @@ def print_contract(repo, kind, branch, block, note, scratch, state):
               "machine.\n"
               "              Nothing may detach it and no agent may park "
               "it.")
-    else:
-        print("1. checkout   This worktree holds %s. No other worktree "
-              "can check\n"
-              "              out that branch while this one holds it, "
-              "which is why\n"
+    elif branch:
+        print("1. checkout   This worktree holds the branch %s. No other "
+              "worktree can\n"
+              "              check it out while this one does, which is "
+              "why\n"
               "              `./run agent-park` detaches before you "
-              "terminate."
-              % (branch or "no branch (detached HEAD)"))
+              "terminate." % branch)
+    else:
+        print("1. checkout   HEAD here is detached, which is the state a "
+              "worktree is\n"
+              "              handed to you in. Branch from "
+              "origin/accounts before you\n"
+              "              edit, so the work has a ref a landing can "
+              "move.")
     print("2. ports      %d-%d, leased to this worktree (%s).\n"
           "              The lease file is the announcement; nothing "
           "outside this\n"

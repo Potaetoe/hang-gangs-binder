@@ -65,7 +65,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 63
+EXPECTED = 67
 
 
 def check(label, condition):
@@ -365,6 +365,29 @@ try:
     again, note = agent_init.take_lease(repo, "slice-a", lease_state)
     check("the same worktree gets the same block back, not a new one",
           again == block and "already leased" in note)
+
+    # The defect this arm exists for: the scan finds a worktree's own
+    # lease only when it REACHES it, so a worktree holding a later block
+    # and asking again was handed an earlier free one as well. Two
+    # leases, one agent, and a block nobody else could take.
+    later = os.path.join(base, "moved-on")
+    os.makedirs(later, exist_ok=True)
+    agent_init.take_lease(later, "slice-b", lease_state,
+                          agent_init.PORT_BLOCKS[2][0])
+    kept, note = agent_init.take_lease(later, "slice-b", lease_state)
+    check("a worktree holding a later block keeps it when asked again",
+          kept == agent_init.PORT_BLOCKS[2])
+    check("and no earlier block is quietly leased to it as well",
+          not os.path.isfile(agent_init.lease_path(
+              agent_init.PORT_BLOCKS[1], lease_state)))
+    moved, note = agent_init.take_lease(later, "slice-b", lease_state,
+                                        agent_init.PORT_BLOCKS[3][0])
+    check("asking for a different block moves the worktree onto it",
+          moved == agent_init.PORT_BLOCKS[3] and "releasing" in note)
+    check("and the block it left goes back to the pool",
+          not os.path.isfile(agent_init.lease_path(
+              agent_init.PORT_BLOCKS[2], lease_state)))
+    agent_init.release_lease(later, lease_state)
 
     others = []
     for index in range(1, len(agent_init.PORT_BLOCKS)):
