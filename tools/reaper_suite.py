@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 124
+EXPECTED = 148
 
 
 def check(label, condition):
@@ -516,6 +516,62 @@ try:
           sorted(os.listdir(shared))
           == ["inner", "inner-link", "sentinel.txt"])
 
+    print("\n--- the plan survives one candidate it cannot walk ---")
+
+    # F3 (review-0.9-m0-s8-2026-08-14.md): find_links(path) raises when
+    # `path` is ITSELF a reparse point. act() already guards the same
+    # walk (sever_links) and turns that into a REPORT for one candidate;
+    # this proves parked_items() owes the same answer, because it builds
+    # this same steps-list whether or not --act was passed. Reachable
+    # rather than asserted: a real parked worktree, relocated under the
+    # sanctioned root and replaced at its REGISTERED path by a junction
+    # to itself. within() resolves through the junction so containment
+    # still holds, and git reads straight through a junction so every
+    # other proof still passes - the one new fact is that the registered
+    # path answers True to is_reparse, which is exactly what find_links
+    # raises on.
+    neighbor = add_worktree(primary, "wt-selfneighbor", "slice-selfneighbor",
+                            first)
+    park(neighbor, state)
+
+    selflinked = add_worktree(primary, "wt-selflink", "slice-selflink",
+                              first)
+    park(selflinked, state)
+    relocated = os.path.join(roots[0], "wt-selflink-relocated")
+    shutil.move(selflinked, relocated)
+    check("the fixture can make the registered path itself a link",
+          make_link(selflinked, relocated))
+    check("the registered path now reads as a reparse point",
+          reaper.is_reparse(selflinked))
+
+    items = reaper.plan(primary, state, roots)
+    broken = find(items, "parked worktree", selflinked)
+    check("the unwalkable candidate still enumerates rather than "
+          "crashing the plan", broken is not None)
+    check("it is reported, not planned, because the walk could not "
+          "complete", broken is not None and broken["verdict"] == "report")
+    check("the refusal names the walk, not a traceback",
+          broken is not None and "could not complete" in reason(broken))
+    check("its neighbor is unaffected and still reapable in the same "
+          "plan",
+          verdict(find(items, "parked worktree", neighbor)) == "reap")
+
+    code, said = run_reaper(["--repo", primary, "--state", state,
+                             "--roots", os.pathsep.join(roots)])
+    check("report mode survives the unwalkable candidate and exits 0",
+          code == 0)
+    check("the report names the unwalkable candidate as REPORTED",
+          "REPORTED" in said and selflinked in said)
+    check("and still reports the neighbor as reapable in the same run",
+          "WOULD REAP" in said and neighbor in said)
+
+    code, said = run_reaper(["--act", "--repo", primary, "--state", state,
+                             "--roots", os.pathsep.join(roots)])
+    check("the unwalkable candidate survives an act",
+          os.path.isdir(relocated))
+    check("the neighbor IS reaped in the same act",
+          not os.path.exists(neighbor))
+
     print("\n--- the live worktree is never touched ---")
 
     live = add_worktree(primary, "wt-live", "slice-live", first)
@@ -535,6 +591,30 @@ try:
     check("the live worktree survives an act", os.path.isdir(live))
     check("the live branch survives an act",
           "slice-live" in branches(primary))
+
+    # F1 (review-0.9-m0-s8-2026-08-14.md): the arm above is satisfied by
+    # `checked_out` (slice-live IS checked out in `live`), not by the
+    # live-record guard in branch_items() it names - `slice-live` would
+    # survive with that guard deleted. This is the case only that guard
+    # owns: a live record naming a branch NOTHING has checked out,
+    # landed on `accounts`. Mutating branch_items()'s live-record loop
+    # to `if False:` makes this branch a "merged branch" candidate and
+    # deletes it on --act; the two checks below are what reds.
+    detached = os.path.join(root, "landed-and-detached")
+    git(primary, "branch", "b-livework", first)
+    agent_init.write_json(agent_init.record_path(detached, state), {
+        "schema": agent_init.SCHEMA, "contract": agent_init.CONTRACT,
+        "worktree": detached, "kind": "linked", "branch": "b-livework",
+        "state": "live", "initialized_at": agent_init.now(),
+        "ports": [8160, 8165], "scratch": None,
+    })
+    items = reaper.plan(primary, state, roots)
+    check("a live record naming a branch NOTHING has checked out is "
+          "still not a branch candidate",
+          find(items, "merged branch", "b-livework") is None)
+    code, said = run_reaper(["--act", "--repo", primary, "--state", state,
+                             "--roots", os.pathsep.join(roots)])
+    check("that branch survives an act", "b-livework" in branches(primary))
 
     print("\n--- a parked record under a held lease is refused ---")
 
@@ -849,6 +929,75 @@ try:
               all(steps(item) == [] for item in reapable))
     finally:
         del reaper.TROUBLE[:]
+
+    print("\n--- an --act run fully held back says so, not \"reaped\" ---")
+
+    # Honesty pair (review-0.9-m0-s8-2026-08-14.md): hold_back() above is
+    # driven directly; this is the END-TO-END shape it exists for - a
+    # command going silent PARTWAY through a run that started fine, so
+    # `main()`'s survey succeeds and the act loop finds nothing with
+    # verdict "reap" left to try. `is_ancestor` is the one call every
+    # branch proof reaches for, so making `git merge-base` silent (and
+    # nothing else) reproduces that shape without the survey refusing
+    # first, the way the blanket GIT_TIMEOUT arm above does.
+    check("the timeout survivor is reapable again before this arm",
+          verdict(find(reaper.plan(primary, state, roots),
+                       "parked worktree", survivor)) == "reap")
+
+    honest_git = reaper.git
+
+    def silent_merge_base(repo, *args):
+        if args[:1] == ("merge-base",):
+            said = "`git merge-base` in %s did not answer" % repo
+            reaper.TROUBLE.append(said)
+            return reaper.GIT_TIMED_OUT, said
+        return honest_git(repo, *args)
+
+    reaper.git = silent_merge_base
+    try:
+        code, said = run_reaper(["--act", "--repo", primary, "--state",
+                                 state, "--roots", os.pathsep.join(roots)])
+    finally:
+        reaper.git = honest_git
+        del reaper.TROUBLE[:]
+
+    check("a fully held-back --act exits nonzero", code != 0)
+    check("it prints WOULD REAP/REAPING zero times - every reap was "
+          "downgraded", "WOULD REAP" not in said and "REAPING" not in said)
+    check("it does NOT claim every proven candidate was reaped",
+          "Every proven candidate was reaped" not in said)
+    check("it says what actually happened instead: held back, nothing "
+          "reaped",
+          "held back" in said.lower() and "nothing was reaped"
+          in said.lower())
+    check("the survivor worktree was never touched", os.path.isdir(survivor))
+    check("its branch was never touched", "slice-timeout" in branches(
+        primary))
+    check("it is reapable again once merge-base answers",
+          verdict(find(reaper.plan(primary, state, roots),
+                       "parked worktree", survivor)) == "reap")
+
+    print("\n--- --report is a real flag, not only the shape typing "
+          "nothing gets you ---")
+
+    # The reviewer ran `--report` expecting the documented invocation and
+    # got argparse's exit 2 instead ("--report is not a flag"). Accepted
+    # here as an explicit, inert alias of the default so that invocation
+    # is real. A rejection would raise SystemExit(2) rather than return,
+    # which is why the check is inside the try - a suite that let that
+    # propagate would crash instead of failing one line.
+    try:
+        code, said = run_reaper(["--report", "--repo", primary, "--state",
+                                 state, "--roots", os.pathsep.join(roots)])
+        accepted = True
+    except SystemExit:
+        code, said, accepted = 2, "", False
+    check("--report is accepted as a flag rather than rejected by "
+          "argparse", accepted)
+    check("--report reads as report mode, the same the default gets",
+          accepted and "reaper: report" in said)
+    check("--report performs nothing, same as the default",
+          accepted and "Nothing above was performed" in said)
 
     print("\n--- a prune nobody could confirm is not a prune ---")
 

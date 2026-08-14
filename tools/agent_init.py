@@ -111,7 +111,9 @@ there is empty; and park.branch, if the ref still exists, points at
 park.tip and park.tip is an ancestor of a mainline. All four hold or
 the worktree is REPORTED and left alone - the provable-dead floor is
 that a failed proof is a report, never a deletion, and a branch is
-never deleted with -D. Having reaped, the reaper sets "state" to
+deleted with `-d` first always, `-D` only with the ancestry proof
+printed beside it, and never after a `-d` that timed out. Having
+reaped, the reaper sets "state" to
 "reaped" with its own timestamp and drops any lease naming that path.
 A record whose worktree path no longer exists is inert: `agent-init`
 already treats its lease as reclaimable, so a reaper that dies halfway

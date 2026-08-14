@@ -3,6 +3,7 @@
 The mechanical reaper: enumerate, PROVE, act, report.
 
     py -3 tools/reaper.py            what it would do, and why
+    py -3 tools/reaper.py --report   the same thing, spelled out
     py -3 tools/reaper.py --act      do it
 
 Worktree death is a machine's job, not a judgment call. `agent-park`
@@ -664,16 +665,35 @@ def parked_items(repo, state, roots, table, primary):
         verdict = "reap" if all(proof.ok for proof in proofs) else "report"
         steps = []
         if verdict == "reap":
-            for link in find_links(path):
-                steps.append("sever the link %s, which points at %s, "
-                             "without walking into it"
-                             % (link, os.path.realpath(link)))
-            steps.append("delete the directory %s" % path)
-            steps.append("prune the worktree registration")
-            if park.get("branch") and resolve(
-                    repo, "refs/heads/" + park["branch"]):
-                steps.append("delete branch %s" % park["branch"])
-            steps.append("mark %s reaped" % os.path.basename(source))
+            try:
+                links = find_links(path)
+            except (ValueError, OSError) as trouble:
+                # find_links raises when the registered path is ITSELF a
+                # reparse point - act() already guards the same walk
+                # (sever_links, below) and turns that into a REPORT for
+                # the one candidate. This loop builds the plan whether
+                # or not --act was passed, so report mode owes the same
+                # fail-closed answer: one unwalkable candidate is a
+                # REPORT for that candidate, not a traceback that takes
+                # down the enumeration of every other candidate on the
+                # machine.
+                proofs.append(Proof(
+                    "links", False,
+                    "the link walk inside %s could not complete, so it "
+                    "is reported as unwalkable rather than planned: %s"
+                    % (path, trouble)))
+                verdict = "report"
+            else:
+                for link in links:
+                    steps.append("sever the link %s, which points at %s, "
+                                 "without walking into it"
+                                 % (link, os.path.realpath(link)))
+                steps.append("delete the directory %s" % path)
+                steps.append("prune the worktree registration")
+                if park.get("branch") and resolve(
+                        repo, "refs/heads/" + park["branch"]):
+                    steps.append("delete branch %s" % park["branch"])
+                steps.append("mark %s reaped" % os.path.basename(source))
         items.append({"kind": "parked worktree", "subject": path,
                       "proofs": proofs, "verdict": verdict, "plan": steps,
                       "record": source, "park": park})
@@ -1027,9 +1047,15 @@ def main(argv=None):
         prog="py -3 tools/reaper.py",
         description="Prove which worktrees and branches on this machine "
                     "are dead, and report them. --act deletes the proven.")
-    parser.add_argument("--act", action="store_true",
-                        help="perform the reap; without it, nothing on "
-                             "disk or in git is changed")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--act", action="store_true",
+                      help="perform the reap; without it, nothing on "
+                           "disk or in git is changed")
+    mode.add_argument("--report", action="store_true",
+                      help="report mode, explicitly - the default when "
+                           "neither flag is given; accepted so the "
+                           "documented invocation is a real flag rather "
+                           "than an argparse error")
     # These three exist so the suite can drive this against a fabricated
     # machine. A rule exercised only against the machine it guards
     # cannot be shown to fail.
@@ -1075,8 +1101,18 @@ def main(argv=None):
             print("    %s" % line)
             if line.startswith("REPORTED") or "could NOT" in line:
                 trouble += 1
-    print("\n%d act(s) could not be completed." % trouble
-          if trouble else "\nEvery proven candidate was reaped.")
+    if trouble:
+        print("\n%d act(s) could not be completed." % trouble)
+    elif TROUBLE:
+        # hold_back already downgraded every reap to a report before this
+        # loop ran, so the loop above did nothing at all - "every proven
+        # candidate was reaped" would say the opposite of what happened.
+        # Say what happened instead: a git command went silent during
+        # this run, so nothing was reaped.
+        print("\nheld back: a git command did not answer during this "
+              "run, so nothing was reaped.")
+    else:
+        print("\nEvery proven candidate was reaped.")
     return 1 if trouble or TROUBLE else 0
 
 
