@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 121
+EXPECTED = 124
 
 
 def check(label, condition):
@@ -849,6 +849,37 @@ try:
               all(steps(item) == [] for item in reapable))
     finally:
         del reaper.TROUBLE[:]
+
+    print("\n--- a prune nobody could confirm is not a prune ---")
+
+    # The one reader in act() is SUBSTITUTED here rather than driven,
+    # and it is worth saying why: the confirming read happens partway
+    # through an act, so no bound set before the act begins can single
+    # it out - a timeout small enough to reach it kills the prune in
+    # front of it too. Three answers is the whole of what this arm is
+    # about, and folding 'could not be read' into 'nothing there' is
+    # how a timed-out confirmation prints as a success.
+    ghost = {"kind": "vanished worktree",
+             "subject": os.path.join(roots[0], "wt-never-existed"),
+             "proofs": [], "verdict": "reap", "plan": [], "park": {},
+             "record": None}
+    honest = reaper.worktree_table
+    try:
+        reaper.worktree_table = lambda repo: None
+        said = reaper.act(primary, ghost, state, roots)
+        check("an unreadable table reports the prune as unconfirmed",
+              any("could NOT be confirmed" in line for line in said))
+        reaper.worktree_table = lambda repo: []
+        said = reaper.act(primary, ghost, state, roots)
+        check("a table without it reports a prune",
+              any("pruned the worktree registration" in line
+                  for line in said))
+        reaper.worktree_table = lambda repo: [{"path": ghost["subject"]}]
+        said = reaper.act(primary, ghost, state, roots)
+        check("a table still holding it reports a survival",
+              any("SURVIVED the prune" in line for line in said))
+    finally:
+        reaper.worktree_table = honest
 
 finally:
     agent_init.rmtree_hard(root)
