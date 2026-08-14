@@ -224,10 +224,15 @@ def parse_declared(text):
     surrounding whitespace; dropped if blank or a `#` comment; stripped
     of one leading `-` or `*` bullet marker; read as the text inside
     the first matching pair of backticks, double, or single quotes if
-    one opens the line, else as its first whitespace-delimited token.
-    The result is normalized to forward slashes and a leading `./` is
-    dropped, so a path copied out of a Windows terminal and a path
-    copied out of a Linux one land on the same set.
+    one opens the line, else as the ENTIRE remainder of the line - not
+    its first whitespace-delimited token, which used to truncate any
+    space-containing path at its first space and broke the "one path
+    per line" contract this docstring itself states (review finding
+    B1/S13-F1). An undecorated line already IS one path; splitting it
+    on whitespace was never faithful to that contract. The result is
+    normalized to forward slashes and a leading `./` is dropped, so a
+    path copied out of a Windows terminal and a path copied out of a
+    Linux one land on the same set.
     """
     declared = set()
     for raw in text.splitlines():
@@ -244,7 +249,7 @@ def parse_declared(text):
             candidate = line[1:end] if end != -1 else (
                 line.split()[0] if line.split() else "")
         else:
-            candidate = line.split()[0] if line.split() else ""
+            candidate = line
         candidate = candidate.strip().rstrip(",").replace("\\", "/")
         if candidate.startswith("./"):
             candidate = candidate[2:]
