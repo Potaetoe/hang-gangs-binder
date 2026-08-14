@@ -148,7 +148,14 @@ def age_hours(started_at):
     try:
         when = datetime.datetime.fromisoformat(
             started_at.replace("Z", "+00:00"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
+        # AttributeError covers a started_at that is valid JSON but not a
+        # string at all - a number or a bool, unreachable through this
+        # module's own writes (now() always returns a string) but
+        # reachable by hand-edit or a future writer. Without this catch
+        # such a record crashed check/acquire outright instead of
+        # landing in the same "age cannot be established" path a list or
+        # a dict already take - see review finding A4.
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=datetime.timezone.utc)
