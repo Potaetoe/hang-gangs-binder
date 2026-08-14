@@ -229,15 +229,14 @@ def parse_declared(text):
     surrounding whitespace; dropped if blank or a `#` comment; stripped
     of one leading `-` or `*` bullet marker; read as the text inside
     the first matching pair of backticks, double, or single quotes if
-    one opens the line, else as the ENTIRE remainder of the line - not
-    its first whitespace-delimited token, which used to truncate any
-    space-containing path at its first space and broke the "one path
-    per line" contract this docstring itself states (review finding
-    B1/S13-F1). An undecorated line already IS one path; splitting it
-    on whitespace was never faithful to that contract. The result is
-    normalized to forward slashes and a leading `./` is dropped, so a
-    path copied out of a Windows terminal and a path copied out of a
-    Linux one land on the same set.
+    one opens the line, else the ENTIRE remainder of the line, never
+    only its first whitespace-delimited token: an undecorated line
+    already IS one path, per this docstring's own "one path per line"
+    contract, so splitting it on whitespace would truncate any
+    space-containing path at its first space (review finding B1/
+    S13-F1). The result is normalized to forward slashes and a leading
+    `./` is dropped, so a path copied out of a Windows terminal and a
+    path copied out of a Linux one land on the same set.
     """
     declared = set()
     for raw in text.splitlines():
@@ -268,13 +267,12 @@ def compare(repo, branch, base, declared_text, allow_empty=False):
 
     `allow_empty` guards one specific collapse (review finding B3): an
     empty declared list against a branch already contained in base
-    (merge_base == branch_sha, so the diff is empty too) used to read
-    as a real MATCH from two literally empty sets. "Nothing to compare"
-    is not the same fact as "the declared set is exactly the real
-    diff" - and an empty diff is exactly what an accidentally-empty
-    declaration (a forgotten --declared, a stdin fed nothing) would
-    also produce, so the two are refused together at exit 2 unless the
-    caller opts in explicitly.
+    (merge_base == branch_sha, so the diff is empty too) is otherwise
+    two literally empty sets, which is not the same fact as "the
+    declared set is exactly the real diff" - an empty diff is exactly
+    what an accidentally-empty declaration (a forgotten --declared, a
+    stdin fed nothing) would also produce, so the two are refused
+    together at exit 2 unless the caller opts in explicitly.
     """
     branch_sha, problem = resolve(repo, branch)
     if problem:

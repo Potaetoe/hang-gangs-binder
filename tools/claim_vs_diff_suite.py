@@ -305,11 +305,12 @@ try:
           "refused, never a silent match (S13-F3) ---")
     # Review finding B3 (2026-08-14): merge_base == branch_sha (a branch
     # already contained in base) makes the diff empty, and an empty
-    # declared list against an empty touched set used to read as a real
-    # MATCH - "nothing to compare" is not the same fact as "the declared
-    # set is exactly the real diff", and the evidence (an empty diff) is
-    # exactly what an accidentally-empty declaration (a forgotten
-    # --declared, a stdin the caller's shell fed nothing) also produces.
+    # declared list against an empty touched set is otherwise
+    # indistinguishable from a real MATCH - "nothing to compare" is not
+    # the same fact as "the declared set is exactly the real diff", and
+    # the evidence (an empty diff) is exactly what an accidentally-empty
+    # declaration (a forgotten --declared, a stdin the caller's shell
+    # fed nothing) also produces.
     git(primary, "checkout", "-b", "slice-empty", "accounts")
     code, said = run_tool(["slice-empty", "accounts", "--repo", primary],
                           stdin_text="")
