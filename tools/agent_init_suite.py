@@ -62,6 +62,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import redirect_stdout
 
 # The module under test sits in this file's own directory, which Python
@@ -78,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 94
+EXPECTED = 98
 
 
 def check(label, condition):
@@ -119,6 +120,45 @@ def load(path):
 def save(path, data):
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(data, handle)
+
+
+# The name every working root of this suite is made under, and the only
+# name the sweep below will delete.
+PREFIX = "worktree-contract-"
+
+# How old a matching directory must be before the sweep believes it
+# belongs to a FINISHED run. This suite takes seconds, so an hour is not
+# a close call - and the thing it protects is a second agent running
+# this file right now, whose working root carries the same name by
+# construction. Deleting that would be this sweep doing to a live run
+# exactly what the leak did to a shared directory.
+STALE_AFTER = 3600
+
+
+def sweep_prior_roots(parent, keep, now=None):
+    """Remove roots earlier runs of this suite left in `parent`.
+
+    A recursive delete loose in the directory every program on the
+    machine shares, so what it matches IS the safety argument. Two
+    limits carry it: directly under the parent and never below it, and
+    the full prefix including its separator - a neighbour called
+    `worktree-contractor` starts with the same letters, belongs to
+    somebody else, and is the same distinction park's containment guard
+    turns on.
+    """
+    swept = []
+    now = time.time() if now is None else now
+    for name in sorted(os.listdir(parent)):
+        path = os.path.join(parent, name)
+        if not name.startswith(PREFIX) or path == keep:
+            continue
+        if not os.path.isdir(path) or os.path.islink(path):
+            continue
+        if now - os.path.getmtime(path) < STALE_AFTER:
+            continue
+        agent_init.rmtree_hard(path)
+        swept.append(name)
+    return swept
 
 
 def run_verb(argv):
@@ -182,7 +222,7 @@ def link_dir(target, link):
     return None
 
 
-base = tempfile.mkdtemp(prefix="worktree-contract-")
+base = tempfile.mkdtemp(prefix=PREFIX)
 state = os.path.join(base, "fleet-state")
 
 # Scratch directories are made under a root this suite owns and deletes.
@@ -191,6 +231,15 @@ state = os.path.join(base, "fleet-state")
 # removes a scratch directory - a suite that leaks while testing the
 # verb that cleans up.
 os.environ["BINDER_SCRATCH_ROOT"] = os.path.join(base, "scratch")
+
+# What earlier runs of this file left behind before its teardown could
+# survive Windows. Swept at the start rather than at the end because a
+# run that dies partway is exactly the run that leaks, and a cleanup
+# that only happens on the way out never runs for it.
+leaked = sweep_prior_roots(tempfile.gettempdir(), base)
+if leaked:
+    print("swept %d root(s) left by earlier runs: %s\n"
+          % (len(leaked), ", ".join(leaked)))
 
 try:
     # ------------------------------------------------------------------
@@ -656,8 +705,35 @@ try:
         check("and a teardown that cannot run says so instead of passing",
               False)
 
+    # The sweep runs against the directory every program on this machine
+    # shares, so the arm that matters is the one it must NOT take.
+    parent = os.path.join(base, "a-shared-temporary-directory")
+    old = time.time() - STALE_AFTER - 60
+    plots = {"prior": PREFIX + "aaaa", "neighbour": "worktree-contractor-x",
+             "running": PREFIX + "bbbb", "mine": PREFIX + "cccc"}
+    for name in plots.values():
+        write(os.path.join(parent, name, "content.txt"), "something\n")
+    for name in (plots["prior"], plots["neighbour"]):
+        os.utime(os.path.join(parent, name), (old, old))
+    swept = sweep_prior_roots(parent, os.path.join(parent, plots["mine"]))
+
+    def still_there(key):
+        return os.path.isdir(os.path.join(parent, plots[key]))
+
+    check("the sweep removes a finished run's root", not still_there("prior"))
+    check("and leaves a name that merely starts the same way",
+          still_there("neighbour"))
+    check("and leaves a matching root too new to be finished",
+          still_there("running"))
+    check("and never sweeps the run doing the sweeping",
+          still_there("mine") and swept == [plots["prior"]])
+
 finally:
-    shutil.rmtree(base, ignore_errors=True)
+    # No ignore_errors. Swallowing a teardown failure is what left one
+    # repository per run in the shared temporary directory while this
+    # file reported clean - the suite for the verb that cleans up being
+    # the thing that did not.
+    agent_init.rmtree_hard(base)
 
 print("\n%d checks, %d failure(s)" % (performed, failures))
 if performed != EXPECTED:
