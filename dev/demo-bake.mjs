@@ -237,13 +237,14 @@ export function stampFor(commit, at) {
  * demo's origin looked like a live one instead of a dead end. Emitted
  * through the manifest, via the same `from: null` slot landingPage()
  * uses two lines below it in manifestFor() - a bake-authored root file
- * is exactly what that slot documents, and the 2026-08-13 review found
- * the earlier direct write false to manifestFor()'s own header ("Everything
- * the build contains") and to the CLI's own reported count. The function
- * stays separate from landingPage() rather than folded into it: the two
- * pages must never diverge on the honesty posture (the CSP, the
- * noindex, the stamp), but they say different things, so this repeats
- * the head rather than threading a flag through the one that redirects.
+ * is exactly what that slot documents, and manifestFor()'s own header
+ * ("Everything the build contains") and the CLI's reported count are
+ * only true if every file the bake writes is counted there, this one
+ * included. The function stays separate from landingPage() rather than
+ * folded into it: the two pages must never diverge on the honesty
+ * posture (the CSP, the noindex, the stamp), but they say different
+ * things, so this repeats the head rather than threading a flag through
+ * the one that redirects.
  *
  * No warning paragraph, no console framing - just what the fold page's
  * <head> already asserts about this build, plus the one fact this page
@@ -438,15 +439,13 @@ export async function bake(options) {
   const commit = String(opts.commit);
   const at = String(opts.at);
 
-  // Validate before clearing. manifestFor() and webEntriesOf() are the
+  // Validate before clearing: manifestFor() and webEntriesOf() are the
   // only things between here and a write that can refuse (an
-  // off-allowlist source, or apps/web unreadable), and a refusal must
-  // never run after prepareOut()'s destructive clear has already
-  // emptied a previously-good build - the 2026-08-13 review's F2: a
-  // failed bake was destroying the last good one instead of leaving it
-  // alone. So the manifest is built first, and prepareOut() - the only
-  // thing here that deletes anything - runs only once building it has
-  // already succeeded.
+  // off-allowlist source, or apps/web unreadable), so prepareOut() -
+  // the only thing here that deletes anything - runs only once the
+  // manifest it is about to fill has already been built without
+  // throwing. A refusal reported after the clear would read as a
+  // clean failure while the directory it names sits empty.
   const manifest = manifestFor(await webEntriesOf(root));
 
   await prepareOut(out);
