@@ -178,8 +178,13 @@ const newName = newStep ? field(newStep, "name") : null;
 
 check("the old gate's step is named", Boolean(oldName));
 check("the new gate's step is named", Boolean(newName));
+/* Both names asserted before they are compared. `oldName !== newName`
+   is satisfied by a missing new step, whose name reads as null - the
+   check would pass, in a run where there is no second step to name a
+   world at all, and a check that passes hardest when its subject is
+   absent is the shape this arm exists to refuse. */
 check("the two names differ, so a red names its world",
-  Boolean(oldName) && oldName !== newName);
+  Boolean(oldName) && Boolean(newName) && oldName !== newName);
 
 /* 4. Both block. `needs` is what makes the release wait on the verify
       job at all, and continue-on-error is the one line that would let
