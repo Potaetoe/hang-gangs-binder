@@ -301,14 +301,21 @@ try:
     finally:
         claim_vs_diff.GIT_TIMEOUT = patient
 
-    print("\n--- a branch with nothing new against its base matches an "
-          "empty declared list ---")
+    print("\n--- an empty declared list against an empty diff is "
+          "refused, never a silent match (S13-F3) ---")
+    # Review finding B3 (2026-08-14): merge_base == branch_sha (a branch
+    # already contained in base) makes the diff empty, and an empty
+    # declared list against an empty touched set used to read as a real
+    # MATCH - "nothing to compare" is not the same fact as "the declared
+    # set is exactly the real diff", and the evidence (an empty diff) is
+    # exactly what an accidentally-empty declaration (a forgotten
+    # --declared, a stdin the caller's shell fed nothing) also produces.
     git(primary, "checkout", "-b", "slice-empty", "accounts")
     code, said = run_tool(["slice-empty", "accounts", "--repo", primary],
                           stdin_text="")
-    check("no diff and no declaration is still a real MATCH, not an "
-          "error",
-          code == 0 and "MATCH" in said)
+    check("no diff and no declaration exits 2, naming 'nothing "
+          "declared', never a silent match",
+          code == 2 and "NOTHING DECLARED" in said)
 
     print("\n--- the tool's own header carries the F10 extension note "
           "---")
