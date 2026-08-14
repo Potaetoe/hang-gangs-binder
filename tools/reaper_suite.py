@@ -74,7 +74,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 96
+EXPECTED = 102
 
 
 def check(label, condition):
@@ -215,7 +215,12 @@ def build_machine(root):
     write(os.path.join(shared, "sentinel.txt"), "the shared install\n")
 
     git(primary, "init", "-b", "accounts")
-    write(os.path.join(primary, ".gitignore"), ".claude/\n")
+    # Both entries are what the real repository ignores, and the second
+    # is load-bearing: park refuses a worktree holding an untracked
+    # path, so a junctioned node_modules that git could see would make
+    # the junction arm untestable for a reason that has nothing to do
+    # with junctions.
+    write(os.path.join(primary, ".gitignore"), ".claude/\nnode_modules/\n")
     write(os.path.join(primary, "one.txt"), "one\n")
     git(primary, "add", "-A")
     git(primary, "commit", "-m", "first")
