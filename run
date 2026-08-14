@@ -77,6 +77,28 @@ case "${1:-}" in
     # separate approval, and dev/README.md carries the steps.
     shift
     exec node dev/demo-bake.mjs "$@" ;;
+  agent-init)
+    # The worktree contract. tools/agent_init.py carries the reasoning -
+    # the four traps this exists to kill, why its state is machine-held
+    # rather than in the tree, and what the readiness probe does and
+    # does not prove. It is the first command to run in a fresh
+    # worktree, it is safe on this primary checkout, and it is
+    # idempotent.
+    #
+    # bootstrap below stays and is not folded into it: bootstrap is the
+    # one-line answer to a lint stage reporting a missing node_modules,
+    # and this is the whole environment. Shifted so `--verify` and
+    # `--ports 8150` reach the script rather than the verb.
+    shift
+    exec $PY tools/agent_init.py init "$@" ;;
+  agent-park)
+    # The far end of the same contract: the death protocol. It detaches
+    # the branch so a landing needs no ref dance, releases the port
+    # block, removes the scratch directory and writes the marker a
+    # reaper proves this worktree dead from. It refuses on the primary
+    # checkout, and it refuses over uncommitted work.
+    shift
+    exec $PY tools/agent_init.py park "$@" ;;
   bootstrap)
     # A fresh checkout or worktree has no node_modules, and the gate's
     # eslint stage reports that absence as FAILED - which reads as a
@@ -104,6 +126,17 @@ case "${1:-}" in
     cat <<'EOF'
 usage: ./run <command>          (PowerShell: .\run <command>)
 
+  agent-init  make this worktree gate-ready and print the contract you
+              are held to: line endings renormalized, dependencies
+              installed junction-safely, one real gate stage run as a
+              readiness probe, a port block leased, a scratch directory
+              outside the tree, and the teardown verb below
+              (--verify reports and changes nothing; --ports N asks for
+              a block; --reclaim supersedes a lease you have shown dead)
+  agent-park  the end of a slice: detach the branch so a landing needs
+              no ref dance, release the port block, remove the scratch
+              directory, and leave the marker a reaper can prove this
+              worktree dead from
   bootstrap   make a fresh checkout gate-ready (installs lint deps)
   build       write dist/ - apps/web with the comments taken out, which
               is what the deploy job publishes (committed; `check`
