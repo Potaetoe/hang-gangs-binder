@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 103
+EXPECTED = 116
 
 
 def check(label, condition):
@@ -98,11 +98,19 @@ def check(label, condition):
         print("ok    %s" % label)
 
 
+# No subprocess this suite starts may outlive it. A fixture git that
+# waits for something is a suite that hangs a gate, and a hung gate is
+# read as a slow one until somebody goes looking - which is exactly how
+# this slice's mutation battery was found wedged rather than slow.
+FIXTURE_TIMEOUT = 120
+
+
 def git(repo, *args):
     done = subprocess.run(
         ["git", "-C", repo, "-c", "user.email=suite@example.invalid",
          "-c", "user.name=suite", *args],
-        capture_output=True, text=True,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        timeout=FIXTURE_TIMEOUT,
     )
     return done.returncode, done.stdout + done.stderr
 
@@ -176,7 +184,9 @@ def make_link(link, target):
     os.makedirs(os.path.dirname(link), exist_ok=True)
     if os.name == "nt":
         done = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL,
+                              timeout=FIXTURE_TIMEOUT)
         return done.returncode == 0
     os.symlink(target, link, target_is_directory=True)
     return True
@@ -315,6 +325,11 @@ def branches(primary):
     code, out = git(primary, "for-each-ref", "--format=%(refname:short)",
                     "refs/heads")
     return set(out.split()) if code == 0 else set()
+
+
+def git_impatiently(repo):
+    """One bounded command run under whatever bound is set right now."""
+    return reaper.git(repo, "rev-parse", "HEAD")
 
 
 def find(items, kind, subject):
@@ -728,6 +743,74 @@ try:
                              "--state", state])
     check("a path that is not a checkout exits nonzero", code != 0)
     check("and says so", "not a git checkout" in said.lower())
+
+    print("\n--- a git that does not answer reaps nothing ---")
+
+    # The arm the wedged mutation battery earned. Every git command the
+    # reaper runs is bounded, and the bound is driven to nothing here so
+    # that the timeout path runs for real rather than being reasoned
+    # about: a spawn cannot complete inside a microsecond, so every
+    # command in the run expires.
+    survivor = add_worktree(primary, "wt-timeout", "slice-timeout", first)
+    park(survivor, state)
+    check("it is reapable while git answers",
+          verdict(find(reaper.plan(primary, state, roots),
+                       "parked worktree", survivor)) == "reap")
+    check("a clean run leaves no trouble behind", reaper.TROUBLE == [])
+
+    patient = reaper.GIT_TIMEOUT
+    reaper.GIT_TIMEOUT = 0.000001
+    try:
+        code, said = git_impatiently(primary)
+        check("a bounded command that expires returns the timeout code",
+              code == reaper.GIT_TIMED_OUT)
+        check("and names the command it killed",
+              "rev-parse" in said and "did not answer" in said)
+        code, said = run_reaper(["--act", "--repo", primary,
+                                 "--state", state, "--roots",
+                                 os.pathsep.join(roots)])
+        check("an --act run over an unanswering git exits nonzero",
+              code != 0)
+        # It refuses at the survey rather than reaching hold_back,
+        # because the first thing this program asks the machine is which
+        # worktrees it has - a machine that has stopped answering stops
+        # answering THAT, and refusing before enumerating is one step
+        # earlier than downgrading verdicts afterwards. hold_back covers
+        # the other shape, where a command goes silent partway through a
+        # run that started fine, and is armed directly below.
+        check("and refuses, naming the command that went unanswered",
+              "REFUSED" in said and "did not answer" in said)
+    finally:
+        reaper.GIT_TIMEOUT = patient
+
+    check("THE WORKTREE SURVIVED THE UNANSWERED RUN",
+          os.path.isdir(survivor))
+    check("its branch survived too", "slice-timeout" in branches(primary))
+    check("and it is reapable again once git answers",
+          verdict(find(reaper.plan(primary, state, roots),
+                       "parked worktree", survivor)) == "reap")
+
+    # hold_back, driven directly: a command that goes silent PARTWAY
+    # through a run that started fine. The plan is already built by
+    # then, so the answer is not a refusal - it is every reap in that
+    # plan turning into a report, whatever the reap was about.
+    standing = reaper.plan(primary, state, roots)
+    reapable = [item for item in standing if verdict(item) == "reap"]
+    # Not vacuous: without this the three arms below would pass over an
+    # empty list and say nothing whatever about hold_back.
+    check("the fixture has a reap to hold back", len(reapable) >= 1)
+    reaper.TROUBLE.append("`git something` did not answer")
+    try:
+        held = reaper.hold_back(standing)
+        check("every reap is downgraded to a report",
+              all(verdict(item) == "report" for item in held))
+        check("each downgraded item carries a failing git proof",
+              all(any(proof.name == "git" and not proof.ok
+                      for proof in item["proofs"]) for item in reapable))
+        check("and their plans are emptied",
+              all(steps(item) == [] for item in reapable))
+    finally:
+        del reaper.TROUBLE[:]
 
 finally:
     agent_init.rmtree_hard(root)

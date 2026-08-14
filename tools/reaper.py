@@ -74,6 +74,26 @@ no `-D` happens without the ancestry proof STATED in the output beside
 it, so the proof sentence is built before the deletion and printed with
 it; a deletion line without its proof is a red in the suite.
 
+NOTHING HERE WAITS FOREVER
+
+Every git command this program runs is bounded, started with stdin
+closed and with terminal prompting off, and a command that runs out of
+time takes the WHOLE RUN's deletions with it rather than only the
+candidate it was asked about - a timeout is a fact about the machine's
+ability to answer questions, and the next question was going to be
+asked of the same machine. That is measured rather than defensive: the
+mutation battery for this slice wedged on a git child that had consumed
+no CPU for minutes with a parent waiting on it and nothing to report.
+A reaper that can wait forever is worse than one that refuses, because
+a refusal is visible and a wait is indistinguishable from work.
+
+The residual, stated rather than hidden: `head_state`, `dirty_paths`
+and `worktree_kind` are imported from tools/agent_init.py and run git
+through that module's own subprocess call, which takes no timeout. This
+file closes what it can from outside - the environment those children
+inherit - and closing the rest is one `timeout=` in that helper, in the
+slice that owns that file.
+
 WHAT THIS DELIBERATELY DOES NOT DO
 
 It does not create worktrees or branches, does not touch the primary
@@ -88,6 +108,7 @@ lost.
 import argparse
 import os
 import stat
+import subprocess
 import sys
 
 # The containment primitive, the hard recursive delete, the git helper,
@@ -118,6 +139,116 @@ DEBRIS_MAINLINES = ("accounts", "main")
 # the certificate is a claim by one agent and the root is a fact about
 # how this machine is laid out, and a recursive delete needs both.
 DEFAULT_ROOTS = (os.path.join(".claude", "worktrees"),)
+
+# Every git command this program runs is bounded, and a command that
+# runs out of time takes the whole run's deletions with it.
+#
+# THIS IS A MEASURED FAILURE, not a precaution. Building this slice, the
+# mutation battery wedged: a git child that had consumed no CPU for
+# minutes, a fixture directory with no writes, and a parent waiting on
+# it with nothing to report. A reaper that can wait forever is worse
+# than one that refuses, because a refusal is visible and a wait is
+# indistinguishable from work.
+GIT_TIMEOUT = 120
+
+# A return code no git command produces, so a timeout can never be read
+# as an ordinary "no". The difference matters most at `rev-parse` on a
+# branch ref, where a plain nonzero means "this branch is gone" and
+# licenses deleting a worktree.
+GIT_TIMED_OUT = -9999
+
+# Every bounded command that ran out of time or could not be started, in
+# this process. `hold_back` below turns a non-empty list into a run that
+# reaps nothing at all - see its reasoning for why the answer is that
+# blunt rather than per-candidate. Cleared by `survey`, which every
+# entry point goes through, so one caller's trouble is not carried into
+# the next caller's plan.
+TROUBLE = []
+
+
+def git_environment():
+    """The environment every git child here is started with.
+
+    Prompting OFF is the root of the hang class rather than a mitigation
+    of it: a git that decides to ask a question, with no terminal to ask
+    and nobody to answer, waits for as long as it is allowed to. The
+    timeout is the backstop for everything else, and closing stdin at
+    the call site is the third lock on the same door.
+
+    `GIT_DIR` and `GIT_WORK_TREE` are dropped because they override
+    `-C`: inherited from a hook or a wrapper, they would silently point
+    every question below at a different repository than the one this
+    program believes it is deleting from.
+    """
+    environment = dict(os.environ)
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment.pop("GIT_DIR", None)
+    environment.pop("GIT_WORK_TREE", None)
+    return environment
+
+
+def git(repo, *args):
+    """(returncode, stdout and stderr) for a git command that cannot hang.
+
+    Written here rather than imported alongside `within` and
+    `rmtree_hard`, and the difference is the point: those two are the
+    containment primitives and a second copy of either is a second
+    chance to get containment wrong, while this is a subprocess call
+    with a bound on it. tools/agent_init.py's helper takes no timeout
+    and that file is held by another in-flight slice, so the bound is
+    added here rather than there - and the three helpers still imported
+    from it are named in the module docstring as the residual.
+
+    Output is NOT stripped, for the reason that file gives: the status
+    columns of `git status --porcelain` are significant whitespace.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", repo, *args],
+            capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=GIT_TIMEOUT,
+            env=git_environment(),
+        )
+    except subprocess.TimeoutExpired:
+        said = ("`git %s` in %s did not answer within %s seconds and was "
+                "killed" % (" ".join(args), repo, GIT_TIMEOUT))
+        TROUBLE.append(said)
+        return GIT_TIMED_OUT, said
+    except OSError as problem:
+        said = ("`git %s` in %s could not be run at all: %s"
+                % (" ".join(args), repo, problem))
+        TROUBLE.append(said)
+        return GIT_TIMED_OUT, said
+    return done.returncode, done.stdout + done.stderr
+
+
+def hold_back(items):
+    """Downgrade every reap to a report if any git command went wrong.
+
+    Blunt on purpose, and the bluntness is the argument. A timeout is
+    not a fact about the candidate it happened to be asked about - it is
+    a fact about this machine's ability to answer questions right now,
+    and the next question was going to be asked of the same machine. So
+    one command that did not answer takes the whole run's deletions,
+    rather than the run picking out which proofs the silence could have
+    reached.
+
+    It also covers the one place a timeout could otherwise read as a
+    licence: `rev-parse` on a branch ref answers "absent" and "timed
+    out" with the same None, and an absent branch is a reason to reap.
+    """
+    if not TROUBLE:
+        return items
+    said = ("a git command did not answer during this run, so nothing is "
+            "provable and nothing is reaped: " + "; ".join(TROUBLE))
+    for item in items:
+        if item["verdict"] == "reap":
+            item["verdict"] = "report"
+            item["plan"] = []
+            item["proofs"].append(Proof("git", False, said))
+    return items
 
 
 class Proof(object):
@@ -253,7 +384,7 @@ def worktree_table(repo):
     needs to know which one that is: the primary checkout is the one
     thing on the machine that is never a candidate for anything.
     """
-    code, out = agent_init.git(repo, "worktree", "list", "--porcelain")
+    code, out = git(repo, "worktree", "list", "--porcelain")
     if code != 0:
         return None
     entries = []
@@ -280,7 +411,7 @@ def worktree_table(repo):
 
 
 def resolve(repo, ref):
-    code, out = agent_init.git(repo, "rev-parse", "--verify", "--quiet", ref)
+    code, out = git(repo, "rev-parse", "--verify", "--quiet", ref)
     out = out.strip()
     return out if code == 0 and len(out) == 40 else None
 
@@ -307,7 +438,7 @@ def mainlines(repo, names):
 
 
 def is_ancestor(repo, sha, ref):
-    code, _ = agent_init.git(repo, "merge-base", "--is-ancestor", sha, ref)
+    code, _ = git(repo, "merge-base", "--is-ancestor", sha, ref)
     return code == 0
 
 
@@ -574,7 +705,7 @@ def branch_items(repo, state, table, spoken_for):
     a branch deleted out from under a worktree this program declined to
     delete is the worst of both answers.
     """
-    code, out = agent_init.git(repo, "for-each-ref",
+    code, out = git(repo, "for-each-ref",
                                "--format=%(refname:short) %(objectname)",
                                "refs/heads")
     if code != 0:
@@ -636,13 +767,30 @@ def survey(repo, state=None, roots=None):
     to the primary, and computing them from a linked worktree would put
     the root inside a worktree - which is how a reaper ends up unable to
     prove anything about its own siblings.
+
+    Every entry point reaches the machine through here, which is why the
+    two pieces of process-wide hardening sit here and not at import
+    time. `head_state`, `dirty_paths` and `worktree_kind` come from
+    tools/agent_init.py and run git through that module's own untimed
+    subprocess call; that file is held by another in-flight slice, so
+    what can be closed from here is the environment those children
+    inherit - and the prompting variable is the whole of the hang class
+    rather than a mitigation of it. The residual, stated rather than
+    hidden: one of those three blocking for a reason other than a prompt
+    is not bounded by anything in this file, and closing it is one
+    `timeout=` in tools/agent_init.py's own helper.
     """
+    os.environ["GIT_TERMINAL_PROMPT"] = "0"
+    os.environ["GIT_OPTIONAL_LOCKS"] = "0"
+    del TROUBLE[:]
     kind, common = agent_init.worktree_kind(repo)
     if kind is None:
         return None, "%s is not a git checkout: %s" % (repo, common)
     table = worktree_table(repo)
     if not table:
-        return None, "git could not list the worktrees of %s" % repo
+        return None, ("git could not list the worktrees of %s%s"
+                      % (repo, " - " + "; ".join(TROUBLE) if TROUBLE
+                         else ""))
     primary = table[0]["path"]
     return (primary, table, roots or worktree_roots(primary)), None
 
@@ -656,9 +804,9 @@ def plan(repo, state=None, roots=None):
     parked, _inert = parked_items(primary, state, roots, table, primary)
     spoken_for = {item["park"].get("branch") for item in parked
                   if item["park"].get("branch")}
-    return (parked
-            + vanished_items(primary, state, table, primary)
-            + branch_items(primary, state, table, spoken_for))
+    return hold_back(parked
+                     + vanished_items(primary, state, table, primary)
+                     + branch_items(primary, state, table, spoken_for))
 
 
 def delete_branch(repo, name, proof):
@@ -670,11 +818,11 @@ def delete_branch(repo, name, proof):
     the deletion - and `-D` carries the ancestry proof in the same line,
     which is the floor this slice is held to.
     """
-    code, out = agent_init.git(repo, "branch", "-d", name)
+    code, out = git(repo, "branch", "-d", name)
     if code == 0:
         return True, ("deleted branch %s - %s; git's own merged check "
                       "agreed" % (name, proof))
-    code, out = agent_init.git(repo, "branch", "-D", name)
+    code, out = git(repo, "branch", "-D", name)
     if code == 0:
         return True, ("deleted branch %s - %s; `-d` declined because the "
                       "branch is not merged into the HEAD this ran from, "
@@ -744,7 +892,7 @@ def act(repo, item, state=None, roots=None):
                            % (path, trouble)]
         done.append("deleted the directory %s" % path)
 
-    agent_init.git(repo, "worktree", "prune")
+    git(repo, "worktree", "prune")
     if path not in {entry["path"] for entry in (worktree_table(repo) or [])}:
         done.append("pruned the worktree registration for %s" % path)
     else:
@@ -823,6 +971,12 @@ def render(items, inert, primary, state, roots, acting, repo):
         for line in inert:
             print("    %s" % line)
 
+    if TROUBLE:
+        print("\n--- git did not answer (%d), so this run reaps nothing "
+              "---" % len(TROUBLE))
+        for line in TROUBLE:
+            print("    %s" % line)
+
     print("\n%d to reap, %d reported and left alone." % (reaped, reported))
     if not acting:
         print("Nothing above was performed. `--act` is what performs it, "
@@ -860,13 +1014,18 @@ def main(argv=None):
     parked, inert = parked_items(primary, args.state, roots, table, primary)
     spoken_for = {item["park"].get("branch") for item in parked
                   if item["park"].get("branch")}
-    items = (parked
-             + vanished_items(primary, args.state, table, primary)
-             + branch_items(primary, args.state, table, spoken_for))
+    items = hold_back(parked
+                      + vanished_items(primary, args.state, table, primary)
+                      + branch_items(primary, args.state, table,
+                                     spoken_for))
 
     render(items, inert, primary, args.state, roots, args.act, primary)
+    # A run in which any git command went unanswered is a failed run in
+    # both modes, and the exit status says so - session-open hygiene
+    # calls this, and a hygiene step that exits 0 on a machine that
+    # stopped answering is a hygiene step nobody will look at again.
     if not args.act:
-        return 0
+        return 1 if TROUBLE else 0
 
     trouble = 0
     print("")
@@ -880,7 +1039,7 @@ def main(argv=None):
                 trouble += 1
     print("\n%d act(s) could not be completed." % trouble
           if trouble else "\nEvery proven candidate was reaped.")
-    return 1 if trouble else 0
+    return 1 if trouble or TROUBLE else 0
 
 
 if __name__ == "__main__":
