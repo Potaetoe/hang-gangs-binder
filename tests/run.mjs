@@ -238,21 +238,31 @@ if (await exists(ROOT + PREFLIGHT)) {
      absent. The honest discriminator is evidence the check really ran,
      not merely its exit code: do_init()'s --verify branch prints
      "initialized: contract N, record ..." on its one success path
-     (tools/agent_init.py) and nothing else in this repository produces
-     that line, so its absence on an exit-0 run is graded the same
-     "armed-looking-but-not" way an empty arms directory already is
-     below - a red, not a note. */
+     (tools/agent_init.py), and nothing else in this repository
+     produced that line - until 0.9-M0-S14 (#300) gave preflight a
+     second legitimate success path. A CI checkout can never hold an
+     initialization record (agent-init is machine-held Windows
+     tooling), so preflight's path 2 prints "initialized: CI path ..."
+     instead of shelling out to a --verify that can never pass there;
+     this file is the one caller that has to tell the two apart from a
+     gutted preflight, so it is the one place widened to recognize
+     both. A verdict missing BOTH is graded the same "armed-looking-
+     but-not" way an empty arms directory already is below - a red,
+     not a note. */
   const vacuous = result.code === 0 &&
-    !verdict.startsWith("initialized: contract ");
+    !verdict.startsWith("initialized: contract ") &&
+    !verdict.startsWith("initialized: CI path");
   const ok = result.code === 0 && !vacuous;
   report(PREFLIGHT, ok, result.ms);
   if (!ok) {
     spill(PREFLIGHT, result);
     console.log(vacuous
-      ? "\npreflight exited 0 without printing --verify's own success " +
-        "line, so it is graded vacuous rather than green - a check " +
-        "that ran and a file that merely exited 0 are not the same " +
-        "thing. Fix that first."
+      ? "\npreflight exited 0 without printing either of the two " +
+        "recognized success lines (--verify's own \"initialized: " +
+        "contract N, ...\" or path 2's \"initialized: CI path ...\"), " +
+        "so it is graded vacuous rather than green - a check that ran " +
+        "and a file that merely exited 0 are not the same thing. Fix " +
+        "that first."
       : "\npreflight is red, so no arm ran. Fix that first.");
     process.exit(1);
   }
