@@ -1,10 +1,21 @@
 """Contract checks for the worktree contract: agent-init and agent-park.
 
-    py -3 tests/worktree-contract.test.py
+    py -3 tools/agent_init_suite.py
 
-Run by hand. `tests/` is deliberately unregistered until the new
-apparatus (0.9-M0-S4) wires its runner, so nothing in the gate executes
-this file yet and no handoff may report it as gated.
+WHY THE ARMS SIT IN tools/ AND THE ENTRY POINT SITS IN tests/
+
+`tests/` holds `.mjs` entry points, and the new apparatus (0.9-M0-S4)
+guards that: a file there under any other extension is a stray, and a
+Python suite parked among them fails the guard for being written in the
+wrong language rather than for being wrong. So the arms live beside the
+module they test, and `tests/worktree-contract.test.mjs` is the entry
+point - five lines that find a Python and hand it this file, exiting on
+its status. That shim is what makes these arms reachable by a runner
+that only knows how to launch `.mjs`, and the two halves are one check:
+this file holds every assertion and the shim holds none.
+
+Until #281's runner registers that entry point, both halves are run by
+hand and no handoff may report either as gated.
 
 WHY THIS BUILDS REAL REPOSITORIES INSTEAD OF ASSERTING ON STRINGS
 
@@ -39,7 +50,8 @@ stripping git's output shifted a path by one character and stopped the
 repair from recognizing a file it must not touch.
 
 Self-contained on purpose: no import from dev/, no framework, no new
-dependency. #281 adopts this file by moving it, not by rewriting it.
+dependency. #281 adopts this pair by registering the entry point, not
+by rewriting the arms.
 """
 
 import io
@@ -51,11 +63,11 @@ import sys
 import tempfile
 from contextlib import redirect_stdout
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "tools"))
-
-import agent_init  # noqa: I001
-
+# The module under test sits in this file's own directory, which Python
+# puts on the path for a script it is handed - so a plain import is the
+# whole wiring, and there is no path arithmetic here to get wrong when
+# the entry point launches this from the repository root.
+import agent_init
 
 failures = 0
 performed = 0
