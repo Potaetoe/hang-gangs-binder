@@ -346,7 +346,7 @@ export default [
   },
 
   {
-    /* The Worker. Not published by the deploy job, still ours. */
+    /* The Worker. Not part of the published site, still ours. */
     files: ["server/**/*.js"],
     languageOptions: {
       ecmaVersion: 2022,

@@ -18,8 +18,9 @@ its <script>, <link>, <img> and <source> tags name, and - transitively
 - everything a stylesheet pulls in through url() or @import. Each file
 is compressed with gzip at level 9 and the sizes are summed.
 
-Gzip because that is what travels. GitHub Pages serves text compressed,
-so the bytes a visitor pays for are the compressed ones; raw sizes
+Gzip because that is what travels. The edge that serves this site
+compresses text, so the bytes a visitor pays for are the compressed
+ones; raw sizes
 overstate this tree by a factor of three or four, and a ceiling built
 on them would be a number with no relationship to anybody's experience
 of the site. Level 9 is the closest a local run gets to what an edge
@@ -178,8 +179,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # dist/, not apps/web - #181. This check is the one place in the gate
 # where the question is literally "how many bytes travel", so it has to
-# read the bytes that travel: the generated site the deploy job
-# publishes, with the design record taken out of the CSS and the scripts.
+# read the bytes that travel: the generated site in dist/, with the
+# design record taken out of the CSS and the scripts.
 # Pointed at apps/web it would measure a tree nobody downloads and
 # overstate every page by the weight of its own comments, which is 78%
 # of theme.css.
@@ -451,8 +452,8 @@ def local_target(value):
     """A same-origin path out of one attribute value, or None.
 
     A leading "/" is site-root-relative and apps/web is the site root -
-    the deploy job copies that directory and nothing above it - so a
-    rooted path names the same file a bare name does. A path climbing
+    nothing above it is ever published - so a rooted path names the
+    same file a bare name does. A path climbing
     out of the directory is refused rather than resolved: nothing above
     apps/web is published, so it cannot be a transfer this site makes.
     """

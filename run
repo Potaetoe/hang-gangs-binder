@@ -38,8 +38,8 @@ case "${1:-}" in
   docs)
     exec $PY tools/check_docs.py ;;
   build)
-    # Write dist/, the site the deploy job publishes: apps/web with the
-    # comments taken out of the CSS and the scripts (#181). Node rather
+    # Write dist/: apps/web with the comments taken out of the CSS and
+    # the scripts (#181). Node rather
     # than $PY because the JavaScript half is parsed with acorn - a "/*"
     # inside a string or a regex literal is not a comment, and a scanner
     # that thinks it is ships corrupted code.
@@ -154,9 +154,8 @@ usage: ./run <command>          (PowerShell: .\run <command>)
               it - this verb is destructive, so the dry run is the one
               an unsure agent reaches for)
   bootstrap   make a fresh checkout gate-ready (installs lint deps)
-  build       write dist/ - apps/web with the comments taken out, which
-              is what the deploy job publishes (committed; `check`
-              refuses a stale one)
+  build       write dist/ - apps/web with the comments taken out
+              (committed; `check` refuses a stale one)
   check       run every check the project has - the same set CI runs
   gate        the 0.9 gate (tests/run.mjs) - the new apparatus under
               #228, running beside `check` until it retires

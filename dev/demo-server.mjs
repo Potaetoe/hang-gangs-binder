@@ -26,8 +26,8 @@
  *
  * APPS/WEB, NOT DIST/, AND THAT IS A CHOICE (#181). There are two trees
  * now: apps/web, which a person edits, and dist/, which is the same code
- * with the comments taken out and is what the deploy job publishes. This
- * mirror serves the source, for the same reason it reads off disk rather
+ * with the comments taken out. This mirror serves the source, for the
+ * same reason it reads off disk rather
  * than caching - the demo exists to exercise behavior while somebody is
  * working, and a mirror pointed at the built tree would show the last
  * build instead of the current edit. A demo that lags the code is the

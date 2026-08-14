@@ -4,8 +4,9 @@ Run every check this project has, locally.
 
     python tools/check.py
 
-A push to main publishes the site, so this exists to make "did I break
-it?" one command instead of a list of remembered ones. It runs the two
+Nothing here publishes anything - the checks are the whole point, so
+this exists to make "did I break it?" one command instead of a list of
+remembered ones. It runs the two
 linters, every Node suite in dev/, the publishability check, the
 deployment-config check, the documentation check, the comment check,
 the per-page transfer budget, and the suite behind each checker, and
@@ -393,8 +394,9 @@ def main():
         [sys.executable, "tools/check_web.py"]
     )))
 
-    # dist/ is what the deploy job publishes and apps/web is what a person
-    # edits; this is the stage that says the two have not come apart. It
+    # apps/web is what a person edits and dist/ is the same code with
+    # comments stripped; this is the stage that says the two have not
+    # come apart. It
     # runs before the budget below because the budget measures dist/, and
     # measuring a stale artifact is a number about a site nobody is
     # shipping. #181.
@@ -582,9 +584,11 @@ def main():
     print("=" * (width + 10))
 
     if all(ok for _, ok in results):
-        print("\nAll checks passed. Safe to push - remember that a push to "
-              "main publishes the site.\nIf server/worker.js changed, "
-              "deploying it is a separate step: see server/README.md.")
+        print("\nAll checks passed. Safe to push - nothing publishes "
+              "automatically: there is no live site today (down by owner "
+              "order; 1.0 deploys the new one).\nIf server/worker.js "
+              "changed, deploying it is a separate step: see "
+              "server/README.md.")
         return 0
 
     print("\nNot safe to push.")

@@ -126,9 +126,8 @@ check("a query string and a fragment are trimmed",
       check_budget.page_references('<script src="ui.js?v=3#top"></script>')
       == ["ui.js"])
 
-# apps/web is the site root - the deploy job copies that directory and
-# nothing above it - so a leading slash names the same file a bare name
-# does.
+# apps/web is the site root - nothing above it is ever published - so a
+# leading slash names the same file a bare name does.
 check("a root-relative path resolves like a bare name",
       check_budget.page_references('<script src="/theme.js"></script>')
       == ["theme.js"])
