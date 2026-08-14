@@ -65,7 +65,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 67
+EXPECTED = 68
 
 
 def check(label, condition):
@@ -172,6 +172,13 @@ def link_dir(target, link):
 base = tempfile.mkdtemp(prefix="worktree-contract-")
 state = os.path.join(base, "fleet-state")
 
+# Scratch directories are made under a root this suite owns and deletes.
+# Without this every run left one behind in the shared parent, because
+# the temporary repositories here are never parked and park is what
+# removes a scratch directory - a suite that leaks while testing the
+# verb that cleans up.
+os.environ["BINDER_SCRATCH_ROOT"] = os.path.join(base, "scratch")
+
 try:
     # ------------------------------------------------------------------
     # A. The trap, and the whole init path over it.
@@ -207,6 +214,10 @@ try:
           "the environment contract" in out and "teardown" in out)
     check("and it says the environment is ready without claiming the gate",
           "THE ENVIRONMENT IS READY" in out)
+    check("the scratch directory is made under the root, outside the tree",
+          os.path.isdir(load(agent_init.record_path(repo, state))["scratch"])
+          and load(agent_init.record_path(repo, state))["scratch"].startswith(
+              os.environ["BINDER_SCRATCH_ROOT"]))
     # An init that was told not to install is still an honest init, and
     # the detection says so: the lint stage would report a missing
     # node_modules as FAILED, so a worktree without one is not one the

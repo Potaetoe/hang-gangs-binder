@@ -640,6 +640,21 @@ def release_lease(repo, state=None):
     return block
 
 
+def scratch_root():
+    """The parent every scratch directory is made under.
+
+    Overridable for the same reason the state directory is: the suite
+    drives this against a directory it can delete afterwards, and
+    without that every suite run leaks a directory into the shared
+    parent - measured, eight of them, because the temporary
+    repositories a suite builds are never parked and park is what
+    removes a scratch directory. It doubles as the escape hatch on a
+    machine whose temporary directory is not where scratch belongs.
+    """
+    return os.environ.get("BINDER_SCRATCH_ROOT") or os.path.join(
+        tempfile.gettempdir(), "binder-scratch")
+
+
 def take_scratch(branch, existing=None):
     """A scratch directory outside the repository tree, made once.
 
@@ -651,7 +666,7 @@ def take_scratch(branch, existing=None):
     """
     if existing and os.path.isdir(existing):
         return existing
-    parent = os.path.join(tempfile.gettempdir(), "binder-scratch")
+    parent = scratch_root()
     os.makedirs(parent, exist_ok=True)
     slug = re.sub(r"[^A-Za-z0-9._-]", "-", branch or "detached")
     return tempfile.mkdtemp(prefix=slug + "-", dir=parent)
@@ -1021,11 +1036,11 @@ def do_park(args):
     scratch = record.get("scratch")
     removed = False
     if scratch and os.path.isdir(scratch):
-        # Only a directory this verb made, and only under the OS
-        # temporary directory. A teardown that deletes a path out of a
-        # record it did not write is a teardown that can delete anything.
-        if os.path.abspath(scratch).startswith(
-                os.path.join(tempfile.gettempdir(), "binder-scratch")):
+        # Only a directory this verb made, and only under the root it
+        # makes them in. A teardown that deletes a path out of a record
+        # it did not write is a teardown that can delete anything.
+        if os.path.abspath(scratch).startswith(os.path.abspath(
+                scratch_root())):
             shutil.rmtree(scratch, ignore_errors=True)
             removed = not os.path.isdir(scratch)
 
