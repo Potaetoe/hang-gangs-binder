@@ -345,14 +345,32 @@ def _walk_links(root, sever):
     a junction here, so reversing these two lines is enough to walk into
     a shared install. The suite hangs a second link inside the junction
     target and reds if this walk ever reports it.
+
+    AND IT TERMINATES WHATEVER THE TREE LOOKS LIKE. Every directory is
+    entered once, keyed by where it RESOLVES rather than by how it was
+    reached, which is what closes a link cycle: a junction pointing at
+    its own parent is two `os.scandir` calls apart from an unbounded
+    walk. That is not hypothetical here - the ordering above was
+    mutated during this slice's mutation battery to prove it
+    load-bearing, and the mutant did not merely delete the wrong thing,
+    it WEDGED, holding a process that consumed no CPU and reported
+    nothing. A walk in deletion machinery that cannot be shown to
+    finish is a defect on its own, because a wait looks exactly like
+    work from outside, so the bound is here rather than in the caller
+    that would have to notice.
     """
     if is_reparse(root):
         raise ValueError("%s is itself a link; a walker that entered it "
                          "would be walking somebody else's tree" % root)
     found = []
+    entered = set()
     stack = [root]
     while stack:
         here = stack.pop()
+        resolved = os.path.realpath(here)
+        if resolved in entered:
+            continue
+        entered.add(resolved)
         try:
             entries = sorted(os.scandir(here), key=lambda item: item.path)
         except OSError:

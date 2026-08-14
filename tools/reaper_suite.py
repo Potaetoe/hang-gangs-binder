@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 116
+EXPECTED = 118
 
 
 def check(label, condition):
@@ -429,6 +429,25 @@ try:
           os.path.isdir(os.path.join(shared, "inner-link")))
     check("severing a tree with no links removes nothing",
           reaper.sever_links(probe) == [])
+
+    # A link pointing at its own parent - the shape that turns a walk
+    # into a wait. Correct code never follows it, so this arm passes
+    # either way and is worth its line for a different reason: it is
+    # the fixture that catches a walk which HAS started following,
+    # before that walk is loose on a real machine. The mutation that
+    # reverses the two questions in the walker wedged on this slice's
+    # battery, and a mutant that hangs teaches nothing while a mutant
+    # that reds teaches everything.
+    loopy = os.path.join(root, "loopy")
+    os.makedirs(os.path.join(loopy, "down"))
+    make_link(os.path.join(loopy, "down", "up"), loopy)
+    check("a link pointing at its own parent is walked, not followed",
+          reaper.find_links(loopy)
+          == [os.path.join(loopy, "down", "up")])
+    check("and severing it terminates and leaves the parent",
+          reaper.sever_links(loopy)
+          == [os.path.join(loopy, "down", "up")]
+          and os.path.isdir(os.path.join(loopy, "down")))
 
     print("\n--- the parked, provable worktree ---")
 
