@@ -74,6 +74,38 @@
  * to argue against them.
  *
  * ------------------------------------------------------------------
+ * PYTHON ARMS: THE SHIM IS THE CONVENTION. tests/worktree-contract.
+ * test.mjs is the template - five lines that find an interpreter and
+ * shell out to a suite living beside the module it tests (tools/
+ * agent_init_suite.py here). This runner does not learn *.test.py
+ * natively: "an arm is a program this runner starts and grades by its
+ * exit code" already covers a shim, with zero lines added here, and a
+ * shim is proof of that on its own - it was adopted the same way the
+ * three site-* arms were, without an edit to this file. Teaching the
+ * runner a second suffix and a second interpreter would buy nothing a
+ * shim does not already buy, and it would cost this file staying
+ * single-language: the stray sweep's message ("name it *.test.mjs")
+ * would need to know to say something else for a stray .py, discovery
+ * would need a second execution path, and both would exist to save
+ * five lines a shim already is. 0.9-M0-S8's reaper arms, next in the
+ * queue and Python too, get the same five lines over their own suite.
+ *
+ * UNTRACKED FILES UNDER tests/ STAY STRICT-RED - no leniency added
+ * here for a file `git status` calls untracked. The sweep already
+ * does not care whether a file is tracked; it is filesystem discovery
+ * over what is checked out, on purpose (see DERIVE, DO NOT PIN above),
+ * and teaching it to skip untracked strays would mean shelling out to
+ * git from the one file in this repository that currently does not
+ * need to, to buy leniency for a state the environment contract
+ * already has an answer to: `./run agent-init` hands every worktree a
+ * scratch directory OUTSIDE the tree for exactly this - the lint stage
+ * reads what is in the tree, so a new arm mid-work belongs in scratch
+ * until its name and shape are the ones this gate should see, not in
+ * tests/ wearing a wrong name so leniency can wave it through. Landing
+ * it under tests/ at all, tracked or not, is the point where the
+ * naming decision is supposed to already be made.
+ *
+ * ------------------------------------------------------------------
  * RETIRING AN OLD ARM WITH ITS SURFACE - the M2/M3/M4 pattern, one
  * line, in the rebuild slice's own pull request:
  *
@@ -89,15 +121,22 @@
  * existing. The old runner's final removal is its own M4-era slice,
  * not something that falls out of the last retirement.
  *
- * THE FIRST STAGE IS A SEAM, and it is deliberately empty. If
- * tests/preflight.mjs exists it runs before any arm and a red stops
- * the gate there, arms unrun: 0.9-M0-S5 (#283) is building the
- * uninitialized-worktree detection that belongs in it, and the reason
- * it short-circuits is that a worktree with no node_modules reds
- * every arm for one cause and buries it. Absent, the gate runs and
- * says the stage is missing rather than passing over it in silence.
- * Adopting it means landing that path and nothing else; hardening the
- * absence into a red is S5's to make once the file is real.
+ * THE FIRST STAGE IS THE SEAM, and it is wired: tests/preflight.mjs
+ * exists, runs before any arm, and a red there stops the gate with no
+ * arm run. 0.9-M0-S5 (#283) built the detection - the exit status of
+ * `./run agent-init --verify`, reading .gitattributes' end-of-line
+ * state directly rather than waiting for some later stage to trip
+ * over a stale worktree and bury the cause. 0.9-M0-S7 (#287) is what
+ * calls it from here. Its absence is graded the same way an empty
+ * arms directory is below: a red, not a note, because tests/
+ * preflight.mjs is expected to always be present from here on, and a
+ * gate that quietly runs without it is the "armed-looking-but-not"
+ * failure this file already refuses for the empty-directory case.
+ * PRESENCE IS NOT ENOUGH EITHER (review-0.9-m0-s7-2026-08-13, finding
+ * R2): an empty or gutted preflight is valid JavaScript that exits 0
+ * having checked nothing, so stage zero also requires the one line
+ * --verify's success path prints - see the vacuity guard where stage
+ * zero runs, below - the same refusal reached a second way.
  */
 import { readdir, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -190,16 +229,40 @@ console.log("the 0.9 gate - " + rel(HERE) + "\n");
 /* Stage zero: the seam. */
 if (await exists(ROOT + PREFLIGHT)) {
   const result = await runFile(ROOT + PREFLIGHT);
-  report(PREFLIGHT, result.code === 0, result.ms);
-  if (result.code !== 0) {
+  const verdict = verdictLine(result.output);
+  /* VACUITY GUARD (review-0.9-m0-s7-2026-08-13, finding R2). Absence is
+     hardened above into a red; a PRESENT-BUT-EMPTY (or otherwise
+     gutted) tests/preflight.mjs is valid, empty JavaScript, so it exits
+     0 having checked nothing - the criterion (file present, exit 0) is
+     met while the property (this worktree was actually verified) is
+     absent. The honest discriminator is evidence the check really ran,
+     not merely its exit code: do_init()'s --verify branch prints
+     "initialized: contract N, record ..." on its one success path
+     (tools/agent_init.py) and nothing else in this repository produces
+     that line, so its absence on an exit-0 run is graded the same
+     "armed-looking-but-not" way an empty arms directory already is
+     below - a red, not a note. */
+  const vacuous = result.code === 0 &&
+    !verdict.startsWith("initialized: contract ");
+  const ok = result.code === 0 && !vacuous;
+  report(PREFLIGHT, ok, result.ms);
+  if (!ok) {
     spill(PREFLIGHT, result);
-    console.log("\npreflight is red, so no arm ran. Fix that first.");
+    console.log(vacuous
+      ? "\npreflight exited 0 without printing --verify's own success " +
+        "line, so it is graded vacuous rather than green - a check " +
+        "that ran and a file that merely exited 0 are not the same " +
+        "thing. Fix that first."
+      : "\npreflight is red, so no arm ran. Fix that first.");
     process.exit(1);
   }
-  console.log("    " + verdictLine(result.output));
+  console.log("    " + verdict);
 } else {
-  console.log("no preflight stage: " + PREFLIGHT + " is absent " +
-    "(0.9-M0-S5, #283, is what lands it)");
+  console.log(PREFLIGHT + " is missing. It is expected to always be " +
+    "present - 0.9-M0-S7 (#287) wired it to tools/agent_init.py's " +
+    "--verify - so a gate that runs without it is graded the same as " +
+    "one that finds no arms: a red, not a note.");
+  process.exit(1);
 }
 
 /* Stage one onward: the arms. */
@@ -226,14 +289,28 @@ console.log("=".repeat(60));
 for (const path of strays) {
   const name = rel(path);
   problems.push(name);
-  console.log(name + " is in tests/ and nothing runs it. Name it " +
-    "*" + ARM_SUFFIX + " so the gate finds it, or take it out." +
-    /* The near-miss is worth its own sentence, because it is the case
-       that arrives looking like a tidy-up rather than a deletion. */
-    (/\.test\.[^./]+$/.test(name)
-      ? " One suffix from being an arm is how coverage leaves quietly:" +
-        " a file this close still runs by hand and still passes."
-      : ""));
+  /* A stray .py gets its OWN message (review-0.9-m0-s7-2026-08-13,
+     finding R3): the generic line below told a Python suite author to
+     rename to *.test.mjs, which is the opposite of the shim convention
+     this file's own header documents two screens up - renaming
+     produces a broken arm (node cannot run a .py file), not a working
+     one. The correct move is a shim beside the module, which is what
+     tests/worktree-contract.test.mjs already is. */
+  console.log(name.endsWith(".py")
+    ? name + " is in tests/ and nothing runs it. A .py suite here " +
+      "wants a shim, not a rename: leave it beside the module it " +
+      "tests and add a five-line *" + ARM_SUFFIX + " that shells out " +
+      "to it - tests/worktree-contract.test.mjs is the pattern."
+    : name + " is in tests/ and nothing runs it. Name it " +
+      "*" + ARM_SUFFIX + " so the gate finds it, or take it out." +
+      /* The near-miss is worth its own sentence, because it is the
+         case that arrives looking like a tidy-up rather than a
+         deletion. */
+      (/\.test\.[^./]+$/.test(name)
+        ? " One suffix from being an arm is how coverage leaves " +
+          "quietly: a file this close still runs by hand and still " +
+          "passes."
+        : ""));
 }
 if (arms.length === 0) {
   problems.push("no arms");
