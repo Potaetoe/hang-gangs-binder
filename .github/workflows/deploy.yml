@@ -145,6 +145,41 @@ jobs:
       - name: Run the whole gate
         run: python tools/check.py
 
+      # TWO GATES, BOTH BLOCKING, AND THE STEP NAME SAYS WHICH WORLD.
+      #
+      # The step above is the pre-0.9 gate. It guards the surfaces that
+      # still exist and shrinks as each rebuild slice retires its arms
+      # with its surface; this one is 0.9's, built new under the owner
+      # ruling on #228, and grows the other way. Both fail the job, so
+      # `deploy` - which needs it - cannot publish past either. Neither
+      # can be read as covering for the other: they check different
+      # trees, and for the length of the transition a release has to
+      # satisfy both worlds.
+      #
+      # `if` rather than nothing, and this is the reason: a step with no
+      # condition is skipped once an earlier step fails, so a red in the
+      # old gate would hide the state of the new one and a fix would
+      # take two round trips to learn about the second failure. This way
+      # one run reports both. It does NOT weaken the gate - a step that
+      # runs after a failure cannot un-fail the job - and it is not
+      # `always()`, because a cancelled run should stop rather than
+      # carry on doing work nobody is waiting for.
+      #
+      # No install line above it because there is nothing to install.
+      # The arms and tests/run.mjs import node: builtins and nothing
+      # else, which is the same reason the runner has no framework under
+      # it; the node the setup-node step already pinned is the whole
+      # dependency. If that ever stops being true it belongs in the
+      # existing install step, not in a second one here.
+      #
+      # tests/run.mjs discovers its own arms, so this step never lists
+      # them - registering an arm is adding the file. That is the half
+      # of `python tools/check.py` above worth keeping: one step, one
+      # registry, and no second list here to drift from the first.
+      - name: Run the 0.9 gate
+        if: ${{ !cancelled() }}
+        run: node tests/run.mjs
+
   deploy:
     needs: verify
     # A pull request gets the checks and nothing else. Publishing is what
