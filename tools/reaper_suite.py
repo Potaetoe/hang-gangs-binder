@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 148
+EXPECTED = 150
 
 
 def check(label, condition):
@@ -256,7 +256,33 @@ def build_machine(root):
     # path, so a junctioned node_modules that git could see would make
     # the junction arm untestable for a reason that has nothing to do
     # with junctions.
-    write(os.path.join(primary, ".gitignore"), ".claude/\nnode_modules/\n")
+    #
+    # `node_modules` carries NO trailing slash, unlike `.claude/` above
+    # it. A trailing slash restricts a gitignore pattern to directories
+    # only (git's own documented rule), and `.claude` is safe under
+    # that restriction because every fixture path under it is a real
+    # directory made by `git worktree add`. `node_modules` is not safe
+    # under it: `make_link` below makes it a junction on Windows, which
+    # answers True to "is a directory" here and so stayed ignored, but
+    # the identical fixture makes it a SYMLINK on POSIX, which is a
+    # non-directory dirent to git - `node_modules/` does not match it,
+    # `git status` sees `?? node_modules`, and `agent-init park`
+    # refuses the "1 uncommitted path" before the reaper is ever
+    # reached (measured: CI run 31827576127, died in fixture setup).
+    # Dropping the slash matches the entry regardless of the shape the
+    # fixture gives it - directory, junction, symlink, or plain file.
+    #
+    # The real repository's own .gitignore keeps the trailing slash on
+    # this entry, and that is not a second instance of this bug: a real
+    # worktree's node_modules is always genuinely directory-shaped there
+    # - either an `npm install` result or the owner's manual Windows
+    # junction (also directory-shaped, per ESLINT_ENTRY's comment in
+    # agent_init.py) - and nothing in this codebase makes it a POSIX
+    # symlink outside this fixture. The symlink shape below exists only
+    # to test the reaper's own walk/sever logic; it is this suite that
+    # needs the unslashed pattern, to be able to fabricate that shape
+    # without the fabrication itself falsely tripping park.
+    write(os.path.join(primary, ".gitignore"), ".claude/\nnode_modules\n")
     write(os.path.join(primary, "one.txt"), "one\n")
     git(primary, "add", "-A")
     git(primary, "commit", "-m", "first")
@@ -515,6 +541,34 @@ try:
     check("the shared directory is untouched, to the entry",
           sorted(os.listdir(shared))
           == ["inner", "inner-link", "sentinel.txt"])
+
+    print("\n--- a non-directory node_modules is ignored too, not only "
+          "a link ---")
+
+    # The comment on the .gitignore write above promises this arm: a
+    # trailing-slash pattern matches directories only, so it covers the
+    # junction fixture above (a junction answers True to "is a
+    # directory" on this platform) but would NOT cover node_modules the
+    # day it is not directory-shaped at all - the shape a POSIX symlink
+    # has to git, and the shape that died in CI (run 31827576127): the
+    # same suite, same fixture, a Linux runner - `git status` saw
+    # `?? node_modules`, and `agent-init park` refused the "1
+    # uncommitted path" before the reaper's own checks ever ran, which
+    # is why the run died in fixture setup rather than in a check. A
+    # plain FILE reproduces that same non-directory shape on any
+    # platform, including this one, without a symlink privilege the
+    # fixture cannot assume it has.
+    nondir = add_worktree(primary, "wt-nondir-nodemodules",
+                          "slice-nondir-nodemodules", first)
+    write(os.path.join(nondir, "node_modules"), "not a directory\n")
+    code, status = git(nondir, "status", "--porcelain")
+    check("a non-directory node_modules is fully ignored, the same as "
+          "a directory one",
+          status.strip() == "")
+    code, out = agent_init_park(nondir, state)
+    check("park succeeds over it rather than refusing an uncommitted "
+          "path",
+          code == 0)
 
     print("\n--- the plan survives one candidate it cannot walk ---")
 
