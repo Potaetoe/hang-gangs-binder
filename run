@@ -96,7 +96,10 @@ case "${1:-}" in
     # the branch so a landing needs no ref dance, releases the port
     # block, removes the scratch directory and writes the marker a
     # reaper proves this worktree dead from. It refuses on the primary
-    # checkout, and it refuses over uncommitted work.
+    # checkout, and it refuses over uncommitted work. Shifted for the
+    # same reason as agent-init above, and --verify matters more here:
+    # this is the destructive verb, so the flag documented as changing
+    # nothing has to change nothing on it.
     shift
     exec $PY tools/agent_init.py park "$@" ;;
   bootstrap)
@@ -137,6 +140,9 @@ usage: ./run <command>          (PowerShell: .\run <command>)
               no ref dance, release the port block, remove the scratch
               directory, and leave the marker a reaper can prove this
               worktree dead from
+              (--verify reports what parking would do and does none of
+              it - this verb is destructive, so the dry run is the one
+              an unsure agent reaches for)
   bootstrap   make a fresh checkout gate-ready (installs lint deps)
   build       write dist/ - apps/web with the comments taken out, which
               is what the deploy job publishes (committed; `check`
