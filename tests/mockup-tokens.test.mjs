@@ -129,9 +129,16 @@ function read(path) {
 
 const html = read(MOCKUP);
 const themeText = read(THEME);
-const styles = (html ?? "").match(/<style>([\s\S]*?)<\/style>/g) || [];
+/* Attribute-tolerant: a rendering <style media="screen"> or a stray
+   <style > (trailing space, still bare) is still a style element the
+   browser paints. The old bare-tag-only pattern let a second, attributed
+   tag arrive alongside the still-bare first one and go completely
+   unmeasured while every check stayed green - review-0.9-m0-s3-2026-08-13.md
+   F1. The `styles.length === 1` assertion just below is what turns that
+   into a red now that the count actually includes it. */
+const styles = (html ?? "").match(/<style[^>]*>([\s\S]*?)<\/style>/g) || [];
 const mockup = declarations(styles.map(
-  (s) => s.replace(/^<style>/, "").replace(/<\/style>$/, "")).join("\n"));
+  (s) => s.replace(/^<style[^>]*>/, "").replace(/<\/style>$/, "")).join("\n"));
 const theme = declarations(themeText ?? "");
 
 /*
@@ -198,7 +205,7 @@ const COVERED = {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 19;
+const EXPECTED = 20;
 let performed = 0;
 let failures = 0;
 
@@ -268,6 +275,26 @@ check("the mockup keeps its palettes in one style block",
   styles.length === 1 && mockup.size > 0,
   () => "found " + styles.length + " <style> blocks and " + mockup.size +
     " blocks declaring color tokens");
+
+/*
+ * The check above catches a second style block only because the mockup
+ * currently has none - it is the extraction pattern's COUNT that would
+ * have to notice, and a bare-tag-only pattern (review-0.9-m0-s3-2026-08-13
+ * .md, F1) does not: a still-rendering <style media="screen"> or a
+ * <style > with a trailing space smuggled a fifth palette past every
+ * check, unmeasured, while styles.length stayed 1. This proves the
+ * pattern itself is attribute-tolerant, in process, rather than relying
+ * on the mockup happening to grow a second tag before anyone notices the
+ * regression - which is exactly how F1 went unnoticed the first time.
+ */
+const styleTagProbe = "<style>a{color:red}</style>\n" +
+  "<style media=\"screen\">a{color:blue}</style>";
+const probeMatches = styleTagProbe.match(/<style[^>]*>([\s\S]*?)<\/style>/g)
+  || [];
+check("the style extraction counts an attributed <style> tag, not only a bare one",
+  probeMatches.length === 2,
+  () => "matched " + probeMatches.length +
+    " style element(s) in a 2-element probe (bare + attributed)");
 
 check("every palette named in the map is present in both files",
   PALETTES.every((p) => mockup.get(p.mockup) && theme.get(p.theme)),
