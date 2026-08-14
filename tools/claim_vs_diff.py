@@ -25,7 +25,12 @@ EXIT CODES, and nothing else decides them:
      A git-ops door check reading this abort naming the delta both
      directions.
   2  COULD NOT ASK - a ref does not resolve, the two refs share no
-     merge-base, or git did not answer inside the bound below. This is
+     merge-base, git did not answer inside the bound below, or the
+     declared list is empty against an empty diff and --allow-empty was
+     not passed (NOTHING DECLARED - review finding B3/S13-F3: "nothing
+     to compare" is not the same fact as "the declared set is exactly
+     the real diff", and it is what a forgotten --declared produces
+     too, so it is refused rather than read as a silent match). This is
      never conflated with 1: "the question could not be asked" and
      "the question was asked and the answer was no" are different
      facts, and a caller that greps for exit-nonzero-means-abort still
@@ -258,8 +263,19 @@ def parse_declared(text):
     return declared
 
 
-def compare(repo, branch, base, declared_text):
-    """("match" | "mismatch" | "error", the printable report)."""
+def compare(repo, branch, base, declared_text, allow_empty=False):
+    """("match" | "mismatch" | "error", the printable report).
+
+    `allow_empty` guards one specific collapse (review finding B3): an
+    empty declared list against a branch already contained in base
+    (merge_base == branch_sha, so the diff is empty too) used to read
+    as a real MATCH from two literally empty sets. "Nothing to compare"
+    is not the same fact as "the declared set is exactly the real
+    diff" - and an empty diff is exactly what an accidentally-empty
+    declaration (a forgotten --declared, a stdin fed nothing) would
+    also produce, so the two are refused together at exit 2 unless the
+    caller opts in explicitly.
+    """
     branch_sha, problem = resolve(repo, branch)
     if problem:
         return "error", "could not resolve branch %r: %s" % (branch,
@@ -294,6 +310,15 @@ def compare(repo, branch, base, declared_text):
         "TOUCHED-BUT-UNDECLARED (%d): %s"
         % (len(undeclared), ", ".join(undeclared) or "none"),
     ]
+    if not declared and not touched and not allow_empty:
+        lines.append(
+            "\nNOTHING DECLARED: the declared file list is empty and "
+            "the diff is empty too - this is never silently a match. "
+            "Pass --allow-empty if an empty declaration against an "
+            "empty diff is genuinely intended (e.g. a branch already "
+            "merged into base with nothing new to declare); otherwise "
+            "this reads as a forgotten declaration, not a real no-op.")
+        return "error", "\n".join(lines)
     if untouched or undeclared:
         lines.append("\nMISMATCH: the declared file list is not the real "
                      "diff. Abort the merge and ask what actually moved.")
@@ -320,6 +345,13 @@ def main(argv=None):
     parser.add_argument("--repo", default=None,
                         help="repository to run git in (default: this "
                              "file's own repository)")
+    parser.add_argument("--allow-empty", action="store_true",
+                        help="allow an empty declared list to match an "
+                             "empty diff. Default: refused at exit 2, "
+                             "naming 'nothing declared', since this "
+                             "combination is usually a forgotten "
+                             "declaration rather than a real no-op "
+                             "branch.")
     args = parser.parse_args(argv)
 
     repo = os.path.abspath(args.repo or os.path.dirname(
@@ -335,7 +367,8 @@ def main(argv=None):
         print("could not read the declared file list: %s" % problem)
         return 2
 
-    status, report = compare(repo, args.branch, args.base, declared_text)
+    status, report = compare(repo, args.branch, args.base, declared_text,
+                             allow_empty=args.allow_empty)
     print(report)
     return {"match": 0, "mismatch": 1, "error": 2}[status]
 

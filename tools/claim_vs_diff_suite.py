@@ -55,7 +55,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 28
+EXPECTED = 29
 
 
 def check(label, condition):
@@ -316,6 +316,11 @@ try:
     check("no diff and no declaration exits 2, naming 'nothing "
           "declared', never a silent match",
           code == 2 and "NOTHING DECLARED" in said)
+
+    code, said = run_tool(["slice-empty", "accounts", "--repo", primary,
+                           "--allow-empty"], stdin_text="")
+    check("--allow-empty opts back into treating it as a real match",
+          code == 0 and "MATCH" in said)
 
     print("\n--- the tool's own header carries the F10 extension note "
           "---")
