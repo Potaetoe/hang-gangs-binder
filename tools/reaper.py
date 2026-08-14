@@ -140,19 +140,31 @@ class Proof(object):
 def is_reparse(path):
     """Whether `path` is a link of any kind, asked two ways.
 
-    THE QUESTION THAT MUST BE ASKED BEFORE "is it a directory". A
-    Windows junction answers "yes" to a directory test and resolves
-    somewhere else entirely, so a walker that tests for a directory
-    first walks into the primary checkout's shared install and deletes
-    it.
+    THE QUESTION THAT MUST BE ASKED BEFORE "is it a directory", and the
+    measurements below are why - all four taken on this machine against
+    a real `mklink /J` junction, Python 3.14 on Windows, because every
+    one of them contradicts what the symlink-shaped reading of this
+    code would predict:
 
-    Two independent tests because they cover each other. `lstat`
-    reports a junction as a link on Python 3.8 and later, which is the
-    portable half; the reparse-point attribute bit is Windows's own
-    answer and covers a reparse tag Python does not map to a link at
-    all. Either one being true is enough - a guard over deletion is
+      os.path.islink                     False
+      lstat -> S_ISLNK                   False
+      st_file_attributes reparse bit     True
+      DirEntry.is_dir(follow_symlinks=False)  True
+
+    So a junction is NOT a symlink to this interpreter, and the entry
+    test every recursive walker reaches for says "ordinary directory"
+    about it. A walker that asks "is it a directory" first therefore
+    descends into the primary checkout's shared install and deletes it,
+    and the islink guard that looks like it prevents that does nothing
+    whatever on this platform.
+
+    Two independent tests because each covers where the other is blind:
+    S_ISLNK is the POSIX answer and catches a symlink, the reparse-point
+    attribute is Windows's own answer and catches the junction S_ISLNK
+    misses. Either being true is enough - a guard over deletion is
     written to over-report, and the cost of a false yes is a link
-    severed that did not have to be.
+    severed that did not have to be. An unreadable path answers yes for
+    the same reason.
     """
     try:
         info = os.lstat(path)
@@ -197,7 +209,11 @@ def _walk_links(root, sever):
 
     The loop asks `is_reparse` about every entry BEFORE it asks whether
     the entry is a directory, and only descends into what answered no.
-    That order is the whole safety property of this file.
+    That order is the whole safety property of this file, and it is not
+    belt-and-braces: `is_dir(follow_symlinks=False)` answers TRUE about
+    a junction here, so reversing these two lines is enough to walk into
+    a shared install. The suite hangs a second link inside the junction
+    target and reds if this walk ever reports it.
     """
     if is_reparse(root):
         raise ValueError("%s is itself a link; a walker that entered it "

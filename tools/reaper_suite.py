@@ -36,14 +36,25 @@ system temporary directory and swept afterwards, and the arm that
 proves the reaper refuses to delete outside its sanctioned roots is the
 arm that would notice if that stopped being true.
 
-THE SENTINEL IS THE POINT
+THE SENTINEL IS THE POINT, AND THE SECOND LINK IS THE EARLIER POINT
 
 `shared/sentinel.txt` sits behind the junction in the fixture and is
 read back after the reap. It stands for the primary checkout's
-`node_modules`, and its survival is the whole of the non-following
-requirement: `git worktree remove --force` follows a junction and
-deletes the target's contents, which is the field note this suite exists
-to keep true.
+`node_modules`, and its survival is the non-following requirement:
+`git worktree remove --force` follows a junction and deletes the
+target's contents, which is the field note this suite exists to keep
+true.
+
+A SECOND link, `shared/inner-link`, is hung inside that target, and it
+is the arm that decides. The sentinel says the DELETE did not follow;
+this says the WALK did not, one step earlier, and one step earlier is
+where the answer is settled. It matters because the walk's guard is
+counter-intuitive on this platform, measured here: a `mklink /J`
+junction answers False to `os.path.islink` and True to
+`DirEntry.is_dir(follow_symlinks=False)` on Python 3.14. So a junction
+looks like an ordinary directory to the test a recursive walker
+naturally reaches for, and the symlink guard that appears to prevent
+the accident does nothing at all.
 
 Self-contained on purpose: no import from dev/, no framework, no new
 dependency.
@@ -74,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 101
+EXPECTED = 103
 
 
 def check(label, condition):
@@ -136,7 +147,7 @@ def sweep_prior_roots(parent, keep, now=None):
         path = os.path.join(parent, name)
         if not name.startswith(PREFIX) or path == keep:
             continue
-        if not os.path.isdir(path) or os.path.islink(path):
+        if not os.path.isdir(path) or is_link(path):
             continue
         if now - os.path.getmtime(path) < STALE_AFTER:
             continue
@@ -171,6 +182,21 @@ def make_link(link, target):
     return True
 
 
+def is_link(path):
+    """Whether `path` is a link, asked of the PLATFORM.
+
+    Deliberately not `reaper.is_reparse`, though it answers the same
+    question: this is the walker the evidence for "a report changes
+    nothing" is computed with, and computing it from the module under
+    test would let one defect satisfy both sides. `os.path.isjunction`
+    is Python's own name for the case `islink` misses on Windows, and
+    asking the standard library is how this stays independent without
+    becoming a second copy of the reaper's guard.
+    """
+    return os.path.islink(path) or (
+        hasattr(os.path, "isjunction") and os.path.isjunction(path))
+
+
 def snapshot(root):
     """Every path under `root` with its size, never following a link.
 
@@ -184,7 +210,7 @@ def snapshot(root):
         here = stack.pop()
         for entry in sorted(os.scandir(here), key=lambda item: item.path):
             path = entry.path
-            if os.path.islink(path):
+            if is_link(path):
                 seen[path] = "link"
                 continue
             if entry.is_dir():
@@ -299,11 +325,27 @@ def find(items, kind, subject):
 
 
 def failed_proofs(item):
-    return [proof for proof in item["proofs"] if not proof.ok]
+    return [proof for proof in item["proofs"] if not proof.ok] if item else []
 
 
 def reason(item):
     return " ".join(proof.said for proof in failed_proofs(item))
+
+
+# The three accessors below tolerate a MISSING candidate rather than
+# raising on it, and that is about the mutation battery rather than
+# about tidiness. A mutation that makes the reaper eat something it
+# should have reported takes that candidate out of the next plan, and a
+# suite that raises there stops - so the remaining arms never run and
+# the mutation's real blast radius is hidden behind one traceback. The
+# sentinel value is a string no verdict can equal, so a vanished
+# candidate reds the arm that expected it instead.
+def verdict(item):
+    return item["verdict"] if item else "no candidate at all"
+
+
+def steps(item):
+    return item["plan"] if item else []
 
 
 # ----------------------------------------------------------------------
@@ -340,6 +382,14 @@ try:
     probe = os.path.join(root, "probe")
     os.makedirs(probe)
     linked = make_link(os.path.join(probe, "node_modules"), shared)
+    # A SECOND link, hung inside the junction TARGET. Nothing the walker
+    # is allowed to see, and the only thing that can tell a walk that
+    # stopped at the junction from one that went through it: the
+    # sentinel proves the delete did not follow, and this proves the
+    # WALK did not, which is one step earlier and the step that decides.
+    os.makedirs(os.path.join(shared, "inner"))
+    make_link(os.path.join(shared, "inner-link"),
+              os.path.join(shared, "inner"))
     check("the fixture could make a directory link", linked)
     check("a plain directory is not a reparse point",
           not reaper.is_reparse(probe))
@@ -350,6 +400,9 @@ try:
     check("the link resolves to the shared directory",
           os.path.realpath(os.path.join(probe, "node_modules"))
           == os.path.realpath(shared))
+    check("THE WALK NAMES THE LINK AND NOTHING BEHIND IT",
+          reaper.find_links(probe)
+          == [os.path.join(probe, "node_modules")])
     severed = reaper.sever_links(probe)
     check("severing names the link it removed",
           [os.path.basename(path) for path in severed] == ["node_modules"])
@@ -357,6 +410,8 @@ try:
           not os.path.exists(os.path.join(probe, "node_modules")))
     check("the sentinel BEHIND the link survives severing",
           os.path.isfile(os.path.join(shared, "sentinel.txt")))
+    check("the link BEHIND the link was never touched",
+          os.path.isdir(os.path.join(shared, "inner-link")))
     check("severing a tree with no links removes nothing",
           reaper.sever_links(probe) == [])
 
@@ -368,7 +423,7 @@ try:
     item = find(items, "parked worktree", landed)
     check("a parked worktree is a candidate", item is not None)
     check("every proof holds", item and not failed_proofs(item))
-    check("the verdict is reap", item and item["verdict"] == "reap")
+    check("the verdict is reap", verdict(item) == "reap")
     check("the ancestry proof names the mainline it proved against",
           item and any("accounts" in proof.said for proof in item["proofs"]
                        if proof.name == "branch"))
@@ -411,9 +466,9 @@ try:
     park(junctioned, state)
     items = reaper.plan(primary, state, roots)
     item = find(items, "parked worktree", junctioned)
-    check("the junctioned worktree is reapable", item["verdict"] == "reap")
+    check("the junctioned worktree is reapable", verdict(item) == "reap")
     check("the plan says the link will be severed rather than walked",
-          any("node_modules" in line for line in item["plan"]))
+          any("node_modules" in line for line in steps(item)))
 
     code, said = run_reaper(["--act", "--repo", primary, "--state", state,
                              "--roots", os.pathsep.join(roots)])
@@ -423,8 +478,9 @@ try:
     check("THE SENTINEL BEHIND THE JUNCTION SURVIVES",
           os.path.isfile(os.path.join(shared, "sentinel.txt")))
     check("the shared directory itself survives", os.path.isdir(shared))
-    check("the shared directory still holds exactly its sentinel",
-          sorted(os.listdir(shared)) == ["sentinel.txt"])
+    check("the shared directory is untouched, to the entry",
+          sorted(os.listdir(shared))
+          == ["inner", "inner-link", "sentinel.txt"])
 
     print("\n--- the live worktree is never touched ---")
 
@@ -456,7 +512,7 @@ try:
     items = reaper.plan(primary, state, roots)
     item = find(items, "parked worktree", leased)
     check("a leased worktree is still enumerated", item is not None)
-    check("its verdict is report, not reap", item["verdict"] == "report")
+    check("its verdict is report, not reap", verdict(item) == "report")
     check("the refusal names the lease", "8140" in reason(item))
     code, said = run_reaper(["--act", "--repo", primary, "--state", state,
                              "--roots", os.pathsep.join(roots)])
@@ -468,7 +524,7 @@ try:
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 leased)
     check("dropping the lease makes it reapable again",
-          item["verdict"] == "reap")
+          verdict(item) == "reap")
 
     print("\n--- the unprovable cases are reported, never deleted ---")
 
@@ -478,7 +534,7 @@ try:
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 dirty)
     check("a worktree that went dirty after parking is reported",
-          item["verdict"] == "report")
+          verdict(item) == "report")
     check("the refusal names the uncommitted path",
           "unsaved.txt" in reason(item))
 
@@ -488,7 +544,7 @@ try:
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 moved)
     check("a worktree whose HEAD moved after parking is reported",
-          item["verdict"] == "report")
+          verdict(item) == "report")
     check("the refusal names the certificate's head", "HEAD" in reason(item))
 
     slipped = add_worktree(primary, "wt-slipped", "slice-slipped", first)
@@ -497,7 +553,7 @@ try:
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 slipped)
     check("a branch that moved off its certificate's tip is reported",
-          item["verdict"] == "report")
+          verdict(item) == "report")
 
     unlanded = add_worktree(primary, "wt-unlanded", "slice-unlanded",
                             accounts)
@@ -508,7 +564,7 @@ try:
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 unlanded)
     check("a parked worktree carrying unlanded work is reported",
-          item["verdict"] == "report")
+          verdict(item) == "report")
     check("the refusal says the tip is not an ancestor of a mainline",
           "ancestor" in reason(item))
 
@@ -517,7 +573,7 @@ try:
     git(primary, "worktree", "lock", locked)
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 locked)
-    check("a locked worktree is reported", item["verdict"] == "report")
+    check("a locked worktree is reported", verdict(item) == "report")
     check("the refusal prints the unlock remedy",
           "worktree unlock" in reason(item))
 
@@ -541,7 +597,7 @@ try:
                 outside)
     check("a worktree outside the sanctioned roots is enumerated",
           item is not None)
-    check("its verdict is report", item["verdict"] == "report")
+    check("its verdict is report", verdict(item) == "report")
     check("the refusal names containment", "not under" in reason(item))
 
     # `<...>/worktrees-elsewhere` satisfies startswith("<...>/worktrees")
@@ -554,7 +610,7 @@ try:
     item = find(reaper.plan(primary, state, roots), "parked worktree",
                 sibling)
     check("a PREFIX-SIBLING of the sanctioned root is not contained",
-          item["verdict"] == "report")
+          verdict(item) == "report")
     check("the string test would have accepted it",
           os.path.abspath(sibling).startswith(roots[0]))
     check("`within` says otherwise", not reaper.within(sibling, roots[0]))
@@ -573,7 +629,7 @@ try:
     item = find(items, "vanished worktree", vanished)
     check("a registered worktree whose directory is gone is a candidate",
           item is not None)
-    check("its verdict is reap", item["verdict"] == "reap")
+    check("its verdict is reap", verdict(item) == "reap")
     check("it is NOT also a parked-worktree candidate",
           find(items, "parked worktree", vanished) is None)
     code, said = run_reaper(["--act", "--repo", primary, "--state", state,
