@@ -142,6 +142,13 @@ TRIPWIRES = [
     ("nobody's entries were read",
      "falsified 2026-08-13 - the secret that opens them is in the "
      "Worker, so an account compromise reaches plaintext"),
+    ("github pages serves static files",
+     "falsified 2026-08-14 - GitHub Pages retired; one Worker serves "
+     "the site and the API from the same origin (#228 hosting "
+     "addendum)"),
+    ("copied verbatim to github pages",
+     "falsified 2026-08-14 - the GitHub Pages deploy job is gone; "
+     "nothing publishes dist/ today"),
 ]
 
 # British spellings the 2026-08-06 decision settled against, as

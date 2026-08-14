@@ -113,13 +113,16 @@ jobs:
       # with the artifact it guards for reasons nobody would look for.
       #
       # It is gate tooling and never reaches the site. pyproject.toml
-      # says why that distinction holds: the deploy job copies dist/ and
-      # never looks at a sibling directory, so this sits in the same
-      # standing as ruff and eslint rather than anywhere near plaintext.
-      # (That job is gone as of 0.9-M0-S6, #286 - this job now also
-      # holds `contents: read` and cannot publish at all, which is the
-      # same standing by a stronger route; the citation above is
-      # pyproject.toml's own words, unedited, not this job's reason.)
+      # says why that distinction holds, in its own words: "Nothing
+      # under tools/ reaches the published site - only dist/ ships,
+      # and tools/ sits beside it as a sibling directory that never
+      # gets copied." Same standing as ruff and eslint, not anywhere
+      # near plaintext.
+      # (The deploy job that once copied dist/ is gone as of
+      # 0.9-M0-S6, #286 - this job now also holds `contents: read`
+      # and cannot publish at all, which is the same standing by a
+      # stronger route; the citation above is pyproject.toml's own
+      # words, unedited, not this job's reason.)
       - name: Install the gate's tooling
         run: |
           npm ci --ignore-scripts
