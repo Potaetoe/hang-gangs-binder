@@ -50,11 +50,24 @@
  * TWO WAYS TO GO GREEN WITHOUT CHECKING ANYTHING, both refused here.
  * Finding no arms is a red - a gate that passes because it swept an
  * empty directory is the armed-looking-but-not failure this project
- * holds to be worse than no gate. And a tests/**\/*.mjs that is not an
- * arm, not this file and not the preflight below is a red too: under
+ * holds to be worse than no gate. And ANY file under tests/ that is not
+ * an arm, not this file and not the preflight below is a red too: under
  * discovery the way coverage disappears is a file that stops matching
  * the pattern, which is the same hole #204 found in the old hand list
- * from the other side. Whether an arm ran ENOUGH is the arm's own job,
+ * from the other side.
+ *
+ * Any file, and the sweep is deliberately not itself a pattern. It
+ * looked at *.mjs first, which left half of its own sentence open:
+ * package.json says "type": "module", so tests/site-spec.test.js is a
+ * live arm - it loads, it runs, it passes - that this gate never calls
+ * again, and renaming one letter took forty-four checks out with every
+ * remaining arm green and no warning printed. A guard that only
+ * inspects the extension it is guarding cannot see a file leave by
+ * changing its extension. The cost is that tests/ holds arms and the
+ * two exemptions and nothing else: a fixture, a helper or a README
+ * wanted here needs its own line in NOT_ARMS, added by whoever needs
+ * it and argued for there, which is the point rather than the price.
+ * Whether an arm ran ENOUGH is the arm's own job,
  * and the site-* three do it by pinning their check counts; this
  * runner counts arms and never their contents, because a total kept
  * here would be a hand-pinned expectation in the one file that exists
@@ -108,14 +121,17 @@ const exists = async (path) => {
   } catch (error) { return false; }
 };
 
-/* Every .mjs under tests/, sorted, so the gate runs in one order
-   everywhere and a diff of two logs is about the arms. */
-async function everyModule(dir) {
+/* Every file under tests/, sorted, so the gate runs in one order
+   everywhere and a diff of two logs is about the arms. Every file and
+   not every .mjs: the arms are picked out of this list by suffix below,
+   and everything left over is the stray sweep, which has to see the
+   extensions it is not looking for or it cannot notice one leaving. */
+async function everyFile(dir) {
   const found = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = dir + entry.name;
-    if (entry.isDirectory()) found.push(...await everyModule(path + "/"));
-    else if (entry.name.endsWith(".mjs")) found.push(path);
+    if (entry.isDirectory()) found.push(...await everyFile(path + "/"));
+    else found.push(path);
   }
   return found.sort();
 }
@@ -181,9 +197,9 @@ if (await exists(ROOT + PREFLIGHT)) {
 }
 
 /* Stage one onward: the arms. */
-const modules = await everyModule(HERE);
-const arms = modules.filter((path) => path.endsWith(ARM_SUFFIX));
-const strays = modules.filter((path) =>
+const files = await everyFile(HERE);
+const arms = files.filter((path) => path.endsWith(ARM_SUFFIX));
+const strays = files.filter((path) =>
   !path.endsWith(ARM_SUFFIX) && !NOT_ARMS.has(rel(path)));
 
 console.log("");
@@ -202,9 +218,16 @@ for (const path of arms) {
 console.log("=".repeat(60));
 
 for (const path of strays) {
-  problems.push(rel(path));
-  console.log(rel(path) + " is in tests/ and nothing runs it. Name it " +
-    "*" + ARM_SUFFIX + " so the gate finds it, or take it out.");
+  const name = rel(path);
+  problems.push(name);
+  console.log(name + " is in tests/ and nothing runs it. Name it " +
+    "*" + ARM_SUFFIX + " so the gate finds it, or take it out." +
+    /* The near-miss is worth its own sentence, because it is the case
+       that arrives looking like a tidy-up rather than a deletion. */
+    (/\.test\.[^./]+$/.test(name)
+      ? " One suffix from being an arm is how coverage leaves quietly:" +
+        " a file this close still runs by hand and still passes."
+      : ""));
 }
 if (arms.length === 0) {
   problems.push("no arms");
