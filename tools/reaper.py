@@ -118,7 +118,7 @@ import sys
 # `within` is a second chance to hold the string version of it, and the
 # string version is the one that was measured deleting a real directory.
 import agent_init
-from agent_init import within, rmtree_hard
+from agent_init import rmtree_hard, within
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -251,7 +251,7 @@ def hold_back(items):
     return items
 
 
-class Proof(object):
+class Proof:
     """One named fact, whether it holds, and the sentence either way.
 
     A namedtuple would do, except that the sentence is the product here:
@@ -917,8 +917,8 @@ def act(repo, item, state=None, roots=None):
         try:
             rmtree_hard(path)
         except OSError as trouble:
-            return done + ["REPORTED: %s could NOT be deleted: %s"
-                           % (path, trouble)]
+            return [*done, "REPORTED: %s could NOT be deleted: %s"
+                    % (path, trouble)]
         done.append("deleted the directory %s" % path)
 
     git(repo, "worktree", "prune")
