@@ -96,7 +96,12 @@ The fields are:
                    AT PARK TIME - a fact with a timestamp on it, not a
                    licence, and the reaper recomputes it
   park.ports       the block released back to the lease pool
-  park.scratch     the scratch directory removed, or null
+  park.scratch     the scratch directory removed, or null - and null
+                   also covers the two cases park declines to act on:
+                   a record naming no scratch directory, and a path
+                   that failed the containment test below, which is
+                   REPORTED on the terminal and left on disk. The field
+                   says what was deleted and never what was found.
   park.at          when this was written
 
 Before deleting anything the reaper independently establishes, on the
@@ -116,11 +121,21 @@ WHAT THIS DELIBERATELY DOES NOT DO
 
 It does not create worktrees, delete them, or move a branch other than
 detaching HEAD in the worktree it is run in. It never runs the gate on
-the agent's behalf, and it never pushes. `--verify` mutates nothing at
-all, which is what makes it safe as a first stage of the gate: the
-apparatus slice consumes initialization_problems() below, or the exit
-status of `./run agent-init --verify`, to refuse an uninitialized
-worktree before spending forty stages on one.
+the agent's behalf, and it never pushes.
+
+`--verify` mutates nothing at all, ON EITHER VERB. That is what makes
+it safe as a first stage of the gate: the apparatus slice consumes
+initialization_problems() below, or the exit status of `./run
+agent-init --verify`, to refuse an uninitialized worktree before
+spending forty stages on one. On park it is the dry run of a
+destructive act, which is the flag an unsure agent reaches for, and it
+answers with the status park would give - a report is the only thing a
+question is allowed to cost.
+
+Nothing here deletes a path it cannot prove it owns. `within()` is that
+proof, and it is one function rather than a rule each teardown restates
+- see its own reasoning for why the obvious string test is wrong, and
+0.9-M0-S8's reaper for the same question at worktree size.
 """
 
 import argparse
@@ -130,6 +145,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -236,6 +252,70 @@ def write_json(path, data):
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(data, handle, indent=2, sort_keys=True)
         handle.write("\n")
+
+
+def within(path, root):
+    """Whether `path` lives inside `root` - a PATH test, not a string one.
+
+    THE CONTAINMENT PRIMITIVE. os.path.commonpath compares path
+    COMPONENTS, and that is the whole difference from a prefix test: a
+    SIBLING named `binder-scratch-elsewhere` satisfies
+    `startswith("binder-scratch")`, so a teardown built on the string
+    test recursively deletes a tree it does not own and prints that it
+    removed its own. It takes no malice to reach - the scratch root is
+    read from the environment at teardown time, so a root that differs
+    between one act and the next makes prefix collisions ordinary.
+
+    Both sides are resolved first, so the answer is about where the two
+    paths land rather than about how they are spelled.
+
+    The root is deliberately NOT inside itself. A record naming the root
+    would otherwise authorize deleting every agent's scratch directory
+    on the machine in one call, which is the same accident one size
+    larger.
+
+    0.9-M0-S8's reaper deletes whole worktrees out of records it did not
+    write, which is this question with a far larger blast radius. It
+    takes this function rather than writing a second one: two
+    containment tests are two chances to hold the string version.
+    """
+    try:
+        path = os.path.realpath(path)
+        root = os.path.realpath(root)
+        return path != root and os.path.commonpath([path, root]) == root
+    except (OSError, ValueError):
+        # Paths on different Windows drives have no common component and
+        # commonpath says so by raising. That is not containment, and a
+        # guard that raises where it cannot answer stops the caller
+        # instead of protecting it.
+        return False
+
+
+# shutil.rmtree's error callback was renamed when the signature changed
+# to carry the exception itself; both spellings take (function, path,
+# problem) here, so the name is all that varies.
+_RMTREE_HANDLER = "onexc" if sys.version_info >= (3, 12) else "onerror"
+
+
+def _clear_read_only(function, path, _problem):
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
+
+
+def rmtree_hard(path):
+    """A recursive delete that survives a read-only file, and still fails.
+
+    git writes loose objects read-only, so deleting any tree that holds
+    a repository raises PermissionError on Windows partway through.
+    `ignore_errors=True` answers that by hiding it: the directory
+    survives, the caller reports a clean teardown, and the residue
+    accumulates in a shared parent where the next reader cannot tell
+    whose it is. Clearing the bit and retrying is the actual repair, and
+    what is still undeletable afterwards is RAISED - a teardown nobody
+    can see fail is the failure this repository holds to be worse than a
+    loud one.
+    """
+    shutil.rmtree(path, **{_RMTREE_HANDLER: _clear_read_only})
 
 
 def git(repo, *args):
@@ -559,11 +639,10 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
     held = []
     for block in blocks:
         path = lease_path(block, state)
-        existing = read_json(path)
-        if existing and os.path.abspath(
-                existing.get("worktree", "")) == mine:
-            return hand_over(block, "already leased to this worktree")
-        if existing:
+        existing = read_lease(path)
+        if existing is not None:
+            if os.path.abspath(existing.get("worktree", "")) == mine:
+                return hand_over(block, "already leased to this worktree")
             why = lease_reclaimable(existing, repo, state)
             if why or reclaim:
                 superseded = existing.get("worktree", "an unnamed worktree")
@@ -578,23 +657,67 @@ def take_lease(repo, branch, state=None, requested=None, reclaim=False):
         except FileExistsError:
             # Lost the race between the read above and here. The other
             # agent holds it; try the next block.
-            held.append((block, read_json(path) or {}))
+            held.append((block, read_lease(path) or {}))
             continue
-        os.close(handle)
-        write_lease(path, mine, branch, block)
+        write_new_lease(handle, mine, branch, block)
         return hand_over(block, "newly leased")
 
     return None, lease_refusal(held)
 
 
-def write_lease(path, worktree, branch, block):
-    write_json(path, {
+def read_lease(path):
+    """The lease at `path` as a record, or None if there is no file there.
+
+    A file that exists and holds nothing readable answers as an EMPTY
+    record rather than as an absent one, and the difference between
+    those two answers is a port block. Creating the file and writing it
+    cannot be one instruction, so a kill in the gap leaves a zero-byte
+    lease; read_json cannot tell that from a missing file, and an
+    allocator that reads it as missing goes on to fail the exclusive
+    create against the file that is sitting right there - and treats the
+    block as taken by a holder no message can name.
+
+    An empty record is the input lease_reclaimable's first clause exists
+    for: it names no worktree, so nothing establishes a live holder, so
+    it is taken over and said out loud. Answering None here instead
+    would make an unreadable lease FREE, which is the opposite error and
+    the worse one - a live agent's block could be stolen by corrupting
+    its lease.
+    """
+    if not os.path.exists(path):
+        return None
+    existing = read_json(path)
+    return existing if isinstance(existing, dict) else {}
+
+
+def lease_record(worktree, branch, block):
+    return {
         "schema": SCHEMA,
         "block": list(block),
         "worktree": worktree,
         "branch": branch,
         "leased_at": now(),
-    })
+    }
+
+
+def write_lease(path, worktree, branch, block):
+    write_json(path, lease_record(worktree, branch, block))
+
+
+def write_new_lease(handle, worktree, branch, block):
+    """Fill a lease through the descriptor the exclusive create returned.
+
+    One open rather than an open, a close and a second open: the gap
+    between a lease existing and a lease being readable is the window
+    that produces a zero-byte lease, and closing the file only to
+    reopen it by name widens that window for no gain. It does not
+    ELIMINATE the window - no sequence of writes is proof against a
+    kill - which is why read_lease above still has to recover from it.
+    """
+    with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as file:
+        json.dump(lease_record(worktree, branch, block), file, indent=2,
+                  sort_keys=True)
+        file.write("\n")
 
 
 def blocks_as_text():
@@ -670,6 +793,20 @@ def take_scratch(branch, existing=None):
     os.makedirs(parent, exist_ok=True)
     slug = re.sub(r"[^A-Za-z0-9._-]", "-", branch or "detached")
     return tempfile.mkdtemp(prefix=slug + "-", dir=parent)
+
+
+def scratch_disposition(record):
+    """(the recorded scratch path, whether a teardown may delete it).
+
+    One answer, read by the dry run and by the act. A dry run that
+    computes its own version of a decision is a dry run that can
+    disagree with the verb it claims to describe, and the whole value of
+    the dry run is that it does not.
+    """
+    scratch = record.get("scratch")
+    if not scratch or not os.path.isdir(scratch):
+        return scratch, False
+    return scratch, within(scratch, scratch_root())
 
 
 def initialization_problems(repo=None, state=None):
@@ -981,6 +1118,72 @@ def print_contract(repo, kind, branch, block, note, scratch, state):
     print("\nre-run this verb any time; it is idempotent.")
 
 
+def describe_scratch(scratch, removed, refused, trouble):
+    """One line for what became of the scratch directory.
+
+    A refusal reads as a refusal rather than as "none to remove". The
+    path belongs to somebody, it is still on disk, and a teardown that
+    says nothing about a directory it declined to touch leaves it for
+    nobody to find.
+    """
+    if refused:
+        return ("REFUSED - %s is not under %s, so it is reported and left "
+                "alone." % (refused, scratch_root()))
+    if trouble:
+        return "%s could NOT be removed: %s" % (scratch, trouble)
+    return "%s removed" % scratch if removed else "none to remove"
+
+
+def report_park(repo, state, record):
+    """What `agent-park` would do here, having done none of it.
+
+    Every fact below is read. Nothing is detached, released, deleted or
+    written, which is the entire contract of the flag. The exit status
+    is park's own answer given in advance - 0 where it would park, 1
+    where it would refuse - so a script can ask the question without
+    taking the consequence, and so can an agent that is unsure.
+    """
+    print("=== agent-park --verify: what parking would do ===\n")
+    dirty = dirty_paths(repo)
+    if dirty is None:
+        print("park would REFUSE: git status could not be read in %s."
+              % repo)
+        return 1
+    if dirty:
+        print("park would REFUSE: %d uncommitted or untracked path(s): %s."
+              % (len(dirty), ", ".join(sorted(dirty)[:8])))
+        print("\nA parked worktree is one a reaper may delete, so parking "
+              "over uncommitted\nwork would be deleting it. Nothing here "
+              "has been changed.")
+        return 1
+    branch, tip = head_state(repo)
+    if tip is None:
+        print("park would REFUSE: HEAD in %s does not resolve to a commit."
+              % repo)
+        return 1
+    block = current_lease(repo, state)
+    scratch, may_remove = scratch_disposition(record)
+    if scratch and not os.path.isdir(scratch):
+        said = "%s is already gone; nothing would be removed" % scratch
+    elif scratch and may_remove:
+        said = "%s would be removed" % scratch
+    elif scratch:
+        said = ("%s would be REFUSED - it is not under %s"
+                % (scratch, scratch_root()))
+    else:
+        said = "none recorded"
+    print("branch       %s would be detached at %s"
+          % (branch or "none - HEAD is already detached", tip))
+    print("clean        yes - no uncommitted or untracked path")
+    print("ports        %s"
+          % ("%d-%d would be released" % block if block else "none held"))
+    print("scratch      %s" % said)
+    print("marker       %s would be written" % record_path(repo, state))
+    print("\nNothing has been changed. `./run agent-park` is what performs "
+          "it.")
+    return 0
+
+
 def do_park(args):
     repo = os.path.abspath(args.repo or REPO)
     state = args.state
@@ -995,8 +1198,24 @@ def do_park(args):
             "shared checkout off its branch." % repo,
             "park the worktree you were working in instead.")
 
-    print("=== agent-park: the death protocol ===\n")
     record = read_json(record_path(repo, state)) or {}
+
+    if args.verify:
+        # The dry-run form of the DESTRUCTIVE verb, and the reason it
+        # has to exist here as well as on init: --verify is documented
+        # as the flag that changes nothing, so it is the flag an agent
+        # reaches for when it is unsure - and being unsure about park is
+        # exactly the state in which the act must not happen. Ignoring
+        # it silently made the two consequential outcomes reachable by a
+        # question: a LIVE worktree's block goes back to a pool another
+        # agent allocates from, and the worktree acquires the death
+        # certificate the reaper deletes on.
+        #
+        # Nothing below this branch runs, because everything below this
+        # branch changes something.
+        return report_park(repo, state, record)
+
+    print("=== agent-park: the death protocol ===\n")
 
     dirty = dirty_paths(repo)
     if dirty is None:
@@ -1033,16 +1252,24 @@ def do_park(args):
     merged = code == 0
 
     released = release_lease(repo, state)
-    scratch = record.get("scratch")
+    # Only a directory under the root this verb makes them in, and
+    # `within` is what asks that as a question about paths. A teardown
+    # that deletes a path out of a record it did not write is a teardown
+    # that can delete anything, and a record this verb did not write is
+    # precisely the case the guard exists for.
+    scratch, may_remove = scratch_disposition(record)
     removed = False
+    refused = None
+    trouble = None
     if scratch and os.path.isdir(scratch):
-        # Only a directory this verb made, and only under the root it
-        # makes them in. A teardown that deletes a path out of a record
-        # it did not write is a teardown that can delete anything.
-        if os.path.abspath(scratch).startswith(os.path.abspath(
-                scratch_root())):
-            shutil.rmtree(scratch, ignore_errors=True)
+        if may_remove:
+            try:
+                rmtree_hard(scratch)
+            except OSError as problem:
+                trouble = problem
             removed = not os.path.isdir(scratch)
+        else:
+            refused = scratch
 
     record.update({
         "schema": SCHEMA,
@@ -1071,8 +1298,8 @@ def do_park(args):
           % ("an ancestor of" if merged else "NOT an ancestor of"))
     print("ports        %s"
           % ("%d-%d released" % released if released else "none held"))
-    print("scratch      %s"
-          % ("%s removed" % scratch if removed else "none to remove"))
+    print("scratch      %s" % describe_scratch(scratch, removed, refused,
+                                               trouble))
     print("marker       %s" % record_path(repo, state))
     print("\nThis worktree is now provably finished: its branch is free "
           "for a landing,\nits block is back in the pool, and the marker "
@@ -1095,8 +1322,9 @@ def main(argv=None):
                     "and print what the agent working in it is held to.")
     parser.add_argument("command", choices=["init", "park"])
     parser.add_argument("--verify", action="store_true",
-                        help="report whether this worktree is "
-                             "initialized and change nothing (init only)")
+                        help="change nothing and report: on init, "
+                             "whether this worktree is initialized; on "
+                             "park, what parking it would do")
     parser.add_argument("--ports", type=int, default=None,
                         help="request a specific block by its first port")
     parser.add_argument("--reclaim", action="store_true",
