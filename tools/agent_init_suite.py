@@ -58,6 +58,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -77,7 +78,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 68
+EXPECTED = 94
 
 
 def check(label, condition):
@@ -445,6 +446,55 @@ try:
           os.path.isfile(agent_init.lease_path(agent_init.PORT_BLOCKS[0],
                                                lease_state)))
 
+    # A lease file that exists and holds nothing readable is the state a
+    # death between creating the file and writing it leaves behind, and
+    # it is the one state no documented remedy reached: it names no
+    # holder, so nothing can prove it live, and a block treated as taken
+    # forever is a sixth of this fleet's ports gone per occurrence. It
+    # is reclaimable for the same reason it is dangerous - a lease that
+    # names nobody is a lease nobody can be shown to hold.
+    broken = os.path.join(base, "broken-lease-state")
+    os.makedirs(agent_init.leases_dir(broken), exist_ok=True)
+    first = agent_init.PORT_BLOCKS[0]
+    with open(agent_init.lease_path(first, broken), "wb"):
+        pass
+    asker = os.path.join(base, "asks-for-the-broken-block")
+    os.makedirs(asker, exist_ok=True)
+    taken, why = agent_init.take_lease(asker, "slice-z", broken, first[0])
+    check("a zero-byte lease is reclaimed rather than held forever",
+          taken == first)
+    check("and the reclaim says the lease named no holder",
+          "names no worktree" in why)
+    check("and what replaces it is readable, so the next reader is free",
+          (agent_init.read_json(agent_init.lease_path(first, broken))
+           or {}).get("worktree") == os.path.abspath(asker))
+
+    # The other direction, and the one that makes the repair safe: a
+    # lease naming a worktree that is on disk is not reclaimable, so
+    # taking over an unreadable one is not a licence to take any block.
+    second = agent_init.PORT_BLOCKS[1]
+    agent_init.write_lease(agent_init.lease_path(second, broken), repo,
+                           "slice-live", second)
+    check("a lease naming a live worktree is not reclaimable",
+          agent_init.lease_reclaimable(
+              agent_init.read_json(agent_init.lease_path(second, broken)),
+              asker, broken) is None)
+    denied, why = agent_init.take_lease(asker, "slice-z", broken, second[0])
+    check("and asking for its block is refused rather than granted",
+          denied is None and "leased" in why)
+
+    # The window that produces the state above: the lease is created and
+    # written, and a reader arriving between the two steps must not see
+    # an empty file. Reading back what a fresh lease holds is the only
+    # way to assert that from outside.
+    fresh = os.path.join(base, "fresh-lease-state")
+    third = agent_init.PORT_BLOCKS[2]
+    agent_init.take_lease(asker, "slice-z", fresh, third[0])
+    check("a lease is readable the moment it exists",
+          os.path.getsize(agent_init.lease_path(third, fresh)) > 0
+          and agent_init.read_json(
+              agent_init.lease_path(third, fresh)) is not None)
+
     # ------------------------------------------------------------------
     # G. The death protocol and the marker the reaper consumes.
     # ------------------------------------------------------------------
@@ -460,7 +510,38 @@ try:
     run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
     _, tip = agent_init.head_state(linked)
 
+    # --verify is the dry-run flag and park is the destructive verb, so
+    # an agent reaching for the safe form of the dangerous one must get
+    # the report and not the act. The two things a wrong answer costs
+    # here are exactly the consequential ones: a LIVE worktree's block
+    # goes back to a pool another agent allocates from, and the worktree
+    # acquires the death certificate a reaper deletes on.
+    live = load(agent_init.record_path(linked, state))
+    code, out = run_verb(["park", "--repo", linked, "--state", state,
+                          "--verify"])
+    check("park --verify answers 0 for a worktree it would park", code == 0)
+    check("and it says what it would do rather than doing it",
+          "would" in out)
+    check("and the record still says live",
+          load(agent_init.record_path(linked, state))["state"] == "live")
+    check("and the port block is still leased to this worktree",
+          agent_init.current_lease(linked, state) is not None)
+    check("and the scratch directory is still there",
+          os.path.isdir(live["scratch"]))
+    check("and the branch is still attached",
+          agent_init.head_state(linked)[0] == "slice-branch")
+
     write(os.path.join(linked, "unfinished.txt"), "work\n")
+    code, out = run_verb(["park", "--repo", linked, "--state", state,
+                          "--verify"])
+    check("park --verify answers 1 for a worktree it would refuse",
+          code == 1)
+    check("and names the uncommitted path in the refusal it reports",
+          "unfinished.txt" in out)
+    check("and changes nothing on the way to reporting a refusal",
+          load(agent_init.record_path(linked, state))["state"] == "live"
+          and agent_init.current_lease(linked, state) is not None)
+
     code, out = run_verb(["park", "--repo", linked, "--state", state])
     check("park refuses over uncommitted work", code == 1)
     check("and no marker is written for a worktree it refused",
@@ -494,6 +575,86 @@ try:
     twice = load(agent_init.record_path(linked, state))
     check("and the second park records the same tip",
           twice["park"]["tip"] == tip and twice["park"]["branch"] is None)
+
+    # ------------------------------------------------------------------
+    # H. What park may delete, and what it may not.
+    # ------------------------------------------------------------------
+    # Containment is a question about paths and `startswith` answers a
+    # question about strings: a SIBLING whose name merely begins with
+    # the root's name satisfies the string test, and a teardown that
+    # believes it is deleting its own scratch directory deletes
+    # somebody else's tree instead. It needs no malice to happen -
+    # BINDER_SCRATCH_ROOT is read at park time, so a root that differs
+    # between init and park makes prefix collisions ordinary - and the
+    # guard exists for exactly the case of a record this verb did not
+    # write, which is the case the string test fails on.
+    within = getattr(agent_init, "within", None)
+    check("agent_init exports a containment primitive", within is not None)
+    root = os.path.join(base, "root")
+    if within:
+        check("a child of the root is inside it",
+              within(os.path.join(root, "scratch-abc"), root))
+        check("a sibling that merely starts with the root's name is not",
+              not within(root + "-elsewhere", root))
+        check("and the root is not inside itself, so no teardown takes it",
+              not within(root, root))
+    else:
+        check("a child of the root is inside it", False)
+        check("a sibling that merely starts with the root's name is not",
+              False)
+        check("and the root is not inside itself, so no teardown takes it",
+              False)
+
+    # The same property through the verb, which is where it bites.
+    run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
+    sibling = os.path.join(os.environ["BINDER_SCRATCH_ROOT"] + "-elsewhere",
+                           "someone-elses-data")
+    write(os.path.join(sibling, "precious.txt"), "not this verb's to take\n")
+    record_file = agent_init.record_path(linked, state)
+    record = load(record_file)
+    record["scratch"] = sibling
+    save(record_file, record)
+    code, out = run_verb(["park", "--repo", linked, "--state", state])
+    check("park still parks a worktree whose scratch path it refuses",
+          code == 0)
+    check("and the path outside the root is still on disk",
+          os.path.isfile(os.path.join(sibling, "precious.txt")))
+    check("and it reports the refusal rather than printing it removed",
+          "REFUSED" in out and sibling in out)
+    check("and records no scratch removal it did not perform",
+          load(record_file)["park"]["scratch"] is None)
+    shutil.rmtree(os.path.dirname(sibling))
+
+    # A teardown that swallows what it cannot delete leaves a directory
+    # per run and says nothing. On Windows git writes loose objects
+    # read-only, which is the file shutil.rmtree raises on, and the
+    # suite building repositories was leaking its own root that way -
+    # the suite for the verb that cleans up being the thing not
+    # cleaning up.
+    rmtree_hard = getattr(agent_init, "rmtree_hard", None)
+    check("agent_init exports a teardown that survives a read-only file",
+          rmtree_hard is not None)
+    stubborn = os.path.join(base, "read-only-tree")
+    write(os.path.join(stubborn, "loose-object"), "written read-only\n")
+    os.chmod(os.path.join(stubborn, "loose-object"), stat.S_IREAD)
+    if rmtree_hard:
+        rmtree_hard(stubborn)
+        check("a tree holding a read-only file is removed, not left behind",
+              not os.path.isdir(stubborn))
+        raised = False
+        try:
+            rmtree_hard(os.path.join(base, "was-never-there"))
+        except OSError:
+            raised = True
+        check("and a teardown that cannot run says so instead of passing",
+              raised)
+    else:
+        os.chmod(os.path.join(stubborn, "loose-object"), stat.S_IWRITE)
+        shutil.rmtree(stubborn)
+        check("a tree holding a read-only file is removed, not left behind",
+              False)
+        check("and a teardown that cannot run says so instead of passing",
+              False)
 
 finally:
     shutil.rmtree(base, ignore_errors=True)
