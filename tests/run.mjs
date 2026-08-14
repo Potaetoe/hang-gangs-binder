@@ -132,6 +132,11 @@
  * preflight.mjs is expected to always be present from here on, and a
  * gate that quietly runs without it is the "armed-looking-but-not"
  * failure this file already refuses for the empty-directory case.
+ * PRESENCE IS NOT ENOUGH EITHER (review-0.9-m0-s7-2026-08-13, finding
+ * R2): an empty or gutted preflight is valid JavaScript that exits 0
+ * having checked nothing, so stage zero also requires the one line
+ * --verify's success path prints - see the vacuity guard where stage
+ * zero runs, below - the same refusal reached a second way.
  */
 import { readdir, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -224,13 +229,34 @@ console.log("the 0.9 gate - " + rel(HERE) + "\n");
 /* Stage zero: the seam. */
 if (await exists(ROOT + PREFLIGHT)) {
   const result = await runFile(ROOT + PREFLIGHT);
-  report(PREFLIGHT, result.code === 0, result.ms);
-  if (result.code !== 0) {
+  const verdict = verdictLine(result.output);
+  /* VACUITY GUARD (review-0.9-m0-s7-2026-08-13, finding R2). Absence is
+     hardened above into a red; a PRESENT-BUT-EMPTY (or otherwise
+     gutted) tests/preflight.mjs is valid, empty JavaScript, so it exits
+     0 having checked nothing - the criterion (file present, exit 0) is
+     met while the property (this worktree was actually verified) is
+     absent. The honest discriminator is evidence the check really ran,
+     not merely its exit code: do_init()'s --verify branch prints
+     "initialized: contract N, record ..." on its one success path
+     (tools/agent_init.py) and nothing else in this repository produces
+     that line, so its absence on an exit-0 run is graded the same
+     "armed-looking-but-not" way an empty arms directory already is
+     below - a red, not a note. */
+  const vacuous = result.code === 0 &&
+    !verdict.startsWith("initialized: contract ");
+  const ok = result.code === 0 && !vacuous;
+  report(PREFLIGHT, ok, result.ms);
+  if (!ok) {
     spill(PREFLIGHT, result);
-    console.log("\npreflight is red, so no arm ran. Fix that first.");
+    console.log(vacuous
+      ? "\npreflight exited 0 without printing --verify's own success " +
+        "line, so it is graded vacuous rather than green - a check " +
+        "that ran and a file that merely exited 0 are not the same " +
+        "thing. Fix that first."
+      : "\npreflight is red, so no arm ran. Fix that first.");
     process.exit(1);
   }
-  console.log("    " + verdictLine(result.output));
+  console.log("    " + verdict);
 } else {
   console.log(PREFLIGHT + " is missing. It is expected to always be " +
     "present - 0.9-M0-S7 (#287) wired it to tools/agent_init.py's " +
@@ -263,14 +289,28 @@ console.log("=".repeat(60));
 for (const path of strays) {
   const name = rel(path);
   problems.push(name);
-  console.log(name + " is in tests/ and nothing runs it. Name it " +
-    "*" + ARM_SUFFIX + " so the gate finds it, or take it out." +
-    /* The near-miss is worth its own sentence, because it is the case
-       that arrives looking like a tidy-up rather than a deletion. */
-    (/\.test\.[^./]+$/.test(name)
-      ? " One suffix from being an arm is how coverage leaves quietly:" +
-        " a file this close still runs by hand and still passes."
-      : ""));
+  /* A stray .py gets its OWN message (review-0.9-m0-s7-2026-08-13,
+     finding R3): the generic line below told a Python suite author to
+     rename to *.test.mjs, which is the opposite of the shim convention
+     this file's own header documents two screens up - renaming
+     produces a broken arm (node cannot run a .py file), not a working
+     one. The correct move is a shim beside the module, which is what
+     tests/worktree-contract.test.mjs already is. */
+  console.log(name.endsWith(".py")
+    ? name + " is in tests/ and nothing runs it. A .py suite here " +
+      "wants a shim, not a rename: leave it beside the module it " +
+      "tests and add a five-line *" + ARM_SUFFIX + " that shells out " +
+      "to it - tests/worktree-contract.test.mjs is the pattern."
+    : name + " is in tests/ and nothing runs it. Name it " +
+      "*" + ARM_SUFFIX + " so the gate finds it, or take it out." +
+      /* The near-miss is worth its own sentence, because it is the
+         case that arrives looking like a tidy-up rather than a
+         deletion. */
+      (/\.test\.[^./]+$/.test(name)
+        ? " One suffix from being an arm is how coverage leaves " +
+          "quietly: a file this close still runs by hand and still " +
+          "passes."
+        : ""));
 }
 if (arms.length === 0) {
   problems.push("no arms");

@@ -97,14 +97,43 @@ rem -arguments trap the top comment describes does not apply here.
 if defined RUN_CMD_AGENT_INIT_VIA_COPY goto :agent_init_run
 setlocal EnableDelayedExpansion
 set "RUN_CMD_AGENT_INIT_VIA_COPY=1"
-set "RUN_CMD_AGENT_INIT_COPY=%TEMP%\hgb-run-agent-init-copy.cmd"
+rem UNIQUE PER INVOCATION - fixes the collision review-0.9-m0-s7-2026-
+rem 08-13 found and reproduced live (finding R1). A fixed %TEMP% path
+rem is the same file for every worktree on the machine, and this fleet
+rem runs several agents at once: while agent A's cmd.exe holds that
+rem path open for the whole runtime of agent-init (npm ci included),
+rem agent B's `copy /y` overwrites it under A - Windows allows the
+rem overwrite, so the `if errorlevel 1` guard below never fires, and A
+rem desyncs against bytes it never asked to run, reporting EXITCODE=0
+rem having initialized nothing. The worktree directory's own name is
+rem already distinct per agent - only one worktree may hold a given
+rem branch (the checkout contract above) - so it alone kills the
+rem cross-worktree case the review measured; %RANDOM% is layered on
+rem top only for the narrower case of two invocations racing inside
+rem the SAME worktree, which the directory tag alone cannot separate.
+for %%W in ("%RUN_CMD_REPO%") do set "RUN_CMD_AGENT_INIT_TAG=%%~nW"
+set "RUN_CMD_AGENT_INIT_COPY=%TEMP%\hgb-run-agent-init-copy-%RUN_CMD_AGENT_INIT_TAG%-%RANDOM%.cmd"
 copy /y "%~f0" "%RUN_CMD_AGENT_INIT_COPY%" >nul
 if errorlevel 1 (
   echo Could not stage a safe copy of run.cmd for agent-init - refusing
   echo rather than risk this file rewriting itself while still read.
   exit /b 1
 )
-call "%RUN_CMD_AGENT_INIT_COPY%" agent-init %2 %3 %4 & exit /b !ERRORLEVEL!
+rem The whole sequence after the risky call stays on this ONE line, on
+rem purpose, for the same read-ahead reason argued above: cmd.exe
+rem buffers a full physical line before executing anything on it, so
+rem this line's bytes are already read before `call` can trigger the
+rem rewrite the copy exists to survive. Splitting the cleanup onto its
+rem own line would read that line AFTER the call returns - from
+rem whatever this file has become by then - which is the exact desync
+rem this comment block exists to prevent. The status is saved to a
+rem name of its own BEFORE the best-effort `del` runs (finding R4), so
+rem a delete that fails (permissions, another process still holding the
+rem copy) can never overwrite the real exit code with its own. Never
+rem masking the real exit code is the whole point of doing this at all
+rem - deleting is cleanup, not part of the contract, so its own success
+rem or failure stays off the screen and off the exit code both.
+call "%RUN_CMD_AGENT_INIT_COPY%" agent-init %2 %3 %4 & set "RUN_CMD_AGENT_INIT_STATUS=!ERRORLEVEL!" & del /f /q "%RUN_CMD_AGENT_INIT_COPY%" >nul 2>nul & exit /b !RUN_CMD_AGENT_INIT_STATUS!
 
 :agent_init_run
 rem Reached only inside the copy, which is never a renormalization
