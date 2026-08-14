@@ -22,11 +22,35 @@ this file does not cover is judged by it.
 
 ## The constraint that shapes everything
 
-GitHub Pages serves static files. There is no server on the page, so
-there is no place on the page to keep a secret and no place on the page
-to enforce anything: whatever the page holds is in View Source, and a
-static site cannot gate a static page. Everything that needs either is
-the Worker.
+The site is still just static files: whatever a page holds is in View
+Source, and a static page cannot gate itself or keep a secret.
+Everything that needs either is the Worker.
+
+What the 0.9 hosting ruling (#228, 2026-08-13) changed is who serves
+those files and from where. **One Cloudflare Worker serves the static
+site and the API from the same origin** — Workers static assets for the
+pages, the Worker's own routes for everything that reads or writes —
+replacing the GitHub Pages-plus-separate-Worker split. One deployable,
+one `wrangler deploy`, no CORS, and the `ALLOWED_ORIGINS` github.io pin
+dies with it. **GitHub Pages retired outright, ahead of 1.0**: the
+owner moved the retirement up the day it was ruled and took the live
+deployment down, because nobody had used the site and there was nothing
+to lose by waiting for the cutover. `README.md`'s Status box carries the
+live fact; this section is the shape, not the schedule.
+
+**One Worker codebase, two environments: `sit` and production.** Same
+bytes, different bindings — each environment gets its own D1 database
+and its own bot secrets. `sit` is where every non-production act
+happens against a real bot and real persistence with zero risk to
+production data; the name replaces the pre-0.9 `dev` environment at M1,
+when the Worker that has environments to name is actually built. Until
+then `server/wrangler.toml` still carries the single `[env.dev]` this
+paragraph describes replacing — a ruled shape, not yet a deployed one.
+
+Subdomains (`workers.dev`, `pages.dev`) carry the whole wave; the custom
+domain is a cutover act. The production origin is noindexed and sends
+no-referrer, the same posture the demo and mockup previews already
+carry — a private-group site is not meant to be crawled or linked from.
 
 ```
   member's browser            Cloudflare Worker + D1        admin's browser
@@ -100,7 +124,18 @@ current membership in the gang's group, checked with the bot; the
 roster syncs from it; leaving the group removes site access. There is
 no site-side ban machinery and there will not be one — removing
 somebody means removing them in Telegram, which is where the group
-already does it.
+already does it. **Removal-to-lockout is a Constant tied to sweep
+cadence, not instant** (#294 F6, ruled 2026-08-14): a departed member's
+sessions end at the Worker's next verification sweep, and an admin
+surface additionally re-checks per request rather than waiting on the
+sweep alone.
+
+**Group composition, in the owner's own words (#294, 2026-08-14): "All
+members of the group are 18+ and it's verified before given
+entrance."** Group-side verification is the age gate; membership
+implies verified adulthood, so nothing on this site re-derives it. The
+form's own over-18 attestation remains as the door's assertion in
+addition, not instead — exact register wording lands at the M4 sitting.
 
 **Admins mirror Telegram admins.** Whoever administers the Telegram
 group is a site Admin, automatically. All admins are equal and hold
@@ -119,7 +154,11 @@ answer, the Worker trusts the last verified roster for a bounded
 window. Members never bounce off an API hiccup, and **"cannot check" is
 never treated as "not a member"** — that sentence governs every place
 the roster is consulted, including the leaver countdown under "Admin
-accounts and deletion".
+accounts and deletion". **The window is 24 hours by default, then the
+cache fails closed** (#294 F6, ruled 2026-08-14): a new sign-in past the
+window is refused honestly rather than trusted on stale data, while a
+session already open lives on to its own idle expiry. A Setting, not a
+constant — an admin may shorten or lengthen it.
 
 ### The identifier is the whole problem
 
@@ -168,6 +207,22 @@ authentication:
    covers sign-ins while a new bot settles.
 4. **The rotation procedure ships with 0.9-M1**, in `OPERATIONS.md`,
    written against the Worker that exists then.
+
+**Two bots exist by design, split by world (#228 Worker-topology
+addendum, 2026-08-13).** One bot plus a small test Telegram group is
+the membership truth for `sit`, permanently — not a stand-in but the
+environment's own bot. A second bot plus the real group serves
+production, arriving at 1.0; standing it up and cutting over to it is
+what exercises the rotation procedure above for the first time, on
+purpose, as a cutover step rather than an emergency.
+
+**The production bot is granted group-admin (#294 F5, ruled
+2026-08-14).** `chat_member` leave events are the primary membership
+signal; a per-id verification sweep is the fallback for whatever the
+event stream misses. Purge clocks arm only off a **verified** signal —
+an event or a sweep result — never off silence; "Bot failure stance"
+below is what that protects. M1's first slice verifies these platform
+claims against a live bot before anything is built on them.
 
 ### Sessions
 
@@ -233,9 +288,28 @@ sooner; re-adding the person in Telegram inside the window restores
 them and their data reattaches. Two guards, both of them about the
 failure modes rather than the happy path: **"cannot check" never starts
 a clock**, and a mass-departure anomaly freezes the countdowns rather
-than arming them all at once. The window's length is a group setting;
-its ruled default is 30 days, stated with the other Settings defaults
-under **Admin surfaces** below.
+than arming them all at once — **ruled 2026-08-14 (#294 F6) at 3 or
+more departures in one sweep, or more than 25% of the roster, whichever
+fires first, and raises `needs-owner` when it does.** Both the window
+and the mass-departure threshold are Settings, editable by an admin. The
+window's ruled default is 30 days, stated with the other Settings
+defaults under **Admin surfaces** below.
+
+**A member sees a pre-leave notice before they act (#294 F3, ruled
+2026-08-14): delete your own rows before you leave, or ask an admin
+after.** This is a mechanism note, not the shipped copy — the exact
+wording is authored at the M4 register sitting, and this line only
+fixes that member surfaces carry the reminder and that the guarded
+window and restore-on-rejoin above are unchanged by it.
+
+**Every admin deletion writes an append-only, admin-visible action
+line: who deleted what, when (#294 F4, ruled 2026-08-14).** M1 carries
+the line's schema; M3 carries its display. **Backups are a ruled
+obligation, not a suggestion**, on the same ruling: the first rehearsal
+happens before the first real entry is ever stored, and the cadence is
+displayed beside bot health on the Settings page rather than living
+only in `OPERATIONS.md`. No specific cadence number was ruled — the
+obligation and its visibility were.
 
 ## Your page
 
@@ -457,11 +531,11 @@ Worker's secret.
   read every entry. This is the ruled trade, it is the largest item on
   this list, and no sentence anywhere in the product may imply
   otherwise.
-- **Anyone who can write to the repository or the Pages deployment.**
-  They change what the page does, silently. Mitigations raise effort
-  and make it detectable, not impossible: `main` is a protected branch
-  with admins included, and the published directory is committed so
-  what ships arrives in a diff somebody read.
+- **Anyone who can write to the repository or deploy the Worker.** They
+  change what the page does, silently. Mitigations raise effort and
+  make it detectable, not impossible: `main` is a protected branch with
+  admins included, and the directory that ships is committed so what
+  ships arrives in a diff somebody read.
 - **A member lying**, including about their own measurements. Sign-in
   verifies who is writing, not what they write.
 - **A Telegram group that hands out admin lightly.** Admin mirrors the
@@ -509,6 +583,10 @@ Worker's secret.
   data is on screen.
 - **No rate limiting** — writing costs membership of one Telegram
   group, which is a stronger lock than an account was.
+- **No standing data-request playbook.** Ruled 2026-08-14 (#294): a
+  legal or personal data request is handled ad hoc — an explicit owner
+  acceptance of that gap rather than an oversight, and the owner
+  decides case by case if one ever arrives.
 
 ## Rejected alternatives, so they are not re-proposed
 

@@ -15,11 +15,13 @@ rather than implying otherwise — the honest statement of what is and is
 not protected is [DESIGN.md](DESIGN.md), "Threat model, honestly
 stated".
 
-> **Status.** 0.9 — the keyless design — is being built on the
-> `accounts` branch, and none of it is deployed. The live site still
-> runs the last complete release. Version 1.0 is the cutover; until
-> then what a visitor sees is unchanged on purpose, because the site is
-> always the last complete release and never a half-state.
+> **Status.** There is no live site today. GitHub Pages was taken down
+> by owner order on 2026-08-14, ahead of the 1.0 cutover it was first
+> scheduled for — nobody had used the site, so nothing was lost by not
+> waiting. 0.9, the keyless design, is being built on the `accounts`
+> branch. Version 1.0 is the cutover: it deploys the new world, one
+> Cloudflare Worker serving the site and the API from the same origin,
+> and is the first time anything ships again.
 
 The operative documents, and what each answers:
 
@@ -70,15 +72,19 @@ Three things worth knowing before your first preview:
   never production.** An unknown hostname gets no endpoint at all — the
   page refuses rather than guessing.
 - **Telegram sign-in cannot work on localhost.** BotFather binds the
-  widget to `potaetoe.github.io`. Local work signs in through the
-  Worker's development route instead, and every page shows a banner
-  while a development session is in use. See
-  [OPERATIONS.md](OPERATIONS.md).
+  sign-in widget to a registered production domain, never to
+  `localhost` or an IP. Local work signs in through the Worker's
+  development route instead, and every page shows a banner while a
+  development session is in use. See [OPERATIONS.md](OPERATIONS.md).
 
 Serve the files rather than opening them: a `file://` URL is not
 reliably a secure context.
 
 ## Checks
+
+A fresh checkout runs `./run agent-init` first — it renormalizes line
+endings, installs dependencies, leases a scratch space and prints the
+contract an agent session is held to (0.9-M0-S5, #283).
 
 ```bash
 ./run check
@@ -89,8 +95,8 @@ its own list. Report the totals it prints, never a remembered count.
 
 *This gate is transitional*: it guards the surfaces that still exist
 and retires with them, while 0.9's work is tested in a new apparatus
-under `tests/` (0.9-M0-S4, #281). Both run in CI through the
-transition; `AGENTS.md`, "Verification", is the rule.
+under `tests/`, run with `./run gate` (0.9-M0-S4, #281). Both run in CI
+through the transition; `AGENTS.md`, "Verification", is the rule.
 
 ## Repository layout
 
@@ -98,7 +104,7 @@ transition; `AGENTS.md`, "Verification", is the rule.
 apps/site.config.js  the one data file - the group's name and its fields
 apps/fields.js       the only reader of it; everything else asks this
 apps/web/            the site you edit - the source every fix belongs in
-dist/                the site that is published - ./run build writes it (#181)
+dist/                the site that would ship - ./run build writes it (#181)
 server/              the Cloudflare Worker and its schema, deployed by hand
 tests/               0.9's test apparatus (#281); never published
 tools/               the transitional gate's checks; never published
@@ -107,16 +113,17 @@ archive/             the pre-2026-08-08 documentation system, frozen
 ```
 
 The two files at the top of `apps/` are source and are **not** part of
-the published site: `apps/web/` is what ships, and the pair beside it is
-what 0.9's pages will derive from.
+what ships: `apps/web/` is what ships, and the pair beside it is what
+0.9's pages will derive from.
 
-`dist/` is copied verbatim to GitHub Pages, and it is committed rather
-than produced during the release — so what ships is in a diff somebody
-read, and nothing can fail to be stripped at a moment nobody is
-watching. It is `apps/web` with the comments taken out of the CSS and
-the scripts (`./run build`, #181); the gate refuses a `dist/` that is
-not what `apps/web` builds to, in either direction. Anything that
-should not be public simply does not live in either directory.
+`dist/` is the site that would ship, and it is committed rather than
+produced during the release — so what ships is in a diff somebody read,
+and nothing can fail to be stripped at a moment nobody is watching. It
+is `apps/web` with the comments taken out of the CSS and the scripts
+(`./run build`, #181); the gate refuses a `dist/` that is not what
+`apps/web` builds to, in either direction. Anything that should not be
+public simply does not live in either directory. Nothing publishes it
+today — see the Status box above.
 
 **A fork edits `apps/site.config.js`** — its own name and its own
 fields — and one more thing that has not moved yet:
@@ -128,30 +135,36 @@ fails the build rather than letting that ship.
 
 ## Deploying
 
-**A push to `main` is a release.** CI runs the checks and publishes the
-committed `dist/` if they pass — it copies that directory and builds
-nothing, which is why what ships is always something a reviewer read.
-While 0.9 is being built, work goes to `accounts`, which publishes
-nothing.
+**Nothing publishes on a push to `main` today.** `main` is a protected
+branch and CI runs both gates on it, but the GitHub Pages deploy job
+that used to copy `dist/` on every push retired on 2026-08-14, ahead of
+the 1.0 cutover it was first scheduled for — see the Status box above.
+Work goes to `accounts` until then, publishing nothing either way.
+
+At 1.0 the release becomes `npx wrangler deploy` against the production
+Worker — see [OPERATIONS.md](OPERATIONS.md), "Deploying the Worker" —
+one command, by hand, for the site and the API together, since both
+ship from the same Worker. This section is updated when that is the
+shipped procedure rather than the ruled one.
 
 ### `main` is frozen, and how to fix production anyway
 
-If something is wrong with the live site right now:
+**This procedure describes the 1.0 world and does not apply while
+nothing is live** — there is no production to hotfix until the cutover
+ships it. Written now so it exists when it is needed:
+
+If something is wrong with the live site:
 
 1. Branch from `main`: `git fetch origin && git checkout -b
    hotfix-<what> origin/main`
 2. Make the **smallest change that fixes the thing** — not the correct
    change, not the tidy one.
-3. **Read what will change on the live site, which is the directory the
-   release publishes and not the one you edited.** If the branch
-   carries a `dist/`, the fix still belongs in `apps/web` and
-   `./run build` is what carries it across — run the build, then the
-   gate, then `git diff --stat origin/main -- dist`. Skipping the build
-   fails the "dist is the build of apps/web" stage (#181) at the worst
-   possible moment. If the branch has no `dist/`, that release
-   publishes `apps/web` and that is the diff to read; the `Build the
-   site` step in `.github/workflows/deploy.yml` on the branch you are
-   fixing settles which of the two you are looking at.
+3. **Read what will change, which is `dist/`** — the directory the
+   release publishes, never `apps/web` directly. The fix still belongs
+   in `apps/web`; `./run build` is what carries it across. Run the
+   build, then the gate, then `git diff --stat origin/main -- dist` to
+   see the actual diff. Skipping the build fails the "dist is the build
+   of apps/web" stage (#181) at the worst possible moment.
 4. Open a pull request against `main` so CI runs before the merge, then
    merge. Merging is the release.
 5. **Cherry-pick the fix to `accounts`.** This is the step that gets
@@ -159,8 +172,10 @@ If something is wrong with the live site right now:
    `accounts` disappears the day 0.9 merges, with every check green.
    Run `./run build` there before pushing if the two branches disagree
    about `dist/`.
-6. Confirm the live site actually changed:
-   `curl -sI https://potaetoe.github.io/hang-gangs-binder/ | grep -i last-modified`
+6. Confirm the live site actually changed: `curl` the site's current
+   origin with `-sI` and read the response, per [OPERATIONS.md](OPERATIONS.md),
+   "Checking a deployment" — there is no fixed URL to hard-code here
+   the way `potaetoe.github.io` once was.
 
 **Owner present.** A hotfix is a live release, the same category as
 deploying the Worker.

@@ -16,14 +16,23 @@ in them.
 
 | Piece | Where | Deployed by |
 | --- | --- | --- |
-| The site (`apps/web`) | GitHub Pages, `potaetoe.github.io/hang-gangs-binder` | CI, on push to `main` |
 | The Worker (`server/worker.js`) | `hgbinderworker.sorcererbiggz.workers.dev` | by hand, `npx wrangler deploy` from `server/` |
 | The database | D1 `hg_binder_db` | schema by hand, `wrangler d1 execute` |
 | Development pair | `hgbinderworker-dev` + `hg_binder_db_dev` | the same commands with `--env dev` |
 
-The site and the Worker deploy independently, so the repository and the
-endpoint can disagree. "Checking a deployment" below is how to learn
-which Worker is actually answering, from fact rather than from memory.
+**The site has nowhere to run today.** GitHub Pages retired outright on
+2026-08-14 (owner order, moved up from the 1.0 cutover it was first
+scheduled for) — the deploy job is gone from
+`.github/workflows/deploy.yml` and the Pages configuration is deleted
+at the repository. Nothing serves `apps/web` until 0.9-M1 builds the
+Worker's static-asset serving; at 1.0 the row above for the Worker is
+also the site's row, one origin and one deploy command for both. See
+`README.md`'s Status box for the live fact and `DESIGN.md`, "The
+constraint that shapes everything", for the ruled shape.
+
+*Until 0.9-M1 lands*, the development pair above is named `dev`; the
+ruled name is `sit` (`DESIGN.md`, same section), and the slice that
+builds the environment is what renames this table.
 
 ## The routes
 
@@ -134,9 +143,10 @@ a session, with the site's `Origin` header set.
 | a 404 | that Worker does not have this route: an older build is deployed |
 | a 500 | a table the route reads is missing |
 
-Send `Origin: https://potaetoe.github.io` on production and the
-localhost origin on development, and read the exact status rather than
-the body.
+Send the site's own origin — the Worker's `workers.dev` subdomain until
+1.0 registers a custom domain — and the localhost origin on `sit`, and
+read the exact status rather than the body. There is no production
+origin to probe today; "What runs where" above is the live fact.
 
 What no local test can see: that the database binding is bound, the
 secrets are set, and the tables exist. A Worker missing any of them

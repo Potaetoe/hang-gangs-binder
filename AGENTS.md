@@ -171,6 +171,11 @@ shrinking, the new one growing. The old runner retires when its last
 surface does. Read an old check as evidence about the code it still
 guards, never as the pattern for a new one.
 
+- **`./run agent-init` is the first command in a fresh worktree** (or on
+  the primary checkout), before either gate: it renormalizes line
+  endings, installs dependencies, leases a scratch space and proves one
+  gate stage runs (0.9-M0-S5, #283). A red observed before it ran is
+  evidence about nothing.
 - Run both gates before any handoff, and report the exact totals each
   prints — never a remembered count, and never "tests pass". The old
   one is `./run check` (or `py -3 tools/check.py`).
@@ -180,15 +185,24 @@ guards, never as the pattern for a new one.
   the handoff. `tools/check.py` is the old runner's single registry,
   which CI runs whole as one step; a retirement edits it in the same
   change that removes the surface.
-- **`tests/` is deliberately unregistered until #281 wires its
-  runner**, and that is the one place the registration rule is
-  suspended rather than met. Its suites are plain `node tests/<file>`
-  entry points that import nothing from `dev/`, run by hand, and the
-  slice that builds the runner adopts them by moving a file. Registering
-  them in the dying runner would be the re-use the owner ruled against,
-  so a 0.9 suite states in its handoff that it was run by hand and how
-  — an unregistered check reported as gated is the failure this bullet
-  exists to prevent.
+- **`tests/` has its own runner now** (0.9-M0-S4, #281, landed):
+  `node tests/run.mjs`, or `./run gate`. An arm declares itself by being
+  `tests/<name>.test.mjs`; the runner discovers it by walking the
+  directory, so adopting a suite already there took zero edits and zero
+  moves — no registry to update by hand. Zero arms found is a failure,
+  and so is a stray file under `tests/` that is not an arm, the runner
+  or the preflight seam; both are the armed-looking-but-not failure this
+  repository holds to be worse than no gate. CI runs it beside the old
+  gate (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it
+  is registered exactly where its apparatus registers checks — nothing
+  here is the registration-suspended exception it once was.
+- **A fix wave's claimed red→greens are re-fired by an agent who did
+  not author the fix, before any landing order issues** (owner ruling
+  A1, audit finding F1, 2026-08-14). A fix wave's own probes already
+  exist, so this is minutes of re-running them, not a second review —
+  but it is not optional: a landing order that includes a fix-wave head
+  names the re-fire verification it rests on, or it is malformed. This
+  is the code half; the pack carries the spawn-side mechanics.
 - Mutation is necessary and not sufficient. A mutation only asks "does
   this check enforce what it says?", never "is this the right thing to
   enforce?" — the review bar below is what answers that.
@@ -245,22 +259,26 @@ implemented it. Say which it is.
   BotFather setting, a Telegram group, a dashboard screen no CLI
   reaches. Every `owner-only` issue carries numbered steps; if writing
   the steps shows an agent could do it, the label is wrong.
-- **`apps/web/` is the site you edit; `dist/` is the site that is
-  published.** `dist/` is `apps/web` with the comments removed from the
+- **`apps/web/` is the site you edit; `dist/` is the site that would
+  ship.** `dist/` is `apps/web` with the comments removed from the
   CSS and the scripts — `./run build` writes it, it is committed, and
   the gate refuses one that is not what `apps/web` builds to in either
-  direction (#181). **Never edit `dist/` by hand.** Neither directory
-  takes a test hook, a fixture, a development-only global or a
-  `?sample=` hook.
+  direction (#181). Nothing publishes `dist/` today — GitHub Pages
+  retired 2026-08-14, ahead of the 1.0 cutover that deploys the new
+  world (`README.md`'s Status box is the live fact). **Never edit
+  `dist/` by hand.** Neither directory takes a test hook, a fixture, a
+  development-only global or a `?sample=` hook.
 - **`apps/` also holds source that is neither the site nor published.**
   `apps/site.config.js` and `apps/fields.js` sit beside `apps/web/`,
   not inside it, and nothing in either directory above is derived from
   them yet — 0.9-M2 is what moves the spec into the shipped tree and
   loads it there. Adding a file at the top of `apps/` is therefore a
   decision about what a page may read, not a tidying choice.
-- **A push to `main` is a release**; work goes to `accounts` until the
-  cutover. The hotfix procedure is in `README.md`, which is on `main`
-  when you need it.
+- **`main` is not a release today** — the GitHub Pages deploy job that
+  once published on every push retired 2026-08-14; nothing publishes
+  until 1.0's Worker deploy replaces it. Work goes to `accounts` until
+  the cutover either way. The hotfix procedure is in `README.md`, which
+  is on `main` when you need it, and it says so where it now applies.
 - Wrangler authenticates from an agent shell; the first call in a
   session may fail once with error 10000 and succeeds on retry.
   **`--env dev` is not optional on any deploy** — a bare deploy
@@ -413,3 +431,17 @@ Hard-won platform facts, one line each, dated. The full stories are in
 - 2026-08-13: a bake that does not clear its output directory deploys
   whatever the previous bake left; six stale files reached a published
   build that way. Clearing the output is part of building it.
+- 2026-08-14: the 2026-08-06 note above is superseded rather than
+  edited, per this file's own convention for a dated field note. GitHub
+  Pages retired 2026-08-14 and its deploy job went with it, so
+  `workflow_dispatch` on `main` runs both gates and publishes nothing —
+  on `main` or on any other ref — until 1.0's Worker deploy replaces
+  the mechanism `workflow_dispatch` used to trigger.
+- 2026-08-14: on Python 3.14/Windows, a `mklink /J` junction reports
+  `os.path.islink` → **False** while
+  `DirEntry.is_dir(follow_symlinks=False)` → **True**. The `islink`
+  guard every deletion walker reaches for does nothing for a junction,
+  so asking is-it-a-link *before* is-it-a-directory is the entire
+  safety property, not belt-and-braces — the reversed ordering wedged a
+  live battery before it was armed (0.9-M0-S8, #288). `tools/reaper.py`
+  carries the armed version.
