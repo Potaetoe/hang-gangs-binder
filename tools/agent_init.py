@@ -1005,6 +1005,24 @@ def do_init(args):
     elif args.no_install:
         print("dependencies absent, and --no-install was passed - the "
               "lint stage of the gate will report FAILED")
+    elif not os.path.isfile(os.path.join(repo, "package.json")):
+        # Field note, 0.9-M0-S6 (#286): the harness spawned a worktree at
+        # an ancient tip with no package.json, and `npm ci` run from
+        # there did not fail - it walked UP the directory tree, found
+        # the primary checkout's package.json, and reinstalled ITS
+        # node_modules before this verb went on to refuse for the real
+        # reason. No damage that time only because the shared install
+        # verified intact afterwards; the walk-up itself is not
+        # contained by cwd and is not a chance worth taking twice. A
+        # repo root with no package.json has nothing here to install
+        # against, so this skips rather than letting npm choose a
+        # directory on its own.
+        print(
+            "dependencies absent, and %s has no package.json - skipping "
+            "the install rather than letting npm walk up into a "
+            "different checkout. The lint stage of the gate will report "
+            "FAILED until this worktree is on a branch that has one."
+            % repo)
     else:
         npm = shutil.which("npm")
         if npm is None:

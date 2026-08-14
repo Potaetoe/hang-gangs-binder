@@ -1,5 +1,8 @@
 /*
- * Both gates are wired into CI, and a release cannot pass either one.
+ * Both gates are wired into CI, and this workflow cannot publish past
+ * them - the deploy job that once needed them retired on 0.9-M0-S6
+ * (#286), and staying retired is what half of what follows now holds
+ * the line on.
  *
  *     node tests/ci-wiring.test.mjs
  *
@@ -19,28 +22,50 @@
  * oversight: this arm runs under tests/run.mjs, so deleting the step
  * that runs tests/run.mjs in CI also deletes the thing that would have
  * reported it. It still catches that deletion locally, and it catches
- * every neighboring edit - the old gate's step going away, the deploy
- * job losing the `needs` that makes either gate block, a gate quietly
- * made advisory with continue-on-error. The uncatchable case is one
- * commit that removes the new gate from CI entirely, and what answers
- * that is a human reading the diff of a workflow file, which is the
- * same thing that has always answered it.
+ * every neighboring edit - the old gate's step going away, a Pages
+ * action, a retired write scope or the write-all shorthand that grants
+ * it, a job-level contents:write grant, a wrangler/pages-deploy step,
+ * a job key carrying a trailing comment, or a second workflow file
+ * joining this one unregistered, a gate quietly made advisory with
+ * continue-on-error (0.9-M0-S6 review, #286: F1-F4 named the gaps in
+ * this paragraph's first draft; this is the trued version, naming what
+ * the checks below actually hold rather than "any write scope
+ * anywhere," which they do not and cannot - GitHub Actions has scopes
+ * this file has no reason to ever mention). The uncatchable case is
+ * one commit that removes the new gate from CI entirely, and what
+ * answers that is a human reading the diff of a workflow file, which
+ * is the same thing that has always answered it.
  *
  * The YAML is read structurally rather than grepped whole. A substring
  * search for "node tests/run.mjs" passes on a file where that string
- * sits in the deploy job, in a comment, or in a step belonging to no
- * job at all - and "the gate runs somewhere in this file" is not the
- * claim. The claim is that it is THE step of the job the release
- * needs: the only one of its shape, and pointed at the runner rather
- * than at something else that would also start. Identifying *a*
- * matching step was not enough, and the checks below say why where
- * they make the distinction.
+ * sits in a comment, or in a step belonging to no job at all - and
+ * "the gate runs somewhere in this file" is not the claim. The claim
+ * is that it is THE step of the job the release needs: the only one
+ * of its shape, and pointed at the runner rather than at something
+ * else that would also start. Identifying *a* matching step was not
+ * enough, and the checks below say why where they make the
+ * distinction.
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const WORKFLOW = ".github/workflows/deploy.yml";
+const WORKFLOW_DIR = ".github/workflows/";
+const WORKFLOW = WORKFLOW_DIR + "deploy.yml";
+
+/* The registered set (0.9-M0-S6 review finding F3). Every check in this
+   file below this line reads WORKFLOW - one path - so nothing here
+   noticed a second file dropped into the same directory; the review's
+   M7 proved it: a full Pages-publishing workflow next to this one,
+   untouched, and the arm green. The retirement the owner ordered is
+   repository-wide (0.9-M0-S6, #286); a file-wide invariant is not that.
+   This is the pinned list of workflow files this repository is allowed
+   to carry. A legitimate future workflow - M1's deploy job is written
+   as its own file, or it is not - joins this array in the same change
+   that adds the file to disk; the enumeration check below reds an
+   addition that does not, sight-unseen, which is the point: coverage
+   does not wait for someone to remember to write a new arm for it. */
+const REGISTERED_WORKFLOWS = ["deploy.yml"];
 
 /* The two gates are found by SHAPE, not by their command spelled out
    here. A gate is a step that runs an interpreter against an entry
@@ -63,9 +88,38 @@ const NEW_GATE = /node\s+(tests\/\S+\.mjs)/;
    it is being held to. */
 const ARM_SUFFIX = ".test.mjs";
 
-const lines = (await readFile(ROOT + WORKFLOW, "utf8")).split(/\r?\n/);
+/* Retirement invariant (0.9-M0-S6, #286; widened by the #286 review's
+   F1 and F4). The strings a Pages release took - the two actions that
+   ship it, the write scope and the id token, the environment key that
+   names it - are what re-adding a deploy job would bring back, whatever
+   that job is called. Reading for the strings rather than for a job
+   named "deploy" is the point: a publishing job under another name
+   still reds.
 
-const EXPECTED = 17;
+   Two widenings past that original set, both from mutations the review
+   put past it green. First, scope grants: `permissions: write-all` is
+   GitHub Actions' shorthand for every scope at once, so it grants both
+   retired scopes - `pages: write` and `id-token: write` - without
+   spelling either, and the review's M4 walked it straight past the old
+   set. `contents: write` is checked alongside it for a different
+   reason: it is not one of the two retired scopes, but it is what a
+   git-push-style publish needs instead of the Pages API (a `gh-pages`
+   branch push via peaceiris/actions-gh-pages, the review's M8), so
+   granting it back is the same breach in a different shape. Second,
+   deploy-shaped steps: `wrangler deploy` and `wrangler pages deploy`
+   are caught by command shape (the review's M6, a step added inside
+   verify itself) because M1's own eventual deploy job runs exactly one
+   of those - THIS IS THE UNLOCK PATH. When that job is written for
+   real, it re-shapes this invariant deliberately, in the same change
+   that adds it; until then, nothing here deploys, and a step of that
+   shape appearing early is precisely what this line exists to catch. */
+const PUBLISHES =
+  /(configure-pages|upload-pages-artifact|deploy-pages|pages:\s*write|id-token:\s*write|permissions:\s*write-all|contents:\s*write|wrangler\s+(pages\s+)?deploy|^ {4}environment:)/;
+
+const lines = (await readFile(ROOT + WORKFLOW, "utf8")).split(/\r?\n/);
+const workflowFiles = (await readdir(ROOT + WORKFLOW_DIR)).sort();
+
+const EXPECTED = 18;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -122,14 +176,43 @@ function field(step, key) {
 const runs = (step, pattern) => pattern.exec(field(step, "run") || "");
 
 const verify = job("verify");
-const deploy = job("deploy");
 const verifySteps = steps(verify);
+
+/* The top-level job names in the file, in one pass over `jobs:` rather
+   than one `job()` call per candidate name - so this reads as "what
+   jobs exist" rather than "does a job called X exist", which is the
+   distinction retirement needs: a publishing job renamed away from
+   "deploy" is still every job but verify.
+
+   A job key line may carry a trailing comment - YAML accepts it, and a
+   temporarily-restored job is exactly how one gets written, key and
+   all (0.9-M0-S6 review finding F2: `  deploy:  # restored, remove
+   before merge` walked straight past the old `\s*$` anchor and the job
+   it introduced was invisible to every check below). The key line is
+   matched with an optional comment tail rather than requiring the rest
+   of the line to be blank, and the name itself is read out of the
+   match rather than by trimming the trailing colon off the whole
+   trimmed line - the second half matters on its own: with a comment
+   present, "trim the last character off" cuts a character off the
+   comment, not the colon. */
+function jobNames() {
+  const at = lines.findIndex((line) => line === "jobs:");
+  if (at < 0) return [];
+  return lines.slice(at + 1)
+    .filter((line) => /^ {2}\S+:\s*(#.*)?$/.test(line))
+    .map((line) => line.trim().match(/^(\S+):/)[1]);
+}
 
 /* 1. The file is shaped the way the rest of this arm assumes. Asserted
       rather than trusted: every check below reads a job block, and a
       parser that found nothing would pass them all vacuously. */
 check("the workflow has a verify job with steps", verifySteps.length > 0);
-check("the workflow has a deploy job", deploy.length > 0);
+check("and verify is the only job: nothing in this workflow deploys",
+  jobNames().length === 1 && jobNames()[0] === "verify");
+check("and .github/workflows/ holds exactly the registered set: no " +
+  "second workflow publishes unseen",
+  JSON.stringify(workflowFiles) ===
+    JSON.stringify([...REGISTERED_WORKFLOWS].sort()));
 
 /* 2. Each world is EXACTLY ONE step of the verify job.
 
@@ -186,23 +269,34 @@ check("the new gate's step is named", Boolean(newName));
 check("the two names differ, so a red names its world",
   Boolean(oldName) && Boolean(newName) && oldName !== newName);
 
-/* 4. Both block. `needs` is what makes the release wait on the verify
-      job at all, and continue-on-error is the one line that would let
-      a gate go red without failing it.
+/* 4. Nothing here can publish, and neither gate is advisory - one
+      check per way the file could quietly stop meaning what it says.
 
-      PRESENCE is the test, not the value, and the difference is the
-      whole check. Comparing against the string "true" was the first
-      draft: `continue-on-error: True` and `continue-on-error: ${{ true
-      }}` both walked past it, and Actions documents the key as taking
-      an expression - so the set of spellings that make a gate advisory
-      is open-ended and is not a set this file can enumerate. Whether
-      any particular spelling is honored is also not something this
-      machine can run, and failing closed is what stops that unknowable
-      question from mattering. A blocking gate needs no spelling of
-      this key at all, so the key itself is the red and deleting the
-      line is the whole remedy. */
-check("the release needs the job both gates run in",
-  deploy.some((line) => /^ {4}needs:.*\bverify\b/.test(line)));
+      PRESENCE is the test for both, not a value read out of either,
+      each for its own reason.
+
+      The publish check is the direct measurement of the retirement
+      itself (0.9-M0-S6, #286): any of the strings PUBLISHES names,
+      anywhere outside a comment, is what re-adding a deploy job (or a
+      publishing job under any other name) would bring back. Comments
+      are filtered first, so prose that NAMES what was retired - the
+      header above does exactly that - stays free to without tripping
+      its own check.
+
+      For continue-on-error: comparing against the string "true" was
+      the first draft, and it was wrong. `continue-on-error: True` and
+      `continue-on-error: ${{ true }}` both walked past it, and Actions
+      documents the key as taking an expression - so the set of
+      spellings that make a gate advisory is open-ended and is not a
+      set this file can enumerate. Whether any particular spelling is
+      honored is also not something this machine can run, and failing
+      closed is what stops that unknowable question from mattering. A
+      blocking gate needs no spelling of this key at all, so the key
+      itself is the red and deleting the line is the whole remedy. */
+check("and nothing here can publish past them: no Pages action, no " +
+  "write scope",
+  !lines.filter((line) => !/^\s*#/.test(line))
+    .some((line) => PUBLISHES.test(line)));
 check("neither gate is advisory: no continue-on-error, in any spelling",
   [oldStep, newStep].every((step) =>
     step !== undefined && field(step, "continue-on-error") === null));

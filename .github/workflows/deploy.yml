@@ -1,49 +1,34 @@
-name: Verify and deploy
+name: Verify
 
-# Publishes dist/ to GitHub Pages, but only after the checks pass.
+# Runs the gates. Nothing here deploys.
 #
 # ---------------------------------------------------------------------
-# THE BUILD IS STILL A COPY, AND THAT IS THE POINT
+# WHAT MERGING TO MAIN MEANS NOW
 #
-# dist/ contains exactly what gets published - nothing more. It is
-# apps/web with the comments taken out of the CSS and the scripts (#181),
-# written by tools/build_web.mjs and COMMITTED, so this job copies a
-# reviewed directory rather than producing one. Checks, the key generator
-# and the test harness live in tools/ and dev/, which are sibling
-# directories the deploy never looks at.
+# It means the gates below ran and passed. It does not publish anything.
+# There is no deploy job in this file and no site behind one: the GitHub
+# Pages deployment was taken down by owner order on 2026-08-13 - the
+# amendment to the hosting addendum on #228, which moved the Pages
+# retirement up from 1.0 to now - and 0.9-M0-S6 removed the job that fed
+# it. The Pages configuration is deleted at the repository as well, so
+# re-adding a job here would not by itself put the old release path back.
 #
-# The generation deliberately does not happen here. A step that builds
-# during the release is a step whose output nobody has read, and the
-# thing that must never be published is the private key that every
-# submitter's privacy depends on. Generating in a commit means what ships
-# is in a diff; the verify job's `dist is the build of apps/web` stage
-# then refuses a dist/ that has come apart from its source in either
-# direction, and tools/check_web.py fails the build if anything
-# key-shaped is sitting in either tree.
+# The deploy that replaces it is not written, and it does not belong in
+# this file until it is. Live becomes ONE Cloudflare Worker serving the
+# static site and the API from a single origin - one `wrangler deploy`,
+# no second host to hold in step. M1 builds that shape; 1.0 makes it the
+# release. Whoever writes it adds the job here. Until then a green run
+# means checked, not shipped, and that is the whole of what it means.
 #
-# A push to main is a release. What protects production is this job, plus
-# running the site locally before pushing. A non-production *environment*
-# - a second Worker and D1, with config.js choosing by hostname - is a
-# different thing and exists; see DESIGN.md.
-#
-# `accounts` is an integration branch, added 2026-08-05, and it is the one
-# exception to "a branch is not a release" being the whole story. It is
-# not a staging environment and does not deploy: it exists because the
-# accounts redesign is a chain of ten steps whose intermediate states are
-# broken on purpose - a sign-in page before the widget exists refuses
-# everybody - and main must never hold one of them. Steps land there,
-# main stays at the last complete release, and the two meet once.
-#
-# This job never deploys server/. The Worker is deployed separately and
-# by hand, which means the repository and the endpoint can disagree -
-# and as of 2026-08-05 they deliberately do. See server/README.md.
+# The Worker in server/ is deployed separately and by hand, which is why
+# the repository and the live endpoint can disagree. That was already
+# true of this file and is not what changed. See server/README.md.
 # ---------------------------------------------------------------------
 
 # The checks run on pull requests as well as on main. Until two agents
 # started working here a push *was* the review, so gating only main was
 # enough; under branch-and-review it would mean every check ran after the
-# merge, which is the wrong way round. The deploy job stays main-only -
-# see its `if` below.
+# merge, which is the wrong way round.
 #
 # `accounts` is listed in both lists deliberately. Leaving it out of
 # `pull_request` would mean a step merged into it with no checks at all,
@@ -57,9 +42,13 @@ on:
     branches: [main, accounts]
   workflow_dispatch:
 
-# Read-only by default. The two write scopes a Pages release needs are
-# granted to the deploy job alone, so a pull request from a branch cannot
-# reach them even if something in the verify job goes wrong.
+# Read-only, and nothing here needs more. The two write scopes that
+# a Pages release took - one over Pages itself, one to mint an id token
+# - were granted to the deploy job alone and went with it. They are not
+# spelled out here on purpose: a scope written in a comment is a scope
+# the next grep finds in this file. A workflow that can only read cannot
+# publish whatever any step in it does, and that is the state this file
+# stays in until the Worker deploy is written against a token of its own.
 permissions:
   contents: read
 
@@ -127,6 +116,10 @@ jobs:
       # says why that distinction holds: the deploy job copies dist/ and
       # never looks at a sibling directory, so this sits in the same
       # standing as ruff and eslint rather than anywhere near plaintext.
+      # (That job is gone as of 0.9-M0-S6, #286 - this job now also
+      # holds `contents: read` and cannot publish at all, which is the
+      # same standing by a stronger route; the citation above is
+      # pyproject.toml's own words, unedited, not this job's reason.)
       - name: Install the gate's tooling
         run: |
           npm ci --ignore-scripts
@@ -150,11 +143,12 @@ jobs:
       # The step above is the pre-0.9 gate. It guards the surfaces that
       # still exist and shrinks as each rebuild slice retires its arms
       # with its surface; this one is 0.9's, built new under the owner
-      # ruling on #228, and grows the other way. Both fail the job, so
-      # `deploy` - which needs it - cannot publish past either. Neither
-      # can be read as covering for the other: they check different
-      # trees, and for the length of the transition a release has to
-      # satisfy both worlds.
+      # ruling on #228, and grows the other way. Both fail the verify
+      # job itself, and nothing in this file can publish past it -
+      # there is no deploy job left to gate at all. Neither can be
+      # read as covering for the other: they check different trees,
+      # and for the length of the transition a release has to satisfy
+      # both worlds.
       #
       # `if` rather than nothing, and this is the reason: a step with no
       # condition is skipped once an earlier step fails, so a red in the
@@ -179,61 +173,3 @@ jobs:
       - name: Run the 0.9 gate
         if: ${{ !cancelled() }}
         run: node tests/run.mjs
-
-  deploy:
-    needs: verify
-    # A pull request gets the checks and nothing else. Publishing is what
-    # merging to main is for, and a release triggered from a branch would
-    # make the site something other than what main says it is.
-    #
-    # The ref test is the load-bearing half and it is not redundant. This
-    # condition was `event_name != 'pull_request'` alone, which was
-    # sufficient only while main was the single branch in the `push`
-    # trigger list; the moment `accounts` was added there, a push to it
-    # would have satisfied that test and published a half-built redesign
-    # to the live site. A branch that deploys because of what it is NOT
-    # is one trigger-list edit away from deploying. Name the branch that
-    # releases.
-    #
-    # github.ref on a pull_request event is refs/pull/<n>/merge, so the
-    # ref test already excludes pull requests; the event test is kept
-    # because two conditions that each fail closed is the pattern this
-    # repository uses wherever the cost of being wrong is a release.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    # Let an in-flight deploy finish rather than cancelling it midway.
-    # Job-level rather than workflow-level, so pull-request checks do not
-    # queue behind a release they are not going to perform.
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/configure-pages@v5
-
-      - name: Build the site
-        # Still a copy. dist/ is the product and it is committed, so
-        # there is nothing to strip here and nothing to guard against
-        # having failed to strip - the generation happened in a commit a
-        # reviewer read, and the verify job above refuses a dist/ that is
-        # not what apps/web builds to. See the header of this file.
-        run: |
-          rm -rf _site
-          cp -r dist _site
-          echo "publishing ($(du -sh _site | cut -f1)):"
-          ls -R _site
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-      - id: deployment
-        uses: actions/deploy-pages@v4
