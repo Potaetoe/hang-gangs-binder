@@ -841,7 +841,25 @@ def do_init(args):
                 "check the install for a partial or interrupted state.")
 
     # 3. Gate readiness: one real stage, named as one.
+    #
+    # The order of these two refusals is the whole point of the stage. A
+    # real gate stage is a real program with real imports - this one
+    # parses JavaScript with acorn, out of node_modules - so with the
+    # dependencies absent it fails on a missing module and says nothing
+    # whatever about the tree. Reporting that as a defect in the tree
+    # would be this verb committing the exact cry-wolf failure it exists
+    # to end. Found by running the verb on a throwaway worktree rather
+    # than by reasoning about it: the suite's stand-in stage imports
+    # nothing, so no arm here could have seen it.
     ok, said = probe_readiness(repo)
+    if not ok and not present:
+        return fail(
+            "the readiness probe could not RUN. It runs the gate stage "
+            "%s, which needs the installed dependencies, and node_modules "
+            "is absent here:\n\n%s" % (PROBE[0], said),
+            "run this again and let it install - the probe depends on "
+            "the install, so skipping one skips the other. Nothing has "
+            "been established about the tree either way.")
     if not ok:
         return fail(
             "the readiness probe failed, and the line endings above are "

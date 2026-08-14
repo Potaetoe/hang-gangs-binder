@@ -65,7 +65,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 61
+EXPECTED = 63
 
 
 def check(label, condition):
@@ -214,6 +214,19 @@ try:
     check("an init that skipped the install still reports the lint entry",
           any("eslint" in line for line in
               agent_init.initialization_problems(repo, state)))
+
+    # The readiness probe is a real program with real imports, so with
+    # the dependencies absent its red says nothing whatever about the
+    # tree. Which of the two the verb is looking at has to be in the
+    # message, or the verb commits the cry-wolf failure it exists to end.
+    os.environ["PROBE_FAIL"] = "1"
+    code, out = run_verb(["init", "--repo", repo, "--state", state,
+                          "--no-install"])
+    check("a probe that fails with no install is not blamed on the tree",
+          code == 1 and "could not RUN" in out)
+    check("and its remedy is the install, not a tree to go and fix",
+          "let it install" in out)
+    del os.environ["PROBE_FAIL"]
 
     # ------------------------------------------------------------------
     # B. The other direction of a pin, and the two states it refuses.
