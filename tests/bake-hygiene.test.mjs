@@ -221,10 +221,13 @@ const emptyResult = await runBake(emptyOut);
 check("a bake into an empty directory proceeds without complaint",
   emptyResult.code === 0);
 
-const absentOut = join(await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-parent-")), "not-yet-created");
+const absentParent = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-parent-"));
+const absentOut = join(absentParent, "not-yet-created");
 const absentResult = await runBake(absentOut);
 check("a bake into a directory that does not exist yet creates it and proceeds",
   absentResult.code === 0 && (await exists(join(absentOut, "index.html"))));
+
+await rm(absentParent, { recursive: true, force: true });
 
 /* ------------------------------------------------------------------ */
 /* 4. The root 404.html: present in a fresh bake, carrying the fold    */
@@ -286,11 +289,11 @@ check("the bake's own stdout states how many files it wrote",
   reportedMatch !== null);
 check("every file the bake reported writing is one that actually exists " +
   "on disk (the count is not overstated)",
-  realFiles.length <= reportedCount);
+  realFiles.length >= reportedCount);
 check("every file actually on disk is one the bake reported writing " +
   "(the count is not understated - the exact way 404.html went " +
   "uncounted before this fix)",
-  realFiles.length >= reportedCount);
+  realFiles.length <= reportedCount);
 
 await rm(emptyOut, { recursive: true, force: true });
 
