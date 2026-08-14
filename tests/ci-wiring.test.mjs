@@ -1,5 +1,8 @@
 /*
- * Both gates are wired into CI, and a release cannot pass either one.
+ * Both gates are wired into CI, and this workflow cannot publish past
+ * them - the deploy job that once needed them retired on 0.9-M0-S6
+ * (#286), and staying retired is what half of what follows now holds
+ * the line on.
  *
  *     node tests/ci-wiring.test.mjs
  *
@@ -19,22 +22,22 @@
  * oversight: this arm runs under tests/run.mjs, so deleting the step
  * that runs tests/run.mjs in CI also deletes the thing that would have
  * reported it. It still catches that deletion locally, and it catches
- * every neighboring edit - the old gate's step going away, the deploy
- * job losing the `needs` that makes either gate block, a gate quietly
- * made advisory with continue-on-error. The uncatchable case is one
- * commit that removes the new gate from CI entirely, and what answers
- * that is a human reading the diff of a workflow file, which is the
- * same thing that has always answered it.
+ * every neighboring edit - the old gate's step going away, a Pages
+ * action or a write scope reappearing anywhere in the file, a gate
+ * quietly made advisory with continue-on-error. The uncatchable case
+ * is one commit that removes the new gate from CI entirely, and what
+ * answers that is a human reading the diff of a workflow file, which
+ * is the same thing that has always answered it.
  *
  * The YAML is read structurally rather than grepped whole. A substring
  * search for "node tests/run.mjs" passes on a file where that string
- * sits in the deploy job, in a comment, or in a step belonging to no
- * job at all - and "the gate runs somewhere in this file" is not the
- * claim. The claim is that it is THE step of the job the release
- * needs: the only one of its shape, and pointed at the runner rather
- * than at something else that would also start. Identifying *a*
- * matching step was not enough, and the checks below say why where
- * they make the distinction.
+ * sits in a comment, or in a step belonging to no job at all - and
+ * "the gate runs somewhere in this file" is not the claim. The claim
+ * is that it is THE step of the job the release needs: the only one
+ * of its shape, and pointed at the runner rather than at something
+ * else that would also start. Identifying *a* matching step was not
+ * enough, and the checks below say why where they make the
+ * distinction.
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -62,6 +65,15 @@ const NEW_GATE = /node\s+(tests\/\S+\.mjs)/;
    deriving it from the file under test would let the file redefine what
    it is being held to. */
 const ARM_SUFFIX = ".test.mjs";
+
+/* Retirement invariant (0.9-M0-S6, #286). The strings a Pages release
+   took - the two actions that ship it, the write scope and the id
+   token, the environment key that names it - are what re-adding a
+   deploy job would bring back, whatever that job is called. Reading
+   for the strings rather than for a job named "deploy" is the point:
+   a publishing job under another name still reds. */
+const PUBLISHES =
+  /(configure-pages|upload-pages-artifact|deploy-pages|pages:\s*write|id-token:\s*write|^ {4}environment:)/;
 
 const lines = (await readFile(ROOT + WORKFLOW, "utf8")).split(/\r?\n/);
 
@@ -122,14 +134,27 @@ function field(step, key) {
 const runs = (step, pattern) => pattern.exec(field(step, "run") || "");
 
 const verify = job("verify");
-const deploy = job("deploy");
 const verifySteps = steps(verify);
+
+/* The top-level job names in the file, in one pass over `jobs:` rather
+   than one `job()` call per candidate name - so this reads as "what
+   jobs exist" rather than "does a job called X exist", which is the
+   distinction retirement needs: a publishing job renamed away from
+   "deploy" is still every job but verify. */
+function jobNames() {
+  const at = lines.findIndex((line) => line === "jobs:");
+  if (at < 0) return [];
+  return lines.slice(at + 1)
+    .filter((line) => /^ {2}\S+:\s*$/.test(line))
+    .map((line) => line.trim().slice(0, -1));
+}
 
 /* 1. The file is shaped the way the rest of this arm assumes. Asserted
       rather than trusted: every check below reads a job block, and a
       parser that found nothing would pass them all vacuously. */
 check("the workflow has a verify job with steps", verifySteps.length > 0);
-check("the workflow has a deploy job", deploy.length > 0);
+check("and verify is the only job: nothing in this workflow deploys",
+  jobNames().length === 1 && jobNames()[0] === "verify");
 
 /* 2. Each world is EXACTLY ONE step of the verify job.
 
@@ -186,23 +211,34 @@ check("the new gate's step is named", Boolean(newName));
 check("the two names differ, so a red names its world",
   Boolean(oldName) && Boolean(newName) && oldName !== newName);
 
-/* 4. Both block. `needs` is what makes the release wait on the verify
-      job at all, and continue-on-error is the one line that would let
-      a gate go red without failing it.
+/* 4. Nothing here can publish, and neither gate is advisory - one
+      check per way the file could quietly stop meaning what it says.
 
-      PRESENCE is the test, not the value, and the difference is the
-      whole check. Comparing against the string "true" was the first
-      draft: `continue-on-error: True` and `continue-on-error: ${{ true
-      }}` both walked past it, and Actions documents the key as taking
-      an expression - so the set of spellings that make a gate advisory
-      is open-ended and is not a set this file can enumerate. Whether
-      any particular spelling is honored is also not something this
-      machine can run, and failing closed is what stops that unknowable
-      question from mattering. A blocking gate needs no spelling of
-      this key at all, so the key itself is the red and deleting the
-      line is the whole remedy. */
-check("the release needs the job both gates run in",
-  deploy.some((line) => /^ {4}needs:.*\bverify\b/.test(line)));
+      PRESENCE is the test for both, not a value read out of either,
+      each for its own reason.
+
+      The publish check is the direct measurement of the retirement
+      itself (0.9-M0-S6, #286): any of the strings PUBLISHES names,
+      anywhere outside a comment, is what re-adding a deploy job (or a
+      publishing job under any other name) would bring back. Comments
+      are filtered first, so prose that NAMES what was retired - the
+      header above does exactly that - stays free to without tripping
+      its own check.
+
+      For continue-on-error: comparing against the string "true" was
+      the first draft, and it was wrong. `continue-on-error: True` and
+      `continue-on-error: ${{ true }}` both walked past it, and Actions
+      documents the key as taking an expression - so the set of
+      spellings that make a gate advisory is open-ended and is not a
+      set this file can enumerate. Whether any particular spelling is
+      honored is also not something this machine can run, and failing
+      closed is what stops that unknowable question from mattering. A
+      blocking gate needs no spelling of this key at all, so the key
+      itself is the red and deleting the line is the whole remedy. */
+check("and nothing here can publish past them: no Pages action, no " +
+  "write scope",
+  !lines.filter((line) => !/^\s*#/.test(line))
+    .some((line) => PUBLISHES.test(line)));
 check("neither gate is advisory: no continue-on-error, in any spelling",
   [oldStep, newStep].every((step) =>
     step !== undefined && field(step, "continue-on-error") === null));
