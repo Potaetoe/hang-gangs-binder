@@ -48,7 +48,7 @@ performed = 0
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 49
+EXPECTED = 57
 
 
 def check(label, condition):
@@ -234,6 +234,43 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     # path than check's and acquire's.
     check("release also refuses a session that never held the lock",
           code != 0)
+
+    print("\n--- a malformed started-at (numeric or boolean) is STALE, "
+          "never a crash ---")
+    # Review finding A4 (2026-08-14): age_hours caught (TypeError,
+    # ValueError) around started_at.replace(...) but not AttributeError,
+    # so a lock record whose started_at is a number or a bool - valid
+    # JSON, unreachable through this tool's own writes (now() always
+    # returns a string) but reachable by hand-edit or a future writer -
+    # raised an uncaught traceback on both check and acquire instead of
+    # landing in the same "age cannot be established" path a list or a
+    # dict already take. The module's own docstring promises such a lock
+    # is "acquirable only with --take-stale, never silently" - a crash
+    # breaks that promise by being acquirable with no flag at all
+    # possible, since it never reaches the flag check.
+    prime_lock.write_lock(prime_lock.lock_path(state), "num-session",
+                          "host-num", 12345)
+    code, said = run(["check", "session-f", "--state", state])
+    check("a numeric started-at does not crash check", code == 0)
+    check("it is STALE-labeled, its age unreadable",
+          "STALE" in said and "could not be read" in said)
+
+    code, said = run(["acquire", "session-f", "--state", state])
+    check("acquiring over it without --take-stale does not crash, and "
+          "is refused", code != 0)
+    check("the refusal is STALE-labeled, not a crash", "STALE" in said)
+
+    code, said = run(["acquire", "session-f", "--state", state,
+                      "--take-stale"])
+    check("acquiring over it WITH --take-stale succeeds", code == 0)
+    check("the lock now names the new holder",
+          read(state).get("session") == "session-f")
+
+    prime_lock.write_lock(prime_lock.lock_path(state), "bool-session",
+                          "host-bool", True)
+    code, said = run(["check", "session-g", "--state", state])
+    check("a boolean started-at does not crash check either", code == 0)
+    check("it is STALE-labeled the same way", "STALE" in said)
 
     print("\n--- BINDER_FLEET_STATE is read, not just documented ---")
     fleet_state = os.path.join(root, "env-state")
