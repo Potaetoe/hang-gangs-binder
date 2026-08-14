@@ -113,9 +113,9 @@ jobs:
       # with the artifact it guards for reasons nobody would look for.
       #
       # It is gate tooling and never reaches the site. pyproject.toml
-      # says why that distinction holds: the deploy job copies dist/ and
-      # never looks at a sibling directory, so this sits in the same
-      # standing as ruff and eslint rather than anywhere near plaintext.
+      # says why that distinction holds: this job holds `contents: read`
+      # and cannot publish at all, so this sits in the same standing as
+      # ruff and eslint rather than anywhere near plaintext.
       - name: Install the gate's tooling
         run: |
           npm ci --ignore-scripts
@@ -139,11 +139,12 @@ jobs:
       # The step above is the pre-0.9 gate. It guards the surfaces that
       # still exist and shrinks as each rebuild slice retires its arms
       # with its surface; this one is 0.9's, built new under the owner
-      # ruling on #228, and grows the other way. Both fail the job, so
-      # `deploy` - which needs it - cannot publish past either. Neither
-      # can be read as covering for the other: they check different
-      # trees, and for the length of the transition a release has to
-      # satisfy both worlds.
+      # ruling on #228, and grows the other way. Both fail the verify
+      # job itself, and nothing in this file can publish past it -
+      # there is no deploy job left to gate at all. Neither can be
+      # read as covering for the other: they check different trees,
+      # and for the length of the transition a release has to satisfy
+      # both worlds.
       #
       # `if` rather than nothing, and this is the reason: a step with no
       # condition is skipped once an earlier step fails, so a red in the
