@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 118
+EXPECTED = 121
 
 
 def check(label, condition):
@@ -808,6 +808,25 @@ try:
     check("and it is reapable again once git answers",
           verdict(find(reaper.plan(primary, state, roots),
                        "parked worktree", survivor)) == "reap")
+
+    # The escalation this program must never make, driven directly.
+    # `-d` failing is the reason `-D` is reached, and a `-d` that never
+    # ANSWERED has not failed - it has said nothing. Reading silence as
+    # a refusal and answering it with the forced form would turn the
+    # safest branch in the plan into the one deleted with no second
+    # opinion at all, which is the precise inverse of the hold_back law
+    # above.
+    reaper.GIT_TIMEOUT = 0.000001
+    try:
+        went, said = reaper.delete_branch(primary, "slice-timeout",
+                                          "a proof nobody checked")
+    finally:
+        reaper.GIT_TIMEOUT = patient
+    check("a branch deletion over an unanswering git does not go",
+          went is False)
+    check("and says `-D` was NOT tried", "NOT tried" in said)
+    check("AND THE BRANCH IS STILL THERE",
+          "slice-timeout" in branches(primary))
 
     # hold_back, driven directly: a command that goes silent PARTWAY
     # through a run that started fine. The plan is already built by

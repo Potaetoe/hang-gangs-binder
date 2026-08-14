@@ -840,6 +840,17 @@ def delete_branch(repo, name, proof):
     if code == 0:
         return True, ("deleted branch %s - %s; git's own merged check "
                       "agreed" % (name, proof))
+    if code == GIT_TIMED_OUT:
+        # The one escalation this program must never make. `-d` failing
+        # is the reason `-D` is reached, and a `-d` that never ANSWERED
+        # has not failed - it has said nothing. Reading silence as a
+        # refusal and answering it with the forced form would turn the
+        # safest branch in the plan into the one deleted without any
+        # second opinion at all.
+        return False, ("could NOT delete branch %s: %s - and `-D` was NOT "
+                       "tried, because escalating to a forced delete on "
+                       "the strength of an unanswered command is the one "
+                       "escalation this program refuses" % (name, out))
     code, out = git(repo, "branch", "-D", name)
     if code == 0:
         return True, ("deleted branch %s - %s; `-d` declined because the "
@@ -911,7 +922,16 @@ def act(repo, item, state=None, roots=None):
         done.append("deleted the directory %s" % path)
 
     git(repo, "worktree", "prune")
-    if path not in {entry["path"] for entry in (worktree_table(repo) or [])}:
+    # Three answers, not two. A table that could not be READ is not a
+    # table with nothing in it, and folding the two together turns a
+    # timeout into a printed success - the shape of lie this whole file
+    # is built to avoid.
+    after = worktree_table(repo)
+    if after is None:
+        done.append("the registration for %s could NOT be confirmed "
+                    "pruned: git did not answer the question that would "
+                    "confirm it" % path)
+    elif path not in {entry["path"] for entry in after}:
         done.append("pruned the worktree registration for %s" % path)
     else:
         done.append("the registration for %s SURVIVED the prune" % path)
