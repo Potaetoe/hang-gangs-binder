@@ -384,15 +384,31 @@ for (const system of SYSTEM) {
  * plausible bug here: `differing` skips names the other side lacks, so
  * a comparator that lost its names would report no drift and no gap.
  */
-const CONTROL = new Map(theme.get(PALETTES[0].theme));
+/*
+ * The control table is invented rather than lifted out of theme.css,
+ * and the first draft of this arm did lift it. The mutation battery is
+ * what caught it: nudging theme.css's --color-bg turned BOTH the
+ * Midnight comparison and this control red, because the control was
+ * asserting on the very hex it had just read. That is a false red
+ * waiting for the first legitimate palette edit - a check that fails
+ * for a reason that is not a defect teaches its reader to wave red
+ * through, which is the cost this repository already pays attention to.
+ * The comparator is generic over token tables, so nothing is lost by
+ * handing it two that no file owns.
+ */
+const CONTROL = new Map([
+  ["--color-bg", "#000001"],
+  ["--color-gold", "#000002"],
+  ["--color-text", "#000003"],
+]);
 
 const nudged = new Map(CONTROL);
-nudged.set("--color-bg", "#120d11");
+nudged.set("--color-bg", "#000009");
 check("a one-digit value difference is reported, with both values",
   (() => {
     const drift = differing(CONTROL, nudged);
     return drift.length === 1 && drift[0].name === "--color-bg" &&
-      drift[0].left === "#120d10" && drift[0].right === "#120d11";
+      drift[0].left === "#000001" && drift[0].right === "#000009";
   })(),
   () => "differing() answered " + JSON.stringify(differing(CONTROL, nudged)));
 
