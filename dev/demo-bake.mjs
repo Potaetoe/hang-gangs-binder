@@ -37,7 +37,7 @@
  * fabricated, the key is the committed throwaway public half, and the
  * only address any page names is one that cannot resolve.
  */
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -230,6 +230,110 @@ export function stampFor(commit, at) {
 }
 
 /*
+ * The 404 a static host falls back to for a path nothing above named.
+ * Cloudflare Pages, and hosts shaped like it, serve index.html with a
+ * 200 for ANY unrecognized path unless a root-level 404.html says
+ * otherwise - so without this, every made-up address under a baked
+ * demo's origin looked like a live one instead of a dead end. Written
+ * beside landingPage() and NOT through it: the two pages must never
+ * diverge on the honesty posture (the CSP, the noindex, the stamp),
+ * but they say different things, so this repeats the head rather than
+ * threading a flag through the one that redirects.
+ *
+ * No warning paragraph, no console framing - just what the fold page's
+ * <head> already asserts about this build, plus the one fact this page
+ * exists to state.
+ */
+function notFoundPage(commit, at) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Hang Gang's Binder — demo build: not found</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+${stampFor(commit, at)}
+<style>
+body { font: 16px/1.6 system-ui, sans-serif; margin: 0 auto; max-width: 40rem;
+       padding: 3rem 1.5rem; color: #1a1a1a; background: #fbfbfb; }
+@media (prefers-color-scheme: dark) {
+  body { color: #eee; background: #141414; }
+}
+</style>
+</head>
+<body>
+<h1>Not found</h1>
+<p>This address does not exist here.</p>
+<p><a href="${DEMO_ENTRY}">Open the demo</a></p>
+</body>
+</html>
+`;
+}
+
+/*
+ * Whether `out` is a directory THIS TOOL wrote before, so a second bake
+ * pointed at it may clear it rather than refuse or - the 2026-08-13
+ * field note - silently leave last run's files sitting beside this
+ * run's. landingPage() stamps every bake's root index.html with
+ * hgb-baked-at; that stamp is the one fact that says "I made this
+ * directory", so it is what is checked, rather than anything about
+ * the directory's name or location.
+ */
+async function isOwnBakeOutput(out) {
+  let html;
+  try {
+    html = await readFile(join(out, "index.html"), "utf8");
+  } catch (error) {
+    if (error && error.code === "ENOENT") return false;
+    throw error;
+  }
+  return html.indexOf('name="hgb-baked-at"') !== -1;
+}
+
+/*
+ * The refusal a bake owes a directory it did not write, run before a
+ * single byte of THIS run goes down. Three cases: empty or absent is
+ * fine outright and needs no clearing; recognized as a previous bake's
+ * own output (isOwnBakeOutput above) is cleared and rebuilt fresh, so
+ * a page this run no longer emits cannot survive into a published
+ * build the way six of them did on 2026-08-13; anything else - a
+ * directory with somebody else's files in it - is a hard refusal
+ * naming the path and the remedy, because clearing it would be
+ * throwing away something that was never this tool's to own.
+ */
+export async function prepareOut(out) {
+  let entries;
+  try {
+    entries = await readdir(out);
+  } catch (error) {
+    if (error && error.code !== "ENOENT") throw error;
+    entries = [];
+  }
+
+  if (entries.length === 0) {
+    await mkdir(out, { recursive: true });
+    return { cleared: false };
+  }
+
+  if (await isOwnBakeOutput(out)) {
+    await rm(out, { recursive: true, force: true });
+    await mkdir(out, { recursive: true });
+    return { cleared: true };
+  }
+
+  throw new Error(
+    "Refusing to bake into " + out + ": it already holds files and " +
+    "none of them is this bake's own stamp (a root index.html with " +
+    "hgb-baked-at), so clearing it could destroy something that is " +
+    "not this bake's to throw away. Point --out at an empty " +
+    "directory, at one a previous bake wrote, or clear " + out +
+    " yourself first."
+  );
+}
+
+/*
  * A tree with uncommitted changes cannot be stamped honestly, so it is
  * not baked at all.
  *
@@ -323,6 +427,8 @@ export async function bake(options) {
   const commit = String(opts.commit);
   const at = String(opts.at);
 
+  await prepareOut(out);
+
   const manifest = manifestFor(await webEntriesOf(root));
   const written = [];
 
@@ -369,6 +475,19 @@ export async function bake(options) {
 
     written.push(entry.to);
   }
+
+  /*
+   * The root 404 (see notFoundPage above), written directly rather
+   * than through the manifest. Not a manifest omission by accident:
+   * dev/demo-bake.test.mjs pins the manifest's one non-/demo/ page as
+   * index.html by name and pins the written count against its own
+   * independent manifestFor() call, and this file's constraints hold
+   * that suite untouched. 404.html carries no source (from: null,
+   * exactly like the root it sits beside) and leaks nothing by being
+   * outside that count.
+   */
+  await mkdir(out, { recursive: true });
+  await writeFile(join(out, "404.html"), notFoundPage(commit, at), "utf8");
 
   return { written: written, out: out, commit: commit, at: at };
 }
