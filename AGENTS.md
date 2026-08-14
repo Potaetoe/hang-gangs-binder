@@ -264,7 +264,7 @@ implemented it. Say which it is.
   CSS and the scripts — `./run build` writes it, it is committed, and
   the gate refuses one that is not what `apps/web` builds to in either
   direction (#181). Nothing publishes `dist/` today — GitHub Pages
-  retired 2026-08-14, ahead of the 1.0 cutover that deploys the new
+  retired 2026-08-13, ahead of the 1.0 cutover that deploys the new
   world (`README.md`'s Status box is the live fact). **Never edit
   `dist/` by hand.** Neither directory takes a test hook, a fixture, a
   development-only global or a `?sample=` hook.
@@ -275,7 +275,7 @@ implemented it. Say which it is.
   loads it there. Adding a file at the top of `apps/` is therefore a
   decision about what a page may read, not a tidying choice.
 - **`main` is not a release today** — the GitHub Pages deploy job that
-  once published on every push retired 2026-08-14; nothing publishes
+  once published on every push retired 2026-08-13; nothing publishes
   until 1.0's Worker deploy replaces it. Work goes to `accounts` until
   the cutover either way. The hotfix procedure is in `README.md`, which
   is on `main` when you need it, and it says so where it now applies.
@@ -433,15 +433,19 @@ Hard-won platform facts, one line each, dated. The full stories are in
   build that way. Clearing the output is part of building it.
 - 2026-08-14: the 2026-08-06 note above is superseded rather than
   edited, per this file's own convention for a dated field note. GitHub
-  Pages retired 2026-08-14 and its deploy job went with it, so
+  Pages retired 2026-08-13 and its deploy job went with it, so
   `workflow_dispatch` on `main` runs both gates and publishes nothing —
   on `main` or on any other ref — until 1.0's Worker deploy replaces
   the mechanism `workflow_dispatch` used to trigger.
 - 2026-08-14: on Python 3.14/Windows, a `mklink /J` junction reports
   `os.path.islink` → **False** while
   `DirEntry.is_dir(follow_symlinks=False)` → **True**. The `islink`
-  guard every deletion walker reaches for does nothing for a junction,
-  so asking is-it-a-link *before* is-it-a-directory is the entire
-  safety property, not belt-and-braces — the reversed ordering wedged a
-  live battery before it was armed (0.9-M0-S8, #288). `tools/reaper.py`
-  carries the armed version.
+  guard every deletion walker reaches for does nothing for a junction —
+  the working test is the reparse-point attribute
+  (`st_file_attributes & FILE_ATTRIBUTE_REPARSE_POINT`, OR'd with
+  `S_ISLNK` to still catch a real symlink), which `os.path.islink` does
+  not give you here. Asking is-it-a-reparse-point *before*
+  is-it-a-directory is the entire safety property, not belt-and-braces
+  — the reversed ordering wedged a live battery before it was armed
+  (0.9-M0-S8, #288). `tools/reaper.py`'s `is_reparse()` carries the
+  armed version; build any walker against that test, not `islink`.

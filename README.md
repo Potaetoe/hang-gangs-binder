@@ -16,7 +16,7 @@ not protected is [DESIGN.md](DESIGN.md), "Threat model, honestly
 stated".
 
 > **Status.** There is no live site today. GitHub Pages was taken down
-> by owner order on 2026-08-14, ahead of the 1.0 cutover it was first
+> by owner order on 2026-08-13, ahead of the 1.0 cutover it was first
 > scheduled for — nobody had used the site, so nothing was lost by not
 > waiting. 0.9, the keyless design, is being built on the `accounts`
 > branch. Version 1.0 is the cutover: it deploys the new world, one

@@ -21,7 +21,7 @@ in them.
 | Development pair | `hgbinderworker-dev` + `hg_binder_db_dev` | the same commands with `--env dev` |
 
 **The site has nowhere to run today.** GitHub Pages retired outright on
-2026-08-14 (owner order, moved up from the 1.0 cutover it was first
+2026-08-13 (owner order, moved up from the 1.0 cutover it was first
 scheduled for) — the deploy job is gone from
 `.github/workflows/deploy.yml` and the Pages configuration is deleted
 at the repository. Nothing serves `apps/web` until 0.9-M1 builds the
