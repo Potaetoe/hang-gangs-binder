@@ -23,9 +23,16 @@
  * that runs tests/run.mjs in CI also deletes the thing that would have
  * reported it. It still catches that deletion locally, and it catches
  * every neighboring edit - the old gate's step going away, a Pages
- * action or a write scope reappearing anywhere in the file, a gate
- * quietly made advisory with continue-on-error. The uncatchable case
- * is one commit that removes the new gate from CI entirely, and what
+ * action, a retired write scope or the write-all shorthand that grants
+ * it, a job-level contents:write grant, a wrangler/pages-deploy step,
+ * a job key carrying a trailing comment, or a second workflow file
+ * joining this one unregistered, a gate quietly made advisory with
+ * continue-on-error (0.9-M0-S6 review, #286: F1-F4 named the gaps in
+ * this paragraph's first draft; this is the trued version, naming what
+ * the checks below actually hold rather than "any write scope
+ * anywhere," which they do not and cannot - GitHub Actions has scopes
+ * this file has no reason to ever mention). The uncatchable case is
+ * one commit that removes the new gate from CI entirely, and what
  * answers that is a human reading the diff of a workflow file, which
  * is the same thing that has always answered it.
  *
@@ -39,11 +46,26 @@
  * enough, and the checks below say why where they make the
  * distinction.
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const WORKFLOW = ".github/workflows/deploy.yml";
+const WORKFLOW_DIR = ".github/workflows/";
+const WORKFLOW = WORKFLOW_DIR + "deploy.yml";
+
+/* The registered set (0.9-M0-S6 review finding F3). Every check in this
+   file below this line reads WORKFLOW - one path - so nothing here
+   noticed a second file dropped into the same directory; the review's
+   M7 proved it: a full Pages-publishing workflow next to this one,
+   untouched, and the arm green. The retirement the owner ordered is
+   repository-wide (0.9-M0-S6, #286); a file-wide invariant is not that.
+   This is the pinned list of workflow files this repository is allowed
+   to carry. A legitimate future workflow - M1's deploy job is written
+   as its own file, or it is not - joins this array in the same change
+   that adds the file to disk; the enumeration check below reds an
+   addition that does not, sight-unseen, which is the point: coverage
+   does not wait for someone to remember to write a new arm for it. */
+const REGISTERED_WORKFLOWS = ["deploy.yml"];
 
 /* The two gates are found by SHAPE, not by their command spelled out
    here. A gate is a step that runs an interpreter against an entry
@@ -66,18 +88,38 @@ const NEW_GATE = /node\s+(tests\/\S+\.mjs)/;
    it is being held to. */
 const ARM_SUFFIX = ".test.mjs";
 
-/* Retirement invariant (0.9-M0-S6, #286). The strings a Pages release
-   took - the two actions that ship it, the write scope and the id
-   token, the environment key that names it - are what re-adding a
-   deploy job would bring back, whatever that job is called. Reading
-   for the strings rather than for a job named "deploy" is the point:
-   a publishing job under another name still reds. */
+/* Retirement invariant (0.9-M0-S6, #286; widened by the #286 review's
+   F1 and F4). The strings a Pages release took - the two actions that
+   ship it, the write scope and the id token, the environment key that
+   names it - are what re-adding a deploy job would bring back, whatever
+   that job is called. Reading for the strings rather than for a job
+   named "deploy" is the point: a publishing job under another name
+   still reds.
+
+   Two widenings past that original set, both from mutations the review
+   put past it green. First, scope grants: `permissions: write-all` is
+   GitHub Actions' shorthand for every scope at once, so it grants both
+   retired scopes - `pages: write` and `id-token: write` - without
+   spelling either, and the review's M4 walked it straight past the old
+   set. `contents: write` is checked alongside it for a different
+   reason: it is not one of the two retired scopes, but it is what a
+   git-push-style publish needs instead of the Pages API (a `gh-pages`
+   branch push via peaceiris/actions-gh-pages, the review's M8), so
+   granting it back is the same breach in a different shape. Second,
+   deploy-shaped steps: `wrangler deploy` and `wrangler pages deploy`
+   are caught by command shape (the review's M6, a step added inside
+   verify itself) because M1's own eventual deploy job runs exactly one
+   of those - THIS IS THE UNLOCK PATH. When that job is written for
+   real, it re-shapes this invariant deliberately, in the same change
+   that adds it; until then, nothing here deploys, and a step of that
+   shape appearing early is precisely what this line exists to catch. */
 const PUBLISHES =
-  /(configure-pages|upload-pages-artifact|deploy-pages|pages:\s*write|id-token:\s*write|^ {4}environment:)/;
+  /(configure-pages|upload-pages-artifact|deploy-pages|pages:\s*write|id-token:\s*write|permissions:\s*write-all|contents:\s*write|wrangler\s+(pages\s+)?deploy|^ {4}environment:)/;
 
 const lines = (await readFile(ROOT + WORKFLOW, "utf8")).split(/\r?\n/);
+const workflowFiles = (await readdir(ROOT + WORKFLOW_DIR)).sort();
 
-const EXPECTED = 17;
+const EXPECTED = 18;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -140,13 +182,25 @@ const verifySteps = steps(verify);
    than one `job()` call per candidate name - so this reads as "what
    jobs exist" rather than "does a job called X exist", which is the
    distinction retirement needs: a publishing job renamed away from
-   "deploy" is still every job but verify. */
+   "deploy" is still every job but verify.
+
+   A job key line may carry a trailing comment - YAML accepts it, and a
+   temporarily-restored job is exactly how one gets written, key and
+   all (0.9-M0-S6 review finding F2: `  deploy:  # restored, remove
+   before merge` walked straight past the old `\s*$` anchor and the job
+   it introduced was invisible to every check below). The key line is
+   matched with an optional comment tail rather than requiring the rest
+   of the line to be blank, and the name itself is read out of the
+   match rather than by trimming the trailing colon off the whole
+   trimmed line - the second half matters on its own: with a comment
+   present, "trim the last character off" cuts a character off the
+   comment, not the colon. */
 function jobNames() {
   const at = lines.findIndex((line) => line === "jobs:");
   if (at < 0) return [];
   return lines.slice(at + 1)
-    .filter((line) => /^ {2}\S+:\s*$/.test(line))
-    .map((line) => line.trim().slice(0, -1));
+    .filter((line) => /^ {2}\S+:\s*(#.*)?$/.test(line))
+    .map((line) => line.trim().match(/^(\S+):/)[1]);
 }
 
 /* 1. The file is shaped the way the rest of this arm assumes. Asserted
@@ -155,6 +209,10 @@ function jobNames() {
 check("the workflow has a verify job with steps", verifySteps.length > 0);
 check("and verify is the only job: nothing in this workflow deploys",
   jobNames().length === 1 && jobNames()[0] === "verify");
+check("and .github/workflows/ holds exactly the registered set: no " +
+  "second workflow publishes unseen",
+  JSON.stringify(workflowFiles) ===
+    JSON.stringify([...REGISTERED_WORKFLOWS].sort()));
 
 /* 2. Each world is EXACTLY ONE step of the verify job.
 
