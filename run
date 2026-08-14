@@ -39,8 +39,8 @@ case "${1:-}" in
     exec $PY tools/check_docs.py ;;
   build)
     # Write dist/: apps/web with the comments taken out of the CSS and
-    # the scripts (#181). Node rather
-    # than $PY because the JavaScript half is parsed with acorn - a "/*"
+    # the scripts (#181). Node rather than $PY because the JavaScript
+    # half is parsed with acorn - a "/*"
     # inside a string or a regex literal is not a comment, and a scanner
     # that thinks it is ships corrupted code.
     #
