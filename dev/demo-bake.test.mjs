@@ -86,7 +86,13 @@ await check("no two manifest entries write the same path", () =>
 await check("every page apps/web ships is emitted, and only under /demo/", () =>
   pages.every((page) => emitted.includes("demo/" + page)) &&
   emitted.filter((path) => path.endsWith(".html")).every((path) =>
-    path.indexOf("demo/") === 0 || path === "index.html"));
+    // index.html and 404.html are the bake's own root pages (from:
+    // null in the manifest, not derived from apps/web) - the next
+    // check pins that they carry no apps/web source. Widened
+    // 2026-08-13 fix round (F1): 404.html now joins the manifest
+    // through the same from: null slot index.html always used, so the
+    // honest count includes it here too.
+    path.indexOf("demo/") === 0 || path === "index.html" || path === "404.html"));
 
 /*
  * The one .html above that is not under /demo/ is the bake's own root.
@@ -410,9 +416,15 @@ await rm(out, { recursive: true, force: true });
 await check("the emitted tree held no directory the allowlist does not name",
   async () => {
     const top = new Set(emitted.map((path) => path.split("/")[0]));
+    // "404.html" added 2026-08-13 fix round (F1): it now joins the
+    // manifest through the same from: null slot as "index.html", so
+    // the top-level allowlist names it too rather than the check
+    // passing only because the temp directory that would have proven
+    // it real is already gone (rm above runs before this check).
     return top.has("demo") && top.has("dev") && top.has("apps") &&
       [...top].every((name) =>
-        ["demo", "dev", "apps", "index.html", "robots.txt"].includes(name));
+        ["demo", "dev", "apps", "index.html", "robots.txt", "404.html"]
+          .includes(name));
   });
 
 report();

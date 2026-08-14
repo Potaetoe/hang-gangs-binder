@@ -44,9 +44,35 @@
  * That is checked here too: the 404 exists, carries the fold page's own
  * honesty posture (its CSP, its noindex, its stamp - not a new one) and
  * nothing more than a title, one line, and a link back in.
+ *
+ * TWO MORE, ADDED IN THE 2026-08-13 FIX ROUND (review F1/F2):
+ *
+ * THE COUNT THE CLI PRINTS HAS TO MATCH WHAT IS ACTUALLY ON DISK, IN
+ * BOTH DIRECTIONS. 404.html used to be written outside the manifest,
+ * so every bake reported one file fewer than it wrote - a check
+ * computed only from the manifest's own in-memory arrays could not see
+ * a file rearranged outside both of them. Checked here by walking the
+ * REAL output directory (not the manifest - this suite still imports
+ * nothing from dev/) and comparing its file count against the "Baked N
+ * files" the CLI prints, both ways: nothing on disk the count is silent
+ * about, and nothing the count claims that is not on disk.
+ *
+ * THE DESTRUCTIVE CLEAR MUST NEVER RUN BEFORE A REFUSAL THAT WOULD HAVE
+ * STOPPED THE BAKE. prepareOut() used to run before the manifest was
+ * even built, so a manifest-time refusal fired after a previous good
+ * build had already been deleted - a failed bake destroying the last
+ * one that worked. There is no input the unmodified CLI accepts that
+ * reaches that refusal (the allowlist guard only fires on an argument
+ * no caller passes), so this is reproduced the way the review did it:
+ * a targeted, restored-in-full mutation of dev/demo-bake.mjs, made
+ * invisible to `git status` with `git update-index --assume-unchanged`
+ * for exactly the window it is needed, the same trick this file's own
+ * refuseDirty precondition below exists to not be fooled by.
  */
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir, mkdtemp, readdir, readFile, rm, writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,7 +83,7 @@ const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const ROOT = HERE("..");
 const BAKE = join(ROOT, "dev", "demo-bake.mjs");
 
-const EXPECTED = 24;
+const EXPECTED = 33;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -74,6 +100,22 @@ const exists = async (path) => {
     return false;
   }
 };
+
+// Every FILE (not directory) under `dir`, as paths relative to it - the
+// ground truth for "what is actually on disk", read from the directory
+// itself rather than from the manifest, which this suite imports nothing
+// of.
+async function walkFiles(dir, relative) {
+  const rel = relative || "";
+  const entries = await readdir(join(dir, rel), { withFileTypes: true });
+  let out = [];
+  for (const entry of entries) {
+    const next = rel ? rel + "/" + entry.name : entry.name;
+    if (entry.isDirectory()) out = out.concat(await walkFiles(dir, next));
+    else out.push(next);
+  }
+  return out;
+}
 
 // Runs the real CLI entry point as a subprocess - process.execPath
 // rather than the bare string "node", so this runs the same binary
@@ -227,7 +269,90 @@ check("the 404 introduces no new voice - no warning paragraph, no explanation",
   !read404.toLowerCase().includes("fabricat") &&
   !read404.toLowerCase().includes("nothing you do here is recorded"));
 
+/* ------------------------------------------------------------------ */
+/* 5. Completeness, both directions (2026-08-13 review, F1): what the  */
+/*    CLI reports writing and what is actually on disk have to be the  */
+/*    same set. 404.html used to be written outside the manifest, so   */
+/*    every bake under-reported its own size by one - a bake writing   */
+/*    50 files while printing "Baked 49 files". Read from the real     */
+/*    directory, not the manifest, per this file's own zero-imports    */
+/*    rule above.                                                      */
+
+const reportedMatch = emptyResult.stdout.match(/Baked (\d+) files/);
+const reportedCount = reportedMatch ? Number(reportedMatch[1]) : -1;
+const realFiles = await walkFiles(emptyOut, "");
+
+check("the bake's own stdout states how many files it wrote",
+  reportedMatch !== null);
+check("every file the bake reported writing is one that actually exists " +
+  "on disk (the count is not overstated)",
+  realFiles.length <= reportedCount);
+check("every file actually on disk is one the bake reported writing " +
+  "(the count is not understated - the exact way 404.html went " +
+  "uncounted before this fix)",
+  realFiles.length >= reportedCount);
+
 await rm(emptyOut, { recursive: true, force: true });
+
+/* ------------------------------------------------------------------ */
+/* 6. The destructive clear must never run before a refusal that would */
+/*    have stopped the bake (2026-08-13 review, F2). Reproduced        */
+/*    against a directory holding a complete previous build: no input  */
+/*    the unmodified CLI accepts reaches manifestFor()'s own refusal   */
+/*    (its allowlist guard only fires on an argument no caller passes),*/
+/*    so the refusal is induced the way the review induced it - a      */
+/*    targeted mutation of dev/demo-bake.mjs, hidden from `git status` */
+/*    with `git update-index --assume-unchanged` for exactly the       */
+/*    window it runs in, then restored byte-for-byte and un-flagged    */
+/*    before this suite reports anything.                              */
+
+const goodOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-f2-"));
+const goodBake = await runBake(goodOut);
+check("setup: a real bake into a fresh directory succeeds - this is the " +
+  "'complete previous build' the refusal below must not destroy",
+  goodBake.code === 0);
+const beforeFiles = (await walkFiles(goodOut, "")).sort();
+check("setup: the previous build this probe protects actually holds files",
+  beforeFiles.length > 0);
+
+const bakeSrcOriginal = await readFile(BAKE, "utf8");
+const anchor = "export function manifestFor(webEntries, raw) {";
+if (bakeSrcOriginal.indexOf(anchor) === -1) {
+  throw new Error(
+    "F2 regression probe: manifestFor()'s signature moved - update the " +
+    "anchor string in tests/bake-hygiene.test.mjs rather than let this " +
+    "probe silently stop mutating anything.");
+}
+const probeMessage =
+  "F2-regression-probe: manifest refused before any output was touched";
+const bakeSrcMutated = bakeSrcOriginal.replace(anchor,
+  anchor + "\n  throw new Error(\"" + probeMessage + "\");");
+
+await run("git", ["update-index", "--assume-unchanged", BAKE], { cwd: ROOT });
+try {
+  await writeFile(BAKE, bakeSrcMutated, "utf8");
+  const probeResult = await runBake(goodOut);
+  check("F2: a refusal ahead of any write refuses rather than silently " +
+    "succeeding",
+    probeResult.code !== 0 && probeResult.stderr.includes(probeMessage));
+
+  const afterFiles = (await walkFiles(goodOut, "")).sort();
+  check("F2: the refusal deleted nothing from the previous build it was " +
+    "pointed at - the destructive clear runs only after every guard " +
+    "that can refuse",
+    JSON.stringify(afterFiles) === JSON.stringify(beforeFiles));
+  check("F2: the refusal wrote nothing new either",
+    afterFiles.length === beforeFiles.length);
+} finally {
+  await writeFile(BAKE, bakeSrcOriginal, "utf8");
+  await run("git", ["update-index", "--no-assume-unchanged", BAKE], { cwd: ROOT });
+}
+
+const restoredSrc = await readFile(BAKE, "utf8");
+check("F2 probe: dev/demo-bake.mjs was restored exactly, byte for byte",
+  restoredSrc === bakeSrcOriginal);
+
+await rm(goodOut, { recursive: true, force: true });
 
 console.log(failures
   ? `\nbake-hygiene FAILED ${failures} of ${performed} check(s)`

@@ -234,11 +234,16 @@ export function stampFor(commit, at) {
  * Cloudflare Pages, and hosts shaped like it, serve index.html with a
  * 200 for ANY unrecognized path unless a root-level 404.html says
  * otherwise - so without this, every made-up address under a baked
- * demo's origin looked like a live one instead of a dead end. Written
- * beside landingPage() and NOT through it: the two pages must never
- * diverge on the honesty posture (the CSP, the noindex, the stamp),
- * but they say different things, so this repeats the head rather than
- * threading a flag through the one that redirects.
+ * demo's origin looked like a live one instead of a dead end. Emitted
+ * through the manifest, via the same `from: null` slot landingPage()
+ * uses two lines below it in manifestFor() - a bake-authored root file
+ * is exactly what that slot documents, and the 2026-08-13 review found
+ * the earlier direct write false to manifestFor()'s own header ("Everything
+ * the build contains") and to the CLI's own reported count. The function
+ * stays separate from landingPage() rather than folded into it: the two
+ * pages must never diverge on the honesty posture (the CSP, the
+ * noindex, the stamp), but they say different things, so this repeats
+ * the head rather than threading a flag through the one that redirects.
  *
  * No warning paragraph, no console framing - just what the fold page's
  * <head> already asserts about this build, plus the one fact this page
@@ -417,6 +422,12 @@ export function manifestFor(webEntries, raw) {
   add(WEB + "robots.txt", "robots.txt", "copy");
   add(null, "index.html", "landing");
 
+  // The static-host 404 (see notFoundPage above): a bake-authored root
+  // file with no source, exactly like the fold page it sits beside, so
+  // it goes through the same from: null slot rather than being written
+  // outside the count this function's own header claims to be complete.
+  add(null, "404.html", "notfound");
+
   return entries;
 }
 
@@ -427,9 +438,19 @@ export async function bake(options) {
   const commit = String(opts.commit);
   const at = String(opts.at);
 
+  // Validate before clearing. manifestFor() and webEntriesOf() are the
+  // only things between here and a write that can refuse (an
+  // off-allowlist source, or apps/web unreadable), and a refusal must
+  // never run after prepareOut()'s destructive clear has already
+  // emptied a previously-good build - the 2026-08-13 review's F2: a
+  // failed bake was destroying the last good one instead of leaving it
+  // alone. So the manifest is built first, and prepareOut() - the only
+  // thing here that deletes anything - runs only once building it has
+  // already succeeded.
+  const manifest = manifestFor(await webEntriesOf(root));
+
   await prepareOut(out);
 
-  const manifest = manifestFor(await webEntriesOf(root));
   const written = [];
 
   for (const entry of manifest) {
@@ -438,6 +459,8 @@ export async function bake(options) {
 
     if (entry.transform === "landing") {
       await writeFile(target, landingPage(commit, at), "utf8");
+    } else if (entry.transform === "notfound") {
+      await writeFile(target, notFoundPage(commit, at), "utf8");
     } else if (entry.transform === "copy") {
       // Copied as bytes rather than read as text: fonts are here too,
       // and a woff2 through a utf8 round trip is a corrupt font that
@@ -468,26 +491,13 @@ export async function bake(options) {
       throw new Error(
         "Refusing to bake " + entry.to + ": the manifest asks for a " +
         "transform called \"" + entry.transform + "\" and this file " +
-        "performs three. A transform nobody implements writes nothing " +
+        "performs four. A transform nobody implements writes nothing " +
         "and reports success."
       );
     }
 
     written.push(entry.to);
   }
-
-  /*
-   * The root 404 (see notFoundPage above), written directly rather
-   * than through the manifest. Not a manifest omission by accident:
-   * dev/demo-bake.test.mjs pins the manifest's one non-/demo/ page as
-   * index.html by name and pins the written count against its own
-   * independent manifestFor() call, and this file's constraints hold
-   * that suite untouched. 404.html carries no source (from: null,
-   * exactly like the root it sits beside) and leaks nothing by being
-   * outside that count.
-   */
-  await mkdir(out, { recursive: true });
-  await writeFile(join(out, "404.html"), notFoundPage(commit, at), "utf8");
 
   return { written: written, out: out, commit: commit, at: at };
 }
