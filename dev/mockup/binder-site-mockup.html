@@ -1,4 +1,47 @@
 <meta charset="utf-8">
+<!--
+  BELOW the charset tag, not above it, and that is not a formatting
+  preference: an encoding declaration has to be serialized inside the
+  document's first 1024 bytes, and this block is longer than that. Moved
+  up, it would silently push the declaration out of the sniffing window
+  and mojibake every em dash and box rule in the file.
+
+  REPUBLISH GATES - all five, before this file is published to the
+  artifact, every time.
+
+  Publishing overwrites the whole artifact, so a republish without the
+  full source in hand is a deletion. The five were earned on 2026-08-10,
+  when a mis-anchored splice beheaded setPalette() and shipped a mockup
+  whose every button was dead: it loaded, it rendered, and every machine
+  read of it came back clean. Only gate 5 catches that.
+
+  1. ANCHOR ON A UNIQUE SELECTOR. A script edit anchors on a string that
+     matches ONCE, asserted as a single match before the splice - never
+     on a pattern that also occurs earlier in the file. This is the one
+     that failed.
+  2. ESCAPE MARKUP IN PROSE. Annotation text naming a tag writes
+     &lt;details&gt;, never a literal tag the parser would open.
+  3. node --check THE SCRIPT. Extract the inline script to a scratch
+     file and parse it. A SyntaxError there is invisible in the page.
+  4. ASSERT ELEMENT COUNTS. Count what the edit was meant to produce -
+     three flyouts and one swatch row, at the time this was written -
+     rather than trusting that it appeared.
+  5. SERVE IT AND CLICK. Page switching, the flyouts' absolute /
+     z-9999 float, and one palette press syncing aria-pressed across
+     every group, with a FORCED RELOAD before reading the console: the
+     console buffer attaches late and silently misses the load-time
+     SyntaxError that is the whole failure being guarded against.
+
+  The counts in 4 and the surfaces in 5 are this mockup's as of the move
+  (0.9-M0-S3, #280); a rebuild that changes them rewrites this list in
+  the same change.
+
+  Carried in the file rather than in a document because this file is
+  what the gates guard - a checklist that travels with its subject
+  cannot be the half somebody forgot to look up. The one gate a machine
+  runs is tests/mockup-tokens.test.mjs, which holds the --color-* tokens
+  below to apps/web/theme.css; the other five are hands.
+-->
 <title>Binder — Site Mockup (post-cutover)</title>
 <style>
   /* ════════════ Artifact chrome (follows viewer theme) ════════════ */
