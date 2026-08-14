@@ -74,7 +74,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 102
+EXPECTED = 101
 
 
 def check(label, condition):
@@ -676,7 +676,10 @@ try:
 finally:
     agent_init.rmtree_hard(root)
 
-print("")
-check("every arm ran (%d expected)" % EXPECTED, performed == EXPECTED)
 print("\n%d checks, %d failure(s)" % (performed, failures))
+if performed != EXPECTED:
+    print("EXPECTED %d checks and %d ran. A suite that quietly stops "
+          "running is a suite that quietly stops checking."
+          % (EXPECTED, performed))
+    sys.exit(1)
 sys.exit(1 if failures else 0)
