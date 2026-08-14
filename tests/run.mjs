@@ -107,12 +107,18 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ARM_SUFFIX = ".test.mjs";
 const PREFLIGHT = "tests/preflight.mjs";
-const NOT_ARMS = new Set(["tests/run.mjs", PREFLIGHT]);
 
 /* Repo-relative and forward-slashed, so a name reads the same in a
    Windows terminal and in the Actions log. */
 const rel = (absolute) =>
   absolute.slice(ROOT.length).split("\\").join("/");
+
+/* This file exempts itself by asking where it is, not by naming
+   itself. The sweep below is over every file in tests/, so a spelled-
+   out "tests/run.mjs" is a second copy of this file's own path: rename
+   the runner and it reports itself as a stray it is in the middle of
+   running. */
+const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT]);
 
 const exists = async (path) => {
   try {
