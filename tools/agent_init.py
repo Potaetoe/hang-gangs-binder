@@ -187,6 +187,14 @@ PROBE = ("dist is the build of apps/web",
 # launches.
 ESLINT_ENTRY = os.path.join("node_modules", "eslint", "bin", "eslint.js")
 
+# The gate's Python tooling (ruff, fontTools[woff]), pinned outside this
+# file so a person and this verb read the same versions -
+# tools/requirements-gate.txt carries the pins and the reasoning for
+# them. install_python_gate_tools() below is the one place that reads
+# this constant to build the install command; 0.9-M0-S19 documents that
+# same command for a human running it by hand.
+GATE_REQUIREMENTS = os.path.join("tools", "requirements-gate.txt")
+
 # `i/<eol> w/<eol> attr/<attrs>\t<path>`, one NUL-terminated record per
 # file. The -z form is what makes this parseable: without it git quotes
 # any path holding a tab or a backslash, and a Windows checkout is the
@@ -321,11 +329,26 @@ def rmtree_hard(path):
 
 
 def git(repo, *args):
-    """(returncode, stdout) for a git command, stderr folded into stdout.
+    """(returncode, stdout, stderr) for a git command, streams kept apart.
 
-    Folded rather than kept apart because every caller here reports the
-    failure to a person: two streams would mean two places for the one
-    sentence that says what went wrong to hide in.
+    SEPARATE, because a machine parser downstream is only safe reading
+    ONE of them. `git status --porcelain -z` and `git ls-files --eol
+    -z` are parsed as machine records on a returncode of 0 - success is
+    not proof stderr is empty. A global excludes file git cannot read
+    prints a WARNING and still exits 0, and folded into the SAME string
+    a parser reads as records, that warning line is itself a record: no
+    NUL in it to split on, so the two-character status prefix a warning
+    line happens to start with reads as a "status" and the rest of the
+    sentence reads as a "path". A clean worktree reads as holding
+    uncommitted work, and `agent-park` refuses it. This is the CRLF-trap
+    sibling - a state git itself produces that is invisible until a
+    parser downstream chokes on it - and the fix is the same shape:
+    stop the two things that mean different things from sharing one
+    string. eol_problems(), dirty_paths(), registered_worktrees() and
+    head_state() below read stdout only and never touch stderr; a
+    caller building a message for a PERSON joins the two back together
+    explicitly, via git_report() below, which is the only place they
+    are allowed to touch.
 
     NOT STRIPPED, and that is load-bearing rather than an omission.
     `git status --porcelain` puts the two status columns in the FIRST
@@ -342,7 +365,21 @@ def git(repo, *args):
         ["git", "-C", repo, *args],
         capture_output=True, text=True,
     )
-    return done.returncode, done.stdout + done.stderr
+    return done.returncode, done.stdout, done.stderr
+
+
+def git_report(stdout, stderr):
+    """stdout and stderr joined into one string, for a person to read.
+
+    The one place the two streams are allowed back together, and only
+    for a fail() message - never for anything a parser downstream reads
+    back in. Each side is stripped and blank sides are dropped, so a
+    command that wrote to only one stream does not report a blank line
+    for the other.
+    """
+    parts = [part.strip() for part in (stdout, stderr)
+             if part and part.strip()]
+    return "\n".join(parts) if parts else "(git produced no output)"
 
 
 def find_node():
@@ -383,9 +420,9 @@ def worktree_kind(repo):
     primary checkout would silently take the machine's shared checkout
     off its branch.
     """
-    code, out = git(repo, "rev-parse", "--git-dir", "--git-common-dir")
+    code, out, err = git(repo, "rev-parse", "--git-dir", "--git-common-dir")
     if code != 0:
-        return None, out.strip()
+        return None, git_report(out, err)
     lines = out.strip().splitlines()
     if len(lines) != 2:
         return None, "git did not answer with two directories: %s" % out
@@ -395,10 +432,20 @@ def worktree_kind(repo):
 
 
 def head_state(repo):
-    """(branch or None, full head sha or None)."""
-    code, branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+    """(branch or None, full head sha or None).
+
+    Reads git()'s stdout only. A warning on stderr - the unreadable-
+    excludes-file case git_report() exists for - has no NUL and no
+    fixed width, so folded into either of these two single-line answers
+    it silently changes what .strip() returns: a real branch name grows
+    a second line, and a real 40-character sha stops being 40
+    characters and reads as unresolvable. Both cases were reachable
+    before this function stopped seeing stderr at all.
+    """
+    code, branch, _err = git(repo, "symbolic-ref", "--quiet", "--short",
+                             "HEAD")
     branch = branch.strip() if code == 0 and branch.strip() else None
-    code, sha = git(repo, "rev-parse", "HEAD")
+    code, sha, _err = git(repo, "rev-parse", "HEAD")
     sha = sha.strip()
     return branch, (sha if code == 0 and len(sha) == 40 else None)
 
@@ -409,8 +456,19 @@ def dirty_paths(repo):
     Untracked files count. A worktree holding an untracked file is a
     worktree holding work nobody can recover once the directory is
     deleted, which is exactly what the death protocol is about.
+
+    Reads git()'s stdout only - see git()'s own docstring for why a
+    machine parser here never touches stderr. On a clean tree, real
+    stdout is the empty string, and nothing below validates a field's
+    SHAPE before reading it as a status-and-path pair: any non-empty
+    text - a warning line from the unreadable global excludes file case
+    included - reads as one, its first two characters becoming a
+    status column and the rest becoming a path. `agent-park` trusts
+    this set completely, so a stray warning folded in here is a phantom
+    path, and a worktree with no uncommitted work gets refused for
+    holding one.
     """
-    code, out = git(repo, "status", "--porcelain", "-z")
+    code, out, _err = git(repo, "status", "--porcelain", "-z")
     if code != 0:
         return None
     paths = set()
@@ -447,7 +505,7 @@ def eol_problems(repo):
               as binary. Same reasoning: a repair here would be a guess
               about bytes, and this verb does not guess about bytes.
     """
-    code, out = git(repo, "ls-files", "--eol", "-z")
+    code, out, _err = git(repo, "ls-files", "--eol", "-z")
     if code != 0:
         return None, None, None
     fixable, committed, binary = [], [], []
@@ -494,9 +552,9 @@ def renormalize(repo, paths):
         if os.path.isfile(full):
             os.remove(full)
     for start in range(0, len(paths), 50):
-        code, out = git(repo, "checkout", "--", *paths[start:start + 50])
+        code, out, err = git(repo, "checkout", "--", *paths[start:start + 50])
         if code != 0:
-            return out.strip()
+            return git_report(out, err)
     return None
 
 
@@ -517,6 +575,54 @@ def dependency_state(repo):
     junctioned = resolved != os.path.abspath(modules)
     return os.path.isfile(os.path.join(repo, ESLINT_ENTRY)), junctioned, (
         resolved if junctioned else None)
+
+
+def python_gate_tools_present():
+    """(ruff, fontTools[woff]) - each True if importable right now.
+
+    A MACHINE fact rather than a worktree fact, unlike node_modules:
+    pip installs into the interpreter this process is already running
+    under, not into `repo`, so there is nothing here for a second
+    worktree to share, junction into or shadow - two worktrees on one
+    machine either both see the tools or neither does.
+
+    `sys.executable -m ruff` rather than `shutil.which("ruff")`, because
+    it is the route tools/check.py itself falls back to when "ruff" is
+    not on PATH, and checking for a route this verb never exercises
+    would be checking the wrong thing. fontTools needs its "woff" extra
+    (brotli) to read the format check_fonts.py's whole job is reading -
+    importing the woff2 submodule is what proves the extra landed,
+    where a bare `import fontTools` would pass with brotli absent and
+    still fail later, inside the check, on a font it cannot open.
+    """
+    ruff_ok = subprocess.run(
+        [sys.executable, "-m", "ruff", "--version"],
+        capture_output=True, text=True).returncode == 0
+    fonttools_ok = subprocess.run(
+        [sys.executable, "-c",
+         "from fontTools.ttLib.woff2 import WOFF2Reader"],
+        capture_output=True, text=True).returncode == 0
+    return ruff_ok, fonttools_ok
+
+
+def install_python_gate_tools(requirements):
+    """returncode for installing the gate's pinned Python tooling.
+
+    `sys.executable -m pip`, never a bare `python` - this machine's PATH
+    has resolved that to a Microsoft Store stub that exits nonzero on
+    every invocation before now, and the interpreter this process is
+    already running under is unambiguous where a PATH lookup is not.
+    The command this runs, spelled out for a human rather than through
+    sys.executable, is:
+
+        py -3 -m pip install --quiet -r tools/requirements-gate.txt
+
+    0.9-M0-S19 documents that literal line; this function is what it is
+    quoting.
+    """
+    return subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet",
+         "-r", requirements]).returncode
 
 
 def bound_ports(block):
@@ -546,7 +652,7 @@ def bound_ports(block):
 
 def registered_worktrees(repo):
     """{absolute path} for every worktree git knows about, or None."""
-    code, out = git(repo, "worktree", "list", "--porcelain")
+    code, out, _err = git(repo, "worktree", "list", "--porcelain")
     if code != 0:
         return None
     return {os.path.abspath(line[len("worktree "):])
@@ -1043,6 +1149,53 @@ def do_init(args):
                 % ESLINT_ENTRY.replace(os.sep, "/"),
                 "check the install for a partial or interrupted state.")
 
+    # 2b. Python gate tooling: ruff and fontTools[woff]. The same
+    # dependency-completeness question as step 2, but for the checks
+    # tools/check.py runs directly rather than through npm - a clean
+    # local gate needs both halves, and until now this verb only ever
+    # answered for the Node one (MINOR4, #310).
+    requirements = os.path.join(repo, GATE_REQUIREMENTS)
+    ruff_ok, fonttools_ok = python_gate_tools_present()
+    if ruff_ok and fonttools_ok:
+        print("py deps      ruff and fontTools[woff] already importable - "
+              "skipping the install")
+    elif args.no_install:
+        print("py deps      absent, and --no-install was passed - the "
+              "ruff (python) and font-coverage stages of the gate will "
+              "report FAILED")
+    elif not os.path.isfile(requirements):
+        # Mirrors the no-package.json skip above rather than refusing:
+        # a worktree checked out at a tip before this file existed has
+        # nothing here to install from, and that is a fact about which
+        # commit is checked out, not a defect this verb repairs.
+        print(
+            "py deps      absent, and %s is not in this worktree - "
+            "skipping the install. The ruff (python) and font-coverage "
+            "stages of the gate will report FAILED until this worktree "
+            "is on a branch that has one." % GATE_REQUIREMENTS.replace(
+                os.sep, "/"))
+    else:
+        print("py deps      installing from %s"
+              % GATE_REQUIREMENTS.replace(os.sep, "/"))
+        code = install_python_gate_tools(requirements)
+        if code != 0:
+            return fail(
+                "%s -m pip install -r %s failed."
+                % (os.path.basename(sys.executable),
+                   GATE_REQUIREMENTS.replace(os.sep, "/")),
+                "read pip's output above; nothing else here has been "
+                "changed.")
+        ruff_ok, fonttools_ok = python_gate_tools_present()
+        if not (ruff_ok and fonttools_ok):
+            missing = ", ".join(
+                name for name, ok in
+                (("ruff", ruff_ok), ("fontTools[woff]", fonttools_ok))
+                if not ok)
+            return fail(
+                "pip reported success and %s still cannot be imported."
+                % missing,
+                "check the install for a partial or interrupted state.")
+
     # 3. Gate readiness: one real stage, named as one.
     #
     # The order of these two refusals is the whole point of the stage. A
@@ -1256,9 +1409,9 @@ def do_park(args):
         return fail("HEAD in %s does not resolve to a commit." % repo,
                     "check that this directory is a healthy checkout.")
     if branch:
-        code, out = git(repo, "checkout", "--detach")
+        code, out, err = git(repo, "checkout", "--detach")
         if code != 0:
-            return fail("detaching HEAD failed: %s" % out.strip(),
+            return fail("detaching HEAD failed: %s" % git_report(out, err),
                         "resolve the git error above and run this again.")
     _, head = head_state(repo)
     if head != tip:
@@ -1267,8 +1420,8 @@ def do_park(args):
             "something else is working in this worktree. Establish what, "
             "then run this again.")
 
-    code, _ = git(repo, "merge-base", "--is-ancestor", tip,
-                  "origin/accounts")
+    code, _out, _err = git(repo, "merge-base", "--is-ancestor", tip,
+                           "origin/accounts")
     merged = code == 0
 
     released = release_lease(repo, state)
@@ -1351,8 +1504,9 @@ def main(argv=None):
                         help="supersede the lease on the requested block, "
                              "printing what it superseded")
     parser.add_argument("--no-install", action="store_true",
-                        help="report a missing node_modules instead of "
-                             "installing it")
+                        help="report missing dependencies (node_modules, "
+                             "the Python gate tools) instead of "
+                             "installing them")
     # Both of these exist so the suite can drive this against a scratch
     # checkout and a scratch state directory. A rule exercised only
     # against the tree it guards cannot be shown to fail.
