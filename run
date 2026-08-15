@@ -87,6 +87,13 @@ case "${1:-}" in
     # separate approval, and dev/README.md carries the steps.
     shift
     exec node dev/demo-bake.mjs "$@" ;;
+  session-open)
+    # The first act of a session (MAJOR3, #311): two read-only checks,
+    # printed for the operator before anything else runs. tools/
+    # session_open.py is the whole wiring - see its own module
+    # docstring for what it calls and why its exit code is prime_lock's
+    # ruled table alone rather than a blend with reaper's.
+    exec $PY tools/session_open.py ;;
   agent-init)
     # The worktree contract. tools/agent_init.py carries the reasoning -
     # the four traps this exists to kill, why its state is machine-held
@@ -139,6 +146,10 @@ case "${1:-}" in
     cat <<'EOF'
 usage: ./run <command>          (PowerShell: .\run <command>)
 
+  session-open  the first act of a session: prime_lock.py check against
+              this session's own identity (exits per its ruled table -
+              0 ok, 1 another session's fresh lock, 2 stale/unreadable)
+              and reaper.py --report, both printed for the operator
   agent-init  make this worktree gate-ready and print the contract you
               are held to: line endings renormalized, dependencies
               installed junction-safely, one real gate stage run as a

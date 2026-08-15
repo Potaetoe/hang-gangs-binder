@@ -44,6 +44,7 @@ if not defined PY (
   exit /b 1
 )
 
+if "%~1"=="session-open" goto :session_open
 if "%~1"=="agent-init" goto :agent_init
 if "%~1"=="agent-park" goto :agent_park
 if "%~1"=="check" goto :check
@@ -58,6 +59,16 @@ if "%~1"=="demo" goto :demo
 if "%~1"=="bake" goto :bake
 if "%~1"=="bootstrap" goto :bootstrap
 goto :usage
+
+:session_open
+rem Mirrors ./run session-open - see the reasoning there, and the whole
+rem argument in tools\session_open.py's own module docstring. Plain
+rem label, unlike agent-init below: this verb never touches a file
+rem run.cmd itself is checked out as, so none of the self-rewrite
+rem hazard that verb's copy-and-call dance exists to survive applies
+rem here.
+%PY% tools\session_open.py
+exit /b %ERRORLEVEL%
 
 :agent_init
 rem Mirrors ./run agent-init - see the reasoning there, and the whole
@@ -231,7 +242,7 @@ exit /b %ERRORLEVEL%
 
 :usage
 echo usage: .\run ^<command^>
-echo   agent-init ^| agent-park ^| bootstrap ^| build ^| check ^| gate ^| docs
-echo   live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
+echo   session-open ^| agent-init ^| agent-park ^| bootstrap ^| build ^| check
+echo   gate ^| docs ^| live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2
