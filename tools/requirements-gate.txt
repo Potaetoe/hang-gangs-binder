@@ -1,0 +1,34 @@
+# The gate's Python tooling, pinned. This is not a package's runtime
+# dependencies - tools/ is a set of scripts run directly, never
+# imported as a library, and pyproject.toml's own header says why it
+# declares no package: nothing under tools/ reaches the published site.
+# This file exists so the version a person installs by hand, the
+# version CI installs and the version `./run agent-init` installs are
+# the same three characters, machine-checked, rather than three
+# separately-typed copies of one fact drifting apart (AGENTS.md's "one
+# home per fact").
+#
+# Installed by:
+#
+#   py -3 -m pip install --quiet -r tools/requirements-gate.txt
+#
+# tools/agent_init.py's install_python_gate_tools() runs the same
+# command through sys.executable, which is this same rule applied
+# inside a process that already knows which interpreter it is - never
+# a bare `python`, which resolves to a Microsoft Store stub on at least
+# one machine this repository is developed on.
+#
+# ruff lints every file under tools/ and dev/ (pyproject.toml's
+# [tool.ruff] table carries its rules); fonttools[woff] is
+# tools/check_fonts.py's only route into a woff2's Brotli-compressed
+# tables, and that stage is written to FAIL rather than skip without
+# it - a coverage check that goes green because it could not open the
+# font is the armed-looking-but-not failure this repository holds to
+# be worse than no check at all.
+#
+# Pinned exact, matching the field note about npx resolving two
+# different majors minutes apart: a linter or a subsetter that drifts
+# between one run and the next is a gate disagreeing with itself for
+# reasons nobody would think to look for.
+ruff==0.16.1
+fonttools[woff]==4.63.0
