@@ -31,8 +31,10 @@ dependency.
 
 import io
 import os
+import subprocess
 import sys
 import tempfile
+import time
 from contextlib import redirect_stdout
 
 # Both modules under test sit in this file's own directory, which Python
@@ -44,11 +46,54 @@ import prime_lock
 failures = 0
 performed = 0
 
+# The synchronized-concurrency harness (2nd-audit MAJOR2). A wall-clock
+# barrier is not enough on its own to prove a single-winner property, but
+# it is what makes the contended op ACTUALLY contend: every worker imports
+# the module, then spins on a shared GO file the parent creates only once
+# every worker is up, so the race window is the acquire/release itself and
+# not the interpreter startup around it. Reuses the shape 0.9-M0-S12's
+# review used (subprocesses on a barrier), against a fabricated --state.
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_WORKER = r"""
+import os, sys
+tools_dir, state, verb, session, go = sys.argv[1:6]
+flags = sys.argv[6:]
+sys.path.insert(0, tools_dir)
+import prime_lock
+while not os.path.exists(go):
+    pass
+sys.exit(prime_lock.main([verb, session, "--state", state] + flags))
+"""
+
+
+def barrier_trial(state, specs):
+    """Run `specs` [(verb, session, [flags]), ...] against one GO barrier.
+
+    Returns [(session, exit_code), ...] in spec order. The lock's own
+    directory must already exist (every caller seeds a record first), so
+    the GO file has somewhere to live that every worker agrees on.
+    """
+    go = os.path.join(prime_lock.locks_dir(state), "GO")
+    procs = []
+    for verb, session, flags in specs:
+        procs.append((session, subprocess.Popen(
+            [sys.executable, "-c", _WORKER, TOOLS_DIR, state, verb,
+             session, go, *flags])))
+    # Let every worker reach its spin loop before firing the barrier, so
+    # the contention is real. Correctness does not depend on perfect
+    # simultaneity - the single-winner invariant holds under any
+    # interleaving - but a tighter barrier makes a broken invariant far
+    # likelier to be caught.
+    time.sleep(0.25)
+    open(go, "w").close()
+    return [(session, proc.wait()) for session, proc in procs]
+
 # Asserted at the end rather than only printed - a hand-written total
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 57
+EXPECTED = 73
 
 
 def check(label, condition):
@@ -116,8 +161,7 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
 
     print("\n--- second-session refusal names the holder ---")
     code, said = run(["check", "session-b", "--state", state])
-    check("a second session's check on a fresh lock exits nonzero",
-          code != 0)
+    check("a second session's check on a FRESH lock exits 1", code == 1)
     check("the refusal names the holding session", "session-a" in said)
     check("the refusal names the mechanism's rule",
           "one Prime at a time" in said or "REFUSED" in said)
@@ -174,8 +218,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
                           "host-old", hours_ago(20))
     code, said = run(["check", "new-session", "--state", state,
                       "--stale-hours", "12"])
-    check("checking a lock stale under the given threshold exits 0",
-          code == 0)
+    check("checking another session's STALE lock exits 2 (a --take-stale "
+          "decision is required; check refuses to imply it)", code == 2)
     check("it is labeled STALE, not treated as absent", "STALE" in said)
     check("it names --take-stale as the acquire path",
           "--take-stale" in said)
@@ -203,8 +247,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
                           "host-old", hours_ago(20))
     code, said = run(["check", "another-session", "--state", state,
                       "--stale-hours", "1000"])
-    check("a wide-enough threshold reads the same 20-hour lock as fresh",
-          code != 0)
+    check("a wide-enough threshold reads the same 20-hour lock as fresh, "
+          "so check exits 1", code == 1)
     check("the refusal still names the holder", "old-session" in said)
 
     print("\n--- an unreadable lock record fails closed, not open ---")
@@ -212,8 +256,9 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     with open(prime_lock.lock_path(state), "w", encoding="utf-8") as handle:
         handle.write("not json at all {")
     code, said = run(["check", "session-c", "--state", state])
-    check("checking an unreadable lock exits 0 (not provably fresh)",
-          code == 0)
+    check("checking another session's UNREADABLE lock exits 2 (fails "
+          "closed - not provably fresh, needs a --take-stale decision)",
+          code == 2)
     check("it says it could not be read", "could not be read" in said)
 
     code, said = run(["acquire", "session-c", "--state", state])
@@ -251,7 +296,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     prime_lock.write_lock(prime_lock.lock_path(state), "num-session",
                           "host-num", 12345)
     code, said = run(["check", "session-f", "--state", state])
-    check("a numeric started-at does not crash check", code == 0)
+    check("a numeric started-at does not crash check, and exits 2",
+          code == 2)
     check("it is STALE-labeled, its age unreadable",
           "STALE" in said and "could not be read" in said)
 
@@ -269,7 +315,8 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     prime_lock.write_lock(prime_lock.lock_path(state), "bool-session",
                           "host-bool", True)
     code, said = run(["check", "session-g", "--state", state])
-    check("a boolean started-at does not crash check either", code == 0)
+    check("a boolean started-at does not crash check either, exits 2",
+          code == 2)
     check("it is STALE-labeled the same way", "STALE" in said)
 
     print("\n--- BINDER_FLEET_STATE is read, not just documented ---")
@@ -287,6 +334,127 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     check("it wrote under BINDER_FLEET_STATE, not the real fleet "
           "directory", os.path.isfile(
               os.path.join(fleet_state, "locks", "prime.json")))
+
+    print("\n--- check's ruled exit table (0.9-M0-S17 MINOR1) ---")
+    # The four rows in one place, because 0.9-M0-S19 branches session-open
+    # on exactly these codes: 0 no-lock/own, 1 other-fresh, 2 other-stale
+    # or other-unreadable. Each row against its own fresh state.
+    table_state = os.path.join(root, "exit-table")
+    code, _ = run(["check", "holder", "--state", table_state])
+    check("row 0a: no lock at all -> exit 0", code == 0)
+    prime_lock.write_lock(prime_lock.lock_path(table_state), "holder",
+                          "host-h", prime_lock.now())
+    code, _ = run(["check", "holder", "--state", table_state])
+    check("row 0b: the caller's OWN fresh lock -> exit 0", code == 0)
+    prime_lock.write_lock(prime_lock.lock_path(table_state), "holder",
+                          "host-h", hours_ago(20))
+    code, _ = run(["check", "holder", "--state", table_state])
+    check("row 0c: the caller's OWN lock, even past staleness -> exit 0",
+          code == 0)
+    code, _ = run(["check", "other", "--state", table_state,
+                   "--stale-hours", "1000"])
+    check("row 1: another session's FRESH lock -> exit 1", code == 1)
+    code, _ = run(["check", "other", "--state", table_state,
+                   "--stale-hours", "12"])
+    check("row 2a: another session's STALE lock -> exit 2", code == 2)
+    os.makedirs(prime_lock.locks_dir(table_state), exist_ok=True)
+    with open(prime_lock.lock_path(table_state), "w",
+              encoding="utf-8") as handle:
+        handle.write("}{ not json")
+    code, _ = run(["check", "other", "--state", table_state])
+    check("row 2b: another session's UNREADABLE lock -> exit 2 (closed)",
+          code == 2)
+
+    print("\n--- MAJOR2: concurrent --take-stale, exactly one winner ---")
+    # Eight sessions all fire --take-stale at one barrier against a single
+    # stale lock. The unconditional-rewrite takeover this slice replaced
+    # let every one of them "win" (all exit 0, all believe they hold it);
+    # the atomic capture-then-exclusive-install must yield exactly one.
+    takeover_state = os.path.join(root, "concurrent-takeover")
+    prime_lock.write_lock(prime_lock.lock_path(takeover_state), "victim",
+                          "host-v", hours_ago(20))
+    outcomes = barrier_trial(takeover_state, [
+        ("acquire", "taker-%d" % i, ["--take-stale", "--stale-hours", "12"])
+        for i in range(8)])
+    winners = [session for session, code in outcomes if code == 0]
+    final = read(takeover_state)
+    check("exactly one of 8 concurrent --take-stale callers wins",
+          len(winners) == 1)
+    check("the lock file survives and names a single taker",
+          isinstance(final, dict)
+          and str(final.get("session", "")).startswith("taker-"))
+    check("the surviving holder is the session that reported success",
+          bool(winners) and isinstance(final, dict)
+          and final.get("session") == winners[0])
+
+    print("\n--- MAJOR2: release never deletes a replacement lock ---")
+    # A releasing old holder races takeovers. The bug: it reads its own
+    # record, a takeover replaces it, and its unconditional unlink then
+    # deletes the REPLACEMENT - leaving a taker that reported success with
+    # no lock behind it. Invariant, over repeated synchronized storms: at
+    # most one taker wins, and whenever one does the lock exists and names
+    # exactly that taker. (Timing-independent for the fixed code; the
+    # matching mutation in the handoff shows the reverted code violating.)
+    trials = 8
+    violations = 0
+    protected = 0
+    for trial in range(trials):
+        rel_state = os.path.join(root, "concurrent-release-%d" % trial)
+        prime_lock.write_lock(prime_lock.lock_path(rel_state), "holder",
+                              "host-h", hours_ago(20))
+        outcomes = dict(barrier_trial(rel_state, [("release", "holder", [])]
+                        + [("acquire", "taker-%d" % i,
+                            ["--take-stale", "--stale-hours", "12"])
+                           for i in range(3)]))
+        taker_wins = [s for s in outcomes
+                      if s.startswith("taker-") and outcomes[s] == 0]
+        final = read(rel_state)
+        if len(taker_wins) > 1:
+            violations += 1
+        elif taker_wins:
+            protected += 1
+            if not (isinstance(final, dict)
+                    and final.get("session") == taker_wins[0]):
+                violations += 1
+    check("over %d release/takeover storms, no invariant violation "
+          "(a winner's lock is never deleted by the releaser)" % trials,
+          violations == 0)
+    check("and the storms actually produced a takeover winner to protect",
+          protected > 0)
+
+    print("\n--- MAJOR2: the mutation mutex steals a crashed holder's ---")
+    # A crashed session can leave its short-lived mutex behind. It must not
+    # wedge the fleet forever: an old or unreadable mutex is stolen, and a
+    # fresh one is respected. The end-to-end case proves a stale mutex left
+    # over a stale lock does not block the takeover that clears both.
+    mx_state = os.path.join(root, "mutex")
+    prime_lock.write_lock(prime_lock.lock_path(mx_state), "victim",
+                          "host-v", hours_ago(20))
+    mpath = prime_lock.mutex_path(mx_state)
+    # Staleness is the file's mtime age, deliberately NOT its contents: a
+    # just-created empty mutex (the O_EXCL-then-write gap) must read fresh,
+    # or a spinner would steal a live mutex and two holders would result.
+    with open(mpath, "w", encoding="utf-8") as handle:
+        handle.write("")
+    check("a just-created (even empty) mutex reads fresh, never stale",
+          not prime_lock.mutex_is_stale(mpath))
+    old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+    os.utime(mpath, (old, old))
+    check("a mutex whose mtime is past the steal threshold is judged stale",
+          prime_lock.mutex_is_stale(mpath))
+    # End-to-end: a crashed holder's stale mutex left over a stale lock must
+    # not wedge the takeover that clears both - it is stolen, single-winner.
+    with open(mpath, "w", encoding="utf-8") as handle:
+        handle.write('{"pid": 99999, "host": "dead"}')
+    os.utime(mpath, (old, old))
+    code, said = run(["acquire", "reaper-session", "--state", mx_state,
+                      "--take-stale", "--stale-hours", "12"])
+    check("a stale mutex does not wedge a takeover; it is stolen",
+          code == 0)
+    check("the takeover installed the new holder behind the stolen mutex",
+          read(mx_state).get("session") == "reaper-session")
+    check("a completed mutation leaves no mutex behind",
+          not os.path.exists(mpath))
 
 print("\n%d checks, %d failure(s)" % (performed, failures))
 if performed != EXPECTED:
