@@ -122,13 +122,83 @@ may fail once with error 10000 and succeed on retry — `wrangler whoami`
 misdescribes that state, so diagnose with a real subcommand. `deploy`
 preserves secrets and applies `[vars]` over the dashboard's.
 
-**0.9 arrives on an empty database.** The record rules no migration:
-the pre-0.9 rows are discarded rather than carried, so the 0.9 schema
-is applied to a database with nothing in it and there is no pre-flight
-to run and no duplicate to resolve. That is a one-time property of this
-wave, and it is the reason dropping the old database is an owner act
-rather than a step in a script — see "Handing the project to someone
-else" for the same rule about anything irreversible.
+### Before re-running `schema.sql` against a database that already holds rows
+
+**This is the general case** — the currently deployed, manually-managed
+transitional Worker's database, and any future rerun of `schema.sql`
+against a database that is not empty. The narrower one-time exception,
+where none of this applies, is below.
+
+`schema.sql`'s own header explains why a rerun is not purely additive:
+every run DROPs the old `submissions_supersedes` index before
+recreating it under a unique name, and if two rows already name the
+same `supersedes` target, the `CREATE UNIQUE INDEX` fails **after** the
+DROP has already committed — the table is left with no index on
+`supersedes` at all, a working database with a silently slower
+`GET /me` and no chain rule enforced under it.
+
+**Run this first, against the same database `schema.sql` is about to
+run against:**
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "SELECT supersedes, COUNT(*) AS n FROM submissions WHERE supersedes IS NOT NULL GROUP BY supersedes HAVING COUNT(*) > 1;"
+```
+
+**Any row back is a STOP, not a warning — do not run `schema.sql`.**
+Resolving a duplicate needs the plaintext, which only a live admin
+session can read (`DESIGN.md`, "Encryption": a raw dump reveals
+nothing, by design): open each row the query names through the admin's
+entries view, decide which is the genuine current correction, and clear
+the loser's pointer by hand —
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "UPDATE submissions SET supersedes = NULL WHERE id = <the-losing-row>;"
+```
+
+— **take a backup first**, the same reason "When a credential may be
+compromised" (below) gives for the session-clearing command: this is a
+hand-typed write against production. Re-run the preflight query above
+and confirm it returns nothing before running `schema.sql`. **Owner, or
+an admin with a backup already in hand.**
+
+**Recovery, if a rerun already dropped the index and failed to recreate
+it.** `schema.sql`'s `CREATE` is `IF NOT EXISTS`, so a repeat attempt
+over an unresolved duplicate fails the same way silently, and the only
+proof of the real state is asking directly — the same "read the index
+list back" step "Backing up the entries" (below) already asks of a
+restore:
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "SELECT name FROM sqlite_master WHERE type='index' AND name='submissions_supersedes_unique';"
+```
+
+An empty answer is the failure state. Resolve every duplicate the
+preflight query names first, then create the index directly rather than
+rerunning the whole file:
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique ON submissions(supersedes);"
+```
+
+Confirm with the same `sqlite_master` query before treating the
+database as healthy again. The same three steps — preflight, resolve
+if named, recreate if missing — apply to `hg_binder_db_dev` with the
+database name swapped, per "Backing up the entries" (below) on how this
+project chooses between the two.
+
+**0.9 arrives on an empty database — the one-time exception.** The
+record rules no migration: the pre-0.9 rows are discarded rather than
+carried, so the 0.9 schema is applied to a database with nothing in it,
+and the preflight query above is answerable in advance without running
+it — an empty `submissions` table has no duplicate `supersedes` to
+find. That is a one-time property of this wave alone, true only for the
+single rerun that performs the 0.9 cutover migration, and it is the
+reason dropping the old database is an owner act rather than a step in
+a script — see "Handing the project to someone else" for the same rule
+about anything irreversible. It does not extend past that one rerun: the
+currently deployed transitional database already holds rows, and every
+other rerun of `schema.sql` — before the cutover or after it — is the
+general case above.
 
 ## Checking a deployment
 
