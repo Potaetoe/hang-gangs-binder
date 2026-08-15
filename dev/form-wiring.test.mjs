@@ -61,9 +61,11 @@ const keyFile = JSON.parse(await readFile(
  * would be a limit that agrees with itself - AGENTS.md's review bar
  * names that exact shape ("something outside the file has to say what
  * it may contain"). The envelope the form writes has to survive the
- * route that already accepts what it writes today, and the only things
- * that route asks are the size cap and the alphabet. Extracted, so a
- * narrowing of either reddens section 9 instead of being remembered.
+ * route that already accepts what it writes today, and the things that
+ * route asks are the size cap, the alphabet, and the length quantum -
+ * base64 comes in groups of four, and POST /submit refuses a length that
+ * is not a multiple of four (2nd audit MINOR3). Extracted, so a narrowing
+ * of any of them reddens section 9 instead of being remembered.
  */
 const workerSource = await readFile(
   new URL("../server/worker.js", import.meta.url), "utf8");
@@ -72,9 +74,15 @@ const MAX_CIPHERTEXT =
     .reduce((a, b) => Number(a) * Number(b));
 // The alphabet the route tests the field against, taken whole. Written
 // out here it would be a fourth copy of a pattern that already exists in
-// the Worker, in crypto.js's header and in dev/crypto.test.mjs.
+// the Worker, in crypto.js's header and in dev/crypto.test.mjs. The `if`
+// carries a length-quantum arm ahead of the regex, so the extraction
+// keys on the `.test(ciphertext)` call rather than on the `if (` before
+// it.
 const WORKER_BASE64 = new RegExp(
-  /if \(!\/(\^.+\$)\/\.test\(ciphertext\)\)/.exec(workerSource)[1]);
+  /!\/(\^.+\$)\/\.test\(ciphertext\)\)/.exec(workerSource)[1]);
+// The quantum the route also requires, off the same statement.
+const WORKER_BASE64_QUANTUM = Number(
+  /ciphertext\.length % (\d+) !== 0/.exec(workerSource)[1]);
 
 const SUBMITTED_EVENT = "binder:submitted";
 const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
@@ -862,7 +870,8 @@ function setHeight(byId, feet, inches) {
    * signal there is. Both limits come off the Worker's own source above.
    */
   check("the wider envelope is one the endpoint carries verbatim",
-    WORKER_BASE64.test(blob) && blob.length <= MAX_CIPHERTEXT);
+    WORKER_BASE64.test(blob) && blob.length <= MAX_CIPHERTEXT &&
+    blob.length % WORKER_BASE64_QUANTUM === 0);
 }
 
 /*

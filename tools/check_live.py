@@ -1089,11 +1089,12 @@ LEDGER = [
         "id": "the group check answering member, left or unknown",
         "surface": "flow",
         "claim": "the development arm exercises the unconfigured "
-                 "branch, which is the one production will not use",
+                 "branch, which now fails closed and which production, "
+                 "carrying a chat id, will not use",
         "covers": ["server/worker.js"],
         "status": "first-contact",
         "cause": "guarded-branch",
-        "guard": 'if (!env.TELEGRAM_GROUP_CHAT_ID) return "member";',
+        "guard": 'if (!env.TELEGRAM_GROUP_CHAT_ID) return "unknown";',
     },
     {
         "id": "a leaver's live sessions revoked",
