@@ -847,11 +847,21 @@ async function signed(user = {}, secondsAgo = 0) {
   return payload;
 }
 
+/*
+ * The default worker under test is a CONFIGURED one: it names its group.
+ * groupStanding() fails closed when no chat id is set (2nd audit
+ * BLOCKER1), so a base env without one would refuse every sign-in this
+ * suite mints - the fixture carries the id, and the default fetch stub
+ * below answers "member" so the ordinary sign-in path returns a member.
+ * The no-chat-id case is asserted deliberately, against an env that drops
+ * this binding, where "Missing group config fails closed" lives.
+ */
 const env = {
   EXPORT_TOKEN: "sekrit-token-value",
   TELEGRAM_BOT_TOKEN: BOT_TOKEN,
   ACCOUNT_SECRET: "account-secret-for-the-suite",
   ADMIN_TELEGRAM_IDS: "99",
+  TELEGRAM_GROUP_CHAT_ID: "-1001234567890",
   DB: DB,
 };
 
@@ -869,6 +879,19 @@ const bearer = (t, headers = good) =>
   ({ ...headers, Authorization: "Bearer " + t });
 
 /*
+ * The Worker asks Telegram whether a signer is in the group, and with a
+ * configured chat id (base env carries one) every ordinary sign-in now
+ * takes that path. The default answer is "member", so a plain sign-in
+ * mints a member; the sections that test departures, outages and the
+ * group check itself SAVE this stub, install their own, and restore it -
+ * so "realFetch" throughout this file means this stub, not Node's, which
+ * keeps the many base-env sign-ins working after each of those sections.
+ */
+globalThis.fetch = async () => new Response(
+  JSON.stringify({ ok: true, result: { status: "member" } }),
+  { headers: TYPE });
+
+/*
  * The count is asserted rather than only printed. This file is the
  * gating matrix - the one place where a check that stops running reads
  * as "nothing refused anybody" rather than as a missing row, and where
@@ -883,7 +906,7 @@ const bearer = (t, headers = good) =>
  * hide one, because the two totals differ by exactly the arms named
  * above.
  */
-const { check, report } = suite("worker.js", 359 + EXECUTED_GUARD_ARMS);
+const { check, report } = suite("worker.js", 366 + EXECUTED_GUARD_ARMS);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1341,18 +1364,27 @@ check("and asked Telegram nothing at all",
   telegramCalls === 0, `${telegramCalls} round trips`);
 
 /*
- * The development Worker's arm. It carries no group chat id and no bot
- * token, and both absences have to stay quiet answers rather than a
- * dereference of something that is not there.
+ * No group chat id FAILS CLOSED (2nd audit BLOCKER1). A Worker able to
+ * verify a Telegram payload but missing its group config cannot know who
+ * is a member, so it admits nobody - the pre-0.9 line returned "member"
+ * here and turned a forgotten binding into an open door for every valid
+ * Telegram identity. The break-glass allowlist, checked above this arm,
+ * stays the documented way into a misconfigured deploy and is asserted
+ * just below. Nothing is interpolated into a Telegram URL either: the
+ * answer is reached before the fetch, so a Worker holding no bot token
+ * never builds a request around one.
  */
+const noChatId = { ...env, TELEGRAM_GROUP_CHAT_ID: undefined };
 telegramCalls = 0;
-await statusOf("with no group chat id configured the check is off",
-  signIn({}, env), 200);
-check("and nothing was interpolated into a Telegram URL",
+await statusOf("no group chat id fails closed rather than admitting everyone",
+  signIn({}, noChatId), 403);
+check("and asked Telegram nothing, having no group to ask about",
   telegramCalls === 0, `${telegramCalls} round trips`);
+await statusOf("break-glass still signs in when the group config is absent",
+  signIn({}, { ...noChatId, ALWAYS_ALLOW_TELEGRAM_IDS: "4242" }), 200);
 
 await statusOf("a Worker with no bot token refuses cleanly rather than throwing",
-  signIn({}, { ...env, TELEGRAM_BOT_TOKEN: undefined }), 401);
+  signIn({}, { ...noChatId, TELEGRAM_BOT_TOKEN: undefined }), 401);
 
 globalThis.fetch = realFetch;
 
@@ -1428,6 +1460,22 @@ await statusOf("a submission with no ciphertext is refused",
 await statusOf("a malformed body is refused", post("{{{"), 400);
 await statusOf("an oversize submission is refused",
   post(JSON.stringify({ ciphertext: "A".repeat(17000) })), 413);
+
+/*
+ * base64 is length-and-padding, not just alphabet (2nd audit MINOR3).
+ * apps/web/crypto.js seals through btoa(), which emits standard base64 in
+ * quanta of four, so a run whose length is not a multiple of four is
+ * proof the field is not a submission this project wrote. The pre-0.9
+ * regex accepted any alphabet-only run, so "A" and "AA" passed as
+ * ciphertext and reached the database. These store nothing, so they do
+ * not perturb the row count asserted just below.
+ */
+await statusOf("a lone base64 character is not a whole quantum",
+  post(JSON.stringify({ ciphertext: "A" })), 400);
+await statusOf("two base64 characters are not one either",
+  post(JSON.stringify({ ciphertext: "AA" })), 400);
+await statusOf("a length that is not a multiple of four is refused",
+  post(JSON.stringify({ ciphertext: "AAAAA" })), 400);
 
 const rowsBefore = stored.length;
 await statusOf("a valid submission is accepted",
@@ -1784,6 +1832,28 @@ await statusOf("an admin row with an unreadable created_at still answers",
   call("GET", "/export", { headers: bearer(ODD_ADMIN) }), 200);
 check("and falls back to the window rather than to anything longer",
   near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
+
+/*
+ * The failing-closed shape one field over: an UNREADABLE expires_at
+ * (2nd audit MINOR2). Date.parse() of a non-date is NaN, and the pre-0.9
+ * check read `NaN <= now` - which is false - as "not yet expired", so a
+ * row whose deadline could not be parsed was served forever. A deadline
+ * must be FINITE and future; a row that is neither is deleted here and
+ * the caller refused. Asserted for both roles, because both flow through
+ * this check ahead of the admin-only slide above - an unreadable member
+ * deadline was as permanent as an admin one.
+ */
+reset();
+const ROT_ADMIN = (await (await signIn({ id: 99 })).clone().json()).session;
+const ROT_MEMBER = (await (await signIn({})).clone().json()).session;
+rowWhere(true).expires_at = "whenever";
+rowWhere(false).expires_at = "whenever";
+await statusOf("an admin session with an unparseable expiry is refused",
+  call("GET", "/export", { headers: bearer(ROT_ADMIN) }), 401);
+await statusOf("a member session with an unparseable expiry is refused",
+  call("GET", "/me", { headers: bearer(ROT_MEMBER) }), 401);
+check("and both unreadable rows are deleted rather than served again",
+  sessions.length === 0, `${sessions.length} row(s) remain`);
 
 /*
  * The member arm of the same decision, asserted rather than only
