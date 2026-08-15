@@ -123,10 +123,23 @@ jobs:
       # and cannot publish at all, which is the same standing by a
       # stronger route; the citation above is pyproject.toml's own
       # words, unedited, not this job's reason.)
+      #
+      # ONE PIN, READ HERE RATHER THAN RETYPED (0.9-M0-S18, #310;
+      # 0.9-M0-S19, #311). tools/requirements-gate.txt is the single
+      # source both `./run agent-init`
+      # (tools/agent_init.py's install_python_gate_tools()) and a
+      # person following README.md's "Checks" section install from;
+      # this step reads the same file rather than carrying its own
+      # copy of the two version numbers, so the version CI runs, the
+      # version agent-init installs and the version a person typed by
+      # hand are the same three characters rather than three
+      # separately-maintained copies that can drift apart - which
+      # ruff being unpinned here, while requirements-gate.txt pinned
+      # it, had already done before this line changed.
       - name: Install the gate's tooling
         run: |
           npm ci --ignore-scripts
-          python -m pip install --quiet ruff "fonttools[woff]==4.63.0"
+          python -m pip install --quiet -r tools/requirements-gate.txt
 
       # One step, one registry. tools/check.py is the only suite list
       # (owner decision, 2026-08-08): registering a check there is

@@ -2,7 +2,7 @@
   "name": "hang-gangs-binder",
   "version": "0.0.0",
   "private": true,
-  "description": "Tooling only. This package is NOT the site - dist/ is the published output and it is committed, built from apps/web by tools/build_web.mjs, which removes comments and nothing else. Nothing here is bundled or transpiled and nothing from node_modules is shipped. See DESIGN.md, 'What is deliberately not here'.",
+  "description": "Tooling only. This package is NOT the site - dist/ is the published output and it is committed, built from apps/web by tools/build_web.mjs, which removes comments and nothing else. Nothing here is bundled or transpiled and nothing from node_modules is shipped. See DESIGN.md, 'What is deliberately not here'. `npm ci --ignore-scripts` is only half of what a clean gate needs - the other half is Python's pinned ruff and fontTools[woff], installed with `py -3 -m pip install --quiet -r tools/requirements-gate.txt` (or by `./run agent-init`, which runs both installs). See README.md, 'Checks'.",
   "license": "MIT",
   "type": "module",
   "scripts": {
