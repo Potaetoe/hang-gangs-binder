@@ -589,18 +589,26 @@ def python_gate_tools_present():
     `sys.executable -m ruff` rather than `shutil.which("ruff")`, because
     it is the route tools/check.py itself falls back to when "ruff" is
     not on PATH, and checking for a route this verb never exercises
-    would be checking the wrong thing. fontTools needs its "woff" extra
-    (brotli) to read the format check_fonts.py's whole job is reading -
-    importing the woff2 submodule is what proves the extra landed,
-    where a bare `import fontTools` would pass with brotli absent and
-    still fail later, inside the check, on a font it cannot open.
+    would be checking the wrong thing.
+
+    fontTools needs its "woff" extra (brotli) to read the format
+    check_fonts.py's whole job is reading, but merely importing the
+    woff2 submodule does NOT prove the extra landed (a gap a review
+    found, S18-MINOR4, #310): woff2.py wraps its own `import brotli`
+    in a try/except and sets a module-level `haveBrotli = False` on
+    failure rather than raising, so `from fontTools.ttLib.woff2 import
+    WOFF2Reader` succeeds either way - the ImportError only fires
+    later, inside `WOFF2Reader.__init__`, which is exactly the "still
+    fail later, inside the check, on a font it cannot open" case this
+    probe exists to catch before it happens. Asserting the flag itself
+    is what proves brotli, not just fontTools, actually landed.
     """
     ruff_ok = subprocess.run(
         [sys.executable, "-m", "ruff", "--version"],
         capture_output=True, text=True).returncode == 0
     fonttools_ok = subprocess.run(
         [sys.executable, "-c",
-         "from fontTools.ttLib.woff2 import WOFF2Reader"],
+         "from fontTools.ttLib.woff2 import haveBrotli\nassert haveBrotli"],
         capture_output=True, text=True).returncode == 0
     return ruff_ok, fonttools_ok
 
