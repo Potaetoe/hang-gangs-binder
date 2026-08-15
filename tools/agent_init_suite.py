@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 103
+EXPECTED = 117
 
 
 def check(label, condition):
@@ -99,6 +99,45 @@ def git(repo, *args):
         capture_output=True, text=True,
     )
     return done.returncode, done.stdout + done.stderr
+
+
+class InjectGitWarning:
+    """While active, every git command still runs for REAL - stdout is
+    untouched - but its stderr gets one extra line glued on: the shape
+    the documented real-world case took (0.9-M0-S18, #310), a global
+    excludes file git could not read, printing `warning: unable to
+    access '<path>': Permission denied` while still exiting 0.
+
+    Manufactured on the subprocess boundary rather than by actually
+    breaking a global excludes file, because this suite found that case
+    turns FATAL rather than a warning on the git version and platform
+    that wrote it (git 2.55, Windows) - a fact about that build, not
+    about the code these arms exist to prove. What is under test is
+    what agent_init's parsers do once a process has produced two
+    streams, which does not depend on which git behaviour put a line on
+    one of them - so this seam patches subprocess.run itself, one level
+    below git(), and every caller downstream runs unmodified against a
+    real command's real output plus one synthetic line of noise.
+    """
+
+    WARNING = ("warning: unable to access "
+               "'/home/agent/.config/git/ignore': Permission denied\n")
+
+    def __enter__(self):
+        self._real_run = agent_init.subprocess.run
+
+        def patched(argv, *args, **kwargs):
+            done = self._real_run(argv, *args, **kwargs)
+            if list(argv[:1]) == ["git"]:
+                done.stderr = self.WARNING + (done.stderr or "")
+            return done
+
+        agent_init.subprocess.run = patched
+        return self
+
+    def __exit__(self, *exc_info):
+        agent_init.subprocess.run = self._real_run
+        return False
 
 
 def write(path, data, newline="\n"):
@@ -754,6 +793,144 @@ try:
           still_there("running"))
     check("and never sweeps the run doing the sweeping",
           still_there("mine") and swept == [plots["prior"]])
+
+    # ------------------------------------------------------------------
+    # G. Stderr separation: MAJOR4 (0.9-M0-S18, #310).
+    # ------------------------------------------------------------------
+    # A dedicated repository built the same trap-bearing way as A, so a
+    # parser that expects "nothing to report" (status) and one that
+    # expects "here is exactly one mismatch" (ls-files --eol) are both
+    # exercised for real while a warning rides on stderr alongside their
+    # genuinely successful stdout.
+    warn_repo = build_repo(os.path.join(base, "stderr-separation"))
+    warn_sha = git(warn_repo, "rev-parse", "HEAD")[1].strip()
+
+    with InjectGitWarning() as warned:
+        # Tolerant of git() still returning the old 2-tuple - this arm
+        # is run once against the pre-fix contract to prove the whole
+        # section red (0.9-M0-S18 completion record), and an unpack
+        # crash there is a true statement about that contract rather
+        # than a reason to lose every check after it.
+        try:
+            code, out, err = agent_init.git(warn_repo, "status",
+                                            "--porcelain", "-z")
+            separated = code == 0 and out == "" and err == warned.WARNING
+        except ValueError:
+            separated = False
+        check("git() keeps stdout and stderr as two separate strings",
+              separated)
+
+        dirty = agent_init.dirty_paths(warn_repo)
+        check("dirty_paths reads a clean tree as clean with a warning on "
+              "stderr",
+              dirty == set())
+
+        branch, head = agent_init.head_state(warn_repo)
+        check("head_state's branch name is not glued to the warning",
+              branch is not None and "warning" not in branch)
+        check("head_state's sha is still exactly the real 40 characters",
+              head == warn_sha)
+
+        worktrees = agent_init.registered_worktrees(warn_repo)
+        check("registered_worktrees still finds this worktree with a "
+              "warning on stderr",
+              os.path.realpath(warn_repo) in
+              {os.path.realpath(path) for path in worktrees})
+
+        fixable, committed, binary = agent_init.eol_problems(warn_repo)
+        check("eol_problems reports the real path, not path-plus-warning",
+              [entry[0] for entry in fixable] == ["pinned.txt"]
+              and committed == [] and binary == [])
+
+    check("the patch is fully undone once the block exits",
+          agent_init.subprocess.run is subprocess.run)
+
+    # ------------------------------------------------------------------
+    # H. Python gate tooling: MINOR4 code-half (0.9-M0-S18, #310).
+    # ------------------------------------------------------------------
+    # python_gate_tools_present() answers a MACHINE fact, not a
+    # worktree one - pip installs into the interpreter this process
+    # runs under, not into any one repo - so these arms drive it
+    # through a seam rather than through this machine's real global
+    # site-packages, the same reason PROBE_FAIL stands in for a real
+    # gate stage in section A: asserting on what this machine happens
+    # to have installed already would make the suite's own answer
+    # depend on the machine running it, which is exactly what a suite
+    # exists to rule out.
+    real_present = agent_init.python_gate_tools_present
+    real_install = agent_init.install_python_gate_tools
+    py_repo = build_repo(os.path.join(base, "py-deps"))
+    py_state = os.path.join(base, "py-deps-state")
+
+    try:
+        agent_init.python_gate_tools_present = lambda: (True, True)
+        code, out = run_verb(["init", "--repo", py_repo,
+                              "--state", py_state])
+        check("py deps already present is reported and not reinstalled",
+              code == 0 and "already importable" in out
+              and "installing from" not in out)
+
+        agent_init.python_gate_tools_present = lambda: (False, False)
+        code, out = run_verb(["init", "--repo", py_repo,
+                              "--state", py_state, "--no-install"])
+        check("--no-install reports absence instead of installing",
+              code == 0 and "FAILED" in out and "installing from" not in out)
+
+        # No tools/requirements-gate.txt in this fixture yet -
+        # build_repo() never writes one - so this is the branch every
+        # arm above this one exercises unless a test opts into the
+        # manifest existing, same shape as C2's no-package.json skip.
+        code, out = run_verb(["init", "--repo", py_repo,
+                              "--state", py_state])
+        check("a worktree with no manifest skips the install rather than "
+              "refusing",
+              code == 0 and "is not in this worktree" in out
+              and "installing from" not in out)
+
+        write(os.path.join(py_repo, "tools", "requirements-gate.txt"),
+              "ruff==0.16.1\nfonttools[woff]==4.63.0\n")
+        installs = []
+
+        def fake_install_ok(requirements):
+            installs.append(requirements)
+            return 0
+
+        agent_init.install_python_gate_tools = fake_install_ok
+        agent_init.python_gate_tools_present = lambda: (False, False)
+        code, out = run_verb(["init", "--repo", py_repo,
+                              "--state", py_state])
+        check("with the manifest present, absence installs from it - but "
+              "python_gate_tools_present still says absent afterward, so "
+              "this reports the partial-install refusal rather than ready",
+              code == 1 and "installing from" in out and len(installs) == 1
+              and "still cannot be imported" in out)
+        check("the exact command install_python_gate_tools ran against is "
+              "tools/requirements-gate.txt, the file S19 documents",
+              installs[0].endswith(
+                  os.path.join("tools", "requirements-gate.txt")))
+
+        present_calls = []
+
+        def present_then_ok():
+            present_calls.append(True)
+            return (True, True) if len(present_calls) > 1 else (False,
+                                                                 False)
+
+        agent_init.python_gate_tools_present = present_then_ok
+        code, out = run_verb(["init", "--repo", py_repo,
+                              "--state", py_state])
+        check("a real install that lands is reported ready, not refused",
+              code == 0 and "installing from" in out)
+
+        agent_init.python_gate_tools_present = lambda: (False, False)
+        agent_init.install_python_gate_tools = lambda requirements: 1
+        code, out = run_verb(["init", "--repo", py_repo,
+                              "--state", py_state])
+        check("a failing pip install refuses rather than reporting ready",
+              code == 1 and "pip install -r" in out)
+    finally:
+        agent_init.python_gate_tools_present = real_present
+        agent_init.install_python_gate_tools = real_install
 
 finally:
     # No ignore_errors. Swallowing a teardown failure is what left one
