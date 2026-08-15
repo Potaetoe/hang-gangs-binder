@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 117
+EXPECTED = 119
 
 
 def check(label, condition):
@@ -931,6 +931,61 @@ try:
     finally:
         agent_init.python_gate_tools_present = real_present
         agent_init.install_python_gate_tools = real_install
+
+    # ------------------------------------------------------------------
+    # I. python_gate_tools_present's REAL fontTools probe against a
+    # brotli-absent interpreter (0.9-M0-S18 fix wave 2, #310 MINOR4
+    # residual, found by review). Section H above mocks
+    # python_gate_tools_present wholesale for every one of its arms,
+    # which is exactly why that gap went unreached: a fontTools probe
+    # built on `from fontTools.ttLib.woff2 import WOFF2Reader` SUCCEEDS
+    # even when brotli/the woff extra is absent, because woff2.py
+    # swallows that ImportError into a module-level
+    # `haveBrotli = False` rather than raising it - the ImportError
+    # only fires later, inside WOFF2Reader.__init__, which is
+    # check_fonts.py's actual call path (TTFont() -> SFNTReader ->
+    # WOFF2Reader.__init__). This section drives the UNMOCKED function
+    # against a real brotli-absent interpreter state, simulated by
+    # shadowing `brotli` and `brotlicffi` with stub modules that raise
+    # ImportError on import, placed ahead of the real site-packages on
+    # PYTHONPATH - the only piece of machine state the probe's
+    # subprocess reads that this suite can fake without touching what
+    # is actually pip-installed on the machine running it.
+    # ------------------------------------------------------------------
+    absent_dir = os.path.join(base, "brotli-absent")
+    os.makedirs(absent_dir, exist_ok=True)
+    write(os.path.join(absent_dir, "brotli.py"),
+          'raise ImportError("shimmed absent for suite section I")\n')
+    write(os.path.join(absent_dir, "brotlicffi.py"),
+          'raise ImportError("shimmed absent for suite section I")\n')
+
+    old_pythonpath = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = (
+        absent_dir if old_pythonpath is None
+        else absent_dir + os.pathsep + old_pythonpath)
+    try:
+        sanity = subprocess.run(
+            [sys.executable, "-c",
+             "from fontTools.ttLib.woff2 import haveBrotli\n"
+             "print(haveBrotli)"],
+            capture_output=True, text=True)
+        check("the shim actually removes brotli - fontTools' own "
+              "haveBrotli flag reads False under it, the fact this "
+              "arm's simulation rests on",
+              sanity.returncode == 0 and sanity.stdout.strip() == "False")
+
+        _ruff_ok, fonttools_ok = agent_init.python_gate_tools_present()
+        check("the real (unmocked) probe correctly reports "
+              "fontTools[woff] ABSENT when brotli cannot be imported - "
+              "the exact machine state check_fonts.py fails on later, "
+              "which a wholesale mock in section H never exercised "
+              "(S18-MINOR4 residual, #310)",
+              fonttools_ok is False)
+    finally:
+        if old_pythonpath is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = old_pythonpath
 
 finally:
     # No ignore_errors. Swallowing a teardown failure is what left one
