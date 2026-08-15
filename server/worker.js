@@ -55,12 +55,17 @@
  *                             reads both. See handleReadMembership for
  *                             which way that migration runs.
  *   EXPORT_TOKEN              secret, break-glass admin access
- *   TELEGRAM_GROUP_CHAT_ID    secret, optional; when set, only members
- *                             of that group may sign in
+ *   TELEGRAM_GROUP_CHAT_ID    secret, REQUIRED on any Worker that signs
+ *                             people in: it names the group whose members
+ *                             may sign in, and its absence fails closed -
+ *                             groupStanding() returns "unknown" (deny), so
+ *                             a Worker missing it admits nobody but the
+ *                             break-glass ids below.
  *   ALWAYS_ALLOW_TELEGRAM_IDS secret, optional; ids that bypass the group
- *                             check, and the way back in if the bot is
- *                             ever removed from the group. Beside the
- *                             table's `always_allow` rows, never
+ *                             check, and the way back in when the group
+ *                             check itself cannot answer - the bot removed
+ *                             from the group, or the chat id unset. Beside
+ *                             the table's `always_allow` rows, never
  *                             replaced by them - groupStanding() says
  *                             why this one keeps a secret arm for good.
  *   ALLOWED_ORIGINS           optional, comma-separated
@@ -559,9 +564,17 @@ async function verifyTelegramPayload(payload, botToken) {
  * answer before the URL is built, which is also what keeps a Worker
  * holding no bot token from ever interpolating one.
  *
- * Unconfigured - no chat id - means the check is off and everybody with
- * a Telegram account passes. That is a deployment decision rather than a
- * silent default, and server/README.md says so.
+ * Unconfigured - no chat id - FAILS CLOSED: the check cannot be made, so
+ * it admits nobody. Returning "member" here (the pre-0.9 shape) turned a
+ * forgotten TELEGRAM_GROUP_CHAT_ID into an open door for every valid
+ * Telegram identity - a security-sensitive membership config missing is
+ * exactly the case that must deny rather than default open. The two
+ * allow arms above are the documented way into a misconfigured deploy
+ * and are checked first for that reason. A Worker that legitimately does
+ * no Telegram sign-in (the development one) carries no bot token, so
+ * verifyTelegramPayload refuses ahead of this call and it is never
+ * reached; the mandatory-config story is server/wrangler.toml and
+ * OPERATIONS.md, which name the chat id as required.
  */
 async function groupStanding(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
@@ -571,7 +584,7 @@ async function groupStanding(env, userId) {
     .has(await accountIdFor(env, userId))) {
     return "member";
   }
-  if (!env.TELEGRAM_GROUP_CHAT_ID) return "member";
+  if (!env.TELEGRAM_GROUP_CHAT_ID) return "unknown";
 
   const url = "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN +
     "/getChatMember?chat_id=" +
@@ -757,7 +770,22 @@ async function sessionFor(env, token) {
   // One reading of the clock for the refusal, the sweep and the slide.
   // Three would let a row be live for the check and expired for the
   // write, which is a whole class of answer that cannot be reproduced.
-  if (Date.parse(row.expires_at) <= now) {
+  //
+  // A deadline must be FINITE and in the future. An unparseable expires_at
+  // is Date.parse() -> NaN, and `NaN <= now` is false, so testing expiry
+  // alone read a row whose deadline could not be parsed as "not yet
+  // expired" and served it forever - a malformed session accepted as live.
+  // The finite check refuses it, and it is deleted by its own hash rather
+  // than by the expiry sweep below: that sweep compares expires_at as
+  // text, and a non-date string does not fall under a `<=` against an ISO
+  // timestamp, so it would leave the bad row in place to be served again.
+  const expiresAt = Date.parse(row.expires_at);
+  if (!Number.isFinite(expiresAt)) {
+    await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?")
+      .bind(tokenHash).run();
+    return null;
+  }
+  if (expiresAt <= now) {
     await env.DB.prepare("DELETE FROM sessions WHERE expires_at <= ?")
       .bind(new Date(now).toISOString()).run();
     return null;
@@ -1291,8 +1319,16 @@ async function handleSubmit(request, env, origin, caller) {
     return json({ error: "Ciphertext too large." }, 413, origin);
   }
   // Shape check only. The contents are unreadable here by design, so
-  // this asserts the field is base64 and stops there.
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext)) {
+  // this asserts the field is base64 and stops there - but base64 is
+  // length-and-padding, not just alphabet. apps/web/crypto.js seals
+  // through btoa(), which emits standard base64 in quanta of four with
+  // padding only on the final group, so a length that is not a multiple
+  // of four is proof the field is not a submission this project wrote.
+  // The alphabet-only regex this replaced accepted "A", "AA" and any
+  // odd-length run as ciphertext; the `% 4` is what makes the check
+  // match what the client can actually produce.
+  if (ciphertext.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext)) {
     return json({ error: "Ciphertext must be base64." }, 400, origin);
   }
 

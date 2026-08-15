@@ -103,9 +103,14 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io"
 #                          from their own history, with no way back.
 #     ADMIN_TELEGRAM_IDS   numeric ids allowed to administer the Worker
 #     TELEGRAM_GROUP_CHAT_ID
-#                          optional group whose members may sign in
+#                          the group whose members may sign in. REQUIRED on
+#                          any Worker that signs people in: worker.js's
+#                          groupStanding() fails closed without it, admitting
+#                          nobody but the break-glass ids below. Absent only
+#                          on [env.dev], which does no Telegram sign-in.
 #     ALWAYS_ALLOW_TELEGRAM_IDS
-#                          optional ids that bypass the group check
+#                          optional ids that bypass the group check - the
+#                          break-glass way in when the check cannot answer
 #     DEV_LOGIN_SECRET     DEVELOPMENT ONLY. Its absence is what turns
 #                          POST /auth/dev off, so it must never be set
 #                          here or on the production Worker.
