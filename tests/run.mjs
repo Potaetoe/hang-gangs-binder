@@ -137,8 +137,24 @@
  * having checked nothing, so stage zero also requires the one line
  * --verify's success path prints - see the vacuity guard where stage
  * zero runs, below - the same refusal reached a second way.
+ *
+ * ------------------------------------------------------------------
+ * THE REQUIRED-ARM ROSTER (MAJOR5, #311; review-0.9-m0-s19). Discovery
+ * above answers "what did the sweep find", which cannot see a whole
+ * arm SUBTRACTED: `git rm tests/claim-vs-diff.test.mjs` shrinks the
+ * walk by one file and the loop below simply runs one fewer program -
+ * 9 arms, all green, exit 0, and nothing anywhere says a tenth used to
+ * run. tests/ROSTER is a second, committed fact about what MUST be
+ * here, read independently of the directory sweep rather than derived
+ * from it - a roster generated from the same walk it is checked
+ * against would shrink together with a deletion and prove nothing.
+ * Discovery still finds every arm exactly as before and the stray
+ * sweep below is unchanged; this adds a THIRD question neither
+ * answers: does every path the roster names still exist among what
+ * discovery found? A green run and the roster together are the whole
+ * claim "the required set actually ran", which neither says alone.
  */
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -146,6 +162,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ARM_SUFFIX = ".test.mjs";
 const PREFLIGHT = "tests/preflight.mjs";
+const ROSTER = "tests/ROSTER";
 
 /* Repo-relative and forward-slashed, so a name reads the same in a
    Windows terminal and in the Actions log. */
@@ -157,7 +174,8 @@ const rel = (absolute) =>
    out "tests/run.mjs" is a second copy of this file's own path: rename
    the runner and it reports itself as a stray it is in the middle of
    running. */
-const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT]);
+const NOT_ARMS = new Set([rel(fileURLToPath(import.meta.url)), PREFLIGHT,
+                          ROSTER]);
 
 const exists = async (path) => {
   try {
@@ -326,6 +344,40 @@ if (arms.length === 0) {
   problems.push("no arms");
   console.log("no *" + ARM_SUFFIX + " under " + rel(HERE) + ". An empty " +
     "gate passes everything, so this is a failure.");
+}
+
+/* The required-arm roster (MAJOR5, #311). See the header block above,
+   "THE REQUIRED-ARM ROSTER", for why this is a THIRD question and not
+   a restatement of discovery: every path tests/ROSTER names must still
+   be among what the sweep found, checked against a committed list that
+   does not shrink when a file does. */
+const rosterPath = ROOT + ROSTER;
+if (!(await exists(rosterPath))) {
+  problems.push(ROSTER);
+  console.log(ROSTER + " is missing. It is the required-arm roster " +
+    "(MAJOR5, #311) and is expected to always be present, so a gate " +
+    "that runs without it is graded the same as one that finds no " +
+    "arms: a red, not a note.");
+} else {
+  const rosterText = await readFile(rosterPath, "utf8");
+  const required = rosterText.split(/\r?\n/).map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+  if (required.length === 0) {
+    problems.push(ROSTER + " (empty)");
+    console.log(ROSTER + " names no required arms. An empty roster " +
+      "asserts nothing, which fails the same way no roster at all " +
+      "does.");
+  }
+  const found = new Set(arms.map(rel));
+  for (const name of required) {
+    if (found.has(name)) continue;
+    problems.push("required arm missing: " + name);
+    console.log("REQUIRED ARM MISSING: " + ROSTER + " names " + name +
+      " and discovery did not find it. Either the file was deleted " +
+      "or renamed, or " + ROSTER + " itself needs updating - argue " +
+      "for that change in the commit that makes it, per this file's " +
+      "own DERIVE, DO NOT PIN header.");
+  }
 }
 
 console.log(problems.length

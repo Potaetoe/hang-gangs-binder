@@ -1,0 +1,38 @@
+# The required-arm pin (MAJOR5, #311; review-0.9-m0-s19). tests/run.mjs
+# discovers arms by walking the directory - that is deliberate (see its
+# own header, "DERIVE, DO NOT PIN") and stays true for the SET of arms
+# that exist. What discovery cannot see is a whole arm SUBTRACTED:
+# `git rm tests/claim-vs-diff.test.mjs` shrinks the walk by one file and
+# the runner simply runs one fewer program, silently green, exit 0 -
+# the fewer-checks-and-nobody-noticed failure #204 already found once
+# from the other side (a renamed extension leaving arms uncounted).
+#
+# This file is the independent fact: every path listed below MUST be
+# present among what discovery finds, or the gate is red and names
+# which one is missing. It is committed and walked on its own, never
+# generated from the same directory sweep it is checked against - a
+# roster derived from tests/ at read time would shrink with tests/ and
+# prove nothing a deletion could not evade.
+#
+# Adding an arm: `git add` under tests/ already registers it with the
+# runner (that half needs no edit here). Add its path below in the same
+# commit, so the roster and the arm land together and neither can be
+# forgotten - tests/ci-wiring.test.mjs checks CI wiring the same
+# both-halves way. Retiring an arm with its surface (the M2/M3/M4
+# pattern tests/run.mjs's own header describes) removes its line here
+# in the same commit that deletes the file.
+#
+# One path per line, repo-relative, forward-slashed. Blank lines and
+# lines starting with # are ignored.
+
+tests/bake-hygiene.test.mjs
+tests/ci-wiring.test.mjs
+tests/claim-vs-diff.test.mjs
+tests/mockup-tokens.test.mjs
+tests/prime-lock.test.mjs
+tests/reaper.test.mjs
+tests/session-open.test.mjs
+tests/site-parity.test.mjs
+tests/site-propagation.test.mjs
+tests/site-spec.test.mjs
+tests/worktree-contract.test.mjs
