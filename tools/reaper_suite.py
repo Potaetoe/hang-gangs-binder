@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 150
+EXPECTED = 193
 
 
 def check(label, condition):
@@ -950,17 +950,53 @@ try:
     # safest branch in the plan into the one deleted with no second
     # opinion at all, which is the precise inverse of the hold_back law
     # above.
-    reaper.GIT_TIMEOUT = 0.000001
+    #
+    # ONLY `git branch -d` is silenced, not the whole clock. delete_branch
+    # now re-resolves the tip before it reaches `-d` (BLOCKER 2), and a
+    # blanket tiny timeout would expire that rev-parse first - so the arm
+    # would prove the re-resolve refuses, not the `-D`-not-tried
+    # escalation it is here for. Silencing the one command reaches the
+    # escalation guard with the tip check having genuinely passed.
+    tip_now = sha(primary, "slice-timeout")
+    honest_for_d = reaper.git
+
+    def silent_branch_d(repo, *args):
+        if args[:2] == ("branch", "-d"):
+            said = "`git branch -d` in %s did not answer" % repo
+            reaper.TROUBLE.append(said)
+            return reaper.GIT_TIMED_OUT, said
+        return honest_for_d(repo, *args)
+
+    reaper.git = silent_branch_d
     try:
-        went, said = reaper.delete_branch(primary, "slice-timeout",
+        went, said = reaper.delete_branch(primary, "slice-timeout", tip_now,
                                           "a proof nobody checked")
     finally:
-        reaper.GIT_TIMEOUT = patient
-    check("a branch deletion over an unanswering git does not go",
+        reaper.git = honest_for_d
+        del reaper.TROUBLE[:]
+    check("a branch deletion whose -d never answered does not go",
           went is False)
     check("and says `-D` was NOT tried", "NOT tried" in said)
     check("AND THE BRANCH IS STILL THERE",
           "slice-timeout" in branches(primary))
+
+    # BLOCKER 2 at the unit: the same call refuses outright when the tip
+    # no longer equals what was planned, whatever else would license it.
+    # first IS an ancestor of accounts, so nothing but the moved tip
+    # stops the delete here.
+    git(primary, "branch", "b-moved-unit", first)
+    went, said = reaper.delete_branch(primary, "b-moved-unit", accounts,
+                                      "a proof that named the wrong tip")
+    check("delete_branch refuses a tip that moved off the planned SHA",
+          went is False and "moved" in said and "NOT deleted" in said)
+    check("and the moved-tip branch is untouched",
+          "b-moved-unit" in branches(primary))
+    went, said = reaper.delete_branch(primary, "b-moved-unit", first,
+                                      "first is an ancestor of accounts")
+    check("delete_branch deletes when the tip matches the planned SHA",
+          went is True)
+    check("and that branch is then gone",
+          "b-moved-unit" not in branches(primary))
 
     # hold_back, driven directly: a command that goes silent PARTWAY
     # through a run that started fine. The plan is already built by
@@ -1083,6 +1119,226 @@ try:
               any("SURVIVED the prune" in line for line in said))
     finally:
         reaper.worktree_table = honest
+
+    print("\n--- BLOCKER 2: a branch that advances between plan and act is "
+          "refused, not force-deleted ---")
+
+    # The real git race the 2nd audit named, end to end: a branch proven
+    # landed is planned for reaping, then - before the act - another
+    # process advances it onto unmerged work. Deleting the NAME now would
+    # lose commit B, having proved only that the SHA the name pointed at
+    # when the plan ran had landed. act() re-resolves the tip immediately
+    # before deleting and refuses the moved name. Driven through act()
+    # on the stale plan item, which is exactly the plan-to-act gap.
+    git(primary, "branch", "b-race-merged", first)
+    items = reaper.plan(primary, state, roots)
+    raced = find(items, "merged branch", "b-race-merged")
+    check("the landed race branch is planned for reaping",
+          verdict(raced) == "reap")
+    planned_sha = raced["sha"] if raced else None
+
+    racewt = os.path.join(root, "race-merged-wt")
+    git(primary, "worktree", "add", "--detach", racewt, "accounts")
+    write(os.path.join(racewt, "raced.txt"), "unmerged work after the plan\n")
+    git(racewt, "add", "-A")
+    git(racewt, "commit", "-m", "raced ahead of the plan")
+    raced_b = sha(racewt, "HEAD")
+    git(primary, "branch", "-f", "b-race-merged", raced_b)
+    git(primary, "worktree", "remove", "--force", racewt)
+    check("the fixture actually moved the branch after the plan",
+          raced_b != planned_sha and raced_b is not None)
+
+    said = reaper.act(primary, raced, state, roots)
+    check("the moved branch is refused at act time, naming the move",
+          any("moved" in line and "NOT deleted" in line for line in said))
+    check("THE RACED BRANCH SURVIVES THE ACT",
+          "b-race-merged" in branches(primary))
+    check("IT STILL POINTS AT THE UNMERGED COMMIT B",
+          sha(primary, "b-race-merged") == raced_b)
+    check("AND COMMIT B IS STILL A REACHABLE OBJECT",
+          git(primary, "cat-file", "-e", raced_b)[0] == 0)
+
+    print("\n--- BLOCKER 3: every parked-worktree licensing proof is "
+          "re-established at act time ---")
+
+    # One helper per case: a fresh parked, reapable worktree, and the
+    # STALE plan item that licenses it. Each case then mutates the live
+    # machine the way a race would - a lease taken, a lock set, HEAD
+    # moved, an untracked file written, the branch advanced - and drives
+    # the stale item through act(). A reap that re-proved only
+    # containment and registration would delete every one of these; the
+    # re-established proof set refuses each and leaves it exactly as
+    # found.
+    def fresh_parked(name, branch):
+        wt = add_worktree(primary, name, branch, first)
+        park(wt, state)
+        it = find(reaper.plan(primary, state, roots), "parked worktree", wt)
+        check("%s is planned for reaping before the race" % name,
+              verdict(it) == "reap")
+        return wt, it
+
+    def reported(said):
+        return any(line.startswith("REPORTED") for line in said)
+
+    def retire(wt):
+        # Each survival is asserted before this runs, so the fixture has
+        # done its job; retiring it keeps it out of every later plan's
+        # enumeration. The enumeration is one git spawn per registered
+        # worktree, so an accumulating fixture makes the whole suite grow
+        # quadratically - measured on Windows, where a git spawn is the
+        # dominant cost. `--force` because the mutation left the tree
+        # dirty or off its recorded HEAD on purpose.
+        if os.path.isdir(wt):
+            git(primary, "worktree", "remove", "--force", wt)
+
+    # A lease taken after the plan.
+    wt, it = fresh_parked("wt-race-lease", "slice-race-lease")
+    lease_race = agent_init.lease_path((8150, 8151), state)
+    agent_init.write_lease(lease_race, os.path.abspath(wt),
+                           "slice-race-lease", (8150, 8151))
+    said = reaper.act(primary, it, state, roots)
+    check("a lease taken after the plan refuses the reap", reported(said))
+    check("the refusal names the lease",
+          any("lease" in line and "8150" in line for line in said))
+    check("the raced-lease worktree survives untouched", os.path.isdir(wt))
+    check("its branch survives", "slice-race-lease" in branches(primary))
+    # Guarded: under a GREEN reaper the reap was refused and the lease is
+    # still here, so this removes it to keep the next arm's plan clean.
+    # A mutation that made act() ignore the lease would already have
+    # dropped it, and this must not crash the mutation battery before it
+    # reaches the arms below.
+    if os.path.isfile(lease_race):
+        os.remove(lease_race)
+    retire(wt)
+
+    # A git worktree lock set after the plan.
+    wt, it = fresh_parked("wt-race-lock", "slice-race-lock")
+    git(primary, "worktree", "lock", wt)
+    said = reaper.act(primary, it, state, roots)
+    check("a lock set after the plan refuses the reap", reported(said))
+    check("the refusal names the lock",
+          any("lock" in line for line in said))
+    check("the raced-lock worktree survives", os.path.isdir(wt))
+    git(primary, "worktree", "unlock", wt)
+    retire(wt)
+
+    # HEAD moved off the certificate's recorded SHA after the plan.
+    wt, it = fresh_parked("wt-race-head", "slice-race-head")
+    git(wt, "checkout", "--detach", accounts)
+    said = reaper.act(primary, it, state, roots)
+    check("HEAD moving after the plan refuses the reap", reported(said))
+    check("the refusal names HEAD",
+          any("HEAD" in line for line in said))
+    check("the raced-head worktree survives", os.path.isdir(wt))
+    retire(wt)
+
+    # An untracked file written into the worktree after the plan.
+    wt, it = fresh_parked("wt-race-dirty", "slice-race-dirty")
+    write(os.path.join(wt, "raced-unsaved.txt"),
+          "work created after the plan\n")
+    said = reaper.act(primary, it, state, roots)
+    check("an untracked file appearing after the plan refuses the reap",
+          reported(said))
+    check("the refusal names the uncommitted path",
+          any("raced-unsaved.txt" in line for line in said))
+    check("the raced-dirty worktree keeps its unsaved work",
+          os.path.isfile(os.path.join(wt, "raced-unsaved.txt")))
+    retire(wt)
+
+    # The worktree's own branch advanced onto unmerged work after the
+    # plan - BLOCKER 2's tip check reached as one of BLOCKER 3's proof
+    # set. Nothing has the branch checked out (park detached HEAD), so
+    # `branch -f` moves it; the reap must refuse and the unmerged commit
+    # must survive.
+    wt, it = fresh_parked("wt-race-tip", "slice-race-tip")
+    tipwt = os.path.join(root, "race-tip-wt")
+    git(primary, "worktree", "add", "--detach", tipwt, "accounts")
+    write(os.path.join(tipwt, "tipwork.txt"), "unmerged branch work\n")
+    git(tipwt, "add", "-A")
+    git(tipwt, "commit", "-m", "advance the branch past its certificate")
+    tip_b = sha(tipwt, "HEAD")
+    git(primary, "worktree", "remove", "--force", tipwt)
+    git(primary, "branch", "-f", "slice-race-tip", tip_b)
+    said = reaper.act(primary, it, state, roots)
+    check("the branch tip moving after the plan refuses the reap",
+          reported(said))
+    check("the raced-tip worktree survives", os.path.isdir(wt))
+    check("its branch still points at the unmerged commit",
+          sha(primary, "slice-race-tip") == tip_b)
+    check("and the unmerged commit survives as a reachable object",
+          git(primary, "cat-file", "-e", tip_b)[0] == 0)
+    retire(wt)
+
+    # Registration withdrawn after the plan: the worktree is moved out
+    # from under git so it is no longer a linked worktree of this
+    # repository. The re-established registered proof - or the table read
+    # ahead of it - must refuse rather than delete a path the repository
+    # no longer owns.
+    wt, it = fresh_parked("wt-race-unreg", "slice-race-unreg")
+    git(primary, "worktree", "remove", "--force", wt)
+    check("the fixture left no directory behind after the removal",
+          not os.path.exists(wt))
+    said = reaper.act(primary, it, state, roots)
+    check("a worktree git no longer registers is refused, not deleted",
+          reported(said))
+
+    print("\n--- MAJOR 1: a registration that survives the prune is an "
+          "incomplete reap, not a success ---")
+
+    # A real vanished worktree - registered, directory gone - carrying a
+    # dead lease and a real record. The prune is forced to appear to fail
+    # by keeping the doomed path in the worktree table after
+    # `git worktree prune` runs. The old code printed SURVIVED but still
+    # dropped the lease, stamped the record reaped and exited 0. The reap
+    # is now incomplete: the lease stays, the record stays parked, and
+    # the run exits nonzero.
+    survived = add_worktree(primary, "wt-survive", "slice-survive", first)
+    park(survived, state)
+    lease_survive = agent_init.lease_path((8154, 8155), state)
+    agent_init.write_lease(lease_survive, os.path.abspath(survived),
+                           "slice-survive", (8154, 8155))
+    shutil.rmtree(survived)
+    survivor_abs = os.path.abspath(survived)
+    item = find(reaper.plan(primary, state, roots), "vanished worktree",
+                survived)
+    check("the vanished-with-lease worktree is a reap candidate",
+          verdict(item) == "reap")
+
+    honest_tbl = reaper.worktree_table
+
+    def prune_never_takes(repo):
+        tbl = honest_tbl(repo)
+        if tbl is None:
+            return None
+        if not any(entry["path"] == survivor_abs for entry in tbl):
+            tbl = [*tbl, {"path": survivor_abs, "head": None,
+                          "branch": None, "locked": False,
+                          "lock_reason": "", "prunable": None}]
+        return tbl
+
+    reaper.worktree_table = prune_never_takes
+    try:
+        said = reaper.act(primary, item, state, roots)
+        check("the act reports the registration SURVIVED the prune",
+              any("SURVIVED the prune" in line for line in said))
+        check("a survived prune is flagged incomplete, counted as trouble",
+              any("could NOT" in line for line in said))
+        check("the dead lease is NOT dropped on an incomplete reap",
+              os.path.isfile(lease_survive))
+        rec = agent_init.read_json(agent_init.record_path(survived, state))
+        check("the record is NOT marked reaped on an incomplete reap",
+              rec.get("state") != "reaped")
+        # And end to end: a full --act run in which the prune survives
+        # exits nonzero rather than claiming success.
+        code, whole = run_reaper(["--act", "--repo", primary, "--state",
+                                  state, "--roots", os.pathsep.join(roots)])
+        check("an --act run whose prune survived exits nonzero", code != 0)
+        check("it does not claim every proven candidate was reaped",
+              "Every proven candidate was reaped" not in whole)
+        check("and the dead lease is still not dropped after the run",
+              os.path.isfile(lease_survive))
+    finally:
+        reaper.worktree_table = honest_tbl
 
 finally:
     agent_init.rmtree_hard(root)

@@ -562,6 +562,94 @@ def branch_proof(repo, park, table, names):
                  "already on a mainline" % (tip[:12], proved, branch))
 
 
+def parked_proofs(repo, state, roots, table, primary, source, record, park,
+                  path):
+    """Every licensing proof for a parked worktree, against the live machine.
+
+    Built for the plan AND re-established in act(), from this one
+    function, and that single home is the 2nd audit's BLOCKER 3. The plan
+    and the act are separated by however long the report took to print,
+    and the world does not hold still for a report: a lease can be taken,
+    a lock set, HEAD moved, the branch advanced onto unmerged work, an
+    untracked file written. A proof remembered from the plan is a proof
+    about a machine that has moved on, so the decisive facts are not
+    carried across - they are the SAME proofs, asked again against
+    whatever the machine now says. Two definitions of "licensed to reap"
+    could disagree, so there is one, the same argument agent-park makes
+    for computing its dry run and its act from a single function.
+    """
+    by_path = {entry["path"]: entry for entry in table}
+    proofs = []
+
+    expected = os.path.abspath(agent_init.record_path(path, state))
+    proofs.append(Proof(
+        "record", expected == os.path.abspath(source)
+        and record.get("schema") == agent_init.SCHEMA,
+        "the record is %s, schema %s, and it is named for the path it "
+        "describes" % (os.path.basename(source), record.get("schema"))
+        if expected == os.path.abspath(source)
+        and record.get("schema") == agent_init.SCHEMA
+        else "%s does not describe its own path under schema %d - a "
+             "record that names a path it is not filed under could be "
+             "one agent writing another's death certificate"
+             % (os.path.basename(source), agent_init.SCHEMA)))
+
+    entry = by_path.get(path)
+    proofs.append(Proof(
+        "registered", entry is not None and path != primary,
+        "git registers %s as a linked worktree of this repository"
+        % path if entry is not None and path != primary
+        else "%s is not a linked worktree of this repository (or it is "
+             "the primary checkout), so nothing here may delete it"
+             % path))
+
+    locked = bool(entry and entry["locked"])
+    proofs.append(Proof(
+        "lock", not locked,
+        "git holds no lock on it" if not locked
+        else "git worktree lock is held on it%s - a lock is a live "
+             "claim by something outside the certificate; remedy: "
+             "`git worktree unlock %s` once you have established what "
+             "held it" % (", reason: " + entry["lock_reason"]
+                          if entry["lock_reason"] else "", path)))
+
+    ok, said = contained(path, roots)
+    proofs.append(Proof("containment", ok, said))
+
+    held = leases_on(state, path)
+    proofs.append(Proof(
+        "lease", not held,
+        "no port lease names it" if not held
+        else "a port lease still names it: %s - the certificate says "
+             "parked and the lease says held, and two records "
+             "disagreeing is a report"
+             % ", ".join(os.path.basename(name) for name in held)))
+
+    head_branch, head = agent_init.head_state(path)
+    proofs.append(Proof(
+        "head", head_branch is None and head == park.get("head"),
+        "HEAD is detached at %s, exactly as the certificate records"
+        % (head or "nothing")[:12]
+        if head_branch is None and head == park.get("head")
+        else "HEAD is %s and the certificate records a detached %s"
+             % (("on " + head_branch) if head_branch
+                else "at " + (head or "nothing")[:12],
+                (park.get("head") or "nothing")[:12])))
+
+    dirty = agent_init.dirty_paths(path)
+    proofs.append(Proof(
+        "clean", dirty is not None and not dirty,
+        "git status there is empty" if dirty is not None and not dirty
+        else "git status could not be read there"
+        if dirty is None
+        else "%d uncommitted or untracked path(s) appeared after it "
+             "parked: %s - deleting the directory would delete that "
+             "work" % (len(dirty), ", ".join(sorted(dirty)[:4]))))
+
+    proofs.append(branch_proof(repo, park, table, SLICE_MAINLINES))
+    return proofs
+
+
 def parked_items(repo, state, roots, table, primary):
     """Candidates out of the death certificates, and the inert leftovers.
 
@@ -573,7 +661,6 @@ def parked_items(repo, state, roots, table, primary):
     items = []
     inert = []
     registered = {entry["path"] for entry in table}
-    by_path = {entry["path"]: entry for entry in table}
     for source, record in records(state):
         if record.get("state") != "parked":
             continue
@@ -593,74 +680,8 @@ def parked_items(repo, state, roots, table, primary):
                                                path))
             continue
         park = record.get("park") or {}
-        proofs = []
-
-        expected = os.path.abspath(agent_init.record_path(path, state))
-        proofs.append(Proof(
-            "record", expected == os.path.abspath(source)
-            and record.get("schema") == agent_init.SCHEMA,
-            "the record is %s, schema %s, and it is named for the path it "
-            "describes" % (os.path.basename(source), record.get("schema"))
-            if expected == os.path.abspath(source)
-            and record.get("schema") == agent_init.SCHEMA
-            else "%s does not describe its own path under schema %d - a "
-                 "record that names a path it is not filed under could be "
-                 "one agent writing another's death certificate"
-                 % (os.path.basename(source), agent_init.SCHEMA)))
-
-        entry = by_path.get(path)
-        proofs.append(Proof(
-            "registered", entry is not None and path != primary,
-            "git registers %s as a linked worktree of this repository"
-            % path if entry is not None and path != primary
-            else "%s is not a linked worktree of this repository (or it is "
-                 "the primary checkout), so nothing here may delete it"
-                 % path))
-
-        locked = bool(entry and entry["locked"])
-        proofs.append(Proof(
-            "lock", not locked,
-            "git holds no lock on it" if not locked
-            else "git worktree lock is held on it%s - a lock is a live "
-                 "claim by something outside the certificate; remedy: "
-                 "`git worktree unlock %s` once you have established what "
-                 "held it" % (", reason: " + entry["lock_reason"]
-                              if entry["lock_reason"] else "", path)))
-
-        ok, said = contained(path, roots)
-        proofs.append(Proof("containment", ok, said))
-
-        held = leases_on(state, path)
-        proofs.append(Proof(
-            "lease", not held,
-            "no port lease names it" if not held
-            else "a port lease still names it: %s - the certificate says "
-                 "parked and the lease says held, and two records "
-                 "disagreeing is a report"
-                 % ", ".join(os.path.basename(name) for name in held)))
-
-        head_branch, head = agent_init.head_state(path)
-        proofs.append(Proof(
-            "head", head_branch is None and head == park.get("head"),
-            "HEAD is detached at %s, exactly as the certificate records"
-            % (head or "nothing")[:12]
-            if head_branch is None and head == park.get("head")
-            else "HEAD is %s and the certificate records a detached %s"
-                 % (("on " + head_branch) if head_branch
-                    else "at " + (head or "nothing")[:12],
-                    (park.get("head") or "nothing")[:12])))
-
-        dirty = agent_init.dirty_paths(path)
-        proofs.append(Proof(
-            "clean", dirty is not None and not dirty,
-            "git status there is empty" if dirty is not None and not dirty
-            else "git status could not be read there"
-            if dirty is None
-            else "%d uncommitted or untracked path(s) appeared after it "
-                 "parked: %s - deleting the directory would delete that "
-                 "work" % (len(dirty), ", ".join(sorted(dirty)[:4]))))
-
-        proofs.append(branch_proof(repo, park, table, SLICE_MAINLINES))
+        proofs = parked_proofs(repo, state, roots, table, primary,
+                               source, record, park, path)
 
         verdict = "reap" if all(proof.ok for proof in proofs) else "report"
         steps = []
@@ -847,8 +868,23 @@ def plan(repo, state=None, roots=None):
                      + branch_items(primary, state, table, spoken_for))
 
 
-def delete_branch(repo, name, proof):
+def delete_branch(repo, name, expected, proof):
     """(whether it went, what to print) - and the proof is in the print.
+
+    THE TIP IS RE-RESOLVED AGAINST `expected` IMMEDIATELY BEFORE THE
+    DELETE, and this is the whole of the 2nd audit's BLOCKER 2. The plan
+    proves a tip has landed, then the report prints, and the world does
+    not hold still for a report: another process can advance the branch
+    onto unmerged work while the report scrolls. Deleting the NAME then
+    destroys that work on the strength of a proof about the SHA the name
+    pointed at when the plan ran - and `-D` would do it without even
+    git's merged check dissenting, because the moved branch is genuinely
+    not merged.
+    So the last question asked before the delete is whether the name
+    still points where the plan proved, and a name that has moved - or
+    vanished - is refused, not deleted. `expected` is the planned tip:
+    `item["sha"]` for a branch candidate, the certificate's recorded tip
+    for a parked worktree's own branch.
 
     `-d` first, as a free second opinion from git. It asks whether the
     branch is merged into the CURRENT HEAD, which is a narrower question
@@ -856,6 +892,14 @@ def delete_branch(repo, name, proof):
     the deletion - and `-D` carries the ancestry proof in the same line,
     which is the floor this slice is held to.
     """
+    current = resolve(repo, "refs/heads/" + name)
+    if current != expected:
+        return False, ("REPORTED: branch %s was at %s when it was planned "
+                       "and is at %s now, so it moved between the plan and "
+                       "the act and was NOT deleted - a landed tip does not "
+                       "license deleting a name that has left it"
+                       % (name, (expected or "nothing")[:12],
+                          (current or "gone")[:12]))
     code, out = git(repo, "branch", "-d", name)
     if code == 0:
         return True, ("deleted branch %s - %s; git's own merged check "
@@ -901,31 +945,68 @@ def act(repo, item, state=None, roots=None):
 
     The plan and the act are separated by however long the report took
     to print, and the world does not hold still for a report - so the
-    decisive facts are asked again here rather than carried across.
+    decisive facts are asked again here rather than carried across. The
+    2nd audit found three ways the old separation leaked, and each is
+    closed below:
+
+      BLOCKER 2  a branch that advanced onto unmerged work after the plan
+                 was force-deleted on the strength of the SHA it pointed
+                 at when the plan ran. delete_branch re-resolves the tip
+                 against the planned SHA immediately before deleting,
+                 and refuses a name that moved.
+      BLOCKER 3  a parked worktree whose lock, lease, HEAD, cleanliness or
+                 branch tip changed after the report was still deleted,
+                 because act() re-proved only containment and
+                 registration. Every licensing proof is re-established
+                 here, from the same function the plan built them with.
+      MAJOR 1    a registration that survived the prune was counted a
+                 success, its lease dropped and its record stamped reaped.
+                 A surviving registration is now an incomplete reap:
+                 nonzero, nothing further touched, safely retryable.
     """
     if item["verdict"] != "reap":
         return ["REPORTED and left alone."]
     kind = item["kind"]
+    roots = roots or worktree_roots(repo)
     if kind in ("debris branch", "merged branch"):
         proof = item["proofs"][0]
         if not is_ancestor(repo, item["sha"],
                            proof.said.split("an ancestor of ")[-1]):
             return ["REPORTED: %s stopped being provable between the plan "
                     "and the act." % item["subject"]]
-        _ok, said = delete_branch(repo, item["subject"], proof.said)
+        # The ancestry above re-proves the SHA is landed; delete_branch
+        # re-proves the NAME still points at it (BLOCKER 2).
+        _ok, said = delete_branch(repo, item["subject"], item["sha"],
+                                  proof.said)
         return [said]
 
     path = item["subject"]
     done = []
+    park = item.get("park") or {}
     if kind == "parked worktree":
-        ok, said = contained(path, roots or worktree_roots(repo))
-        if not ok:
-            return ["REPORTED: " + said]
-        table = worktree_table(repo) or []
-        if path not in {entry["path"] for entry in table} or path == (
-                table[0]["path"] if table else None):
-            return ["REPORTED: %s stopped being a linked worktree of this "
-                    "repository between the plan and the act." % path]
+        # BLOCKER 3: re-establish EVERY licensing proof against the
+        # machine as it is now, not only containment and registration.
+        # Re-read the table and the certificate first, because both are
+        # what the proofs are computed from, and a proof computed from a
+        # stale reading is the very staleness this is here to close.
+        table = worktree_table(repo)
+        if table is None:
+            return ["REPORTED: the worktree table could not be read "
+                    "between the plan and the act, so %s was left "
+                    "untouched." % path]
+        record = agent_init.read_json(item["record"])
+        if record is None:
+            return ["REPORTED: the death certificate for %s could not be "
+                    "re-read at act time, so it was left untouched." % path]
+        park = record.get("park") or {}
+        proofs = parked_proofs(repo, state, roots, table, table[0]["path"],
+                               item["record"], record, park, path)
+        failed = [proof for proof in proofs if not proof.ok]
+        if failed:
+            return ["REPORTED: %s stopped being provable between the plan "
+                    "and the act, so it was left untouched." % path,
+                    *["    %-12s %s" % (proof.name, proof.said)
+                      for proof in failed]]
         try:
             severed = sever_links(path)
         except (ValueError, OSError) as trouble:
@@ -950,22 +1031,42 @@ def act(repo, item, state=None, roots=None):
     if after is None:
         done.append("the registration for %s could NOT be confirmed "
                     "pruned: git did not answer the question that would "
-                    "confirm it" % path)
-    elif path not in {entry["path"] for entry in after}:
-        done.append("pruned the worktree registration for %s" % path)
-    else:
-        done.append("the registration for %s SURVIVED the prune" % path)
+                    "confirm it. The directory is gone, so the next run "
+                    "reaps this as a vanished worktree; nothing further "
+                    "was done here." % path)
+        return done
+    if path in {entry["path"] for entry in after}:
+        # MAJOR 1: a registration still present after the prune is an
+        # INCOMPLETE reap, not a success. Dropping the lease and stamping
+        # the record reaped here would erase the two signals that let the
+        # next run finish the job, and returning without a trouble marker
+        # would let the run exit 0 on work it did not complete. So this
+        # stops before either, and the line carries "could NOT" so the
+        # run counts it. It is safely retryable: the directory is already
+        # gone, so the next run reaps the leftover registration as a
+        # vanished worktree.
+        done.append("the registration for %s SURVIVED the prune, so this "
+                    "reap could NOT be completed: no lease was dropped and "
+                    "the record was not marked reaped. The directory is "
+                    "gone, so the next run reaps the leftover registration "
+                    "as a vanished worktree." % path)
+        return done
+    done.append("pruned the worktree registration for %s" % path)
 
     for lease in leases_on(state, path):
         os.remove(lease)
         done.append("dropped the dead port lease %s"
                     % os.path.basename(lease))
 
-    branch = item["park"].get("branch")
+    branch = park.get("branch")
     if kind == "parked worktree" and branch and resolve(
             repo, "refs/heads/" + branch):
         proof = next(one for one in item["proofs"] if one.name == "branch")
-        _ok, said = delete_branch(repo, branch, proof.said)
+        # BLOCKER 2 at the worktree's own branch: parked_proofs above
+        # already re-proved the tip is where the certificate recorded,
+        # and delete_branch re-resolves it one last time against that
+        # tip immediately before deleting.
+        _ok, said = delete_branch(repo, branch, park.get("tip"), proof.said)
         done.append(said)
 
     source = mark_reaped(path, state, done)
