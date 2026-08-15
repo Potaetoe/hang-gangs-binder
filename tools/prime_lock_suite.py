@@ -93,7 +93,7 @@ def barrier_trial(state, specs):
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 68
+EXPECTED = 73
 
 
 def check(label, condition):
@@ -421,6 +421,40 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           violations == 0)
     check("and the storms actually produced a takeover winner to protect",
           protected > 0)
+
+    print("\n--- MAJOR2: the mutation mutex steals a crashed holder's ---")
+    # A crashed session can leave its short-lived mutex behind. It must not
+    # wedge the fleet forever: an old or unreadable mutex is stolen, and a
+    # fresh one is respected. The end-to-end case proves a stale mutex left
+    # over a stale lock does not block the takeover that clears both.
+    mx_state = os.path.join(root, "mutex")
+    prime_lock.write_lock(prime_lock.lock_path(mx_state), "victim",
+                          "host-v", hours_ago(20))
+    mpath = prime_lock.mutex_path(mx_state)
+    # Staleness is the file's mtime age, deliberately NOT its contents: a
+    # just-created empty mutex (the O_EXCL-then-write gap) must read fresh,
+    # or a spinner would steal a live mutex and two holders would result.
+    with open(mpath, "w", encoding="utf-8") as handle:
+        handle.write("")
+    check("a just-created (even empty) mutex reads fresh, never stale",
+          not prime_lock.mutex_is_stale(mpath))
+    old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+    os.utime(mpath, (old, old))
+    check("a mutex whose mtime is past the steal threshold is judged stale",
+          prime_lock.mutex_is_stale(mpath))
+    # End-to-end: a crashed holder's stale mutex left over a stale lock must
+    # not wedge the takeover that clears both - it is stolen, single-winner.
+    with open(mpath, "w", encoding="utf-8") as handle:
+        handle.write('{"pid": 99999, "host": "dead"}')
+    os.utime(mpath, (old, old))
+    code, said = run(["acquire", "reaper-session", "--state", mx_state,
+                      "--take-stale", "--stale-hours", "12"])
+    check("a stale mutex does not wedge a takeover; it is stolen",
+          code == 0)
+    check("the takeover installed the new holder behind the stolen mutex",
+          read(mx_state).get("session") == "reaper-session")
+    check("a completed mutation leaves no mutex behind",
+          not os.path.exists(mpath))
 
 print("\n%d checks, %d failure(s)" % (performed, failures))
 if performed != EXPECTED:
