@@ -141,6 +141,46 @@ matters is at the *file* level:
   over work you did not make. Shut down any preview server you started
   before reporting done.
 
+### The landing door
+
+Before any branch merges, its declared file list is checked against its
+real diff — the mechanism a git-ops merge order runs at the door,
+`tools/claim_vs_diff.py` (0.9-M0-S13, #297; corrected by the S13 fix
+wave, finding S13-F3). The fleet's charter carries the same step
+machine-held; this section is the repository's own copy, so a fork
+without the charter still has the door. The invocation:
+
+```bash
+py -3 tools/claim_vs_diff.py <branch-or-sha> origin/accounts --repo <path to the repository> --declared <path to the declared file list>
+```
+
+- **`--repo` is always explicit**, never the tool's own-repository
+  default — a door check may run from a different working directory
+  than the branch it is checking.
+- **The base is always `origin/accounts`**, the remote-tracking ref
+  rather than the local `accounts` a machine may not have fetched
+  freshly — 0.9 work lands there, not on `main` (see "The 0.9 wave" and
+  "`main` is not a release today" above).
+- **`--declared` is always passed, and always a real file**, never
+  omitted to read from stdin. An empty declaration against an empty
+  diff is refused rather than read as a match (exit 2, "NOTHING
+  DECLARED") only when the tool can tell a genuine no-op apart from a
+  forgotten declaration; a door script that dropped `--declared` and
+  received a disconnected or empty stdin would produce that exact shape
+  by accident, and the empty match it is refused for is the one this
+  flag exists to keep unreachable by mistake.
+
+Exit 0 is MATCH. Exit 1 is MISMATCH — abort the merge and ask what
+actually moved, both directions of the delta are in the output. Exit 2
+is COULD NOT ASK — a ref did not resolve, the two refs share no
+merge-base, or nothing was declared; never conflated with 1, because
+"the question could not be asked" and "the question was asked and the
+answer was no" are different facts, and a caller that only greps for
+exit-nonzero still aborts either way. `tools/claim_vs_diff.py`'s own
+module docstring carries the full reasoning, including why Prime may
+run this same tool against its own completion summaries (audit F10),
+pointed at whatever two refs the comparison is about.
+
 **The contract between agents is a failing test, not a paragraph.**
 Commit the test first, implement to green. Where behavior cannot be
 known in advance, spike, observe, record the finding in a commit, then
@@ -171,6 +211,18 @@ shrinking, the new one growing. The old runner retires when its last
 surface does. Read an old check as evidence about the code it still
 guards, never as the pattern for a new one.
 
+- **`./run session-open` is the first act of a session**, ahead of
+  `agent-init` and any edit: it runs `tools/prime_lock.py check`
+  against this session's own identity, exiting per its RULED table (0
+  no lock or this session's own; 1 another session holds a FRESH lock —
+  STOP and surface to the owner; 2 another session's lock is STALE or
+  unreadable — `--take-stale` is a decision an operator makes on
+  purpose, never an accident), then `tools/reaper.py --report`, what a
+  later `--act` would clean up. Both are read-only. The exit code
+  answers the lock question alone — a nonzero `reaper.py --report` is
+  printed rather than folded in, since it can fail for a reason that
+  has nothing to do with any lock (`tools/session_open.py`'s own module
+  docstring carries the full argument; 0.9-M0-S19, #311, MAJOR3).
 - **`./run agent-init` is the first command in a fresh worktree** (or on
   the primary checkout), before either gate: it renormalizes line
   endings, installs dependencies, leases a scratch space and proves one

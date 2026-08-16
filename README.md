@@ -50,9 +50,13 @@ The Telegram username comes from the sign-in rather than being typed.
 
 ## Running it locally
 
-No build step and no dependencies beyond Python and Node. The launcher
-finds a working Python for you — on this machine bare `python` is a
-Microsoft Store stub:
+No build step, and the site itself needs nothing beyond Python and
+Node to serve. **A clean gate does need more**: `./run agent-init`
+installs it for you (Node's `npm ci --ignore-scripts` and Python's
+pinned `ruff` and `fontTools[woff]`, from `tools/requirements-gate.txt`
+— see "Checks" below), so run that first on a fresh checkout. The
+launcher finds a working Python for you — on this machine bare `python`
+is a Microsoft Store stub:
 
 ```bash
 ./run serve
@@ -83,8 +87,20 @@ reliably a secure context.
 ## Checks
 
 A fresh checkout runs `./run agent-init` first — it renormalizes line
-endings, installs dependencies, leases a scratch space and prints the
-contract an agent session is held to (0.9-M0-S5, #283).
+endings, installs dependencies for **both** gates, leases a scratch
+space and prints the contract an agent session is held to (0.9-M0-S5,
+#283; the Python half, 0.9-M0-S18, #310). What it installs, in full,
+is `npm ci --ignore-scripts` and
+
+```bash
+py -3 -m pip install --quiet -r tools/requirements-gate.txt
+```
+
+— the pinned `ruff` and `fontTools[woff]` the old gate's Python stages
+need. `tools/requirements-gate.txt` carries the two pins; installing by
+hand, `./run agent-init` and CI's own install step all read the same
+file, so the version each of them lands on is the same three
+characters rather than three separately-typed copies of one fact.
 
 ```bash
 ./run check

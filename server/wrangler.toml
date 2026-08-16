@@ -18,8 +18,16 @@
 #     wrangler deploy
 #
 # Run both from this directory. The first is only needed when
-# schema.sql changes; it uses CREATE TABLE IF NOT EXISTS, so re-running
-# the whole file against a live database is safe.
+# schema.sql changes; CREATE TABLE IF NOT EXISTS makes a rerun safe for
+# every table it adds, but the supersedes index is not purely additive
+# - every rerun drops it before recreating it unique, which fails
+# loudly against two rows that already name the same target and can
+# leave NO index behind if it does. OPERATIONS.md, "Before re-running
+# schema.sql against a database that already holds rows", carries the
+# preflight query, the failure handling and the recovery - read it
+# before this command touches a database that is not empty.
+# schema.sql's own header carries the same warning where the statement
+# itself lives.
 
 name = "hgbinderworker"
 main = "worker.js"
