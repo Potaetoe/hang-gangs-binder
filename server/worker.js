@@ -80,7 +80,50 @@
  *   ALLOWED_ORIGINS           optional, comma-separated
  *   DEV_LOGIN_SECRET          DEVELOPMENT ONLY. Its absence is what
  *                             turns POST /auth/dev off. Never set this
- *                             on production.
+ *                             on production. RETIRING - see below.
+ *
+ * Tables: `submissions`, `sessions`, `snapshots`, `site_content`,
+ * `membership`, `auth_replay`. server/schema.sql is the whole database
+ * and each table's own block there carries its reasoning.
+ *
+ * ---------------------------------------------------------------------
+ * THREE MECHANISMS IN THIS FILE THE 0.9 RECORD RETIRES, AND WHAT IS
+ * TRUE OF THEM TODAY (0.9-M1-S5, #331).
+ *
+ * They are named here rather than only in an issue because a
+ * pull-request body is not in the repository and the next person to
+ * read this file is the person who needs to know. Each is dead by the
+ * record and alive in this code, and each dies WITH the surface that
+ * rebuilds it - the wave's own rule about a check retiring in the same
+ * change as its surface, applied to the code under the checks.
+ *
+ *   1. ADMIN_TELEGRAM_IDS and the `membership` table's `admin` rows.
+ *      DESIGN.md, "Admin accounts and deletion": there is no admin list
+ *      to maintain and no founding-admin secret, because admins mirror
+ *      the Telegram group. Retired by the milestone that builds the
+ *      Members page and the mirror with it (0.9-M3).
+ *   2. ALWAYS_ALLOW_TELEGRAM_IDS and the `always_allow` rows.
+ *      DESIGN.md, "What is deliberately not here": no always-allow
+ *      bypass - a list that skips the membership check is a way in that
+ *      outlives the reason it was added. Retired with the same surface,
+ *      since the same routes maintain it.
+ *   3. POST /auth/dev and DEV_LOGIN_SECRET. The reason it exists is
+ *      that Telegram will not bind the widget to localhost; sit now has
+ *      a real bot, a real test group and a bound domain (DESIGN.md,
+ *      "The bot is temporary" - two bots by design, sit's permanently
+ *      its own), so local work signs in for real. Retired by the
+ *      milestone that rebuilds the member pages (0.9-M2), which is what
+ *      also removes the development-session card the flag paints.
+ *
+ * NONE OF THE THREE IS REACHABLE ON sit, and the guard is this code
+ * rather than an operator remembering: each reads a binding sit does
+ * not set, and each fails closed when it is absent. idList() of an
+ * unset secret is the empty list, so neither id list grants anybody
+ * anything; handleDevAuth answers 404 whenever DEV_LOGIN_SECRET is
+ * unset, before it looks at anything else. What is NOT code-guarded is
+ * somebody setting one of those bindings, or writing a `membership`
+ * row - both would work, which is exactly why they are listed here.
+ * ---------------------------------------------------------------------
  */
 
 // The only origins allowed to call this. A submission from anywhere
@@ -201,42 +244,40 @@ const TELEGRAM_ID = /^[0-9]{1,20}$/;
 const SESSION_HOURS = { member: 24 * 7, admin: 2 };
 
 /*
- * How long an admin session may go unused before it stops working.
+ * How long ANY session may go unused before it stops working.
  *
- * apps/web/admin.html is the only place in this system where the whole
- * corpus exists in the clear, and the two-hour cap above runs whether
- * anybody is at the machine or not - so the tab left open on a decrypted
- * corpus is what this cuts, from two hours to a quarter of one
+ * ONE RULE EVERYWHERE, which is DESIGN.md, "Sessions", in one constant.
+ * The pre-0.9 shape exempted member sessions and argued the exemption
+ * from a member page that held no history and no plaintext worth
+ * leaving on a screen. 0.9's your-page shows the member their whole
+ * history, so the premise is false and the exemption goes with it - a
+ * tab left open on somebody's own record is the thing this bounds, and
+ * whose record it is does not change that. The admin half of the
+ * argument is unchanged and is why the number is this one
  * (ASD STIG V-222390, #91).
  *
  * Fifteen minutes rather than the STIG's ten for a privileged session,
- * because what this side can measure is requests and not attention: the
- * admin page decrypts once and is then read with nothing crossing the
- * wire, so a window tight enough to be an attention timer would end the
- * session in the middle of a read. The timer that can see real
- * interaction belongs on the page; this is the backstop for the case
+ * because what this side can measure is requests and not attention: a
+ * page that has already been served its data is then read with nothing
+ * crossing the wire, so a window tight enough to be an attention timer
+ * would end the session in the middle of a read. The timer that can see
+ * real interaction belongs on the page, and DESIGN.md fixes the
+ * ordering rather than either value: the page's window is deliberately
+ * SHORTER than this one, so the page always acts first, on its own
+ * initiative, warning before it acts. This is the backstop for the case
  * where the page never gets to run it - the tab killed, the browser
- * gone, the token captured. Any authenticated request slides this
- * window, so that timer needs no route added here to hold it open.
+ * gone, the token captured. Any authenticated request slides it, so
+ * that timer needs no route added here to hold it open.
  *
- * Member sessions have no window, deliberately, and the decision stands
- * on two legs rather than one. A member session appends rows for one
- * account and reads a document carrying no handles and no rows, so
- * there is no plaintext corpus behind it to leave on a screen; and the
- * measurable thing here is requests, while somebody filling in
- * apps/web/your-page.html sends none until they submit. A window short
- * enough to behave like an attention timer therefore signs a member out
- * mid-entry, and nothing in apps/web polls to hold one open - so the
- * failure mode is losing what they typed, for a session that had no
- * corpus behind it to protect. DESIGN.md, "Sessions", records that as a
- * decision (V-222389).
+ * The number is not repeated in DESIGN.md on purpose: that document
+ * says every lifetime and window is a constant in this file, and a
+ * second copy of one is a thing that can be wrong.
  *
- * That leaves the member cap in SESSION_HOURS bounding a second thing
- * besides the lifetime, which is where a reader should go next:
- * revokeAccountSessions() below states the residual the cap is the only
- * bound on, and why a window here would not close it.
+ * The caps in SESSION_HOURS are untouched by this and still bound a
+ * session that is being used; revokeAccountSessions() below states the
+ * one residual neither a cap nor a window closes.
  */
-const ADMIN_IDLE_MINUTES = 15;
+const SESSION_IDLE_MINUTES = 15;
 
 // Telegram signs the moment you pressed the button. A payload older
 // than this is refused, which is what stops a captured one being a
@@ -245,6 +286,65 @@ const ADMIN_IDLE_MINUTES = 15;
 // five minutes is enough and the difference is the window in which a
 // stolen payload is worth anything.
 const AUTH_FRESHNESS_SECONDS = 300;
+
+/*
+ * The other edge of the same window: how far ahead of this Worker's
+ * clock a payload may be dated.
+ *
+ * A named constant rather than a literal because it is a SECOND
+ * refusal and not a rounding allowance on the first. Telegram's clock
+ * and Cloudflare's are not the same clock, so a payload arriving a few
+ * seconds "in the future" is ordinary; one dated minutes ahead is a
+ * payload whose freshness window has been extended by whoever wrote the
+ * field, which is the ceiling above defeated from the other side.
+ */
+const AUTH_SKEW_SECONDS = 60;
+
+/*
+ * What auth_date is allowed to look like, read as written.
+ *
+ * Number() is not a shape check: it trims whitespace, reads "1e12" and
+ * "0x10" as numbers, and turns null into 0. Every one of those would
+ * pass a Number.isFinite() test and none of them is the seconds-since-
+ * the-epoch integer Telegram signs. The field is inside the HMAC, so
+ * this is defense in depth rather than the first gate - but a shape
+ * check the caller cannot reach around is cheap, and "the signature
+ * covers it" is exactly the reasoning that stops holding the day a
+ * signing key is shared with something else.
+ *
+ * Fifteen digits is past any epoch second this system will see and
+ * short of a number a string comparison should be asked to carry, the
+ * same bound TELEGRAM_ID above is chosen for.
+ */
+const AUTH_DATE = /^[0-9]{1,15}$/;
+
+/*
+ * How long a spent payload is remembered, so it cannot be spent twice.
+ *
+ * The two guards compose rather than overlap, and the arithmetic is the
+ * whole reason this is not simply AUTH_FRESHNESS_SECONDS. A payload
+ * stops being fresh at auth_date + AUTH_FRESHNESS_SECONDS, and
+ * auth_date may legitimately be as much as AUTH_SKEW_SECONDS ahead of
+ * now - so a row that lived only for the freshness window could age out
+ * while its payload was still inside one, which would re-open exactly
+ * the replay this table exists to refuse. Held for the sum, the row
+ * always outlives its payload's acceptability, and after that freshness
+ * alone does the refusing with nothing stored.
+ */
+const REPLAY_HOLD_SECONDS = AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS;
+
+/*
+ * How long the group check may take before it is abandoned.
+ *
+ * A fetch with no bound is a sign-in with no bound: a Telegram that
+ * accepts the connection and then says nothing holds the request open
+ * for the platform's own ceiling, and the member is left looking at a
+ * page that has not refused and has not signed them in. Abandoning is
+ * safe here precisely because the abandoned answer is "unknown", which
+ * already refuses - see groupStanding(). Five seconds is far past a
+ * healthy getChatMember and far short of anybody's patience.
+ */
+const GROUP_CHECK_TIMEOUT_MS = 5000;
 
 // Being in the group, as Telegram spells it. `restricted` is still a
 // member unless it says otherwise, which is why it cannot simply be
@@ -523,13 +623,87 @@ async function verifyTelegramPayload(payload, botToken) {
   const expected = await hmacHex(await sha256(botToken), fields);
   if (!tokenMatches(payload.hash.toLowerCase(), expected)) return null;
 
-  // Freshness. Without this a captured payload never expires.
+  /*
+   * Freshness, in three refusals rather than one, because they fail for
+   * three different reasons and a reader changing one should not have to
+   * work out which of the others they just moved.
+   *
+   * The shape first: AUTH_DATE says why reading the field as written
+   * beats coercing it. Then the two edges. Without the ceiling a
+   * captured payload never expires and is a permanent credential; without
+   * the floor the same payload dated far enough ahead buys itself an
+   * arbitrarily long one, which is the ceiling defeated by arithmetic.
+   */
+  if (!AUTH_DATE.test(String(payload.auth_date))) return null;
   const authDate = Number(payload.auth_date);
   if (!Number.isFinite(authDate)) return null;
   const age = Math.floor(Date.now() / 1000) - authDate;
-  if (age > AUTH_FRESHNESS_SECONDS || age < -60) return null;
+  if (age > AUTH_FRESHNESS_SECONDS) return null;
+  if (age < -AUTH_SKEW_SECONDS) return null;
 
   return payload;
+}
+
+/*
+ * One session per payload, claimed atomically.
+ *
+ * WHAT THIS ADDS THAT FRESHNESS DOES NOT. A verified payload is a bearer
+ * credential for the length of the freshness window: anybody who
+ * captures it inside those five minutes can present it again and be
+ * issued a session of their own, alongside the one the real member is
+ * already holding. The window bounds how long that is worth doing; it
+ * cannot make the payload single-use. This can.
+ *
+ * THE CLAIM IS THE INSERT, and that is the load-bearing part. Reading
+ * the table and then writing to it leaves a gap two simultaneous posts
+ * both fit through - the same race the `submissions` unique index
+ * exists for, arriving at a route where losing it mints a credential.
+ * `ON CONFLICT DO NOTHING` over a primary key makes the database decide,
+ * once, and `changes` reports which caller won: 1 is a claim, 0 is a
+ * payload already spent. Nothing here matches on an error string.
+ *
+ * A HASH OF THE HASH is what is stored. payload.hash is itself a
+ * credential inside its window, so keeping it in a table would be
+ * keeping spent-but-not-yet-stale credentials in the clear - the same
+ * reasoning that keeps the session token out of `sessions`, applied to
+ * something with a shorter life. SHA-256 is as good a key for a lookup
+ * and useless to whoever reads the table.
+ *
+ * FAILING CLOSED. A throw here refuses the sign-in rather than falling
+ * through to issue one: an unreadable replay table is the one condition
+ * under which this guard cannot be honored, and a guard that yields
+ * when its storage is unwell is not a guard. The member sees the same
+ * refusal every other unverifiable sign-in gets and can simply press
+ * the button again, which mints a new payload with a new hash.
+ *
+ * The prune runs after the claim, never before it, so housekeeping
+ * cannot be what decides whether the guard held.
+ */
+async function claimPayload(env, payloadHash) {
+  const now = Date.now();
+  let claimed;
+  try {
+    claimed = await env.DB.prepare(
+      "INSERT INTO auth_replay (payload_hash, expires_at) VALUES (?, ?) " +
+      "ON CONFLICT(payload_hash) DO NOTHING"
+    ).bind(
+      await sha256Hex(payloadHash),
+      new Date(now + REPLAY_HOLD_SECONDS * 1000).toISOString()
+    ).run();
+  } catch (e) {
+    return false;
+  }
+
+  if (!claimed || !claimed.meta || claimed.meta.changes !== 1) return false;
+
+  try {
+    await env.DB.prepare("DELETE FROM auth_replay WHERE expires_at <= ?")
+      .bind(new Date(now).toISOString()).run();
+  } catch (e) {
+    // Housekeeping. The claim above already succeeded, and a table that
+    // grows is a smaller problem than a sign-in refused for it.
+  }
+  return true;
 }
 
 /*
@@ -602,12 +776,20 @@ async function groupStanding(env, userId) {
 
   let body;
   try {
-    body = await (await fetch(url)).json();
+    body = await (await fetch(url, {
+      signal: AbortSignal.timeout(GROUP_CHECK_TIMEOUT_MS),
+    })).json();
   } catch (e) {
     // Unreachable Telegram is not a reason to let people in, and not
-    // evidence that anybody left either. `e` is discarded rather than
-    // reported: the bot token is interpolated into the URL above, and a
-    // fetch failure names the URL it failed on.
+    // evidence that anybody left either. A timeout arrives here as a
+    // throw and is therefore the same "unknown" - deliberately, because
+    // "the answer did not come" and "the answer could not be read" are
+    // the same fact to everything downstream.
+    //
+    // `e` is discarded rather than reported, and that is not tidiness:
+    // the bot token is interpolated into the URL above, and a fetch
+    // failure names the URL it failed on. Logging this error logs the
+    // token.
     return "unknown";
   }
   if (!body || body.ok !== true || !body.result) return "unknown";
@@ -665,13 +847,15 @@ async function revokeAccountSessions(env, accountId) {
 /*
  * When a session dies, in two answers that are not the same answer.
  *
- * absoluteExpiry() is the cap measured from sign-in and never moves.
- * deadlineAt() is what the row carries: the cap for a member, and for an
- * admin whichever comes first, the cap or the idle window measured from
- * `now`. Every write of `expires_at` goes through deadlineAt(), which is
- * what makes the cap un-slideable - a slide that forgot the Math.min
- * would renew an admin session a quarter of an hour at a time, forever,
- * and nothing else in this file would notice.
+ * absoluteExpiry() is the cap measured from sign-in and never moves, and
+ * it is the one place the member and admin caps differ. deadlineAt() is
+ * what the row carries: whichever comes first, that cap or the idle
+ * window measured from `now` - the same rule for both kinds of session
+ * since 0.9-M1-S5, per DESIGN.md, "Sessions". Every write of
+ * `expires_at` goes through deadlineAt(), which is what makes the cap
+ * un-slideable: a slide that forgot the Math.min would renew a session
+ * a quarter of an hour at a time, forever, and nothing else in this
+ * file would notice.
  */
 function absoluteExpiry(createdAt, isAdmin) {
   const hours = isAdmin ? SESSION_HOURS.admin : SESSION_HOURS.member;
@@ -680,8 +864,7 @@ function absoluteExpiry(createdAt, isAdmin) {
 
 function deadlineAt(createdAt, isAdmin, now) {
   const absolute = absoluteExpiry(createdAt, isAdmin);
-  if (!isAdmin) return absolute;
-  return Math.min(absolute, now + ADMIN_IDLE_MINUTES * 60 * 1000);
+  return Math.min(absolute, now + SESSION_IDLE_MINUTES * 60 * 1000);
 }
 
 /*
@@ -725,18 +908,15 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  * scheduled job. The ordinary failure of a scheduled job is silence, and
  * there is nothing here worth a moving part.
  *
- * Using an admin session is also what resets its idle window, and the
- * row this already read is where that is recorded. A write per request
- * on a row that was going to be read anyway is the small version; a
+ * Using a session is also what resets its idle window, and the row this
+ * already read is where that is recorded. A write per request on a row
+ * that was going to be read anyway is the small version; a
  * `last_used_at` column would need a second sweep predicate beside the
- * one above, which is a moving part rather than fewer of them. Only
- * admin rows are written, so the cost is bounded by admin traffic.
- *
- * The stored flag decides whether the window applies, not the re-read
- * below it: this row was handed the whole corpus's ciphertext once, and
- * taking its owner off the admin list does not un-hand it. Reading the
- * re-read instead would give a demoted session the longer deadline,
- * which is the wrong direction for a demotion.
+ * one above, which is a moving part rather than fewer of them. Every
+ * session is written now rather than admin rows alone, because the
+ * window applies to every session (SESSION_IDLE_MINUTES) - the cost is
+ * one small UPDATE per authenticated request, against a corpus that is
+ * one Telegram group.
  *
  * The admin flag is re-checked here rather than trusted from the row,
  * and the re-check reads BOTH the secret and the `membership` table.
@@ -800,22 +980,26 @@ async function sessionFor(env, token) {
     return null;
   }
 
-  if (row.is_admin === 1) {
-    // An unparseable created_at falls back to `now`, which yields the
-    // idle window and never more than it. Unguarded this is
-    // new Date(NaN).toISOString(), which throws - so one unreadable row
-    // would turn every admin request into a 500 rather than into a
-    // shorter session. The same failing-closed shape tokenMatches()
-    // carries for an unset secret.
-    const created = Date.parse(row.created_at);
-    await env.DB.prepare(
-      "UPDATE sessions SET expires_at = ? WHERE token_hash = ?"
-    ).bind(
-      new Date(deadlineAt(
-        Number.isFinite(created) ? created : now, true, now)).toISOString(),
-      tokenHash
-    ).run();
-  }
+  // An unparseable created_at falls back to `now`, which yields the
+  // idle window and never more than it. Unguarded this is
+  // new Date(NaN).toISOString(), which throws - so one unreadable row
+  // would turn every request on it into a 500 rather than into a
+  // shorter session. The same failing-closed shape tokenMatches()
+  // carries for an unset secret.
+  //
+  // The STORED flag decides which cap the slide is bounded by, not the
+  // re-read below it: an admin row was handed the whole corpus once,
+  // and taking its owner off the admin list does not un-hand it.
+  // Reading the re-read instead would give a demoted session the longer
+  // member cap, which is the wrong direction for a demotion.
+  const created = Date.parse(row.created_at);
+  await env.DB.prepare(
+    "UPDATE sessions SET expires_at = ? WHERE token_hash = ?"
+  ).bind(
+    new Date(deadlineAt(Number.isFinite(created) ? created : now,
+      row.is_admin === 1, now)).toISOString(),
+    tokenHash
+  ).run();
 
   const isDev = row.is_dev === 1;
   let isAdmin = row.is_admin === 1;
@@ -867,6 +1051,32 @@ function unauthorized(origin) {
 }
 
 /*
+ * The only thing this Worker says out loud about a sign-in.
+ *
+ * AN ALLOWLIST OF TWO FIELDS, not a habit of being careful. Everything a
+ * sign-in touches is either a secret or an identifier that resolves to a
+ * person: the bot token, the chat id, the numeric id, the handle, the
+ * payload's own hash, the session token and its hash. A log line is
+ * durable, it leaves this Worker, and whoever reads it is not
+ * necessarily whoever may read the group's membership - so the field
+ * list is fixed here rather than decided at each call site, where the
+ * next person adding a line has to remember the whole list to get it
+ * right.
+ *
+ * The account id is the one identifier that may travel: it is an HMAC
+ * under a secret this Worker holds, so it cannot be worked back to a
+ * Telegram id or confirmed against a guessed handle - the property
+ * DESIGN.md, "The identifier is the whole problem", turns the whole
+ * store on. The reason for a refusal is folded into the event NAME
+ * rather than carried as a field, so there is no free-text slot for a
+ * later caller to interpolate something into.
+ */
+function log(event, accountId) {
+  console.log(JSON.stringify(
+    accountId ? { event: event, accountId: accountId } : { event: event }));
+}
+
+/*
  * Signing in.
  *
  * The username is handed back to the page, which puts it in the record
@@ -891,6 +1101,28 @@ async function handleTelegramAuth(request, env, origin) {
 
   const user = await verifyTelegramPayload(payload, env.TELEGRAM_BOT_TOKEN);
   if (!user) {
+    log("signin.refused.unverified");
+    return json({ error: "That sign-in could not be verified." }, 401, origin);
+  }
+
+  /*
+   * Spent, before anything is done with it.
+   *
+   * Immediately after verification and before every other step, which
+   * is the narrowest place it can sit: a payload that reaches the group
+   * check twice is a payload that can be made to cost two Telegram
+   * calls, and one that reaches issueSession() twice is two credentials
+   * from one press of the button.
+   *
+   * The refusal is byte-identical to the one above it, deliberately.
+   * Telling "already used" apart from "does not verify" would report,
+   * to anybody holding a captured payload, whether the real member had
+   * got there first - and neither answer changes what the caller should
+   * do, which is press the button again.
+   */
+  const claimed = await claimPayload(env, payload.hash);
+  if (claimed !== true) {
+    log("signin.refused.replay");
     return json({ error: "That sign-in could not be verified." }, 401, origin);
   }
 
@@ -898,6 +1130,7 @@ async function handleTelegramAuth(request, env, origin) {
   // this binder identifies people by handle - so it says which thing to
   // go and fix rather than storing a blank.
   if (!user.username) {
+    log("signin.refused.no-username", await accountIdFor(env, user.id));
     return json({
       error: "Your Telegram account has no username. This binder " +
         "identifies people by @username, so set one in Telegram's " +
@@ -929,6 +1162,10 @@ async function handleTelegramAuth(request, env, origin) {
     if (standing === "left") {
       await revokeAccountSessions(env, await accountIdFor(env, user.id));
     }
+    // The event name carries the verdict because an operator watching a
+    // Telegram outage needs to tell one refusal from the other; the
+    // CALLER is told neither, per the paragraph above.
+    log("signin.refused." + standing, await accountIdFor(env, user.id));
     return json({
       error: "This binder is for members of the group only.",
     }, 403, origin);
@@ -942,7 +1179,24 @@ async function handleTelegramAuth(request, env, origin) {
   // set it.
   const isAdmin = (await adminAccountIds(env)).has(accountId);
   const session = await issueSession(env, accountId, isAdmin, false);
+  log("signin.ok", accountId);
 
+  /*
+   * NO TELEGRAM NUMERIC ID IN THIS ANSWER, and nothing may put one back.
+   * The numeric id is the one identifier that resolves to a person -
+   * DESIGN.md, "The identifier is the whole problem" - so a route that
+   * hands one out needs a reason strong enough to carry that, and there
+   * is none: DESIGN.md, "Admin accounts and deletion", keeps no admin
+   * list and no founding-admin secret, so no deployment of this Worker
+   * is bootstrapped by reading an id off a page.
+   *
+   * The handle stays, and the difference is who already holds it. The
+   * page POSTed this payload, handle included, and is handed back the
+   * same string it sent, so nothing is disclosed that the caller did not
+   * supply - while the numeric id, though also in the payload, is the
+   * value everything else here is careful never to store, log or repeat.
+   * Neither reaches a log line; see log() above.
+   */
   return json({
     ok: true,
     session: session.token,
@@ -950,10 +1204,6 @@ async function handleTelegramAuth(request, env, origin) {
     username: String(user.username).toLowerCase(),
     isAdmin: isAdmin,
     isDev: false,
-    // Returned so a first-time admin can read their own id off the page
-    // and put it in ADMIN_TELEGRAM_IDS, rather than guessing at it or
-    // asking a third-party bot. It is their own id and nobody else's.
-    telegramId: String(user.id),
   }, 200, origin);
 }
 

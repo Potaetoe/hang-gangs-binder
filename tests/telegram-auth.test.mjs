@@ -340,7 +340,8 @@ async function signIn(options) {
 }
 
 {
-  const { hash, ...unsigned } = payloadFor();
+  const unsigned = payloadFor();
+  delete unsigned.hash;
   const { status } = await signIn({ payload: unsigned });
   check("a payload carrying no hash at all is refused 401", status === 401);
 }
@@ -615,9 +616,14 @@ async function signIn(options) {
     typeof bot.calls[0].init.signal.aborted === "boolean");
 }
 
-check("the bound is five seconds, read off the source because a signal " +
-  "does not publish its own duration",
-  /AbortSignal\.timeout\(5000\)/.test(workerSrc));
+/* An AbortSignal does not publish its own duration, so the number is
+   read off the source - both halves, because either alone is passable
+   while the other is wrong: a constant nothing uses, or a use of a
+   constant somebody set to five minutes. */
+check("the bound is five seconds",
+  /GROUP_CHECK_TIMEOUT_MS = 5000;/.test(workerSrc));
+check("and it is that constant the group check is bounded by",
+  /signal: AbortSignal\.timeout\(GROUP_CHECK_TIMEOUT_MS\)/.test(workerSrc));
 
 {
   const { status } = await signIn({ bot: new Error("network is down") });
@@ -904,7 +910,7 @@ async function mutant(label, from, to) {
 
 {
   const mutated = await mutant("the abort signal removed",
-    "{ signal: AbortSignal.timeout(GROUP_CHECK_TIMEOUT_MS) }", "{}");
+    "      signal: AbortSignal.timeout(GROUP_CHECK_TIMEOUT_MS),\n", "");
   const { bot } = await signIn({ worker: mutated });
   check("mutation: without the signal the group check is unbounded",
     bot.calls.length === 1 &&
@@ -958,7 +964,7 @@ async function mutant(label, from, to) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 76;
+const EXPECTED = 92;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

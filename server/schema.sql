@@ -75,10 +75,10 @@
 -- recovery if it has.
 --
 -- A whole new table is the easy case of the same rule: re-running this
--- file creates `site_content` and `membership` where they are absent and
--- skips them where they exist, which is the one thing CREATE TABLE IF
--- NOT EXISTS is safe for. The trap is only ever a table that exists
--- already in a different shape - which is the block above.
+-- file creates `site_content`, `membership` and `auth_replay` where they
+-- are absent and skips them where they exist, which is the one thing
+-- CREATE TABLE IF NOT EXISTS is safe for. The trap is only ever a table
+-- that exists already in a different shape - which is the block above.
 
 -- `supersedes` is the id of the row this one replaces, or NULL. It sits
 -- last because that is where ALTER TABLE puts it, so a database migrated
@@ -175,11 +175,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
 -- see revokeAccountSessions() in server/worker.js for the bound, and
 -- for why an unreachable Telegram deletes nothing.
 --
--- `expires_at` is not fixed at sign-in for every session: an admin row's
+-- `expires_at` is not fixed at sign-in for ANY session: every row's
 -- deadline moves forward each time the session is used, and never past a
 -- cap derived from `created_at`. Anything reading this table that
--- assumes expires_at = created_at + a constant will be wrong about admin
--- rows - see DESIGN.md, "Sessions".
+-- assumes expires_at = created_at + a constant will be wrong about every
+-- row in it. The idle window is one rule for member and admin alike
+-- since 0.9-M1-S5 (#331) - the pre-0.9 member exemption was argued from
+-- a member page holding no history, and 0.9's your-page holds all of it.
+-- See DESIGN.md, "Sessions", and SESSION_IDLE_MINUTES in
+-- server/worker.js, which is where the number lives.
+--
+-- `is_admin` still decides WHICH cap the slide is bounded by, so the two
+-- kinds of row differ in their ceiling and no longer in whether they
+-- have a window at all.
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
@@ -191,6 +199,53 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_expiry
   ON sessions(expires_at);
+
+-- Payloads already spent, so one press of the sign-in button issues one
+-- session and never two (0.9-M1-S5, #331).
+--
+-- WHY A TABLE AND NOT A WINDOW. A verified Telegram payload is a bearer
+-- credential for as long as the freshness window in server/worker.js
+-- accepts it. The window bounds how long a captured payload is worth
+-- presenting; only a record of what has been spent can make presenting
+-- it a second time fail. claimPayload() in server/worker.js carries the
+-- full argument, including why the claim is the INSERT rather than a
+-- read followed by one.
+--
+-- `payload_hash` is the SHA-256 of the payload's own hash, never the
+-- payload's hash itself - the same reasoning that keeps the session
+-- token out of `sessions` above, applied to something with a much
+-- shorter life but the same bearer property while it lives. It is the
+-- PRIMARY KEY because that is what makes the claim atomic: two
+-- simultaneous posts of one payload both reach the INSERT, and SQLite
+-- rather than the Worker decides which of them is the first.
+--
+-- Rows are aged out on the next successful claim rather than on a
+-- schedule, the same choice `sessions` makes above and for the same
+-- reason - the ordinary failure of a scheduled job is silence. Losing
+-- the sweep costs a table that grows; it can never re-open a replay,
+-- because a row is held for longer than its payload can stay fresh, and
+-- past that point the freshness check refuses with nothing stored. The
+-- arithmetic is REPLAY_HOLD_SECONDS in server/worker.js.
+--
+-- Nothing about a person is here. A hash of a hash names no account,
+-- and the table is deliberately not keyed to one: a replay guard that
+-- recorded whose payload it refused would be a log of who signed in and
+-- when, sitting in the clear beside the entries - the membership oracle
+-- DESIGN.md, "The identifier is the whole problem", exists to prevent.
+--
+-- Re-running this file is the easy case the header block describes: a
+-- whole new table, created where it is absent and skipped where it
+-- exists. There is nothing here worth preserving across a rerun either
+-- way - every row in it expires within minutes, and a lost row costs at
+-- most one replayable payload inside its own freshness window. It is
+-- the one table in this file that may simply be dropped.
+CREATE TABLE IF NOT EXISTS auth_replay (
+  payload_hash TEXT PRIMARY KEY,
+  expires_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS auth_replay_expiry
+  ON auth_replay(expires_at);
 
 -- The published aggregate. It holds counts, medians and histogram bins -
 -- no handles, no rows - computed in the keyholder's browser and sent here

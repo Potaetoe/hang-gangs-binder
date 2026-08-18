@@ -4,17 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  This is the sign-in page and nothing else. It deliberately does not load
-  crypto.js or hold submission fields: the Telegram widget is allowed
-  only on a page with no plaintext or key to expose.
+  This is the sign-in page and nothing else, and that is what makes the
+  policy below survivable. The rule is positional - nothing third-party
+  runs where plaintext is in reach - so the one page carrying a
+  third-party script is the one page with no form, no submission fields
+  and nothing decrypted on it. The widget does hold the session it just
+  minted; what it never sits beside is anybody's entries.
 
-  The legacy callback script parses data-onauth with eval, so unsafe-eval is
-  required as well as Telegram's script and frame origins. Keeping the form,
-  submission plaintext, private key, and crypto.js off this page confines
-  what the widget can reach, though it still holds the session after sign-in.
-  Checks 11 and 12 pin that boundary. The policy is provisional until the
-  widget can be observed on potaetoe.github.io; BotFather's binding prevents
-  localhost from proving the real render or callback.
+  Telegram's legacy callback script parses data-onauth with eval, so
+  unsafe-eval is required alongside its script and frame origins. The
+  eval-free alternative, redirect mode, was rejected: it returns the
+  signed payload in a URL query string, which puts a numeric id and a
+  handle into browser history, Referer headers and access logs.
+
+  This policy is pinned from outside the page, in tools/check_web.py -
+  both that the exception does not spread to any other page and that it
+  stays exactly this narrow here. It is provisional until the widget is
+  observed against sit's own origin and sit's own bot: BotFather binds
+  the widget to one domain, so no local preview can prove the real
+  render or the real callback.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-eval' https://telegram.org; frame-src https://oauth.telegram.org; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Sign in — Hang Gang Binder</title>
