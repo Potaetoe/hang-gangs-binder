@@ -53,8 +53,17 @@ function section(markdown, heading) {
 }
 
 /* Every fenced ```bash block in a section, each line trimmed and blank
-   lines dropped - the commands as a reader would actually type them. */
-function bashLines(text) {
+   lines dropped - the commands as a reader would actually type them.
+   CRLF-normalized first (the same gap tests/wrangler-sit.test.mjs's own
+   header names, found by its mutation battery): the fence regex looks
+   for a literal "\n" right after "```bash", so a "\r\n" line ending
+   would leave the "\r" in the way and the match would silently find
+   nothing - OPERATIONS.md is pinned `text eol=lf` so this never happens
+   through normal git operations, but silently finding zero commands in
+   a section that plainly has some is the same quiet-failure shape this
+   arm exists to catch elsewhere, so it is worth closing here too. */
+function bashLines(rawText) {
+  const text = rawText.replace(/\r\n/g, "\n");
   const blocks = [...text.matchAll(/```bash\n([\s\S]*?)```/g)]
     .map((m) => m[1]);
   return blocks.flatMap((block) =>

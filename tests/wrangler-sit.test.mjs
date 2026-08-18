@@ -79,7 +79,20 @@ function unquote(value) {
    (a stray `[env.sit.secrets]`, say) still has to be caught, and a
    parser that only looked inside known headers would miss exactly
    that. */
-function parse(text) {
+function parse(rawText) {
+  /* CRLF-normalized first (found by this arm's own mutation battery,
+     0.9-M1-S1, #325): JS's `.` never matches `\r`, so ASSIGN's trailing
+     `(.*)$` cannot reach end-of-line over an unconsumed `\r` and every
+     assignment on a CRLF line goes unseen - headers still match (`\s`
+     does include `\r`), so the failure is silent rather than a crash:
+     noSecretValues in particular would read a CRLF-corrupted file as
+     clean no matter what it assigned. server/wrangler.toml is pinned
+     `text eol=lf` (.gitattributes) so this never happens through normal
+     git operations, but a parser that quietly stops checking anything
+     the moment a line ending changes is exactly the kind of gap this
+     repository's own field notes (AGENTS.md, 2026-08-09) keep finding
+     the hard way - cheap to close here rather than rediscovered live. */
+  const text = rawText.replace(/\r\n/g, "\n");
   const headers = new Set();
   const blocks = {};
   const assigns = [];
