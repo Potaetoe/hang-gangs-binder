@@ -426,6 +426,32 @@ check("trend: one member submitting more than the floor's number of " +
   "times is still one person and draws nothing",
   busy.enough === false);
 
+/* The same rule inside a view that DOES draw, which is the half the
+   check above cannot reach: with five people the floor is cleared
+   whatever the row count, so a distribution counting rows would draw
+   there while the gate above stayed satisfied. One member's repeats
+   would then be a cell of their own - the disclosure the row-versus-
+   person distinction exists to refuse - and only their newest row is
+   their current claim. */
+const withRepeats = evenGroup(FLOOR);
+[[200, "2026-08-02"], [225, "2026-08-03"], [250, "2026-08-04"]]
+  .forEach((pair) => {
+    withRepeats.push(row(acct(0), pair[1] + "T00:00:00.000Z",
+      record(pair[0], 170, "male", ["feeder"], "US")));
+  });
+const repeats = agg.aggregate(withRepeats, ask("measure=weight"));
+check("people, not rows: a member who submits four times is counted " +
+  "once in the drawn distribution - the counts sum to the people, not " +
+  "to the rows",
+  repeats.enough === true &&
+  repeats.distribution.bins.reduce((n, b) => n + b.count, 0) === FLOOR);
+check("people, not rows: it is their NEWEST row that stands - the " +
+  "distribution reaches the weight they last claimed",
+  repeats.distribution.bins.some((b) =>
+    b.to.metric >= 250 || b.to.metric === null) ||
+  repeats.distribution.bins[repeats.distribution.bins.length - 1]
+    .to.metric > 200);
+
 /* ================================================================== */
 /* 7. The measure list derives from the spec (DESIGN.md, "Charts").     */
 
@@ -740,7 +766,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 67;
+const EXPECTED = 69;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
