@@ -123,6 +123,15 @@ let sessions = [];
 let snapshot = null;
 let content = [];
 let roster = [];
+// The member directory a verified sign-in refreshes (0.9-M1-S11, #340;
+// server/schema.sql, `directory`). Its own bucket rather than the
+// submissions default below, so a directory UPSERT does not land among
+// the rows /me counts and /my-entries opens - which it would if it fell
+// through to `stored`, since its ciphertext is sealed for purpose 'dir'
+// and openRow refuses it. This suite does not assert on the directory
+// (tests/roster-directory.test.mjs and tests/telegram-auth.test.mjs do);
+// it only has to keep the write off the submissions path.
+const directory = [];
 
 /*
  * Payloads already spent (0.9-M1-S5, #331; server/schema.sql,
@@ -253,6 +262,7 @@ const DB = {
       : /membership/i.test(sql) ? "membership"
       : /snapshots/i.test(sql) ? "snapshots"
       : /sessions/i.test(sql) ? "sessions"
+      : /\bdirectory\b/i.test(sql) ? "directory"
       : "submissions";
     const verb = /^\s*(\w+)/.exec(sql)[1].toUpperCase();
     const counting = /COUNT\(\*\)/i.test(sql);
@@ -430,6 +440,13 @@ const DB = {
             is_dev: a[3], created_at: a[4], expires_at: a[5],
           });
         }
+      } else if (table === "directory") {
+        // One UPSERT keyed by account_id, read off the statement the same
+        // way membership is - joined_at kept, last_seen_at and the
+        // ciphertext re-written - so the write is reproduced rather than
+        // dropped, and kept out of `stored` where it would poison the
+        // submissions reads.
+        upsert(directory, ["account_id"], a);
       } else if (table === "site_content") {
         if (verb === "DELETE") content = content.filter((r) => !matches(r, a));
         else upsert(content, ["name"], a);
