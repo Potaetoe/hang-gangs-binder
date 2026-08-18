@@ -251,7 +251,7 @@ REAL = open(os.path.join(check_server.SERVER, "wrangler.toml"),
 real_blocks, real_problem = check_server.vars_blocks(REAL)
 check("the real wrangler.toml parses, and its blocks are found",
       real_problem is None and
-      set(real_blocks) == {"[vars]", "[env.dev.vars]"})
+      set(real_blocks) == {"[vars]", "[env.sit.vars]"})
 check("the real file's vars are what the rules are actually reading",
       all(list(keys) == ["ALLOWED_ORIGINS"]
           for keys in real_blocks.values()))

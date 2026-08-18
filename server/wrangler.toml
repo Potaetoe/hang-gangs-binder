@@ -114,8 +114,12 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io"
 #                          the group whose members may sign in. REQUIRED on
 #                          any Worker that signs people in: worker.js's
 #                          groupStanding() fails closed without it, admitting
-#                          nobody but the break-glass ids below. Absent only
-#                          on [env.dev], which does no Telegram sign-in.
+#                          nobody but the break-glass ids below. Present on
+#                          production AND [env.sit] alike - sit runs a real
+#                          bot against a real (if small) group rather than
+#                          doing no Telegram sign-in at all, which is what
+#                          the pre-0.9 [env.dev] this replaced did instead
+#                          (0.9-M1-S1, #325; #228 Worker-topology addendum).
 #     ALWAYS_ALLOW_TELEGRAM_IDS
 #                          optional ids that bypass the group check - the
 #                          break-glass way in when the check cannot answer
@@ -134,73 +138,125 @@ binding = "DB"            # worker.js reads env.DB - do not rename
 database_name = "hg_binder_db"
 database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 
-# Local work gets its own Worker, database, origins and secrets. Keep the
-# name explicit: a typo here deploys successfully to a new Worker instead
-# of failing. preview_urls is repeated rather than inherited by assumption;
-# past versions of the development sign-in bypass must not remain reachable.
+# `sit` is where every non-production act happens against a real bot and
+# real persistence, with zero risk to production data - DESIGN.md, "One
+# Worker codebase, two environments: sit and production", implemented by
+# this block (0.9-M1-S1, #325). It replaces the pre-0.9 [env.dev] block
+# this paragraph used to describe. Renaming this block does not touch
+# what is actually deployed: `hgbinderworker-dev` and `hg_binder_db_dev`
+# stay live under their old names, untouched, until someone deploys this
+# shape over them or retires them separately - this slice makes no cloud
+# writes at all (its own issue's boundary). Keep the name explicit: a
+# typo here deploys successfully to a new Worker instead of failing.
+# preview_urls is repeated rather than inherited by assumption, per the
+# same reasoning production's own preview_urls line above states.
 #
-# THE DEV WORKER CARRIES THREE SECRETS AND MUST NOT CARRY MORE, verified
-# on the live Worker 2026-08-08:
+# THE SIT WORKER CARRIES FOUR SECRETS AND MUST NOT CARRY MORE. Unlike
+# the pre-0.9 dev arm this replaces, sit runs a REAL bot against a real
+# (if small, test-only) Telegram group - #228 Worker-topology addendum,
+# 2026-08-13: "Two bots exist by design, split by world... not a
+# stand-in but the environment's own bot" - so its roster is closer to
+# production's than to dev's:
 #
-#     ACCOUNT_SECRET     a fresh value, deliberately NOT production's
-#     DEV_LOGIN_SECRET   development only; production must never have it
-#     EXPORT_TOKEN       break-glass admin access
+#     ACCOUNT_SECRET          a fresh value, deliberately NOT production's.
+#                             DESIGN.md, "The bot is temporary": an id
+#                             HMACed under a bot token instead orphans
+#                             every row at the first rotation, and sit's
+#                             bot is expected to rotate before production's.
+#     TELEGRAM_BOT_TOKEN      sit's own bot (#282), permanently - never a
+#                             stand-in for production's.
+#     TELEGRAM_GROUP_CHAT_ID  the small TEST group's id (#282), never the
+#                             real group's.
+#     EXPORT_TOKEN            break-glass admin access, carried over from
+#                             the pre-0.9 dev arm unchanged. DESIGN.md's
+#                             threat model already rules that whoever runs
+#                             the Worker can read every entry - "Whoever
+#                             runs the Worker", the largest item on that
+#                             list - so a break-glass path for that same
+#                             operator grants nothing a Cloudflare login
+#                             does not already grant.
 #
-# ADMIN_TELEGRAM_IDS, TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_CHAT_ID and
-# ALWAYS_ALLOW_TELEGRAM_IDS are DELIBERATELY ABSENT HERE. Do not "fix"
-# the asymmetry by setting them.
+# DELIBERATELY ABSENT, each for its own citation. Do not "fix" the
+# asymmetry by setting any of these:
 #
-# Nothing on the development path needs them. handleDevAuth takes
-# admin-ness from its own request payload, and sessionFor re-reads
-# DEV_LOGIN_SECRET rather than an id list for a dev session - so a dev
-# admin exists without any of the four. Unset, they read as empty lists
-# everywhere they are consulted, so no ID LIST grants anything here -
-# and the `membership` table grants nothing either, for the separate
-# reason the next paragraph gives. What grants admin on this Worker is
-# the two secrets above, by their own routes: DEV_LOGIN_SECRET through
-# POST /auth/dev, EXPORT_TOKEN as break-glass, and either one reaches
-# every membership route. Reading this block as "the table is the
-# authority on this Worker" is what makes an admin row written from a
-# local login look harmless; server/worker.js's router refuses one, and
-# says why. With no bot token, verifyTelegramPayload returns null at its
-# first guard and POST /auth/telegram answers a clean 401 rather than
-# throwing - probed live, not inferred.
+#     ADMIN_TELEGRAM_IDS          DESIGN.md, "Admin accounts and
+#                                 deletion": "There is no admin list to
+#                                 maintain, no founding-admin secret and
+#                                 no last-admin guard... every one of
+#                                 those mechanisms existed to hold a list
+#                                 the site no longer keeps." Until the
+#                                 Worker is rewritten to mirror Telegram
+#                                 admins live, its absence means no
+#                                 account is treated as admin on sit -
+#                                 the honest state, not a convenient one.
+#     ALWAYS_ALLOW_TELEGRAM_IDS   DESIGN.md, "What is deliberately not
+#                                 here": "No always-allow bypass. A list
+#                                 that skips the membership check is a
+#                                 way in that outlives the reason it was
+#                                 added."
+#     DEV_LOGIN_SECRET            A judgment call, flagged rather than
+#                                 made silently (0.9-M1-S1 completion,
+#                                 #325, names it as such): DESIGN.md does
+#                                 not name this secret by name, but the
+#                                 reason POST /auth/dev existed - that no
+#                                 environment here could pass a real
+#                                 Telegram sign-in - stops holding the
+#                                 moment one has a real bot, and "No
+#                                 always-allow bypass" above reads the
+#                                 same whether the list has one entry or
+#                                 none. Its absence turns POST /auth/dev
+#                                 off here exactly as it does on
+#                                 production; see the general secret list
+#                                 above.
 #
-# THE DEV DATABASE'S `membership` ROWS GRANT NOTHING HERE. Every
-# consumption site of that table sits inside the Telegram sign-in:
-# groupStanding reads the always-allow rows and handleTelegramAuth is
-# its only caller, and adminAccountIds is read there and in sessionFor's
-# `!isDev` branch. This Worker holds no bot token, so
-# verifyTelegramPayload returns null and handleTelegramAuth answers 401
-# ahead of all of it; POST /auth/dev is the only route that mints a
-# session here, always with is_dev = 1, and sessionFor takes that
-# branch's adminness from DEV_LOGIN_SECRET instead. handleReadMembership
-# does still LIST rows, and listing is not granting. So a row here is
-# writable, readable and inert - the same words tools/check_live.py's
-# first-contact row for this carries, because it is one fact and these
-# are its two homes. What that costs is worth saying plainly: the whole
-# dual-read model cannot be exercised on the one deployment that exists
-# to exercise things, so it stays first contact until production.
-#
-# That leaves the router's refusal above standing on a reason of its
-# own: a dev session may not write an `admin` row, because after a flip
-# to table-only the row IS the whole authority on whatever database
-# holds it, so a row minted from a local login is a real one wherever it
-# is minted. server/worker.js's router carries that refusal.
-#
-# And the widget cannot be exercised here anyway: BotFather binds it to
-# potaetoe.github.io, so it will not render on localhost. See archive/UAT.md A7.
-# Setting a real bot token on this Worker would therefore buy nothing and
-# would put a production credential on the one deployment whose entire
-# purpose is that it is not for users. The asymmetry is the design.
-[env.dev]
-name = "hgbinderworker-dev"
+# server/worker.js is untouched by this rename (out of this slice's
+# scope; #325's own boundary). Concretely, that means: with only the
+# four secrets above set, groupStanding() can genuinely check the real
+# test group (unlike the old dev arm, which always fell through its
+# missing-bot-token guard), but adminAccountIds() still reads only
+# ADMIN_TELEGRAM_IDS, which is empty here on purpose - so no account
+# reads as admin on sit until the Worker is rewritten to mirror Telegram
+# admins live. That gap is real and is flagged in this slice's
+# completion rather than papered over with a secret DESIGN.md just ruled
+# out.
+[env.sit]
+name = "hgbinderworker-sit"
 preview_urls = false
 
-[env.dev.vars]
+# Loopback only, matching the pre-0.9 dev arm's shape - OPERATIONS.md,
+# "Checking a deployment", is the one place that names an origin for
+# sit by name ("the localhost origin on sit"), and this is it. sit's
+# own workers.dev origin is deliberately NOT added here yet: the Worker
+# this config deploys does not yet serve the static site from its own
+# origin (DESIGN.md, "The constraint that shapes everything", is the
+# change that eventually makes it need to), so nothing here needs to
+# POST back to itself. Adding it is a one-line change when that lands -
+# but that same change also has to re-examine tools/check_live.py's
+# "published-origin-only" and "guarded-branch" ledger rows, whose
+# classifications assume this arm never carries a bot token or a
+# published origin; this slice's roster above already breaks the first
+# half of that assumption, and the ledger has not been told (0.9-M1-S1
+# completion, #325, names this finding for whichever slice picks it up).
+[env.sit.vars]
 ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"
 
-[[env.dev.d1_databases]]
-binding = "DB"            # worker.js reads env.DB - do not rename
-database_name = "hg_binder_db_dev"
-database_id = "137e266f-a5f1-414f-8fac-3d110b9eb648"
+# The database does not exist yet, and this slice makes no cloud writes
+# (its own issue's boundary) - so there is no id to put here.
+# Placeholder-free rather than REPLACE_ME, per the reasoning above
+# production's own [[d1_databases]] block: a config that gets run
+# cannot quietly be wrong, and an id that names nothing is exactly the
+# lie that reasoning already refused once. Absence is what stays true
+# instead: `wrangler deploy --env sit` with no binding here fails
+# closed on the first route that touches env.DB, rather than silently
+# pointing at the wrong database.
+#
+# OPERATIONS.md, "Building the sit environment", is the exact sequence:
+# `wrangler d1 create hg_binder_db_sit` prints a real id, and the
+# operator pastes it into a block here shaped like this one -
+#
+#     [[env.sit.d1_databases]]
+#     binding = "DB"            # worker.js reads env.DB - do not rename
+#     database_name = "hg_binder_db_sit"
+#     database_id = "<what wrangler printed>"
+#
+# - before running `wrangler deploy --env sit`.

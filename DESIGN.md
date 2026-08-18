@@ -42,10 +42,11 @@ live fact; this section is the shape, not the schedule.
 bytes, different bindings — each environment gets its own D1 database
 and its own bot secrets. `sit` is where every non-production act
 happens against a real bot and real persistence with zero risk to
-production data; the name replaces the pre-0.9 `dev` environment at M1,
-when the Worker that has environments to name is actually built. Until
-then `server/wrangler.toml` still carries the single `[env.dev]` this
-paragraph describes replacing — a ruled shape, not yet a deployed one.
+production data. `server/wrangler.toml` carries `[env.sit]` where the
+pre-0.9 `dev` environment stood (0.9-M1-S1, #325) — a ruled shape, and
+still not a deployed one: OPERATIONS.md, "Building the sit
+environment", is the operator act that makes it one, and it waits on
+#282's two secrets.
 
 Subdomains (`workers.dev`, `pages.dev`) carry the whole wave; the custom
 domain is a cutover act. The production origin is noindexed and sends

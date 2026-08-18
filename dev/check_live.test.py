@@ -455,7 +455,7 @@ WORKER_SRC = 'if (!botToken) {\n  return null;\n}\n'
 
 DEV_LOOPBACK = {
     "[vars]": {"ALLOWED_ORIGINS": "https://potaetoe.github.io"},
-    "[env.dev.vars]": {
+    "[env.sit.vars]": {
         "ALLOWED_ORIGINS": "http://localhost:8124,http://127.0.0.1:8124"},
 }
 
@@ -480,26 +480,26 @@ check("the falsified-guard report says to reclassify or re-pin",
 
 WIDGET = entry(status="first-contact", cause="published-origin-only")
 
-check("loopback-only dev origins corroborate the widget's entry",
+check("loopback-only sit origins corroborate the widget's entry",
       caused([WIDGET]) == [])
 
-check("a published origin reaching the dev arm fails the gate",
+check("a published origin reaching the sit arm fails the gate",
       len(caused([WIDGET], blocks={
           "[vars]": {"ALLOWED_ORIGINS": "https://potaetoe.github.io"},
-          "[env.dev.vars]": {
+          "[env.sit.vars]": {
               "ALLOWED_ORIGINS": "http://127.0.0.1:8124,"
                                  "https://potaetoe.github.io"}})) == 1)
 
 check("a production arm with no published origin fails the gate",
       len(caused([WIDGET], blocks={
           "[vars]": {"ALLOWED_ORIGINS": "http://127.0.0.1:8124"},
-          "[env.dev.vars]": {
+          "[env.sit.vars]": {
               "ALLOWED_ORIGINS": "http://127.0.0.1:8124"}})) == 1)
 
-check("an agent port block added to the dev arm is still loopback",
+check("an agent port block added to the sit arm is still loopback",
       caused([WIDGET], blocks={
           "[vars]": {"ALLOWED_ORIGINS": "https://potaetoe.github.io"},
-          "[env.dev.vars]": {
+          "[env.sit.vars]": {
               "ALLOWED_ORIGINS": "http://127.0.0.1:8124,"
                                  "http://127.0.0.1:8170"}}) == [])
 
