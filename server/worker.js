@@ -482,13 +482,19 @@ async function accountIdFor(env, subject) {
  * reach it (DESIGN.md, "The identifier is the whole problem"). So the
  * shape is asserted here rather than trusted: sixty-four lowercase hex
  * characters, the same ACCOUNT_ID pattern the account id is written
- * with. A dev session cannot submit as a result, which is correct - a
- * dev: subject is exactly what mandate 1 names as the value that must
- * not reach the crypto, and POST /auth/dev is retiring anyway (see the
- * header). This throws rather than returning a refusal shape a caller
- * chose: on a Worker signing real members in it can only fire on a bug,
- * and a bug that binds a row to the wrong identity must be loud, not a
- * 4xx a page interprets.
+ * with. A dev session is NOT refused as a result, and that is correct:
+ * handleDevAuth stores accountIdFor(env, "dev:" + subject) - the HMAC of
+ * the namespaced subject, sixty-four hex characters - as the session's
+ * account id, so a dev caller submits and reads like any account. Mandate
+ * 1 holds not because dev is excluded but because the value bound into the
+ * crypto is that HMAC, never a raw "dev:" subject or a raw id: the "dev:"
+ * namespacing happens inside accountIdFor, BEFORE the derivation, so only
+ * the un-invertible id ever reaches a seal or an open. What this throw
+ * guards against is a RAW identity - a bare numeric id, a user.id, or an
+ * un-HMAC'd "dev:" subject string - reaching the crypto. This throws
+ * rather than returning a refusal shape a caller chose: on a Worker
+ * signing real members in it can only fire on a bug, and a bug that binds
+ * a row to the wrong identity must be loud, not a 4xx a page interprets.
  */
 function rowIdentity(accountId) {
   if (typeof accountId !== "string" || !ACCOUNT_ID.test(accountId)) {
@@ -1718,8 +1724,10 @@ async function handleSubmit(request, env, origin, caller) {
 
   // The identity every seal on this route is bound to, asserted before
   // the crypto is reached: the account-id HMAC and nothing else (mandate
-  // 1). rowIdentity throws on a raw id or a dev: subject, and that throw
-  // is a bug being made loud rather than a refusal the member acts on.
+  // 1). rowIdentity throws on a raw id or an un-HMAC'd "dev:" subject
+  // string - never on the account-id HMAC a dev session's caller.accountId
+  // actually holds, which submits like any account - and that throw is a
+  // bug being made loud rather than a refusal the member acts on.
   const accountId = rowIdentity(caller.accountId);
   const store = await openStore(env);
   const receivedAt = new Date().toISOString();

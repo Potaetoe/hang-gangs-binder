@@ -12,10 +12,12 @@
  * server/store-crypto.js runs for real (Node has WebCrypto), so the AAD
  * bindings the routes rest on are exercised rather than stubbed. Only D1
  * is a stub, because D1 is the one dependency Node cannot supply - and
- * the stub reads its scoping off the SQL it is handed (an account clause
- * dropped from a statement changes what the stub returns), so a route
- * that stopped scoping to the caller reds here rather than passing
- * against a stub that hard-coded the rule.
+ * the stub takes its scoping from the SQL it is handed rather than
+ * hard-coding the rule, so a route that stopped scoping to the caller reds
+ * here. For read-own it goes further and EVALUATES the statement's WHERE
+ * against the seeded rows (see whereMatches), so a scope clause that is
+ * merely weakened - `WHERE (mine.account_id = ? OR 1=1)` - leaks and reds,
+ * not only a clause that was removed.
  *
  * WHY THE WORKER IS LOADED BY FILE PATH, not the data: URL the older
  * arms use. server/worker.js now statically imports ./store-crypto.js
@@ -41,7 +43,7 @@
  *      level and against what the route actually stored.
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -106,6 +108,73 @@ const TOKEN_RAW = "session-token-raw-id-defect";
 /* it does not recognize throws rather than answering a quiet default,  */
 /* so a route that changed shape is caught here rather than passing.    */
 
+/* Split an expression on a top-level boolean keyword (OR / AND), ignoring
+   the keyword inside parentheses or a quoted literal. Word boundaries keep
+   it from splitting inside an identifier. */
+function splitTop(expr, op) {
+  const parts = [];
+  const upper = expr.toUpperCase();
+  const OP = op.toUpperCase();
+  let depth = 0, inStr = false, buf = "";
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i];
+    if (c === '"') inStr = !inStr;
+    if (!inStr) {
+      if (c === "(") depth += 1;
+      else if (c === ")") depth -= 1;
+      else if (depth === 0 && upper.startsWith(OP, i)) {
+        const before = i === 0 ? " " : expr[i - 1];
+        const after = i + OP.length >= expr.length ? " " : expr[i + OP.length];
+        if (/[\s()]/.test(before) && /[\s()]/.test(after)) {
+          parts.push(buf);
+          buf = "";
+          i += OP.length - 1;
+          continue;
+        }
+      }
+    }
+    buf += c;
+  }
+  parts.push(buf);
+  return parts;
+}
+
+/* Really evaluate a WHERE predicate against one row, rather than testing
+   the SQL for a substring. This is what makes a WEAKENED-but-present scope
+   clause red: `mine.account_id = ? OR 1=1` still contains "account_id = ?",
+   so a substring test scopes correctly and the leak passes; evaluated, the
+   OR 1=1 is a tautology and every row matches, exactly as it would in D1.
+   Supports the equality comparisons these routes issue, joined by AND/OR
+   and grouped by parentheses; operands are mine.<col>, a bound ? (filled
+   left-to-right from the statement's args), a "quoted" value, or a bare
+   integer literal. An unmodelled predicate throws, like an unmodelled
+   statement, so a route that grew a shape this stub does not evaluate is
+   caught rather than silently answered. */
+function whereMatches(pred, row, params) {
+  let idx = 0;
+  const filled = pred.replace(/\?/g, () => JSON.stringify(String(params[idx++])));
+  const resolve = (tok) => {
+    tok = tok.trim();
+    if (/^".*"$/.test(tok)) return JSON.parse(tok);
+    const col = tok.match(/^mine\.(\w+)$/i);
+    if (col) return String(row[col[1].toLowerCase()]);
+    if (/^-?\d+$/.test(tok)) return tok;
+    throw new Error("unmodelled WHERE operand: " + tok);
+  };
+  const evalExpr = (expr) => {
+    const ors = splitTop(expr, "OR");
+    if (ors.length > 1) return ors.some(evalExpr);
+    const ands = splitTop(expr, "AND");
+    if (ands.length > 1) return ands.every(evalExpr);
+    const e = expr.trim();
+    if (e.startsWith("(") && e.endsWith(")")) return evalExpr(e.slice(1, -1));
+    const sides = e.split("=");
+    if (sides.length !== 2) throw new Error("unmodelled WHERE predicate: " + e);
+    return resolve(sides[0]) === resolve(sides[1]);
+  };
+  return evalExpr(filled);
+}
+
 function makeDb() {
   const sessions = [];
   const submissions = [];
@@ -148,20 +217,30 @@ function makeDb() {
   }
 
   function all(sql, args) {
-    /* The member's own listing. Scoped to the bound account, newest
-       first - the order and the scope are both read off the statement.
+    /* The member's own listing. Newest first, scoped to the caller - and
+       the scope is APPLIED, not substring-matched.
 
        `COUNT\(` rather than `COUNT`: the bare word is a substring of
        "account_id", which every statement against this table binds, so
        the aggregate test matched the listing too and this branch was
        never reached - the stub threw "unmodelled" against the exact
        statement it models. The open paren is what makes it the SQL
-       function rather than four letters inside a column name. */
+       function rather than four letters inside a column name.
+
+       The outer WHERE (the one after "FROM submissions AS mine", not the
+       EXISTS subquery's own WHERE in the SELECT list) is pulled out and
+       really evaluated per row by whereMatches. Testing the SQL for the
+       "account_id = ?" substring instead would pass a clause that is
+       present but weakened - `WHERE (mine.account_id = ? OR 1=1)` keeps the
+       substring yet leaks every account's rows - so the clause is run, not
+       read. A statement with no outer WHERE at all leaks the same way and
+       is left unscoped here on purpose, so a dropped clause reds too. */
     if (/FROM submissions AS mine/i.test(sql) && /ORDER BY/i.test(sql) &&
         !/COUNT\(/i.test(sql)) {
-      const account = /account_id = \?/i.test(sql) ? args[0] : null;
+      const outer = sql.match(
+        /FROM submissions AS mine\s+WHERE\s+(.+?)\s+ORDER BY/i);
       const mine = submissions.filter((r) =>
-        account === null || r.account_id === account);
+        outer ? whereMatches(outer[1], r, args) : true);
       mine.sort((a, b) =>
         a.received_at === b.received_at
           ? b.id - a.id
@@ -318,8 +397,22 @@ check("rowIdentity accepts a 64-hex account-id HMAC unchanged",
   (await valueOf(() => worker.rowIdentity(ACCT_A))) === ACCT_A);
 check("rowIdentity refuses a raw Telegram numeric id",
   (await threw(() => worker.rowIdentity(RAW_ID))) !== null);
-check("rowIdentity refuses a dev: subject (mandate 1 names it)",
+check("rowIdentity refuses a raw, un-HMAC'd dev: subject string (mandate 1 " +
+  "names it)",
   (await threw(() => worker.rowIdentity("dev:someone"))) !== null);
+/* But a real dev session does NOT carry that raw string - handleDevAuth
+   stores accountIdFor(env, "dev:" + subject), the HMAC of the namespaced
+   subject, exactly as this line derives it. That HMAC is 64-hex and
+   rowIdentity ACCEPTS it, so a dev session submits and reads like any
+   account; mandate 1 holds because it is the HMAC, not the raw subject,
+   that is bound. This check exists so the two above can never be read as
+   "a dev session cannot submit". */
+const DEV_ACCOUNT_ID = createHmac("sha256", "arm-account-secret / not real")
+  .update("dev:someone").digest("hex");
+check("rowIdentity accepts a dev session's account id (the HMAC of its " +
+  "dev: subject) - a dev session submits like any account",
+  /^[0-9a-f]{64}$/.test(DEV_ACCOUNT_ID) &&
+  (await valueOf(() => worker.rowIdentity(DEV_ACCOUNT_ID))) === DEV_ACCOUNT_ID);
 check("rowIdentity refuses a missing identity",
   (await threw(() => worker.rowIdentity(undefined))) !== null);
 
@@ -481,8 +574,23 @@ check("read-own: the listing is newest first",
   ents(listOrder)[0].id === (secondOfPair.body && secondOfPair.body.id) &&
   ents(listOrder)[1].id === (firstOfPair.body && firstOfPair.body.id));
 
+/* Read-own isolation, asserted with BOTH accounts holding rows: B's
+   listing is non-empty and carries not one of A's rows. Here A owns
+   several rows and B owns two, so a scope clause that is present but
+   weakened (WHERE (mine.account_id = ? OR 1=1)) or dropped entirely would
+   fold A's rows into this result - and this check reds - while the
+   correct clause returns B's two and nothing else. This is the behavioral
+   arm for security mandate 3's read-own scope. */
+const aIds = new Set(
+  db._submissions.filter((r) => r.account_id === ACCT_A).map((r) => r.id));
+check("read-own: with both accounts holding rows, the caller's listing " +
+  "carries only the caller's rows (the scope clause is applied, not just " +
+  "present)",
+  aIds.size > 0 && ents(listOrder).length > 0 &&
+  ents(listOrder).every((e) => !aIds.has(e.id)));
+
 /* ------------------------------------------------------------------ */
-const EXPECTED = 39;
+const EXPECTED = 41;
 console.log(failures
   ? `\nentry-rows FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
