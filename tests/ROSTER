@@ -30,6 +30,7 @@ tests/ci-wiring.test.mjs
 tests/claim-vs-diff.test.mjs
 tests/fleet-status.test.mjs
 tests/mockup-tokens.test.mjs
+tests/operations-sit-procedure.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
 tests/session-open.test.mjs
@@ -38,3 +39,4 @@ tests/site-parity.test.mjs
 tests/site-propagation.test.mjs
 tests/site-spec.test.mjs
 tests/worktree-contract.test.mjs
+tests/wrangler-sit.test.mjs

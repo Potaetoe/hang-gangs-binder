@@ -18,7 +18,7 @@ in them.
 | --- | --- | --- |
 | The Worker (`server/worker.js`) | `hgbinderworker.sorcererbiggz.workers.dev` | by hand, `npx wrangler deploy` from `server/` |
 | The database | D1 `hg_binder_db` | schema by hand, `wrangler d1 execute` |
-| Development pair | `hgbinderworker-dev` + `hg_binder_db_dev` | the same commands with `--env dev` |
+| sit pair | `hgbinderworker-sit` + `hg_binder_db_sit` | the same commands with `--env sit`, once built — "Building the sit environment" below |
 
 **The site has nowhere to run today.** GitHub Pages retired outright on
 2026-08-13 (owner order, moved up from the 1.0 cutover it was first
@@ -30,9 +30,16 @@ also the site's row, one origin and one deploy command for both. See
 `README.md`'s Status box for the live fact and `DESIGN.md`, "The
 constraint that shapes everything", for the ruled shape.
 
-*Until 0.9-M1 lands*, the development pair above is named `dev`; the
-ruled name is `sit` (`DESIGN.md`, same section), and the slice that
-builds the environment is what renames this table.
+**This table's sit row is the ruled config shape, not a claim that it
+is deployed** (0.9-M1-S1, #325, is what renamed it from `dev`, per the
+note this replaced; `server/wrangler.toml`'s own `[env.sit]` block is
+the config this row names). Whether it is actually live is exactly the
+kind of *current* live-state fact this file's own opening paragraph
+sends to an issue rather than keeping here — #282 is where that fact
+lands. `hgbinderworker-dev` and `hg_binder_db_dev`, the pre-0.9 pair
+this row replaces, are untouched by the rename: they stay live under
+their old names, unrenamed, until #282's holder runs "Building the sit
+environment" below or somebody retires them on purpose.
 
 ## The routes
 
@@ -98,6 +105,77 @@ verification, and the old bot revoked **last**.
 *Until 0.9-M1 lands* the deployed Worker still carries the pre-0.9 set,
 including the key-world credentials and the two admin-id lists. They
 die with the milestone; do not add to them.
+
+## Building the sit environment
+
+**The sequence #282's holder runs, once its two secrets are in hand**
+(0.9-M1-S1, #325). Every command is safe to re-run except the first —
+running `d1 create` twice makes a second, unlinked database under the
+same name. From `server/`. No token, id or generated value is typed
+into this repository at any step: each command below that wants one
+either prompts for it directly or takes it as a CLI argument typed at
+the terminal, never pasted into a file.
+
+1. **Create the database.** It does not exist yet, which is why
+   `server/wrangler.toml` carries no `[[env.sit.d1_databases]]` block —
+   see that file's own comment on why an id that names nothing is worse
+   than no block at all.
+
+   ```bash
+   npx wrangler d1 create hg_binder_db_sit
+   ```
+
+   Paste the id it prints into `server/wrangler.toml`, in the shape the
+   file's own comment shows, and commit that one line before
+   continuing — the database exists from this point on, and re-running
+   the command above would create a second one under the same name.
+
+2. **Apply the schema.** `hg_binder_db_sit` is new and holds no rows, so
+   the "0.9 arrives on an empty database" exception under "Before
+   re-running schema.sql" above applies without running its preflight
+   query first. A *later* rerun against sit, once it holds rows, is the
+   general case that section describes and wants the preflight query
+   run against `hg_binder_db_sit` first.
+
+   ```bash
+   npx wrangler d1 execute hg_binder_db_sit --remote --file=schema.sql --env sit
+   ```
+
+3. **Deploy the Worker.** Dry-run first and read the bindings back — the
+   same discipline "Deploying the Worker" below asks of every deploy: a
+   sit deploy must report `hg_binder_db_sit` and the origins
+   `server/wrangler.toml`'s `[env.sit.vars]` names, or stop.
+
+   ```bash
+   npx wrangler deploy --dry-run --env sit
+   npx wrangler deploy --env sit
+   ```
+
+4. **Set the secrets**, in the order `server/wrangler.toml`'s `[env.sit]`
+   comment lists and explains them. Each command prompts for the value
+   at the terminal; type or paste it into that prompt, never into a
+   file, an issue or this document:
+
+   ```bash
+   npx wrangler secret put ACCOUNT_SECRET --env sit
+   npx wrangler secret put TELEGRAM_BOT_TOKEN --env sit
+   npx wrangler secret put TELEGRAM_GROUP_CHAT_ID --env sit
+   npx wrangler secret put EXPORT_TOKEN --env sit
+   ```
+
+   The bot token and the group chat id are #282's two inputs, exactly as
+   supplied there. `ACCOUNT_SECRET` is a fresh value generated for sit
+   alone — never production's, never reused, per `DESIGN.md`, "The bot
+   is temporary". `EXPORT_TOKEN` is any value the operator keeps.
+
+   **This is the act that closes #282.** Comment there with which
+   secrets were set — names only, never values — once done.
+
+5. **Verify.** "Checking a deployment" below, sent at the localhost
+   origin `[env.sit.vars]` names: it should read back as the healthy
+   401, not a 403 or a 500. **Not sit's own origin yet** — see the note
+   under that section on why a probe sent from it currently reads 403
+   rather than confirming anything.
 
 ## Deploying the Worker
 
@@ -217,6 +295,16 @@ Send the site's own origin — the Worker's `workers.dev` subdomain until
 1.0 registers a custom domain — and the localhost origin on `sit`, and
 read the exact status rather than the body. There is no production
 origin to probe today; "What runs where" above is the live fact.
+
+**sit's own origin is not in `[env.sit.vars]`'s `ALLOWED_ORIGINS` yet**
+(0.9-M1-S1, #325: loopback only, matching the pre-0.9 dev arm's shape,
+until the Worker actually serves the static site from sit's own origin
+— `server/wrangler.toml`'s own comment on `[env.sit.vars]` carries the
+full reasoning and the finding this leaves open). Until whichever slice
+adds it, a probe sent from sit's own origin reads 403 honestly rather
+than 401 — that is the ALLOWED_ORIGINS list working as configured, not
+a broken deployment, and the localhost origin is what actually
+corroborates a healthy sit today.
 
 What no local test can see: that the database binding is bound, the
 secrets are set, and the tables exist. A Worker missing any of them

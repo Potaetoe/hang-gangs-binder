@@ -8,7 +8,7 @@ and the live endpoint can disagree. Probing which Worker actually
 answers, the secrets it needs, and every operating procedure are in
 [../OPERATIONS.md](../OPERATIONS.md).
 
-Deploy and schema commands, with the `--env dev` trap that matters:
+Deploy and schema commands, with the `--env sit` trap that matters:
 `OPERATIONS.md`, "Deploying the Worker". Reasoning about the
 configuration lives as comments in [wrangler.toml](wrangler.toml); the
 routing is exercised by `node dev/worker.test.mjs` without an account

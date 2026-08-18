@@ -104,12 +104,21 @@ STATUSES = ("never", "performed", "first-contact")
 SURFACES = ("route", "page", "flow")
 
 # The deployments a run can have driven. Two Workers answer for this
-# project - server/wrangler.toml's [env.dev] block and its bare one -
-# and a sitting reaches exactly one of them. The arm is declared on the
-# run rather than on the row so that it cannot be typed wrong per row,
-# and the report groups on it: without the grouping, a count of
+# project - server/wrangler.toml's non-production block and its bare
+# one - and a sitting reaches exactly one of them. The arm is declared
+# on the run rather than on the row so that it cannot be typed wrong per
+# row, and the report groups on it: without the grouping, a count of
 # performed rows is read as coverage of whichever deployment the reader
 # had in mind.
+#
+# "development" names every REHEARSAL/SITTING run recorded below,
+# against the pre-0.9 Worker that [env.dev] deployed - true history,
+# unrenamed on purpose (0.9-M1-S1, #325: that block is now [env.sit] in
+# the file, but a past run drove what was actually deployed the day it
+# ran, and renaming the label would misstate which Worker it was).
+# Nothing here has yet performed a run against sit itself; when one
+# does, it is free to introduce its own arm name rather than overload
+# this one.
 ARMS = ("development", "production")
 
 REQUIRED = ("id", "surface", "claim", "covers", "status")
@@ -1071,9 +1080,19 @@ LEDGER = [
     # discharged one would be a sitting that had falsified the reason
     # the row is here, and the pinned guards are what would say so. The
     # membership row is the one to read beside server/wrangler.toml:
-    # that file's [env.dev] block owns the same fact for the deployment
-    # and this row owns it for the ledger, in the same words, so a
+    # the two are meant to own the same fact in the same words, so a
     # future sweep finds one fact rather than a disagreement.
+    #
+    # THAT AGREEMENT IS CURRENTLY BROKEN, ON PURPOSE (0.9-M1-S1, #325).
+    # [env.sit] now carries a real TELEGRAM_BOT_TOKEN and
+    # a real TELEGRAM_GROUP_CHAT_ID (the two-bot split, #228 Worker-
+    # topology addendum) - the opposite of what the two rows below still
+    # assume. Reclassifying them is route/flow work #325's own boundary
+    # put out of its scope ("this is the environment, not the routes");
+    # its completion names this as the open finding for whichever slice
+    # next deploys sit or rewrites the routes these rows cover. Until
+    # then the rows stand as written and are read as describing the
+    # pre-0.9 Worker they were pinned against, not sit.
     {
         "id": "telegram sign-in past the bot-token guard",
         "surface": "flow",
@@ -1667,13 +1686,28 @@ def cause_problems(ledger, worker_source, blocks):
 def origin_problems(blocks):
     """The asymmetry the widget's classification rests on.
 
-    Development allows loopback only; production names the published
-    origin. Adding the agent port blocks' loopback origins to the
-    development arm - which is the cheapest way to make live checks
-    routine for delegated slices - leaves this intact, deliberately.
+    The non-production arm allows loopback only; production names the
+    published origin. Adding the agent port blocks' loopback origins to
+    the non-production arm - which is the cheapest way to make live
+    checks routine for delegated slices - leaves this intact,
+    deliberately.
+
+    Reads "[env.sit.vars]" (0.9-M1-S1, #325: server/wrangler.toml's
+    non-production block is now named [env.sit] rather than [env.dev],
+    and the string here matches it - a lookup keyed to the old name
+    would find nothing and report the file as having "changed shape"
+    that it has not). What the rename does not touch: sit's own
+    roster now carries a real TELEGRAM_BOT_TOKEN and a real
+    TELEGRAM_GROUP_CHAT_ID (the two-bot split, #228 Worker-topology
+    addendum), which is the same fact the "guarded-branch" ledger rows
+    below assume never holds for the non-production arm - #325's
+    completion names that as an open finding for whichever slice next
+    deploys sit or rewrites the routes those rows cover; this function
+    only reads ALLOWED_ORIGINS, so it stays correct on its own terms
+    either way.
     """
     problems = []
-    dev = blocks.get("[env.dev.vars]", {}).get("ALLOWED_ORIGINS")
+    dev = blocks.get("[env.sit.vars]", {}).get("ALLOWED_ORIGINS")
     live = blocks.get("[vars]", {}).get("ALLOWED_ORIGINS")
     if dev is None or live is None:
         return ["server/wrangler.toml no longer names ALLOWED_ORIGINS "
@@ -1684,10 +1718,11 @@ def origin_problems(blocks):
                  if origin.strip() and not loopback(origin.strip())]
     if reachable:
         problems.append(
-            "the development arm now allows %s, which is not loopback. "
-            "A published origin reaching it changes what the widget can "
-            "be exercised against, so its first-contact row wants "
-            "re-reading rather than inheriting" % ", ".join(reachable))
+            "the non-production arm now allows %s, which is not "
+            "loopback. A published origin reaching it changes what the "
+            "widget can be exercised against, so its first-contact row "
+            "wants re-reading rather than inheriting" %
+            ", ".join(reachable))
 
     if not [origin for origin in live.split(",")
             if origin.strip() and not loopback(origin.strip())]:
