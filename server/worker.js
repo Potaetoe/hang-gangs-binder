@@ -43,7 +43,16 @@
  * is, and this endpoint only holds the result. That is what keeps a
  * daily public dashboard from requiring the private key to live here.
  *
+ * Every path above is API-shaped (see isApiPath/API_SEGMENTS below);
+ * everything else is a page or an asset, served by env.ASSETS rather
+ * than by anything in this file - see route()'s own comment for the
+ * precedence and wrangler.toml's [assets] block for the routing that
+ * makes it deny-by-default (0.9-M1-S3, #329; DESIGN.md, "The
+ * constraint that shapes everything").
+ *
  * Bindings expected (see server/README.md):
+ *   ASSETS                    static-assets binding, dist/ - GET
+ *                              env.ASSETS.fetch(request), never written to
  *   DB                        D1 database binding
  *   TELEGRAM_BOT_TOKEN        secret, verifies every login payload
  *   ACCOUNT_SECRET            secret, the HMAC key behind every account
@@ -2141,6 +2150,33 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
 }
 
 /*
+ * The path shapes this Worker answers for itself; every other path is
+ * static-asset territory. One segment per route family below -
+ * "submission" rather than "submission/:id", because this guard only
+ * needs to know THAT a path is this Worker's, not which row it names;
+ * route() below still resolves the rest exactly as it always has.
+ *
+ * server/wrangler.toml's [assets] and [env.sit.assets] blocks carry
+ * the same set, as their own run_worker_first pattern lists (a bare
+ * pattern for a segment with no sub-resource, plus a "/*" pattern for
+ * one that takes one) - see the comment above [assets] there for why:
+ * in short, so Cloudflare's own routing layer never lets a static file
+ * answer in this Worker's place, on any of these paths, whether or not
+ * one happens to exist at that path in dist/ today. tests/route-
+ * precedence.test.mjs derives both lists from the two files and fails
+ * if they ever name a different set - the guard a hand-kept comment
+ * cannot give itself.
+ */
+const API_SEGMENTS = new Set([
+  "auth", "session", "me", "my-entries", "submit", "export", "snapshot",
+  "submission", "content", "membership",
+]);
+
+function isApiPath(pathname) {
+  return API_SEGMENTS.has(pathname.split("/")[1] || "");
+}
+
+/*
  * Every route, once the origin is settled.
  *
  * Split from fetch() so that one try/catch can stand around all of it -
@@ -2148,7 +2184,25 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * does not otherwise have.
  */
 async function route(request, env, url, allowed) {
-  if (request.method === "OPTIONS") {
+  const path = url.pathname;
+  const method = request.method;
+
+  /*
+   * Decided before anything else in this function runs, including the
+   * origin gate just below: an ordinary page navigation and a request
+   * for a font file carry no Origin header at all, and gating them on
+   * ALLOWED_ORIGINS would 403 the site itself rather than serve it.
+   * Reaching this line means Cloudflare's own asset lookup already
+   * missed - wrangler.toml's run_worker_first sends every API-shaped
+   * path straight past that lookup and into this function; every other
+   * path tries it first and only lands here on a miss - so handing the
+   * request back to env.ASSETS.fetch is what applies this deployment's
+   * own not_found_handling to it, rather than this function inventing
+   * a second, different "not found" of its own.
+   */
+  if (!isApiPath(path)) return env.ASSETS.fetch(request);
+
+  if (method === "OPTIONS") {
     if (!allowed) return new Response(null, { status: 403 });
     return new Response(null, { status: 204, headers: corsHeaders(allowed) });
   }
@@ -2156,9 +2210,6 @@ async function route(request, env, url, allowed) {
   if (!allowed) {
     return json({ error: "Origin not allowed." }, 403, null);
   }
-
-  const path = url.pathname;
-  const method = request.method;
 
   // The two sign-in routes are the only ones that answer without a
   // credential, because issuing one is what they are for.
@@ -2278,6 +2329,19 @@ async function route(request, env, url, allowed) {
 
   return json({ error: "Not found." }, 404, allowed);
 }
+
+/*
+ * A named export beside the default one Cloudflare actually deploys -
+ * the runtime only ever calls the default export's fetch(), so this
+ * changes nothing about what ships. It lets
+ * tests/route-precedence.test.mjs exercise the precedence decision as
+ * the pure function it is, without needing a D1 stub the decision
+ * itself never touches - matching the pure/DOM split AGENTS.md asks
+ * for everywhere else in this repository, applied here for the first
+ * time because this is the first piece of server/worker.js's own logic
+ * simple enough to have one.
+ */
+export { isApiPath, API_SEGMENTS };
 
 export default {
   /*

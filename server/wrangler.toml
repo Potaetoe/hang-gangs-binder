@@ -47,6 +47,43 @@ compatibility_date = "2026-08-04"
 # here".
 preview_urls = false
 
+# Workers static assets: one Worker serves the pages and the API from
+# the same origin (0.9-M1-S3, #329; DESIGN.md, "The constraint that
+# shapes everything" - no CORS, no separate host, the github.io
+# ALLOWED_ORIGINS pin dies with the split it served). directory names
+# dist/, not apps/web/: AGENTS.md's own words are "apps/web/ is the
+# site you edit; dist/ is the site that would ship", dist/ is the
+# comment-stripped build `./run build` writes and tools/build_web.mjs
+# refuses to let drift from apps/web/, and apps/web/ carries source
+# comments and (per AGENTS.md, "Boundaries") is where a test hook or a
+# development-only global would land if one ever did - neither belongs
+# in what a visitor's browser receives.
+#
+# not_found_handling = "404-page" matches the site's own shape: every
+# page here ships a real apps/web/404.html rather than being a
+# single-page app, so a miss should render that page, not a blank 200.
+#
+# run_worker_first is the deny-by-default half. The DEFAULT routing
+# (unlisted paths) already tries an asset first and falls back to the
+# Worker on a miss, which is the correct order for a page - but the
+# credentialed API cannot rest on "no file happens to be sitting at
+# this path today": a colliding file placed at /session or /submit,
+# by accident or by a future page addition, must never be served in
+# place of the router's own answer. Every pattern below is therefore
+# exactly the set of top-level path segments server/worker.js's route()
+# dispatches on - one bare pattern for a segment with no sub-resource
+# (e.g. /session, which is always exactly that path) and both the bare
+# and the /* form for a segment that also takes one (e.g. /content and
+# /content/:name). worker.js's own isApiPath() reads the same segment
+# set from its own constant; tests/route-precedence.test.mjs parses
+# both files and fails if the two ever name a different set - the
+# guard a hand-kept comment cannot give itself.
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "404-page"
+run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/export", "/snapshot", "/submission/*", "/content", "/content/*", "/membership", "/membership/*" ]
+
 # The site allowed to POST here. Set this and the Worker never needs
 # editing - see the comment above DEFAULT_ORIGINS in worker.js.
 [vars]
@@ -223,22 +260,41 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 name = "hgbinderworker-sit"
 preview_urls = false
 
-# Loopback only, matching the pre-0.9 dev arm's shape - OPERATIONS.md,
-# "Checking a deployment", is the one place that names an origin for
-# sit by name ("the localhost origin on sit"), and this is it. sit's
-# own workers.dev origin is deliberately NOT added here yet: the Worker
-# this config deploys does not yet serve the static site from its own
-# origin (DESIGN.md, "The constraint that shapes everything", is the
-# change that eventually makes it need to), so nothing here needs to
-# POST back to itself. Adding it is a one-line change when that lands -
-# but that same change also has to re-examine tools/check_live.py's
-# "published-origin-only" and "guarded-branch" ledger rows, whose
-# classifications assume this arm never carries a bot token or a
-# published origin; this slice's roster above already breaks the first
-# half of that assumption, and the ledger has not been told (0.9-M1-S1
-# completion, #325, names this finding for whichever slice picks it up).
+# Repeated rather than inherited by assumption, matching every other
+# per-environment block in this file - and here it also has to be the
+# SAME shape (directory, binding, not_found_handling, run_worker_first)
+# as the top-level [assets] block above: one build serves both
+# environments, so a divergence here would be the one place sit and
+# production actually differed in what they showed a browser.
+[env.sit.assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "404-page"
+run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/export", "/snapshot", "/submission/*", "/content", "/content/*", "/membership", "/membership/*" ]
+
+# sit's own workers.dev origin joins localhost (0.9-M1-S3, #329): the
+# Worker now serves the static site from its own origin (DESIGN.md,
+# "The constraint that shapes everything"), so the Telegram sign-in
+# widget rendered on that origin needs to be allowed to POST back to
+# it - localhost stays for local work against sit's data, per
+# OPERATIONS.md, "Checking a deployment". This is also the domain
+# BotFather's /setdomain names for sit (OPERATIONS.md, "Building the
+# sit environment"; #282's trail) - #282 stays open on the owner
+# actually running it.
+#
+# This is the one-line change the comment this replaced said would
+# come, and it does what that comment said it would: it falsifies
+# tools/check_live.py's "the Telegram widget rendering and its
+# callback" row, whose "published-origin-only" cause read "sit has no
+# published origin to test the widget against" - no longer true the
+# moment this line is. That row is reclassified "off-machine" in the
+# same commit (0.9-M1-S3 completion has the reasoning); the OTHER
+# ledger rows the comment this replaced named - "guarded-branch",
+# resting on sit's bot token rather than its origin - are #326's own,
+# untouched here, because this change does not touch what those rows
+# actually test.
 [env.sit.vars]
-ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"
+ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124,https://hgbinderworker-sit.sorcererbiggz.workers.dev"
 
 # The database exists since 2026-08-18: OPERATIONS.md's "Building the
 # sit environment" step 1 was run (owner-initiated, #282) and

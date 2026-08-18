@@ -175,9 +175,33 @@ function origins(value) {
 const isLoopback = (origin) =>
   origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1");
 
-function sitOriginsLoopbackOnly(parsed) {
+/* sit's own workers.dev origin (0.9-M1-S3, #329: the Worker now serves
+   the static site from its own origin, so the Telegram widget rendered
+   there has to be allowed to POST back to it - server/wrangler.toml's
+   own comment above [env.sit.vars] carries the full reasoning, and
+   tools/check_live.py's "the Telegram widget rendering and its
+   callback" row is reclassified in the same commit because THIS is
+   the fact that falsifies its old "no published origin" cause). Not
+   loopback, and the one non-loopback origin [env.sit.vars] may name -
+   anything else there is still a real deployment leak, exactly as
+   before this slice. */
+const SIT_OWN_ORIGIN = "https://hgbinderworker-sit.sorcererbiggz.workers.dev";
+
+function sitOriginsAllowed(parsed) {
   const list = origins(parsed.blocks["[env.sit.vars]"]?.ALLOWED_ORIGINS);
-  return list.length > 0 && list.every(isLoopback);
+  return list.length > 0 &&
+    list.every((o) => isLoopback(o) || o === SIT_OWN_ORIGIN);
+}
+
+/* sitOriginsAllowed alone would pass a file where sit went back to
+   loopback-only - every remaining entry is still individually allowed,
+   so nothing above notices SIT_OWN_ORIGIN's absence. This is the other
+   half: the origin server/wrangler.toml's [env.sit.vars] comment and
+   OPERATIONS.md's BotFather /setdomain procedure both name has to
+   actually be there, not merely be a legal value if present. */
+function sitOwnOriginPresent(parsed) {
+  return origins(parsed.blocks["[env.sit.vars]"]?.ALLOWED_ORIGINS)
+    .includes(SIT_OWN_ORIGIN);
 }
 
 /* --- fixture: the ruled shape, minimal but complete --- */
@@ -205,8 +229,19 @@ check("fixture: no secret carries a value", noSecretValues(good));
 check("fixture: the [[env.sit.d1_databases]] block is present and " +
   "well-formed (the database exists since 2026-08-18, #282)",
   sitDatabaseBlockReal(good));
-check("fixture: sit's origins are loopback-only",
-  sitOriginsLoopbackOnly(good));
+check("fixture: sit's loopback-only origins are allowed",
+  sitOriginsAllowed(good));
+
+const goodWithOwnOrigin = GOOD.replace(
+  'ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"',
+  'ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124,' +
+  SIT_OWN_ORIGIN + '"');
+check("fixture: sit's own published origin is allowed beside loopback",
+  sitOriginsAllowed(parse(goodWithOwnOrigin)));
+check("fixture: sit's own published origin is detected as present",
+  sitOwnOriginPresent(parse(goodWithOwnOrigin)));
+check("fixture: sit's own published origin is detected as absent from " +
+  "a loopback-only file", !sitOwnOriginPresent(good));
 
 /* --- mutation evidence: each rule catches the violation it names --- */
 const stillDev = GOOD.replace("[env.sit]", "[env.dev]")
@@ -240,8 +275,18 @@ check("mutation: a deleted [[env.sit.d1_databases]] block is caught",
 const publishedOrigin = GOOD.replace(
   'ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"',
   'ALLOWED_ORIGINS = "http://localhost:8124,https://potaetoe.github.io"');
-check("mutation: a non-loopback origin under [env.sit.vars] is caught",
-  !sitOriginsLoopbackOnly(parse(publishedOrigin)));
+check("mutation: a third-party non-loopback origin under " +
+  "[env.sit.vars] is caught", !sitOriginsAllowed(parse(publishedOrigin)));
+
+const wrongScheme = GOOD.replace(
+  'ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"',
+  'ALLOWED_ORIGINS = "http://localhost:8124,' +
+  SIT_OWN_ORIGIN.replace("https://", "http://") + '"');
+check("mutation: a look-alike sit origin on the wrong scheme is caught",
+  !sitOriginsAllowed(parse(wrongScheme)));
+
+check("mutation: sit's own origin regressing back out of " +
+  "[env.sit.vars] is caught", !sitOwnOriginPresent(parse(GOOD)));
 
 /* --- naming it in a comment, never as an assignment, must NOT trip
    the no-value scan - the real file discusses every absent secret at
@@ -271,14 +316,16 @@ check("the real file assigns no secret a value, present or absent-by-" +
 check("the real file's [[env.sit.d1_databases]] block is present and " +
   "well-formed - the database was created 2026-08-18 (#282) and the " +
   "committed id is what deploy binds", sitDatabaseBlockReal(real));
-check("the real file's [env.sit.vars] origins are loopback-only",
-  sitOriginsLoopbackOnly(real));
+check("the real file's [env.sit.vars] origins are loopback or sit's " +
+  "own published origin, nothing else", sitOriginsAllowed(real));
+check("the real file's [env.sit.vars] actually names sit's own " +
+  "origin, not just permits it", sitOwnOriginPresent(real));
 check("the real file's production [vars] still names a real published " +
   "origin, untouched by the sit rename",
   origins(real.blocks["[vars]"]?.ALLOWED_ORIGINS)
     .some((o) => !isLoopback(o)));
 
-const EXPECTED = 21;
+const EXPECTED = 27;
 console.log(failures
   ? `\nwrangler-sit FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
