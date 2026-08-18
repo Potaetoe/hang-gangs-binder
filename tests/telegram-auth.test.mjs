@@ -483,6 +483,68 @@ async function signIn(options) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 3b. The replay hold outlasts freshness AT THE SKEW CEILING.         */
+/*                                                                     */
+/* Freshness floors Date.now() to whole seconds, so a payload dated at */
+/* the skew ceiling stays acceptable through the entire final second - */
+/* a millisecond short of auth_date + AUTH_FRESHNESS_SECONDS + 1. The  */
+/* replay row expires in milliseconds, so a hold of exactly            */
+/* AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS falls due up to 999 ms   */
+/* early and an intervening prune can delete the spent row while a     */
+/* replay of it still passes freshness. Time is pinned (Date.now       */
+/* stubbed to whole-second instants) so the boundary is exact rather   */
+/* than racing the wall clock, and the claim instant carries no        */
+/* sub-second remainder - the worst case, where the un-padded hold     */
+/* expires a full 999 ms too soon.                                     */
+
+{
+  const realNow = Date.now;
+  // A whole-second claim instant, so the freshness ceiling and the
+  // row's due time compare to the millisecond.
+  const T0 = 1760000000000;
+  const claimSec = T0 / 1000;
+  // The skew ceiling: auth_date as far ahead of the claim as the floor
+  // in verifyTelegramPayload() allows (age === -AUTH_SKEW_SECONDS).
+  const ceilingDate = String(claimSec + 60);
+  // Fresh through auth_date + AUTH_FRESHNESS_SECONDS entire; the last
+  // millisecond it is still accepted is (auth_date + 300 + 1) * 1000 - 1.
+  const lastFreshMs = (claimSec + 60 + 300 + 1) * 1000 - 1;
+
+  const db = makeDb();
+  const spent = payloadFor({ auth_date: ceilingDate });
+  try {
+    Date.now = () => T0;
+    const first = await withSeams(botAnswering(memberAnswer), () =>
+      post(worker, sitEnv(db), "/auth/telegram", spent));
+    check("skew-ceiling replay: the first sign-in at the claim instant " +
+      "is accepted, so the boundary is measured against a real claim",
+      first.value.status === 200 && db.replay.has(sha256hex(spent.hash)));
+
+    // An intervening, unrelated sign-in at the last-fresh millisecond
+    // runs the prune (DELETE FROM auth_replay WHERE expires_at <= now).
+    // A different auth_date keeps its hash distinct from the spent one,
+    // so it mints its own session rather than reading as a replay.
+    Date.now = () => lastFreshMs;
+    await withSeams(botAnswering(memberAnswer), () =>
+      post(worker, sitEnv(db), "/auth/telegram",
+        payloadFor({ auth_date: String(claimSec + 360) })));
+    check("skew-ceiling replay: the spent payload's row survives that " +
+      "prune - it is held past the last millisecond the payload is fresh",
+      db.replay.has(sha256hex(spent.hash)));
+
+    // Replay the ORIGINAL payload at that same last-fresh instant: it is
+    // still fresh, so only the surviving row can refuse it.
+    const replay = await withSeams(botAnswering(memberAnswer), () =>
+      post(worker, sitEnv(db), "/auth/telegram", spent));
+    check("skew-ceiling replay: replaying the spent payload at the last " +
+      "millisecond it is still fresh is refused 401 and mints nothing " +
+      "new", replay.value.status === 401 && db.inserts.length === 2);
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 4. The session token and how it is stored (mandate 4).              */
 
 {
@@ -962,9 +1024,45 @@ async function mutant(label, from, to) {
     "probe", logs.includes(HANDLE));
 }
 
+{
+  /* The other direction of the skew-ceiling arm above: dropping the + 1
+     back to the bare sum re-opens the replay it closes. Same scenario,
+     against a worker whose hold is one second too short - the spent
+     row is pruned by the intervening sign-in and the replay mints a
+     second session. */
+  const mutated = await mutant(
+    "the replay hold dropped back to the un-padded sum",
+    "const REPLAY_HOLD_SECONDS = " +
+      "AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS + 1;",
+    "const REPLAY_HOLD_SECONDS = " +
+      "AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS;");
+  const realNow = Date.now;
+  const T0 = 1760000000000;
+  const claimSec = T0 / 1000;
+  const lastFreshMs = (claimSec + 60 + 300 + 1) * 1000 - 1;
+  const db = makeDb();
+  const spent = payloadFor({ auth_date: String(claimSec + 60) });
+  try {
+    Date.now = () => T0;
+    await withSeams(botAnswering(memberAnswer), () =>
+      post(mutated, sitEnv(db), "/auth/telegram", spent));
+    Date.now = () => lastFreshMs;
+    await withSeams(botAnswering(memberAnswer), () =>
+      post(mutated, sitEnv(db), "/auth/telegram",
+        payloadFor({ auth_date: String(claimSec + 360) })));
+    const replay = await withSeams(botAnswering(memberAnswer), () =>
+      post(mutated, sitEnv(db), "/auth/telegram", spent));
+    check("mutation: with the un-padded hold the spent row is pruned a " +
+      "second too early and the replay mints a second session",
+      replay.value.status === 200 && db.inserts.length === 3);
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 92;
+const EXPECTED = 97;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

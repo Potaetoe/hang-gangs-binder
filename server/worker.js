@@ -322,16 +322,31 @@ const AUTH_DATE = /^[0-9]{1,15}$/;
  * How long a spent payload is remembered, so it cannot be spent twice.
  *
  * The two guards compose rather than overlap, and the arithmetic is the
- * whole reason this is not simply AUTH_FRESHNESS_SECONDS. A payload
- * stops being fresh at auth_date + AUTH_FRESHNESS_SECONDS, and
- * auth_date may legitimately be as much as AUTH_SKEW_SECONDS ahead of
- * now - so a row that lived only for the freshness window could age out
- * while its payload was still inside one, which would re-open exactly
- * the replay this table exists to refuse. Held for the sum, the row
- * always outlives its payload's acceptability, and after that freshness
- * alone does the refusing with nothing stored.
+ * whole reason this is neither AUTH_FRESHNESS_SECONDS alone nor simply
+ * the sum of the two window edges. A payload stops being fresh at
+ * auth_date + AUTH_FRESHNESS_SECONDS, and auth_date may legitimately be
+ * as much as AUTH_SKEW_SECONDS ahead of now - so a row that lived only
+ * for the freshness window could age out while its payload was still
+ * inside one, which would re-open exactly the replay this table exists
+ * to refuse. That sum is the floor; the trailing + 1 is what makes the
+ * property strictly true rather than true only to the whole second.
+ *
+ * Freshness is counted in WHOLE seconds: verifyTelegramPayload() floors
+ * Date.now() to seconds before subtracting auth_date, so a payload is
+ * accepted through the ENTIRE final second - fresh right up to
+ * auth_date + AUTH_FRESHNESS_SECONDS + 1 seconds, one millisecond short
+ * of that. The replay row, by contrast, expires in MILLISECONDS at the
+ * claim instant plus this many seconds. Held for exactly
+ * AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS the row can therefore fall
+ * due as much as 999 ms BEFORE its payload stops being acceptable - a
+ * sub-second window in which the prune inside claimPayload() deletes a
+ * spent row while a replay of it would still pass freshness. The extra
+ * second covers exactly that flooring: with it the row's expiry lands
+ * strictly after the last millisecond the payload is acceptable, at
+ * every sub-second alignment of the claim instant. The skew-ceiling
+ * boundary is armed in tests/telegram-auth.test.mjs, both directions.
  */
-const REPLAY_HOLD_SECONDS = AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS;
+const REPLAY_HOLD_SECONDS = AUTH_FRESHNESS_SECONDS + AUTH_SKEW_SECONDS + 1;
 
 /*
  * How long the group check may take before it is abandoned.
