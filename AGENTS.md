@@ -238,7 +238,14 @@ guards, never as the pattern for a new one.
   notification or process state, which is exactly the failure this
   view replaced (`tools/fleet_status.py`'s own module docstring carries
   the full reasoning). A fork's orchestrator gets the same view for
-  free: nothing here is specific to this machine's history.
+  free: nothing here is specific to this machine's history. **Exit code
+  0 means all four sections derived cleanly; exit code 1 means any
+  derivation gap** — including the routine case of `gh` being absent on
+  a fork's machine, which is not breakage and is named as its own
+  problem line rather than folded into a table that still renders. A
+  fork reading exit 1 as "something is broken" over a `gh`-less
+  checkout is reading the wrong signal; the printed problem line says
+  which section could not be derived and why.
 - **`./run agent-init` is the first command in a fresh worktree** (or on
   the primary checkout), before either gate: it renormalizes line
   endings, installs dependencies, leases a scratch space and proves one

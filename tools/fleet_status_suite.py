@@ -50,6 +50,7 @@ invocation could never take.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -67,7 +68,7 @@ performed = 0
 # in this fleet holds itself to (reaper_suite.py's own EXPECTED, this
 # file's ancestor in spirit): a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 75
+EXPECTED = 113
 
 
 def check(label, condition):
@@ -268,6 +269,20 @@ ISSUES = {
          "labels": [], "milestone": {"number": 1, "title": "0.9-M0"},
          "url": "https://example.invalid/701"},
     ],
+    # MAJOR-1 (0.9-M0-S20 fix round, #317): a title carrying a real ESC
+    # byte, exactly the shape a hostile issue-comment author on this
+    # PUBLIC repository could write - the outer \\\\x1b here is two
+    # backslashes plus "x1b" in fleet_status_suite.py's own source, so
+    # it lands as the four characters \\x1b in gh_stub.py's source,
+    # which Python parses as one real ESC byte when the stub runs and
+    # gh's JSON carries it across the wire like any other character.
+    "hostile": [
+        {"number": 801,
+         "title": "0.9-M0-Sxx: hostile title \\x1b[2J\\x1b[H\\x1b[32m"
+                   "FORGED\\x1b[0m",
+         "labels": [], "milestone": {"number": 1, "title": "0.9-M0"},
+         "url": "https://example.invalid/801"},
+    ],
 }
 
 COMMENTS = {
@@ -286,6 +301,15 @@ COMMENTS = {
     "503": {"comments": []},
     "504": {"comments": [
         {"body": "just chatting, nothing structured here",
+         "createdAt": "2026-08-17T00:00:00Z"},
+    ]},
+    # MAJOR-1: a single-line comment (no real newline, so splitlines()
+    # alone would never separate it) carrying ESC and a forged copy of
+    # this program's own all-clear line - the exact attack the module
+    # docstring's UNTRUSTED TEXT section names.
+    "801": {"comments": [
+        {"body": "\\x1b[2J\\x1b[H\\x1b[32mall four sections derived "
+                 "cleanly.\\x1b[0m",
          "createdAt": "2026-08-17T00:00:00Z"},
     ]},
 }
@@ -439,11 +463,58 @@ try:
           rows and "gh issue view" in rows[0]["marker"]
           and "simulated gh issue view failure" in rows[0]["marker"])
 
+    print("\n--- MAJOR-1: hostile gh text is sanitized before it ever "
+         "reaches print() ---")
+
+    os.environ["FLEET_STATUS_STUB_SCENARIO"] = "hostile"
+    rows, milestone_title, problem = fleet_status.ticket_rows()
+    check("ticket_rows derives cleanly against the hostile fixture",
+          problem is None and len(rows) == 1)
+    hostile_row = rows[0]
+    check("the ESC byte is gone from the sanitized title - not merely "
+         "present alongside an escape, gone",
+          "\x1b" not in hostile_row["title"])
+    check("the title's escape sequence is rendered as visible hex, "
+         "not silently dropped - the reader can still see what gh sent",
+          "\\x1b" in hostile_row["title"])
+    check("the sanitized title still carries the readable prose around "
+         "the attack, so nothing legitimate was lost",
+          "hostile title" in hostile_row["title"]
+          and "FORGED" in hostile_row["title"])
+    check("the comment excerpt's ESC byte is gone too - the marker "
+         "line, not only the title, is untrusted text",
+          "\x1b" not in hostile_row["marker"])
+    check("the excerpt's forged all-clear line is visible as escaped "
+         "text in the marker rather than able to act on a terminal",
+          "\\x1b" in hostile_row["marker"]
+          and "all four sections derived cleanly." in
+          hostile_row["marker"])
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        code = fleet_status.main(["--repo", primary, "--state", state])
+    rendered = buffer.getvalue()
+    check("main()'s own gate is exercised: a fully-derivable hostile "
+         "run still exits 0",
+          code == 0)
+    check("the rendered output contains not one raw C0 control byte or "
+         "DEL, checked against the actual emitted characters rather "
+         "than a substring guess",
+          not any((ord(ch) < 0x20 and ch != "\n") or ord(ch) == 0x7f
+                  for ch in rendered))
+    check("this program's own real closing line is exactly that line "
+         "on its own - the forged copy stays embedded (harmlessly, now "
+         "inert) inside the hostile ticket's quoted marker rather than "
+         "replacing it, which is what the raw ESC bytes could have "
+         "done to a real terminal before sanitize() existed",
+          rendered.rstrip("\n").splitlines()[-1]
+          == "all four sections derived cleanly.")
+
     del os.environ["FLEET_STATUS_STUB_SCENARIO"]
     del os.environ["BINDER_GH_CMD"]
 
-    print("\n--- classify_comment, active_milestone, excerpt: unit "
-         "checks ---")
+    print("\n--- classify_comment, active_milestone, excerpt, sanitize: "
+         "unit checks ---")
 
     check("BUILD-AND-HOLD is recognized",
           fleet_status.classify_comment(
@@ -495,6 +566,48 @@ try:
     check("excerpt truncates a long line and marks the cut",
           len(excerpted) == 91 and excerpted.endswith("..."))
     check("excerpt of nothing is nothing", fleet_status.excerpt("") == "")
+
+    check("sanitize() escapes ESC as visible hex",
+          fleet_status.sanitize("a\x1bb") == "a\\x1bb")
+    check("sanitize() escapes every C0 control byte, not only ESC",
+          fleet_status.sanitize("".join(chr(code) for code in range(32)))
+          == "".join("\\x%02x" % code for code in range(32)))
+    check("sanitize() escapes DEL (0x7f)",
+          fleet_status.sanitize("a\x7fb") == "a\\x7fb")
+    check("sanitize() leaves \\n itself, the literal two-character "
+         "escape spelling, alone - only a REAL newline byte is "
+         "escaped",
+          fleet_status.sanitize("a\\nb") == "a\\nb")
+    check("sanitize() of text with nothing to escape is unchanged",
+          fleet_status.sanitize("plain ASCII, nothing to see here")
+          == "plain ASCII, nothing to see here")
+    check("sanitize() of the empty string is the empty string",
+          fleet_status.sanitize("") == "")
+    check("excerpt() sanitizes what it returns - a hostile ESC inside "
+         "an otherwise-normal single line does not survive it",
+          "\x1b" not in fleet_status.excerpt("before\x1bafter")
+          and "\\x1b" in fleet_status.excerpt("before\x1bafter"))
+
+    print("\n--- MINOR-1: valid_block() - the lease-shape guard ---")
+
+    check("a well-formed two-integer block is valid",
+          fleet_status.valid_block([8130, 8135]))
+    check("a tuple is accepted the same as a list",
+          fleet_status.valid_block((8130, 8135)))
+    check("a one-element block is not valid",
+          not fleet_status.valid_block([8130]))
+    check("a three-element block is not valid",
+          not fleet_status.valid_block([8130, 8131, 8135]))
+    check("a block holding a string instead of an int is not valid",
+          not fleet_status.valid_block([8130, "8135"]))
+    check("a bare string is not valid (block is not even a list)",
+          not fleet_status.valid_block("8130-8135"))
+    check("None is not valid",
+          not fleet_status.valid_block(None))
+    check("a block of two booleans is not valid - bool subclasses int "
+         "in Python, and a lease file is untrusted JSON, not a value "
+         "this program constructed itself",
+          not fleet_status.valid_block([True, False]))
 
     print("\n--- gh_command(): the injectable seam's own edges ---")
 
@@ -571,16 +684,82 @@ try:
         agent_init.lease_path((8170, 8175), state),
         os.path.abspath(ghost_path), "ghost-branch", (8170, 8175))
 
+    # MINOR-1: a lease file whose `block` is a single integer, not a
+    # pair - hand-written directly rather than through
+    # agent_init.write_lease(), which never produces a malformed one.
+    # `worktree` is a real string (never None) so that reaper.py's own
+    # leases_on(), which this fixture's later --act step drives over
+    # every lease file on the machine, has something os.path.abspath()
+    # can take - this fixture is only about the malformed `block`.
+    agent_init.write_json(
+        agent_init.lease_path((8180,), state),
+        {"schema": agent_init.SCHEMA, "block": [8180],
+         "worktree": os.path.join(root, "not-a-real-worktree-8180"),
+         "branch": "ticket-nope", "leased_at": agent_init.now()})
+
+    # MINOR-3: a worktree on a branch that does not match BRANCH_PATTERN
+    # - the naming standard, not the filter, is the thing this fixture
+    # violates on purpose.
+    nonstandard = add_worktree(primary, "wt-nonstandard",
+                               "work-0.9-m0-s21-fw2", landed)
+    write_live_record(nonstandard, "work-0.9-m0-s21-fw2", state)
+
+    # NIT: a live, registered worktree whose record's own `branch` field
+    # is None - the detached-HEAD shape a Python `"branch %s" % None`
+    # would render as the literal word "None".
+    detached = add_worktree(primary, "wt-detached", "0.9-m0-sdetached",
+                            landed)
+    write_live_record(detached, None, state)
+
+    # MINOR-5: a record naming no worktree at all - the MALFORMED row
+    # class, hand-written because agent-init itself never omits the
+    # field.
+    malformed_source = agent_init.record_path(
+        os.path.join(root, "malformed-record-subject"), state)
+    agent_init.write_json(malformed_source, {
+        "schema": agent_init.SCHEMA, "contract": agent_init.CONTRACT,
+        "kind": "linked", "branch": None, "state": "live",
+        "initialized_at": agent_init.now(), "ports": None,
+        "scratch": None})
+
+    # MINOR-5: a record whose `state` field is not one this program
+    # recognizes - the UNKNOWN STATE row class.
+    unknown_path = os.path.join(root, "wt-unknown-state-subject")
+    agent_init.write_json(agent_init.record_path(unknown_path, state), {
+        "schema": agent_init.SCHEMA, "contract": agent_init.CONTRACT,
+        "worktree": unknown_path, "kind": "linked",
+        "branch": "0.9-m0-sunknown", "state": "transmogrified",
+        "initialized_at": agent_init.now(), "ports": None,
+        "scratch": None})
+
     rows, problem = fleet_status.worktree_rows(primary, state)
     check("worktree_rows derives cleanly against the fixture machine",
           problem is None)
     by_path = {row["path"]: row for row in rows}
 
-    check("a live record matching git's own registration reads live",
-          by_path[os.path.abspath(live_ok)]["status"] == "live")
+    check("MAJOR-2: a live record matching git's own registration no "
+         "longer reads the bare word 'live' - the word a working "
+         "agent's row would print identically",
+          by_path[os.path.abspath(live_ok)]["status"] == "CLAIMS LIVE")
+    live_ok_detail = by_path[os.path.abspath(live_ok)]["detail"]
     check("its detail names the branch and the ports it holds",
-          "0.9-m0-slive" in by_path[os.path.abspath(live_ok)]["detail"]
-          and "8130-8135" in by_path[os.path.abspath(live_ok)]["detail"])
+          "0.9-m0-slive" in live_ok_detail and "8130-8135" in
+          live_ok_detail)
+    check("MAJOR-2: the detail says outright what it does not prove",
+          "record claims live, written" in live_ok_detail
+          and "nothing here proves a process is running"
+          in live_ok_detail)
+    check("MAJOR-2: the record's age is derived from its own "
+         "initialized_at, not guessed - a record written moments ago "
+         "by this fixture reads under an hour",
+          re.search(r"written (\d+\.\d)h ago", live_ok_detail) is not
+          None
+          and float(re.search(r"written (\d+\.\d)h ago",
+                              live_ok_detail).group(1)) < 1.0)
+    check("MAJOR-2: the port lease's own mtime is surfaced too, "
+         "corroborating (or not) the record's initialized_at",
+          "port lease written" in live_ok_detail
+          and "unknown" not in live_ok_detail)
 
     check("a live record git no longer registers reads ORPHANED - the "
          "stale/orphaned distinction this ticket exists for",
@@ -590,11 +769,22 @@ try:
          "per the reaper fold-in",
           "reaper would reap it"
           in by_path[os.path.abspath(parked_reap)]["detail"])
+    check("MINOR-2: the same row ALSO carries the two-writers signal on "
+         "a reachable path, because agent-park detaches HEAD but never "
+         "deregisters the worktree from git - the ordinary shape the "
+         "reviewer found three of on the real machine, not a rare one",
+          "still registered by git as a live worktree despite the "
+         "parked record, a two-writers signal"
+          in by_path[os.path.abspath(parked_reap)]["detail"])
 
     check("a parked worktree whose branch carries unlanded work is "
          "reported blocked, not silently a candidate",
           "blocked" in by_path[os.path.abspath(parked_blocked)]["detail"]
           and "not an ancestor"
+          in by_path[os.path.abspath(parked_blocked)]["detail"])
+    check("MINOR-2: the blocked row carries the same reachable "
+         "two-writers signal alongside the blocked verdict",
+          "two-writers signal"
           in by_path[os.path.abspath(parked_blocked)]["detail"])
 
     check("a parked record whose directory is already gone reads GONE, "
@@ -617,6 +807,55 @@ try:
          "design",
           os.path.abspath(primary) not in
           {row["path"] for row in rows if row["status"] == "UNRECORDED"})
+
+    malformed_lease_row = next(
+        (row for row in rows if row["status"] == "MALFORMED LEASE"),
+        None)
+    check("MINOR-1: a lease whose block is not a two-integer pair "
+         "renders as its own MALFORMED LEASE row instead of crashing "
+         "the whole view - worktree_rows() already returned above "
+         "with problem is None, which is the crash-proof",
+          malformed_lease_row is not None
+          and "8180.json" in malformed_lease_row["evidence"]
+          and "[8180]" in malformed_lease_row["detail"])
+    check("MINOR-1: every OTHER row still rendered - one malformed "
+         "lease did not blank the section it has nothing to do with",
+          by_path[os.path.abspath(live_ok)]["status"] == "CLAIMS LIVE"
+          and by_path[os.path.abspath(parked_reap)]["status"]
+          == "parked")
+
+    nonstandard_row = by_path.get(os.path.abspath(nonstandard))
+    check("MINOR-3: a worktree on a branch BRANCH_PATTERN excludes is "
+         "annotated, naming the disagreement rather than hiding it",
+          nonstandard_row is not None
+          and "non-standard branch name (not in BRANCHES section)"
+          in nonstandard_row["detail"])
+    check("MINOR-3: a standard 0.9-* branch carries no such annotation",
+          "non-standard branch name" not in live_ok_detail)
+
+    detached_row = by_path.get(os.path.abspath(detached))
+    check("NIT: a record whose branch is None renders as 'detached', "
+         "not the Python literal 'branch None'",
+          detached_row is not None
+          and "branch detached" in detached_row["detail"]
+          and "branch None" not in detached_row["detail"])
+
+    malformed_record_row = next(
+        (row for row in rows if row["status"] == "MALFORMED"
+         and row["evidence"] == os.path.basename(malformed_source)),
+        None)
+    check("MINOR-5: a record naming no worktree at all renders as "
+         "MALFORMED, named by its own source file",
+          malformed_record_row is not None
+          and malformed_record_row["path"] == "(none)")
+
+    unknown_row = by_path.get(os.path.abspath(unknown_path))
+    check("MINOR-5: a record whose state field this program does not "
+         "recognize renders as UNKNOWN STATE rather than crashing or "
+         "silently matching one of the known branches",
+          unknown_row is not None
+          and unknown_row["status"] == "UNKNOWN STATE"
+          and "transmogrified" in unknown_row["detail"])
 
     print("\n--- reaper fold-in: derived, not re-derived, and read-only "
          "---")
@@ -657,7 +896,7 @@ try:
           by_path[os.path.abspath(parked_reap)]["detail"] != "branch "
           "0.9-m0-sreap - (no detail recorded)")
     check("the live worktree is untouched by the act",
-          by_path[os.path.abspath(live_ok)]["status"] == "live")
+          by_path[os.path.abspath(live_ok)]["status"] == "CLAIMS LIVE")
     check("the orphaned live record is untouched by the act - reaper's "
          "own rules never reap a state=live record, however stale",
           by_path[os.path.abspath(live_stale)]["status"] == "ORPHANED")
@@ -677,6 +916,14 @@ try:
     check("the tickets section is present", "0.9-M0" in output)
     check("the worktrees section is present", "wt-live-ok" in output
           or os.path.abspath(live_ok) in output)
+    check("MINOR-1/MINOR-5: the malformed-lease and malformed-record "
+         "row classes both reach the real render(), not only the "
+         "unit-level worktree_rows() call above",
+          "MALFORMED LEASE" in output and "MALFORMED" in output
+          and "UNKNOWN STATE" in output)
+    check("the run's own exit code is unaffected by any of the "
+         "MALFORMED-class rows - they are named, not fatal",
+          code == 0)
 
     os.environ["FLEET_STATUS_STUB_SCENARIO"] = "boom"
     buffer = io.StringIO()

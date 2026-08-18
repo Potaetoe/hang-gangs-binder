@@ -61,16 +61,27 @@ a ticket, or a comment always prints what it read to reach that
 answer, in the same line, not in a legend the reader has to hold in
 their head across forty lines.
 
-UNTRUSTED TEXT (Prime's hardening note, triaged for this ticket): gh
-returns issue titles and comment bodies that this repository does not
-control - anyone with issue-comment access wrote them. Nothing here
-executes, evals, or interpolates that text into a shell command; every
-subprocess call in this file is list-form (never `shell=True`, never
-an f-string built into a command line), so the only thing untrusted
-text can do is appear, verbatim, in a `print()` line. That is also why
-the milestone/label/marker CLASSIFICATION logic below matches against
-gh's own structured JSON fields (`labels[].name`, `milestone.number`)
-rather than parsing prose, wherever a structured field exists to use.
+UNTRUSTED TEXT (Prime's hardening note, triaged for this ticket; MAJOR-1
+of the 0.9-M0-S20 fix round, #317, is the finding that sharpened this
+paragraph): gh returns issue titles and comment bodies that this
+repository does not control - anyone with issue-comment access wrote
+them, and this repository is PUBLIC, so that is anyone with a GitHub
+account. Nothing here executes, evals, or interpolates that text into a
+shell command; every subprocess call in this file is list-form (never
+`shell=True`, never an f-string built into a command line). List-form
+is not the whole safety property, though: a terminal interprets C0
+control bytes (ESC included) wherever they sit inside a line, not only
+at a line boundary, so an untrusted title or comment carrying
+`\x1b[2J\x1b[H` and a forged status line can clear the operator's
+screen and print a fake "all four sections derived cleanly." over the
+real rows, with nothing in this program's own output marking the
+substitution. `sanitize()` below escapes every C0 control byte and DEL
+out of gh-derived text - titles and excerpts both - before either
+reaches `print()`, so the only thing untrusted text can do is appear,
+escaped, in a `print()` line. That is also why the milestone/label/
+marker CLASSIFICATION logic below matches against gh's own structured
+JSON fields (`labels[].name`, `milestone.number`) rather than parsing
+prose, wherever a structured field exists to use.
 
 WHY THIS HAS A TIMEOUT ON EVERY SUBPROCESS, LIKE reaper.py's OWN
 
@@ -85,12 +96,14 @@ exactly that, never silently read as "found nothing".
 """
 
 import argparse
+import datetime
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 
 import agent_init
 import reaper
@@ -123,7 +136,7 @@ BRANCH_PATTERN = re.compile(r"^(?:0\.9-|ticket-)")
 # field: there is no structured field for "what kind of comment is
 # this" anywhere in the issue-tracker's own schema, so the alternative
 # is not reading it at all. Each pattern is anchored to how that
-# comment class is written elsewhead in this fleet (the pack's Ship
+# comment class is written elsewhere in this fleet (the pack's Ship
 # discipline and Claim release sections, AGENTS.md's landing door) -
 # not invented here. A body matching none of them is not an error: it
 # is reported as exactly that, with the comment's own opening line as
@@ -145,6 +158,30 @@ MARKERS = (
     (re.compile(r"VERDICT\s+PASS\b"),
      lambda m: "review verdict: PASS"),
 )
+
+# Every C0 control byte (0x00-0x1f) and DEL (0x7f), with no exception -
+# not even \n or \r, which excerpt()'s own splitlines() already keeps
+# out of a single-line excerpt but which a raw ISSUE TITLE (never run
+# through splitlines()) could still carry. 0x1b (ESC) is the one that
+# matters most: a terminal acts on an ESC sequence wherever it appears
+# in a line, not only at a line boundary, which is what MAJOR-1
+# (0.9-M0-S20 fix round, #317) found - see the module docstring's
+# UNTRUSTED TEXT section for the full argument this pattern closes.
+CONTROL_BYTES = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def sanitize(text):
+    """gh-derived text, safe to hand to `print()`.
+
+    Every C0 control byte and DEL becomes a `\\xHH` escape - visible,
+    unambiguous, and inert on any terminal. Applied to every string gh
+    handed this program before it reaches a `print()` line: issue
+    titles in ticket_rows() and the first-line excerpt excerpt() builds
+    from a comment body. Text with nothing to escape passes through
+    unchanged, which is why this is safe to call unconditionally rather
+    than only when a control byte is suspected.
+    """
+    return CONTROL_BYTES.sub(lambda m: "\\x%02x" % ord(m.group(0)), text)
 
 
 def git_environment():
@@ -366,7 +403,8 @@ def classify_comment(body):
 def excerpt(text, width=88):
     first = next((line.strip() for line in text.splitlines()
                  if line.strip()), "")
-    return (first[:width] + "...") if len(first) > width else first
+    trimmed = (first[:width] + "...") if len(first) > width else first
+    return sanitize(trimmed)
 
 
 def ticket_rows():
@@ -410,7 +448,8 @@ def ticket_rows():
                 quoted = excerpt(latest.get("body", ""))
                 marker = ("%s - \"%s\"" % (label, quoted) if label
                           else "no recognized marker - \"%s\"" % quoted)
-        rows.append({"number": issue["number"], "title": issue["title"],
+        rows.append({"number": issue["number"],
+                    "title": sanitize(issue["title"]),
                     "url": issue["url"], "claimed": claimed,
                     "marker": marker})
     rows.sort(key=lambda row: row["number"])
@@ -421,26 +460,99 @@ def ticket_rows():
 # 3. Worktrees
 # ----------------------------------------------------------------------
 
+def valid_block(block):
+    """Whether a lease's `block` field is the two-integer pair every
+    other line in this file assumes it is - never assumed true. bool is
+    excluded even though it subclasses int in Python, because a lease
+    file is JSON on disk that this program treats as untrusted until
+    checked, not a value this program constructed itself."""
+    return (isinstance(block, (list, tuple)) and len(block) == 2
+           and all(isinstance(item, int) and not isinstance(item, bool)
+                  for item in block))
+
+
 def read_leases(state):
-    """[{path (lease file), block, branch, worktree}], every lease on
-    the machine - not filtered to any one worktree, unlike
-    reaper.leases_on(), because this section's job is to name every
-    lease that has NOTHING live behind it, and that requires seeing
-    all of them at once rather than asking one at a time.
+    """([{file, path, block, branch, worktree}], [{file, block}]) - the
+    well-formed leases, and separately every lease whose `block` field
+    is not a two-integer pair.
+
+    MINOR-1 (0.9-M0-S20 fix round, #317): a lease file is JSON on disk,
+    read here as untrusted until its shape is checked - and every other
+    line in this file that formats a block assumes `lease["block"]` is
+    already a two-integer pair. Without a guard at the read, the FIRST
+    malformed one reaches `"%d-%d" % tuple(lease["block"])`, raises,
+    and blanks all four sections of the view - one bad lease file
+    taking down the report of every other row that has nothing to do
+    with it. Shape is validated here instead, so nothing downstream
+    ever calls `tuple()` on a block it has not already been told is
+    well-formed; a malformed lease is carried separately and
+    worktree_rows() renders it as its own row rather than silently
+    dropping it or letting it corrupt a row it is not part of - the
+    same property the gh boundary already has (one unreadable comment
+    cannot blank the tickets section, only its own row).
+
+    Not filtered to any one worktree, unlike reaper.leases_on(),
+    because this section's job is to name every lease that has NOTHING
+    live behind it, and that requires seeing all of them at once rather
+    than asking one at a time.
     """
     directory = agent_init.leases_dir(state)
     if not os.path.isdir(directory):
-        return []
+        return [], []
     found = []
+    malformed = []
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".json"):
             continue
-        lease = agent_init.read_json(os.path.join(directory, name))
-        if isinstance(lease, dict):
-            found.append({"file": name, "block": lease.get("block"),
-                         "branch": lease.get("branch"),
-                         "worktree": lease.get("worktree")})
-    return found
+        path = os.path.join(directory, name)
+        lease = agent_init.read_json(path)
+        if not isinstance(lease, dict):
+            continue
+        block = lease.get("block")
+        if not valid_block(block):
+            malformed.append({"file": name, "block": block})
+            continue
+        found.append({"file": name, "path": path, "block": block,
+                     "branch": lease.get("branch"),
+                     "worktree": lease.get("worktree")})
+    return found, malformed
+
+
+def _hours_ago(timestamp, now=None):
+    """Hours between a UNIX timestamp and now, one decimal - or None if
+    there is no timestamp to measure from. Never guessed."""
+    if timestamp is None:
+        return None
+    now = time.time() if now is None else now
+    return (now - timestamp) / 3600.0
+
+
+def _record_age_hours(record, now=None):
+    """Hours since a fleet record's own `initialized_at`, or None if
+    the field is missing or does not parse - MAJOR-2's age derivation,
+    read from the one artifact that carries a "when" at all."""
+    when = record.get("initialized_at")
+    if not when:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(when.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return (now - parsed).total_seconds() / 3600.0
+
+
+def _lease_age_hours(held, now=None):
+    """Hours since the OLDEST of a worktree's held port leases was last
+    written (its file mtime) - the second artifact MAJOR-2 names,
+    corroborating (or not) the record's own initialized_at."""
+    stamps = [os.path.getmtime(lease["path"]) for lease in held
+             if lease.get("path") and os.path.exists(lease["path"])]
+    return _hours_ago(min(stamps), now) if stamps else None
+
+
+def _format_hours(hours):
+    return "%.1fh" % hours if hours is not None else "unknown"
 
 
 def worktree_rows(repo, state):
@@ -477,7 +589,7 @@ def worktree_rows(repo, state):
                if item["kind"] in ("parked worktree", "vanished worktree")}
               if reaper_items is not None else {})
 
-    leases = read_leases(state)
+    leases, malformed_leases = read_leases(state)
     leases_by_path = {}
     for lease in leases:
         if lease["worktree"]:
@@ -498,6 +610,11 @@ def worktree_rows(repo, state):
         known_paths.add(path)
         is_registered = path in registered
         branch = record.get("branch")
+        # NIT (0.9-M0-S20 fix round): a detached-HEAD record's `branch`
+        # is Python `None`, and `"branch %s" % None` prints the literal
+        # word "None" - a reader's-eye defect, not a derivation one, but
+        # confusing enough on an operator's screen to fix here.
+        branch_label = branch if branch else "detached"
         state_field = record.get("state")
         held = leases_by_path.pop(path, [])
         lease_note = (", ".join("%d-%d" % tuple(lease["block"])
@@ -505,11 +622,31 @@ def worktree_rows(repo, state):
                      if held else "no lease held")
 
         if state_field == "live":
-            status = "live" if is_registered else "ORPHANED"
-            detail = (("branch %s, ports %s" % (branch, lease_note))
-                      if is_registered else
-                      "record says live and git does not register "
-                      "this worktree - a resumed-vs-two-writers signal")
+            if is_registered:
+                # MAJOR-2 (0.9-M0-S20 fix round, #317): a bare "live"
+                # status here would print the same word a working
+                # agent's row prints, from a record and a git
+                # registration that a dead-without-parking agent leaves
+                # behind identically to a working one - the weakest
+                # evidence in this whole view printing the strongest
+                # word. No process-state inference is added (still no
+                # psutil, no pid); instead the two artifacts that ARE
+                # derivable, the record's own initialized_at and the
+                # port lease file's mtime, are surfaced as ages, with a
+                # caveat that says outright what neither of them
+                # proves.
+                status = "CLAIMS LIVE"
+                detail = ("branch %s, ports %s - record claims live, "
+                          "written %s ago (port lease written %s ago); "
+                          "nothing here proves a process is running"
+                          % (branch_label, lease_note,
+                             _format_hours(_record_age_hours(record)),
+                             _format_hours(_lease_age_hours(held))))
+            else:
+                status = "ORPHANED"
+                detail = ("record says live and git does not register "
+                          "this worktree - a resumed-vs-two-writers "
+                          "signal")
         elif state_field == "parked":
             if not os.path.isdir(path):
                 status = "GONE"
@@ -517,7 +654,7 @@ def worktree_rows(repo, state):
                           "no longer exists on disk; reaper.py treats a "
                           "missing directory as inert (nothing left to "
                           "act on), not a reap candidate"
-                          % (branch, lease_note))
+                          % (branch_label, lease_note))
             else:
                 reaped = by_path.get(path)
                 if reaped is not None:
@@ -529,24 +666,51 @@ def worktree_rows(repo, state):
                 elif reaper_problem:
                     verdict = "reaper could not be consulted: %s" \
                              % reaper_problem
-                elif is_registered:
-                    verdict = ("still registered by git as a live "
-                              "worktree despite the parked record - a "
-                              "live claim, not a reap candidate")
                 else:
                     verdict = "not currently a reap candidate"
+                # MINOR-2 (0.9-M0-S20 fix round, #317): appended
+                # unconditionally rather than living behind its own
+                # `elif is_registered:` slot, because reaper.plan()'s
+                # own parked_items() emits an item for ANY parked
+                # record whose directory still exists, registered or
+                # not - so an `elif` here competing with the block
+                # above would only run on a path `reaped is not None`
+                # never takes once the directory exists, which is
+                # always. `agent-park` detaches HEAD but never runs
+                # `git worktree remove` (agent_init.py's own park
+                # command only detaches; only a reap prunes the
+                # registration), so a freshly parked worktree is
+                # ordinarily STILL registered - the reviewer's "three
+                # such worktrees on the real machine" is that ordinary
+                # case, not a rare one, and it deserves a row that says
+                # so on a path this program actually reaches.
+                if is_registered:
+                    verdict += (" - still registered by git as a live "
+                               "worktree despite the parked record, a "
+                               "two-writers signal")
                 status = "parked"
-                detail = "branch %s, %s - %s" % (branch, lease_note,
+                detail = "branch %s, %s - %s" % (branch_label, lease_note,
                                                  verdict)
         elif state_field == "reaped":
             status = "gone (reaped)"
             reaped_meta = record.get("reaped") or {}
             what = reaped_meta.get("what") or []
             detail = "branch %s - %s" % (
-                branch, what[-1] if what else "(no detail recorded)")
+                branch_label, what[-1] if what else "(no detail recorded)")
         else:
             status = "UNKNOWN STATE"
             detail = "record's state field is %r" % state_field
+        # MINOR-3 (Prime ruling, 0.9-M0-S20 fix round, #317): the
+        # naming standard is law and BRANCH_PATTERN is right to exclude
+        # a branch like `work-0.9-m0-s21-fw2` from the BRANCHES section
+        # - the branch name is the violation, not the filter. A
+        # worktree row still names its branch regardless of the
+        # pattern, so it says outright when the two sections disagree
+        # rather than leaving the reader to notice a name missing from
+        # BRANCHES on their own.
+        if branch and not BRANCH_PATTERN.match(branch):
+            detail += (" - non-standard branch name (not in BRANCHES "
+                      "section)")
         rows.append({"status": status, "path": path, "detail": detail,
                     "evidence": os.path.basename(source)})
 
@@ -564,6 +728,18 @@ def worktree_rows(repo, state):
                                           for lease in held),
                     "evidence": ", ".join(lease["file"] for lease in
                                           held)})
+
+    # MINOR-1 (0.9-M0-S20 fix round, #317): a lease whose `block` field
+    # is not a well-formed two-integer pair is carried separately by
+    # read_leases() rather than crashing every OTHER row's format call
+    # - rendered here as its own row, named by the lease file that
+    # holds it, same as a malformed fleet record already renders above.
+    for bad in malformed_leases:
+        rows.append({"status": "MALFORMED LEASE", "path": "(none)",
+                    "detail": "%s names a port block that is not a "
+                              "well-formed two-integer pair: %r"
+                              % (bad["file"], bad["block"]),
+                    "evidence": bad["file"]})
 
     rows.sort(key=lambda row: (row["status"] != "ORPHANED",
                                row["status"] != "ORPHANED LEASE",
