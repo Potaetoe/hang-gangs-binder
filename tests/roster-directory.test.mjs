@@ -180,8 +180,11 @@ check("schema: account_id is the primary key - the membership key, in " +
 check("schema: an index on last_seen_at, so a freshness read does not " +
   "scan the table",
   /CREATE INDEX IF NOT EXISTS directory_last_seen/i.test(schemaSrc));
+/* Flatten the comment prefixes and line wraps so the rerun sentence can
+   be read across the lines it is wrapped over in the house style. */
+const schemaFlat = schemaSrc.replace(/\n--\s?/g, " ").replace(/\s+/g, " ");
 check("schema: the rerun story names directory as a whole-new-table case",
-  /re-running this file creates[^.]*directory/is.test(schemaSrc));
+  /re-running this file creates[^.]*\bdirectory\b/i.test(schemaFlat));
 
 /* ================================================================== */
 /* 2. The write path: a real round trip through sealDirectory.         */
@@ -315,8 +318,9 @@ async function mutant(label, from, to) {
   /* The seal removed: the plaintext record is stored in the clear. The
      dump property must red. */
   const mutated = await mutant("the directory seal removed",
-    "const sealed = bytesToBase64(await store.sealDirectory(",
-    "const sealed = record; void (bytesToBase64(await store.sealDirectory(");
+    "const sealed = bytesToBase64(await store.sealDirectory(\n" +
+    "    record, { accountId: bound, recordId: DIRECTORY_SLOT }));",
+    "const sealed = record;");
   const db = makeDb();
   await mutated.syncDirectoryEntry(direct, env(db), ACCT_A,
     { handle: HANDLE, displayName: DISPLAY, role: ROLE },
@@ -380,7 +384,7 @@ async function mutant(label, from, to) {
 }
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 24;
+const EXPECTED = 25;
 console.log(failures
   ? `\nroster-directory FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

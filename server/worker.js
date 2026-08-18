@@ -542,6 +542,21 @@ function randomRowId() {
   return id + 1;
 }
 
+/*
+ * The record half of a directory record's AAD, bound alongside the
+ * account-id HMAC (security mandate 2). server/schema.sql keys the
+ * `directory` table on account_id and holds exactly one row per member,
+ * so the account is what separates one directory record from another and
+ * this slot id is a stable constant rather than a per-record value - the
+ * job an entry row's own random id does is already done here by the
+ * account. What it earns is the cross-purpose and cross-account
+ * bindings: server/store-crypto.js's boundData() binds purpose, account
+ * and record together, so a record sealed for this slot under one
+ * account cannot open under another account's context, and a directory
+ * record and an entry row cannot open as each other.
+ */
+const DIRECTORY_SLOT = "directory";
+
 function idList(value) {
   return typeof value === "string"
     ? value.split(",").map((s) => s.trim()).filter(Boolean)
@@ -1216,14 +1231,64 @@ function log(event, accountId) {
 }
 
 /*
+ * Refresh one account's directory record from a verified sign-in.
+ *
+ * THE DIRECTORY IS THE ROSTER, ENCRYPTED AT REST. DESIGN.md, "The
+ * identifier is the whole problem", rules the directory INSIDE what is
+ * encrypted rather than beside it: a clear-text roster of handles next to
+ * the rows is the membership oracle the whole design exists to kill, by a
+ * shorter route than any hash of a handle. So the handle, the display name
+ * and the role go through sealDirectory (purpose 'dir') and live in the
+ * ciphertext; the only clear columns are the account-id HMAC that keys the
+ * row and the two timestamps (server/schema.sql, `directory`).
+ *
+ * THE MEMBERSHIP KEY IS THE ACCOUNT-ID HMAC AND NEVER A RAW ID OR HANDLE.
+ * rowIdentity() refuses anything that is not the 64-hex HMAC before a seal
+ * is reached (security mandate 3; the same guard the entry rows use), so a
+ * raw Telegram id or a handle can never become the clear key of a
+ * directory row - which would be the oracle relocated into the one column
+ * a dump reads without opening anything. It is the same function the entry
+ * rows reach for because it is the same property: the value bound into the
+ * store's accountId context is the HMAC, full stop.
+ *
+ * THE SEAL IS BOUND TO THIS ACCOUNT AND THIS SLOT. The AAD binds the
+ * account-id HMAC and DIRECTORY_SLOT, so a record lifted into another
+ * account's row fails to open rather than decrypting into it (mandate 2),
+ * and purpose 'dir' is half of what boundData() binds, so a directory
+ * record cannot open as an entry row nor an entry row as a directory
+ * record (mandate 1). server/store-crypto.js is the one door that seals or
+ * opens either; this reaches for sealDirectory and nothing else.
+ *
+ * A RE-SYNC KEEPS joined_at. The UPSERT rewrites the ciphertext and moves
+ * last_seen_at forward on every verified sign-in; joined_at is written
+ * once and never touched again, so it stays the first-seen date. The admin
+ * read of this table is a later milestone - Members is 0.9-M3 (DESIGN.md,
+ * "Admin surfaces") - so nothing here serves a directory record back; this
+ * is the write half alone.
+ */
+async function syncDirectoryEntry(store, env, accountId, fields, now) {
+  const bound = rowIdentity(accountId);
+  const record = JSON.stringify({
+    handle: fields.handle,
+    displayName: fields.displayName,
+    role: fields.role,
+  });
+  const sealed = bytesToBase64(await store.sealDirectory(
+    record, { accountId: bound, recordId: DIRECTORY_SLOT }));
+  await env.DB.prepare(
+    "INSERT INTO directory (account_id, ciphertext, joined_at, last_seen_at) " +
+    "VALUES (?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET " +
+    "ciphertext = excluded.ciphertext, last_seen_at = excluded.last_seen_at"
+  ).bind(bound, sealed, now, now).run();
+}
+
+/*
  * Signing in.
  *
- * The username is handed back to the page, which puts it in the record
- * before encrypting. That does NOT make it trustworthy - the record is
- * sealed in the member's own browser and they can write whatever they
- * like into it. The account id is the identity that cannot be forged;
- * the handle is a label. See DESIGN.md, "The identifier is the whole
- * problem".
+ * The username is handed back to the page for display, and the account id
+ * is the identity that cannot be forged: the id is set server-side from a
+ * verified sign-in, while a handle is a label the person can change. See
+ * DESIGN.md, "The identifier is the whole problem".
  */
 async function handleTelegramAuth(request, env, origin) {
   const body = await request.text();
@@ -1319,6 +1384,40 @@ async function handleTelegramAuth(request, env, origin) {
   const isAdmin = (await adminAccountIds(env)).has(accountId);
   const session = await issueSession(env, accountId, isAdmin, false);
   log("signin.ok", accountId);
+
+  /*
+   * The roster follows the group, and a verified sign-in is where it is
+   * refreshed. DESIGN.md, "Accounts": the directory syncs from the
+   * Telegram group; "Bot failure stance": the roster cache is the
+   * Worker's last-known-good record of who is in it. This is the one
+   * moment the group has confirmed this account is a member AND the
+   * handle, display name and role are in hand, so the directory row is
+   * written here.
+   *
+   * BEST-EFFORT, BECAUSE THE MEMBER IS ALREADY SIGNED IN. The session is
+   * minted above; the directory is a cache of who has been seen, not a
+   * gate on being seen. A write that fails must not bounce a verified
+   * member off an infrastructure hiccup (DESIGN.md, "Bot failure stance":
+   * "cannot check" is never "not a member"), so a failure is logged - the
+   * event name and account id only, like every other line here - and the
+   * sign-in still succeeds. The staleness that leaves is visible in
+   * last_seen_at, not a silent lie. The entry-row seal at POST /submit
+   * fails loud instead, and the difference is which is the point of the
+   * request: there the seal IS the request, here it is a side effect of
+   * one that has already succeeded.
+   */
+  try {
+    const store = await openStore(env);
+    await syncDirectoryEntry(store, env, accountId, {
+      handle: String(user.username).toLowerCase(),
+      displayName: [user.first_name, user.last_name]
+        .filter((part) => typeof part === "string" && part.trim() !== "")
+        .join(" "),
+      role: isAdmin ? "admin" : "member",
+    }, new Date().toISOString());
+  } catch (e) {
+    log("directory.sync.failed", accountId);
+  }
 
   /*
    * NO TELEGRAM NUMERIC ID IN THIS ANSWER, and nothing may put one back.
@@ -2654,7 +2753,8 @@ async function route(request, env, url, allowed) {
  * time because this is the first piece of server/worker.js's own logic
  * simple enough to have one.
  */
-export { isApiPath, API_SEGMENTS, rowIdentity };
+export { isApiPath, API_SEGMENTS, rowIdentity, syncDirectoryEntry,
+         DIRECTORY_SLOT };
 
 export default {
   /*

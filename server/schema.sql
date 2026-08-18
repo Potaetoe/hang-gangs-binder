@@ -82,10 +82,11 @@
 -- recovery if it has.
 --
 -- A whole new table is the easy case of the same rule: re-running this
--- file creates `site_content`, `membership` and `auth_replay` where they
--- are absent and skips them where they exist, which is the one thing
--- CREATE TABLE IF NOT EXISTS is safe for. The trap is only ever a table
--- that exists already in a different shape - which is the block above.
+-- file creates `site_content`, `membership`, `auth_replay` and
+-- `directory` where they are absent and skips them where they exist,
+-- which is the one thing CREATE TABLE IF NOT EXISTS is safe for. The trap
+-- is only ever a table that exists already in a different shape - which is
+-- the block above.
 --
 -- 0.9-M1-S6 (#332) ADDED NO COLUMN AND CHANGED NO SHAPE, so everything
 -- above stays exactly as true as it was. What that slice changed is who
@@ -433,3 +434,57 @@ CREATE TABLE IF NOT EXISTS membership (
   added_by   TEXT NOT NULL,
   PRIMARY KEY (account_id, role)
 );
+
+-- The member directory: the roster, one row per member, and the reason it
+-- is a table at all is that the roster has to be somewhere a raw dump
+-- cannot read. DESIGN.md, "The identifier is the whole problem", rules the
+-- directory INSIDE what is encrypted rather than beside it: a clear-text
+-- roster of handles next to `submissions` answers "did @foo submit?"
+-- without opening a single entry, and a hash of a handle is the same
+-- oracle over a smaller alphabet. So the handle, the display name and the
+-- role live in `ciphertext`, sealed by the Worker under purpose 'dir'
+-- (server/store-crypto.js's sealDirectory; 0.9-M1-S11, #340), and the only
+-- things this table shows a dump are the account-id HMAC that keys the row
+-- and two timestamps.
+--
+-- `account_id` is the SAME value `submissions` and `membership` carry - an
+-- HMAC of the Telegram numeric id under ACCOUNT_SECRET - and it is the
+-- clear key ON PURPOSE, because it is the one identifier that names the
+-- row without naming the person: as un-invertible as the ids beside it,
+-- and never a raw id or a handle (mandate 3). It is the recordId's
+-- companion in the ciphertext's AAD, so a directory record lifted into
+-- another account's row fails to open rather than decrypting into it.
+--
+-- ONE ROW PER MEMBER, keyed by account_id, so the roster is a set rather
+-- than a log: a member seen again is the same row rewritten, not a second
+-- one. syncDirectoryEntry() in server/worker.js does that write as an
+-- UPSERT - `joined_at` is written once and kept, `last_seen_at` and the
+-- ciphertext move forward on every verified sign-in. That is the roster
+-- syncing from the group (DESIGN.md, "Accounts") and the last-known-good
+-- cache (DESIGN.md, "Bot failure stance") in storage: the Worker's own
+-- record of who it has lately confirmed is a member. Nothing here serves
+-- a directory record back - the admin read of
+-- this table is the Members surface, which is 0.9-M3 (DESIGN.md, "Admin
+-- surfaces").
+--
+-- Re-running this file is the easy case the header block describes: a
+-- whole new table, created where absent and skipped where it exists.
+-- Nothing in it is worth preserving across a rebuild that a verified
+-- sign-in does not restore - a lost row is rewritten the next time that
+-- member signs in - so it may simply be dropped, the same as `auth_replay`.
+CREATE TABLE IF NOT EXISTS directory (
+  account_id   TEXT PRIMARY KEY,
+  ciphertext   TEXT NOT NULL,
+  joined_at    TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+
+-- `last_seen_at` is how fresh the roster is for one member, and it is read
+-- rather than only stored: "membership last verified N minutes ago"
+-- (DESIGN.md, "Admin surfaces": Settings) and the leaver countdown both
+-- ask this table who has not been seen since some cutoff. The index keeps
+-- that a range scan rather than a full read. It is additive on a whole new
+-- table, so a rerun creates it and never has the supersedes index's
+-- rename-and-drop hazard - see that index above for the case that does.
+CREATE INDEX IF NOT EXISTS directory_last_seen
+  ON directory(last_seen_at);
