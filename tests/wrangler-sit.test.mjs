@@ -161,8 +161,12 @@ function noSecretValues(parsed) {
     !parsed.assigns.some((a) => a.name === name));
 }
 
-function sitDatabaseBlockAbsent(parsed) {
-  return !parsed.headers.has("[[env.sit.d1_databases]]");
+const D1_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function sitDatabaseBlockReal(parsed) {
+  const block = parsed.blocks["[[env.sit.d1_databases]]"];
+  return Boolean(block) && block.binding === "DB" &&
+    block.database_name === "hg_binder_db_sit" &&
+    D1_UUID.test(block.database_id || "");
 }
 
 function origins(value) {
@@ -187,6 +191,10 @@ name = "hgbinderworker-sit"
 preview_urls = false
 [env.sit.vars]
 ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"
+[[env.sit.d1_databases]]
+binding = "DB"
+database_name = "hg_binder_db_sit"
+database_id = "00000000-1111-4222-8333-444444444444"
 `;
 const good = parse(GOOD);
 check("fixture: the ruled shape names [env.sit], not [env.dev]",
@@ -194,8 +202,9 @@ check("fixture: the ruled shape names [env.sit], not [env.dev]",
 check("fixture: preview_urls is false at top level and under [env.sit]",
   previewUrlsOff(good));
 check("fixture: no secret carries a value", noSecretValues(good));
-check("fixture: no [[env.sit.d1_databases]] block (nothing exists yet " +
-  "to put an id in)", sitDatabaseBlockAbsent(good));
+check("fixture: the [[env.sit.d1_databases]] block is present and " +
+  "well-formed (the database exists since 2026-08-18, #282)",
+  sitDatabaseBlockReal(good));
 check("fixture: sit's origins are loopback-only",
   sitOriginsLoopbackOnly(good));
 
@@ -219,10 +228,14 @@ const plantedAbsentSecret = GOOD + '\nDEV_LOGIN_SECRET = "hunter2hunter2"\n';
 check("mutation: a value for a deliberately-absent secret is caught too",
   !noSecretValues(parse(plantedAbsentSecret)));
 
-const shippedId = GOOD.replace("[env.sit.vars]",
-  '[[env.sit.d1_databases]]\ndatabase_id = "REPLACE_ME"\n\n[env.sit.vars]');
-check("mutation: a shipped [[env.sit.d1_databases]] block is caught",
-  !sitDatabaseBlockAbsent(parse(shippedId)));
+const placeholderId = GOOD.replace(
+  'database_id = "00000000-1111-4222-8333-444444444444"',
+  'database_id = "REPLACE_ME"');
+check("mutation: a placeholder database_id is caught",
+  !sitDatabaseBlockReal(parse(placeholderId)));
+const blockGone = GOOD.replace(/\[\[env\.sit\.d1_databases\]\][^]*?444444444444"\n/, "");
+check("mutation: a deleted [[env.sit.d1_databases]] block is caught",
+  !sitDatabaseBlockReal(parse(blockGone)));
 
 const publishedOrigin = GOOD.replace(
   'ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"',
@@ -255,9 +268,9 @@ check("the real file states preview_urls = false at top level and " +
   "under [env.sit]", previewUrlsOff(real));
 check("the real file assigns no secret a value, present or absent-by-" +
   "design alike", noSecretValues(real));
-check("the real file ships no [[env.sit.d1_databases]] block - the " +
-  "database does not exist yet, and this repository makes no cloud " +
-  "writes to create one", sitDatabaseBlockAbsent(real));
+check("the real file's [[env.sit.d1_databases]] block is present and " +
+  "well-formed - the database was created 2026-08-18 (#282) and the " +
+  "committed id is what deploy binds", sitDatabaseBlockReal(real));
 check("the real file's [env.sit.vars] origins are loopback-only",
   sitOriginsLoopbackOnly(real));
 check("the real file's production [vars] still names a real published " +
@@ -265,7 +278,7 @@ check("the real file's production [vars] still names a real published " +
   origins(real.blocks["[vars]"]?.ALLOWED_ORIGINS)
     .some((o) => !isLoopback(o)));
 
-const EXPECTED = 20;
+const EXPECTED = 21;
 console.log(failures
   ? `\nwrangler-sit FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
