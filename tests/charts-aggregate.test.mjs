@@ -320,6 +320,25 @@ check("one partition: the partition names the system it was binned in " +
   check("one partition: every system's edges are the partition's edges " +
     "converted through the spec's own `per` ratio - no second binning " +
     "and no second constant", off.length === 0);
+
+  /* The anchor that is not the answer's own arithmetic. Both checks
+     above compare numbers this answer produced, so a conversion wrong by
+     one constant EVERYWHERE moves all of them together and passes both -
+     which its own mutation battery demonstrated. A partition edge is a
+     multiple of the spec's band width by construction, and that is a
+     fact about the spec rather than about the answer: it catches the
+     uniform error, and it is also the privacy property in its own right,
+     because an edge fitted to the smallest and largest values in a group
+     reports somebody's real weight instead of a boundary. */
+  const width = globalThis.BinderFields
+    .measure(partitioned.measure.name).units[part.system].bin;
+  const multiple = (edge) =>
+    Math.abs(edge / width - Math.round(edge / width)) < 1e-6;
+  check("one partition: every partition edge is a multiple of the " +
+    "spec's own band width - the edges are the grid, never the group's " +
+    "smallest and largest values",
+    width > 0 && partitioned.distribution.bins.every((bin) =>
+      multiple(bin.from[part.system]) && multiple(bin.to[part.system])));
 }
 
 /* The attack the rule exists for: overlay the two systems' edges and
@@ -721,7 +740,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 66;
+const EXPECTED = 67;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
