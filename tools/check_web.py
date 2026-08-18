@@ -919,6 +919,19 @@ PRODUCTION_ENDPOINT = "https://hgbinderworker.sorcererbiggz.workers.dev"
 # mistake again.
 DEVELOPMENT_ENDPOINT = "https://hgbinderworker-dev.sorcererbiggz.workers.dev"
 
+# sit serves the page and the API from the one origin (0.9-M1-S10, #339;
+# DESIGN.md, "The constraint that shapes everything"), so this is the
+# third and, for now, last literal origin every interactive page's
+# connect-src has to carry.
+SIT_ENDPOINT = "https://hgbinderworker-sit.sorcererbiggz.workers.dev"
+
+# Arms built before the keyless ruling (DESIGN.md, "Trust model: the
+# Worker reads") still carry a real key and must keep carrying one - a
+# config that quietly dropped production's or development's key would
+# leave every submission on that host unreadable. An arm outside this
+# set may declare `publicKey: null` instead; see literal_null().
+KEYED_ARM_NAMES = frozenset({"production", "development"})
+
 
 def crossed_wire_problems(environments):
     """Problems where production carries a value that is not production's.
@@ -988,6 +1001,18 @@ def literal_field(body, name):
     return found.group(1) if found else None
 
 
+def literal_null(body, name):
+    """True if `name: null` appears literally in an arm's body.
+
+    A deliberate keyless declaration and a forgotten field read the same
+    way to literal_field() - both are None - and the required-field loop
+    below has to tell them apart. Only the arm that spells out `null`
+    counts as declaring itself keyless; an arm with the field left out
+    entirely still fails as missing.
+    """
+    return re.search(r"\b%s\s*:\s*null\b" % name, body) is not None
+
+
 def config_environments(text=None):
     """([environment], [problem]) parsed from config.js source.
 
@@ -1030,12 +1055,23 @@ def config_environments(text=None):
             "name": literal_field(body, "name"),
             "endpoint": literal_field(body, "endpoint"),
             "publicKey": literal_field(body, "publicKey"),
+            # 0.9 is keyless (DESIGN.md, "Trust model: the Worker
+            # reads"), so an arm built after that ruling may declare
+            # `publicKey: null` on purpose rather than carry a key it
+            # has no use for. Recorded separately from "publicKey" so
+            # the required-field loop below can tell a deliberate null
+            # apart from a field nobody wrote.
+            "publicKeyIsNull": literal_null(body, "publicKey"),
         }
         environments.append(environment)
         for required in ("name", "endpoint", "publicKey"):
-            if not environment[required]:
-                problems.append("the %s arm has no literal %s" %
-                                (host, required))
+            if environment[required]:
+                continue
+            if (required == "publicKey" and environment["publicKeyIsNull"]
+                    and environment["name"] not in KEYED_ARM_NAMES):
+                continue
+            problems.append("the %s arm has no literal %s" %
+                            (host, required))
 
     if not environments:
         problems.append("ENVIRONMENTS has no literal hostname arms")
@@ -1268,7 +1304,8 @@ CSP_BASELINE = {
     # reports as a bug. 'self' and only 'self': the fonts are vendored
     # precisely so no third-party origin is ever reached for them.
     "font-src": ["'self'"],
-    "connect-src": ["'self'", PRODUCTION_ENDPOINT, DEVELOPMENT_ENDPOINT],
+    "connect-src": ["'self'", PRODUCTION_ENDPOINT, DEVELOPMENT_ENDPOINT,
+                    SIT_ENDPOINT],
     "base-uri": ["'none'"],
     "form-action": ["'none'"],
 }
@@ -6600,6 +6637,15 @@ def main():
         if origin:
             origins.append(origin)
 
+        # A deliberate `publicKey: null` on an arm outside KEYED_ARM_NAMES
+        # is not "no publicKey is set" - it is 0.9's keyless design
+        # (DESIGN.md, "Trust model: the Worker reads") declared on
+        # purpose, and public_key_problem() has no way to tell that
+        # apart from a forgotten key. config_environments() already
+        # confirmed which one this is.
+        if environment["publicKeyIsNull"] and \
+                environment["name"] not in KEYED_ARM_NAMES:
+            continue
         problem = public_key_problem(environment["publicKey"])
         if problem:
             problems.append(

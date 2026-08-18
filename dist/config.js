@@ -24,6 +24,24 @@ const ENVIRONMENTS = {
      
     publicKey: "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMPaE//xgG5GdS5tH8Atk24MqkwNaVx5OMST/OsDWMJ5l4fSsvlFKZKyrc=",
   },
+  "hgbinderworker-sit.sorcererbiggz.workers.dev": {
+    name: "sit",
+
+     
+     
+     
+     
+     
+     
+    endpoint: "https://hgbinderworker-sit.sorcererbiggz.workers.dev",
+
+     
+     
+     
+     
+     
+    publicKey: null,
+  },
 };
 
 ENVIRONMENTS["127.0.0.1"] = ENVIRONMENTS.localhost;

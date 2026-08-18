@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 569
+EXPECTED = 572
 
 
 def check(label, condition):
@@ -1092,6 +1092,38 @@ Object.defineProperty(globalThis, "BINDER_CONFIG", {
 
 check("a well-formed config resolves with no problem",
       check_web.config_environments(CONFIG_ENV_OK)[1] == [])
+
+# 0.9-M1-S10 (#339): an arm outside {production, development} may
+# declare `publicKey: null` on purpose - DESIGN.md, "Trust model: the
+# Worker reads", 0.9 is keyless - rather than carry a key it has no use
+# for. Both directions belong here: the null resolves clean, a
+# forgotten field still does not, and the escape hatch stays closed to
+# the two arms that still carry a real key.
+CONFIG_ENV_WITH_KEYLESS_ARM = CONFIG_ENV_OK.replace(
+    '  },\n};',
+    '  },\n'
+    '  "sit.example.workers.dev": {\n'
+    '    name: "sit",\n'
+    '    endpoint: "https://sit.example.workers.dev",\n'
+    '    publicKey: null,\n'
+    '  },\n'
+    '};', 1)
+check("a keyless arm outside production/development resolves with no "
+      "problem",
+      check_web.config_environments(CONFIG_ENV_WITH_KEYLESS_ARM)[1] == [])
+
+CONFIG_ENV_MISSING_KEY_FIELD = CONFIG_ENV_WITH_KEYLESS_ARM.replace(
+    '    publicKey: null,\n', '')
+check("an arm that omits publicKey entirely is still refused - only a "
+      "written-out null counts as a declaration",
+      any("no literal publicKey" in p for p in check_web.config_environments(
+          CONFIG_ENV_MISSING_KEY_FIELD)[1]))
+
+CONFIG_ENV_PRODUCTION_GONE_KEYLESS = CONFIG_ENV_OK.replace(
+    'publicKey: "PRODKEYPRODKEYPRODKEY"', 'publicKey: null')
+check("production cannot declare itself keyless by writing null",
+      any("no literal publicKey" in p for p in check_web.config_environments(
+          CONFIG_ENV_PRODUCTION_GONE_KEYLESS)[1]))
 
 # The resolution arm, unchanged in intent by the freeze wrapper: an
 # unknown host must fall through to the closed, keyless object.
