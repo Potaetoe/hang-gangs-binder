@@ -16,6 +16,14 @@
  *                            naming the row it supersedes. The body
  *                            carries the plaintext record; this Worker
  *                            seals it at rest. Needs a member session.
+ *   GET    /charts           aggregate the whole corpus on request and
+ *                            answer one filter and one measure: the
+ *                            trend and the distribution, with the
+ *                            suppression floor already applied by
+ *                            server/charts-agg.js. Needs a member
+ *                            session. The Worker opens every current row
+ *                            to compute it - DESIGN.md, "Charts": "The
+ *                            Worker aggregates on request".
  *   GET    /export           return every row, sealed as stored. Admin.
  *                            Server-side opening for admins is a later
  *                            slice (0.9-M3); this route is unchanged by
@@ -152,6 +160,19 @@
 // one (0.9-M1-S6, #332).
 import { openStore } from "./store-crypto.js";
 
+// The charts' aggregation, in one file. This module knows the routes,
+// the session and the database; charts-agg knows the disclosure rules
+// and holds no opinion about any of them. It is a MODULE rather than a
+// section of this file because the floor has to be applied somewhere a
+// handler cannot reach around: askFor/aggregate/selfSeries are the only
+// rows-to-series path, they apply the floor before returning, and
+// handleCharts below serializes what they hand back without computing a
+// cell of its own (0.9-M2-S0, #351, security mandate 1). Static import
+// so wrangler bundles it into the deployed Worker; the arms that load
+// this file as a data: URL rewrite its relative specifiers to absolute
+// URLs, because a data: module cannot resolve a relative one.
+import { askFor, aggregate, selfSeries } from "./charts-agg.js";
+
 // The only origins allowed to call this. A submission from anywhere
 // else is either a mistake or somebody else's copy of the form, and in
 // both cases the row is noise in the export.
@@ -214,6 +235,29 @@ const MAX_RECORD_BYTES = 8 * 1024;
 // parameter on this route, which is the property every scope argument
 // here rests on not having.
 const MAX_ENTRY_LISTING = 500;
+
+// How many rows one aggregation reads, and why a cap is here at all.
+//
+// GET /charts opens EVERY current row in the corpus - the group is the
+// subject, so there is no account clause to bound it the way
+// MAX_ENTRY_LISTING bounds one member's listing. Each row costs one
+// AES-GCM open, so the number is a CPU bound rather than a response
+// bound: the answer is counts and bins whatever the corpus size.
+//
+// Ten thousand against one Telegram group is nine years of weekly
+// entries for twenty people, so nobody reaches it by using the site as
+// intended. It is a LITERAL in the statement rather than a bound
+// parameter, for the same reason MAX_ENTRY_LISTING is: a cap D1 is told
+// about is a cap on what D1 reads, and nothing on the wire can move it
+// because there is nothing on the wire.
+//
+// What it costs if a corpus ever does reach it: the OLDEST rows fall
+// out of the aggregate, because the read orders by received_at
+// descending. That is a chart quietly drawn from part of the history,
+// which is the one failure mode here worth naming - the fix at that
+// point is a precomputed aggregate on a schedule, not a bigger number,
+// and a bigger number would only move the day it happens.
+const MAX_AGGREGATE_ROWS = 10000;
 
 // A snapshot is counts, medians and histogram bins, plus at most a
 // dozen short weight histories. A few KB in practice; this is the
@@ -1983,6 +2027,113 @@ async function handleExport(request, env, origin, caller) {
 }
 
 /*
+ * Every row that is still somebody's current claim, for one aggregation.
+ *
+ * NO ACCOUNT CLAUSE, and that is the difference between this read and
+ * every other one over `submissions`: the subject is the group, so the
+ * scope that makes a member's listing theirs would make this answer
+ * nothing. What replaces it as the guard is the ROUTER's session gate
+ * and the fact that nothing row-shaped survives the aggregation - the
+ * response is counts and bins, and server/charts-agg.js is what
+ * guarantees that rather than this statement.
+ *
+ * The tombstones are excluded HERE rather than after opening, because
+ * whether a row is superseded is answerable in the clear (that is half
+ * of why `supersedes` is a clear column at all) and opening a corrected
+ * row in order to discard it is one AES-GCM open bought for nothing.
+ * SUPERSEDED is the same predicate GET /me counts with and GET
+ * /my-entries flags with, reused rather than restated, so the three
+ * member-facing surfaces cannot come to disagree about one corpus.
+ */
+const CHART_ROWS =
+  "SELECT mine.id AS id, mine.account_id AS account_id, " +
+  "mine.received_at AS received_at, mine.ciphertext AS ciphertext " +
+  "FROM submissions AS mine WHERE NOT " + SUPERSEDED + " " +
+  "ORDER BY mine.received_at DESC, mine.id DESC LIMIT " + MAX_AGGREGATE_ROWS;
+
+/*
+ * The charts, computed now rather than published earlier.
+ *
+ * DESIGN.md, "Charts": "The Worker aggregates on request. Publish,
+ * unpublish, the published snapshot document and its freshness line are
+ * all gone, along with the class of failure where the figures on screen
+ * were as old as the last time somebody remembered to press a button."
+ *
+ * THIS HANDLER COMPUTES NO CELL (0.9-M2-S0, #351, security mandate 1).
+ * It reads rows, opens them, and hands them to server/charts-agg.js,
+ * which applies the floor before it returns anything - so there is no
+ * moment in this function where an unfloored count exists, and no second
+ * path a later route could take to the same data. The self overlay comes
+ * from its own function keyed on the session's account (mandate 3) and
+ * is attached as its own field, never merged into the group series.
+ *
+ * A ROW THAT WILL NOT OPEN FAILS THE WHOLE READ, exactly as it does at
+ * GET /my-entries: openRow throws store-crypto's StoreFormatError on
+ * tamper or a cross-binding, and that throw propagates to fetch()'s
+ * handler, which answers 500 with no detail. Serving the rest while
+ * quietly dropping it would hide the tampering the AAD exists to catch,
+ * and a chart is exactly the surface where one missing person is
+ * invisible. The remedy is an admin removing the row (DELETE
+ * /submission/:id), which is why the failure has to be loud enough to
+ * send somebody looking.
+ *
+ * A ROW THAT OPENS BUT IS NOT A JSON OBJECT IS DROPPED, and the split is
+ * deliberate rather than inconsistent. Opening it already PROVED its
+ * integrity - the AAD binds the account and the row id - so a record
+ * whose plaintext is not a record is a submitter's shape problem, not
+ * evidence of tampering, and it can contribute no value to any measure.
+ * Failing the whole group's charts over one member's malformed record
+ * would let one row take the page down for everybody.
+ *
+ * PRIVATE AND NEVER STORED (mandate 6). This body is aggregate figures
+ * about a private group, computed for one member's session; a shared
+ * cache holding it is a copy of the group's numbers sitting somewhere
+ * the session gate does not reach.
+ */
+async function handleCharts(request, env, origin, caller) {
+  const accountId = rowIdentity(caller.accountId);
+
+  const asked = askFor(new URL(request.url).searchParams);
+  if (!asked.ok) return json({ error: asked.error }, 400, origin);
+
+  const store = await openStore(env);
+  const rows = await env.DB.prepare(CHART_ROWS).all();
+
+  const opened = [];
+  for (const row of rows.results) {
+    const plaintext = await store.openRow(base64ToBytes(row.ciphertext),
+      { accountId: row.account_id, recordId: String(row.id) });
+    let record;
+    try {
+      record = JSON.parse(plaintext);
+    } catch (e) {
+      continue;
+    }
+    if (!record || typeof record !== "object") continue;
+    opened.push({
+      id: row.id,
+      accountId: row.account_id,
+      receivedAt: row.received_at,
+      record: record,
+    });
+  }
+
+  const answer = aggregate(opened, asked.ask);
+  answer.self = selfSeries(opened, accountId, asked.ask);
+
+  return new Response(JSON.stringify(answer), {
+    status: 200,
+    headers: Object.assign(
+      {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
+      },
+      origin ? corsHeaders(origin) : {}
+    ),
+  });
+}
+
+/*
  * One snapshot, replaced in place. There is no history kept, and that
  * is deliberate: a series of snapshots is more published data about the
  * same people, retained for nobody's benefit. The current picture is
@@ -2571,8 +2722,8 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * cannot give itself.
  */
 const API_SEGMENTS = new Set([
-  "auth", "session", "me", "my-entries", "submit", "export", "snapshot",
-  "submission", "content", "membership",
+  "auth", "session", "me", "my-entries", "submit", "charts", "export",
+  "snapshot", "submission", "content", "membership",
 ]);
 
 function isApiPath(pathname) {
@@ -2662,6 +2813,17 @@ async function route(request, env, url, allowed) {
     // Submitting is a member action and it needs a member.
     if (!caller || !caller.accountId) return unauthorized(allowed);
     return handleSubmit(request, env, allowed, caller);
+  }
+  // The charts, members only (DESIGN.md, "Charts": "Charts require a
+  // session; the public URL shows the door and nothing else"). A
+  // break-glass EXPORT_TOKEN caller has no account and is refused here
+  // for the same reason POST /submit and GET /my-entries refuse it -
+  // there is no member whose line the overlay would be. Nothing is
+  // withheld from that caller: GET /export is the whole corpus, and an
+  // aggregate of it is a strictly smaller answer.
+  if (method === "GET" && path === "/charts") {
+    if (!caller || !caller.accountId) return unauthorized(allowed);
+    return handleCharts(request, env, allowed, caller);
   }
   if (method === "GET" && path === "/export") {
     return handleExport(request, env, allowed, caller);

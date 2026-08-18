@@ -420,6 +420,9 @@ function makeDb() {
     if (/FROM sessions WHERE token_hash = \?/i.test(sql)) {
       return sessions.find((s) => s.token_hash === args[0]) || null;
     }
+    /* Modelled only so the non-scope check below can prove the route is
+       still wired. Nothing here publishes one, so the read finds none. */
+    if (/FROM snapshots WHERE id = 1/i.test(sql)) return null;
     throw new Error("unmodelled first(): " + sql);
   }
   function all(sql) {
@@ -654,7 +657,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 48;
+const EXPECTED = 63;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

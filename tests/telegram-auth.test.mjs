@@ -53,21 +53,24 @@ const readText = async (path) =>
 const workerSrc = await readText(WORKER_PATH);
 const schemaSrc = await readText(SCHEMA_PATH);
 
-/* server/worker.js imports ./store-crypto.js (0.9-M1-S6, #332), and a
-   data: module has no base URL to resolve a relative specifier against -
+/* server/worker.js imports its neighbours in server/ - ./store-crypto.js
+   (0.9-M1-S6, #332) and ./charts-agg.js (0.9-M2-S0, #351) - and a data:
+   module has no base URL to resolve a relative specifier against, so
    Node throws ERR_UNSUPPORTED_RESOLVE_REQUEST before a single check
-   runs. The specifier is rewritten to the real file's absolute URL, so
+   runs. Each specifier is rewritten to the real file's absolute URL, so
    the worker still runs from its own bytes (the reason for the data: URL
-   in the first place) while the import resolves. The rewrite is scoped
-   to this one specifier rather than a general one: a second relative
-   import appearing in server/worker.js should fail loudly here and be
-   handled deliberately, not be silently absorbed by a broad regex. */
-const STORE_CRYPTO_URL =
-  pathToFileURL(ROOT + "server/store-crypto.js").href;
+   in the first place) while the imports resolve.
+   THE REWRITE IS NOW GENERAL, on purpose. Its predecessor named
+   store-crypto.js alone so that a second relative import would fail
+   loudly and be handled deliberately rather than absorbed; a second one
+   arrived and this is that deliberate handling. It stays anchored to
+   `./<name>.js` in server/, so an import reaching outside that directory
+   still fails loudly. */
+const serverModule = (name) => pathToFileURL(ROOT + "server/" + name).href;
 
 async function loadWorker(src) {
-  const resolved = src.replace(
-    /(\bfrom\s*)"\.\/store-crypto\.js"/, '$1"' + STORE_CRYPTO_URL + '"');
+  const resolved = src.replace(/(\bfrom\s*)"\.\/([\w.-]+\.js)"/g,
+    (whole, from, name) => from + '"' + serverModule(name) + '"');
   return import("data:text/javascript," + encodeURIComponent(resolved));
 }
 
