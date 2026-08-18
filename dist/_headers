@@ -1,0 +1,24 @@
+# Cloudflare's static-assets layer reads this file natively (Workers
+# static assets headers, matching the syntax Pages used) and applies
+# it to every response it serves - which is most of them, since
+# server/wrangler.toml's run_worker_first only sends API-shaped paths
+# to worker.js and everything else is answered here without the
+# Worker ever running (0.9-M1-S3, #329).
+#
+# This is the response-header half of the posture DESIGN.md names in
+# "The constraint that shapes everything" - "The production origin is
+# noindexed and sends no-referrer" - kept as a SEPARATE layer from the
+# <meta name="robots"> and <meta name="referrer"> tags every page in
+# this directory already carries in its own <head>: a header is read
+# before a crawler or a browser parses any HTML at all, where the meta
+# tags cannot reach. Neither layer replaces the other and this file
+# does not touch the meta tags - see AGENTS.md, "Boundaries", on
+# apps/web/ being the site as shipped rather than a place to loosen
+# what a page has already declared.
+#
+# tools/build_web.mjs copies this file into dist/ byte for byte (no
+# recognized extension, so it falls to the "copy" default) - no build
+# step change needed for it to ship.
+/*
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer

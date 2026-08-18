@@ -24,11 +24,15 @@ in them.
 2026-08-13 (owner order, moved up from the 1.0 cutover it was first
 scheduled for) — the deploy job is gone from
 `.github/workflows/deploy.yml` and the Pages configuration is deleted
-at the repository. Nothing serves `apps/web` until 0.9-M1 builds the
-Worker's static-asset serving; at 1.0 the row above for the Worker is
-also the site's row, one origin and one deploy command for both. See
-`README.md`'s Status box for the live fact and `DESIGN.md`, "The
-constraint that shapes everything", for the ruled shape.
+at the repository. `server/wrangler.toml`'s `[assets]` block now names
+`dist/` as what the Worker serves from its own origin (0.9-M1-S3, #329)
+— the row above for the Worker is also the site's row, one origin and
+one deploy command for both, as the shape 1.0 makes live — but naming
+the shape is not deploying it: nothing here has run `wrangler deploy`
+against this config, so the row is exactly as undeployed as it was
+before this paragraph. See `README.md`'s Status box for the live fact
+and `DESIGN.md`, "The constraint that shapes everything", for the
+ruled shape.
 
 **This table's sit row is the ruled config shape, not a claim that it
 is deployed** (0.9-M1-S1, #325, is what renamed it from `dev`, per the
@@ -143,8 +147,11 @@ the terminal, never pasted into a file.
 
 3. **Deploy the Worker.** Dry-run first and read the bindings back — the
    same discipline "Deploying the Worker" below asks of every deploy: a
-   sit deploy must report `hg_binder_db_sit` and the origins
-   `server/wrangler.toml`'s `[env.sit.vars]` names, or stop.
+   sit deploy must report `hg_binder_db_sit`, the origins
+   `server/wrangler.toml`'s `[env.sit.vars]` names, and (0.9-M1-S3,
+   #329) the `[env.sit.assets]` block naming `dist/` — this is the
+   deploy that starts serving the site itself from sit's own origin,
+   not only the API.
 
    ```bash
    npx wrangler deploy --dry-run --env sit
@@ -171,11 +178,23 @@ the terminal, never pasted into a file.
    **This is the act that closes #282.** Comment there with which
    secrets were set — names only, never values — once done.
 
-5. **Verify.** "Checking a deployment" below, sent at the localhost
-   origin `[env.sit.vars]` names: it should read back as the healthy
-   401, not a 403 or a 500. **Not sit's own origin yet** — see the note
-   under that section on why a probe sent from it currently reads 403
-   rather than confirming anything.
+5. **Verify.** "Checking a deployment" below, sent at both the
+   localhost origin and sit's own published origin — `[env.sit.vars]`
+   now names both (0.9-M1-S3, #329) — should read back as the healthy
+   401, not a 403 or a 500; and sit's own origin, loaded in a browser,
+   should render the site rather than answer as an API.
+
+6. **Register the domain with BotFather**: `/setdomain` against sit's
+   own bot, pointed at the `workers.dev` hostname `[env.sit]`'s `name`
+   deploys to. This is what "The sign-in page and the CSP" in
+   `DESIGN.md` needs before the Telegram widget on that origin can mint
+   a session at all, and step 3 is what makes it runnable at all — a
+   domain BotFather binds before anything serves pages there stays
+   inert until step 3 actually deploys this config, at which point the
+   binding is immediately live rather than needing a second act.
+   Whether this step has been run and against what is *current* live
+   state; the issue that tracked standing sit up carries that record,
+   never this procedure.
 
 ## Deploying the Worker
 
@@ -296,15 +315,25 @@ Send the site's own origin — the Worker's `workers.dev` subdomain until
 read the exact status rather than the body. There is no production
 origin to probe today; "What runs where" above is the live fact.
 
-**sit's own origin is not in `[env.sit.vars]`'s `ALLOWED_ORIGINS` yet**
-(0.9-M1-S1, #325: loopback only, matching the pre-0.9 dev arm's shape,
-until the Worker actually serves the static site from sit's own origin
-— `server/wrangler.toml`'s own comment on `[env.sit.vars]` carries the
-full reasoning and the finding this leaves open). Until whichever slice
-adds it, a probe sent from sit's own origin reads 403 honestly rather
-than 401 — that is the ALLOWED_ORIGINS list working as configured, not
-a broken deployment, and the localhost origin is what actually
-corroborates a healthy sit today.
+**The site itself is a second, separate probe** (0.9-M1-S3, #329): a
+plain `curl` at the deployed origin's `/` (no `Origin` header needed —
+a page load carries none) should return the page's HTML with a
+`200`, `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-
+referrer` among the response headers — `apps/web/_headers` names both,
+and `server/wrangler.toml`'s `[assets]`/`[env.sit.assets]` blocks are
+what make it apply. A path this Worker's API answers — `/session`,
+say — should still refuse the way the table above describes; the two
+probes together are what confirm route precedence actually deployed
+the way `tests/route-precedence.test.mjs` proves it is wired.
+
+**sit's own origin joined `[env.sit.vars]`'s `ALLOWED_ORIGINS` at 0.9-
+M1-S3 (#329)**, beside localhost — `server/wrangler.toml`'s own comment
+on `[env.sit.vars]` carries the full reasoning. A probe sent from
+sit's own origin therefore reads the same healthy 401 the localhost
+origin does, once sit is actually deployed with this config; a 403
+from that origin past that point is a real fault (the deployed
+`ALLOWED_ORIGINS` disagreeing with what is committed here), not the
+honest, configured answer it used to be.
 
 What no local test can see: that the database binding is bound, the
 secrets are set, and the tables exist. A Worker missing any of them

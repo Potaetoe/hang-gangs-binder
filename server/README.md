@@ -11,8 +11,10 @@ answers, the secrets it needs, and every operating procedure are in
 Deploy and schema commands, with the `--env sit` trap that matters:
 `OPERATIONS.md`, "Deploying the Worker". Reasoning about the
 configuration lives as comments in [wrangler.toml](wrangler.toml); the
-routing is exercised by `node dev/worker.test.mjs` without an account
-or a network.
+API routing is exercised by `node dev/worker.test.mjs` without an
+account or a network, and the asset-vs-API precedence that decides
+whether a path even reaches that router is `node
+tests/route-precedence.test.mjs` (0.9-M1-S3, #329).
 
 *Until 0.9-M1 lands* this Worker is the pre-0.9 one: it enforces the
 key-world routes and reads its admins from its own lists. `DESIGN.md`

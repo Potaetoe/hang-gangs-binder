@@ -32,6 +32,15 @@
 # both copies of a .txt are still CRLF and agree with each other.
 *.txt   text eol=lf
 
+# _headers (0.9-M1-S3, #329): no extension, so `* text=auto` above
+# guesses rather than reading a pin - on a Windows checkout that guess
+# produced CRLF and broke a parser expecting LF the same day the file
+# was added (tests/route-precedence.test.mjs's own history). A bare
+# name rather than a path matches both apps/web/_headers and the copy
+# tools/build_web.mjs writes to dist/_headers, which is also copy mode
+# and therefore also never normalizes this file's line endings itself.
+_headers   text eol=lf
+
 # Binary, never touched. woff2 is here for the same reason the rest
 # are: text=auto guesses, and a guess that goes the wrong way on a font
 # rewrites bytes inside a compressed container and ships a file no

@@ -1131,7 +1131,15 @@ const matrix = [
   ["DELETE", "/membership/admin/" + FIXTURE_4242, null, 401],
   ["DELETE", "/membership/admin/" + FIXTURE_4242, MEMBER, 401],
   ["DELETE", "/membership/admin/" + FIXTURE_4242, ADMIN, 200],
-  ["GET", "/whatever", ADMIN, 404],
+  // Not "/whatever" (0.9-M1-S3, #329): a path outside the API segment
+  // set now falls to env.ASSETS.fetch rather than reaching this 404 -
+  // see isApiPath in server/worker.js and tests/route-precedence.
+  // test.mjs, which is where that fallback is exercised against a
+  // stubbed ASSETS binding this file's stub env does not carry. This
+  // row keeps testing what it always tested - the router's own refusal
+  // when nothing dispatches - on a path that is still API-shaped
+  // (the "auth" segment) but matches no registered route.
+  ["GET", "/auth/whatever", ADMIN, 404],
 ];
 
 // One body per POST route rather than one shape for all of them. A

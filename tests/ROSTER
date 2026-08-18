@@ -33,6 +33,7 @@ tests/mockup-tokens.test.mjs
 tests/operations-sit-procedure.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
+tests/route-precedence.test.mjs
 tests/session-open.test.mjs
 tests/ship-check.test.mjs
 tests/site-parity.test.mjs
