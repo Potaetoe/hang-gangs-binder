@@ -42,6 +42,24 @@ const ENVIRONMENTS = {
     // production private key. Only this public half belongs in Git.
     publicKey: "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMPaE//xgG5GdS5tH8Atk24MqkwNaVx5OMST/OsDWMJ5l4fSsvlFKZKyrc=",
   },
+  "hgbinderworker-sit.sorcererbiggz.workers.dev": {
+    name: "sit",
+
+    // Under one-Worker-one-origin (DESIGN.md, "The constraint that
+    // shapes everything") the Worker serving this page also answers
+    // its API, so the honest endpoint is the page's own address,
+    // written out in full like every other arm here rather than as a
+    // relative "" - auth.js's `if (!config.endpoint)` guard would read
+    // an empty string as "not set up" and refuse to sign in.
+    endpoint: "https://hgbinderworker-sit.sorcererbiggz.workers.dev",
+
+    // 0.9 is keyless (DESIGN.md, "Trust model: the Worker reads" - all
+    // client-side crypto is gone). sit is the first arm built after
+    // that ruling, so it carries no key rather than a placeholder one;
+    // production and localhost above still do because config.js itself
+    // has not been rewritten for the keyless design yet.
+    publicKey: null,
+  },
 };
 
 ENVIRONMENTS["127.0.0.1"] = ENVIRONMENTS.localhost;
