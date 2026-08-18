@@ -573,7 +573,7 @@ function seedSession(token, accountId) {
   });
 }
 
-async function call(method, path, { token, body } = {}) {
+async function callOn(against, method, path, { token, body } = {}) {
   const headers = { Origin: ORIGIN };
   if (token) headers.Authorization = "Bearer " + token;
   const init = { method, headers };
@@ -582,11 +582,13 @@ async function call(method, path, { token, body } = {}) {
     headers["Content-Type"] = "application/json";
   }
   const res = await fetchWorker(
-    new Request("https://sit.example" + path, init), env);
+    new Request("https://sit.example" + path, init), against);
   let parsed = null;
   try { parsed = await res.json(); } catch { parsed = null; }
   return { status: res.status, body: parsed, headers: res.headers };
 }
+
+const call = (method, path, options) => callOn(env, method, path, options);
 
 /* Seed through the real POST /submit, so the rows this route reads are
    sealed by the Worker's own store rather than by the arm. */
@@ -756,6 +758,55 @@ check("correction: a member who corrects a row is still one person in " +
   afterCorrection.body.distribution.bins
     .reduce((n, b) => n + b.count, 0) === FLOOR + 2);
 
+/* A tombstone in a PAST period is where excluding it can be seen at all.
+   Inside one period, latest-per-account already picks the correction, so
+   the read's own NOT EXISTS predicate changes nothing an arm could
+   notice - which its own mutation battery proved by dropping the
+   predicate and reddening nothing. Across periods it is a whole point:
+   with the tombstones counted, a month every member has since corrected
+   still draws a line from the values they retracted. */
+const histDb = makeDb();
+const histEnv = Object.assign({}, env, { DB: histDb });
+const HIST_TOKENS = [];
+for (let i = 0; i < FLOOR + 2; i += 1) {
+  const token = "charts-arm-history-" + i;
+  HIST_TOKENS.push(token);
+  histDb._sessions.push({
+    token_hash: sha256hex(token), account_id: acct(i),
+    is_admin: 0, is_dev: 0,
+    created_at: new Date().toISOString(), expires_at: future,
+  });
+  await callOn(histEnv, "POST", "/submit", {
+    token: token,
+    body: { record: JSON.stringify(record(100 + i, 170)) },
+  });
+}
+/* Backdated in the stub rather than through the route, because the
+   receipt time is the Worker's own clock and there is deliberately no
+   way to choose it from the wire - which is the property under test one
+   layer down. */
+const original = histDb._submissions.map((r) => {
+  r.received_at = "2026-05-1" + (r.id % 9) + "T00:00:00.000Z";
+  return { id: r.id, account_id: r.account_id };
+});
+for (let i = 0; i < HIST_TOKENS.length; i += 1) {
+  const mineRow = original.filter((r) => r.account_id === acct(i))[0];
+  await callOn(histEnv, "POST", "/submit", {
+    token: HIST_TOKENS[i],
+    body: { record: JSON.stringify(record(150 + i, 170)),
+      supersedes: mineRow.id },
+  });
+}
+const history = await callOn(histEnv, "GET", "/charts?measure=weight",
+  { token: HIST_TOKENS[0] });
+check("tombstones: a month every member has since corrected draws no " +
+  "point - the read excludes superseded rows rather than averaging " +
+  "values people retracted",
+  history.status === 200 &&
+  !history.body.trend.points.some((p) => p.period === "2026-05"));
+check("tombstones: the correction's own month is the one that draws",
+  history.body.trend.points.length === 1);
+
 /* ================================================================== */
 /* 9. Not this slice's to touch: the snapshot routes stay alive until   */
 /* the Charts page stops reading them (0.9-M2-S3).                      */
@@ -766,7 +817,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 69;
+const EXPECTED = 71;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
