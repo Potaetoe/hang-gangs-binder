@@ -9,11 +9,17 @@
  *   GET    /me               what this account has on record.
  *   GET    /my-entries       this account's own rows: an id, a receipt
  *                            time, whether something supersedes it, and
- *                            the sealed bytes as stored. Needs a member
- *                            session, because it needs an account.
- *   POST   /submit           append one row, optionally naming the row
- *                            it supersedes. Needs a member session.
- *   GET    /export           return every row. Admin.
+ *                            the row's PLAINTEXT, opened here from the
+ *                            at-rest ciphertext. Needs a member session,
+ *                            because it needs an account.
+ *   POST   /submit           seal one row and append it, optionally
+ *                            naming the row it supersedes. The body
+ *                            carries the plaintext record; this Worker
+ *                            seals it at rest. Needs a member session.
+ *   GET    /export           return every row, sealed as stored. Admin.
+ *                            Server-side opening for admins is a later
+ *                            slice (0.9-M3); this route is unchanged by
+ *                            0.9-M1-S6 and still hands back ciphertext.
  *   POST   /snapshot         replace the published aggregate. Admin.
  *   GET    /snapshot         return it. Members only since 2026-08-05 -
  *                            it still carries no handles and no rows,
@@ -33,15 +39,18 @@
  *   DELETE /membership/:role/:accountId
  *                            remove one. Admin.
  *
- * It never decrypts, holds no key, and cannot read what it stores. The
- * first two routes move opaque base64 - see DESIGN.md, which explains
- * why the storage layer is untrusted on purpose.
+ * ROWS ARE ENCRYPTED AT REST UNDER A SECRET ONLY THIS WORKER HOLDS, and
+ * this Worker reads them to serve a member their own history back
+ * (0.9-M1-S6, #332; DESIGN.md, "Trust model: the Worker reads"). The
+ * at-rest format lives in one place, server/store-crypto.js, imported
+ * below - this file knows the routes and the database and lets that file
+ * know the ciphertext. What a raw database dump alone reveals is
+ * argued there; the trade that the operator can read plaintext is ruled
+ * knowingly in DESIGN.md and is not this file's to change.
  *
- * The snapshot is the exception that proves it: the Worker cannot
- * compute one, because computing it requires reading the submissions.
- * It is built in the keyholder's browser, where the plaintext already
- * is, and this endpoint only holds the result. That is what keeps a
- * daily public dashboard from requiring the private key to live here.
+ * The snapshot route is the pre-0.9 client-built aggregate, kept until
+ * live aggregation replaces it (0.9-M2): the page still computes it and
+ * this endpoint holds the result. It carries no handles and no rows.
  *
  * Every path above is API-shaped (see isApiPath/API_SEGMENTS below);
  * everything else is a page or an asset, served by env.ASSETS rather
@@ -58,6 +67,12 @@
  *   ACCOUNT_SECRET            secret, the HMAC key behind every account
  *                             id. PERMANENT - changing it detaches every
  *                             member from their own history.
+ *   STORE_SECRET              secret, the cipher secret rows are sealed
+ *                             under at rest. Its own secret, never the
+ *                             account-id HMAC key - server/store-crypto.js
+ *                             names it, takes it, and this file passes it
+ *                             through openStore(env). Required wherever
+ *                             rows are stored.
  *   ADMIN_TELEGRAM_IDS        secret, comma-separated numeric ids. One
  *                             of the two admin lists - the `membership`
  *                             table is the other, and adminAccountIds()
@@ -126,6 +141,17 @@
  * ---------------------------------------------------------------------
  */
 
+// The at-rest format, in one file. This module knows the routes, the
+// session and the database; store-crypto knows the ciphertext and holds
+// no opinion about any of them. openStore(env) reads STORE_SECRET and
+// hands back sealRow/openRow bound to the AAD this file supplies. See
+// server/store-crypto.js's own header for the format and the fixture
+// rule. Static import so wrangler bundles it into the deployed Worker;
+// the arms that load this file as a data: URL rewrite this one specifier
+// to an absolute URL, because a data: module cannot resolve a relative
+// one (0.9-M1-S6, #332).
+import { openStore } from "./store-crypto.js";
+
 // The only origins allowed to call this. A submission from anywhere
 // else is either a mistake or somebody else's copy of the form, and in
 // both cases the row is noise in the export.
@@ -150,19 +176,29 @@ function allowedOrigins(env) {
   return DEFAULT_ORIGINS;
 }
 
-// A submission is a base64 blob of a short record. 16 KB is far more
-// than that and far less than anything worth storing by accident.
-const MAX_CIPHERTEXT = 16 * 1024;
+// The plaintext a member may submit in one row, bounded before it is
+// sealed. A weigh-in is a handful of short fields; this is generous for
+// that and small enough that MAX_ENTRY_LISTING rows stay a bounded
+// response. A record over this is refused at POST /submit with 413,
+// before any seal or write.
+//
+// The bound is on the PLAINTEXT rather than on the stored blob, and that
+// is the only place it can be asserted: nothing on the wire is a sealed
+// blob, so there is no caller-supplied ciphertext length to refuse. The
+// stored size follows from this one by arithmetic this Worker does
+// itself - a fixed header and tag, then base64's third - so bounding the
+// input bounds the row.
+const MAX_RECORD_BYTES = 8 * 1024;
 
 // How many rows one member's listing hands back, and why there is a
 // number here at all.
 //
-// GET /my-entries carries the sealed bytes, so a listing is the largest
-// response this Worker ever sends and its size is chosen by whoever has
-// been submitting rather than by anything here. This bounds it: 500
-// rows against MAX_CIPHERTEXT is roughly 8 MB in the worst case, and
-// nine years of weekly entries in the realistic one, so nobody in this
-// group reaches it by using the site as intended.
+// GET /my-entries carries every row's opened plaintext, so a listing is
+// the largest response this Worker ever sends and its size is chosen by
+// whoever has been submitting rather than by anything here. This bounds
+// it: 500 rows against MAX_RECORD_BYTES is roughly 4 MB in the worst
+// case, and nine years of weekly entries in the realistic one, so nobody
+// in this group reaches it by using the site as intended.
 //
 // It is a LITERAL in the statement rather than a bound parameter, and
 // that is the load-bearing part: a cap D1 is told about is a cap on
@@ -171,11 +207,12 @@ const MAX_CIPHERTEXT = 16 * 1024;
 // everything and then throw some away, which is a cap in the only place
 // it does not help.
 //
-// If a member ever does reach it their oldest rows are what they get,
-// because ORDER BY is ascending and stable. The fix at that point is
-// pagination, not a bigger number - and pagination is a parameter on
-// this route, which is the property every scope argument here rests on
-// not having.
+// If a member ever does reach it their NEWEST rows are what they get,
+// because the listing orders by received_at descending - the right half
+// to keep for a page whose top row is the current claim. The fix at that
+// point is pagination, not a bigger number - and pagination is a
+// parameter on this route, which is the property every scope argument
+// here rests on not having.
 const MAX_ENTRY_LISTING = 500;
 
 // A snapshot is counts, medians and histogram bins, plus at most a
@@ -431,6 +468,72 @@ async function hmacHex(key, message) {
  */
 async function accountIdFor(env, subject) {
   return hmacHex(env.ACCOUNT_SECRET, String(subject));
+}
+
+/*
+ * The one thing that reaches the store's accountId context is the
+ * account-id HMAC, and this refuses anything else BEFORE a seal or an
+ * open (0.9-M1-S6, #332, security mandate 1; #294 F6). sessionFor()
+ * returns row.account_id, which is that HMAC for a real member - but a
+ * raw Telegram numeric id, a bare user.id, or a "dev:"-namespaced dev
+ * subject would each be a caller identity that is NOT the HMAC, and
+ * binding a row to one of those would put the membership oracle back
+ * inside the ciphertext where no dump-reveals-nothing property could
+ * reach it (DESIGN.md, "The identifier is the whole problem"). So the
+ * shape is asserted here rather than trusted: sixty-four lowercase hex
+ * characters, the same ACCOUNT_ID pattern the account id is written
+ * with. A dev session cannot submit as a result, which is correct - a
+ * dev: subject is exactly what mandate 1 names as the value that must
+ * not reach the crypto, and POST /auth/dev is retiring anyway (see the
+ * header). This throws rather than returning a refusal shape a caller
+ * chose: on a Worker signing real members in it can only fire on a bug,
+ * and a bug that binds a row to the wrong identity must be loud, not a
+ * 4xx a page interprets.
+ */
+function rowIdentity(accountId) {
+  if (typeof accountId !== "string" || !ACCOUNT_ID.test(accountId)) {
+    throw new Error("row identity is not an account-id HMAC");
+  }
+  return accountId;
+}
+
+/*
+ * Uint8Array <-> base64, so a sealed row (bytes) rides the TEXT
+ * `ciphertext` column. btoa/atob rather than Buffer because Buffer is
+ * not in the Workers runtime; a sealed row is a few KB, well within the
+ * spread the chunked loop avoids needing to worry about at all.
+ */
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function base64ToBytes(text) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/*
+ * A row's DB id, assigned here rather than by AUTOINCREMENT, and the
+ * reason is the AAD (0.9-M1-S6, #332, security mandate 2). The record's
+ * own id is bound into the ciphertext, so a row lifted to another id
+ * fails to open - which means the id has to be known BEFORE the seal.
+ * An autoincrement id is known only AFTER the insert, so binding it
+ * would force a seal-then-update over a half-written row; choosing the
+ * id here keeps the write a single atomic INSERT of already-sealed
+ * bytes. It is a random 48-bit integer: unique enough that a collision
+ * is astronomically unlikely for one small group's corpus, caught by
+ * the PRIMARY KEY when it does (handleSubmit retries), and - unlike a
+ * sequence - it leaks no row count and no ordering. The listing orders
+ * by received_at because the id no longer carries time.
+ */
+function randomRowId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  let id = 0;
+  for (const byte of bytes) id = id * 256 + byte;
+  return id + 1;
 }
 
 function idList(value) {
@@ -1429,117 +1532,71 @@ async function handleMe(request, env, origin, caller) {
 }
 
 /*
- * The rows this account has written, and the sealed bytes of each.
+ * The rows this account has written, opened here to their plaintext.
  *
- * WHY IT EXISTS. A correction names the row it replaces, and until this
- * route a member could name none: POST /submit answers `{ok:true}`, GET
- * /me answers counts and a date, and GET /export is admin. So the
- * member-facing half of the correction path had nothing to point at,
- * and this gives it one - an id per row, the receipt time this side
- * attested to, and whether something supersedes it.
+ * WHAT IT RETURNS. An id per row, the receipt time this side attested
+ * to, whether something supersedes it, and the record's PLAINTEXT -
+ * opened from the at-rest ciphertext with store-crypto, using the same
+ * accountId HMAC and the row's own id as the AAD the seal was written
+ * under (0.9-M1-S6, #332). The correction path needs the id to name a
+ * row; your page needs the plaintext to show it.
  *
- * THE BYTES TRAVEL NOW, AND THEY DID NOT BEFORE. This route shipped
- * carrying no ciphertext, on the reasoning that the bytes were inert to
- * the only caller allowed to ask for them: nothing in the tree could
- * open one, so the field would have been cost without use. #85's device
- * key is what changes that - apps/web/memberkey.js gives the submitting
- * browser a second recipient it cannot export - and the note that
- * shipped with the refusal said this is how it would come back: a field
- * can be added the day something can read it, and a field that has
- * shipped cannot be taken back.
+ * THE SCOPE IS IN THE STATEMENT, and doubly so at rest. The account
+ * clause is what makes this the member's own rows - there is no
+ * parameter on the wire for a caller to point elsewhere, the account
+ * comes from the session, and a clause in the SQL cannot be forgotten
+ * by a later map. And even a row that somehow reached this listing under
+ * the wrong account would not open: openRow binds accountId into the
+ * AAD, so a cross-account row fails closed rather than decrypting into
+ * this member's page. The two guards are independent on purpose.
  *
- * The cost the refusal named is real and is not paid off by the key
- * existing: a stolen member session now downloads that member's whole
- * sealed history rather than counts. Two things bound it. The session
- * gate is one, which is why the arm that matters is the REVOKED one -
- * a token captured before Sign out must read nothing after it, and
- * every call resolves the caller against the session table rather than
- * trusting a token's shape. MAX_ENTRY_LISTING is the other.
- *
- * THE WORKER STILL CANNOT TELL THESE ROWS APART. The column is emitted
- * verbatim - not parsed, not validated, not tried against a shape, and
- * with no per-row branch anywhere in this function. A row sealed to two
- * recipients and a row sealed to the keyholder alone are one opaque
- * string here, so "which of this member's rows are member-readable" is
- * not a question this side can answer, and therefore not one anybody
- * who reaches this side can answer either. It is decided in the browser
- * holding the key, which is the only place that can decide it.
- *
- * WHAT IT STILL DOES NOT CARRY, and why that is a decision rather than
- * an omission:
- *
- *   - No account id. GET /me answers that question, and a fact stated
- *     in two responses is a fact two routes can disagree about.
- *   - No handle and no Telegram id. Neither is reachable from here:
- *     nothing outside handleTelegramAuth in this file ever holds one,
- *     and a row carries the HMAC account id and nothing else.
- *   - No recipient count, and no "this one is yours" flag. Both would
- *     be this side forming an opinion about the envelope, which is the
- *     paragraph above.
- *   - No count, no total, and no distinct answer for an account with
- *     nothing stored. Absent and empty are one 200 with one empty
- *     array, because anything else answers "has this account ever
- *     submitted" to whoever holds the session.
- *
- * THE SCOPE IS IN THE STATEMENT, not applied to what comes back. That
- * is the lesson this route inherits from the one below it, where a
- * read-back keyed on a value the caller had SENT answered 200 about
- * somebody else's row. A clause in the SQL cannot be forgotten by a
- * later map, and there is no parameter on this route at all - the
- * account comes from the session, so there is nothing on the wire for a
- * caller to point somewhere else.
+ * A ROW THAT WILL NOT OPEN FAILS THE READ. openRow throws store-crypto's
+ * uniform StoreFormatError on tamper or a cross-binding, and that throw
+ * is left to propagate to fetch()'s handler, which answers 500 with no
+ * detail. This is fail-closed by design: a row that does not open is a
+ * row the database no longer holds honestly, and serving the rest while
+ * quietly dropping it would hide exactly the tampering the AAD exists to
+ * catch. DESIGN.md, "Encryption", rules the format part of the data.
  *
  * THE SUPERSEDE FLAG IS THE SAME PREDICATE GET /me COUNTS WITH, reused
  * rather than restated, so the two member-facing surfaces cannot come to
- * disagree about one corpus. Its account clause is load-bearing for the
- * same reason it is there: a row written through another door - and
- * `wrangler d1 execute` validates nothing - naming this member's entry
- * must not make that entry vanish from their own listing.
+ * disagree about one corpus. Its account clause is load-bearing: a row
+ * written through another door - `wrangler d1 execute` validates nothing
+ * - naming this member's entry must not make that entry vanish from
+ * their own listing.
  *
- * The flag is advisory and the enforcement stays at POST /submit, which
- * is what bounds the cost of getting it wrong: a page that offered a
- * tombstone as correctable is answered 409 there rather than storing a
- * second current row.
- *
- * ORDER BY is not decoration. Without it the order is D1's to choose,
- * and a listing that reshuffles between loads is one a member cannot
- * read. dev/worker.test.mjs reads the column, the direction and the cap
- * off this statement and sorts by them, so dropping the clause or
- * turning it around goes red there. What that cannot reach is D1: the
- * sequence it compares against is produced by a sort in the suite, and
- * whether the database honors the clause it was handed is a claim only
- * a live round trip makes. tools/check_live.py carries the row that
- * says that half is unmade.
+ * ORDER BY received_at, not id. The id is a random value now (see
+ * randomRowId), so it no longer carries insertion order; the receipt
+ * time this side stamped does. Newest first, with the id as a stable
+ * tie-break for two rows stamped in the same millisecond, so a listing
+ * does not reshuffle between loads. Whether the database honors the
+ * clause is a live-only claim; tools/check_live.py carries that row.
  */
 async function handleMyEntries(env, origin, caller) {
+  const accountId = rowIdentity(caller.accountId);
+  const store = await openStore(env);
   const rows = await env.DB.prepare(
     "SELECT mine.id AS id, mine.received_at AS received_at, " +
     "CASE WHEN " + SUPERSEDED + " THEN 1 ELSE 0 END AS superseded, " +
     "mine.ciphertext AS ciphertext " +
     "FROM submissions AS mine WHERE mine.account_id = ? " +
-    "ORDER BY mine.id LIMIT " + MAX_ENTRY_LISTING
-  ).bind(caller.accountId).all();
+    "ORDER BY mine.received_at DESC, mine.id DESC LIMIT " + MAX_ENTRY_LISTING
+  ).bind(accountId).all();
 
-  return json({
-    ok: true,
-    entries: rows.results.map((row) => ({
-      id: row.id,
-      receivedAt: row.received_at,
-      // SQLite answers a CASE with an integer and the page wants a
-      // boolean. The comparison is strict, so anything else this column
-      // could ever arrive as reads as NOT superseded - which is the
-      // direction whose failure something else still catches. A page
-      // that offers a tombstone is answered 409 by POST /submit; a page
-      // wrongly told an entry is already corrected offers the member
-      // nothing to press and no refusal to explain why.
-      superseded: row.superseded === 1,
-      // Straight off the column, with no coercion and no default. An
-      // undefined here would be this function inventing a value for a
-      // row whose bytes it failed to select; the browser's decoder says
-      // so plainly, and a "" would look to it like an empty envelope.
-      ciphertext: row.ciphertext,
-    })),
-  }, 200, origin);
+  const entries = await Promise.all(rows.results.map(async (row) => ({
+    id: row.id,
+    receivedAt: row.received_at,
+    // Strict compare: SQLite answers the CASE with an integer, and
+    // anything this column could otherwise arrive as reads as NOT
+    // superseded - the direction POST /submit's 409 still catches.
+    superseded: row.superseded === 1,
+    // The plaintext, opened under this row's own id as the recordId AAD.
+    // A row that will not open throws here and the read fails closed.
+    record: await store.openRow(base64ToBytes(row.ciphertext),
+      { accountId: accountId, recordId: String(row.id) }),
+  })));
+
+  return json({ ok: true, entries: entries }, 200, origin);
 }
 
 /*
@@ -1592,6 +1649,51 @@ const NOT_YOURS = "That entry is not one of yours.";
 const ALREADY_CORRECTED =
   "That entry has already been corrected. Correct the correction instead.";
 
+/*
+ * Seal one record and write it as a new row, returning the id assigned.
+ *
+ * ONE ATOMIC INSERT of already-sealed bytes, and randomRowId above is
+ * what makes that possible: the row's own id is the recordId bound into
+ * the AAD (security mandate 2), so it has to be known before the seal.
+ * A seal-then-update over a half-written row is the alternative an
+ * autoincrement id would force, and it opens a window where a row exists
+ * that nothing can read. Choosing the id here closes that window - the
+ * bytes are sealed under the id they are stored beside, in one statement.
+ *
+ * THE ID COLLISION IS CAUGHT, NOT ASSUMED AWAY. A 48-bit random id
+ * collides only astronomically rarely for one group's corpus, but the
+ * PRIMARY KEY is what makes "rarely" safe rather than "never" a hope:
+ * a clash throws, and this re-rolls the id and RE-SEALS under it, because
+ * the AAD must match the id actually stored. Any other constraint - the
+ * UNIQUE index on `supersedes` refusing a raced correction - is not this
+ * function's to interpret, so it propagates to the caller.
+ */
+async function insertSealed(store, env, accountId, record, supersedes,
+  receivedAt) {
+  const columns = "INSERT INTO submissions " +
+    "(id, account_id, ciphertext, received_at, supersedes) " +
+    "VALUES (?, ?, ?, ?, ?)";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const id = randomRowId();
+    const sealed = bytesToBase64(await store.sealRow(record,
+      { accountId: accountId, recordId: String(id) }));
+    try {
+      await env.DB.prepare(columns)
+        .bind(id, accountId, sealed, receivedAt, supersedes).run();
+      return id;
+    } catch (error) {
+      if (/UNIQUE constraint failed: submissions\.id\b/i
+        .test(String(error && error.message))) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  // Four 48-bit collisions in a row is not a state a real corpus reaches;
+  // reaching it is a broken RNG, which is a bug to surface, not to retry.
+  throw new Error("could not assign a free row id");
+}
+
 async function handleSubmit(request, env, origin, caller) {
   let payload;
   try {
@@ -1600,234 +1702,148 @@ async function handleSubmit(request, env, origin, caller) {
     return json({ error: "Body must be JSON." }, 400, origin);
   }
 
-  const ciphertext = payload && payload.ciphertext;
-  if (typeof ciphertext !== "string" || ciphertext.length === 0) {
-    return json({ error: "Missing ciphertext." }, 400, origin);
+  // The record is the row's PLAINTEXT, and this Worker seals it. It is
+  // opaque to this route on purpose: what a record contains is the
+  // form's business (apps/site.config.js, form-as-data), not the store's,
+  // and validating fields here would be a second place the shape could
+  // drift from the one the page enforces. The bound is on bytes because
+  // the ceiling is a storage fact, not a character count.
+  const record = payload && payload.record;
+  if (typeof record !== "string" || record.length === 0) {
+    return json({ error: "Missing record." }, 400, origin);
   }
-  if (ciphertext.length > MAX_CIPHERTEXT) {
-    return json({ error: "Ciphertext too large." }, 413, origin);
-  }
-  // Shape check only. The contents are unreadable here by design, so
-  // this asserts the field is base64 and stops there - but base64 is
-  // length-and-padding, not just alphabet. apps/web/crypto.js seals
-  // through btoa(), which emits standard base64 in quanta of four with
-  // padding only on the final group, so a length that is not a multiple
-  // of four is proof the field is not a submission this project wrote.
-  // The alphabet-only regex this replaced accepted "A", "AA" and any
-  // odd-length run as ciphertext; the `% 4` is what makes the check
-  // match what the client can actually produce.
-  if (ciphertext.length % 4 !== 0 ||
-      !/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext)) {
-    return json({ error: "Ciphertext must be base64." }, 400, origin);
+  if (encoder.encode(record).length > MAX_RECORD_BYTES) {
+    return json({ error: "Record too large." }, 413, origin);
   }
 
-  /*
-   * A correction, if this is one.
-   *
-   * There is no UPDATE path here and there cannot be one: the Worker
-   * cannot read what it stores, so it cannot modify a record. A
-   * correction is an insert of freshly-sealed ciphertext plus a pointer
-   * at the row it replaces, and the row it replaces stays as a
-   * tombstone. DESIGN.md, "Admin accounts and deletion", holds the rule.
-   *
-   * THE CHECKS AND THE WRITE ARE ONE BATCH, which is one transaction,
-   * and the write carries the rules in its own WHERE. Do not separate
-   * them back into a question and an insert that follows it: the gap
-   * between those is not theoretical, and two corrections of one entry -
-   * two tabs, or a request the browser retried - both pass the question
-   * before either reaches the write, so both commit. That is fan-in, two
-   * current rows where the design allows one. The database refuses it as
-   * well, by a UNIQUE index on `supersedes`, and server/schema.sql
-   * carries the reasoning for why the rule is stated in both places.
-   *
-   * A refused correction stores nothing. Storing it as an ordinary new
-   * row instead would be the worst available outcome: the member sees a
-   * success, and the row they meant to replace is still counted and
-   * still in the series.
-   *
-   * Absent, foreign and deleted answer identically on purpose. Telling
-   * "no such row" apart from "not your row" would make this route a
-   * probe for which ids are live across the whole corpus - more than the
-   * grouping DESIGN.md's threat model accepts, and reachable with any
-   * member session rather than with the database. One predicate asks for
-   * a row that is both there and the caller's, so no branch here learns
-   * that a row exists without also knowing whose it is.
-   *
-   * The already-corrected answer is told apart, and safely: reaching it
-   * means the caller has proved the row is theirs, so the answer is
-   * about their own data. It is where the chain shape lives. A row may
-   * be superseded once, which is what keeps "current" meaning "the rows
-   * nobody names" - a total function needing no tie-break in a client
-   * this side cannot see.
-   *
-   * A pointer at a row that is gone is not checked for and not an error.
-   * It resolves as no pointer everywhere that reads one, which is what
-   * lets DELETE /submission/:id stay a single unconditional delete:
-   * removing a correction puts the row it corrected back among the
-   * current ones, and no deletion ever becomes two.
-   */
+  // The identity every seal on this route is bound to, asserted before
+  // the crypto is reached: the account-id HMAC and nothing else (mandate
+  // 1). rowIdentity throws on a raw id or a dev: subject, and that throw
+  // is a bug being made loud rather than a refusal the member acts on.
+  const accountId = rowIdentity(caller.accountId);
+  const store = await openStore(env);
+  const receivedAt = new Date().toISOString();
+
   const supersedes = payload.supersedes;
 
-  // The account id comes from the session and never from the body. It is
-  // the one identity on a row that a client cannot influence, which is
-  // what lets the ownership rule below be asked about the session's
-  // account rather than about anything the caller said.
-  const columns = "INSERT INTO submissions " +
-    "(account_id, ciphertext, received_at, supersedes) ";
-
+  /*
+   * An ordinary submission: seal and append, no pointer. The account id
+   * comes from the session (rowIdentity above) and never from the body -
+   * the one identity on a row a client cannot influence.
+   */
   if (supersedes === undefined || supersedes === null) {
-    await env.DB.prepare(columns + "VALUES (?, ?, ?, ?)")
-      .bind(caller.accountId, ciphertext, new Date().toISOString(), null)
-      .run();
-    return json({ ok: true }, 200, origin);
+    const id = await insertSealed(store, env, accountId, record, null,
+      receivedAt);
+    return json({ ok: true, id: id }, 200, origin);
   }
 
-  // The id of a row, or nothing. A client sending the string "1" has a
-  // bug worth hearing about rather than a value worth coercing.
-  if (!Number.isInteger(supersedes) || supersedes < 1) {
+  // The id of a row, or a bug. A client sending "1" as a string, or a
+  // value past what a row id can be, is worth hearing about rather than
+  // coercing. Row ids are 48-bit, comfortably inside a safe integer.
+  if (!Number.isInteger(supersedes) || supersedes < 1 ||
+      supersedes > Number.MAX_SAFE_INTEGER) {
     return json({
       error: "supersedes must be the id of one of your entries.",
     }, 400, origin);
   }
 
-  const now = new Date().toISOString();
-  let checked;
-  let landed;
-  try {
-    [checked, , landed] = await env.DB.batch([
-      env.DB.prepare(
-        "SELECT " + OWNED_BY_CALLER + " AS mine, " +
-        ALREADY_CORRECTED_ROW + " AS corrected"
-      ).bind(supersedes, caller.accountId, supersedes),
-      env.DB.prepare(
-        columns + "SELECT ?, ?, ?, ? WHERE " +
-        OWNED_BY_CALLER + " AND NOT " + ALREADY_CORRECTED_ROW
-      ).bind(
-        caller.accountId, ciphertext, now, supersedes,
-        supersedes, caller.accountId, supersedes
-      ),
-      env.DB.prepare(
-        "SELECT ciphertext FROM submissions " +
-        "WHERE supersedes = ? AND account_id = ?"
-      ).bind(supersedes, caller.accountId),
-    ]);
-  } catch (error) {
-    /*
-     * The index refusing a correction of a row somebody else corrected
-     * in the same instant. It is the same event as the check below
-     * catching it a moment earlier, so it is the same answer - a member
-     * who lost a race and a member who corrected twice have identical
-     * work to do next, and telling them apart would publish which of
-     * them the database happened to serve first.
-     *
-     * Only that violation is absorbed, and the constraint is named down
-     * to its column. Anything else is a failure this route has no answer
-     * for and must not report as a refusal the member could act on, so
-     * it goes to fetch()'s handler: "that entry has already been
-     * corrected", told to somebody whose entry was not corrected, sends
-     * them looking for a correction that does not exist and turns a
-     * fault into a refusal nobody investigates.
-     *
-     * Matching the whole message class instead would be a ratchet rather
-     * than a present bug - `submissions` carries exactly one unique
-     * constraint, so today every UNIQUE violation reachable here IS this
-     * one. The cost of the wide match falls on whoever adds the second
-     * index to this table, and it falls silently. SQLite names the table
-     * and the column in that order, which is what makes the narrow form
-     * available.
-     */
-    if (!/UNIQUE constraint failed: submissions\.supersedes/i
-      .test(String(error && error.message))) {
-      throw error;
-    }
+  /*
+   * A correction supersedes rather than mutates (DESIGN.md, "Admin
+   * accounts and deletion"): a NEW row naming the row it replaces, and
+   * the replaced row is never rewritten. The Worker could open and
+   * re-seal the old row now, but must not - the history the binder
+   * exists to accumulate IS the repeats.
+   *
+   * PRE-CHECK, THEN THE INDEX. The two rules are asked once here for a
+   * clean diagnosis - is the target the caller's, is it already
+   * corrected - and the UNIQUE index on `supersedes` is what actually
+   * holds the chain rule when two corrections of one row race: the
+   * pre-check can pass for both, and the index refuses the second. So
+   * the pre-check does not need to be atomic with the insert; the index
+   * is the guard, and the pre-check is the courtesy of a 404-vs-409 the
+   * member can act on. server/schema.sql carries why the ownership rule
+   * is scoped to the account and the chain rule is scoped to nothing.
+   *
+   * Absent, foreign and deleted answer 404 alike, so this route is not a
+   * probe for which ids are live across the corpus. The already-corrected
+   * 409 is told apart safely: reaching it means the caller proved the row
+   * is theirs, so the answer is about their own data.
+   */
+  const check = await env.DB.prepare(
+    "SELECT " + OWNED_BY_CALLER + " AS mine, " +
+    ALREADY_CORRECTED_ROW + " AS corrected"
+  ).bind(supersedes, accountId, supersedes).first();
+
+  if (!check || !check.mine) {
+    return json({ error: NOT_YOURS }, 404, origin);
+  }
+  if (check.corrected) {
     return json({ error: ALREADY_CORRECTED }, 409, origin);
   }
 
-  /*
-   * Whether the row LANDED, rather than whether it should have.
-   *
-   * The three statements are one batch and therefore one transaction,
-   * and the insert carries the rules in its own WHERE - so a refused
-   * correction stores nothing even if the diagnosis beside it were read
-   * wrong, and a stored one was stored under rules that held at the
-   * moment of the write rather than at the moment of the question.
-   * Reading the outcome back inside the same batch is what keeps this
-   * from depending on the isolation the store happens to offer: a
-   * diagnosis that says "fine" and a write that quietly did nothing is
-   * exactly the 200-with-no-row the member cannot see, and it is the
-   * worst outcome available on this route.
-   *
-   * The row is identified by its ciphertext AND by the caller's account,
-   * and the account clause is the load-bearing half. The ciphertext is
-   * the one thing about the row the caller already knows, which is what
-   * makes it a usable handle - but it is a value the caller SENT, not a
-   * fact about them: ciphertext is not a secret, every blob travels to
-   * the keyholder in the export, and the field is free text on the wire.
-   * Ask only "is there a row naming this target whose bytes are these"
-   * and a member naming somebody else's entry, replaying the ciphertext
-   * of the correction that already supersedes it, reads back a row they
-   * did not write and is told 200 while nothing was stored. Do not
-   * simplify this WHERE back to the pointer alone. Nothing legitimate
-   * depends on the wider question: a row this statement is looking for is
-   * one the insert above would have written, and that row always carries
-   * the caller's own account id.
-   *
-   * Every row naming the target is examined rather than the first one,
-   * and the difference is only visible against a database this index has
-   * not reached yet: there, two rows can already name one target, and
-   * taking whichever came back first would answer 409 to the member
-   * whose row did land. The reply must not depend on the order a result
-   * set happens to arrive in.
-   */
-  if (landed.results.some((r) => r.ciphertext === ciphertext)) {
-    return json({ ok: true }, 200, origin);
+  try {
+    const id = await insertSealed(store, env, accountId, record, supersedes,
+      receivedAt);
+    return json({ ok: true, id: id }, 200, origin);
+  } catch (error) {
+    /*
+     * The index refusing a correction of a row corrected in the same
+     * instant - the same answer as the pre-check catching it a moment
+     * earlier, because a member who lost a race and one who corrected
+     * twice have identical work to do next. Only that violation is
+     * absorbed, named down to its column; anything else is a failure
+     * this route cannot honestly report as a refusal and goes to
+     * fetch()'s handler. `submissions` carries exactly this one unique
+     * constraint on `supersedes`, and SQLite names the table and column
+     * in that order, which is what makes the narrow match available.
+     */
+    if (/UNIQUE constraint failed: submissions\.supersedes/i
+      .test(String(error && error.message))) {
+      return json({ error: ALREADY_CORRECTED }, 409, origin);
+    }
+    throw error;
   }
-
-  /*
-   * It did not land, and the diagnosis says why. The first answer covers
-   * absent, foreign and deleted alike: one statement asks for a row that
-   * is both there and the caller's, so no branch here learns that a row
-   * exists without also knowing it belongs to the person asking, and
-   * telling those apart would make this route a probe for which ids are
-   * live across the whole corpus.
-   *
-   * Everything else is the chain rule, including the case where the
-   * diagnosis found nothing wrong and the write still did nothing -
-   * which is another correction of the same row arriving first.
-   */
-  if (!checked.results[0] || !checked.results[0].mine) {
-    return json({ error: NOT_YOURS }, 404, origin);
-  }
-  return json({ error: ALREADY_CORRECTED }, 409, origin);
 }
 
 /*
- * Deleting one submission. An admin action, and the second destructive
- * route in this Worker.
+ * Deleting one submission - a member deleting their own, or an admin
+ * deleting anyone's.
  *
- * It is what answers "please take mine down" without a Cloudflare
- * console, and it is what makes junk recoverable - which is the reason
- * spam protection was allowed to stay "nothing until it appears". See
- * DESIGN.md, "Admin accounts and deletion", including why members cannot yet
- * do this for themselves.
+ * DELETION IS DELETION (DESIGN.md, "Admin accounts and deletion"): a
+ * member corrects and deletes their own rows in full self-service, no
+ * trace and no admin notice, and the charts move with it. An admin can
+ * also remove any row - what answers "please take mine down" without a
+ * Cloudflare console and what makes junk recoverable.
  *
- * Deleting nothing succeeds, for the same reason unpublishing twice
- * does: the caller has got what they wanted.
+ * WHO MAY DELETE WHAT IS THE WHOLE OF THE DIFFERENCE. An admin deletes
+ * by id alone; a member's delete carries `AND account_id = ?` bound to
+ * their session, so a member can only ever remove a row that is theirs
+ * (security mandate 3). The id is in the path, but the account clause is
+ * from the session, so a member naming another member's id deletes
+ * nothing - and deleting nothing succeeds, for the same reason
+ * unpublishing twice does: the caller has got what they wanted, and a
+ * distinct answer would tell them whether that id exists.
  *
- * It stays a single unconditional delete now that rows can point at each
- * other, and the temptation to make it more than that is worth naming:
- * `supersedes` is advisory, so a pointer at a row that is gone resolves
- * as no pointer, and removing a correction simply puts the row it
- * corrected back among the current ones. Cascading instead would turn
- * one "please take mine down" into two rows disappearing, and refusing
- * instead would make a row undeletable because somebody corrected it.
+ * IT STAYS A SINGLE DELETE, no cascade, now that rows point at each
+ * other. `supersedes` is advisory: a pointer at a row that is gone
+ * resolves as no pointer, so removing a correction simply puts the row
+ * it corrected back among the current ones. Cascading would turn one
+ * "take mine down" into two rows disappearing; refusing would make a row
+ * undeletable because somebody corrected it. What remains are the
+ * tombstones of a coherent chain, which is the design.
  */
-async function handleDeleteSubmission(env, origin, id) {
+async function handleDeleteSubmission(env, origin, id, caller) {
   if (!/^\d+$/.test(id)) {
     return json({ error: "Not found." }, 404, origin);
   }
-  await env.DB.prepare("DELETE FROM submissions WHERE id = ?")
-    .bind(Number(id)).run();
+  if (caller.isAdmin) {
+    await env.DB.prepare("DELETE FROM submissions WHERE id = ?")
+      .bind(Number(id)).run();
+  } else {
+    await env.DB.prepare(
+      "DELETE FROM submissions WHERE id = ? AND account_id = ?"
+    ).bind(Number(id), caller.accountId).run();
+  }
   return json({ ok: true }, 200, origin);
 }
 
@@ -2559,10 +2575,19 @@ async function route(request, env, url, allowed) {
     return handleDeleteSnapshot(env, allowed);
   }
 
+  // A member deletes their own row here, and an admin deletes anyone's -
+  // the handler scopes the member's delete to their session account and
+  // leaves the admin's unscoped (0.9-M1-S6, #332; DESIGN.md, "Admin
+  // accounts and deletion"). A break-glass EXPORT_TOKEN caller is an
+  // admin and takes the admin path; a caller with neither adminness nor
+  // an account has nothing to delete and is refused here, so the handler
+  // never runs with an account of null in its member branch.
   const submission = /^\/submission\/([^/]+)$/.exec(path);
   if (method === "DELETE" && submission) {
-    if (!admin) return unauthorized(allowed);
-    return handleDeleteSubmission(env, allowed, submission[1]);
+    if (!caller || (!caller.isAdmin && !caller.accountId)) {
+      return unauthorized(allowed);
+    }
+    return handleDeleteSubmission(env, allowed, submission[1], caller);
   }
 
   // The site copy. The read takes no credential, which is the one
@@ -2621,7 +2646,7 @@ async function route(request, env, url, allowed) {
  * time because this is the first piece of server/worker.js's own logic
  * simple enough to have one.
  */
-export { isApiPath, API_SEGMENTS };
+export { isApiPath, API_SEGMENTS, rowIdentity };
 
 export default {
   /*

@@ -129,8 +129,14 @@ function check(label, condition) {
 /* stopped checking anything reds here even when the real file is      */
 /* clean.                                                              */
 
+/* STORE_SECRET joined the roster at 0.9-M1-S6 (#332) - the cipher
+   secret entry rows are sealed under at rest, a fifth sit secret and
+   deliberately not ACCOUNT_SECRET reused. The order is the order both
+   server/wrangler.toml's [env.sit] comment and OPERATIONS.md's procedure
+   list them in, which the cross-file check at the end of this file
+   compares against. */
 const SIT_SECRETS = ["ACCOUNT_SECRET", "TELEGRAM_BOT_TOKEN",
-  "TELEGRAM_GROUP_CHAT_ID", "EXPORT_TOKEN"];
+  "TELEGRAM_GROUP_CHAT_ID", "EXPORT_TOKEN", "STORE_SECRET"];
 const ABSENT_SECRETS = ["ADMIN_TELEGRAM_IDS", "ALWAYS_ALLOW_TELEGRAM_IDS",
   "DEV_LOGIN_SECRET"];
 /* Every secret this file's own general vocabulary names, whether sit

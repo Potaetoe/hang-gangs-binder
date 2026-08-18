@@ -148,10 +148,17 @@ function makeDb() {
   }
 
   function all(sql, args) {
-    // The member's own listing. Scoped to the bound account, newest
-    // first - the order and the scope are both read off the statement.
+    /* The member's own listing. Scoped to the bound account, newest
+       first - the order and the scope are both read off the statement.
+
+       `COUNT\(` rather than `COUNT`: the bare word is a substring of
+       "account_id", which every statement against this table binds, so
+       the aggregate test matched the listing too and this branch was
+       never reached - the stub threw "unmodelled" against the exact
+       statement it models. The open paren is what makes it the SQL
+       function rather than four letters inside a column name. */
     if (/FROM submissions AS mine/i.test(sql) && /ORDER BY/i.test(sql) &&
-        !/COUNT/i.test(sql)) {
+        !/COUNT\(/i.test(sql)) {
       const account = /account_id = \?/i.test(sql) ? args[0] : null;
       const mine = submissions.filter((r) =>
         account === null || r.account_id === account);

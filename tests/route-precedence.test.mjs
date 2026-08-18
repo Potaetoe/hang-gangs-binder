@@ -46,7 +46,7 @@
  * rather than duplicated against a second one.
  */
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WORKER_PATH = ROOT + "server/worker.js";
@@ -66,8 +66,18 @@ const readText = async (path) =>
 
 const workerSrc = await readText(WORKER_PATH);
 
+/* server/worker.js imports ./store-crypto.js (0.9-M1-S6, #332), and a
+   data: module has no base URL to resolve a relative specifier against -
+   Node throws before a single check runs. The specifier is rewritten to
+   the real file's absolute URL, so this still exercises the file's own
+   bytes while the import resolves. Scoped to this one specifier: a
+   second relative import should fail loudly rather than be absorbed. */
+const STORE_CRYPTO_URL =
+  pathToFileURL(ROOT + "server/store-crypto.js").href;
+
 async function loadWorker(src) {
-  return import("data:text/javascript," + encodeURIComponent(src));
+  return import("data:text/javascript," + encodeURIComponent(src.replace(
+    /(\bfrom\s*)"\.\/store-crypto\.js"/, '$1"' + STORE_CRYPTO_URL + '"')));
 }
 
 const { isApiPath, API_SEGMENTS, default: worker } = await loadWorker(workerSrc);
