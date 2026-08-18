@@ -40,5 +40,6 @@ tests/site-parity.test.mjs
 tests/site-propagation.test.mjs
 tests/site-spec.test.mjs
 tests/store-crypto.test.mjs
+tests/telegram-auth.test.mjs
 tests/worktree-contract.test.mjs
 tests/wrangler-sit.test.mjs
