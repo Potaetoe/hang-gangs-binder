@@ -222,6 +222,26 @@ check("their nonces differ",
 check("their ciphertexts differ",
   hex(again.slice(15)) !== hex(rowRecord.slice(15)));
 
+/* The three checks above only prove that two seals DIFFER, and a
+   counter satisfies every one of them - which is exactly how a nonce
+   stops being random with no arm noticing. Where the value comes from
+   is not observable from out here, so the source is what says it, the
+   same way section 9 pins NOT_EXTRACTABLE's value rather than its
+   reach: the nonce is a fresh crypto.getRandomValues read taken inside
+   seal, and nothing else in the module assigns one.
+   MUTATION: replace the read with a module-level counter and the two
+   checks below red while all three above stay green. */
+const randomReads = (source.match(/getRandomValues\(/g) || []).length;
+const nonceAssignments = (source.match(/\bnonce\s*=[^=]/g) || []).length;
+check("the nonce is a fresh crypto.getRandomValues read, taken per seal " +
+  "(a source check)",
+  /const nonce = crypto\.getRandomValues\(new Uint8Array\(NONCE_BYTES\)\);/
+    .test(source));
+check("nothing else in the module produces a nonce, so a counter, a row id " +
+  "or a timestamp cannot arrive beside the random one - " + randomReads +
+  " getRandomValues call(s), " + nonceAssignments + " nonce assignment(s)",
+  randomReads === 1 && nonceAssignments === 1);
+
 /* 5. FAIL CLOSED, UNIFORMLY. Every way a record can be unreadable
    produces one opaque error carrying no field name, offset or reason.
    The set of messages collected here has to have exactly one member -
@@ -271,11 +291,15 @@ const refusals = [
 ];
 
 const messages = new Set();
+const stacks = new Set();
 for (const [label, work] of refusals) {
   const error = await threw(work);
   check(label + " is refused",
     error instanceof StoreFormatError && error instanceof Error);
-  if (error) messages.add(String(error.message));
+  if (error) {
+    messages.add(String(error.message));
+    stacks.add(String(error.stack));
+  }
 }
 check("every refusal above carries ONE message, with no field name, " +
   "offset or reason - saw " + JSON.stringify([...messages]),
@@ -283,6 +307,13 @@ check("every refusal above carries ONE message, with no field name, " +
 check("that message names nothing about the record",
   [...messages].every((m) =>
     !/version|nonce|tag|key|account|purpose|offset|byte|length/i.test(m)));
+/* The message is only half the refusal. A stack names the line that
+   threw and the path that reached it, so separate throw sites hand a
+   caller the distinction the message declines to make - an unknown key
+   id reads apart from a bad tag on the stack alone. */
+check("every refusal above carries ONE stack too, so the throw site tells " +
+  "a caller nothing the message would not - saw " + stacks.size,
+  stacks.size === 1);
 
 /* 6. THE AAD IS UNAMBIGUOUS. Length-prefixed fields, so a record
    sealed for account "ab"/record "c" cannot open as "a"/"bc" - the
@@ -416,6 +447,26 @@ check("NOT_EXTRACTABLE is false",
 check("the key ring's secrets are cleared once the subkeys exist",
   /entries\.length = 0;/.test(source));
 
+/* The source half of the uniform-stack property in section 5. The
+   behavioral arm can see that today's refusals share a stack; only the
+   source can say that the NEXT refusal added to this module leaves
+   through the same door instead of opening one of its own.
+   MUTATION: throw new StoreFormatError() at any guard in open() and
+   the construction count reds; delete the stack line in the class and
+   section 5's stack check reds with it. */
+const constructions = (source.match(/new StoreFormatError\(/g) || []).length;
+const refusalCalls = (source.match(/\brefuse\(\)/g) || []).length - 1;
+check("StoreFormatError is constructed in exactly one place - " +
+  constructions + " site(s), reached by " + refusalCalls + " call(s) to " +
+  "refuse()",
+  constructions === 1 && refusalCalls > 1);
+check("that one place is the refuse() helper",
+  /function refuse\(\) \{\s*throw new StoreFormatError\(\);\s*\}/
+    .test(source));
+check("StoreFormatError writes its own stack to a constant, so the line " +
+  "that refused is not a field name arriving by another route",
+  /this\.stack = this\.name \+ ": " \+ this\.message;/.test(source));
+
 /* Every algorithm the module actually names in a WebCrypto call,
    read off the call sites rather than off the prose - the docstring
    argues about the modes this format does NOT use, and a check that
@@ -428,10 +479,14 @@ check("the WebCrypto algorithms named in calls are AES-GCM, HKDF and " +
     ["AES-GCM", "HKDF", "SHA-256"].includes(name)));
 check("the key material is imported as HKDF input",
   /importKey\(\s*"raw",[\s\S]{0,60}?"HKDF"/.test(source));
+/* The dynamic forms allow whitespace before the parenthesis, so the
+   patterns do too: `import (` and `require (` are the same call as
+   `import(` and `require(`, and a check that missed the space would
+   read a supply chain as no supply chain. */
 check("nothing third-party is anywhere near the plaintext: the module " +
   "imports and requires nothing",
-  !/^import\s/m.test(source) && !/\brequire\(/.test(source) &&
-  !/\bimport\(/.test(source));
+  !/^import\s/m.test(source) && !/\brequire\s*\(/.test(source) &&
+  !/\bimport\s*\(/.test(source));
 
 /* 10. ACCOUNT_SECRET IS NEVER A CIPHER KEY. The rule is that it stays
    HMAC-only (DESIGN.md, "The identifier is the whole problem" keys the
@@ -459,6 +514,21 @@ check("the docstring says what a dump still shows",
   /no padding/i.test(prose));
 check("the docstring forbids regenerating a failing fixture",
   /never regenerate/i.test(prose));
+/* The two paragraphs a reader needs BEFORE acting: what a version bump
+   actually has to change, and what the clock still gives away. Both
+   are statements the code cannot make for itself, and both are wrong
+   to leave to memory - the first is a trap that reds the v1 fixture
+   and the second is an accepted limit somebody would otherwise try to
+   fake. */
+check("the docstring says a version bump reads the RECORD's version, not " +
+  "the module's, so label() and boundData() take it as an argument",
+  /read the\s+module-level VERSION/i.test(prose) &&
+  /passes the RECORD's\s+version into both/i.test(prose));
+check("the docstring states what timing still reveals and that it is " +
+  "accepted rather than faked",
+  /what the clock still tells/i.test(prose) &&
+  /not constant-time/i.test(prose) &&
+  /which version and which key ids/i.test(prose));
 
 /* 12. THE ENV DOOR. openStore(env) is the shape S6 wires; a missing or
    too-short STORE_SECRET is a configuration failure and says so
@@ -515,7 +585,55 @@ check("PURPOSE names exactly the two purposes and is frozen",
   JSON.stringify(PURPOSE) === JSON.stringify({ ROW: "row",
                                                DIRECTORY: "dir" }));
 
-const EXPECTED = 66;
+/* 14. THE FIELD CEILING IS THE AAD'S LENGTH-PREFIX GUARD, and it is
+   the only thing standing between a caller who chooses an id and a
+   real cross-account lift. boundData writes each field's byte length
+   as a big-endian uint16, so a field of 65537 bytes writes 00 01 - the
+   same two bytes a 1-byte field writes - and those prefixes are the
+   whole of what tells one (account, record) pair from another. Past
+   the wrap they stop telling, two different pairs produce identical
+   bound data, and a row sealed for one account opens under the other
+   with a tag that verifies. So the ceiling is driven at its boundary
+   and again at the wrap point.
+   MUTATION: take the MAX_FIELD_BYTES branch out of requireField() and
+   this block reds - the over-ceiling and wrap-point fields start
+   sealing. That is the whole finding: removing the ceiling is a
+   cross-account lift, not a loosened validation. */
+const ceiling = Number((source.match(/const MAX_FIELD_BYTES = (\d+);/) ||
+  [])[1]);
+const WRAP = 0x10000;
+check("the field ceiling is a named constant and it sits below the uint16 " +
+  "wrap point of " + WRAP + " - saw " + ceiling,
+  Number.isInteger(ceiling) && ceiling > 0 && ceiling < WRAP);
+
+const atCeiling = "c".repeat(ceiling);
+const overCeiling = "c".repeat(ceiling + 1);
+/* One byte past the wrap, so the prefix this field writes is a 1-byte
+   field's prefix. */
+const wrapping = "c".repeat(WRAP + 1);
+
+check("a record id of exactly the ceiling still seals and opens",
+  await valueOf(async () => store.openRow(
+    await store.sealRow("edge", { accountId: "acct-hmac-aaaa",
+      recordId: atCeiling }),
+    { accountId: "acct-hmac-aaaa", recordId: atCeiling })) === "edge");
+check("one byte over the ceiling is refused on the record id",
+  await threw(() => store.sealRow("x", { accountId: "acct-hmac-aaaa",
+    recordId: overCeiling })) instanceof StoreConfigError);
+check("one byte over the ceiling is refused on the account id",
+  await threw(() => store.sealRow("x", { accountId: overCeiling,
+    recordId: "row-1" })) instanceof StoreConfigError);
+check("an account id long enough to wrap the AAD's uint16 length prefix is " +
+  "refused - " + (WRAP + 1) + " bytes writes the same two prefix bytes as " +
+  "one byte, and the prefixes are all that separate account from record",
+  await threw(() => store.sealRow("x", { accountId: wrapping,
+    recordId: "row-1" })) instanceof StoreConfigError);
+check("a wrapping account id is refused on the way IN as well, so the lift " +
+  "is unreachable from the read door too",
+  await threw(() => store.openRow(rowRecord, { accountId: wrapping,
+    recordId: "row-1" })) instanceof StoreConfigError);
+
+const EXPECTED = 80;
 console.log(failures
   ? `\nstore-crypto FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

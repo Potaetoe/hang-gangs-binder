@@ -118,7 +118,7 @@
  * deliberately uniform.
  *
  * The version byte is bound into the additional data, so a record
- * cannot be relabelled as a different version. The key id is not: a
+ * cannot be relabeled as a different version. The key id is not: a
  * flipped key id selects a different key and the tag fails on its own,
  * and there is no confusion left for binding it to prevent.
  *
@@ -131,6 +131,19 @@
  * row unreadable. tests/store-crypto.test.mjs holds the v1 fixture and
  * a hash pin over it that makes the quiet edit loud.
  *
+ * WHAT "A DECODER FOR BOTH" COSTS, because raising the constant alone
+ * is the trap rather than the remedy: label() and boundData() read the
+ * module-level VERSION, so a bump re-derives every subkey and rewrites
+ * the bound data for OLD records too, and v1 stops opening the moment
+ * the new code deploys. A version bump therefore passes the RECORD's
+ * version into both of them instead of letting either read the
+ * module's - and the key map, keyed by (key id, purpose) today, takes
+ * version as a third dimension with it, since two live versions want
+ * different subkeys under one key id. Neither is parameterized here
+ * because a second version settles that shape and a guess does not;
+ * the committed fixture is what makes the trap loud, and it fails on
+ * a bare bump exactly as intended.
+ *
  * ------------------------------------------------------------------
  * FAIL CLOSED, AND SAY NOTHING
  *
@@ -140,6 +153,34 @@
  * finer is an oracle: a caller that can tell "unknown version" from
  * "bad tag" can walk the format, and a caller that can tell "wrong
  * account" from "bad tag" can test account ids against records.
+ *
+ * ONE THROW SITE, so the STACK is uniform as well as the message. A
+ * message that names nothing is only half a refusal: the runtime
+ * records the line that threw, so six throw sites hand a caller
+ * exactly the six-way distinction the message declines to make. Every
+ * refusal leaves through refuse() below, and StoreFormatError writes
+ * its own stack to a constant - the same field, closed by the same
+ * argument. StoreConfigError keeps its real stack on purpose: a
+ * configuration mistake is a bug somebody has to find, and nothing is
+ * probing for it.
+ *
+ * WHAT THE CLOCK STILL TELLS, AND WHY IT IS ACCEPTED. The refusal is
+ * uniform in type, in message and in stack. It is NOT constant-time,
+ * and this file makes no such claim. A record whose version byte is
+ * wrong, whose key id the ring does not hold, or which is too short to
+ * be a record at all is refused before any AES call and costs a few
+ * microseconds; a record that reaches the tag check costs several
+ * times that. A caller who can time the door therefore learns WHICH
+ * VERSION AND WHICH KEY IDS the ring accepts, one probe at a time.
+ * That is the whole of what the clock gives, and it is accepted rather
+ * than defended: the version byte and the key id are in the clear in
+ * every record already, so a caller holding one reads both without a
+ * stopwatch. What the clock does NOT give is a plaintext oracle -
+ * every record that reaches a key runs the same GCM verification, and
+ * the tag comparison inside it belongs to the platform. Padding the
+ * early refusals out to the slow path would be a constant-time claim
+ * this file cannot honestly make on a runtime it does not control, and
+ * a false claim of that kind is worse than a stated limit.
  *
  * A configuration mistake is the opposite and is loud - a missing or
  * too-short STORE_SECRET, an empty account id, a plaintext that is not
@@ -162,9 +203,22 @@ const KEY_ID_MAX = 0xffff;
    perfectly well-formed key from four characters. */
 const MIN_SECRET_CHARS = 24;
 
-/* An account id or a record id longer than this is a bug in the
-   caller, not a legitimate identifier - and unbounded fields make the
-   bound data unbounded. */
+/* THE UINT16 LENGTH PREFIX IS WHAT THIS CEILING DEFENDS, and caller
+   hygiene is the side effect rather than the point. boundData writes
+   each field's byte length as a big-endian uint16, so a field of 65537
+   bytes writes the same two prefix bytes as a field of 1 byte - and
+   those prefixes are the only thing separating an account of ab with a
+   record of c from an account of a with a record of bc. Wrap one and
+   that separation is gone: a caller able to put an over-long id on one
+   side of the pair can make two different pairs produce byte-identical
+   bound data, which is one account's record opening under another's
+   context with a valid tag. A ceiling two orders of magnitude below
+   the wrap point is what puts the wrap out of REACH rather than merely
+   out of the ordinary, and refusing is the only mechanism that does it
+   - truncating to the ceiling would collide the same way, one length
+   lower. Removing this constant is a cross-account lift, not a
+   loosened validation. tests/store-crypto.test.mjs drives the boundary
+   and the wrap point both. */
 const MAX_FIELD_BYTES = 512;
 
 /* The extractable flag, named once so every call site reads the same
@@ -197,7 +251,22 @@ class StoreFormatError extends Error {
   constructor() {
     super("the stored record could not be read");
     this.name = "StoreFormatError";
+    /* The stack is a field name arriving by another route: it carries
+       the file, the line and the call path of whichever check refused,
+       so a caller comparing two stacks reads "unknown key id" against
+       "bad tag" straight off them while the message says neither. A
+       constant is the same answer the message gives. */
+    this.stack = this.name + ": " + this.message;
   }
+}
+
+/*
+ * The one place a record is refused. Called rather than thrown at each
+ * check so that the refusal has a single origin - see ONE THROW SITE
+ * above for why the stack is part of what is being kept quiet.
+ */
+function refuse() {
+  throw new StoreFormatError();
 }
 
 /*
@@ -301,7 +370,7 @@ async function subkey(secret, keyId, purpose) {
 function asBytes(record) {
   if (record instanceof Uint8Array) return record;
   if (record instanceof ArrayBuffer) return new Uint8Array(record);
-  throw new StoreFormatError();
+  return refuse();
 }
 
 /*
@@ -395,10 +464,10 @@ async function openStoreWithKeys(keyring) {
     const accountId = requireField("accountId", holder.accountId);
     const recordId = requireField("recordId", holder.recordId);
     const bytes = asBytes(record);
-    if (bytes.length < HEADER_BYTES + TAG_BYTES) throw new StoreFormatError();
-    if (bytes[0] !== VERSION) throw new StoreFormatError();
+    if (bytes.length < HEADER_BYTES + TAG_BYTES) refuse();
+    if (bytes[0] !== VERSION) refuse();
     const key = keys.get(((bytes[1] << 8) | bytes[2]) + "/" + purpose);
-    if (!key) throw new StoreFormatError();
+    if (!key) refuse();
     let plaintext;
     try {
       plaintext = await crypto.subtle.decrypt(
@@ -411,12 +480,12 @@ async function openStoreWithKeys(keyring) {
         key,
         bytes.subarray(HEADER_BYTES));
     } catch (error) {
-      throw new StoreFormatError();
+      return refuse();
     }
     try {
       return FROM_UTF8.decode(plaintext);
     } catch (error) {
-      throw new StoreFormatError();
+      return refuse();
     }
   }
 
