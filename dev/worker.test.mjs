@@ -886,9 +886,17 @@ const hex = (buffer) => Array.from(new Uint8Array(buffer))
  */
 let mintedPayloads = 0;
 
+/* The epoch is read ONCE. Re-reading Date.now() per mint let the clock
+ * tick a second between two mints, which cancels the counter's
+ * decrement and hands two payloads the same auth_date - identical
+ * payloads, so the second one hits the replay guard with a 401 where
+ * the case under test expected its own refusal. It cost a real landing
+ * (PR #342's CI red, 2026-08-18) before it was pinned. */
+const MINT_EPOCH = Math.floor(Date.now() / 1000);
+
 async function signed(user = {}, secondsAgo = 0) {
   const payload = {
-    auth_date: Math.floor(Date.now() / 1000) - secondsAgo - mintedPayloads++,
+    auth_date: MINT_EPOCH - secondsAgo - mintedPayloads++,
     first_name: "Test",
     id: 4242,
     username: "somehandle",
