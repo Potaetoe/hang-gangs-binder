@@ -431,6 +431,123 @@ def worktree_kind(repo):
     return ("linked" if here != common else "primary"), common
 
 
+def primary_root(repo):
+    """The primary checkout's absolute root, or None if it cannot be told.
+
+    A linked worktree's `.claude/` is gitignored and therefore absent -
+    see plant_hook_registration() below for why that matters. Every hook
+    script this fleet runs lives only in the PRIMARY's checkout, so a
+    worktree that wants to run them needs the primary's own path, not a
+    copy. `worktree_kind()` already resolves the shared git-common-dir
+    for exactly this reason (park's own primary/linked distinction), and
+    that directory's parent is the checkout it belongs to - a shared
+    `.git` only ever lives at the primary's root.
+    """
+    kind, common = worktree_kind(repo)
+    if kind is None:
+        return None
+    if kind == "primary":
+        return os.path.abspath(repo)
+    return os.path.dirname(common)
+
+
+# The one string every hook command in the primary's settings.json uses
+# to name its own script - see plant_hook_registration() for why this,
+# and only this, substring is rewritten.
+HOOK_SCRIPT_MARKER = "$CLAUDE_PROJECT_DIR/.claude/hooks/"
+
+
+def plant_hook_registration(primary, existing=None):
+    """(settings dict to write, note), or (None, why there is nothing to
+    plant) - wiring the primary's hooks into a linked worktree (#347).
+
+    THE GAP THIS CLOSES
+
+    `.claude/` is gitignored by design (see .gitignore's own comment on
+    the line), so `git worktree add` never carries `.claude/settings.json`
+    or `.claude/hooks/*.py` into a new worktree - there is nothing there
+    for anything to read. A Claude Code session whose project directory
+    IS that worktree therefore registers no project hooks at all: the
+    guards this project depends on (push-to-main, cross-tree git, the
+    backgrounded-gate refusal, the false-premise dispatch check) do not
+    exist for it. This function is what `do_init` calls, on every linked
+    worktree, to repair that.
+
+    WHY THIS COPIES NOTHING
+
+    Not one byte of `.claude/hooks/*.py` is copied. A copy goes stale
+    the moment the primary's hooks change, and a stale copy is worse
+    than the gap it would close because it LOOKS armed. Instead, every
+    hook command that names `$CLAUDE_PROJECT_DIR/.claude/hooks/<file>`
+    (HOOK_SCRIPT_MARKER above) is rewritten to name the PRIMARY's own
+    absolute path to that same file, so the worktree always runs the
+    primary's CURRENT script. `agent-init` re-runs on every HEAD move
+    (the pack's own contract), so this registration is refreshed exactly
+    as often as everything else it establishes - it has no separate
+    staleness window of its own.
+
+    `$CLAUDE_PROJECT_DIR` is left untouched everywhere it does NOT
+    prefix `.claude/hooks/` - concretely, the SessionStart hook's `cd
+    "$CLAUDE_PROJECT_DIR" && ./run session-open` is written through
+    unchanged. `./run` and `tools/session_open.py` are tracked files,
+    present in every worktree already, and session-open's own identity
+    is keyed to the worktree that ran it (its module docstring: "this
+    worktree's identity" via agent_init.record_path()) - rewriting that
+    `cd` to the primary would make every worktree session report the
+    PRIMARY's identity to the prime lock, exactly backwards from what
+    session-open is for. Nor does this touch what a hook SCRIPT reads
+    from `os.environ["CLAUDE_PROJECT_DIR"]` at its own runtime
+    (bash_guard.py's cross-tree containment check, dispatch_premise.py's
+    git lookups) - that is the harness's real environment variable for
+    the session actually running, set independently of any string this
+    function writes, and both of those checks are already correct
+    against the session's own worktree. Only the FILE PATH used to find
+    and exec the script is what this function repairs.
+
+    WHY "permissions" IS NEVER PLANTED
+
+    The primary's settings.json also carries a `permissions.allow` list.
+    Copying it into every worktree would hand every session there the
+    same pre-approved command list without a prompt - a wider grant than
+    this ticket's scope, and no part of the guard mechanism needs it:
+    the PreToolUse hooks run and can deny regardless of what is or is
+    not on that list. So this reads ONLY the "hooks" key out of the
+    primary's settings.json and returns a dict holding ONLY that key
+    merged over `existing` (whatever the worktree's own settings.json
+    already carries by hand) - "permissions" and every other key stays
+    exactly what `existing` already said, untouched.
+
+    NEVER CALLED FOR THE PRIMARY ITSELF
+
+    `do_init` only calls this when `kind == "linked"`. The primary
+    checkout already carries its own real settings.json; this function
+    is never given the chance to touch it.
+    """
+    primary_settings = os.path.join(primary, ".claude", "settings.json")
+    data = read_json(primary_settings)
+    if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict):
+        return None, (
+            "no %s to plant hooks from - this checkout does not carry "
+            "the fleet's machine-held hook mechanism, so there is "
+            "nothing missing here either." % primary_settings)
+
+    replacement = primary.replace(os.sep, "/").rstrip("/") + "/.claude/hooks/"
+
+    def rewrite(value):
+        if isinstance(value, str):
+            return value.replace(HOOK_SCRIPT_MARKER, replacement)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, dict):
+            return {key: rewrite(item) for key, item in value.items()}
+        return value
+
+    merged = dict(existing or {})
+    merged["hooks"] = rewrite(data["hooks"])
+    return merged, ("hooks registered from %s, pointed at the primary's "
+                    "own scripts" % primary_settings)
+
+
 def head_state(repo):
     """(branch or None, full head sha or None).
 
@@ -1204,6 +1321,30 @@ def do_init(args):
                 % missing,
                 "check the install for a partial or interrupted state.")
 
+    # 2c. Hooks: point this worktree's own registration at the PRIMARY's
+    # guard scripts (#347) - `.claude/` is gitignored, so a linked
+    # worktree carries no `.claude/hooks/*.py` or `.claude/settings.json`
+    # of its own, and nothing here has ever registered the project hooks
+    # for a session whose project directory is this worktree. Never runs
+    # for the primary itself (kind == "primary" skips it entirely, so
+    # the primary's own settings.json is never touched by this verb).
+    # See plant_hook_registration()'s own docstring for the whole
+    # argument, including why this copies nothing, why "permissions" is
+    # never planted, and why $CLAUDE_PROJECT_DIR survives in SessionStart.
+    hook_note = None
+    if kind == "linked":
+        primary = primary_root(repo)
+        if primary is None:
+            hook_note = ("could not determine the primary checkout's "
+                         "root - skipping hook registration")
+        else:
+            worktree_settings = os.path.join(repo, ".claude", "settings.json")
+            planted, hook_note = plant_hook_registration(
+                primary, read_json(worktree_settings))
+            if planted is not None:
+                write_json(worktree_settings, planted)
+        print("hooks        %s" % hook_note)
+
     # 3. Gate readiness: one real stage, named as one.
     #
     # The order of these two refusals is the whole point of the stage. A
@@ -1254,11 +1395,12 @@ def do_init(args):
     })
     record.pop("park", None)
     write_json(record_path(repo, state), record)
-    print_contract(repo, kind, branch, block, note, scratch, state)
+    print_contract(repo, kind, branch, block, note, scratch, state, hook_note)
     return 0
 
 
-def print_contract(repo, kind, branch, block, note, scratch, state):
+def print_contract(repo, kind, branch, block, note, scratch, state,
+                   hook_note=None):
     print("\n--- the environment contract ---\n")
     if kind == "primary":
         print("1. checkout   This is the PRIMARY checkout, shared by the "
@@ -1289,13 +1431,29 @@ def print_contract(repo, kind, branch, block, note, scratch, state):
           "              Outside the repository, which is the rule: the "
           "lint stage\n"
           "              reads what is in the tree." % scratch)
-    print("4. teardown   `./run agent-park` before you terminate. It "
-          "detaches the\n"
-          "              branch, releases the block, removes the scratch "
-          "directory\n"
-          "              and writes the record a reaper can prove this "
-          "worktree\n"
-          "              dead from. Record: %s" % record_path(repo, state))
+    if hook_note is not None:
+        print("4. hooks      %s\n"
+              "              (#347: a linked worktree's own .claude/ is "
+              "gitignored - this is\n"
+              "              how the project's guard hooks reach a "
+              "session rooted here.)" % hook_note)
+        print("5. teardown   `./run agent-park` before you terminate. It "
+              "detaches the\n"
+              "              branch, releases the block, removes the "
+              "scratch directory\n"
+              "              and writes the record a reaper can prove "
+              "this worktree\n"
+              "              dead from. Record: %s"
+              % record_path(repo, state))
+    else:
+        print("4. teardown   `./run agent-park` before you terminate. It "
+              "detaches the\n"
+              "              branch, releases the block, removes the "
+              "scratch directory\n"
+              "              and writes the record a reaper can prove "
+              "this worktree\n"
+              "              dead from. Record: %s"
+              % record_path(repo, state))
     print("\nre-run this verb any time; it is idempotent.")
 
 

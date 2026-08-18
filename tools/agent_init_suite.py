@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 119
+EXPECTED = 131
 
 
 def check(label, condition):
@@ -157,6 +157,7 @@ def load(path):
 
 
 def save(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(data, handle)
 
@@ -223,7 +224,13 @@ def build_repo(root):
     git(root, "init", "-q")
     git(root, "config", "core.autocrlf", "true")
     write(os.path.join(root, ".gitattributes"), "* text=auto\n")
-    write(os.path.join(root, ".gitignore"), "node_modules/\n")
+    # .claude/ is ignored here for the same reason the real project
+    # ignores it (see the real .gitignore's own comment): section G
+    # below plants an untracked .claude/settings.json fixture in the
+    # "primary" repo this builds, and an untracked .claude/ that were
+    # NOT ignored would read as dirty work to every later arm that
+    # asserts a clean tree.
+    write(os.path.join(root, ".gitignore"), "node_modules/\n.claude/\n")
     write(os.path.join(root, "pinned.txt"), "one\ntwo\nthree\n")
     write(os.path.join(root, "windows.cmd"), "@echo off\n")
     write(os.path.join(root, "loose.dat"), "unpinned\ncontent\n")
@@ -622,7 +629,121 @@ try:
     git(repo, "worktree", "add", "-q", "-b", "slice-branch", linked)
     check("the linked worktree is linked, and git says so",
           agent_init.worktree_kind(linked)[0] == "linked")
+
+    # ------------------------------------------------------------------
+    # G0. Hook registration into a linked worktree (#347). `.claude/` is
+    # gitignored (build_repo's own .gitignore, above, matches the real
+    # project's), so `repo`'s fixture settings.json below is genuinely
+    # untracked - exactly the state the real primary checkout is in -
+    # and a fresh `git worktree add` genuinely does not carry it into
+    # `linked`, which is the gap this section proves closed.
+    # ------------------------------------------------------------------
+    fixture_settings = {
+        "permissions": {"allow": ["Bash(echo *)"]},
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash",
+                 "hooks": [{"type": "command",
+                           "command": 'py -3 "$CLAUDE_PROJECT_DIR'
+                                      '/.claude/hooks/probe.py"'}]}
+            ],
+            "SessionStart": [
+                {"hooks": [{"type": "command",
+                            "command": 'cd "$CLAUDE_PROJECT_DIR" && '
+                                       './run session-open'}]}
+            ],
+        },
+    }
+    primary_settings_path = os.path.join(repo, ".claude", "settings.json")
+    primary_bytes_before = None
+    save(primary_settings_path, fixture_settings)
+    primary_bytes_before = read_bytes(primary_settings_path)
+
+    linked_settings_path = os.path.join(linked, ".claude", "settings.json")
+    check("before any fix, a fresh linked worktree carries no settings.json"
+          " of its own - the gap #347 names",
+          not os.path.exists(linked_settings_path))
+
+    check("primary_root() resolves a linked worktree back to the primary",
+          os.path.realpath(agent_init.primary_root(linked))
+          == os.path.realpath(repo))
+    check("and answers the primary checkout with itself",
+          os.path.realpath(agent_init.primary_root(repo))
+          == os.path.realpath(repo))
+
     run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
+    check("agent-init plants a settings.json into the linked worktree",
+          os.path.isfile(linked_settings_path))
+    planted = load(linked_settings_path)
+    pretool_cmd = (planted["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
+    session_cmd = (planted["hooks"]["SessionStart"][0]["hooks"][0]["command"])
+    primary_fwd = repo.replace(os.sep, "/")
+    check("the hook script's own path is rewritten to the primary's "
+          "absolute location, not left as $CLAUDE_PROJECT_DIR",
+          "$CLAUDE_PROJECT_DIR" not in pretool_cmd
+          and primary_fwd + "/.claude/hooks/probe.py" in pretool_cmd)
+    check("SessionStart's $CLAUDE_PROJECT_DIR survives untouched - "
+          "./run session-open is a tracked path already in the worktree, "
+          "and session-open's own identity is keyed to the worktree that "
+          "ran it",
+          session_cmd == fixture_settings["hooks"]["SessionStart"][0]
+          ["hooks"][0]["command"])
+    check("permissions is never planted into the worktree - only hooks",
+          "permissions" not in planted)
+    check("the primary's own settings.json is never touched by planting "
+          "into a linked worktree",
+          read_bytes(primary_settings_path) == primary_bytes_before)
+
+    # Re-running is idempotent and refreshes rather than duplicating.
+    run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
+    replanted = load(linked_settings_path)
+    check("re-running agent-init reproduces the same registration exactly",
+          replanted == planted)
+
+    # A hand-added key in the worktree's OWN settings.json survives a
+    # re-init: this function merges the "hooks" key over what is already
+    # there, never overwrites the whole file.
+    with_local = dict(replanted)
+    with_local["myLocalOverride"] = "kept by hand"
+    save(linked_settings_path, with_local)
+    run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
+    after_merge = load(linked_settings_path)
+    check("a hand-added key in the worktree's own settings.json survives "
+          "a re-init - only \"hooks\" is overwritten, nothing else",
+          after_merge.get("myLocalOverride") == "kept by hand"
+          and after_merge["hooks"] == planted["hooks"])
+
+    # A checkout with no .claude/settings.json at all (a fork without the
+    # fleet's machine-held hook mechanism) is not a failure - init still
+    # succeeds, and says plainly that there was nothing to plant.
+    #
+    # A dedicated state directory, not the shared `state` every other
+    # arm in this section leases against: take_lease()'s reclaim check
+    # asks registered_worktrees() of the repo DOING the asking, which
+    # for `bare_linked` is `bare_primary`'s own (unrelated) git
+    # repository - `linked` is never registered there, so under the
+    # shared pool this scenario reads `linked`'s lease as abandoned and
+    # takes it, failing two unrelated checks below it. That is a real
+    # property of take_lease()'s cross-repository reclaim check, not
+    # something this arm exists to prove one way or the other - giving
+    # it its own pool is what keeps this scenario from asserting
+    # anything about that question at all.
+    bare_state = os.path.join(base, "bare-state")
+    bare_primary = build_repo(os.path.join(base, "bare-primary"))
+    bare_linked = os.path.join(base, "bare-linked")
+    git(bare_primary, "worktree", "add", "-q", "-b", "bare-branch",
+        bare_linked)
+    code, out = run_verb(["init", "--repo", bare_linked, "--state",
+                          bare_state, "--no-install"])
+    check("a linked worktree of a primary with no settings.json still "
+          "initializes successfully",
+          code == 0)
+    check("and says there was nothing to plant, rather than failing "
+          "silently or crashing",
+          "nothing missing here either" in out
+          and not os.path.exists(
+              os.path.join(bare_linked, ".claude", "settings.json")))
+
     _, tip = agent_init.head_state(linked)
 
     # --verify is the dry-run flag and park is the destructive verb, so
