@@ -84,22 +84,27 @@ const FIXTURE = {
     accountId: "acct-hmac-2f6c9a1b4e8d7350",
     recordId: "row-000000000000001",
     plaintext: "{\"weight\":180,\"unit\":\"lb\",\"note\":\"first sitting\"}",
-    record: "",
+    record: "010001e21f83e067baf018b2d62af129bdbda45afbf69ed0a46b8a0423920" +
+      "16cc4320f9a17569086f772235f64a4c026f3dfb0bdf8bd8d8e8438ff2b258b8" +
+      "92a71496493338ef3a5ae074b8578d49d7a",
   },
   directory: {
     accountId: "acct-hmac-2f6c9a1b4e8d7350",
     recordId: "dir-000000000000001",
     plaintext: "{\"handle\":\"@example\",\"display\":\"Example\"," +
       "\"role\":\"member\"}",
-    record: "",
+    record: "010001a17b2df0c14d92105cf5109fd728c3d18dec8f2a2afc9f6d4a143e" +
+      "e4aebb0631a276aafacec21f946158a271ee5765364d97d16aa56dd2558a4768" +
+      "94039aee142001c14e5657a49ffffa30cc4dd1bee44220f9d770",
   },
 };
 
 /* SHA-256 over the frozen record bytes, one per fixture. The hash is
    the half a regeneration forgets. */
 const FIXTURE_SHA256 = {
-  row: "",
-  directory: "",
+  row: "4fce6cff4c305b9be15e48714a81279ee81887938fa2a0261738546d883e1748",
+  directory:
+    "d63f0d92483fc9be2795c5a50a35658a00645a417a8eaa1927dfb22e1b4f232c",
 };
 
 /* ------------------------------------------------------------------ */
@@ -136,14 +141,17 @@ for (const name of ["row", "directory"]) {
   const bytes = unhex(fixture.record);
   const context = { accountId: fixture.accountId,
                     recordId: fixture.recordId };
-  const opened = await threw(async () => name === "row"
-    ? store.openRow(bytes, context)
-    : store.openDirectory(bytes, context));
-  const plain = opened instanceof Error ? null : opened;
+  let plain = null;
+  let refusal = null;
+  try {
+    plain = name === "row"
+      ? await store.openRow(bytes, context)
+      : await store.openDirectory(bytes, context);
+  } catch (error) { refusal = error; }
   check("the committed v1 " + name + " fixture decodes to its pinned " +
-    "plaintext" + (opened instanceof Error
-      ? " - it threw " + opened.name + ". DO NOT REGENERATE IT: add a " +
-        "version byte and a decoder for both (DESIGN.md, \"Encryption\")"
+    "plaintext" + (refusal
+      ? " - it threw " + refusal.name + ". DO NOT REGENERATE IT: add a " +
+        "version byte and a decoder for both, per DESIGN.md's own rule"
       : ""),
     plain === fixture.plaintext);
   check("the committed v1 " + name + " fixture's bytes match their " +
@@ -331,9 +339,23 @@ check("the module never calls exportKey",
 check("every importKey/deriveKey passes NOT_EXTRACTABLE - " + derivations +
   " call(s), " + notExtractable + " use(s)",
   derivations > 0 && derivations === notExtractable);
-check("the module names no cipher primitive other than AES-GCM",
-  !/AES-CBC|AES-CTR|RSA-OAEP|createCipher/i.test(source));
-check("the module imports nothing", !/^\s*import\s/m.test(source));
+
+/* Every algorithm the module actually names in a WebCrypto call,
+   read off the call sites rather than off the prose - the docstring
+   argues about the modes this format does NOT use, and a check that
+   searched the whole file for their names would forbid the argument. */
+const algorithms = new Set([...source.matchAll(/(?:name|hash):\s*"([^"]+)"/g)]
+  .map((found) => found[1]));
+check("the WebCrypto algorithms named in calls are AES-GCM, HKDF and " +
+  "SHA-256 and nothing else - saw " + JSON.stringify([...algorithms].sort()),
+  algorithms.has("AES-GCM") && [...algorithms].every((name) =>
+    ["AES-GCM", "HKDF", "SHA-256"].includes(name)));
+check("the key material is imported as HKDF input",
+  /importKey\(\s*"raw",[\s\S]{0,60}?"HKDF"/.test(source));
+check("nothing third-party is anywhere near the plaintext: the module " +
+  "imports and requires nothing",
+  !/^import\s/m.test(source) && !/\brequire\(/.test(source) &&
+  !/\bimport\(/.test(source));
 
 /* 10. ACCOUNT_SECRET IS NEVER A CIPHER KEY. The rule is that it stays
    HMAC-only (DESIGN.md, "The identifier is the whole problem" keys the
@@ -348,13 +370,19 @@ check("the module reserves STORE_SECRET as its own secret",
    of what a dump still shows is part of the format, not commentary on
    it - DESIGN.md, "Threat model, honestly stated" is where the reader
    goes next. */
+/* Comment continuations folded away first, the way
+   tools/check_comments.py reads a wrapped sentence: a line break plus
+   " * " sits in the middle of every one of these sentences, and a
+   check that missed them would be a check on where the author happened
+   to wrap. */
+const prose = source.replace(/\s*\n\s*\*+\s?/g, " ");
 check("the docstring says the directory is inside the ciphertext",
-  /directory included/i.test(source) && /inside the ciphertext/i.test(source));
+  /directory included/i.test(prose) && /inside the ciphertext/i.test(prose));
 check("the docstring says what a dump still shows",
-  /row counts?/i.test(source) && /timestamps?/i.test(source) &&
-  /no padding/i.test(source));
+  /row counts?/i.test(prose) && /timestamps?/i.test(prose) &&
+  /no padding/i.test(prose));
 check("the docstring forbids regenerating a failing fixture",
-  /never regenerate/i.test(source));
+  /never regenerate/i.test(prose));
 
 /* 12. THE ENV DOOR. openStore(env) is the shape S6 wires; a missing or
    too-short STORE_SECRET is a configuration failure and says so
