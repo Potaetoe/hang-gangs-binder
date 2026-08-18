@@ -28,6 +28,7 @@
 tests/bake-hygiene.test.mjs
 tests/ci-wiring.test.mjs
 tests/claim-vs-diff.test.mjs
+tests/fleet-status.test.mjs
 tests/mockup-tokens.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
