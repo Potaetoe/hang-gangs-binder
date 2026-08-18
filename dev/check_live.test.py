@@ -65,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 120
+EXPECTED = 121
 
 
 def check(label, condition):
@@ -889,6 +889,31 @@ check("the reclassified Telegram-widget row still names an off-machine "
           and e["cause"] == "off-machine"
           and e["status"] == "first-contact"
           for e in check_live.LEDGER))
+
+# 0.9-M1-S2 (#326), the same shape as 0.9-M1-S3's rider above: the
+# reclassification is a STATUS change out of "first-contact", not a
+# promotion to "performed" - the owner's one sign-in on sit is not
+# evidence this file can cite (no date, head or account of what it
+# drove is written down anywhere here), so nothing may read these rows
+# as discharged on that alone. Pinned by id so a future edit that
+# quietly slides one back to "guarded-branch"/"first-contact" now that
+# sit is real, or promotes one to "performed" on nothing, reds here
+# first.
+RECLASSIFIED_NEVER = {
+    "telegram sign-in past the bot-token guard",
+    "the group check answering member, left or unknown",
+    "one payload, one session",
+    "a leaver's live sessions revoked",
+    "membership rows granting authority rather than listing",
+}
+
+check("the five bot-token-guarded rows are 'never', not 'first-contact' "
+      "and not 'performed'",
+      {e["id"] for e in check_live.LEDGER if e["id"] in RECLASSIFIED_NEVER}
+      == RECLASSIFIED_NEVER
+      and all(e["status"] == "never" and "cause" not in e
+              for e in check_live.LEDGER
+              if e["id"] in RECLASSIFIED_NEVER))
 
 check("the destructive route is on the ledger and marked hands-off",
       any(e["id"] == "DELETE /snapshot"
