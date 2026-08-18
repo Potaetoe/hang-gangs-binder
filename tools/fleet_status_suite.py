@@ -50,7 +50,6 @@ invocation could never take.
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -691,7 +690,7 @@ try:
           and "section(s) could not be fully derived" in output)
     check("the OTHER three sections still rendered - one unreachable "
          "artifact does not blank the whole view",
-          "0.9-m0-s99" in output and "wt-live-ok" in output
+          ("0.9-m0-s99" in output and "wt-live-ok" in output)
           or os.path.abspath(live_ok) in output)
 
     del os.environ["FLEET_STATUS_STUB_SCENARIO"]

@@ -45,6 +45,7 @@ if not defined PY (
 )
 
 if "%~1"=="session-open" goto :session_open
+if "%~1"=="fleet-status" goto :fleet_status
 if "%~1"=="agent-init" goto :agent_init
 if "%~1"=="agent-park" goto :agent_park
 if "%~1"=="check" goto :check
@@ -68,6 +69,16 @@ rem run.cmd itself is checked out as, so none of the self-rewrite
 rem hazard that verb's copy-and-call dance exists to survive applies
 rem here.
 %PY% tools\session_open.py
+exit /b %ERRORLEVEL%
+
+:fleet_status
+rem Mirrors ./run fleet-status - see the reasoning there and in
+rem tools\fleet_status.py's own module docstring: the derived
+rem orchestration view (0.9-M0-S20, #317), Prime's session-open and
+rem pre-decision habit. Plain label, same reasoning as :session_open
+rem above - this verb never touches a file run.cmd itself is checked
+rem out as.
+%PY% tools\fleet_status.py
 exit /b %ERRORLEVEL%
 
 :agent_init
@@ -242,7 +253,8 @@ exit /b %ERRORLEVEL%
 
 :usage
 echo usage: .\run ^<command^>
-echo   session-open ^| agent-init ^| agent-park ^| bootstrap ^| build ^| check
-echo   gate ^| docs ^| live ^| serve ^| serve-root ^| keygen ^| demo ^| bake
+echo   session-open ^| fleet-status ^| agent-init ^| agent-park ^| bootstrap
+echo   build ^| check ^| gate ^| docs ^| live ^| serve ^| serve-root ^| keygen
+echo   demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2

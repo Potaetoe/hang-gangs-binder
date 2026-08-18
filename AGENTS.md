@@ -223,6 +223,22 @@ guards, never as the pattern for a new one.
   printed rather than folded in, since it can fail for a reason that
   has nothing to do with any lock (`tools/session_open.py`'s own module
   docstring carries the full argument; 0.9-M0-S19, #311, MAJOR3).
+- **`./run fleet-status` is Prime's session-open and pre-decision
+  habit** (0.9-M0-S20, #317; the fleet-management review's codified
+  answer to "Prime made the owner the monitor", 2026-08-15): one table
+  — branches, tickets in the active milestone, every fleet worktree
+  record's state against what git and the port leases say now, and
+  `tools/reaper.py`'s own report folded in — every row naming the
+  artifact it was derived from, contacting nothing it cannot read
+  locally plus `gh`. It extends session-open rather than duplicating
+  it: session-open answers "is a lock held and what would the reaper
+  clean up", this answers "what is the whole fleet doing right now",
+  and both are read-only. Consult it before every spawn, continuation
+  or landing decision — never read agent liveness from a task
+  notification or process state, which is exactly the failure this
+  view replaced (`tools/fleet_status.py`'s own module docstring carries
+  the full reasoning). A fork's orchestrator gets the same view for
+  free: nothing here is specific to this machine's history.
 - **`./run agent-init` is the first command in a fresh worktree** (or on
   the primary checkout), before either gate: it renormalizes line
   endings, installs dependencies, leases a scratch space and proves one
