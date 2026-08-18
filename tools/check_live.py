@@ -113,10 +113,18 @@ SURFACES = ("route", "page", "flow")
 # unrenamed on purpose (0.9-M1-S1, #325: that block is now [env.sit] in
 # the file, but a past run drove what was actually deployed the day it
 # ran, and renaming the label would misstate which Worker it was).
-# Nothing here has yet performed a run against sit itself; when one
-# does, it is free to introduce its own arm name rather than overload
-# this one.
-ARMS = ("development", "production")
+#
+# "sit" is its own arm (0.9-M1-S2, #326), never an overload of
+# "development": [env.sit] carries a real TELEGRAM_BOT_TOKEN and a real
+# TELEGRAM_GROUP_CHAT_ID that no run ever recorded against "development"
+# had, so evidence earned on one is not evidence about the other, and a
+# shared label would blur exactly the grouping the module docstring's
+# evidence-is-about-one-deployment paragraph exists to keep. Declared
+# here with zero runs citing it: the owner has signed in on sit once,
+# and nothing this file can read says what that sign-in established, so
+# RUNS stays silent about it rather than guessing, and report() names
+# the arm as unproven rather than omitting it.
+ARMS = ("development", "sit", "production")
 
 REQUIRED = ("id", "surface", "claim", "covers", "status")
 OPTIONAL = ("performed", "cause", "guard")
@@ -1086,48 +1094,55 @@ LEDGER = [
                 "something a run can settle"),
     },
 
-    # ---- first contact: permanently unreachable before production.
-    # Not debt. A row here is a risk that survives a perfect rehearsal,
-    # and every one of them is the identity half of the design.
+    # ---- flow: reachable on sit now, not yet driven.
     #
-    # No row here moves on a rehearsal, by construction - a sitting that
-    # discharged one would be a sitting that had falsified the reason
-    # the row is here, and the pinned guards are what would say so. The
-    # membership row is the one to read beside server/wrangler.toml:
-    # the two are meant to own the same fact in the same words, so a
-    # future sweep finds one fact rather than a disagreement.
+    # RECLASSIFIED 0.9-M1-S2 (#326). server/wrangler.toml's [env.sit]
+    # names a real TELEGRAM_BOT_TOKEN and TELEGRAM_GROUP_CHAT_ID
+    # (0.9-M1-S1, #325, the two-bot split, #228 Worker-topology
+    # addendum) - the opposite of what these five rows' "guarded-
+    # branch" cause stood on: that no non-production arm ever carries
+    # either secret, so the guard text below always closes. cause_
+    # problems() only checks that a pinned guard's text still exists in
+    # server/worker.js, never whether an arm can still be forced
+    # through it - the same corollary the review bar names for a check
+    # computed from the file it guards - so nothing here caught the
+    # premise breaking; it is a judgment call, argued and recorded here
+    # instead. BotFather's /setdomain for sit is also run (#282, closed
+    # 2026-08-18), so the last off-machine precondition these flows
+    # needed is met too. "guarded-branch" is gone from all five: sit
+    # can take the right side of every guard listed below now, so
+    # "first-contact" - permanently unreachable before production - is
+    # the wrong column.
     #
-    # THAT AGREEMENT IS CURRENTLY BROKEN, ON PURPOSE (0.9-M1-S1, #325).
-    # [env.sit] now carries a real TELEGRAM_BOT_TOKEN and
-    # a real TELEGRAM_GROUP_CHAT_ID (the two-bot split, #228 Worker-
-    # topology addendum) - the opposite of what the two rows below still
-    # assume. Reclassifying them is route/flow work #325's own boundary
-    # put out of its scope ("this is the environment, not the routes");
-    # its completion names this as the open finding for whichever slice
-    # next deploys sit or rewrites the routes these rows cover. Until
-    # then the rows stand as written and are read as describing the
-    # pre-0.9 Worker they were pinned against, not sit.
+    # Still not "performed." The owner has signed in on sit once, but
+    # no date, head or account of what that sign-in actually drove is
+    # written down anywhere this file can cite, and status_problems()
+    # below requires exactly that triple for a performed claim, on
+    # purpose - a row does not get marked discharged on a fact nobody
+    # recorded. "never" is the honest middle: reachable, owed, counted
+    # in the cadence line rather than sitting outside it as a permanent
+    # risk. Discharging one for real means editing it here with the
+    # date, the head and what actually ran, the same act that
+    # discharges every other "never" row in this ledger.
     {
         "id": "telegram sign-in past the bot-token guard",
         "surface": "flow",
         "claim": "signature verification, the freshness window, the "
-                 "no-username refusal and minting an admin all sit "
-                 "behind a guard the development arm never passes",
+                 "no-username refusal and minting an admin all run for "
+                 "real the moment a Telegram account signs in on sit, "
+                 "which now carries a bot token able to verify one",
         "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "guarded-branch",
-        "guard": "if (!botToken) return null;",
+        "status": "never",
     },
     {
         "id": "the group check answering member, left or unknown",
         "surface": "flow",
-        "claim": "the development arm exercises the unconfigured "
-                 "branch, which now fails closed and which production, "
-                 "carrying a chat id, will not use",
+        "claim": "sit carries a real chat id now, so the group check "
+                 "can answer member, left or unknown for a real "
+                 "Telegram account rather than always falling to the "
+                 "unconfigured branch",
         "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "guarded-branch",
-        "guard": 'if (!env.TELEGRAM_GROUP_CHAT_ID) return "unknown";',
+        "status": "never",
     },
     {
         "id": "one payload, one session",
@@ -1136,39 +1151,52 @@ LEDGER = [
                  "captured one cannot mint a session beside the "
                  "member's own inside the freshness window",
         "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "guarded-branch",
-        # Nothing local ever reaches the claim: it runs after a payload
-        # HMAC-signed under a real bot token has verified, which is the
-        # guard the row above this block already describes. The suite
-        # drives it against a stub, and a stub is not a D1 primary key -
-        # what has never been observed is SQLite refusing the second
-        # INSERT. The first real sign-in on sit discharges it, by
-        # posting one captured payload twice.
-        "guard": "if (claimed !== true) {",
+        # Still nothing local reaches this: it runs after a payload
+        # HMAC-signed under a real bot token has verified, which the
+        # row above this one covers. The suite drives it against a
+        # stub, and a stub is not a D1 primary key - what stays
+        # unobserved is SQLite refusing the second INSERT. A real
+        # sign-in on sit discharges it by posting one captured payload
+        # twice, the same operator act the row above needs.
+        "status": "never",
     },
     {
         "id": "a leaver's live sessions revoked",
         "surface": "flow",
-        "claim": "revocation fires from one place, on a standing the "
-                 "development arm cannot produce",
+        "claim": "revocation fires from one place, on a standing only a "
+                 "real group check can produce - reachable now that "
+                 "sit's chat id is real, and not yet driven",
         "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "guarded-branch",
-        "guard": 'if (standing === "left") {',
+        "status": "never",
     },
     {
         "id": "membership rows granting authority rather than listing",
         "surface": "flow",
         "claim": "every consumption site of that table sits inside the "
-                 "Telegram sign-in, so on the development arm a row is "
-                 "writable, readable and inert",
+                 "Telegram sign-in, which sit can now complete for "
+                 "real, so a membership row can carry actual authority "
+                 "instead of being inert",
         "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "guarded-branch",
-        "guard": "const isAdmin = (await adminAccountIds(env))"
-                 ".has(accountId);",
+        "status": "never",
     },
+
+    # ---- first contact: permanently unreachable before production.
+    # Not debt. A row here is a risk that survives a perfect rehearsal,
+    # and every one of them is the identity half of the design.
+    #
+    # No row here moves on a rehearsal, by construction - a sitting that
+    # discharged one would be a sitting that had falsified the reason
+    # the row is here, and the pinned guards are what would say so.
+    #
+    # The five rows on the no-real-bot premise are reclassified in the
+    # flow section above (0.9-M1-S2, #326); see that section for the
+    # reasoning. The two rows immediately below rest on a DIFFERENT
+    # premise sit does not break: it deliberately carries neither
+    # DEV_LOGIN_SECRET (0.9-M1-S1, #325's own judgment call) nor
+    # ADMIN_TELEGRAM_IDS / ALWAYS_ALLOW_TELEGRAM_IDS (DESIGN.md's
+    # no-admin-list design; both scheduled for retirement at
+    # 0.9-M2/M3 per 0.9-M1-S5, #331, which found neither reachable on
+    # sit either). Nothing here reclassifies those two.
     {
         "id": "the development sign-in's loopback condition",
         "surface": "flow",
