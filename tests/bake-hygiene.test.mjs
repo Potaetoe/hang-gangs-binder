@@ -109,6 +109,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -459,13 +460,25 @@ try {
 
   await rm(goodOut, { recursive: true, force: true });
 } finally {
-  // Best-effort, but reported rather than swallowed: a worktree this
-  // suite forgot to remove is a leak the next run (or the reaper) has to
-  // notice on its own, so whether the removal actually happened is part
-  // of this suite's own verdict, not a side note.
-  const removed = await run("git",
-    ["worktree", "remove", worktreeRoot, "--force"], { cwd: ROOT })
-    .then(() => true, () => false);
+  // Reported rather than swallowed: a worktree this suite forgot to
+  // remove is a leak the next run (or the reaper) has to notice on its
+  // own, so whether the removal actually happened is part of this
+  // suite's own verdict, not a side note. Retried a few times rather
+  // than judged on one attempt: the F2 probe above writes and restores
+  // dev/demo-bake.mjs inside this same private worktree moments before
+  // this runs, and on Windows a file that was just written can still be
+  // held by something else for a beat (an indexer, a virus scanner) -
+  // long enough for `git worktree remove` to lose that specific race
+  // even though nothing this suite did was actually wrong. That is a
+  // timing accommodation for a housekeeping step, not a retry over the
+  // property under test - every check above still runs exactly once.
+  let removed = false;
+  for (let attempt = 0; attempt < 5 && !removed; attempt += 1) {
+    if (attempt > 0) await delay(200);
+    removed = await run("git",
+      ["worktree", "remove", worktreeRoot, "--force"], { cwd: ROOT })
+      .then(() => true, () => false);
+  }
   check("the private worktree was removed when this run finished",
     removed);
 }
