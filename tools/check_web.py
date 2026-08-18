@@ -1283,13 +1283,26 @@ CSP_DEVIATIONS = {
     # The sign-in page, and the only page permitted third-party script.
     # Telegram's legacy widget builds its data-onauth handler with eval,
     # so 'unsafe-eval' is required alongside the script and frame
-    # origins. Survivable only because it is confined: no form, no
-    # plaintext, no key, and check 11 keeps crypto.js off it.
+    # origins. Redirect mode needs no eval and was rejected: it returns
+    # the signed payload in a URL query string, into history, Referer
+    # headers and access logs - DESIGN.md, "The sign-in page and the
+    # CSP". The exception is survivable only because it is CONFINED to
+    # this page: no form and no plaintext in reach, which is the
+    # positional rule that document states.
     #
-    # Provisional. BotFather binds the widget to a domain, so localhost
-    # cannot prove the real render or callback - the first sign-in on
-    # potaetoe.github.io is the observation, and if the policy differs
-    # this table changes with it. Pinned so that is a decision.
+    # Three exact tokens and no fourth. Widening this entry is the
+    # failure it exists to make impossible - if the exception ever has
+    # to grow, DESIGN.md's recorded answer is the bot deep-link flow
+    # rather than a wider policy.
+    #
+    # Provisional still, and against sit rather than against a retired
+    # host: BotFather binds the widget to one domain, so no local
+    # preview can prove the real render or the real callback. The first
+    # sign-in against sit's own origin and sit's own bot is the
+    # observation (OPERATIONS.md, "Building the sit environment",
+    # step 6), and if the policy the widget actually needs differs, this
+    # table changes with it. Pinned so that is a decision somebody makes
+    # rather than a head somebody copied.
     "index.html": {
         "script-src": ["'self'", "'unsafe-eval'", "https://telegram.org"],
         "frame-src": ["https://oauth.telegram.org"],

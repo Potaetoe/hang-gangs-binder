@@ -219,6 +219,36 @@ may fail once with error 10000 and succeed on retry — `wrangler whoami`
 misdescribes that state, so diagnose with a real subcommand. `deploy`
 preserves secrets and applies `[vars]` over the dashboard's.
 
+### The schema goes first, and a sign-in is what proves it did
+
+**A Worker deployed ahead of its own schema refuses every sign-in.**
+Sign-in claims the payload it just verified against the `auth_replay`
+table (0.9-M1-S5, #331), and a claim that cannot be written fails
+closed — so against a database missing that table the route answers the
+same 401 a tampered payload gets, for everybody, until the schema
+catches up. Nothing is lost and nothing is corrupted; the site is
+simply shut.
+
+The order in "Building the sit environment" above already has this
+right — the schema is applied before the deploy. This note is for the
+case that section does not cover: a database that **already exists**
+and a Worker being redeployed over it. Re-run the schema first:
+
+```bash
+npx wrangler d1 execute hg_binder_db_sit --remote --file=schema.sql --env sit
+```
+
+Re-running is safe here for the ordinary reason — `auth_replay` is a
+new table, which is the additive case `server/schema.sql`'s header
+calls the easy one — but read "Before re-running `schema.sql` against a
+database that already holds rows" below first, because the same rerun
+touches the `submissions` index and that part is not additive.
+
+**Then check it**, per "Checking a deployment" below: the healthy 401 a
+gated route answers proves the Worker is up, and it is *the same 401* a
+schema-less Worker answers a real sign-in with. Only an actual sign-in
+tells the two apart.
+
 ### Before re-running `schema.sql` against a database that already holds rows
 
 **This is the general case** — the currently deployed, manually-managed

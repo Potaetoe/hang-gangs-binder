@@ -116,6 +116,19 @@ let roster = [];
 let nextId = 1;
 
 /*
+ * Payloads already spent (0.9-M1-S5, #331; server/schema.sql,
+ * `auth_replay`).
+ *
+ * A Map rather than an array because the table's whole behavior is its
+ * PRIMARY KEY: the Worker claims a payload with an INSERT carrying
+ * ON CONFLICT DO NOTHING and reads `meta.changes` to learn whether it
+ * won. Modelled with an array and a scan, a stub would answer the same
+ * for a first claim and a second one, and an implementation that
+ * dropped the guard entirely would stay green here.
+ */
+let replay = new Map();
+
+/*
  * What was asked, as well as what was stored.
  *
  * `executed` is one entry per statement run, carrying the batch it
@@ -194,6 +207,8 @@ function reset() {
   snapshot = null;
   content = [];
   roster = [];
+  replay = new Map();
+  mintedPayloads = 0;
   nextId = 1;
   executed = [];
   batches = [];
@@ -244,7 +259,8 @@ function evaluateClauses(clauses, args, offset, rows) {
 
 const DB = {
   prepare: (sql) => {
-    const table = /site_content/i.test(sql) ? "site_content"
+    const table = /auth_replay/i.test(sql) ? "auth_replay"
+      : /site_content/i.test(sql) ? "site_content"
       : /membership/i.test(sql) ? "membership"
       : /snapshots/i.test(sql) ? "snapshots"
       : /sessions/i.test(sql) ? "sessions"
@@ -364,6 +380,27 @@ const DB = {
     };
 
     const exec = async (a, batch) => {
+      if (table === "auth_replay") {
+        /*
+         * The claim, and nothing else. `meta.changes` is what the Worker
+         * reads to decide whether this payload was already spent, so it
+         * is returned here rather than assumed: a stub answering 1 for
+         * every INSERT would pass an implementation with no primary key
+         * behind it, which is a replay guard that refuses nothing.
+         */
+        if (verb === "INSERT") {
+          if (replay.has(a[0])) return { meta: { changes: 0 } };
+          replay.set(a[0], a[1]);
+          return { meta: { changes: 1 } };
+        }
+        // The sweep. Modelled rather than skipped, because a prune with
+        // the comparison the wrong way round would empty the table on
+        // every claim and turn the guard off without failing anything.
+        for (const [key, expiresAt] of [...replay]) {
+          if (expiresAt <= a[0]) replay.delete(key);
+        }
+        return { meta: { changes: 0 } };
+      }
       if (table === "snapshots") {
         if (verb === "DELETE") snapshot = null;
         else snapshot = { body: a[0], updated_at: a[1] };
@@ -823,9 +860,35 @@ const BOT_TOKEN = "8123456789:AAtest-bot-token-value-for-the-suite";
 const hex = (buffer) => Array.from(new Uint8Array(buffer))
   .map((b) => b.toString(16).padStart(2, "0")).join("");
 
+/*
+ * One second older per payload minted, and this is not cosmetic
+ * (0.9-M1-S5, #331).
+ *
+ * A payload may be spent once - claimPayload() in server/worker.js. Two
+ * sign-ins as the same account in the same second produce byte-identical
+ * payloads, which is a replay by the Worker's definition and by
+ * Telegram's: pressing the button twice inside one second really does
+ * sign the same fields. This suite fires far faster than a person can,
+ * and what it means by two sign-ins is two SEPARATE ones, so each minted
+ * payload is dated one second before the last. It only ever grows, and
+ * eighty-odd sign-ins stay far inside the five-minute window.
+ *
+ * It restarts at reset(), and that is not a convenience - it is the only
+ * safe place for it to restart, in both directions. It has to restart
+ * SOMEWHERE, because this file signs in far more than three hundred
+ * times and a counter that only grew would eventually date a payload
+ * past the five-minute window and refuse it for a reason that has
+ * nothing to do with the arm under test. And it may only restart where
+ * the spent-payload table is emptied, or a re-minted payload would be
+ * one the Worker has correctly recorded as already used. reset() is the
+ * one place both are true: it is this suite's "a fresh database", and a
+ * fresh database has spent nothing.
+ */
+let mintedPayloads = 0;
+
 async function signed(user = {}, secondsAgo = 0) {
   const payload = {
-    auth_date: Math.floor(Date.now() / 1000) - secondsAgo,
+    auth_date: Math.floor(Date.now() / 1000) - secondsAgo - mintedPayloads++,
     first_name: "Test",
     id: 4242,
     username: "somehandle",
@@ -906,7 +969,7 @@ globalThis.fetch = async () => new Response(
  * hide one, because the two totals differ by exactly the arms named
  * above.
  */
-const { check, report } = suite("worker.js", 366 + EXECUTED_GUARD_ARMS);
+const { check, report } = suite("worker.js", 369 + EXECUTED_GUARD_ARMS);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -930,9 +993,34 @@ check("a correctly signed payload issues a session",
   firstBody.username === "somehandle" && firstBody.isAdmin === false &&
   firstBody.isDev === false);
 
-check("sign-in reports the caller's own numeric id",
-  firstBody.telegramId === "4242",
-  "so ADMIN_TELEGRAM_IDS is set from fact rather than guessed");
+/*
+ * The arm that asserted `telegramId` in the sign-in answer is GONE with
+ * the field, in the same change that removed it (0.9-M1-S5, #331). It
+ * existed so a first-time admin could read their own numeric id off the
+ * page and put it in ADMIN_TELEGRAM_IDS; DESIGN.md, "Admin accounts and
+ * deletion", retires the founding-admin secret and every other list the
+ * site no longer keeps, and what was left without that reason was a
+ * route echoing the one identifier that resolves to a person. Replaced
+ * here by its opposite, because a field removed is a field that must
+ * stay removed.
+ */
+check("sign-in does not echo the caller's Telegram numeric id",
+  firstBody.telegramId === undefined);
+
+/*
+ * The same payload cannot be spent twice, which is what stops one
+ * captured payload from minting a second session beside the member's
+ * own inside the freshness window. Asserted here as well as in
+ * tests/telegram-auth.test.mjs because this is the gating matrix - the
+ * file where a refusal that stops refusing has to show up.
+ */
+const spent = await signed({});
+await statusOf("a payload that has already been spent is refused",
+  call("POST", "/auth/telegram",
+    { headers: good, body: JSON.stringify(spent) }), 200);
+await statusOf("and presenting the very same payload again is refused",
+  call("POST", "/auth/telegram",
+    { headers: good, body: JSON.stringify(spent) }), 401);
 
 /*
  * Tampering, both halves. A verifier that accepts an altered payload has
@@ -1732,8 +1820,12 @@ check("but the caller is told the absolute expiry, not the window",
 check("so the row dies sooner than the expiry the caller was handed",
   Date.parse(rowWhere(true).expires_at) < Date.parse(idleAdmin.expiresAt));
 
-check("a member row still expires seven days out",
-  near(leftOn(rowWhere(false)), MEMBER_CAP_MS),
+/* A member row carries the same window since 0.9-M1-S5 (#331), which is
+ * DESIGN.md, "Sessions": one rule everywhere. The seven days are still
+ * the member's CAP and still differ from the admin's two hours - what is
+ * gone is the exemption from having a window at all. */
+check("a member row expires on the same idle window, not on its cap",
+  near(leftOn(rowWhere(false)), IDLE_MS),
   inMinutes(leftOn(rowWhere(false))));
 
 await statusOf("an admin session used inside the window is allowed",
@@ -1757,11 +1849,16 @@ await statusOf("an admin session idle past the window is refused",
 check("and the idle row is cleared rather than left to sit",
   !sessions.some((s) => s.is_admin === 1), `${sessions.length} row(s) left`);
 
-const memberDeadline = rowWhere(false).expires_at;
+/* The member row beside it is a SEPARATE row, and ending the admin's
+ * must not reach it. What is asserted is survival, not stillness: using
+ * the member session slides its own window now, exactly as using the
+ * admin one slid that. */
+rowWhere(false).expires_at = new Date(Date.now() + 60 * 1000).toISOString();
 await statusOf("the member session beside it is untouched",
   call("GET", "/me", { headers: bearer(IDLE_MEMBER) }), 200);
-check("and using that one moves nothing - members have no window",
-  rowWhere(false).expires_at === memberDeadline, memberDeadline);
+check("and using that one slides its own window out to full",
+  near(leftOn(rowWhere(false)), IDLE_MS),
+  inMinutes(leftOn(rowWhere(false))));
 
 /*
  * A row in continuous use for just under two hours: every request slid
@@ -1865,36 +1962,34 @@ check("and both unreadable rows are deleted rather than served again",
 
 /*
  * The member arm of the same decision, asserted rather than only
- * written down - and the residual it leaves.
+ * written down - and the residual that survives it.
  *
- * Members have no idle window on purpose (DESIGN.md, "Sessions"). A
- * decision recorded only in prose is one the next reader can undo by
- * accident: a member window added here would be a behavior change with
- * a data-loss failure mode that no assertion in this file would notice,
- * because every arm above it is about admins. So the deviation is
- * pinned. Breaking these arms is what tells whoever tries that the
- * record has to move with the code.
+ * ONE WINDOW FOR EVERY SESSION, pinned here because it is the half of
+ * DESIGN.md, "Sessions", that a reader is most likely to undo by
+ * accident: a member exemption reads like a kindness, and restoring one
+ * would be a behavior change no other arm in this file could see,
+ * because every arm above this is about admins. Breaking these two is
+ * what tells whoever tries that the record has to move with the code.
  *
- * The bound is stated in both halves, because they are separate claims
- * and a member window would have to break both:
+ * Both halves are asserted, because they are separate claims and a
+ * member exemption would have to break both:
  *
- *   1. The deadline. A member row carries the seven-day cap measured
- *      from sign-in and nothing takes a window off it, on the row at
- *      mint or on any request afterwards.
- *   2. The write. sessionFor() writes only admin rows, which is what
- *      the cost argument on it rests on - a slide extended to members
- *      is a D1 write on every authenticated member request, and it is
- *      invisible in the deadline because a member's slide would write
- *      the value the row already holds.
+ *   1. The deadline. A member row idle past the window is refused, and
+ *      it is refused while its seven-day cap is still days away - which
+ *      is what makes it an IDLE refusal and not the ordinary expiry
+ *      this file covers further up.
+ *   2. The write. A member request slides the row, so it writes, and
+ *      the count is what says so: the deadline alone cannot, because a
+ *      slide and no slide can both leave a plausible-looking value.
  *
- * And what the seven days therefore bound, which is more than the
- * lifetime: #136's residual. A member Telegram has definitively said is
- * gone keeps the session they already hold until they attempt to sign
- * in again or the cap ends it, because the account id on the row is an
- * HMAC and getChatMember needs the numeric id - see
- * revokeAccountSessions() in server/worker.js. These arms are what say
- * that is the residual as designed rather than an accident, and they
- * are the arms an idle window would be reached for to close.
+ * What the CAP still bounds on its own is #136's residual. A member
+ * Telegram has definitively said is gone keeps the session they already
+ * hold until they attempt to sign in again or a deadline ends it,
+ * because the account id on the row is an HMAC and getChatMember needs
+ * the numeric id - see revokeAccountSessions() in server/worker.js. The
+ * window shortens that residual for a session nobody is using and
+ * cannot touch one that is in use, which is why the residual is still
+ * stated here rather than treated as closed.
  */
 reset();
 
@@ -1905,33 +2000,35 @@ const sessionWrites = () => executed.filter(
 
 /*
  * A row minted six days ago and not touched since. Six days is chosen
- * against the cap rather than against the window: it leaves a day, so a
- * refusal here is an idle refusal and never the ordinary expiry, and it
- * is five hundred and seventy-six admin windows of silence.
+ * against the CAP rather than against the window: it leaves a day of
+ * cap, so the refusal below is unambiguously the idle window doing it.
  */
 const QUIET_MEMBER = (await (await signIn({})).clone().json()).session;
 memberRow().created_at = new Date(Date.now() - SIX_DAYS).toISOString();
 memberRow().expires_at =
-  new Date(Date.now() - SIX_DAYS + MEMBER_CAP_MS).toISOString();
+  new Date(Date.now() - SIX_DAYS + IDLE_MS).toISOString();
 
-await statusOf("a member session unused for six days still works",
-  call("GET", "/me", { headers: bearer(QUIET_MEMBER) }), 200);
-check("and the day left on it is the cap's, with no window taken off",
-  near(leftOn(memberRow()), MEMBER_CAP_MS - SIX_DAYS),
-  inMinutes(leftOn(memberRow())));
+check("the cap is still a day off when the member's window runs out",
+  Date.parse(memberRow().created_at) + MEMBER_CAP_MS - Date.now() >
+    24 * 3600 * 1000 - SLACK_MS);
+await statusOf("a member session unused for six days is refused",
+  call("GET", "/me", { headers: bearer(QUIET_MEMBER) }), 401);
+check("and the idle member row is cleared rather than left to sit",
+  !sessions.some((s) => s.is_admin === 0), `${sessions.length} row(s) left`);
 
 /*
  * The write, counted rather than inferred from the deadline. A slide
- * extended to members writes deadlineAt(created, false, now), which is
- * the absolute expiry - the same string the row already carries - so
- * every deadline assertion above would still hold and only the count
- * says it happened.
+ * that never happened and one that wrote a value close to what the row
+ * already held look the same in `expires_at`; only the count tells them
+ * apart, which is why the count is what is asserted.
  */
+reset();
+const BUSY_MEMBER = (await (await signIn({})).clone().json()).session;
 const beforeMember = sessionWrites();
 await statusOf("a member request is answered from the row",
-  call("GET", "/me", { headers: bearer(QUIET_MEMBER) }), 200);
-check("and writes nothing back to the sessions table",
-  sessionWrites() - beforeMember === 0,
+  call("GET", "/me", { headers: bearer(BUSY_MEMBER) }), 200);
+check("and slides it, writing the new deadline back",
+  sessionWrites() - beforeMember === 1,
   `${sessionWrites() - beforeMember} write(s)`);
 
 /*

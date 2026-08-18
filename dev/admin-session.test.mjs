@@ -1617,17 +1617,23 @@ check("the page's window is ten minutes with two minutes of warning",
  * The one number on this page that is only meaningful beside another
  * file's, so it is compared against that file rather than restated.
  *
- * `ADMIN_IDLE_MINUTES` is the Worker's sliding window. The page's has to
- * be SHORTER, and the ordering is the load-bearing part rather than
- * either value: at ten against fifteen the page always acts first, so
- * the tab discards its plaintext and revokes on its own initiative.
- * Reversed, this timer becomes unreachable - the credential dies first,
- * some call gets a 401, and the corpus stays on screen until it does.
- * Lowering the Worker's number is the change that would do it, and
- * nothing in `apps/web` can see that happen.
+ * `SESSION_IDLE_MINUTES` is the Worker's sliding window - one window for
+ * every session since 0.9-M1-S5 (#331), where it was `ADMIN_IDLE_MINUTES`
+ * and applied to admin rows alone. The page's has to be SHORTER, and the
+ * ordering is the load-bearing part rather than either value: at ten
+ * against fifteen the page always acts first, so the tab discards its
+ * plaintext and revokes on its own initiative. Reversed, this timer
+ * becomes unreachable - the credential dies first, some call gets a 401,
+ * and the corpus stays on screen until it does. Lowering the Worker's
+ * number is the change that would do it, and nothing in `apps/web` can
+ * see that happen.
+ *
+ * The rename is why the pattern is read rather than the number typed:
+ * a constant that goes missing must fail here, and it does - Number(
+ * undefined) is NaN and the comparison below is false.
  */
 const workerIdleMinutes = Number(
-  (/const ADMIN_IDLE_MINUTES = (\d+);/.exec(workerSource) || [])[1]);
+  (/const SESSION_IDLE_MINUTES = (\d+);/.exec(workerSource) || [])[1]);
 check("the page acts before the Worker's own idle window can",
   Number.isFinite(workerIdleMinutes) &&
   WINDOW.idleMs < workerIdleMinutes * MINUTE);
