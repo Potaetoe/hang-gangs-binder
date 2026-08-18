@@ -501,8 +501,8 @@ def plant_hook_registration(primary, existing=None):
     git lookups) - that is the harness's real environment variable for
     the session actually running, set independently of any string this
     function writes, and both of those checks are already correct
-    against the session's own worktree. Only the FILE PATH used to find
-    and exec the script is what this function repairs.
+    against the session's own worktree. Only the FILE PATH that finds
+    and execs the script is what this function repairs.
 
     WHY "permissions" IS NEVER PLANTED
 
