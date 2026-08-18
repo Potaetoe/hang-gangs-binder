@@ -49,6 +49,7 @@ if "%~1"=="fleet-status" goto :fleet_status
 if "%~1"=="agent-init" goto :agent_init
 if "%~1"=="agent-park" goto :agent_park
 if "%~1"=="check" goto :check
+if "%~1"=="ship-check" goto :ship_check
 if "%~1"=="gate" goto :gate
 if "%~1"=="docs" goto :docs
 if "%~1"=="build" goto :build
@@ -177,6 +178,17 @@ exit /b %ERRORLEVEL%
 %PY% tools\check.py
 exit /b %ERRORLEVEL%
 
+:ship_check
+rem Mirrors ./run ship-check - the executor's pre-signal door
+rem (0.9-M0-S22, #320). See tools\ship_check.py's own module docstring
+rem for the whole argument. Positional forwarding rather than a shift,
+rem the same reason :agent_init above gives - the verb is matched by
+rem %~1 and cmd has no way to pass the rest along by name. Six slots
+rem because this verb's flags (--declared PATH --issue N --base REF)
+rem run longer than any other verb's here.
+%PY% tools\ship_check.py %2 %3 %4 %5 %6 %7
+exit /b %ERRORLEVEL%
+
 :gate
 rem The 0.9 gate (tests/run.mjs) - see its own header, including the
 rem preflight seam that is its stage zero. `check` above is the OLD
@@ -254,7 +266,7 @@ exit /b %ERRORLEVEL%
 :usage
 echo usage: .\run ^<command^>
 echo   session-open ^| fleet-status ^| agent-init ^| agent-park ^| bootstrap
-echo   build ^| check ^| gate ^| docs ^| live ^| serve ^| serve-root ^| keygen
-echo   demo ^| bake
+echo   build ^| check ^| ship-check ^| gate ^| docs ^| live ^| serve
+echo   serve-root ^| keygen ^| demo ^| bake
 echo run with no arguments from a POSIX shell ^(./run^) for descriptions
 exit /b 2

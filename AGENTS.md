@@ -116,22 +116,33 @@ and `git log`.
 ## Working an issue
 
 Work is claimed and released on GitHub issues, and the collision that
-matters is at the *file* level:
+matters is at the *file* level. **No pre-edit CLAIM comment is
+required** (owner ruling 2026-08-15): the old rule was skipped six
+times in the 0.9-M0 batch, every time disclosed, and prevented zero
+collisions — the board re-read below is what actually prevents them,
+and it happens before every edit regardless.
 
 - **Read the board immediately before your first edit** — open issues
   with labels, and open pull requests with their real file lists. An
   open pull request reserves its files just as a labeled issue does.
-- **A file is held if any open CLAIM names it**, whatever issue you
-  associate that file with. Test your files against the claim lists,
-  not against issue titles.
+- **A file is "held" if it appears in an open pull request's declared
+  file list, sits inside a live worktree (`git worktree list`), or its
+  issue carries the `claude` label** — nothing else, since there is no
+  pre-edit claim comment to name a list separately. Test your files
+  against those three sources, not against issue titles.
 - **Check `git worktree list` too.** Two sessions can carry the same
-  label, so the label cannot see a second one; a claim names its
-  session by naming its worktree.
-- **Post a `CLAIM` comment before the first edit**: branch, full
-  40-character base SHA, the files held, the files deliberately not
-  held. **Release the same way** when the pull request merges or you
-  stop, then remove the label. A label left on a merged issue reads as
-  held.
+  label, so the label cannot see a second one.
+- **Post your completion when the work is done**, carrying what a
+  pre-edit claim used to state up front instead: branch, full
+  40-character base SHA, the files touched, the files deliberately not
+  touched, and (for an agent worktree) the port block. `./run
+  ship-check` (0.9-M0-S22, #320) is the required act between your last
+  commit and your terminal signal that produces most of this table
+  mechanically rather than by hand — see "Verification" below.
+  Labeling the ticket `claude` is the orchestrating session's
+  bookkeeping, not the builder's gate; it is released in the same
+  breath as the completion comment, before terminating. A label left
+  on a merged issue reads as held.
 - If your file list overlaps an existing claim: take a different issue,
   branch from *their* branch and say so, or ask them to release. Pick
   one out loud; picking silently is not an option.
@@ -254,6 +265,18 @@ guards, never as the pattern for a new one.
 - Run both gates before any handoff, and report the exact totals each
   prints — never a remembered count, and never "tests pass". The old
   one is `./run check` (or `py -3 tools/check.py`).
+- **`./run ship-check` is the required act between your last commit and
+  your terminal signal** (0.9-M0-S22, #320): three completions in one
+  wave reported a remembered stage count ("38", then "39") while the
+  tree was 40/40, and this is the machine-held answer - it runs both
+  gates itself and captures their exact printed tables, checks the
+  branch name against the naming standard, the working tree's
+  cleanliness and its full 40-character head SHA, the declared-files-
+  vs-real-diff shape (`--declared PATH`, reusing `tools/claim_vs_diff.py`
+  the same way the landing door does), and the ticket's label state
+  report-only (`--issue N`). Its own stdout, unedited, is the block a
+  completion comment pastes - see `tools/ship_check.py`'s own module
+  docstring for the whole argument.
 - **A new check is registered where its apparatus registers checks**,
   and **confirmed armed by mutation, in both directions**: break it,
   watch it fail, restore it, watch it pass, and state the mutations in

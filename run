@@ -25,6 +25,15 @@ PY=$(find_python) || {
 case "${1:-}" in
   check)
     exec $PY tools/check.py ;;
+  ship-check)
+    # The mechanical ship-check (0.9-M0-S22, #320): an executor runs
+    # this after its last commit and before its terminal signal.
+    # tools/ship_check.py's own module docstring carries the whole
+    # argument - its stdout, unedited, is the ready-to-paste block the
+    # completion comment carries. Shifted so --declared/--base/--issue
+    # reach the script rather than the verb.
+    shift
+    exec $PY tools/ship_check.py "$@" ;;
   gate)
     # The 0.9 gate (tests/run.mjs) - see its own header for the whole
     # argument, including the preflight seam that is its stage zero.
@@ -183,6 +192,13 @@ usage: ./run <command>          (PowerShell: .\run <command>)
   build       write dist/ - apps/web with the comments taken out
               (committed; `check` refuses a stale one)
   check       run every check the project has - the same set CI runs
+  ship-check  the executor's pre-signal door (0.9-M0-S22, #320): runs
+              both gates itself and captures their exact tables, checks
+              the branch name, the clean tree and head SHA, the
+              declared-vs-diff shape, and reports ticket label state
+              (--declared PATH required for that shape; --issue N for
+              the report-only label stage; --base REF, default
+              origin/accounts)
   gate        the 0.9 gate (tests/run.mjs) - the new apparatus under
               #228, running beside `check` until it retires
   docs        run only the documentation checks
