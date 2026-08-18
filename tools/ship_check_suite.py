@@ -92,7 +92,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 44
+EXPECTED = 64
 
 
 def check(label, condition):
@@ -187,21 +187,60 @@ class PatchInitProblems:
 # against.
 # ----------------------------------------------------------------------
 
+# Two-row, real-bordered tables - close enough to tools/check.py's own
+# `main()` render step (the "="*(width+10) fence printed twice, one
+# "<label padded> ok"/"FAILED" row per stage between them) to prove
+# ship_check._count_old_gate_table() reads the actual fence and rows,
+# not a position or a hand count. Three scenarios, selected by
+# SHIP_CHECK_STUB_OLD_GATE:
+#   (unset/"pass") both stages ok
+#   "fail"         stage two FAILED, no other change
+#   "lie"          stage two FAILED too, PLUS a false "999 stages, 999
+#                   ok, 0 FAILED" line printed after the real fence -
+#                   the mutation this ticket's DoD names: proof the
+#                   counted line below is read from the rows, never
+#                   from a number sitting in the same captured text.
 OLD_GATE_STUB = '''
 import os, sys
-ok = os.environ.get("SHIP_CHECK_STUB_OLD_GATE") != "fail"
+scenario = os.environ.get("SHIP_CHECK_STUB_OLD_GATE", "pass")
+fail = scenario in ("fail", "lie")
+results = [("fixture stage one", True), ("fixture stage two", not fail)]
+width = max(len(label) for label, _ in results)
 print("=== fixture stage one ===")
-print("fixture stage one    " + ("ok" if ok else "FAILED"))
-print("\\nAll checks passed." if ok else "\\nNot safe to push.")
-sys.exit(0 if ok else 1)
+print("\\n" + "=" * (width + 10))
+for label, ok in results:
+    print("%-*s %s" % (width + 2, label, "ok" if ok else "FAILED"))
+print("=" * (width + 10))
+if scenario == "lie":
+    print("999 stages, 999 ok, 0 FAILED")
+print("\\nAll checks passed." if not fail else "\\nNot safe to push.")
+sys.exit(1 if fail else 0)
 '''
 
+# Same shape, one level over: two `tests/<name>.test.mjs` rows in
+# tests/run.mjs's own report() format (name.padEnd(52) +
+# status.padEnd(8) + seconds.toFixed(1) + "s"), so
+# ship_check._count_new_gate_table()'s tests/*.test.mjs pattern has a
+# real row to match against - never a "fixture arm 1:" line no real
+# runner ever prints. Same three scenarios as the old-gate stub above,
+# same "lie" meaning: a false "999 arm(s), all green." printed beside
+# rows that say otherwise.
 NEW_GATE_STUB = '''
-const ok = process.env.SHIP_CHECK_STUB_NEW_GATE !== "fail";
-console.log("fixture arm 1: " + (ok ? "ok" : "FAILED"));
-console.log(ok ? "1 arm(s), all green."
-               : "1 arm(s), 1 problem(s): fixture arm 1");
-process.exit(ok ? 0 : 1);
+const scenario = process.env.SHIP_CHECK_STUB_NEW_GATE || "pass";
+const fail = scenario === "fail" || scenario === "lie";
+function report(name, ok, ms) {
+  console.log(name.padEnd(52) + (ok ? "ok" : "FAILED").padEnd(8) +
+    ms.toFixed(1) + "s");
+}
+report("tests/fixture-one.test.mjs", true, 0.1);
+report("tests/fixture-two.test.mjs", !fail, 0.2);
+if (scenario === "lie") {
+  console.log("999 arm(s), all green.");
+} else {
+  console.log(fail ? "2 arm(s), 1 problem(s): tests/fixture-two.test.mjs"
+                    : "2 arm(s), all green.");
+}
+process.exit(fail ? 1 : 0);
 '''
 
 GH_STUB_SOURCE = '''
@@ -363,38 +402,86 @@ try:
     check("an unreadable --declared path fails, names why",
           not stage.ok and "could not read" in stage.lines[0])
 
+    print("\n--- _count_old_gate_table / _count_new_gate_table: pure "
+         "counters, 0.9-M1-S0 (#323) ---")
+    check("a bordered two-row table (one ok row, one FAILED row) counts "
+         "both, from the rows alone",
+          ship_check._count_old_gate_table(
+              ["=" * 20, "one" + " " * 14 + "ok", "two" + " " * 11 + "FAILED",
+               "=" * 20]) == (2, 1, 1))
+    check("no bordered pair anywhere in the captured text counts as "
+         "None, not a crash or a false zero",
+          ship_check._count_old_gate_table(
+              ["nothing here looks like a fence at all"]) is None)
+    check("a lying line placed AFTER the real fence never changes the "
+         "count - only rows BETWEEN the fence pair are read",
+          ship_check._count_old_gate_table(
+              ["=" * 10, "a  ok", "b  FAILED", "=" * 10,
+               "999 stages, 999 ok, 0 FAILED"]) == (2, 1, 1))
+
+    check("an arm row (tests/<name>.test.mjs + ok + seconds) is counted",
+          ship_check._count_new_gate_table(
+              ["tests/a.test.mjs" + " " * 40 + "ok      0.1s"]) == (1, 1, 0))
+    check("...and a FAILED arm row is counted on the other side",
+          ship_check._count_new_gate_table(
+              ["tests/a.test.mjs" + " " * 40 + "ok      0.1s",
+               "tests/b.test.mjs" + " " * 40 + "FAILED  0.2s"]) == (2, 1, 1))
+    check("preflight's own row (same report() shape, no .test.mjs suffix) "
+         "is never counted as an arm",
+          ship_check._count_new_gate_table(
+              ["tests/preflight.mjs" + " " * 36 + "ok      0.1s"]) is None)
+    check("a lying closing line ('999 arm(s), all green.') never changes "
+         "the count - only tests/*.test.mjs rows are read",
+          ship_check._count_new_gate_table(
+              ["tests/a.test.mjs" + " " * 40 + "ok      0.1s",
+               "tests/b.test.mjs" + " " * 40 + "FAILED  0.2s",
+               "999 arm(s), all green."]) == (2, 1, 1))
+
     print("\n--- stage 1 & 2: subprocess capture is VERBATIM, never "
-         "summarized (the whole reason this ticket exists) ---")
+         "summarized (the whole reason this ticket exists), and its own "
+         "COUNTED summary line closes the block (0.9-M1-S0, #323) ---")
+    for scenario, want_old, want_new in (
+        ("pass", (2, 2, 0), (2, 2, 0)),
+        ("fail", (2, 1, 1), (2, 1, 1)),
+        ("lie", (2, 1, 1), (2, 1, 1)),
+    ):
+        if scenario == "pass":
+            os.environ.pop("SHIP_CHECK_STUB_OLD_GATE", None)
+            os.environ.pop("SHIP_CHECK_STUB_NEW_GATE", None)
+        else:
+            os.environ["SHIP_CHECK_STUB_OLD_GATE"] = scenario
+            os.environ["SHIP_CHECK_STUB_NEW_GATE"] = scenario
+
+        stage = ship_check.stage_old_gate(repo)
+        old_line = "%d stages, %d ok, %d FAILED" % want_old
+        check("old gate (%s): the real stage rows are captured verbatim"
+             % scenario,
+              any(line.startswith("fixture stage one") and
+                  line.endswith("ok") for line in stage.lines))
+        check("old gate (%s): the exit code matches - stage.ok never "
+             "trusts the summary line alone" % scenario,
+              stage.ok == (scenario == "pass"))
+        check("old gate (%s): the block's own LAST non-blank line is the "
+             "COUNTED summary %r, read from the rows - never the fake "
+             "'999...' line the 'lie' scenario also prints"
+             % (scenario, old_line),
+              [line for line in stage.lines if line][-1] == old_line)
+
+        with PatchInitProblems([]):
+            stage = ship_check.stage_new_gate(repo, None)
+        new_line = "%d arms, %d green, %d FAILED" % want_new
+        check("new gate (%s): the real arm rows are captured verbatim"
+             % scenario,
+              any(line.startswith("tests/fixture-one.test.mjs")
+                  for line in stage.lines))
+        check("new gate (%s): the block's own LAST non-blank line is the "
+             "COUNTED summary %r, never run.mjs's own closing line "
+             "('999 arm(s), all green.' in the 'lie' scenario)"
+             % (scenario, new_line),
+              [line for line in stage.lines if line][-1] == new_line)
+
     os.environ.pop("SHIP_CHECK_STUB_OLD_GATE", None)
-    stage = ship_check.stage_old_gate(repo)
-    check("a passing old gate's own line is captured verbatim",
-          stage.ok
-          and any("fixture stage one    ok" in line for line in stage.lines))
-    check("the real exit code is echoed as its own line",
-          any("exited 0" in line for line in stage.lines))
-
-    os.environ["SHIP_CHECK_STUB_OLD_GATE"] = "fail"
-    stage = ship_check.stage_old_gate(repo)
-    check("a failing old gate is reported FAILED with its real output",
-          not stage.ok
-          and any("FAILED" in line for line in stage.lines)
-          and any("exited 1" in line for line in stage.lines))
-    del os.environ["SHIP_CHECK_STUB_OLD_GATE"]
-
-    with PatchInitProblems([]):
-        stage = ship_check.stage_new_gate(repo, None)
-    check("an initialized worktree runs the real 0.9 gate and captures "
-         "its exact line",
-          stage.ok
-          and any("fixture arm 1: ok" in line for line in stage.lines))
-
-    os.environ["SHIP_CHECK_STUB_NEW_GATE"] = "fail"
-    with PatchInitProblems([]):
-        stage = ship_check.stage_new_gate(repo, None)
-    check("a failing 0.9 gate is reported FAILED too",
-          not stage.ok
-          and any("FAILED" in line for line in stage.lines))
-    del os.environ["SHIP_CHECK_STUB_NEW_GATE"]
+    os.environ.pop("SHIP_CHECK_STUB_NEW_GATE", None)
 
     with PatchInitProblems(["fixture: pretend uninitialized"]):
         stage = ship_check.stage_new_gate(repo, None)
@@ -402,9 +489,14 @@ try:
           not stage.ok and stage.lines[0].startswith("not initialized"))
     check("...naming the real problem initialization_problems() gave",
           "fixture: pretend uninitialized" in stage.lines)
+    check("...and no counted summary line is fabricated for a gate that "
+         "never ran",
+          not any(line.endswith("green, 0 FAILED")
+                  or "arms," in line for line in stage.lines))
     check("...and NEVER runs the gate at all - the stub would have "
          "passed, and its telltale line is nowhere in the output",
-          not any("fixture arm 1" in line for line in stage.lines))
+          not any("tests/fixture-one.test.mjs" in line
+                  for line in stage.lines))
 
     print("\n--- stage 6: ticket label state (report-only) ---")
     stub_path = os.path.join(root, "gh_stub.py")
@@ -481,6 +573,11 @@ try:
     check("the full 40-character head SHA appears, ready to copy into "
          "the signal",
           ("head: " + tip_sha) in rendered)
+    check("the old gate's own COUNTED summary line reaches the final "
+         "rendered paste block, 0.9-M1-S0 (#323)",
+          "2 stages, 2 ok, 0 FAILED" in rendered)
+    check("...and so does the new gate's, in the same pass-through run",
+          "2 arms, 2 green, 0 FAILED" in rendered)
 
     buffer2 = io.StringIO()
     with PatchInitProblems(["fixture: pretend uninitialized"]), \
