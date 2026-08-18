@@ -88,11 +88,8 @@ import re
 import subprocess
 import sys
 
-import check_server
-
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKER = os.path.join(REPO, "server", "worker.js")
-WRANGLER = os.path.join(REPO, "server", "wrangler.toml")
 WEB = os.path.join(REPO, "apps", "web")
 
 STATUSES = ("never", "performed", "first-contact")
@@ -132,19 +129,21 @@ OPTIONAL = ("performed", "cause", "guard")
 # claim that rests on a value no file here can see. Dressing it in a
 # predicate that cannot fail would be worse than admitting it, so those
 # two are bounded by the ceiling below instead.
+#
+# No "sit has no published origin" cause is registered here, because
+# server/wrangler.toml's [env.sit.vars] names one (0.9-M1-S3, #329) and
+# a cause nothing in the ledger stands on is exactly what
+# dev/check_live.test.py's "every registered cause is carried by at
+# least one entry" refuses to let sit quietly. "The Telegram widget
+# rendering and its callback" reads "off-machine" below for the same
+# reason: the origin existing is not BotFather's /setdomain having
+# been run, so the row still needs a cause nothing here can corroborate.
 CAUSES = {
     "guarded-branch": {
         "guard": True,
         "checked": True,
         "why": "the development arm takes a branch production will not, "
                "so it exercises the wrong side of a guard",
-    },
-    "published-origin-only": {
-        "guard": False,
-        "checked": True,
-        "why": "it needs the published origin; BotFather binds the "
-               "widget there and the development arm allows loopback "
-               "only",
     },
     "production-secret": {
         "guard": False,
@@ -164,7 +163,15 @@ CAUSES = {
 # claim taken on trust, so the count may only fall; raising this number
 # is a line in a diff somebody reads, which is the whole point. Take one
 # off the moment a row can be pinned or performed instead.
-UNCORROBORATED_CEILING = 3
+#
+# Four rows currently rest on something no file here can check (0.9-
+# M1-S3, #329): two "production-secret" rows, one "off-machine" row on
+# the submit-page fingerprint, and "the Telegram widget rendering and
+# its callback", whose cause is "off-machine" rather than something
+# server/wrangler.toml's ALLOWED_ORIGINS shape can corroborate, because
+# BotFather's /setdomain is an owner act no shell here can perform or
+# see the result of.
+UNCORROBORATED_CEILING = 4
 
 # The batch is due when the OWED count reaches this, or before any
 # cutover, whichever comes first. Owed is the `never` rows plus the
@@ -1160,6 +1167,21 @@ LEDGER = [
         "cause": "guarded-branch",
         "guard": "for (const id of await secretAdminAccountIds(env)) {",
     },
+    # RECLASSIFIED 0.9-M1-S3 (#329). server/wrangler.toml's
+    # [env.sit.vars] now names sit's own published origin beside
+    # localhost - the fact "published-origin-only" existed to describe
+    # the ABSENCE of - so origin_problems() below would fail this row's
+    # old cause the moment that origin landed (mutation evidence: this
+    # is the corroborating check for the cause, and it is exactly what
+    # went red first). The claim did not become true: BotFather /
+    # setdomain is still unrun (#282 stays open on it), so nothing here
+    # can show the widget actually works against sit yet - only WHY it
+    # cannot answered differently. "off-machine" is the honest reason
+    # now: what is missing is an owner act in BotFather's own UI, not a
+    # config value this repository can see. This is the one row #329's
+    # own completion reclassifies; the six rows below still reading
+    # "guarded-branch" rest on a DIFFERENT premise (sit's bot token,
+    # not its origin) and are untouched here - #326 is theirs.
     {
         "id": "the Telegram widget rendering and its callback",
         "surface": "flow",
@@ -1168,7 +1190,7 @@ LEDGER = [
                  "from nowhere else",
         "covers": ["apps/web/index.html"],
         "status": "first-contact",
-        "cause": "published-origin-only",
+        "cause": "off-machine",
     },
     {
         "id": "POST /auth/dev answering 404 on production",
@@ -1623,12 +1645,7 @@ def run_problems(ledger):
     return problems
 
 
-def loopback(origin):
-    return (origin.startswith("http://localhost")
-            or origin.startswith("http://127.0.0.1"))
-
-
-def cause_problems(ledger, worker_source, blocks):
+def cause_problems(ledger, worker_source):
     """The boundary, corroborated from outside the ledger.
 
     A permanent list nobody re-examines is where an untested thing goes
@@ -1641,10 +1658,14 @@ def cause_problems(ledger, worker_source, blocks):
     than a cost: the row gets read again, and re-pinning it is one
     edit. A fuzzy pin that survived the edit would survive the deletion
     too.
+
+    Took a `blocks` parameter (server/wrangler.toml's parsed vars
+    blocks) through 0.9-M1-S3: the only reader was origin_problems(),
+    retired the same slice along with the "published-origin-only" cause
+    it alone corroborated - see the note above CAUSES.
     """
     problems = []
     uncorroborated = 0
-    wants_origins = False
 
     for row in ledger:
         if row.get("status") != "first-contact":
@@ -1665,11 +1686,6 @@ def cause_problems(ledger, worker_source, blocks):
                     "first-contact claim whose stated reason the code "
                     "has moved past is a claim nothing supports"
                     % (row.get("id"), guard))
-        if cause == "published-origin-only":
-            wants_origins = True
-
-    if wants_origins:
-        problems.extend(origin_problems(blocks))
 
     if uncorroborated > UNCORROBORATED_CEILING:
         problems.append(
@@ -1679,56 +1695,6 @@ def cause_problems(ledger, worker_source, blocks):
             "row here is a claim taken on trust. Pin one to source, "
             "perform one, or say in the diff why the trust grew."
             % (uncorroborated, UNCORROBORATED_CEILING))
-
-    return problems
-
-
-def origin_problems(blocks):
-    """The asymmetry the widget's classification rests on.
-
-    The non-production arm allows loopback only; production names the
-    published origin. Adding the agent port blocks' loopback origins to
-    the non-production arm - which is the cheapest way to make live
-    checks routine for delegated slices - leaves this intact,
-    deliberately.
-
-    Reads "[env.sit.vars]" (0.9-M1-S1, #325: server/wrangler.toml's
-    non-production block is now named [env.sit] rather than [env.dev],
-    and the string here matches it - a lookup keyed to the old name
-    would find nothing and report the file as having "changed shape"
-    that it has not). What the rename does not touch: sit's own
-    roster now carries a real TELEGRAM_BOT_TOKEN and a real
-    TELEGRAM_GROUP_CHAT_ID (the two-bot split, #228 Worker-topology
-    addendum), which is the same fact the "guarded-branch" ledger rows
-    below assume never holds for the non-production arm - #325's
-    completion names that as an open finding for whichever slice next
-    deploys sit or rewrites the routes those rows cover; this function
-    only reads ALLOWED_ORIGINS, so it stays correct on its own terms
-    either way.
-    """
-    problems = []
-    dev = blocks.get("[env.sit.vars]", {}).get("ALLOWED_ORIGINS")
-    live = blocks.get("[vars]", {}).get("ALLOWED_ORIGINS")
-    if dev is None or live is None:
-        return ["server/wrangler.toml no longer names ALLOWED_ORIGINS "
-                "in both vars blocks, so the widget's first-contact "
-                "classification rests on nothing readable"]
-
-    reachable = [origin for origin in dev.split(",")
-                 if origin.strip() and not loopback(origin.strip())]
-    if reachable:
-        problems.append(
-            "the non-production arm now allows %s, which is not "
-            "loopback. A published origin reaching it changes what the "
-            "widget can be exercised against, so its first-contact row "
-            "wants re-reading rather than inheriting" %
-            ", ".join(reachable))
-
-    if not [origin for origin in live.split(",")
-            if origin.strip() and not loopback(origin.strip())]:
-        problems.append(
-            "the production arm names no published origin, so "
-            "'published-origin-only' distinguishes nothing")
 
     return problems
 
@@ -2008,13 +1974,9 @@ def problems():
     if refused:
         return refused
 
-    blocks, unreadable = check_server.vars_blocks(read(WRANGLER))
-    if unreadable:
-        return [unreadable]
-
     found = entry_problems(LEDGER)
     found += spine_problems(LEDGER, routes, page_names())
-    found += cause_problems(LEDGER, source, blocks)
+    found += cause_problems(LEDGER, source)
     found += run_problems(LEDGER)
     return found
 

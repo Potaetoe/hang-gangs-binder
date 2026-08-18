@@ -65,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 123
+EXPECTED = 120
 
 
 def check(label, condition):
@@ -453,16 +453,9 @@ check("more than one row may cover one route",
 
 WORKER_SRC = 'if (!botToken) {\n  return null;\n}\n'
 
-DEV_LOOPBACK = {
-    "[vars]": {"ALLOWED_ORIGINS": "https://potaetoe.github.io"},
-    "[env.sit.vars]": {
-        "ALLOWED_ORIGINS": "http://localhost:8124,http://127.0.0.1:8124"},
-}
 
-
-def caused(ledger, source=WORKER_SRC, blocks=None):
-    return check_live.cause_problems(
-        ledger, source, DEV_LOOPBACK if blocks is None else blocks)
+def caused(ledger, source=WORKER_SRC):
+    return check_live.cause_problems(ledger, source)
 
 
 PINNED = entry(status="first-contact", cause="guarded-branch",
@@ -478,30 +471,10 @@ check("the falsified-guard report says to reclassify or re-pin",
       "reclassify"
       in only(caused([PINNED], source="nothing here")).lower())
 
-WIDGET = entry(status="first-contact", cause="published-origin-only")
-
-check("loopback-only sit origins corroborate the widget's entry",
-      caused([WIDGET]) == [])
-
-check("a published origin reaching the sit arm fails the gate",
-      len(caused([WIDGET], blocks={
-          "[vars]": {"ALLOWED_ORIGINS": "https://potaetoe.github.io"},
-          "[env.sit.vars]": {
-              "ALLOWED_ORIGINS": "http://127.0.0.1:8124,"
-                                 "https://potaetoe.github.io"}})) == 1)
-
-check("a production arm with no published origin fails the gate",
-      len(caused([WIDGET], blocks={
-          "[vars]": {"ALLOWED_ORIGINS": "http://127.0.0.1:8124"},
-          "[env.sit.vars]": {
-              "ALLOWED_ORIGINS": "http://127.0.0.1:8124"}})) == 1)
-
-check("an agent port block added to the sit arm is still loopback",
-      caused([WIDGET], blocks={
-          "[vars]": {"ALLOWED_ORIGINS": "https://potaetoe.github.io"},
-          "[env.sit.vars]": {
-              "ALLOWED_ORIGINS": "http://127.0.0.1:8124,"
-                                 "http://127.0.0.1:8170"}}) == [])
+# No "published-origin-only" fixture stands here: tools/check_live.py
+# registers no such cause, for the reasoning its own note above CAUSES
+# carries (0.9-M1-S3, #329). The row that cause named is exercised
+# below instead, under its current cause.
 
 # The ratchet. Two causes cannot be corroborated from any file here -
 # a secret is invisible to this repository by design, and so is a
@@ -870,6 +843,20 @@ check("every performed row's evidence resolves to a registered arm",
 check("every registered cause is carried by at least one entry",
       {e.get("cause") for e in check_live.LEDGER if e.get("cause")}
       == set(check_live.CAUSES))
+
+# 0.9-M1-S3 (#329), Prime's second rider: the reclassification is a
+# CAUSE change, not a status change - sit's own origin existing does
+# not mean BotFather's /setdomain has been run, so nothing here may
+# read this row as performed without that owner act actually
+# happening. Both halves are asserted together so a future edit that
+# quietly flips either one - the cause back to something checked, or
+# the status to "performed" on nothing - reds here first.
+check("the reclassified Telegram-widget row still names an off-machine "
+      "cause and is still not marked performed",
+      any(e["id"] == "the Telegram widget rendering and its callback"
+          and e["cause"] == "off-machine"
+          and e["status"] == "first-contact"
+          for e in check_live.LEDGER))
 
 check("the destructive route is on the ledger and marked hands-off",
       any(e["id"] == "DELETE /snapshot"
