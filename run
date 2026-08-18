@@ -94,6 +94,16 @@ case "${1:-}" in
     # docstring for what it calls and why its exit code is prime_lock's
     # ruled table alone rather than a blend with reaper's.
     exec $PY tools/session_open.py ;;
+  fleet-status)
+    # The derived orchestration view (0.9-M0-S20, #317): branches,
+    # tickets, worktrees and the reaper's own report, each row naming
+    # the artifact it came from - Prime's session-open and pre-decision
+    # habit, extending session-open above rather than duplicating it
+    # (session-open answers "is a lock held and what would the reaper
+    # clean up"; this answers "what is the whole fleet doing right
+    # now"). tools/fleet_status.py's own module docstring carries the
+    # full reasoning.
+    exec $PY tools/fleet_status.py ;;
   agent-init)
     # The worktree contract. tools/agent_init.py carries the reasoning -
     # the four traps this exists to kill, why its state is machine-held
@@ -150,6 +160,11 @@ usage: ./run <command>          (PowerShell: .\run <command>)
               this session's own identity (exits per its ruled table -
               0 ok, 1 another session's fresh lock, 2 stale/unreadable)
               and reaper.py --report, both printed for the operator
+  fleet-status  the derived orchestration view: branches, tickets,
+              worktrees and the reaper's own report, each row naming
+              the artifact it came from - consult before every spawn,
+              continuation or landing decision (contacts gh; nothing
+              else leaves this machine)
   agent-init  make this worktree gate-ready and print the contract you
               are held to: line endings renormalized, dependencies
               installed junction-safely, one real gate stage run as a
