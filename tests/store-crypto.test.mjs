@@ -68,6 +68,19 @@ async function threw(work) {
   } catch (error) { return error; }
 }
 
+/* What it returned, or a sentinel that fails a comparison instead of
+   ending the run. A throw where a value was expected is the failure of
+   ONE check, not a reason for the other sixty to go unreported - and a
+   mutation battery that reads "the arm crashed" learns less than one
+   that reads which check went red. */
+async function valueOf(work) {
+  try {
+    return await work();
+  } catch (error) {
+    return "<threw " + (error && error.name || String(error)) + ">";
+  }
+}
+
 /* ------------------------------------------------------------------
  * THE COMMITTED v1 FIXTURE. Two records - one row, one directory -
  * sealed once under TEST_SECRET with the context named beside each,
@@ -133,7 +146,17 @@ const { openStoreWithKeys, openStore, PURPOSE, VERSION,
         StoreFormatError, StoreConfigError } = mod;
 
 const keyring = { writeKeyId: TEST_KEY_ID, secrets: { 1: TEST_SECRET } };
-const store = await openStoreWithKeys(keyring);
+let store = null;
+const openError = await threw(async () => {
+  store = await openStoreWithKeys(keyring);
+});
+if (openError) {
+  console.log("FAIL  the store opens over the committed test key ring");
+  console.log(String(openError && openError.stack || openError));
+  console.log("\nstore-crypto FAILED - the store did not open, so nothing " +
+    "below could run");
+  process.exit(1);
+}
 
 /* 1. THE FIXTURE DECODES. The whole reason a stored format is pinned. */
 for (const name of ["row", "directory"]) {
@@ -272,8 +295,8 @@ const slid = await threw(() => store.openRow(split, { accountId: "a",
 check("the account/record boundary cannot be slid (length-prefixed AAD)",
   slid instanceof StoreFormatError);
 check("the same record still opens under its own boundary",
-  await store.openRow(split, { accountId: "ab", recordId: "c" }) ===
-    "boundary");
+  await valueOf(() => store.openRow(split,
+    { accountId: "ab", recordId: "c" })) === "boundary");
 
 /* 7. ROTATION NEEDS NO NEW VERSION. A second generation reads what the
    first sealed and stamps its own id on what it writes. */
@@ -282,7 +305,7 @@ const rotated = await openStoreWithKeys({
   secrets: { 1: TEST_SECRET, 2: TEST_SECRET + " generation two" },
 });
 check("a record sealed under key id 1 still opens after rotation",
-  await rotated.openRow(rowRecord, rowContext) === rowPlain);
+  await valueOf(() => rotated.openRow(rowRecord, rowContext)) === rowPlain);
 const freshRecord = await rotated.sealRow(rowPlain, rowContext);
 check("what the rotated store writes carries key id 2",
   ((freshRecord[1] << 8) | freshRecord[2]) === 2);
@@ -294,30 +317,71 @@ check("the pre-rotation store cannot read a post-rotation record",
 
 /* 8. NO KEY MATERIAL ANYWHERE IT COULD LEAK. The canary is the secret
    itself: if any error, any thrown object's own properties, or the
-   store handle serializes it, the substring is there to find. */
+   store handle serializes it, the substring is there to find.
+   EVERY error path that has a secret in its hand is driven, not a
+   representative one - the first version of this block drove two of
+   them, and a mutation that interpolated the secret into the
+   short-secret message passed it. The short secret has to be short, so
+   it carries a trimmed canary of its own. */
 const CANARY = "ZQ7X-KEYMATERIAL-CANARY-8842";
+const SHORT_CANARY = "ZQ7X-SHORT";
+const canarySecret = "store secret carrying " + CANARY + " and nothing else";
 const canaryStore = await openStoreWithKeys({ writeKeyId: 1,
-  secrets: { 1: "store secret carrying " + CANARY + " and nothing else" } });
+  secrets: { 1: canarySecret } });
 const canaryRecord = await canaryStore.sealRow("x", rowContext);
 const canaryTampered = Uint8Array.from(canaryRecord);
 canaryTampered[canaryTampered.length - 1] ^= 0xff;
 
+/* Everything a thrown value can be read through, flattened. */
+function surfacesOf(thrown) {
+  if (thrown === null || thrown === undefined) return ["(nothing thrown)"];
+  return [String(thrown), String(thrown.message), String(thrown.stack),
+    JSON.stringify(thrown) || "",
+    JSON.stringify(Object.getOwnPropertyNames(thrown)
+      .map((name) => String(thrown[name])))];
+}
+
+const leakPaths = [
+  ["a tampered record under a canary secret",
+   () => canaryStore.openRow(canaryTampered, rowContext)],
+  ["a key ring whose write id names no secret",
+   () => openStoreWithKeys({ writeKeyId: 9, secrets: { 1: canarySecret } })],
+  ["a key ring with an out-of-range key id",
+   () => openStoreWithKeys({ writeKeyId: 1,
+     secrets: { 0: canarySecret } })],
+  ["a secret below the length floor",
+   () => openStoreWithKeys({ writeKeyId: 1, secrets: { 1: SHORT_CANARY } })],
+  ["STORE_SECRET below the length floor",
+   () => openStore({ STORE_SECRET: SHORT_CANARY })],
+  ["STORE_SECRET_PREVIOUS below the length floor",
+   () => openStore({ STORE_SECRET: canarySecret,
+     STORE_SECRET_PREVIOUS: SHORT_CANARY,
+     STORE_SECRET_PREVIOUS_KEY_ID: "2" })],
+  ["STORE_SECRET_PREVIOUS with no key id",
+   () => openStore({ STORE_SECRET: canarySecret,
+     STORE_SECRET_PREVIOUS: canarySecret + " two" })],
+  ["a canary account id on a sealed row",
+   () => canaryStore.sealRow("x", { accountId: "", recordId: CANARY })],
+];
+
 const leakSurfaces = [];
-const canaryError = await threw(() =>
-  canaryStore.openRow(canaryTampered, rowContext));
-leakSurfaces.push(String(canaryError.message), String(canaryError.stack),
-  String(canaryError), JSON.stringify(canaryError),
-  JSON.stringify(Object.getOwnPropertyNames(canaryError)
-    .map((n) => canaryError[n])));
+const silent = [];
+for (const [label, work] of leakPaths) {
+  const error = await threw(work);
+  if (!(error instanceof Error)) silent.push(label);
+  leakSurfaces.push(...surfacesOf(error));
+}
 leakSurfaces.push(JSON.stringify(canaryStore),
   JSON.stringify(Object.keys(canaryStore)), String(canaryStore.openRow),
   String(canaryStore.sealRow));
-const configError = await threw(() => openStoreWithKeys({ writeKeyId: 9,
-  secrets: { 1: "store secret carrying " + CANARY + " and nothing else" } }));
-leakSurfaces.push(String(configError && configError.message),
-  String(configError && configError.stack));
-check("no error, thrown object or store handle carries the secret",
-  leakSurfaces.every((text) => !text.includes(CANARY)));
+check("no error from any of the " + leakPaths.length + " secret-bearing " +
+  "paths, and no store handle, carries the secret",
+  leakSurfaces.every((text) => !text.includes(CANARY) &&
+    !text.includes(SHORT_CANARY)));
+check("every one of those paths actually threw - one that stopped failing " +
+  "would carry nothing and pass the check above for the wrong reason" +
+  (silent.length ? ", and these did not: " + silent.join("; ") : ""),
+  silent.length === 0);
 check("the store handle serializes to nothing at all",
   JSON.stringify(canaryStore) === "{}");
 check("the store handle exposes exactly the four sealed operations",
@@ -394,12 +458,11 @@ check("the docstring forbids regenerating a failing fixture",
    loudly, which is the opposite of the decode path's silence and is
    the difference between an operator error and an attacker probe. */
 const envStore = await openStore({ STORE_SECRET: TEST_SECRET });
+const envRecord = await envStore.sealRow(rowPlain, rowContext);
 check("openStore(env) round trips through STORE_SECRET",
-  await envStore.openRow(await envStore.sealRow(rowPlain, rowContext),
-    rowContext) === rowPlain);
+  await valueOf(() => envStore.openRow(envRecord, rowContext)) === rowPlain);
 check("openStore(env) defaults to key id 1",
-  ((await envStore.sealRow("x", rowContext))[1] << 8 |
-   (await envStore.sealRow("x", rowContext))[2]) === 1);
+  ((envRecord[1] << 8) | envRecord[2]) === 1);
 check("a missing STORE_SECRET is a loud configuration failure",
   await threw(() => openStore({})) instanceof StoreConfigError);
 check("a short STORE_SECRET is refused",
@@ -414,10 +477,12 @@ check("a previous generation reusing the write key id is refused",
     STORE_SECRET_PREVIOUS: TEST_SECRET + " two",
     STORE_SECRET_PREVIOUS_KEY_ID: "1" })) instanceof StoreConfigError);
 check("openStore(env) reads a previous generation when both are given",
-  await (await openStore({ STORE_SECRET: TEST_SECRET + " generation two",
-    STORE_SECRET_KEY_ID: "2", STORE_SECRET_PREVIOUS: TEST_SECRET,
-    STORE_SECRET_PREVIOUS_KEY_ID: "1" })).openRow(rowRecord, rowContext) ===
-    rowPlain);
+  await valueOf(async () => (await openStore({
+    STORE_SECRET: TEST_SECRET + " generation two",
+    STORE_SECRET_KEY_ID: "2",
+    STORE_SECRET_PREVIOUS: TEST_SECRET,
+    STORE_SECRET_PREVIOUS_KEY_ID: "1",
+  })).openRow(rowRecord, rowContext)) === rowPlain);
 
 /* 13. CALLER BUGS ARE LOUD, and deliberately NOT the opaque refusal:
    an empty account id is an uninitialized variable in the Worker, not
@@ -437,7 +502,7 @@ check("PURPOSE names exactly the two purposes and is frozen",
   JSON.stringify(PURPOSE) === JSON.stringify({ ROW: "row",
                                                DIRECTORY: "dir" }));
 
-const EXPECTED = 63;
+const EXPECTED = 64;
 console.log(failures
   ? `\nstore-crypto FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
