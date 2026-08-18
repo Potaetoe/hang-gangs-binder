@@ -1901,7 +1901,7 @@
      * twelve people can produce twenty selections and no whole exists
      * for a percentage to be part of: the published page printed
      * `Other (fewer than 5) — 9 (180%)`. The counts are right; the share
-     * had nothing to be a share of, so it is gone rather than relabelled.
+     * had nothing to be a share of, so it is gone rather than relabeled.
      */
     container.appendChild(breakdown("Feedism affiliations",
       "These do not add up to the number of entries — no share is shown " +
