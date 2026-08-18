@@ -300,6 +300,28 @@ check("one partition: the partition names the system it was binned in " +
   partitioned.distribution.partition.system ===
     globalThis.BINDER_SITE.units.default);
 
+/* The edges are the partition's own edges CONVERTED through the spec's
+   ratio and through nothing else. Checked against apps/fields.js rather
+   than against the answer's other system, because the split check below
+   compares the systems to each other and a conversion wrong by one
+   constant in every system moves them together - true of the shape and
+   wrong on the axis. Both questions are worth asking and only this one
+   can see a second constant. */
+{
+  const part = partitioned.distribution.partition;
+  const off = partitioned.distribution.bins.filter((bin) =>
+    !systems.every((system) => {
+      const unit = partitioned.units[system].unit;
+      const factor = globalThis.BinderFields.factor(part.unit, unit);
+      return Math.abs(bin.from[system] - bin.from[part.system] * factor)
+        <= 0.06 &&
+        Math.abs(bin.to[system] - bin.to[part.system] * factor) <= 0.06;
+    }));
+  check("one partition: every system's edges are the partition's edges " +
+    "converted through the spec's own `per` ratio - no second binning " +
+    "and no second constant", off.length === 0);
+}
+
 /* The attack the rule exists for: overlay the two systems' edges and
    look for an intersection nobody drew. Because the edges are one
    partition converted, every metric edge is an imperial edge times a
@@ -699,7 +721,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 65;
+const EXPECTED = 66;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
