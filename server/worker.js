@@ -1009,6 +1009,21 @@ async function sessionFor(env, token) {
       : (await adminAccountIds(env)).has(row.account_id);
   }
 
+  /*
+   * `accountId` HERE IS THE ACCOUNT-ID HMAC AND NEVER A TELEGRAM
+   * NUMERIC ID, and anything downstream that binds a caller to stored
+   * data must take it from here rather than deriving one of its own.
+   *
+   * This is the only identity a route below can reach: the numeric id
+   * exists inside handleTelegramAuth for the length of one sign-in and
+   * is written to nothing, so a route that wanted one would have to
+   * invent a way to get it. Said out loud because the storage work that
+   * encrypts rows binds each one to a caller identity, and binding to a
+   * raw numeric id would put the membership oracle back inside the
+   * ciphertext where no dump-reveals-nothing property could reach it -
+   * DESIGN.md, "The identifier is the whole problem". Sixty-four
+   * lowercase hex characters is the shape; ACCOUNT_ID is the pattern.
+   */
   return {
     accountId: row.account_id,
     isAdmin: isAdmin,

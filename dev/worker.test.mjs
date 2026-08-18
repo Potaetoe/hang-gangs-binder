@@ -208,6 +208,7 @@ function reset() {
   content = [];
   roster = [];
   replay = new Map();
+  mintedPayloads = 0;
   nextId = 1;
   executed = [];
   batches = [];
@@ -872,9 +873,16 @@ const hex = (buffer) => Array.from(new Uint8Array(buffer))
  * payload is dated one second before the last. It only ever grows, and
  * eighty-odd sign-ins stay far inside the five-minute window.
  *
- * It is deliberately NOT reset between sections: a counter that restarted
- * would re-mint a payload an earlier section had already spent, and the
- * suite would fail somewhere with nothing wrong in the Worker.
+ * It restarts at reset(), and that is not a convenience - it is the only
+ * safe place for it to restart, in both directions. It has to restart
+ * SOMEWHERE, because this file signs in far more than three hundred
+ * times and a counter that only grew would eventually date a payload
+ * past the five-minute window and refuse it for a reason that has
+ * nothing to do with the arm under test. And it may only restart where
+ * the spent-payload table is emptied, or a re-minted payload would be
+ * one the Worker has correctly recorded as already used. reset() is the
+ * one place both are true: it is this suite's "a fresh database", and a
+ * fresh database has spent nothing.
  */
 let mintedPayloads = 0;
 

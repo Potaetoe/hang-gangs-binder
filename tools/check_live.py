@@ -1123,6 +1123,24 @@ LEDGER = [
         "guard": 'if (!env.TELEGRAM_GROUP_CHAT_ID) return "unknown";',
     },
     {
+        "id": "one payload, one session",
+        "surface": "flow",
+        "claim": "a payload spent once is refused the second time, so a "
+                 "captured one cannot mint a session beside the "
+                 "member's own inside the freshness window",
+        "covers": ["server/worker.js"],
+        "status": "first-contact",
+        "cause": "guarded-branch",
+        # Nothing local ever reaches the claim: it runs after a payload
+        # HMAC-signed under a real bot token has verified, which is the
+        # guard the row above this block already describes. The suite
+        # drives it against a stub, and a stub is not a D1 primary key -
+        # what has never been observed is SQLite refusing the second
+        # INSERT. The first real sign-in on sit discharges it, by
+        # posting one captured payload twice.
+        "guard": "if (claimed !== true) {",
+    },
+    {
         "id": "a leaver's live sessions revoked",
         "surface": "flow",
         "claim": "revocation fires from one place, on a standing the "
