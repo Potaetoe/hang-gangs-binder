@@ -772,8 +772,24 @@ check("a fresh ledger under the threshold does not say DUE",
       == (len(check_live.debt(check_live.LEDGER))
           >= check_live.CADENCE_THRESHOLD))
 
+# Isolated from check_live.LEDGER on purpose, unlike DUE_TEXT/CALM_TEXT
+# above: the real ledger's debt count is not pinned against
+# CADENCE_THRESHOLD anywhere (nor should it be - a real ledger crossing
+# the threshold is the mechanism doing its job), so a check that reads
+# "None, not False" off the real ledger's CURRENT debt would break the
+# day that debt legitimately went DUE, which is exactly what happened
+# when 0.9-M1-S2 (#326) reclassified five rows to "never" and pushed
+# the real count past fifteen. A fixture under the threshold is what
+# this check is actually about.
+saved = check_live.LEDGER
+try:
+    check_live.LEDGER = NEVER_ROWS + FRESH_ROWS
+    UNREADABLE_TEXT = check_live.report(silent)
+finally:
+    check_live.LEDGER = saved
+
 check("the report refuses to say not-due when rows cannot be aged",
-      "CANNOT SAY" in SILENT_TEXT)
+      "CANNOT SAY" in UNREADABLE_TEXT)
 
 # The marker line rather than the word. The closing paragraph names
 # STALE in prose to say how such a row is discharged, and a bare word
@@ -783,8 +799,24 @@ check("every stale row is marked where the report lists it",
           [e for e in check_live.LEDGER if e["status"] == "performed"])
       and "\n      STALE  " not in CALM_TEXT)
 
-check("performed rows are grouped under the arm that earned them",
-      all("  %s  (" % arm in DUE_TEXT for arm in check_live.ARMS))
+# An arm registered with no performed row against it yet - "sit"
+# (0.9-M1-S2, #326) is the first one this ledger has ever carried - is
+# not a bug in this check; it is the state without-production below
+# proves on purpose. So the expectation per arm follows which line
+# check_live.report() actually owes: the grouped-rows heading for an
+# arm with evidence, the named-empty line for one without, never a
+# blanket assumption that every declared arm has earned a row yet.
+check("performed rows are grouped under the arm that earned them, and "
+      "an arm nobody has performed a row against yet is named rather "
+      "than assumed",
+      all(
+          ("  %s  (" % arm in DUE_TEXT)
+          if any(row["status"] == "performed"
+                 and check_live.arm_of(row["performed"]["sha"]) == arm
+                 for row in check_live.LEDGER)
+          else ("  %s  - NO ROW HAS EVER BEEN PERFORMED AGAINST THIS "
+                "ARM" % arm in DUE_TEXT)
+          for arm in check_live.ARMS))
 
 # An arm with no evidence at all is the state this ledger was in for
 # production until today, and it has to be printed rather than left out
