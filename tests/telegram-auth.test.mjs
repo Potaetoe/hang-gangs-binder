@@ -865,6 +865,20 @@ check("and it is that constant the group check is bounded by",
     body.isAdmin === false && db.inserts[0].is_admin === 0);
 }
 
+/* The development sign-in door, retired (0.9-M2-S1, #352; the
+   retirement server/worker.js's own header note 3 named). It is GONE
+   rather than turned off, and these two arms are what says so.
+
+   The second one is the whole point and the first one alone would not
+   have caught the difference. While the route existed, its absence was
+   a CONFIGURATION fact - DEV_LOGIN_SECRET unset - so an arm posting
+   without the secret went green against a Worker that would have minted
+   a session the moment somebody set one. This ORIGIN is loopback
+   (http://localhost:8124), which is the other condition the old handler
+   wanted, so a Worker still carrying the route answers 200 here. A 404
+   with the secret set and the origin right is only available to a
+   Worker that has no such route at all, and that is the property this
+   slice is for. */
 {
   const { value } = await withSeams(botAnswering(memberAnswer), () =>
     post(worker, sitEnv(makeDb()), "/auth/dev",
@@ -872,6 +886,29 @@ check("and it is that constant the group check is bounded by",
   check("POST /auth/dev does not exist on a Worker carrying no " +
     "DEV_LOGIN_SECRET: 404, not 401 - a deployment does not advertise " +
     "a route it will not serve", value.status === 404);
+}
+
+{
+  const db = makeDb();
+  const env = sitEnv(db, { DEV_LOGIN_SECRET: "a-development-secret" });
+  const { value } = await withSeams(botAnswering(memberAnswer), () =>
+    post(worker, env, "/auth/dev",
+      { secret: "a-development-secret", subject: "someone" }));
+  check("POST /auth/dev is 404 WITH the secret set and the origin " +
+    "loopback - the route is gone, not fail-closed, so setting the " +
+    "binding cannot open it again", value.status === 404);
+  check("and the retired door mints nothing - no session row is written",
+    db.inserts.length === 0);
+}
+
+{
+  const db = makeDb();
+  const env = sitEnv(db, { DEV_LOGIN_SECRET: "a-development-secret" });
+  const { value } = await withSeams(botAnswering(memberAnswer), () =>
+    post(worker, env, "/auth/dev",
+      { secret: "a-development-secret", subject: "someone", admin: true }));
+  check("nor for an admin subject, which is the shape that used to hand " +
+    "out the whole corpus", value.status === 404 && db.inserts.length === 0);
 }
 
 {

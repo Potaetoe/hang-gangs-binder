@@ -102,6 +102,15 @@ const TOKEN_A = "session-token-member-a";
 const TOKEN_B = "session-token-member-b";
 const TOKEN_RAW = "session-token-raw-id-defect";
 
+/* A session row carrying is_dev = 1 AND is_admin = 1. Nothing in the
+   Worker can mint one any more - POST /auth/dev was the only writer and
+   0.9-M2-S1 (#352) removed it - so the only way this row exists is
+   somebody writing it into D1 by hand, which is exactly the case the
+   arms below pin. */
+const ACCT_DEV =
+  "3333333333333333333333333333333333333333333333333333333333333333";
+const TOKEN_DEV = "session-token-hand-written-dev-row";
+
 /* ------------------------------------------------------------------ */
 /* A D1 binding that remembers rows and reads its scoping off the SQL.  */
 /* It models only the statements these four routes issue; a statement   */
@@ -312,16 +321,17 @@ function makeDb() {
 const db = makeDb();
 const nowIso = () => new Date().toISOString();
 const future = new Date(Date.now() + 3600_000).toISOString();
-function seedSession(token, accountId, isAdmin) {
+function seedSession(token, accountId, isAdmin, isDev) {
   db._sessions.push({
     token_hash: sha256hex(token), account_id: accountId,
-    is_admin: isAdmin ? 1 : 0, is_dev: 0,
+    is_admin: isAdmin ? 1 : 0, is_dev: isDev ? 1 : 0,
     created_at: nowIso(), expires_at: future,
   });
 }
 seedSession(TOKEN_A, ACCT_A, false);
 seedSession(TOKEN_B, ACCT_B, false);
 seedSession(TOKEN_RAW, RAW_ID, false);
+seedSession(TOKEN_DEV, ACCT_DEV, true, true);
 
 const env = {
   DB: db,
@@ -346,7 +356,10 @@ const openStored = (id) => {
     { accountId: row.account_id, recordId: String(id) }));
 };
 
-async function call(method, path, { token, body } = {}) {
+/* `over` adds bindings for one call only. It exists for the dev-session
+   arms below, which have to ask what a Worker does when DEV_LOGIN_SECRET
+   IS set - the binding whose absence used to be the whole guard. */
+async function call(method, path, { token, body, over } = {}) {
   const headers = { Origin: ORIGIN };
   if (token) headers.Authorization = "Bearer " + token;
   const init = { method, headers };
@@ -355,7 +368,7 @@ async function call(method, path, { token, body } = {}) {
     headers["Content-Type"] = "application/json";
   }
   const res = await fetchWorker(new Request("https://sit.example" + path, init),
-    env);
+    over ? Object.assign({}, env, over) : env);
   let parsed = null;
   try { parsed = await res.json(); } catch { parsed = null; }
   return { status: res.status, body: parsed };
@@ -529,6 +542,43 @@ const idA2 = submitA2.body && submitA2.body.id;
 const delForeign = await call("DELETE", "/submission/" + idA2, { token: TOKEN_B });
 check("delete: a member's delete of another's row deletes nothing",
   delForeign.status === 200 &&
+  db._submissions.some((r) => r.id === idA2));
+
+/* No session at all is refused before the handler runs, and that gate is
+   in the router rather than in handleDeleteSubmission - so the handler is
+   never reached with an account id of null, which is the shape that would
+   scope a member's delete to nothing and delete nothing while looking
+   like an ownership check. 401 rather than the 200 an owned no-op gets:
+   there is no caller here to have got what they wanted. */
+const delNoSession = await call("DELETE", "/submission/" + idA2);
+check("delete: no session is refused (401) - the router gate, ahead of " +
+  "the handler", delNoSession.status === 401);
+check("delete: and the refused call removed nothing",
+  db._submissions.some((r) => r.id === idA2));
+
+/* A HAND-WRITTEN is_dev SESSION CONFERS NOTHING (0.9-M2-S1, #352).
+   POST /auth/dev was the only writer of is_dev = 1 and it is gone, so a
+   row like this can only arrive through `wrangler d1 execute` or a
+   restored backup. It used to be the one session whose adminness was
+   re-read from DEV_LOGIN_SECRET instead of from the admin lists; now
+   adminness comes from the lists alone, and a "dev:"-namespaced id can
+   never be a numeric Telegram id's HMAC, so this row is a member.
+
+   The override is what makes this arm mean anything: with the binding
+   absent the old code answered "not an admin" for the wrong reason -
+   the secret was unset - and an arm run without it would have gone
+   green against the very Worker this slice is removing. */
+const devSecret = { DEV_LOGIN_SECRET: "a-development-secret" };
+const devExport = await call("GET", "/export",
+  { token: TOKEN_DEV, over: devSecret });
+check("dev row: a hand-written is_dev session is not an admin, even with " +
+  "DEV_LOGIN_SECRET set (401 at /export)", devExport.status === 401);
+
+const devForeignDelete = await call("DELETE", "/submission/" + idA2,
+  { token: TOKEN_DEV, over: devSecret });
+check("dev row: its delete takes the MEMBER path - scoped to its own " +
+  "account, so another member's row survives",
+  devForeignDelete.status === 200 &&
   db._submissions.some((r) => r.id === idA2));
 
 /* Break-glass admin may delete any row. */
