@@ -240,23 +240,18 @@ preview_urls = false
 [env.sit.vars]
 ALLOWED_ORIGINS = "http://localhost:8124,http://127.0.0.1:8124"
 
-# The database does not exist yet, and this slice makes no cloud writes
-# (its own issue's boundary) - so there is no id to put here.
-# Placeholder-free rather than REPLACE_ME, per the reasoning above
-# production's own [[d1_databases]] block: a config that gets run
-# cannot quietly be wrong, and an id that names nothing is exactly the
-# lie that reasoning already refused once. Absence is what stays true
-# instead: `wrangler deploy --env sit` with no binding here fails
-# closed on the first route that touches env.DB, rather than silently
-# pointing at the wrong database.
-#
-# OPERATIONS.md, "Building the sit environment", is the exact sequence:
-# `wrangler d1 create hg_binder_db_sit` prints a real id, and the
-# operator pastes it into a block here shaped like this one -
-#
-#     [[env.sit.d1_databases]]
-#     binding = "DB"            # worker.js reads env.DB - do not rename
-#     database_name = "hg_binder_db_sit"
-#     database_id = "<what wrangler printed>"
-#
-# - before running `wrangler deploy --env sit`.
+# The database exists since 2026-08-18: OPERATIONS.md's "Building the
+# sit environment" step 1 was run (owner-initiated, #282) and
+# `wrangler d1 create hg_binder_db_sit` printed the id below. The id is
+# account-scoped and not a credential, for the same reasons written
+# above production's own [[d1_databases]] block - it identifies the
+# database but opens nothing without Cloudflare authentication. The
+# absence this block replaced used to be what kept the file honest;
+# now presence is: a config that gets run cannot quietly be wrong, and
+# this one names a database that really answers to this id
+# (0.9-M1-S1b landed it the same hour the id was minted).
+
+[[env.sit.d1_databases]]
+binding = "DB"            # worker.js reads env.DB - do not rename
+database_name = "hg_binder_db_sit"
+database_id = "05fc23ae-e0a1-4ca4-8f18-fd6425525853"
