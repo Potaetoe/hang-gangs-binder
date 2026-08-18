@@ -547,11 +547,12 @@ def plant_hook_registration(primary, existing=None):
     This function assumes `existing` is already a real dict or `None` -
     it does not itself guard against anything else, because
     `worktree_settings_merge_base()` below is the one place that reads
-    the worktree's own file and is where that guard lives (F5, #347
-    review, comment 5335343747: a worktree settings.json holding valid
-    JSON that is not an object used to reach `dict(existing or {})` here
-    unguarded and crash `agent-init` with a traceback rather than the
-    verb's own printed remedy).
+    the worktree's own file and is where that guard lives. A caller
+    that hands this function anything else - a worktree settings.json
+    that holds valid JSON but is not an object, for instance - reaches
+    `dict(existing or {})` unguarded and crashes `agent-init` with a
+    traceback instead of the verb's own printed remedy (F5, #347
+    review, comment 5335343747).
     """
     primary_settings = os.path.join(primary, ".claude", "settings.json")
     data = read_json(primary_settings)
@@ -587,16 +588,17 @@ def worktree_settings_merge_base(path):
     `read_json()` answers None for two different situations - the file
     is simply absent, and the file exists but `json.load` raised - and
     that collapse is exactly right for a caller that only wants to know
-    "is there something to read", but plant_hook_registration()'s
-    `existing` parameter used to receive that None (or, worse, whatever
-    read_json DID manage to parse, even when it was not a JSON object at
-    all - a list, a string, a number, true/false, null) with nothing
-    downstream checking the shape: `dict(existing or {})` raises on
-    anything that is neither falsy nor already a mapping, which turned a
-    hand-typo'd or hand-edited settings.json into a Python traceback
-    instead of agent-init's own printed contract - the crash the
-    primary-side `isinstance(data, dict)` guard two paragraphs up
-    already prevents for the PRIMARY's file, unmirrored on this side.
+    "is there something to read". A caller that passes either answer,
+    or anything read_json DID manage to parse that is still not a JSON
+    object - a list, a string, a number, true/false, null - straight
+    into `plant_hook_registration()`'s `existing` parameter with no
+    shape check first hands `dict(existing or {})` something it raises
+    on: anything that is neither falsy nor already a mapping. A
+    hand-typo'd or hand-edited settings.json reaches that line as a
+    Python traceback instead of agent-init's own printed contract unless
+    something checks its shape first - which is this function's job,
+    mirroring the primary-side `isinstance(data, dict)` guard two
+    paragraphs up that already protects the PRIMARY's own file.
 
     This function is the one place that reads the worktree's file, so it
     is the one place with enough information to tell those two failure
@@ -610,8 +612,10 @@ def worktree_settings_merge_base(path):
         about to be replaced with hooks-only, and the note says so
         instead of the plant doing it wordlessly.
       - the file exists, parses, and is valid JSON that is NOT an object
-        - same replacement, same requirement to say so, and the case
-          that used to crash rather than replace.
+        - same replacement, same requirement to say so; this is the
+          shape that reaches `dict(existing or {})` unguarded and
+          crashes if it is handed to plant_hook_registration() directly
+          instead of through here.
     """
     if not os.path.isfile(path):
         return None, None

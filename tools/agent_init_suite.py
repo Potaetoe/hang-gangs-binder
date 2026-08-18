@@ -762,12 +762,13 @@ try:
     save(primary_settings_path, fixture_settings)  # restore for what follows
 
     # F5 (#347 review, comment 5335343747): the worktree-side read of its
-    # OWN settings.json had no type guard, unlike the primary-side read
-    # a few lines up in plant_hook_registration(). Two shapes exercised:
-    # unparseable JSON (used to be swallowed and replaced with no word
-    # said about it) and valid JSON that is not an object, like a bare
-    # list (used to reach `dict(existing or {})` unguarded and CRASH the
-    # whole verb with a traceback instead of its own printed remedy).
+    # OWN settings.json needs the same type guard the primary-side read
+    # a few lines up in plant_hook_registration() already has, or two
+    # shapes go wrong silently or loudly: unparseable JSON is swallowed
+    # and replaced with no word said about it, and valid JSON that is
+    # not an object, like a bare list, reaches `dict(existing or {})`
+    # unguarded and crashes the whole verb with a traceback instead of
+    # printing its own remedy. Both are exercised here.
     write(linked_settings_path, "{not json at all")
     code, out = run_verb(["init", "--repo", linked, "--state", state,
                           "--no-install"])
