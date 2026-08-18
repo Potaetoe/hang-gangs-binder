@@ -40,7 +40,7 @@
  * key-shaped and none of them is real.
  */
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, createHmac } from "node:crypto";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -53,8 +53,22 @@ const readText = async (path) =>
 const workerSrc = await readText(WORKER_PATH);
 const schemaSrc = await readText(SCHEMA_PATH);
 
+/* server/worker.js imports ./store-crypto.js (0.9-M1-S6, #332), and a
+   data: module has no base URL to resolve a relative specifier against -
+   Node throws ERR_UNSUPPORTED_RESOLVE_REQUEST before a single check
+   runs. The specifier is rewritten to the real file's absolute URL, so
+   the worker still runs from its own bytes (the reason for the data: URL
+   in the first place) while the import resolves. The rewrite is scoped
+   to this one specifier rather than a general one: a second relative
+   import appearing in server/worker.js should fail loudly here and be
+   handled deliberately, not be silently absorbed by a broad regex. */
+const STORE_CRYPTO_URL =
+  pathToFileURL(ROOT + "server/store-crypto.js").href;
+
 async function loadWorker(src) {
-  return import("data:text/javascript," + encodeURIComponent(src));
+  const resolved = src.replace(
+    /(\bfrom\s*)"\.\/store-crypto\.js"/, '$1"' + STORE_CRYPTO_URL + '"');
+  return import("data:text/javascript," + encodeURIComponent(resolved));
 }
 
 const { default: worker } = await loadWorker(workerSrc);

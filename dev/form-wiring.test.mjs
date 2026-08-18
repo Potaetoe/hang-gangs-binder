@@ -54,35 +54,21 @@ const keyFile = JSON.parse(await readFile(
   new URL("test-key.json", import.meta.url), "utf8"));
 
 /*
- * The Worker's entire opinion about a submission's bytes, read off the
- * Worker rather than restated here.
+ * NOTHING IS READ OFF server/worker.js HERE, and that is a property of
+ * the route rather than a gap in this suite (0.9-M1-S6, #332).
  *
- * This suite guards a client file, so a limit written down in this file
- * would be a limit that agrees with itself - AGENTS.md's review bar
- * names that exact shape ("something outside the file has to say what
- * it may contain"). The envelope the form writes has to survive the
- * route that already accepts what it writes today, and the things that
- * route asks are the size cap, the alphabet, and the length quantum -
- * base64 comes in groups of four, and POST /submit refuses a length that
- * is not a multiple of four (2nd audit MINOR3). Extracted, so a narrowing
- * of any of them reddens section 9 instead of being remembered.
+ * POST /submit takes a record's PLAINTEXT and seals it itself, so the
+ * route holds no opinion about a blob's size, alphabet or length quantum
+ * - there is no blob on the wire to hold one about. A check that the
+ * envelope this page writes is one the endpoint carries rather than
+ * refuses therefore has no subject, and inventing limits in this file to
+ * check it against would be a limit agreeing with itself, which
+ * AGENTS.md's review bar names as worthless ("something outside the file
+ * has to say what it may contain").
+ *
+ * This suite guards the page. The sealed row's whole lifecycle is
+ * tests/entry-rows.test.mjs, driven against the real format.
  */
-const workerSource = await readFile(
-  new URL("../server/worker.js", import.meta.url), "utf8");
-const MAX_CIPHERTEXT =
-  /const MAX_CIPHERTEXT = (\d+) \* (\d+);/.exec(workerSource).slice(1)
-    .reduce((a, b) => Number(a) * Number(b));
-// The alphabet the route tests the field against, taken whole. Written
-// out here it would be a fourth copy of a pattern that already exists in
-// the Worker, in crypto.js's header and in dev/crypto.test.mjs. The `if`
-// carries a length-quantum arm ahead of the regex, so the extraction
-// keys on the `.test(ciphertext)` call rather than on the `if (` before
-// it.
-const WORKER_BASE64 = new RegExp(
-  /!\/(\^.+\$)\/\.test\(ciphertext\)\)/.exec(workerSource)[1]);
-// The quantum the route also requires, off the same statement.
-const WORKER_BASE64_QUANTUM = Number(
-  /ciphertext\.length % (\d+) !== 0/.exec(workerSource)[1]);
 
 const SUBMITTED_EVENT = "binder:submitted";
 const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
@@ -863,15 +849,12 @@ function setHeight(byId, feet, inches) {
     key.privateKey.extractable === false && key.privateKey.type === "private");
 
   /*
-   * MANDATE 4, from this side. The Worker was proved to have no branch
-   * on a row's contents; what is left to show is that the wider envelope
-   * is not distinguishable by being REFUSED - a row the endpoint would
-   * turn away is told apart from one it accepts by the most visible
-   * signal there is. Both limits come off the Worker's own source above.
+   * MANDATE 4 is checked from this side only. Its endpoint half - that
+   * the wider envelope is one POST /submit carries rather than refuses -
+   * has no subject on a route that seals plaintext itself and sees no
+   * envelope at all; the header of this file carries that argument in
+   * full. The page-side half is the two checks just above.
    */
-  check("the wider envelope is one the endpoint carries verbatim",
-    WORKER_BASE64.test(blob) && blob.length <= MAX_CIPHERTEXT &&
-    blob.length % WORKER_BASE64_QUANTUM === 0);
 }
 
 /*

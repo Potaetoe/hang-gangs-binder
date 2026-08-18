@@ -219,8 +219,8 @@ PINNED = {
     ("dev/demo.test.mjs", "-ll- doubling"): 1,
     ("dev/form-wiring.test.mjs", "-ll- doubling"): 1,
     ("dev/memberkey.test.mjs", "-ll- doubling"): 2,
-    ("dev/worker.test.mjs", "-ise family"): 4,
-    ("dev/worker.test.mjs", "-ll- doubling"): 17,
+    ("dev/worker.test.mjs", "-ise family"): 3,
+    ("dev/worker.test.mjs", "-ll- doubling"): 16,
     # Held by 0.9-M1-S6 (#332) as of this pin - read-only this slice.
     ("server/worker.js", "-ise family"): 2,
     ("tools/agent_init_suite.py", "-our words"): 1,

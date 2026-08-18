@@ -93,7 +93,13 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io"
 # that lives in a public repository. DEV_LOGIN_SECRET is a separate,
 # development-only secret and must never be set on production.
 #
-# ALL SIX ARE SET ON PRODUCTION, as Secrets rather than [vars].
+# THE PRE-0.9 SIX ARE SET ON PRODUCTION, as Secrets rather than [vars].
+# STORE_SECRET is the seventh name on the list below and is NOT among
+# them: it arrives with the entry-row rewrite (0.9-M1-S6, #332) and
+# production is not deployed against that code, so setting it is part of
+# the 1.0 cutover rather than a gap to close today. Until it is set, a
+# production Worker running this code would fail closed on every route
+# that stores or reads a row - loudly, which is the intended direction.
 # Confirmed by the owner from the dashboard on 2026-08-07, and again on
 # 2026-08-08 from an agent shell with
 # `wrangler versions view <id> --name hgbinderworker`, which lists secret
@@ -146,6 +152,14 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io"
 #     ACCOUNT_SECRET       the HMAC key behind every account id.
 #                          PERMANENT - changing it detaches every member
 #                          from their own history, with no way back.
+#     STORE_SECRET         the cipher secret entry rows are sealed under
+#                          at rest (0.9-M1-S6, #332). Its own secret and
+#                          never ACCOUNT_SECRET reused - see the [env.sit]
+#                          roster below and server/store-crypto.js. It is
+#                          rotatable where ACCOUNT_SECRET is not: the key
+#                          id in each record's header is what lets a new
+#                          generation be written while the old one stays
+#                          readable.
 #     ADMIN_TELEGRAM_IDS   numeric ids allowed to administer the Worker
 #     TELEGRAM_GROUP_CHAT_ID
 #                          the group whose members may sign in. REQUIRED on
@@ -188,7 +202,7 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 # preview_urls is repeated rather than inherited by assumption, per the
 # same reasoning production's own preview_urls line above states.
 #
-# THE SIT WORKER CARRIES FOUR SECRETS AND MUST NOT CARRY MORE. Unlike
+# THE SIT WORKER CARRIES FIVE SECRETS AND MUST NOT CARRY MORE. Unlike
 # the pre-0.9 dev arm this replaces, sit runs a REAL bot against a real
 # (if small, test-only) Telegram group - #228 Worker-topology addendum,
 # 2026-08-13: "Two bots exist by design, split by world... not a
@@ -212,6 +226,24 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 #                             list - so a break-glass path for that same
 #                             operator grants nothing a Cloudflare login
 #                             does not already grant.
+#     STORE_SECRET            the cipher secret entry rows are sealed
+#                             under at rest (0.9-M1-S6, #332). A FIFTH
+#                             secret here rather than a reuse of
+#                             ACCOUNT_SECRET, and server/store-crypto.js's
+#                             own header rules why: the account-id HMAC
+#                             key and the cipher key have different
+#                             lifetimes, so one must never be borrowed for
+#                             the other. Fresh for sit and never
+#                             production's, on the same reasoning the
+#                             account secret above carries. Without it any
+#                             route that stores or reads a row fails
+#                             closed - store-crypto refuses to build a
+#                             store at all rather than deriving a key from
+#                             nothing.
+#                             (Do not start a continuation line here with
+#                             a bare CAPITALIZED_NAME: the roster reader
+#                             in tests/operations-sit-procedure.test.mjs
+#                             takes any such line as a new roster entry.)
 #
 # DELIBERATELY ABSENT, each for its own citation. Do not "fix" the
 # asymmetry by setting any of these:

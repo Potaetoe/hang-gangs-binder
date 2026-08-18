@@ -168,12 +168,21 @@ the terminal, never pasted into a file.
    npx wrangler secret put TELEGRAM_BOT_TOKEN --env sit
    npx wrangler secret put TELEGRAM_GROUP_CHAT_ID --env sit
    npx wrangler secret put EXPORT_TOKEN --env sit
+   npx wrangler secret put STORE_SECRET --env sit
    ```
 
    The bot token and the group chat id are #282's two inputs, exactly as
    supplied there. `ACCOUNT_SECRET` is a fresh value generated for sit
    alone — never production's, never reused, per `DESIGN.md`, "The bot
    is temporary". `EXPORT_TOKEN` is any value the operator keeps.
+   `STORE_SECRET` is the fifth secret (0.9-M1-S6, #332): the cipher
+   secret entry rows are sealed under at rest, generated fresh for sit
+   and never ACCOUNT_SECRET reused — `server/store-crypto.js` rules why
+   the two must be separate. Make it long; the store refuses a secret
+   under twenty-four characters rather than deriving a key from too
+   little. Until it is set, every route that stores or reads a row fails
+   closed — sign-in still works, so a sit Worker that signs people in and
+   then errors on the form is this secret missing.
 
    **This is the act that closes #282.** Comment there with which
    secrets were set — names only, never values — once done.

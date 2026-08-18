@@ -367,58 +367,60 @@ LEDGER = [
     {
         "id": "GET /my-entries",
         "surface": "route",
-        "claim": "a member's listing carries their own rows in id "
-                 "order and nobody else's, with the sealed bytes as "
-                 "stored. dev/worker.test.mjs reads the ORDER BY "
-                 "column, its direction and the LIMIT off the "
-                 "statement, so a Worker that drops, reverses or "
-                 "unbounds either clause goes red there. The half that "
-                 "stays live-only is D1 applying them: every sequence "
-                 "the suite compares against is produced by a sort in "
-                 "the suite, and the cap is a slice of rows the stub "
-                 "already held rather than a database that stops "
-                 "reading",
+        "claim": "a member's listing carries their own rows and "
+                 "nobody else's, newest first, each one OPENED by the "
+                 "Worker from its at-rest ciphertext (0.9-M1-S6, "
+                 "#332). tests/entry-rows.test.mjs drives the whole "
+                 "lifecycle against the real format, so the seal, the "
+                 "open and the account scoping are covered off-line. "
+                 "The half that stays live-only is D1 applying the "
+                 "ORDER BY and the LIMIT: every sequence the arm "
+                 "compares against is produced by a sort in the arm, "
+                 "and the cap is a slice of rows a stub already held "
+                 "rather than a database that stops reading",
         "covers": ["server/worker.js"],
         "status": "never",
     },
     {
         "id": "GET /my-entries, after the session is revoked",
         "surface": "route",
-        "claim": "a token captured before Sign out reads no sealed "
-                 "bytes after it. The route carries a member's whole "
-                 "encrypted history since #85, so revocation stopped "
-                 "being about counts - and the stub cannot falsify "
-                 "this half: it deletes a row from an array, which "
-                 "proves the route re-resolves the caller every call "
-                 "and proves nothing about D1 removing the row. "
-                 "Capture the token first, sign out, replay it",
+        "claim": "a token captured before Sign out reads nothing "
+                 "after it. The route now serves a member's whole "
+                 "history as PLAINTEXT (0.9-M1-S6, #332), so what a "
+                 "stale token would reach is the readable record "
+                 "rather than bytes needing a key - which raises what "
+                 "this row is worth rather than changing what it "
+                 "tests. A stub cannot falsify this half: it deletes "
+                 "a row from an array, which proves the route "
+                 "re-resolves the caller every call and proves "
+                 "nothing about D1 removing the row. Capture the "
+                 "token first, sign out, replay it",
         "covers": ["server/worker.js", "apps/web/signout.js"],
         "status": "never",
     },
     {
         "id": "POST /submit",
         "surface": "route",
-        "claim": "a sealed row reaches D1, and a correction supersedes "
-                 "exactly one entry",
+        "claim": "the WORKER seals a submitted record and the row "
+                 "reaches D1 openable under STORE_SECRET, and a "
+                 "correction supersedes exactly one entry without "
+                 "rewriting it (0.9-M1-S6, #332). The row id is "
+                 "assigned before the seal and bound into the "
+                 "ciphertext, so what a live run adds over "
+                 "tests/entry-rows.test.mjs is D1 accepting that id "
+                 "as the PRIMARY KEY and the UNIQUE index on "
+                 "`supersedes` refusing a real raced correction",
         "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="rows sealed in the browser reached the deployed "
-                "database and came back openable under the "
-                "deployment's key, while rows pushed in beside them "
-                "carrying placeholder ciphertext did not - which is "
-                "what tells a row that made the whole round trip from "
-                "one that was seeded. A correction then stored 200 and "
-                "replaced exactly one row: the member's count held "
-                "rather than rising, a second correction of the same "
-                "row drew 409 in the wording the page shows, and the "
-                "fan-in query returned nothing before or after. The "
-                "refusals answer identically where they must - a "
-                "foreign entry, an absent one and a seeded one all 404 "
-                "byte for byte, so the route is not a way to test "
-                "which ids exist - and a malformed pointer draws 400 "
-                "with no coercion of \"1\" to 1"),
+        # Reclassified from "performed" by 0.9-M1-S6 (#332), which is
+        # the change that falsified the evidence rather than a doubt
+        # about it. The sitting recorded rows SEALED IN THE BROWSER
+        # reaching the deployed database and opening under the
+        # deployment's key - a client-seal path this slice retires. The
+        # route it exercised does not exist to be re-checked, so the
+        # honest state is that the route as it now stands has never run
+        # against a real database. It needs STORE_SECRET set on sit
+        # first, which is the operator act this slice does not perform.
+        "status": "never",
     },
     {
         "id": "GET /export",
@@ -558,8 +560,13 @@ LEDGER = [
     {
         "id": "DELETE /submission/{}",
         "surface": "route",
-        "claim": "an admin removes one stored row and nothing beside "
-                 "it moves",
+        "claim": "a member removes one of their OWN rows and an admin "
+                 "removes anyone's, and nothing beside it moves "
+                 "(0.9-M1-S6, #332). The live half a stub cannot "
+                 "reach is that a member's delete carries its account "
+                 "clause into D1: a stub filters an array, so it "
+                 "proves the statement was sent scoped and proves "
+                 "nothing about the database honoring it",
         "covers": ["server/worker.js"],
         "status": "never",
     },

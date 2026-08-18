@@ -1,17 +1,21 @@
 -- The whole database.
 --
--- One row per submission. `ciphertext` is an opaque base64 blob that
--- nothing on this side can read; every field a submitter typed lives
--- inside it, including the timestamp their browser recorded.
+-- One row per submission. `ciphertext` is the record sealed at rest by
+-- the Worker itself (0.9-M1-S6, #332): every field a submitter typed
+-- lives inside it, and server/store-crypto.js is the only thing that
+-- seals or opens one. The Worker CAN read it, deliberately - DESIGN.md,
+-- "Trust model: the Worker reads", rules that trade knowingly, and it is
+-- what lets a member read their own history back. What the encryption
+-- buys is that a raw dump of this file's tables alone reveals nothing.
 --
 -- `received_at` is the server's own receipt time, kept outside the blob
 -- because it is the one fact the endpoint can honestly attest to. It,
 -- `account_id` and `supersedes` are the only metadata stored, and each
 -- of the three is in the clear because a pointer or an id the Worker
--- cannot read is one it can neither check nor count - see DESIGN.md,
--- "The identifier is the whole problem", on why the Telegram handle is
--- not a column and why an account id can sit in the clear where a
--- handle cannot.
+-- must read WITHOUT opening a record is one it can check and count
+-- cheaply - see DESIGN.md, "The identifier is the whole problem", on why
+-- the Telegram handle is not a column and why an account id can sit in
+-- the clear where a handle cannot.
 --
 -- ---------------------------------------------------------------------
 -- AHEAD OF THE LIVE DATABASE, as of 2026-08-05.
@@ -35,15 +39,18 @@
 -- why a plain hash of the handle would have been a disaster.
 --
 -- No UPDATE: a correction is a new row that names the row it supersedes
--- in `supersedes`, and the superseded row stays as a tombstone. Which of
--- two rows is the current claim is therefore a fact this side can see,
--- while what either of them says stays unreadable here - so resolving a
--- correction, which means dropping tombstones from a series, happens in
--- the keyholder's browser where the plaintext is. DESIGN.md, "Admin
--- accounts and deletion", is the home of that rule. There IS a DELETE -
--- an admin can remove one submission, which is what answers "please take
--- mine down", what makes junk recoverable, and the only thing that
--- erases a tombstone.
+-- in `supersedes`, and the superseded row is never rewritten. That is a
+-- design rule and not a limit of what this side can do - the Worker
+-- could open and re-seal a row now, and must not: the repeats ARE the
+-- history the binder exists to accumulate. DESIGN.md, "Admin accounts
+-- and deletion", is the home of that rule. The pointer stays a clear
+-- column so which of two rows is the current claim is answerable without
+-- opening either.
+--
+-- There IS a DELETE - a member removes their own row and an admin can
+-- remove anyone's (0.9-M1-S6, #332; "their data, their delete"). It is
+-- what answers "please take mine down", what makes junk recoverable, and
+-- the only thing that erases a tombstone.
 --
 -- Adding account_id to a table that already has rows is not possible in
 -- SQLite for a NOT NULL column, so the accounts migration DROPs and
@@ -79,6 +86,19 @@
 -- are absent and skips them where they exist, which is the one thing
 -- CREATE TABLE IF NOT EXISTS is safe for. The trap is only ever a table
 -- that exists already in a different shape - which is the block above.
+--
+-- 0.9-M1-S6 (#332) ADDED NO COLUMN AND CHANGED NO SHAPE, so everything
+-- above stays exactly as true as it was. What that slice changed is who
+-- fills `id` and what `ciphertext` holds - both described at the table
+-- itself below, both invisible to this file's rerun story. A database
+-- created before it and one created after it are the same table, which
+-- is the property that let the change ship without a migration.
+-- What DOES change across it is the DATA: rows written by the pre-0.9
+-- client-seal path cannot be opened by the Worker, because they were
+-- never sealed under its secret. DESIGN.md, "Trust model", rules that
+-- 0.9 starts empty and the old sealed rows are discarded, so no such row
+-- is expected to exist - and if one does, it is deleted rather than
+-- migrated. There is no decoder for it and there is deliberately none.
 
 -- `supersedes` is the id of the row this one replaces, or NULL. It sits
 -- last because that is where ALTER TABLE puts it, so a database migrated
@@ -91,6 +111,31 @@
 -- pointer. A constraint here would instead refuse that deletion or
 -- cascade into a second one, and nothing may turn "please take mine
 -- down" into two rows disappearing.
+-- `id` IS ASSIGNED BY THE WORKER, NOT BY THE SEQUENCE, since 0.9-M1-S6
+-- (#332), and the reason is the at-rest format rather than anything
+-- about this table: each row's own id is bound into its ciphertext as
+-- additional authenticated data, so a row lifted into another id's slot
+-- fails to open instead of decrypting into the wrong place. That binding
+-- means the id has to exist BEFORE the record is sealed, and an
+-- autoincrement id is knowable only after the insert - so the Worker
+-- picks a random 48-bit id, seals under it, and inserts both together.
+-- randomRowId() in server/worker.js carries the rest of the argument,
+-- including why a random id also leaks no row count and no ordering.
+--
+-- The auto-assigning keyword on `id` below is therefore never exercised
+-- and is KEPT anyway. It is inert - an explicit id always wins, and
+-- every insert this Worker makes supplies one - while removing it would
+-- change the table's shape, which CREATE TABLE IF NOT EXISTS cannot
+-- apply to a database that already has the table (the trap the block at
+-- the top of this file describes). A shape change costs a destructive
+-- migration; the keyword costs nothing. Anything inserting here by
+-- another door should supply an id too: a row that takes a sequence id
+-- carries ciphertext sealed under no id at all, and nothing will ever
+-- open it.
+--
+-- Because ids no longer carry insertion order, the member's listing
+-- orders by `received_at` (with the id only as a tie-break). Anything
+-- reading this table that sorts by id is sorting by nothing.
 CREATE TABLE IF NOT EXISTS submissions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id  TEXT NOT NULL,
