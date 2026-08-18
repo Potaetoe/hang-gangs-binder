@@ -420,6 +420,17 @@ function makeDb() {
     if (/FROM sessions WHERE token_hash = \?/i.test(sql)) {
       return sessions.find((s) => s.token_hash === args[0]) || null;
     }
+    /* POST /submit's correction pre-check, modelled so a member can
+       really correct a row here and the aggregate can be watched
+       counting them once. */
+    if (/ AS mine/i.test(sql) && /AS corrected/i.test(sql)) {
+      const [target, account, already] = [args[0], args[1], args[2]];
+      return {
+        mine: submissions.some((r) =>
+          r.id === target && r.account_id === account) ? 1 : 0,
+        corrected: submissions.some((r) => r.supersedes === already) ? 1 : 0,
+      };
+    }
     /* Modelled only so the non-scope check below can prove the route is
        still wired. Nothing here publishes one, so the read finds none. */
     if (/FROM snapshots WHERE id = 1/i.test(sql)) return null;
@@ -427,15 +438,19 @@ function makeDb() {
   }
   function all(sql) {
     /* The charts read: every current row, no account scope, because the
-       group is the subject. The stub applies the supersede predicate the
-       statement carries rather than assuming it, so a read that stopped
-       excluding tombstones would double-count a corrected member here. */
-    if (/FROM submissions AS mine/i.test(sql) && /NOT EXISTS/i.test(sql)) {
+       group is the subject. The tombstone predicate is APPLIED from the
+       statement rather than assumed, so a read that stopped excluding
+       superseded rows really does hand this stub the corrected row too -
+       and a corrected member would then be counted twice, exactly as D1
+       would count them. */
+    if (/FROM submissions AS mine/i.test(sql)) {
+      const excludes = /NOT EXISTS/i.test(sql);
       return {
-        results: submissions.filter((r) => !supersededBy(r)).map((r) => ({
-          id: r.id, account_id: r.account_id,
-          received_at: r.received_at, ciphertext: r.ciphertext,
-        })),
+        results: submissions.filter((r) => !excludes || !supersededBy(r))
+          .map((r) => ({
+            id: r.id, account_id: r.account_id,
+            received_at: r.received_at, ciphertext: r.ciphertext,
+          })),
       };
     }
     throw new Error("unmodelled all(): " + sql);
@@ -647,6 +662,25 @@ check("self: a member alone in the corpus still gets their own line " +
   lonely.status === 200 && lonely.body.enough === false &&
   lonely.body.self.points.length === 1);
 
+/* A correction is a second row for one person, and the corrected row is
+   a tombstone the read excludes. Counted twice, one member would clear a
+   floor of five by correcting themselves four times - which is the row-
+   versus-person distinction the floor rests on, arriving through the
+   database rather than through the aggregator. */
+const corrected = db._submissions.find((r) => r.account_id === acct(0));
+await call("POST", "/submit", {
+  token: TOKENS[0],
+  body: { record: JSON.stringify(record(140, 170, "male", ["feeder"], "US")),
+    supersedes: corrected.id },
+});
+const afterCorrection = await call("GET", "/charts?measure=weight",
+  { token: TOKENS[0] });
+check("correction: a member who corrects a row is still one person in " +
+  "the group - the tombstone is excluded by the read, not counted",
+  afterCorrection.status === 200 &&
+  afterCorrection.body.distribution.bins
+    .reduce((n, b) => n + b.count, 0) === FLOOR + 2);
+
 /* ================================================================== */
 /* 9. Not this slice's to touch: the snapshot routes stay alive until   */
 /* the Charts page stops reading them (0.9-M2-S3).                      */
@@ -657,7 +691,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 63;
+const EXPECTED = 64;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
