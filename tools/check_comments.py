@@ -153,10 +153,11 @@ it, for the same reason ALLOWLIST counts.
 
 The two files that define and test the rule are EXEMPT, because a file
 has to be able to name the phrases it forbids - the same reason
-tools/check_server.py strips comments before looking for
-DEV_LOGIN_SECRET, so that server/wrangler.toml can say at length that
-it must never be set. The exemption is pinned in
-dev/check_comments.test.py so it cannot grow one file at a time.
+tools/check_server.py strips comments before it reads a vars block, so
+that server/wrangler.toml can argue at length that ADMIN_TELEGRAM_IDS
+is deliberately absent while the allowlist still refuses an assignment
+under that name. The exemption is pinned in dev/check_comments.test.py
+so it cannot grow one file at a time.
 
 archive/ is never scanned. It is frozen history, and history is exactly
 what it is allowed to contain.

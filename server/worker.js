@@ -2653,11 +2653,14 @@ async function route(request, env, url, allowed) {
   // real one are the same refusal to anybody who may not read the list
   // at all.
   //
-  // A development session is an admin that may not touch the admin
-  // list - handleAddMembership argues that in full. The role is in the
-  // path here, so the refusal is in the router where the rest of the
-  // gate is; on POST it is the first thing past the body parse, which
-  // is the earliest the role is knowable at all.
+  // A session flagged `is_dev` is not an admin by virtue of the flag:
+  // adminness is read from the admin lists alone, so such a session is
+  // a member unless its account id sits in one. The flag buys a second
+  // refusal on top of that - a caller carrying it may not touch the
+  // admin list at all, which handleAddMembership argues in full. The
+  // role is in the path here, so the refusal is in the router where the
+  // rest of the gate is; on POST it is the first thing past the body
+  // parse, which is the earliest the role is knowable at all.
   if (method === "GET" && path === "/membership") {
     if (!admin) return unauthorized(allowed);
     return handleReadMembership(env, allowed);

@@ -205,10 +205,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
 -- keeps plaintext out of `submissions`, applied to a much smaller
 -- secret.
 --
--- `is_dev` marks a session minted by POST /auth/dev rather than by
--- Telegram. It defaults to 0, so a session is only ever a development
--- one by having said so, and the pages show a banner while one is in
--- use. A development session that looks real is worse than none.
+-- `is_dev` marks a session Telegram did not authenticate. It defaults
+-- to 0, so a session is only ever a development one by having said so -
+-- and nothing says so: this Worker carries no local sign-in route at
+-- all (0.9-M2-S1, #352), so a row with the flag set can only arrive by
+-- hand, through a direct `wrangler d1 execute` or a restored backup.
+-- Such a row grants nothing. Adminness is read from the admin lists
+-- alone and never from this column, and a caller carrying the flag is
+-- refused any write to the admin list - so the flag is a second wall
+-- around a hand-written row rather than a privilege attached to it.
+-- Dropping the column is a migration rather than an edit, which is why
+-- 0.9-M3 owns that decision: to take it, or to decline it out loud.
 --
 -- Expired rows are cleared when one is looked up rather than on a
 -- schedule. The ordinary failure of a scheduled job is silence.

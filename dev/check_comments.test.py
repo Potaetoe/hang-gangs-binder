@@ -401,10 +401,12 @@ check("every pinned phrase is one a pattern produces",
           for _rel, label in check_comments.ALLOWLIST))
 
 # The exemption is the hole in this check and it is deliberate: the
-# file defining the phrases has to be allowed to name them, exactly as
-# server/wrangler.toml is allowed to name DEV_LOGIN_SECRET in order to
-# say it must never be set. Pinning it here is what stops the hole
-# growing quietly by one file at a time.
+# file defining the phrases has to be allowed to name them. The same
+# hole sits one tool over, for the same reason and closed the same way -
+# tools/check_spelling.py exempts itself and its own suite so it can
+# name the spellings it forbids, and pins that set exactly rather than
+# letting it grow. Pinning it here is what stops the hole growing
+# quietly by one file at a time.
 check("the exemption is exactly the two self-referential files",
       check_comments.EXEMPT == frozenset({
           "tools/check_comments.py", "dev/check_comments.test.py"}))
