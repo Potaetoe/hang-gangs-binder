@@ -87,8 +87,10 @@
  *   string rather than exactly 32 bytes of key material. The derived
  *   keys are imported non-extractable and held in a closure, so
  *   nothing that serializes the store handle - a log line, an error
- *   response, JSON.stringify - can reach them; the raw secret is
- *   dropped as soon as the subkeys exist.
+ *   response, JSON.stringify - can reach them. This file's own copy of
+ *   the secrets is cleared the moment the subkeys exist; the caller's
+ *   bindings are the caller's, and no second copy outlives this
+ *   function.
  *
  *   THE CIPHER SECRET IS ITS OWN SECRET. STORE_SECRET, and only
  *   STORE_SECRET. The account-id HMAC key is a different secret with a
@@ -334,6 +336,21 @@ async function openStoreWithKeys(keyring) {
       "writeKeyId names key id " + writeKeyId +
       ", which the key ring holds no secret for");
   }
+  /* "1" and "01" are one id and two entries. Whichever loses would
+     shadow the other silently, and every record already written under
+     the loser becomes unreadable with no way to tell that apart from
+     tamper - the same failure the two-byte key id exists to keep out
+     of reach, arriving through the ring instead of through the
+     counter. */
+  const seen = new Set();
+  for (const [id] of entries) {
+    if (seen.has(id)) {
+      throw new StoreConfigError(
+        "the key ring names key id " + id + " more than once, so one " +
+        "secret would shadow the other");
+    }
+    seen.add(id);
+  }
 
   const keys = new Map();
   for (const [id, secret] of entries) {
@@ -341,6 +358,11 @@ async function openStoreWithKeys(keyring) {
       keys.set(id + "/" + purpose, await subkey(secret, id, purpose));
     }
   }
+  /* The subkeys exist, so this function's own copy of the secrets goes
+     now rather than resting on an engine's judgment about which
+     captured variables an inner closure keeps alive. What the handle
+     below closes over is the key map. */
+  entries.length = 0;
 
   async function seal(purpose, plaintext, context) {
     if (typeof plaintext !== "string") {

@@ -497,12 +497,18 @@ check("a missing record id is a loud caller failure",
 check("a non-string plaintext is a loud caller failure",
   await threw(() => store.sealRow({ weight: 1 }, rowContext))
     instanceof StoreConfigError);
+check("a key ring naming one id twice is refused - \"1\" and \"01\" are " +
+  "one id, and the loser's records would be unreadable in a way nothing " +
+  "can tell from tamper",
+  await threw(() => openStoreWithKeys({ writeKeyId: 1,
+    secrets: { 1: TEST_SECRET, "01": TEST_SECRET + " shadow" } }))
+    instanceof StoreConfigError);
 check("PURPOSE names exactly the two purposes and is frozen",
   Object.isFrozen(PURPOSE) &&
   JSON.stringify(PURPOSE) === JSON.stringify({ ROW: "row",
                                                DIRECTORY: "dir" }));
 
-const EXPECTED = 64;
+const EXPECTED = 65;
 console.log(failures
   ? `\nstore-crypto FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
