@@ -399,12 +399,24 @@ const listB0 = await call("GET", "/my-entries", { token: TOKEN_B });
 check("cross-account: member B's listing never carries member A's rows",
   listB0.status === 200 && ents(listB0).length === 0);
 
+/* The target is a FRESH, UNCORRECTED row of A's, so ownership is the
+   only rule that can refuse it. Pointed at an already-corrected row
+   instead, the chain rule refuses the same request for its own reason
+   and the ownership check is never the thing under test - which is how
+   an unscoped ownership predicate would still be answered 409 here and
+   look refused. This arm's own mutation battery found that. */
+const freshA = await call("POST", "/submit",
+  { token: TOKEN_A, body: { record: JSON.stringify({ weight_kg: 116 }) } });
+const idAFresh = freshA.body && freshA.body.id;
+
 const foreignCorrect = await call("POST", "/submit",
-  { token: TOKEN_B, body: { record: R1, supersedes: id1 } });
+  { token: TOKEN_B, body: { record: R1, supersedes: idAFresh } });
 check("cross-account: a correction of another member's row is refused (404 " +
   "- absent and foreign answer alike)", foreignCorrect.status === 404);
 check("cross-account: the refused correction stored nothing under B",
   db._submissions.filter((r) => r.account_id === ACCT_B).length === 0);
+check("cross-account: and A's row is not superseded by the refusal",
+  db._submissions.every((r) => r.supersedes !== idAFresh));
 
 /* A member deletes their own row: gone from their listing. */
 const submitB = await call("POST", "/submit",
@@ -470,7 +482,7 @@ check("read-own: the listing is newest first",
   ents(listOrder)[1].id === (firstOfPair.body && firstOfPair.body.id));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 38;
+const EXPECTED = 39;
 console.log(failures
   ? `\nentry-rows FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
