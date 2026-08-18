@@ -587,6 +587,14 @@ check("route: a filter value nobody holds answers the same not-enough " +
 check("route: the answer never enumerates the values the group actually " +
   "holds (mandate 5)",
   !everyString(echoed.body).includes("US"));
+/* The echo's SHAPE is the enumeration guard, because the leak this
+   mandate names would arrive as a helpful third field - the values on
+   offer, the values in the group - rather than as a wrong value in the
+   two that belong. Exactly two keys, so anything added is a red. */
+check("route: the filter echo carries the caller's own field and value " +
+  "and nothing beside them (mandate 5)",
+  JSON.stringify(Object.keys(echoed.body.filter)) ===
+    JSON.stringify(["field", "value"]));
 
 const badValue = await call("GET",
   "/charts?measure=weight&filter=country&value=not-a-country",
@@ -691,7 +699,7 @@ check("non-scope: GET /snapshot is still routed - it retires with the " +
   snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 64;
+const EXPECTED = 65;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
