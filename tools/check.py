@@ -27,6 +27,10 @@ drift.) In outline:
       offenders still here); the same stage refuses a raw control byte
       in any source file it reads, because a file grep classifies as
       binary answers nothing to any search of it
+    - the same comments hold to American spelling, over the same
+      source tree check_comments.py already reads (tools/check_spelling.py
+      carries the deny-list and the ratchet that pins what was already
+      there when this stage was born; #334)
     - each page stays inside its gzipped transfer budget, in both
       directions (tools/check_budget.py carries the ceilings; a change
       that adds weight raises them in its own diff)
@@ -173,6 +177,7 @@ PYTHON_SUITES = [
     ("check_server vars parser + rules", "dev/check_server.test.py"),
     ("check_docs registries + rules", "dev/check_docs.test.py"),
     ("check_comments extractor + ratchet", "dev/check_comments.test.py"),
+    ("check_spelling extractor + ratchet", "dev/check_spelling.test.py"),
     ("check_budget extractor + budgets", "dev/check_budget.test.py"),
     ("check_fonts extractor + coverage", "dev/check_fonts.test.py"),
     ("check_contrast parser + pairings", "dev/check_contrast.test.py"),
@@ -467,6 +472,20 @@ def main():
     results.append(("check_comments extractor + ratchet", run(
         "check_comments extractor + ratchet",
         [sys.executable, "dev/check_comments.test.py"]
+    )))
+
+    # AGENTS.md rule 8's other half: American spelling, held over the
+    # same comment surface check_comments.py just read rather than over
+    # the four documents check_docs.py owns. #334 - a British spelling
+    # in a code comment passed both of those and was found by eye.
+    results.append(("comments hold to American spelling", run(
+        "comments hold to American spelling",
+        [sys.executable, "tools/check_spelling.py"]
+    )))
+
+    results.append(("check_spelling extractor + ratchet", run(
+        "check_spelling extractor + ratchet",
+        [sys.executable, "dev/check_spelling.test.py"]
     )))
 
     # Each page against a pinned number of gzipped bytes. #72 measured
