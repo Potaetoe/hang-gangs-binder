@@ -205,6 +205,101 @@ the terminal, never pasted into a file.
    state; the issue that tracked standing sit up carries that record,
    never this procedure.
 
+## Rotating sit's bot token
+
+**The same-bot case: BotFather reissues sit's own bot a new token, in
+place.** Sit's bot is permanent — `DESIGN.md`, "The bot is temporary":
+two bots exist by design, and sit's is not a stand-in — so nothing
+about *which* bot watches sit's group changes here: no new bot, no
+username edit, no rerunning `/setdomain`, no redeploy. Only the token
+value moves, which is also exactly the act "When a credential may be
+compromised" below names as its own step 2 (revoke first, re-paste
+second); this section is that act, written out in order and scoped to
+sit. Swapping sit to a *different* bot, or standing up production's
+bot for the first time, is "Rotating the bot" above, still unbuilt
+until that day comes.
+
+**Split by who must act.** BotFather lives at Telegram, reachable by
+nobody but the owner, and the new token exists nowhere until the owner
+reads it off BotFather's own reply — it is typed exactly once, into
+wrangler's own interactive prompt, by the owner, at their own terminal,
+never into a file, a chat message, an issue or this document. Everything
+else — the before-and-after probes, and confirming the secret's *name*
+landed (never its value) — is Claude's or any operator-with-repo-
+access's to run.
+
+1. **Baseline, before touching anything** (Claude or an operator). Run
+   the probe in "Checking a deployment" below against sit's own origin
+   and note the answer — the healthy 401. Step 5 is compared against
+   this; without a baseline, a failure discovered afterward cannot be
+   told apart from one that predates the rotation.
+2. **Revoke and reissue, in BotFather** (owner only). Open the chat with
+   sit's own bot in @BotFather and regenerate its token. The old value
+   is invalidated the instant this completes and a new one is shown
+   once. This is the moment the gap below opens.
+3. **Set the new value** (owner only). From `server/`, at your own
+   terminal:
+
+   ```bash
+   npx wrangler secret put TELEGRAM_BOT_TOKEN --env sit
+   ```
+
+   Paste the new token only into wrangler's own prompt when it asks —
+   the same `wrangler secret put --env sit` pattern "Building the sit
+   environment" step 4 uses to set it the first time; the difference
+   here is the value is a replacement, not a first setting. This is the
+   moment the gap below closes.
+4. **Confirm the name landed, not the value** (Claude or an operator):
+
+   ```bash
+   npx wrangler secret list --env sit
+   ```
+
+   lists secret *names* only — wrangler never prints a value back, so
+   this is safe for anyone to run and read. `TELEGRAM_BOT_TOKEN` present
+   in the list is what this step checks.
+5. **Verify** (Claude or an operator). Re-run the same probe as step 1,
+   at sit's own origin — "Checking a deployment" below, expect the same
+   healthy 401. This confirms the Worker is still up and the route is
+   still gated; it does **not** by itself confirm the new token is the
+   one now verifying sign-ins, since a wrong token answers an
+   unauthenticated request with the identical 401 a right one does (see
+   "What no local test can see" under "Checking a deployment" — a wrong
+   bot token refuses every sign-in the same way a tampered payload
+   does). Only an actual sign-in in sit's own test group tells the two
+   apart, and that needs a Telegram account inside it — a test member's
+   or the owner's to run, not this procedure's.
+
+### What breaks, and for how long
+
+The gap is open from step 2 to step 3 above — the time it takes
+BotFather to answer and the owner to paste the value, ordinarily well
+under a minute and never longer than the owner takes to act.
+
+- **Every sign-in attempt is refused.** Telegram signs each new login
+  payload under the bot's *current* token from the instant BotFather
+  regenerates it; the Worker is still checking incoming payloads
+  against the *old* token until step 3 lands, so nothing verifies and
+  every attempt gets the same 401 a tampered payload gets. Nobody is
+  let in and nobody is wrongly told they are not a member — the route
+  fails closed, the same shape "The schema goes first" above describes
+  for a Worker deployed ahead of its schema.
+- **Sessions already open are unaffected.** A session is a random value
+  the Worker already issued and stores only the hash of; nothing about
+  it is re-checked against the bot, so a member already signed in
+  through the gap notices nothing (`DESIGN.md`, "The bot is temporary",
+  point 3).
+- **Roster and leaver checks that call the bot API fail the same way
+  for the same window**, and the Worker's own bot-failure stance
+  already covers it: it holds the last verified roster and arms no
+  purge countdown off a failed check, only off a verified one
+  (`DESIGN.md`, "Bot failure stance"). A gap measured in seconds is far
+  inside the 24-hour default that stance runs on — nothing here needs a
+  separate response.
+- **No redeploy is part of this procedure.** `wrangler secret put`
+  reaches the running Worker directly; the very next request after step
+  3 reads the new value, not the next deploy.
+
 ## Deploying the Worker
 
 From `server/`, and read the reasoning comments in
