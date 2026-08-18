@@ -31,29 +31,27 @@ so server/ was not partially checked. It was entirely unchecked. No check
 in the gate read wrangler.toml, worker.js or server/README.md for
 anything at all.
 
-Three checks:
+Two checks:
 
 1. Every [vars] block names only ALLOWED_ORIGINS. An **allowlist**, not a
    denylist. A denylist of the three known id bindings passes the day
    somebody adds a fourth, which is the same shape as the bug in #34
    where the rule was right and its reach was wrong.
 
-   Both blocks, not one. wrangler.toml has [vars] and [env.dev.vars], and
-   a check reading only the first passes a paste into the second. The dev
+   Both blocks, not one. wrangler.toml has [vars] and [env.sit.vars], and
+   a check reading only the first passes a paste into the second. The sit
    Worker is not a lesser place to leak a member list from: the file is
    in the same public repository either way.
 
-2. DEV_LOGIN_SECRET is never assigned. Its **absence** is what turns
-   POST /auth/dev off - see handleDevAuth - so a vars entry for it would
-   silently open a development login on production. worker.js says so in
-   a comment and nothing enforced it.
+   The allowlist is what makes this check cover the binding it never
+   names. There was a second check here, refusing a DEV_LOGIN_SECRET
+   assignment specifically, and it retired with the route that binding
+   turned on (0.9-M2-S1, #352): a Worker with no local sign-in has
+   nothing for the value to open. Anything assigned under that name today
+   is refused by rule 1 like any other non-ALLOWED_ORIGINS entry, which
+   is the reason a denylist of known-bad names was never the shape.
 
-   Assignment, not mention. wrangler.toml names DEV_LOGIN_SECRET several
-   times in prose, in order to say it must never be set. A check that
-   matched the name would fail on the correct file, and the obvious fix
-   for that is to weaken the check - so it strips comments first.
-
-3. Nothing in server/ is key-shaped, using check_web's own KEY_PATTERNS.
+2. Nothing in server/ is key-shaped, using check_web's own KEY_PATTERNS.
    Those patterns guard the directory that gets published and not the
    directory that holds the deployment config, which is the wrong way
    round for a bot token: the realistic accident is pasting one into a
@@ -87,7 +85,6 @@ VARS_HEADER = re.compile(r"^\[(?:vars|env\.[^.\]]+\.vars)\]$")
 
 HEADER = re.compile(r"^\s*(\[\[?[^\]]+\]\]?)\s*$")
 ASSIGN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(.*)$")
-DEV_LOGIN_ASSIGN = re.compile(r"^\s*DEV_LOGIN_SECRET\s*=", re.M)
 
 
 def strip_comments(text):
@@ -172,15 +169,6 @@ def vars_problems(text):
     return problems
 
 
-def dev_login_problems(text):
-    """A description if DEV_LOGIN_SECRET is assigned anywhere."""
-    if DEV_LOGIN_ASSIGN.search(strip_comments(text)):
-        return ["DEV_LOGIN_SECRET is assigned. Its absence is what turns "
-                "POST /auth/dev off, so setting it here opens a "
-                "development sign-in on the deployed Worker"]
-    return []
-
-
 def key_shaped_problem(text):
     """A description of key-shaped content in text, or None.
 
@@ -226,9 +214,6 @@ def main():
     for problem in vars_problems(text):
         problems.append("server/%s: %s." % (CONFIG_FILE, problem))
 
-    for problem in dev_login_problems(text):
-        problems.append("server/%s: %s." % (CONFIG_FILE, problem))
-
     for rel, description in key_shaped_hits():
         problems.append(
             "server/%s contains %s. This repository is public - it must "
@@ -245,8 +230,8 @@ def main():
     # Report what was established rather than the part that is easy to
     # check: "no disallowed vars" is true of a file the parser never read.
     # Naming the blocks it did read is what makes the line worth printing.
-    print("server/ OK - %d vars block(s) (%s) naming only %s, no dev "
-          "sign-in secret, nothing key-shaped"
+    print("server/ OK - %d vars block(s) (%s) naming only %s, nothing "
+          "key-shaped"
           % (len(blocks), ", ".join(sorted(blocks)),
              ", ".join(sorted(VARS_ALLOWED))))
     return 0

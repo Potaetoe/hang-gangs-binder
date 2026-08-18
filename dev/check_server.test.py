@@ -105,9 +105,9 @@ check("an empty vars block parses to no keys, not to no block",
       empty_problem is None and empty == {"[vars]": {}})
 
 # Comments are not configuration. server/wrangler.toml's comments name
-# every secret it must not contain, including DEV_LOGIN_SECRET, so a check
-# that reads comments fails on the correct file - which is worse than not
-# having the check, because the fix is to weaken it.
+# every secret it must not contain, so a check that reads comments fails
+# on the correct file - which is worse than not having the check, because
+# the fix is to weaken it.
 commented, _ = check_server.vars_blocks(toml(
     '# [vars]',
     '# ADMIN_TELEGRAM_IDS = "5551234567"',
@@ -185,30 +185,18 @@ check("a disallowed binding in [env.dev.vars] is refused",
           'ADMIN_TELEGRAM_IDS = "5551234567"',
       )) != [])
 
-# DEV_LOGIN_SECRET's *absence* is what turns POST /auth/dev off, so a vars
-# entry for it would silently open a development login on production. The
-# Worker says so in a comment; this is what enforces it.
-check("DEV_LOGIN_SECRET assigned in a vars block is refused",
-      check_server.dev_login_problems(toml(
-          '[vars]',
-          'DEV_LOGIN_SECRET = "hunter2"',
-      )) != [])
-check("DEV_LOGIN_SECRET assigned anywhere is refused",
-      check_server.dev_login_problems(toml(
-          '[env.dev.vars]',
-          'DEV_LOGIN_SECRET = "hunter2"',
-      )) != [])
-
-# And the half that keeps the check usable: the real file discusses
-# DEV_LOGIN_SECRET at length in prose. Naming a secret in order to say it
-# must never be set is the opposite of setting it.
-check("naming DEV_LOGIN_SECRET in a comment is not an assignment",
-      check_server.dev_login_problems(toml(
-          '# DEV_LOGIN_SECRET is development-only and must never be set',
-          '# here or on the production Worker.',
+# The named-secret check that stood here retired with the local sign-in
+# route its binding turned on (0.9-M2-S1, #352). What replaced it is the
+# rule that was always underneath it: an allowlist refuses a binding by
+# not naming it, so a value assigned under any secret's name is caught
+# without this file having to keep a roster of the names worth fearing.
+check("a secret that no rule names by name is still refused, because "
+      "the vars rule is an allowlist",
+      check_server.vars_problems(toml(
           '[vars]',
           'ALLOWED_ORIGINS = "https://example.test"',
-      )) == [])
+          'DEV_LOGIN_SECRET = "hunter2"',
+      )) != [])
 
 
 # ------------------------------------------------------------------ #
@@ -258,13 +246,11 @@ check("the real file's vars are what the rules are actually reading",
 
 check("server/ as it stands has no disallowed vars",
       check_server.vars_problems(REAL) == [])
-check("server/ as it stands assigns no DEV_LOGIN_SECRET",
-      check_server.dev_login_problems(REAL) == [])
 check("server/ as it stands holds nothing key-shaped",
       check_server.key_shaped_hits() == [])
 
 
 if failures:
-    print("\ncheck_server.py FAILED %d of 25 checks" % failures)
+    print("\ncheck_server.py FAILED %d of 22 checks" % failures)
     sys.exit(1)
-print("\ncheck_server.py OK - 25 checks")
+print("\ncheck_server.py OK - 22 checks")

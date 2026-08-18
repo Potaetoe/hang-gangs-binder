@@ -65,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 121
+EXPECTED = 122
 
 
 def check(label, condition):
@@ -196,8 +196,16 @@ check("the shipped router parses with no refusals",
       REAL_ROUTE_PROBLEMS == [])
 
 check("the shipped router yields the routes it dispatches",
-      {"POST /auth/dev", "GET /snapshot", "DELETE /snapshot",
+      {"POST /auth/telegram", "GET /snapshot", "DELETE /snapshot",
        "DELETE /membership/{}/{}", "OPTIONS *"} <= set(REAL_ROUTES))
+
+# And the other direction, which is what the ledger's spine rests on: a
+# route the router has stopped dispatching must stop being yielded. Pinned
+# on POST /auth/dev because that is a path this Worker once served and
+# does not (0.9-M2-S1, #352) - a name with no dispatch line, rather than
+# an invented one that never had one.
+check("a path the shipped router does not dispatch is not yielded",
+      "POST /auth/dev" not in set(REAL_ROUTES))
 
 
 # ------------------------------------------------------------------ #

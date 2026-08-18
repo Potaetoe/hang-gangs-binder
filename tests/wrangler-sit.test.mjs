@@ -7,8 +7,8 @@
  *
  * WHY A FRESH PARSER RATHER THAN REUSING tools/check_server.py's.
  * tools/check_server.py already parses this file's `[vars]`-shaped
- * blocks for the OLD gate's own reasons (no disallowed plaintext var,
- * no DEV_LOGIN_SECRET assignment). That check keeps guarding what it
+ * blocks for the OLD gate's own reason: no disallowed plaintext var.
+ * That check keeps guarding what it
  * always guarded - it does not know sit exists, and it does not need
  * to: a `[vars]`-shaped block is a `[vars]`-shaped block whatever its
  * header is named. This arm is a DIFFERENT question - not "is anything
@@ -137,11 +137,10 @@ function check(label, condition) {
    compares against. */
 const SIT_SECRETS = ["ACCOUNT_SECRET", "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_GROUP_CHAT_ID", "EXPORT_TOKEN", "STORE_SECRET"];
-const ABSENT_SECRETS = ["ADMIN_TELEGRAM_IDS", "ALWAYS_ALLOW_TELEGRAM_IDS",
-  "DEV_LOGIN_SECRET"];
+const ABSENT_SECRETS = ["ADMIN_TELEGRAM_IDS", "ALWAYS_ALLOW_TELEGRAM_IDS"];
 /* Every secret this file's own general vocabulary names, whether sit
    carries it or not - the no-value scan covers all seven, because a
-   value for one of the "deliberately absent" three would be the worse
+   value for one of the "deliberately absent" ones would be the worse
    mistake, not a smaller one. */
 const ALL_SECRETS = [...SIT_SECRETS, ...ABSENT_SECRETS];
 
@@ -265,7 +264,7 @@ const plantedSecret = GOOD + '\nACCOUNT_SECRET = "hunter2hunter2hunter2"\n';
 check("mutation: a secret value planted anywhere in the file is caught",
   !noSecretValues(parse(plantedSecret)));
 
-const plantedAbsentSecret = GOOD + '\nDEV_LOGIN_SECRET = "hunter2hunter2"\n';
+const plantedAbsentSecret = GOOD + '\nADMIN_TELEGRAM_IDS = "606060606"\n';
 check("mutation: a value for a deliberately-absent secret is caught too",
   !noSecretValues(parse(plantedAbsentSecret)));
 
@@ -299,8 +298,8 @@ check("mutation: sit's own origin regressing back out of " +
    length in prose, which is the point of citing a ruling rather than
    staying silent. --- */
 const namedInComment = GOOD +
-  "\n# DEV_LOGIN_SECRET is deliberately absent - see DESIGN.md.\n" +
-  "# ADMIN_TELEGRAM_IDS and ALWAYS_ALLOW_TELEGRAM_IDS: same.\n";
+  "\n# ADMIN_TELEGRAM_IDS is deliberately absent - see DESIGN.md.\n" +
+  "# ALWAYS_ALLOW_TELEGRAM_IDS: same.\n";
 check("naming an absent secret in a comment is not an assignment",
   noSecretValues(parse(namedInComment)));
 

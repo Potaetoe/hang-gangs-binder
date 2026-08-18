@@ -172,14 +172,19 @@ CAUSES = {
 # is a line in a diff somebody reads, which is the whole point. Take one
 # off the moment a row can be pinned or performed instead.
 #
-# Four rows currently rest on something no file here can check (0.9-
-# M1-S3, #329): two "production-secret" rows, one "off-machine" row on
-# the submit-page fingerprint, and "the Telegram widget rendering and
-# its callback", whose cause is "off-machine" rather than something
-# server/wrangler.toml's ALLOWED_ORIGINS shape can corroborate, because
-# BotFather's /setdomain is an owner act no shell here can perform or
-# see the result of.
-UNCORROBORATED_CEILING = 4
+# Three rows currently rest on something no file here can check: one
+# "production-secret" row on the production id list and account secret,
+# one "off-machine" row on the submit-page fingerprint, and "the Telegram
+# widget rendering and its callback", whose cause is "off-machine" rather
+# than something server/wrangler.toml's ALLOWED_ORIGINS shape can
+# corroborate, because BotFather's /setdomain is an owner act no shell
+# here can perform or see the result of (0.9-M1-S3, #329).
+#
+# It came down from four when the development sign-in's route was removed
+# and its production-secret row went with it (0.9-M2-S1, #352). That is
+# the ratchet working in the direction it is built for: deleting the
+# mechanism is the cheapest way a trusted claim ever stops being owed.
+UNCORROBORATED_CEILING = 3
 
 # The batch is due when the OWED count reaches this, or before any
 # cutover, whichever comes first. Owed is the `never` rows plus the
@@ -306,35 +311,13 @@ LEDGER = [
                 "the path, because a wrong hash answers in the same "
                 "bytes; the secret listing is what discriminates"),
     },
-    {
-        "id": "POST /auth/dev",
-        "surface": "route",
-        "claim": "a development sign-in mints a real session",
-        "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="the route minted sessions against the deployed "
-                "development Worker in both shapes the sitting needed, "
-                "an admin subject and a member subject. Each was then "
-                "spent on other routes rather than only inspected, "
-                "which is the difference between a token being issued "
-                "and a session existing"),
-    },
-    {
-        "id": "POST /auth/dev, a wrong secret",
-        "surface": "route",
-        "claim": "the route answers 404 rather than 401, in the bytes a "
-                 "route that does not exist would answer in",
-        "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            REHEARSAL,
-            how='a wrong secret answered 404 {"error":"Not found."}, '
-                "byte-identical to GET /nope - a control the sitting "
-                "added, because 404 on its own does not show that the "
-                "route declines to advertise itself"),
-    },
+    # The two POST /auth/dev rows retired with the route (0.9-M2-S1,
+    # #352). spine_problems() below is what made that mandatory rather
+    # than tidy: it fails in BOTH directions, so a ledger row for a
+    # surface server/worker.js no longer dispatches reddens this stage.
+    # Their evidence is not lost - it is in the git history of this file
+    # and in that slice's pull request - and keeping the rows would have
+    # meant carrying live evidence about a route nobody can call.
     {
         "id": "DELETE /session",
         "surface": "route",
@@ -1190,24 +1173,16 @@ LEDGER = [
     #
     # The five rows on the no-real-bot premise are reclassified in the
     # flow section above (0.9-M1-S2, #326); see that section for the
-    # reasoning. The two rows immediately below rest on a DIFFERENT
-    # premise sit does not break: it deliberately carries neither
-    # DEV_LOGIN_SECRET (0.9-M1-S1, #325's own judgment call) nor
-    # ADMIN_TELEGRAM_IDS / ALWAYS_ALLOW_TELEGRAM_IDS (DESIGN.md's
-    # no-admin-list design; both scheduled for retirement at
-    # 0.9-M2/M3 per 0.9-M1-S5, #331, which found neither reachable on
-    # sit either). Nothing here reclassifies those two.
-    {
-        "id": "the development sign-in's loopback condition",
-        "surface": "flow",
-        "claim": "the origin handed to the handler is already a "
-                 "matched entry, so this condition fires only on a "
-                 "misconfigured Worker and on neither deployment",
-        "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "guarded-branch",
-        "guard": "if (!isLoopback(origin)) return missing;",
-    },
+    # reasoning. The row immediately below rests on a DIFFERENT premise
+    # sit does not break: it deliberately carries no ADMIN_TELEGRAM_IDS
+    # and no ALWAYS_ALLOW_TELEGRAM_IDS (DESIGN.md's no-admin-list design,
+    # scheduled for retirement at 0.9-M3 per 0.9-M1-S5, #331, which found
+    # neither reachable on sit either). Nothing here reclassifies it.
+    #
+    # A third row sat here on the development sign-in's secret, and it is
+    # gone with the route (0.9-M2-S1, #352) rather than reclassified.
+    # That is the one exit from this list nobody has to negotiate: a
+    # permanent risk stops being one when the code that carried it does.
     {
         "id": "the secret-only backfill measurement",
         "surface": "flow",
@@ -1244,16 +1219,6 @@ LEDGER = [
         "covers": ["apps/web/index.html"],
         "status": "first-contact",
         "cause": "off-machine",
-    },
-    {
-        "id": "POST /auth/dev answering 404 on production",
-        "surface": "flow",
-        "claim": "the absence of the development secret is what turns "
-                 "the route off, and only production can show it, "
-                 "where anything but 404 is a sign-in bypass",
-        "covers": ["server/worker.js"],
-        "status": "first-contact",
-        "cause": "production-secret",
     },
     {
         "id": "the production id list and account secret being right",

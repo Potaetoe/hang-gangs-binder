@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 58);
+const { check, report } = nodeTestSuite("session/auth", 59);
 
 const values = new Map();
 
@@ -214,7 +214,7 @@ check("a credential that rots under the tab is un-announced as it is dropped",
   identity.textContent === "");
 
 /* ------------------------------------------------------------------ */
-/* The common half of /auth/dev and the future widget callback.        */
+/* The transport, and the future widget callback that rides it.        */
 
 globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
 globalThis.BinderUI = {
@@ -240,21 +240,26 @@ const Auth = globalThis.BinderAuth;
 check("the shipped file exposes one frozen auth object",
   Auth && Object.isFrozen(Auth));
 
-const devPayload = {
-  secret: "test-only-secret",
-  subject: "alice",
-  admin: false,
-};
-const devSession = await Auth.authenticate("/auth/dev", devPayload);
-check("development auth POSTs the exact payload to the configured Worker",
-  requests[0].url === "https://worker.example/auth/dev" &&
+const authPayload = { id: 4242, hash: "signed" };
+const firstSession = await Auth.authenticate("/auth/telegram", authPayload);
+check("auth POSTs the exact payload to the configured Worker",
+  requests[0].url === "https://worker.example/auth/telegram" &&
   requests[0].options.method === "POST" &&
   requests[0].options.headers["Content-Type"] === "application/json" &&
-  requests[0].options.body === JSON.stringify(devPayload));
+  requests[0].options.body === JSON.stringify(authPayload));
 check("a successful auth response is stored before redirecting",
-  devSession.session === "tab-token" &&
+  firstSession.session === "tab-token" &&
   Session.read().session === "tab-token" &&
   redirects.at(-1) === "your-page.html");
+
+/* The allowlist is a list of one, and that is the assertion (0.9-M2-S1,
+   #352). A second sign-in door has to be added here on purpose. */
+let secondDoor = null;
+try { await Auth.authenticate("/auth/dev", authPayload); }
+catch (error) { secondDoor = error; }
+check("the retired development sign-in route is not a route this " +
+  "transport will post to",
+  secondDoor && /not a sign-in route/.test(secondDoor.message));
 
 requests.length = 0;
 await globalThis.onTelegramAuth({ id: 42, hash: "signed" });
@@ -305,7 +310,7 @@ nextResponse = {
   },
 };
 let refused = null;
-try { await Auth.authenticate("/auth/dev", devPayload); }
+try { await Auth.authenticate("/auth/telegram", { id: 4242 }); }
 catch (error) { refused = error; }
 check("a refused sign-in is neither stored nor redirected",
   refused && refused.message === "No entry." &&

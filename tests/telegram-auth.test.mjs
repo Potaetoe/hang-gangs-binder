@@ -1197,7 +1197,7 @@ async function mutant(label, from, to) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 103;
+const EXPECTED = 106;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

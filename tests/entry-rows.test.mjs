@@ -338,9 +338,9 @@ const env = {
   STORE_SECRET,
   EXPORT_TOKEN,
   ALLOWED_ORIGINS: ORIGIN,
-  // No ACCOUNT_SECRET / ADMIN_TELEGRAM_IDS / DEV_LOGIN_SECRET: member
-  // sessions never reach the admin re-read, and none of these routes
-  // needs them. Their absence is deliberate, not an oversight.
+  // No ACCOUNT_SECRET and no ADMIN_TELEGRAM_IDS: member sessions never
+  // reach the admin re-read, and none of these routes needs them. Their
+  // absence is deliberate, not an oversight.
 };
 
 /* Safe views, so an unexpected refusal is one red check rather than a
@@ -413,13 +413,12 @@ check("rowIdentity refuses a raw Telegram numeric id",
 check("rowIdentity refuses a raw, un-HMAC'd dev: subject string (mandate 1 " +
   "names it)",
   (await threw(() => worker.rowIdentity("dev:someone"))) !== null);
-/* But a real dev session does NOT carry that raw string - handleDevAuth
-   stores accountIdFor(env, "dev:" + subject), the HMAC of the namespaced
-   subject, exactly as this line derives it. That HMAC is 64-hex and
-   rowIdentity ACCEPTS it, so a dev session submits and reads like any
-   account; mandate 1 holds because it is the HMAC, not the raw subject,
-   that is bound. This check exists so the two above can never be read as
-   "a dev session cannot submit". */
+/* The refusal is about the SHAPE of the value, not about the word "dev".
+   A namespaced subject run through accountIdFor is a 64-hex HMAC like
+   any other, and rowIdentity ACCEPTS it - mandate 1 holds because what
+   is bound into the crypto is the HMAC rather than the subject that
+   derived it. This check exists so the two above can never be read as a
+   ban on some class of account. */
 const DEV_ACCOUNT_ID = createHmac("sha256", "arm-account-secret / not real")
   .update("dev:someone").digest("hex");
 check("rowIdentity accepts a dev session's account id (the HMAC of its " +
@@ -640,7 +639,7 @@ check("read-own: with both accounts holding rows, the caller's listing " +
   ents(listOrder).every((e) => !aIds.has(e.id)));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 41;
+const EXPECTED = 45;
 console.log(failures
   ? `\nentry-rows FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

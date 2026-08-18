@@ -3,7 +3,7 @@
 (function (root) {
   "use strict";
 
-  const AUTH_PATHS = ["/auth/telegram", "/auth/dev"];
+  const AUTH_PATHS = ["/auth/telegram"];
   const UI = root.BinderUI;
 
   function statusElement() {

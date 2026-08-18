@@ -16,8 +16,16 @@
  * bytes, which is what matters.
  */
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { suite } from "./harness.mjs";
+
+/* The Worker stores a session by the SHA-256 of its token, so a row this
+   file seeds directly has to be keyed the same way. Only the seeded
+   rows need it - every other session here arrives through a route that
+   does its own hashing. */
+const sha256Hex = (text) =>
+  createHash("sha256").update(text, "utf8").digest("hex");
 
 const SOURCE = fileURLToPath(new URL("../server/worker.js", import.meta.url));
 const src = await readFile(SOURCE, "utf8");
@@ -981,7 +989,7 @@ globalThis.fetch = async () => new Response(
  * The count is asserted rather than only printed. This file is the
  * gating matrix - the one place where a check that stops running reads
  * as "nothing refused anybody" rather than as a missing row, and where
- * POST /auth/dev failing open is itself the compromise. See
+ * a silently absent refusal is itself the compromise. See
  * dev/harness.mjs.
  *
  * The addend is the only part of this number that is not a constant,
@@ -1101,7 +1109,10 @@ const ADMIN = adminBody.session;
  */
 const FIXTURE_4242 =
   "a9246ad96523241df2d1823e6d8237ca26fbd848fdb74d12db531abee875a20c";
-const FIXTURE_DEV_ALICE =
+/* A 64-hex account id shaped like a namespaced subject's HMAC, for the
+   hand-written is_dev rows below. It is in neither admin list, which is
+   the whole point: no such id can be a numeric Telegram id's HMAC. */
+const FIXTURE_DEV_SUBJECT =
   "20f2d196dc50d92d29b687e4e6b0ab4f30d622e954715e6f97be07a76e3c8ee1";
 
 await call("POST", "/submit",
@@ -1111,56 +1122,75 @@ check("the account id derivation is unchanged",
   stored.length ? stored[0].account_id.slice(0, 20) + "â€¦" : "no row");
 
 /* ------------------------------------------------------------------ */
-/* POST /auth/dev - the deliberate hole, and which way it fails.       */
+/* POST /auth/dev - retired, and the difference that makes.            */
 
 /*
- * These are the most important assertions in this file. Every other test
- * here protects the data; these protect the boundary that protects the
- * data, and a silent pass is itself the compromise. Each of the three
- * refusals is a separate condition failing closed on its own.
+ * These are still the most important assertions in this file. Every
+ * other test here protects the data; these protect the boundary that
+ * protects the data.
+ *
+ * WHAT THEY ASSERT IS AN ABSENCE, not a set of conditions failing
+ * closed, and that is the stronger claim of the two (0.9-M2-S1, #352).
+ * A local sign-in door held shut by four guards is only as good as the
+ * next edit to any of them; a route that is not there cannot be got
+ * wrong. So each arm below arranges everything such a door would want -
+ * DEV_LOGIN_SECRET set, a loopback origin, the matching secret, an admin
+ * subject - and demands 404 with nothing written.
+ *
+ * `devEnv` sets DEV_LOGIN_SECRET precisely because the binding is
+ * meaningless. An arm that only tried the empty case would go green
+ * against a Worker that still carried the route.
  */
-await statusOf("dev login is 404 when DEV_LOGIN_SECRET is unset",
-  call("POST", "/auth/dev", { headers: { Origin: LOCAL, ...TYPE },
-    body: JSON.stringify({ secret: "anything", subject: "alice" }) }), 404);
-
 const devEnv = {
   ...env,
   DEV_LOGIN_SECRET: "dev-secret",
-  ALLOWED_ORIGINS: `${SITE},${LOCAL}`,
+  ALLOWED_ORIGINS: `${SITE},${LOCAL},${LOCAL_IP}`,
 };
 
-await statusOf("dev login is 404 from a non-loopback origin",
-  call("POST", "/auth/dev", { headers: good,
-    body: JSON.stringify({ secret: "dev-secret", subject: "alice" }) }, devEnv),
-  404);
+const sessionsBeforeDoor = sessions.length;
 
-await statusOf("dev login is 404 with the wrong secret",
+await statusOf("POST /auth/dev is 404 with no DEV_LOGIN_SECRET at all",
   call("POST", "/auth/dev", { headers: { Origin: LOCAL, ...TYPE },
-    body: JSON.stringify({ secret: "wrong", subject: "alice" }) }, devEnv), 404);
+    body: JSON.stringify({ secret: "anything", subject: "alice" }) }), 404);
 
-const dev = await call("POST", "/auth/dev",
-  { headers: { Origin: LOCAL, ...TYPE },
-    body: JSON.stringify({ secret: "dev-secret", subject: "alice" }) }, devEnv);
-const devBody = await dev.clone().json();
-check("dev login works when all four conditions hold",
-  dev.status === 200 && devBody.isDev === true &&
-  typeof devBody.session === "string");
+await statusOf("404 WITH the secret set, from the loopback origin, with " +
+  "the right secret - every condition the old door wanted",
+  call("POST", "/auth/dev", { headers: { Origin: LOCAL, ...TYPE },
+    body: JSON.stringify({ secret: "dev-secret", subject: "alice" }) },
+  devEnv), 404);
 
-const devByIp = await call("POST", "/auth/dev",
-  { headers: { Origin: LOCAL_IP, ...TYPE },
+await statusOf("404 from the numeric loopback origin too",
+  call("POST", "/auth/dev", { headers: { Origin: LOCAL_IP, ...TYPE },
     body: JSON.stringify({ secret: "dev-secret", subject: "bob" }) },
-  { ...devEnv, ALLOWED_ORIGINS: `${LOCAL},${LOCAL_IP}` });
-const devByIpBody = await devByIp.clone().json();
-check("the numeric loopback origin can use the dev login too",
-  devByIp.status === 200 && devByIpBody.isDev === true &&
-  typeof devByIpBody.session === "string");
+  devEnv), 404);
 
-await call("POST", "/submit",
-  { headers: bearer(devBody.session, { Origin: LOCAL, ...TYPE }),
-    body: JSON.stringify({ record: "{\"w\":1}" }) }, devEnv);
-check("a dev subject is namespaced away from every real account id",
-  stored.length === 2 && stored[1].account_id === FIXTURE_DEV_ALICE,
-  stored.length > 1 ? stored[1].account_id.slice(0, 20) + "â€¦" : "no row");
+await statusOf("404 for an admin subject, the shape that handed out the " +
+  "whole corpus",
+  call("POST", "/auth/dev", { headers: { Origin: LOCAL, ...TYPE },
+    body: JSON.stringify(
+      { secret: "dev-secret", subject: "root", admin: true }) },
+  devEnv), 404);
+
+check("and none of those four minted anything - the session table is " +
+  "exactly as they found it",
+  sessions.length === sessionsBeforeDoor,
+  `${sessions.length} row(s), was ${sessionsBeforeDoor}`);
+
+/* The bytes, not just the status. A route that answered 404 with its own
+   wording would still be advertising itself to anybody reading the body,
+   and this is the router's closing refusal rather than a handler's. The
+   control is another path under the same API segment, so both answers
+   come from this Worker rather than one of them falling through to the
+   asset binding. */
+const goneBody = await (await call("POST", "/auth/dev",
+  { headers: { Origin: LOCAL, ...TYPE },
+    body: JSON.stringify({ secret: "dev-secret", subject: "alice" }) },
+  devEnv)).text();
+const nowhereBody = await (await call("POST", "/auth/nothing-here",
+  { headers: { Origin: LOCAL, ...TYPE }, body: "{}" }, devEnv)).text();
+check("byte-identical to a path this Worker never served",
+  goneBody === nowhereBody && goneBody === JSON.stringify(
+    { error: "Not found." }), goneBody);
 
 /* ------------------------------------------------------------------ */
 /* The gating matrix.                                                  */
@@ -1775,27 +1805,31 @@ check("the demoted session still works as an ordinary member session",
   `${demotedMe.status}, isAdmin=${demotedMeBody.isAdmin}`);
 
 /*
- * The development session is exempt, on purpose rather than by
- * oversight. A dev admin's authority never came from ADMIN_TELEGRAM_IDS
- * - its account id is namespaced under "dev:" and could not be in that
- * list - it came from DEV_LOGIN_SECRET, so that is what gets re-read for
- * it. Unsetting the secret drops the session exactly the way delisting
- * an id does, which is the same "must be SET" shape the route itself
- * uses. Untested, this exemption would be indistinguishable from having
- * forgotten dev sessions existed.
+ * THE DEVELOPMENT SESSION HAS NO EXEMPTION, and that is the tightening
+ * 0.9-M2-S1 (#352) landed with the route's removal. Nothing in this
+ * Worker writes is_dev = 1 any more, so the only such row is one written
+ * straight into the database - a `wrangler d1 execute`, a restored
+ * backup - and the old code would have re-read its adminness out of
+ * DEV_LOGIN_SECRET, handing that row the corpus on any deployment where
+ * somebody set the binding. Adminness comes from the lists alone now,
+ * and a "dev:"-namespaced account id cannot be a numeric id's HMAC, so
+ * the hand-written row is a member.
+ *
+ * Seeded rather than minted, because seeding is what the case IS.
  */
-const devAdmin = await (await call("POST", "/auth/dev",
-  { headers: { Origin: LOCAL, ...TYPE },
-    body: JSON.stringify(
-      { secret: "dev-secret", subject: "root", admin: true }) },
-  devEnv)).clone().json();
-check("a dev session can be minted as an admin", devAdmin.isAdmin === true);
-await statusOf("and ADMIN_TELEGRAM_IDS has no say over it",
-  call("GET", "/export", { headers: bearer(devAdmin.session) },
-    { ...devEnv, ADMIN_TELEGRAM_IDS: "" }), 200);
-await statusOf("but unsetting DEV_LOGIN_SECRET drops it to a member",
-  call("GET", "/export", { headers: bearer(devAdmin.session) },
-    { ...devEnv, DEV_LOGIN_SECRET: "" }), 401);
+const HAND_WRITTEN_DEV = "hand-written-dev-admin-session-token";
+sessions.push({
+  token_hash: await sha256Hex(HAND_WRITTEN_DEV),
+  account_id: FIXTURE_DEV_SUBJECT,
+  is_admin: 1, is_dev: 1,
+  created_at: new Date().toISOString(),
+  expires_at: new Date(Date.now() + 3600_000).toISOString(),
+});
+await statusOf("a hand-written is_dev admin row is NOT an admin, even " +
+  "with DEV_LOGIN_SECRET set",
+  call("GET", "/export", { headers: bearer(HAND_WRITTEN_DEV) }, devEnv), 401);
+await statusOf("and it still works as the member session it also is",
+  call("GET", "/me", { headers: bearer(HAND_WRITTEN_DEV) }, devEnv), 200);
 
 /* ------------------------------------------------------------------ */
 /* An admin session also ends when nothing uses it.                    */
@@ -1938,18 +1972,26 @@ await statusOf("a demoted admin session still works as a member session",
 check("and keeps the admin window, because the row still opened the corpus",
   near(leftOn(rowWhere(true)), IDLE_MS), inMinutes(leftOn(rowWhere(true))));
 
-/* A development admin session is an admin session, with no carve-out of
- * the kind the ADMIN_TELEGRAM_IDS re-read needs: the window bounds what
- * the row can reach, not where its adminness came from. */
-const devIdle = await (await call("POST", "/auth/dev",
-  { headers: { Origin: LOCAL, ...TYPE },
-    body: JSON.stringify(
-      { secret: "dev-secret", subject: "root", admin: true }) },
-  devEnv)).clone().json();
+/* THE WINDOW FOLLOWS THE STORED FLAG, not the re-read, and an is_dev row
+ * is where those two answers differ most: it is refused adminness by the
+ * lists (0.9-M2-S1, #352) while its row still says is_admin = 1, so a
+ * slide computed from the re-read would hand it the member's seven days.
+ * The row was handed the corpus's shape once and is bounded accordingly.
+ * Seeded, because nothing mints one. */
+const DEV_IDLE_TOKEN = "hand-written-dev-idle-session-token";
+sessions.push({
+  token_hash: await sha256Hex(DEV_IDLE_TOKEN),
+  account_id: FIXTURE_DEV_SUBJECT,
+  is_admin: 1, is_dev: 1,
+  created_at: new Date().toISOString(),
+  expires_at: new Date(Date.now() + 60 * 1000).toISOString(),
+});
 const devRow = () => sessions.find((s) => s.is_dev === 1);
-check("a development admin session gets the window too",
-  devIdle.isAdmin === true && near(leftOn(devRow()), IDLE_MS),
-  inMinutes(leftOn(devRow())));
+await statusOf("a hand-written is_dev admin row is a member session",
+  call("GET", "/me", { headers: bearer(DEV_IDLE_TOKEN) }, devEnv), 200);
+check("and gets the ADMIN window, because the stored flag is what the " +
+  "slide reads",
+  near(leftOn(devRow()), IDLE_MS), inMinutes(leftOn(devRow())));
 
 /* The break-glass token is a secret rather than a row, so there is
  * nothing to slide and no row to find. Asserted because a slide written
@@ -2965,28 +3007,38 @@ if (DatabaseSync) {
 /* A development session may not write an admin row.                   */
 
 /*
- * POST /auth/dev mints a session whose adminness comes from
- * DEV_LOGIN_SECRET and from nothing else, and that was harmless while
- * the table granted nothing. It is not harmless now: a row written from
- * a development login is a real admin row, and after the flip to
- * table-only it is the whole authority. So the dev session keeps every
- * power it had over the data and loses this one - it may still manage
- * the always-allow list, which is what makes a local admin page
- * workable at all.
+ * A row written from a development session is a real admin row, and
+ * after the flip to table-only it is the whole authority. So such a
+ * session keeps every power it has over the data and loses this one - it
+ * may still manage the always-allow list, which is what makes a local
+ * admin page workable at all.
  *
- * There is deliberately no escape hatch. "Unless the gating is
- * explicit" is satisfied by a refusal, not by a second secret to
- * forget: on production DEV_LOGIN_SECRET is unset and no dev session
- * can exist, so this guard costs that deployment nothing and is a real
- * boundary on every other one.
+ * There is deliberately no escape hatch. "Unless the gating is explicit"
+ * is satisfied by a refusal, not by a second secret to forget.
+ *
+ * REACHING THIS GUARD NOW TAKES TWO HAND-WRITTEN ROWS, and that is the
+ * measure of how narrow it has become rather than a reason to drop it
+ * (0.9-M2-S1, #352). Nothing mints an is_dev session, and adminness
+ * comes from the lists, so the caller this refuses is somebody who has
+ * written both a session row and a `membership` row straight into D1.
+ * That caller is exactly the one who should not be able to turn a
+ * session into a durable admin row - the session expires, the row does
+ * not.
  */
 reset();
 
-const DEV_ADMIN = (await (await call("POST", "/auth/dev",
-  { headers: { Origin: LOCAL, ...TYPE },
-    body: JSON.stringify(
-      { secret: "dev-secret", subject: "alice", admin: true }) },
-  devEnv)).clone().json()).session;
+const DEV_ADMIN = "hand-written-dev-admin-for-the-membership-guard";
+roster.push({
+  account_id: FIXTURE_DEV_SUBJECT, role: "admin", label: "Seeded",
+  added_at: new Date().toISOString(), added_by: "seed",
+});
+sessions.push({
+  token_hash: await sha256Hex(DEV_ADMIN),
+  account_id: FIXTURE_DEV_SUBJECT,
+  is_admin: 1, is_dev: 1,
+  created_at: new Date().toISOString(),
+  expires_at: new Date(Date.now() + 3600_000).toISOString(),
+});
 
 await statusOf("the dev session administers",
   call("GET", "/membership", { headers: bearer(DEV_ADMIN) }, devEnv), 200);
@@ -3004,8 +3056,11 @@ check("but an admin row from a dev session is refused", devWrite.status === 401,
   `${devWrite.status}`);
 check("with the refusal every other one gives, byte for byte",
   (await devWrite.text()) === JSON.stringify({ error: "Not authorized." }));
-check("and nothing reached the table",
-  !roster.some((r) => r.role === "admin"), `${roster.length} row(s)`);
+check("and nothing reached the table - the seeded row is the only admin " +
+  "row there is",
+  roster.filter((r) => r.role === "admin").length === 1 &&
+  !roster.some((r) => r.role === "admin" && r.account_id === FIXTURE_4242),
+  `${roster.filter((r) => r.role === "admin").length} admin row(s)`);
 
 /*
  * The refusal stands ahead of every shape check, which is what its
