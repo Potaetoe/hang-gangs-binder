@@ -25,6 +25,37 @@
  * schemes have no relative resolution. A subprocess sidesteps that
  * rather than fighting it.)
  *
+ * WHY THIS SUITE'S OWN BAKES RUN AGAINST A PRIVATE WORKTREE, NOT THIS
+ * CHECKOUT (0.9-M0-S21, #318 - fixes a flake surfaced twice: the S19
+ * review's Observation and the S19 landing door). dev/demo-bake.mjs's
+ * refuseDirty() looks at THIS ENTIRE CHECKOUT's `git status
+ * --porcelain`, by design - a stamped bake claims a commit produced
+ * these bytes, and that claim is a lie the moment anything anywhere in
+ * the tree is uncommitted, whether or not the bake actually reads that
+ * file. Correct for a real `./run bake`. But it means every bake this
+ * suite runs is hostage to whatever ELSE is uncommitted in this same
+ * checkout at the moment it runs - and the gate's own mutation
+ * batteries for OTHER checks routinely leave the tree in exactly that
+ * state on purpose (`rm tests/claim-vs-diff.test.mjs && node
+ * tests/run.mjs`, reproduced from #311's own landing-door probe, is
+ * the exact sequence the S19 review hit this with). Standalone or in a
+ * freshly-committed clean gate nothing is uncommitted, so the arm
+ * passed every time it was watched directly - which is what made it
+ * read as flaky rather than broken. The fix is not a unique temp path
+ * (every output directory here already comes from mkdtemp, outside the
+ * repository) - it is that the SOURCE this suite bakes FROM was never
+ * isolated from the checkout's shared, global, ambient git state. A
+ * private worktree checked out fresh at HEAD (`git worktree add
+ * <private dir> --detach HEAD`) fixes that at the root: it has its own
+ * working tree and its own index, so `git status --porcelain` run
+ * inside it answers a question about ONLY that private copy, immune to
+ * whatever any other check does to this one. Section 0b below is the
+ * regression guard - it proves the immunity by actually dirtying this
+ * checkout and watching the isolated bake still succeed, and proves
+ * that proof isn't a coincidence by also watching a NON-isolated bake
+ * against the same dirty checkout refuse, the way `./run bake` really
+ * would.
+ *
  * WHAT WOULD BE WRONG WITHOUT IT. Two hazards, the 2026-08-13 field
  * note and the ticket that follows it:
  *
@@ -67,7 +98,10 @@
  * a targeted, restored-in-full mutation of dev/demo-bake.mjs, made
  * invisible to `git status` with `git update-index --assume-unchanged`
  * for exactly the window it is needed, the same trick this file's own
- * refuseDirty precondition below exists to not be fooled by.
+ * refuseDirty precondition below exists to not be fooled by. This
+ * mutation runs against the PRIVATE worktree's own copy of the file and
+ * its OWN index (not this checkout's), for the same isolation reason as
+ * everything else in this file - see the paragraph above.
  */
 import { execFile } from "node:child_process";
 import {
@@ -81,9 +115,9 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const ROOT = HERE("..");
-const BAKE = join(ROOT, "dev", "demo-bake.mjs");
+const PRIMARY_BAKE = join(ROOT, "dev", "demo-bake.mjs");
 
-const EXPECTED = 33;
+const EXPECTED = 36;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -120,11 +154,15 @@ async function walkFiles(dir, relative) {
 // Runs the real CLI entry point as a subprocess - process.execPath
 // rather than the bare string "node", so this runs the same binary
 // that is running the suite regardless of what a shell's PATH resolves
-// "node" to.
-async function runBake(out) {
+// "node" to. Takes the bake script explicitly rather than a module
+// constant, because this suite runs two different copies of it (the
+// isolated worktree's, for every real check; the checkout's own, once,
+// for the regression guard in 0b that proves the isolation is doing
+// something).
+async function runBakeAt(bakeScript, out) {
   try {
-    const { stdout, stderr } = await run(process.execPath, [BAKE, "--out", out],
-      { cwd: ROOT });
+    const { stdout, stderr } = await run(process.execPath,
+      [bakeScript, "--out", out], { cwd: ROOT });
     return { code: 0, stdout, stderr };
   } catch (error) {
     return {
@@ -136,226 +174,301 @@ async function runBake(out) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 0. The precondition this whole suite runs under.                    */
+/* 0. Set-up: a private worktree, checked out fresh at HEAD, that every */
+/*    real check below bakes against instead of this checkout - see    */
+/*    "WHY THIS SUITE'S OWN BAKES RUN AGAINST A PRIVATE WORKTREE" above */
+/*    (0.9-M0-S21, #318). `--detach HEAD` rather than a branch name: it */
+/*    is the commit this run is actually testing, whatever that is on  */
+/*    whatever machine runs this, and a detached checkout cannot        */
+/*    collide with a branch already checked out elsewhere - which a     */
+/*    same-named branch could, on a machine running several worktrees   */
+/*    of this repository at once (this fleet's normal condition).      */
 
-// A dirty tree makes the CLI refuse for a reason that has nothing to
-// do with output-directory hygiene (dev/demo-bake.mjs's own
-// refuseDirty), and every scenario below would fail with the same
-// unhelpful cause. Checked and named first so a red run here is never
-// mistaken for a hygiene regression.
-const { stdout: porcelain } = await run("git", ["status", "--porcelain"], { cwd: ROOT });
-check("the tree is clean, so a refusal below is about hygiene and not this",
-  porcelain.trim().length === 0);
+const worktreeRoot = await mkdtemp(
+  join(tmpdir(), "hgb-bake-hygiene-worktree-"));
+await run("git", ["worktree", "add", worktreeRoot, "--detach", "HEAD"],
+  { cwd: ROOT });
+const BAKE = join(worktreeRoot, "dev", "demo-bake.mjs");
+const runBake = (out) => runBakeAt(BAKE, out);
 
-/* ------------------------------------------------------------------ */
-/* 1. A directory this bake recognizes as its own previous output      */
-/*    (the stamp its own index.html carries) is cleared, not carried.  */
+const { stdout: worktreePorcelain } = await run("git",
+  ["status", "--porcelain"], { cwd: worktreeRoot });
+check("the private worktree starts clean, exactly matching HEAD - " +
+  "every check below depends on that, so a failure here means `git " +
+  "worktree add` did not behave the way this suite assumes",
+  worktreePorcelain.trim().length === 0);
 
-const staleOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-stale-"));
-await writeFile(join(staleOut, "index.html"),
-  '<meta name="hgb-baked-at" content="0000000000000000000000000000000000000 old">',
-  "utf8");
-await mkdir(join(staleOut, "demo"), { recursive: true });
-await writeFile(join(staleOut, "demo", "retired-page.html"), "a page nobody ships anymore", "utf8");
-await writeFile(join(staleOut, "stale-top-level.txt"), "left by a previous run", "utf8");
-
-const staleResult = await runBake(staleOut);
-check("a bake into its own recognized previous output succeeds",
-  staleResult.code === 0);
-check("a page the current manifest no longer emits does not survive the bake",
-  !(await exists(join(staleOut, "demo", "retired-page.html"))));
-check("a stray top-level file from the previous bake does not survive either",
-  !(await exists(join(staleOut, "stale-top-level.txt"))));
-check("the fresh bake's own pages land where the manifest says",
-  (await exists(join(staleOut, "index.html"))) &&
-  (await exists(join(staleOut, "demo", "index.html"))));
-
-await rm(staleOut, { recursive: true, force: true });
-
-/* ------------------------------------------------------------------ */
-/* 2. A directory this bake does NOT recognize is refused outright,    */
-/*    before anything is written or removed - both the case with no    */
-/*    index.html at all and the case with an unrelated one.            */
-
-const foreignOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-foreign-"));
-await writeFile(join(foreignOut, "notes.txt"), "somebody else's working directory", "utf8");
-
-const foreignResult = await runBake(foreignOut);
-check("a bake into a directory holding an unrecognized file refuses",
-  foreignResult.code !== 0);
-check("the refusal names the directory it refused",
-  foreignResult.stderr.includes(foreignOut));
-check("the refusal states a remedy rather than just failing",
-  /empty directory|clear .* yourself|previous bake/i.test(foreignResult.stderr));
-check("the file that was never this bake's to touch survives untouched",
-  (await readFile(join(foreignOut, "notes.txt"), "utf8")) ===
-    "somebody else's working directory");
-check("nothing from this bake was written into the refused directory",
-  !(await exists(join(foreignOut, "index.html"))));
-
-await rm(foreignOut, { recursive: true, force: true });
-
-// The same refusal for a directory that DOES hold an index.html, but
-// one that carries no hgb-baked-at stamp - proving recognition is
-// about the stamp, not merely about the filename matching.
-const unstampedOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-unstamped-"));
-await writeFile(join(unstampedOut, "index.html"), "<h1>Somebody else's site</h1>", "utf8");
-
-const unstampedResult = await runBake(unstampedOut);
-check("an index.html with no hgb-baked-at stamp does not count as recognition",
-  unstampedResult.code !== 0);
-check("that refusal also names the directory",
-  unstampedResult.stderr.includes(unstampedOut));
-check("the unrelated index.html survives the refusal untouched",
-  (await readFile(join(unstampedOut, "index.html"), "utf8")) ===
-    "<h1>Somebody else's site</h1>");
-
-await rm(unstampedOut, { recursive: true, force: true });
-
-/* ------------------------------------------------------------------ */
-/* 3. An empty or absent directory is neither "recognized" nor         */
-/*    "foreign" - a bake proceeds into it outright, no clearing owed.  */
-
-const emptyOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-empty-"));
-const emptyResult = await runBake(emptyOut);
-check("a bake into an empty directory proceeds without complaint",
-  emptyResult.code === 0);
-
-const absentParent = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-parent-"));
-const absentOut = join(absentParent, "not-yet-created");
-const absentResult = await runBake(absentOut);
-check("a bake into a directory that does not exist yet creates it and proceeds",
-  absentResult.code === 0 && (await exists(join(absentOut, "index.html"))));
-
-await rm(absentParent, { recursive: true, force: true });
-
-/* ------------------------------------------------------------------ */
-/* 4. The root 404.html: present in a fresh bake, carrying the fold    */
-/*    page's own meta/CSP/noindex posture and nothing more.            */
-
-const read404 = await readFile(join(emptyOut, "404.html"), "utf8");
-const readIndex = await readFile(join(emptyOut, "index.html"), "utf8");
-
-check("the fresh bake emits a root-level 404.html beside the fold page",
-  await exists(join(emptyOut, "404.html")));
-check("the 404 states its title in a heading",
-  /<h1[^>]*>\s*Not found\s*<\/h1>/i.test(read404));
-check("the 404 says, in one line, that the address does not exist here",
-  read404.includes("This address does not exist here."));
-check("the 404 links back to the same demo entry the fold page links to",
-  (() => {
-    const foldHref = readIndex.match(/<a href="([^"]+)">Open the demo<\/a>/);
-    const notFoundHref = read404.match(/<a href="([^"]+)">Open the demo<\/a>/);
-    return foldHref && notFoundHref && foldHref[1] === notFoundHref[1];
-  })());
-check("the 404 carries the exact same Content-Security-Policy as the fold page",
-  (() => {
-    const cspOf = (html) => (html.match(/Content-Security-Policy" content="([^"]*)"/) || [])[1];
-    const cspIndex = cspOf(readIndex);
-    const csp404 = cspOf(read404);
-    return cspIndex && csp404 && cspIndex === csp404;
-  })());
-check("the 404 carries noindex, nofollow, like the fold page",
-  read404.includes('name="robots" content="noindex, nofollow"') &&
-  readIndex.includes('name="robots" content="noindex, nofollow"'));
-check("the 404 carries the no-referrer posture the fold page carries",
-  read404.includes('name="referrer" content="no-referrer"') &&
-  readIndex.includes('name="referrer" content="no-referrer"'));
-check("the 404 carries the same hgb-baked-at stamp the fold page carries",
-  (() => {
-    const stampOf = (html) => (html.match(/<meta name="hgb-baked-at" content="[^"]*">/) || [])[0];
-    const stampIndex = stampOf(readIndex);
-    const stamp404 = stampOf(read404);
-    return stampIndex && stamp404 && stampIndex === stamp404;
-  })());
-check("the 404 introduces no new voice - no warning paragraph, no explanation",
-  !read404.toLowerCase().includes("fabricat") &&
-  !read404.toLowerCase().includes("nothing you do here is recorded"));
-
-/* ------------------------------------------------------------------ */
-/* 5. Completeness, both directions (2026-08-13 review, F1): what the  */
-/*    CLI reports writing and what is actually on disk have to be the  */
-/*    same set. 404.html used to be written outside the manifest, so   */
-/*    every bake under-reported its own size by one - a bake writing   */
-/*    50 files while printing "Baked 49 files". Read from the real     */
-/*    directory, not the manifest, per this file's own zero-imports    */
-/*    rule above.                                                      */
-
-const reportedMatch = emptyResult.stdout.match(/Baked (\d+) files/);
-const reportedCount = reportedMatch ? Number(reportedMatch[1]) : -1;
-const realFiles = await walkFiles(emptyOut, "");
-
-check("the bake's own stdout states how many files it wrote",
-  reportedMatch !== null);
-check("every file the bake reported writing is one that actually exists " +
-  "on disk (the count is not overstated)",
-  realFiles.length >= reportedCount);
-check("every file actually on disk is one the bake reported writing " +
-  "(the count is not understated - the exact way 404.html went " +
-  "uncounted before this fix)",
-  realFiles.length <= reportedCount);
-
-await rm(emptyOut, { recursive: true, force: true });
-
-/* ------------------------------------------------------------------ */
-/* 6. The destructive clear must never run before a refusal that would */
-/*    have stopped the bake (2026-08-13 review, F2). Reproduced        */
-/*    against a directory holding a complete previous build: no input  */
-/*    the unmodified CLI accepts reaches manifestFor()'s own refusal   */
-/*    (its allowlist guard only fires on an argument no caller passes),*/
-/*    so the refusal is induced the way the review induced it - a      */
-/*    targeted mutation of dev/demo-bake.mjs, hidden from `git status` */
-/*    with `git update-index --assume-unchanged` for exactly the       */
-/*    window it runs in, then restored byte-for-byte and un-flagged    */
-/*    before this suite reports anything.                              */
-
-const goodOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-f2-"));
-const goodBake = await runBake(goodOut);
-check("setup: a real bake into a fresh directory succeeds - this is the " +
-  "'complete previous build' the refusal below must not destroy",
-  goodBake.code === 0);
-const beforeFiles = (await walkFiles(goodOut, "")).sort();
-check("setup: the previous build this probe protects actually holds files",
-  beforeFiles.length > 0);
-
-const bakeSrcOriginal = await readFile(BAKE, "utf8");
-const anchor = "export function manifestFor(webEntries, raw) {";
-if (bakeSrcOriginal.indexOf(anchor) === -1) {
-  throw new Error(
-    "F2 regression probe: manifestFor()'s signature moved - update the " +
-    "anchor string in tests/bake-hygiene.test.mjs rather than let this " +
-    "probe silently stop mutating anything.");
-}
-const probeMessage =
-  "F2-regression-probe: manifest refused before any output was touched";
-const bakeSrcMutated = bakeSrcOriginal.replace(anchor,
-  anchor + "\n  throw new Error(\"" + probeMessage + "\");");
-
-await run("git", ["update-index", "--assume-unchanged", BAKE], { cwd: ROOT });
 try {
-  await writeFile(BAKE, bakeSrcMutated, "utf8");
-  const probeResult = await runBake(goodOut);
-  check("F2: a refusal ahead of any write refuses rather than silently " +
-    "succeeding",
-    probeResult.code !== 0 && probeResult.stderr.includes(probeMessage));
+  /* ------------------------------------------------------------------ */
+  /* 0b. Regression guard for the isolation above (0.9-M0-S21, #318):    */
+  /*     both halves of the claim, not just the encouraging one. The     */
+  /*     isolated worktree has to bake fine while THIS checkout carries  */
+  /*     an unrelated, uncommitted file - reproducing the exact shape of */
+  /*     the flake (some other check's mutation battery left the tree    */
+  /*     dirty; every bake in this suite refused). And this checkout has */
+  /*     to have genuinely BEEN dirty enough to matter - checked by      */
+  /*     running the SAME probe against the checkout's own, non-isolated */
+  /*     copy of the bake and watching it refuse, the way `./run bake`   */
+  /*     really would. Without that second half, a future edit that      */
+  /*     quietly broke the isolation (BAKE resolving back to a copy      */
+  /*     under ROOT, say) would still pass the first half for free on a  */
+  /*     tree that happened to be clean regardless - dirtying an         */
+  /*     already-clean tree on purpose is the only way to tell whether   */
+  /*     the isolation is doing anything at all.                         */
 
-  const afterFiles = (await walkFiles(goodOut, "")).sort();
-  check("F2: the refusal deleted nothing from the previous build it was " +
-    "pointed at - the destructive clear runs only after every guard " +
-    "that can refuse",
-    JSON.stringify(afterFiles) === JSON.stringify(beforeFiles));
-  check("F2: the refusal wrote nothing new either",
-    afterFiles.length === beforeFiles.length);
+  const dirtyProbe = join(ROOT,
+    "hgb-bake-hygiene-ambient-dirty-probe.tmp");
+  await writeFile(dirtyProbe,
+    "an unrelated mutation battery's leftover, uncommitted on purpose " +
+    "by this suite's own regression guard (0.9-M0-S21, #318)",
+    "utf8");
+  try {
+    const isolatedWhileDirty = await mkdtemp(
+      join(tmpdir(), "hgb-bake-hygiene-isolated-while-dirty-"));
+    const isolatedResult = await runBake(isolatedWhileDirty);
+    check("the isolated worktree bakes cleanly even while this " +
+      "checkout carries an unrelated, uncommitted file",
+      isolatedResult.code === 0);
+    await rm(isolatedWhileDirty, { recursive: true, force: true });
+
+    const primaryWhileDirty = await mkdtemp(
+      join(tmpdir(), "hgb-bake-hygiene-primary-while-dirty-"));
+    const primaryResult = await runBakeAt(PRIMARY_BAKE, primaryWhileDirty);
+    check("...and a NON-isolated bake against this same dirty " +
+      "checkout really does refuse, naming the uncommitted change - " +
+      "confirming the guard above proves isolation and is not passing " +
+      "by coincidence",
+      primaryResult.code !== 0 &&
+      /uncommitted changes/.test(primaryResult.stderr) &&
+      primaryResult.stderr.includes("hgb-bake-hygiene-ambient-dirty-probe.tmp"));
+    await rm(primaryWhileDirty, { recursive: true, force: true });
+  } finally {
+    await rm(dirtyProbe, { force: true });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 1. A directory this bake recognizes as its own previous output      */
+  /*    (the stamp its own index.html carries) is cleared, not carried.  */
+
+  const staleOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-stale-"));
+  await writeFile(join(staleOut, "index.html"),
+    '<meta name="hgb-baked-at" content="0000000000000000000000000000000000000 old">',
+    "utf8");
+  await mkdir(join(staleOut, "demo"), { recursive: true });
+  await writeFile(join(staleOut, "demo", "retired-page.html"), "a page nobody ships anymore", "utf8");
+  await writeFile(join(staleOut, "stale-top-level.txt"), "left by a previous run", "utf8");
+
+  const staleResult = await runBake(staleOut);
+  check("a bake into its own recognized previous output succeeds",
+    staleResult.code === 0);
+  check("a page the current manifest no longer emits does not survive the bake",
+    !(await exists(join(staleOut, "demo", "retired-page.html"))));
+  check("a stray top-level file from the previous bake does not survive either",
+    !(await exists(join(staleOut, "stale-top-level.txt"))));
+  check("the fresh bake's own pages land where the manifest says",
+    (await exists(join(staleOut, "index.html"))) &&
+    (await exists(join(staleOut, "demo", "index.html"))));
+
+  await rm(staleOut, { recursive: true, force: true });
+
+  /* ------------------------------------------------------------------ */
+  /* 2. A directory this bake does NOT recognize is refused outright,    */
+  /*    before anything is written or removed - both the case with no    */
+  /*    index.html at all and the case with an unrelated one.            */
+
+  const foreignOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-foreign-"));
+  await writeFile(join(foreignOut, "notes.txt"), "somebody else's working directory", "utf8");
+
+  const foreignResult = await runBake(foreignOut);
+  check("a bake into a directory holding an unrecognized file refuses",
+    foreignResult.code !== 0);
+  check("the refusal names the directory it refused",
+    foreignResult.stderr.includes(foreignOut));
+  check("the refusal states a remedy rather than just failing",
+    /empty directory|clear .* yourself|previous bake/i.test(foreignResult.stderr));
+  check("the file that was never this bake's to touch survives untouched",
+    (await readFile(join(foreignOut, "notes.txt"), "utf8")) ===
+      "somebody else's working directory");
+  check("nothing from this bake was written into the refused directory",
+    !(await exists(join(foreignOut, "index.html"))));
+
+  await rm(foreignOut, { recursive: true, force: true });
+
+  // The same refusal for a directory that DOES hold an index.html, but
+  // one that carries no hgb-baked-at stamp - proving recognition is
+  // about the stamp, not merely about the filename matching.
+  const unstampedOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-unstamped-"));
+  await writeFile(join(unstampedOut, "index.html"), "<h1>Somebody else's site</h1>", "utf8");
+
+  const unstampedResult = await runBake(unstampedOut);
+  check("an index.html with no hgb-baked-at stamp does not count as recognition",
+    unstampedResult.code !== 0);
+  check("that refusal also names the directory",
+    unstampedResult.stderr.includes(unstampedOut));
+  check("the unrelated index.html survives the refusal untouched",
+    (await readFile(join(unstampedOut, "index.html"), "utf8")) ===
+      "<h1>Somebody else's site</h1>");
+
+  await rm(unstampedOut, { recursive: true, force: true });
+
+  /* ------------------------------------------------------------------ */
+  /* 3. An empty or absent directory is neither "recognized" nor         */
+  /*    "foreign" - a bake proceeds into it outright, no clearing owed.  */
+
+  const emptyOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-empty-"));
+  const emptyResult = await runBake(emptyOut);
+  check("a bake into an empty directory proceeds without complaint",
+    emptyResult.code === 0);
+
+  const absentParent = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-parent-"));
+  const absentOut = join(absentParent, "not-yet-created");
+  const absentResult = await runBake(absentOut);
+  check("a bake into a directory that does not exist yet creates it and proceeds",
+    absentResult.code === 0 && (await exists(join(absentOut, "index.html"))));
+
+  await rm(absentParent, { recursive: true, force: true });
+
+  /* ------------------------------------------------------------------ */
+  /* 4. The root 404.html: present in a fresh bake, carrying the fold    */
+  /*    page's own meta/CSP/noindex posture and nothing more.            */
+
+  const read404 = await readFile(join(emptyOut, "404.html"), "utf8");
+  const readIndex = await readFile(join(emptyOut, "index.html"), "utf8");
+
+  check("the fresh bake emits a root-level 404.html beside the fold page",
+    await exists(join(emptyOut, "404.html")));
+  check("the 404 states its title in a heading",
+    /<h1[^>]*>\s*Not found\s*<\/h1>/i.test(read404));
+  check("the 404 says, in one line, that the address does not exist here",
+    read404.includes("This address does not exist here."));
+  check("the 404 links back to the same demo entry the fold page links to",
+    (() => {
+      const foldHref = readIndex.match(/<a href="([^"]+)">Open the demo<\/a>/);
+      const notFoundHref = read404.match(/<a href="([^"]+)">Open the demo<\/a>/);
+      return foldHref && notFoundHref && foldHref[1] === notFoundHref[1];
+    })());
+  check("the 404 carries the exact same Content-Security-Policy as the fold page",
+    (() => {
+      const cspOf = (html) => (html.match(/Content-Security-Policy" content="([^"]*)"/) || [])[1];
+      const cspIndex = cspOf(readIndex);
+      const csp404 = cspOf(read404);
+      return cspIndex && csp404 && cspIndex === csp404;
+    })());
+  check("the 404 carries noindex, nofollow, like the fold page",
+    read404.includes('name="robots" content="noindex, nofollow"') &&
+    readIndex.includes('name="robots" content="noindex, nofollow"'));
+  check("the 404 carries the no-referrer posture the fold page carries",
+    read404.includes('name="referrer" content="no-referrer"') &&
+    readIndex.includes('name="referrer" content="no-referrer"'));
+  check("the 404 carries the same hgb-baked-at stamp the fold page carries",
+    (() => {
+      const stampOf = (html) => (html.match(/<meta name="hgb-baked-at" content="[^"]*">/) || [])[0];
+      const stampIndex = stampOf(readIndex);
+      const stamp404 = stampOf(read404);
+      return stampIndex && stamp404 && stampIndex === stamp404;
+    })());
+  check("the 404 introduces no new voice - no warning paragraph, no explanation",
+    !read404.toLowerCase().includes("fabricat") &&
+    !read404.toLowerCase().includes("nothing you do here is recorded"));
+
+  /* ------------------------------------------------------------------ */
+  /* 5. Completeness, both directions (2026-08-13 review, F1): what the  */
+  /*    CLI reports writing and what is actually on disk have to be the  */
+  /*    same set. 404.html used to be written outside the manifest, so   */
+  /*    every bake under-reported its own size by one - a bake writing   */
+  /*    50 files while printing "Baked 49 files". Read from the real     */
+  /*    directory, not the manifest, per this file's own zero-imports    */
+  /*    rule above.                                                      */
+
+  const reportedMatch = emptyResult.stdout.match(/Baked (\d+) files/);
+  const reportedCount = reportedMatch ? Number(reportedMatch[1]) : -1;
+  const realFiles = await walkFiles(emptyOut, "");
+
+  check("the bake's own stdout states how many files it wrote",
+    reportedMatch !== null);
+  check("every file the bake reported writing is one that actually exists " +
+    "on disk (the count is not overstated)",
+    realFiles.length >= reportedCount);
+  check("every file actually on disk is one the bake reported writing " +
+    "(the count is not understated - the exact way 404.html went " +
+    "uncounted before this fix)",
+    realFiles.length <= reportedCount);
+
+  await rm(emptyOut, { recursive: true, force: true });
+
+  /* ------------------------------------------------------------------ */
+  /* 6. The destructive clear must never run before a refusal that would */
+  /*    have stopped the bake (2026-08-13 review, F2). Reproduced        */
+  /*    against a directory holding a complete previous build: no input  */
+  /*    the unmodified CLI accepts reaches manifestFor()'s own refusal   */
+  /*    (its allowlist guard only fires on an argument no caller passes),*/
+  /*    so the refusal is induced the way the review induced it - a      */
+  /*    targeted mutation of the private worktree's own copy of          */
+  /*    dev/demo-bake.mjs, hidden from that worktree's `git status` with */
+  /*    `git update-index --assume-unchanged` for exactly the window it  */
+  /*    runs in, then restored byte-for-byte and un-flagged before this  */
+  /*    suite reports anything.                                          */
+
+  const goodOut = await mkdtemp(join(tmpdir(), "hgb-bake-hygiene-f2-"));
+  const goodBake = await runBake(goodOut);
+  check("setup: a real bake into a fresh directory succeeds - this is the " +
+    "'complete previous build' the refusal below must not destroy",
+    goodBake.code === 0);
+  const beforeFiles = (await walkFiles(goodOut, "")).sort();
+  check("setup: the previous build this probe protects actually holds files",
+    beforeFiles.length > 0);
+
+  const bakeSrcOriginal = await readFile(BAKE, "utf8");
+  const anchor = "export function manifestFor(webEntries, raw) {";
+  if (bakeSrcOriginal.indexOf(anchor) === -1) {
+    throw new Error(
+      "F2 regression probe: manifestFor()'s signature moved - update the " +
+      "anchor string in tests/bake-hygiene.test.mjs rather than let this " +
+      "probe silently stop mutating anything.");
+  }
+  const probeMessage =
+    "F2-regression-probe: manifest refused before any output was touched";
+  const bakeSrcMutated = bakeSrcOriginal.replace(anchor,
+    anchor + "\n  throw new Error(\"" + probeMessage + "\");");
+
+  await run("git", ["update-index", "--assume-unchanged", BAKE],
+    { cwd: worktreeRoot });
+  try {
+    await writeFile(BAKE, bakeSrcMutated, "utf8");
+    const probeResult = await runBake(goodOut);
+    check("F2: a refusal ahead of any write refuses rather than silently " +
+      "succeeding",
+      probeResult.code !== 0 && probeResult.stderr.includes(probeMessage));
+
+    const afterFiles = (await walkFiles(goodOut, "")).sort();
+    check("F2: the refusal deleted nothing from the previous build it was " +
+      "pointed at - the destructive clear runs only after every guard " +
+      "that can refuse",
+      JSON.stringify(afterFiles) === JSON.stringify(beforeFiles));
+    check("F2: the refusal wrote nothing new either",
+      afterFiles.length === beforeFiles.length);
+  } finally {
+    await writeFile(BAKE, bakeSrcOriginal, "utf8");
+    await run("git", ["update-index", "--no-assume-unchanged", BAKE],
+      { cwd: worktreeRoot });
+  }
+
+  const restoredSrc = await readFile(BAKE, "utf8");
+  check("F2 probe: dev/demo-bake.mjs was restored exactly, byte for byte",
+    restoredSrc === bakeSrcOriginal);
+
+  await rm(goodOut, { recursive: true, force: true });
 } finally {
-  await writeFile(BAKE, bakeSrcOriginal, "utf8");
-  await run("git", ["update-index", "--no-assume-unchanged", BAKE], { cwd: ROOT });
+  // Best-effort, but reported rather than swallowed: a worktree this
+  // suite forgot to remove is a leak the next run (or the reaper) has to
+  // notice on its own, so whether the removal actually happened is part
+  // of this suite's own verdict, not a side note.
+  const removed = await run("git",
+    ["worktree", "remove", worktreeRoot, "--force"], { cwd: ROOT })
+    .then(() => true, () => false);
+  check("the private worktree was removed when this run finished",
+    removed);
 }
-
-const restoredSrc = await readFile(BAKE, "utf8");
-check("F2 probe: dev/demo-bake.mjs was restored exactly, byte for byte",
-  restoredSrc === bakeSrcOriginal);
-
-await rm(goodOut, { recursive: true, force: true });
 
 console.log(failures
   ? `\nbake-hygiene FAILED ${failures} of ${performed} check(s)`
