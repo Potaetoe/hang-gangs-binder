@@ -184,15 +184,17 @@ the terminal, never pasted into a file.
    401, not a 403 or a 500; and sit's own origin, loaded in a browser,
    should render the site rather than answer as an API.
 
-6. **Register the domain with BotFather**, now that step 3 gives sit a
-   real, reachable origin: `/setdomain` against sit's own bot (#282),
-   pointed at the `workers.dev` hostname `[env.sit]`'s `name` deploys
-   to. This is what "The sign-in page and the CSP" in `DESIGN.md`
-   needs before the Telegram widget on that origin can mint a session
-   at all — nothing before this step makes it runnable, because
-   nothing before it gives BotFather an origin to bind. Comment on
-   #282 once done; that issue stays open until it and the four secrets
-   above are both true.
+6. **Register the domain with BotFather**: `/setdomain` against sit's
+   own bot, pointed at the `workers.dev` hostname `[env.sit]`'s `name`
+   deploys to. This is what "The sign-in page and the CSP" in
+   `DESIGN.md` needs before the Telegram widget on that origin can mint
+   a session at all, and step 3 is what makes it runnable at all — a
+   domain BotFather binds before anything serves pages there stays
+   inert until step 3 actually deploys this config, at which point the
+   binding is immediately live rather than needing a second act.
+   Whether this step has been run and against what is *current* live
+   state; the issue that tracked standing sit up carries that record,
+   never this procedure.
 
 ## Deploying the Worker
 
