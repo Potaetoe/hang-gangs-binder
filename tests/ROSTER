@@ -31,6 +31,7 @@ tests/claim-vs-diff.test.mjs
 tests/entry-rows.test.mjs
 tests/fleet-status.test.mjs
 tests/mockup-tokens.test.mjs
+tests/operations-bot-rotation.test.mjs
 tests/operations-sit-procedure.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
