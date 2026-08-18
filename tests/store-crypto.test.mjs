@@ -339,6 +339,11 @@ check("the module never calls exportKey",
 check("every importKey/deriveKey passes NOT_EXTRACTABLE - " + derivations +
   " call(s), " + notExtractable + " use(s)",
   derivations > 0 && derivations === notExtractable);
+/* The count above says the constant reaches every call site; it cannot
+   say what the constant IS, and flipping one word would leave every
+   derived key exportable with the count still matching. */
+check("NOT_EXTRACTABLE is false",
+  /const NOT_EXTRACTABLE = false;/.test(source));
 
 /* Every algorithm the module actually names in a WebCrypto call,
    read off the call sites rather than off the prose - the docstring
@@ -432,7 +437,7 @@ check("PURPOSE names exactly the two purposes and is frozen",
   JSON.stringify(PURPOSE) === JSON.stringify({ ROW: "row",
                                                DIRECTORY: "dir" }));
 
-const EXPECTED = 62;
+const EXPECTED = 63;
 console.log(failures
   ? `\nstore-crypto FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
