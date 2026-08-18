@@ -93,7 +93,13 @@ ALLOWED_ORIGINS = "https://potaetoe.github.io"
 # that lives in a public repository. DEV_LOGIN_SECRET is a separate,
 # development-only secret and must never be set on production.
 #
-# ALL SIX ARE SET ON PRODUCTION, as Secrets rather than [vars].
+# THE PRE-0.9 SIX ARE SET ON PRODUCTION, as Secrets rather than [vars].
+# STORE_SECRET is the seventh name on the list below and is NOT among
+# them: it arrives with the entry-row rewrite (0.9-M1-S6, #332) and
+# production is not deployed against that code, so setting it is part of
+# the 1.0 cutover rather than a gap to close today. Until it is set, a
+# production Worker running this code would fail closed on every route
+# that stores or reads a row - loudly, which is the intended direction.
 # Confirmed by the owner from the dashboard on 2026-08-07, and again on
 # 2026-08-08 from an agent shell with
 # `wrangler versions view <id> --name hgbinderworker`, which lists secret
