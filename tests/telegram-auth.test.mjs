@@ -71,7 +71,14 @@ async function loadWorker(src) {
   return import("data:text/javascript," + encodeURIComponent(resolved));
 }
 
-const { default: worker } = await loadWorker(workerSrc);
+const { default: worker, DIRECTORY_SLOT } = await loadWorker(workerSrc);
+
+/* store-crypto imported by its own path, to open the directory record a
+   sign-in seals (0.9-M1-S11, #340). Built from the same STORE_SECRET the
+   Worker uses below: HKDF's salt is fixed, so this store derives the same
+   subkeys and opens what the sign-in's store sealed. */
+const store = await import(
+  pathToFileURL(ROOT + "server/store-crypto.js").href);
 
 let performed = 0;
 let failures = 0;
@@ -87,6 +94,7 @@ function check(label, condition) {
 const BOT_TOKEN = "canary-bot-token-belonging-to-nobody";
 const CHAT_ID = "canary-chat-id-belonging-to-nobody";
 const ACCOUNT_SECRET = "canary-account-secret-belonging-to-nobody";
+const STORE_SECRET = "canary-store-secret-belonging-to-nobody-v1";
 const HANDLE = "canaryhandle";
 const NUMERIC_ID = "606060606";
 const ORIGIN = "http://localhost:8124";
@@ -133,6 +141,7 @@ function makeDb(seed) {
   const sessions = new Map();
   const replay = new Map();
   const membership = (seed && seed.membership) || [];
+  const directory = new Map();
   const inserts = [];
   const statements = [];
 
@@ -195,6 +204,26 @@ function makeDb(seed) {
           .map((row) => ({ account_id: row.account_id })),
       };
     }
+    /* The roster refresh a verified sign-in issues (0.9-M1-S11, #340).
+       One UPSERT; joined_at is kept on conflict and last_seen_at moved
+       forward, applied off the DO UPDATE SET clause the statement carries
+       so a change to that clause is observed rather than assumed. */
+    if (sql.startsWith("INSERT INTO directory")) {
+      const [account_id, ciphertext, joined_at, last_seen_at] = args;
+      const existing = directory.get(account_id);
+      if (!existing) {
+        directory.set(account_id,
+          { account_id, ciphertext, joined_at, last_seen_at });
+        return { meta: { changes: 1 } };
+      }
+      const incoming = { account_id, ciphertext, joined_at, last_seen_at };
+      const setClause = sql.match(/DO UPDATE SET\s+(.+)$/i);
+      for (const piece of (setClause ? setClause[1] : "").split(",")) {
+        const m = piece.match(/(\w+)\s*=\s*excluded\.(\w+)/i);
+        if (m) existing[m[1]] = incoming[m[2]];
+      }
+      return { meta: { changes: 1 } };
+    }
     throw new Error("the D1 stub was handed a statement it does not " +
       "recognize, which means the auth path changed shape without this " +
       "arm being told: " + sql);
@@ -207,7 +236,7 @@ function makeDb(seed) {
   });
 
   return {
-    sessions, replay, inserts, statements,
+    sessions, replay, directory, inserts, statements,
     DB: {
       prepare: (sql) => Object.assign(
         { bind: (...args) => bound(sql, args) }, bound(sql, [])),
@@ -219,11 +248,18 @@ function makeDb(seed) {
    of ADMIN_TELEGRAM_IDS, ALWAYS_ALLOW_TELEGRAM_IDS or DEV_LOGIN_SECRET
    (0.9-M1-S1, #325; the S5 dispatch's mandate 9). Every default here is
    an absence on purpose - a test env that sets one of the three would
-   check a Worker nobody deploys. */
+   check a Worker nobody deploys.
+
+   STORE_SECRET is present, and that is one of sit's five deployed secrets
+   (server/wrangler.toml [env.sit]): a verified sign-in now refreshes the
+   member directory on the encrypted store (0.9-M1-S11, #340), so a sit
+   env without it would check a Worker whose sign-in fails its roster
+   write on every call. */
 function sitEnv(db, overrides) {
   return Object.assign({
     DB: db.DB,
     ACCOUNT_SECRET: ACCOUNT_SECRET,
+    STORE_SECRET: STORE_SECRET,
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_GROUP_CHAT_ID: CHAT_ID,
     EXPORT_TOKEN: "canary-export-token-belonging-to-nobody",
@@ -847,12 +883,45 @@ check("and it is that constant the group check is bounded by",
 }
 
 /* ------------------------------------------------------------------ */
+/* 8b. The roster: a verified sign-in refreshes the directory          */
+/* (0.9-M1-S11, #340; DESIGN.md, "Accounts" - the roster syncs from    */
+/* the group - and "Bot failure stance" - the roster cache is the      */
+/* Worker's last-known-good). This is the wiring INTO sign-in; the      */
+/* format's own properties are armed in tests/roster-directory.test.mjs */
+/* and tests/store-crypto.test.mjs.                                     */
+
+{
+  const { db, status } = await signIn({});
+  const row = db.directory.get(ACCOUNT_ID);
+  check("a verified sign-in writes a directory row keyed by the account " +
+    "id - the roster's last-known-good record of who is in the group",
+    status === 200 && Boolean(row) && row.account_id === ACCOUNT_ID);
+
+  const dstore = await store.openStore({ STORE_SECRET });
+  const opened = row ? await dstore.openDirectory(
+    new Uint8Array(Buffer.from(row.ciphertext, "base64")),
+    { accountId: ACCOUNT_ID, recordId: DIRECTORY_SLOT }) : "";
+  let parsed = {};
+  try { parsed = JSON.parse(opened); } catch (error) { parsed = {}; }
+  check("the directory record opens under the account id and the slot to " +
+    "the signed-in handle and a member role, sealed with purpose 'dir'",
+    parsed.handle === HANDLE && parsed.role === "member");
+
+  check("the directory row's clear columns carry neither the numeric id " +
+    "nor the handle - only the account-id HMAC and the timestamps",
+    Boolean(row) && ![row.account_id, row.joined_at, row.last_seen_at]
+      .some((value) => String(value).includes(NUMERIC_ID) ||
+        String(value).includes(HANDLE)));
+}
+
+/* ------------------------------------------------------------------ */
 /* 9. Nothing secret reaches a log line (mandate 7).                   */
 
 const SECRETS = [
   ["the bot token", BOT_TOKEN],
   ["the chat id", CHAT_ID],
   ["the account secret", ACCOUNT_SECRET],
+  ["the store secret", STORE_SECRET],
   ["the Telegram handle", HANDLE],
   ["the numeric id", NUMERIC_ID],
   ["api.telegram.org", "api.telegram.org"],
@@ -1074,9 +1143,24 @@ async function mutant(label, from, to) {
   }
 }
 
+{
+  /* The roster refresh removed from sign-in: the object literal is left
+     for Promise.resolve to swallow, so the call is gone but the code
+     still parses. A verified sign-in then writes no directory row - and
+     still succeeds, because the roster is best-effort and the session is
+     already minted (0.9-M1-S11, #340; DESIGN.md, "Bot failure stance"). */
+  const mutated = await mutant("the directory sync call removed from sign-in",
+    "await syncDirectoryEntry(store, env, accountId, {",
+    "await Promise.resolve({");
+  const { db, status } = await signIn({ worker: mutated });
+  check("mutation: without the sync call a verified sign-in writes no " +
+    "directory row, yet still signs in - the write is best-effort",
+    status === 200 && db.directory.size === 0);
+}
+
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 97;
+const EXPECTED = 103;
 console.log(failures
   ? `\ntelegram-auth FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
