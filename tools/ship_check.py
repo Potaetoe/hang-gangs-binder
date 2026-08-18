@@ -108,10 +108,36 @@ scenario against a fabricated repository instead of this one. `--base`
 defaults to `origin/accounts` - AGENTS.md's landing door rule, "the
 base is always origin/accounts" - but stays a real, documented flag
 because a fork's default branch may differ.
+
+THE COUNTED SUMMARY LINE (0.9-M1-S0, #323)
+
+Four completions in the M0 close wave hand-typed the WRONG count
+beside a correct, fully-pasted table - the table itself was never the
+problem, the number a tired human wrote next to it was. Stage 1 and
+stage 2's captured lines now grow one more line each, appended after
+everything the subprocess printed: `_count_old_gate_table()` and
+`_count_new_gate_table()` below read that same captured text back and
+COUNT it, so the last line of each gate's own block is a number this
+program computed, never one it remembered or asked the subprocess for.
+
+Both counters are deliberately blind to any total the subprocess
+itself may have printed - `tools/check.py` prints no summary today and
+`tests/run.mjs` prints its own ("N arm(s), all green." or "...,
+problem(s): ..."), and this file never reads that line as the answer.
+Trusting a subprocess's self-report would make this exactly the
+failure the ticket exists to end, one level down: a number sitting
+beside the evidence that nothing here checked against the evidence.
+Instead each counter re-derives the same fact a human eye reads off
+the table - `tools/check.py`'s own bordered block of "<label> ok" /
+"<label> FAILED" rows for the old gate, `tests/run.mjs`'s own
+`tests/<name>.test.mjs` arm rows for the new one - so a subprocess
+whose own self-reported count disagreed with its own rows would be
+caught here, not echoed.
 """
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -191,6 +217,83 @@ def _run_captured(argv, cwd, label):
     return done.returncode == 0, lines
 
 
+# `tools/check.py`'s own render step prints this border twice, verbatim
+# ("=" * (width + 10)), sandwiching one "<label padded> ok"/"FAILED" row
+# per stage - see check.py's own `main()`, the block right after
+# `results.append(("check.py roster rules", ...))`. A line entirely made
+# of "=" cannot occur as one of check.py's own labels (none of them are
+# "="-only), so it is an unambiguous fence; the LAST such pair is taken
+# so a stray look-alike line earlier in a checker's own chatty stdout
+# (none is known to print one, but nothing here assumes that stays true)
+# can never be mistaken for the fence around the real table.
+_BORDER = "="
+_OLD_GATE_OK_SUFFIX = " ok"
+_OLD_GATE_FAILED_SUFFIX = " FAILED"
+
+
+def _count_old_gate_table(lines):
+    """(total, ok, failed) counted from the old gate's own bordered
+    table, or None when no such table was found in the captured text -
+    which only happens when the subprocess died before rendering one,
+    a case the stage already reports FAILED for on its own terms.
+
+    Deliberately reads the ROWS, never any total `tools/check.py` might
+    print (it prints none today) - see this module's docstring, "THE
+    COUNTED SUMMARY LINE", for why a subprocess's own self-report is
+    never the source here.
+    """
+    borders = [index for index, line in enumerate(lines)
+              if line and set(line) == {_BORDER}]
+    if len(borders) < 2:
+        return None
+    start, end = borders[-2], borders[-1]
+    ok = failed = 0
+    for line in lines[start + 1:end]:
+        if line.endswith(_OLD_GATE_OK_SUFFIX):
+            ok += 1
+        elif line.endswith(_OLD_GATE_FAILED_SUFFIX):
+            failed += 1
+    total = ok + failed
+    return (total, ok, failed) if total else None
+
+
+# `tests/run.mjs`'s own `report()` prints one row per arm as
+# `name.padEnd(52) + status.padEnd(8) + seconds.toFixed(1) + "s"` - see
+# run.mjs's own `report` and the loop over `arms` that calls it. Every
+# arm's name is `tests/<name>.test.mjs` by construction (`ARM_SUFFIX`,
+# the same file's own header), which is what lets this pattern exclude
+# `tests/preflight.mjs`'s row (same shape, no `.test.mjs` suffix) without
+# any position-based reasoning - a python line ending the same way by
+# coincidence would need to both start with `tests/` and end in
+# `.test.mjs ` immediately followed by a status word, which nothing else
+# in the captured stdout does.
+_NEW_GATE_ROW = re.compile(
+    r"^tests/[^\s]+\.test\.mjs\s+(ok|FAILED)\s+\d+\.\d+s$")
+
+
+def _count_new_gate_table(lines):
+    """(total, ok, failed) counted from tests/run.mjs's own arm rows, or
+    None when none were found - the "not initialized" short-circuit
+    below never calls this, and a subprocess that died before printing
+    any row is already FAILED on its own terms.
+
+    Deliberately never reads `tests/run.mjs`'s own closing line ("N
+    arm(s), all green." or "..., N problem(s): ...") - see this module's
+    docstring, "THE COUNTED SUMMARY LINE".
+    """
+    ok = failed = 0
+    for line in lines:
+        match = _NEW_GATE_ROW.match(line)
+        if not match:
+            continue
+        if match.group(1) == "ok":
+            ok += 1
+        else:
+            failed += 1
+    total = ok + failed
+    return (total, ok, failed) if total else None
+
+
 def stage_old_gate(repo):
     script = os.path.join(repo, "tools", "check.py")
     label = "py -3 tools/check.py"
@@ -198,6 +301,11 @@ def stage_old_gate(repo):
         return Stage("old gate (%s)" % label, False,
                      ["%s is not in this worktree." % script], script)
     ok, lines = _run_captured([sys.executable, script], repo, label)
+    counted = _count_old_gate_table(lines)
+    if counted is not None:
+        total, passed, failed = counted
+        lines = [*lines, "", "%d stages, %d ok, %d FAILED"
+                             % (total, passed, failed)]
     return Stage("old gate (%s)" % label, ok, lines,
                  "%s, captured verbatim above" % label)
 
@@ -229,6 +337,11 @@ def stage_new_gate(repo, state):
         return Stage("0.9 gate (%s)" % label, False,
                      ["%s is not in this worktree." % script], script)
     ok, lines = _run_captured([node, script], repo, label)
+    counted = _count_new_gate_table(lines)
+    if counted is not None:
+        total, passed, failed = counted
+        lines = [*lines, "", "%d arms, %d green, %d FAILED"
+                             % (total, passed, failed)]
     return Stage("0.9 gate (%s)" % label, ok, lines,
                  "%s, captured verbatim above" % label)
 
