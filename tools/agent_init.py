@@ -468,10 +468,25 @@ def plant_hook_registration(primary, existing=None):
     or `.claude/hooks/*.py` into a new worktree - there is nothing there
     for anything to read. A Claude Code session whose project directory
     IS that worktree therefore registers no project hooks at all: the
-    guards this project depends on (push-to-main, cross-tree git, the
-    backgrounded-gate refusal, the false-premise dispatch check) do not
+    guards this project depends on (push-to-main, the backgrounded-gate
+    refusal, the premise check for a worktree-rooted session) do not
     exist for it. This function is what `do_init` calls, on every linked
     worktree, to repair that.
+
+    WHAT THIS DOES NOT RESTORE (narrowed by review, #347 comment
+    5335343747, finding F1): the cross-tree git guard is NOT one of the
+    guards this closes, even though an earlier version of this docstring
+    said it was. bash_guard rule 3 anchors its containment check on
+    `CLAUDE_PROJECT_DIR` itself, so for a session ROOTED AT this
+    worktree, `git -C` into the primary checkout or a sibling worktree
+    falls through that rule whether or not hooks are planted here -
+    probed both roots against the real hook, and both pass through. The
+    plant is correct as far as it goes; the claim that it also covers
+    cross-tree git was too broad. That gap is a defect in
+    `.claude/hooks/bash_guard.py` itself, outside this file's declared
+    scope, tracked at #357 - not something a hook-command PATH rewrite
+    like this function could fix, since it never touches rule 3's own
+    containment logic.
 
     WHY THIS COPIES NOTHING
 
@@ -500,9 +515,13 @@ def plant_hook_registration(primary, existing=None):
     (bash_guard.py's cross-tree containment check, dispatch_premise.py's
     git lookups) - that is the harness's real environment variable for
     the session actually running, set independently of any string this
-    function writes, and both of those checks are already correct
-    against the session's own worktree. Only the FILE PATH that finds
-    and execs the script is what this function repairs.
+    function writes. dispatch_premise.py's git lookups are correct
+    against the session's own worktree; bash_guard.py's cross-tree check
+    is NOT (see "WHAT THIS DOES NOT RESTORE" above, #357) - and either
+    way, this function could not change that outcome, since it rewrites
+    only a hook COMMAND'S file path and never touches the containment
+    logic a hook script runs once it is invoked. Only the FILE PATH that
+    finds and execs the script is what this function repairs.
 
     WHY "permissions" IS NEVER PLANTED
 
@@ -522,6 +541,17 @@ def plant_hook_registration(primary, existing=None):
     `do_init` only calls this when `kind == "linked"`. The primary
     checkout already carries its own real settings.json; this function
     is never given the chance to touch it.
+
+    `existing`, WHEN THIS FUNCTION IS TRUSTED TO RECEIVE IT
+
+    This function assumes `existing` is already a real dict or `None` -
+    it does not itself guard against anything else, because
+    `worktree_settings_merge_base()` below is the one place that reads
+    the worktree's own file and is where that guard lives (F5, #347
+    review, comment 5335343747: a worktree settings.json holding valid
+    JSON that is not an object used to reach `dict(existing or {})` here
+    unguarded and crash `agent-init` with a traceback rather than the
+    verb's own printed remedy).
     """
     primary_settings = os.path.join(primary, ".claude", "settings.json")
     data = read_json(primary_settings)
@@ -546,6 +576,56 @@ def plant_hook_registration(primary, existing=None):
     merged["hooks"] = rewrite(data["hooks"])
     return merged, ("hooks registered from %s, pointed at the primary's "
                     "own scripts" % primary_settings)
+
+
+def worktree_settings_merge_base(path):
+    """(a real dict to merge hooks over, or None; an honest note, or
+    None) - the type-guarded read of a linked worktree's OWN
+    settings.json, ahead of plant_hook_registration() (F5, #347 review,
+    comment 5335343747).
+
+    `read_json()` answers None for two different situations - the file
+    is simply absent, and the file exists but `json.load` raised - and
+    that collapse is exactly right for a caller that only wants to know
+    "is there something to read", but plant_hook_registration()'s
+    `existing` parameter used to receive that None (or, worse, whatever
+    read_json DID manage to parse, even when it was not a JSON object at
+    all - a list, a string, a number, true/false, null) with nothing
+    downstream checking the shape: `dict(existing or {})` raises on
+    anything that is neither falsy nor already a mapping, which turned a
+    hand-typo'd or hand-edited settings.json into a Python traceback
+    instead of agent-init's own printed contract - the crash the
+    primary-side `isinstance(data, dict)` guard two paragraphs up
+    already prevents for the PRIMARY's file, unmirrored on this side.
+
+    This function is the one place that reads the worktree's file, so it
+    is the one place with enough information to tell those two failure
+    shapes apart and say which happened, rather than replacing either
+    one silently:
+
+      - the file does not exist at all - nothing to merge over and
+        nothing to report; a brand-new worktree reaches this every time.
+      - the file exists and parses to a dict - merged as before.
+      - the file exists and is not valid JSON - the existing content is
+        about to be replaced with hooks-only, and the note says so
+        instead of the plant doing it wordlessly.
+      - the file exists, parses, and is valid JSON that is NOT an object
+        - same replacement, same requirement to say so, and the case
+          that used to crash rather than replace.
+    """
+    if not os.path.isfile(path):
+        return None, None
+    raw = read_json(path)
+    if isinstance(raw, dict):
+        return raw, None
+    if raw is None:
+        return None, ("%s exists but is not valid JSON - replacing it "
+                      "with hooks-only content rather than dropping "
+                      "whatever it held silently." % path)
+    return None, ("%s is valid JSON but not a JSON object (found a %s) "
+                 "- replacing it with hooks-only content rather than "
+                 "crashing trying to merge into it." % (
+                     path, type(raw).__name__))
 
 
 def head_state(repo):
@@ -1339,8 +1419,12 @@ def do_init(args):
                          "root - skipping hook registration")
         else:
             worktree_settings = os.path.join(repo, ".claude", "settings.json")
+            merge_base, unusable_note = worktree_settings_merge_base(
+                worktree_settings)
             planted, hook_note = plant_hook_registration(
-                primary, read_json(worktree_settings))
+                primary, merge_base)
+            if unusable_note is not None:
+                hook_note = unusable_note + " " + hook_note
             if planted is not None:
                 write_json(worktree_settings, planted)
         print("hooks        %s" % hook_note)

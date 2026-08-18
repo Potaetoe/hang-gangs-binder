@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 131
+EXPECTED = 140
 
 
 def check(label, condition):
@@ -694,6 +694,21 @@ try:
           "into a linked worktree",
           read_bytes(primary_settings_path) == primary_bytes_before)
 
+    # F2 (#347 review, comment 5335343747): the check above only ever
+    # asks "does planting into a DIFFERENT worktree leave the primary
+    # alone" - it never runs init AGAINST the fixture primary itself,
+    # which is the actual boundary do_init draws (`kind == "linked"`).
+    # A mutation that widens that test to `kind in ("linked", "primary")`
+    # left the suite fully green until this arm existed, because nothing
+    # else ever asked the primary to init itself a second time.
+    code, out = run_verb(["init", "--repo", repo, "--state", state,
+                          "--no-install"])
+    check("running agent-init again directly against the fixture primary "
+          "leaves its settings.json byte-identical - the only gate is "
+          "do_init's own kind == \"linked\" test (F2, #347 review)",
+          code == 0 and read_bytes(primary_settings_path)
+          == primary_bytes_before)
+
     # Re-running is idempotent and refreshes rather than duplicating.
     run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
     replanted = load(linked_settings_path)
@@ -712,6 +727,73 @@ try:
           "a re-init - only \"hooks\" is overwritten, nothing else",
           after_merge.get("myLocalOverride") == "kept by hand"
           and after_merge["hooks"] == planted["hooks"])
+
+    # F3 (#347 review, comment 5335343747): the idempotence arm above
+    # (re-running with NOTHING changed reproduces the same registration)
+    # cannot tell "refreshed to the same value" apart from "planted once
+    # and never touched again" - both look identical from outside. This
+    # arm changes the PRIMARY's own hook registration between two inits
+    # of the same linked worktree and asserts the second plant carries
+    # the change, which a plant-once-then-early-return mutation would
+    # fail while the arm above stayed green. linked_settings_path already
+    # carries `after_merge` from the check just above (hooks plus the
+    # hand-added local key), so this starts from that real state rather
+    # than a freshly written one.
+    changed_settings = dict(fixture_settings)
+    changed_settings["hooks"] = dict(fixture_settings["hooks"])
+    changed_settings["hooks"]["PreToolUse"] = [
+        {"matcher": "Bash",
+         "hooks": [{"type": "command",
+                   "command": 'py -3 "$CLAUDE_PROJECT_DIR'
+                              '/.claude/hooks/probe-v2.py"'}]}
+    ]
+    save(primary_settings_path, changed_settings)
+    run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
+    refreshed = load(linked_settings_path)
+    refreshed_cmd = (refreshed["hooks"]["PreToolUse"][0]["hooks"][0]
+                     ["command"])
+    check("a change to the primary's own hook registration made BETWEEN "
+          "two linked inits is picked up by the second plant, not just "
+          "reproduced from the first (F3, #347 review)",
+          "probe-v2.py" in refreshed_cmd and primary_fwd in refreshed_cmd)
+    check("and the hand-added local key from before still survives this "
+          "refresh - only \"hooks\" moved",
+          refreshed.get("myLocalOverride") == "kept by hand")
+    save(primary_settings_path, fixture_settings)  # restore for what follows
+
+    # F5 (#347 review, comment 5335343747): the worktree-side read of its
+    # OWN settings.json had no type guard, unlike the primary-side read
+    # a few lines up in plant_hook_registration(). Two shapes exercised:
+    # unparseable JSON (used to be swallowed and replaced with no word
+    # said about it) and valid JSON that is not an object, like a bare
+    # list (used to reach `dict(existing or {})` unguarded and CRASH the
+    # whole verb with a traceback instead of its own printed remedy).
+    write(linked_settings_path, "{not json at all")
+    code, out = run_verb(["init", "--repo", linked, "--state", state,
+                          "--no-install"])
+    check("agent-init does not crash on an unparseable worktree "
+          "settings.json (F5, #347 review)", code == 0)
+    check("and it SAYS it is replacing the file hooks-only, rather than "
+          "doing it silently",
+          "not valid JSON" in out and "replacing it" in out)
+    check("and the file on disk afterward really is hooks-only",
+          set(load(linked_settings_path)) == {"hooks"})
+
+    save(linked_settings_path, [1, 2, 3])
+    code, out = run_verb(["init", "--repo", linked, "--state", state,
+                          "--no-install"])
+    check("agent-init does not crash on a worktree settings.json that is "
+          "valid JSON but not an object (F5, #347 review)", code == 0)
+    check("and it says so and replaces the file hooks-only instead of "
+          "reaching dict(existing or {}) unguarded",
+          "not a JSON object" in out and "replacing it" in out)
+    check("and the file on disk afterward really is hooks-only",
+          set(load(linked_settings_path)) == {"hooks"})
+
+    # Leave the worktree's own settings.json in the normal planted shape
+    # so nothing after this section is reading a fixture built to prove
+    # a crash guard.
+    run_verb(["init", "--repo", linked, "--state", state, "--no-install"])
 
     # A checkout with no .claude/settings.json at all (a fork without the
     # fleet's machine-held hook mechanism) is not a failure - init still
