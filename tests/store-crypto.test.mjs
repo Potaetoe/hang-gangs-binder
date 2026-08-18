@@ -408,6 +408,13 @@ check("every importKey/deriveKey passes NOT_EXTRACTABLE - " + derivations +
    derived key exportable with the count still matching. */
 check("NOT_EXTRACTABLE is false",
   /const NOT_EXTRACTABLE = false;/.test(source));
+/* A source check and stated as one: whether the module still holds a
+   copy of the secrets after deriving is not observable from out here,
+   because the whole point is that nothing out here can reach them.
+   What a check CAN hold is that the line doing the clearing is still
+   in the file. */
+check("the key ring's secrets are cleared once the subkeys exist",
+  /entries\.length = 0;/.test(source));
 
 /* Every algorithm the module actually names in a WebCrypto call,
    read off the call sites rather than off the prose - the docstring
@@ -508,7 +515,7 @@ check("PURPOSE names exactly the two purposes and is frozen",
   JSON.stringify(PURPOSE) === JSON.stringify({ ROW: "row",
                                                DIRECTORY: "dir" }));
 
-const EXPECTED = 65;
+const EXPECTED = 66;
 console.log(failures
   ? `\nstore-crypto FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
