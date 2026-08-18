@@ -56,6 +56,29 @@
  * against the same dirty checkout refuse, the way `./run bake` really
  * would.
  *
+ * THE COVERAGE TRADE THAT MECHANISM MAKES, AND THE SUBJECT-PIN THAT
+ * CLOSES IT (0.9-M0-S21 fix wave 2, #318 F1). `--detach HEAD`
+ * materializes HEAD's COMMITTED tree into the private worktree - it does
+ * not copy the enclosing checkout's working-tree bytes at all. That is
+ * exactly the immunity the paragraph above wants for ambient, UNRELATED
+ * dirt (some other check's mutation battery), but it is immunity to ALL
+ * working-tree state without distinction, including uncommitted edits to
+ * dev/demo-bake.mjs itself: this suite would keep baking HEAD's clean
+ * copy of the bake script and reporting green while the enclosing
+ * checkout's actual, uncommitted copy carried the exact regression this
+ * arm exists to catch (demonstrated: delete the destructive-clear line
+ * from the uncommitted script and the suite still runs 36/36). The
+ * design's promise was never "immune to all dirt" - it was "immune to
+ * dirt this arm's own subject did not cause." The subject-pin below (run
+ * before the private worktree is even created) restores that distinction
+ * without reopening the flake: it checks `git status --porcelain` in
+ * THIS checkout against exactly the files the bake reads to produce its
+ * output (the script, the demo assets it names one by one, and the
+ * apps/web tree) and refuses early if any differ from HEAD. The flake's
+ * own triggers - `rm tests/claim-vs-diff.test.mjs`, other arms' mutation
+ * batteries - touch none of those paths, so the pin stays quiet exactly
+ * when the worktree mechanism needs it to.
+ *
  * WHAT WOULD BE WRONG WITHOUT IT. Two hazards, the 2026-08-13 field
  * note and the ticket that follows it:
  *
@@ -175,6 +198,74 @@ async function runBakeAt(bakeScript, out) {
 }
 
 /* ------------------------------------------------------------------ */
+/* -1. Subject pin (0.9-M0-S21 fix wave 2, #318 F1) - run before ANYTHING */
+/*     else, including the private worktree below, because the whole    */
+/*     point is to refuse before that worktree's `--detach HEAD` gets a  */
+/*     chance to paper over dirt in its own subject. See "THE COVERAGE   */
+/*     TRADE THAT MECHANISM MAKES" in this file's header for why this    */
+/*     exists. Not run through check()/EXPECTED: a dirty subject          */
+/*     invalidates the premise every other check in this file runs on    */
+/*     (they would all still execute, against HEAD's clean copy, and all */
+/*     still pass - the exact silent-pass this fix closes), so this      */
+/*     stops the run outright with a clear, actionable message rather    */
+/*     than adding one more line to a report that would otherwise read   */
+/*     as clean.                                                         */
+
+const SUBJECT_PATHS = [
+  // dev/demo-bake.mjs's own DEMO_FILES concat DEMO_DATA - named one by
+  // one there ("not a pattern over dev/", that file's own header) and
+  // mirrored one by one here for the same reason: a slice that adds a
+  // demo asset to that allowlist updates this list in the same change,
+  // or the pin stops meaning what it says. Verified against the file by
+  // hand for this fix (0.9-M0-S21 fix wave 2), not derived from it - this
+  // suite imports nothing from dev/, so there is nothing to derive it
+  // from without breaking that rule.
+  "dev/demo-bake.mjs",
+  "dev/demo-stub.js",
+  "dev/demo-boot.js",
+  "dev/demo-toolbar.js",
+  "dev/demo-toolbar.css",
+  "dev/demo-corpus.js",
+  "dev/demo-telegram.js",
+  "dev/demo-config.js",
+  "dev/sample-submissions.json",
+  "dev/test-key.json",
+  "dev/test-member-key.json",
+  // The mirrored tree, read directory-not-list by webEntriesOf() itself
+  // (dev/demo-bake.mjs, "READ, NEVER LISTED") - a single directory
+  // pathspec keeps that same property here: nothing added under
+  // apps/web needs a matching edit to this array.
+  "apps/web",
+];
+
+const { stdout: subjectPorcelain } = await run("git",
+  ["status", "--porcelain", "--", ...SUBJECT_PATHS], { cwd: ROOT });
+if (subjectPorcelain.trim().length > 0) {
+  console.error(
+    "bake-hygiene: commit these files first; this arm tests HEAD's " +
+    "copy. The private worktree this suite bakes against materializes " +
+    "HEAD's committed tree, so testing it while these paths carry " +
+    "uncommitted changes would silently exercise the wrong bytes:\n" +
+    subjectPorcelain.trim());
+  process.exit(1);
+}
+
+/* ------------------------------------------------------------------ */
+/* 0a. Stale-probe sweep (0.9-M0-S21 fix wave 2, #318 F2). Section 0b    */
+/*     below writes DIRTY_PROBE_PATH into this checkout's root and       */
+/*     removes it only in a `finally` - a SIGINT mid-run strands it, and */
+/*     a stranded probe then makes the next REAL `./run bake` refuse     */
+/*     (refuseDirty sees an uncommitted file that has nothing to do with */
+/*     the bake it is about to run). Unconditional and silent: an absent */
+/*     probe is the ordinary case and costs one no-op unlink, not a      */
+/*     check - the property under test is what 0b below verifies, this   */
+/*     is housekeeping for a run that never got to run 0b's own cleanup. */
+
+const DIRTY_PROBE_PATH = join(ROOT,
+  "hgb-bake-hygiene-ambient-dirty-probe.tmp");
+await rm(DIRTY_PROBE_PATH, { force: true });
+
+/* ------------------------------------------------------------------ */
 /* 0. Set-up: a private worktree, checked out fresh at HEAD, that every */
 /*    real check below bakes against instead of this checkout - see    */
 /*    "WHY THIS SUITE'S OWN BAKES RUN AGAINST A PRIVATE WORKTREE" above */
@@ -217,9 +308,7 @@ try {
   /*     already-clean tree on purpose is the only way to tell whether   */
   /*     the isolation is doing anything at all.                         */
 
-  const dirtyProbe = join(ROOT,
-    "hgb-bake-hygiene-ambient-dirty-probe.tmp");
-  await writeFile(dirtyProbe,
+  await writeFile(DIRTY_PROBE_PATH,
     "an unrelated mutation battery's leftover, uncommitted on purpose " +
     "by this suite's own regression guard (0.9-M0-S21, #318)",
     "utf8");
@@ -244,7 +333,7 @@ try {
       primaryResult.stderr.includes("hgb-bake-hygiene-ambient-dirty-probe.tmp"));
     await rm(primaryWhileDirty, { recursive: true, force: true });
   } finally {
-    await rm(dirtyProbe, { force: true });
+    await rm(DIRTY_PROBE_PATH, { force: true });
   }
 
   /* ------------------------------------------------------------------ */
