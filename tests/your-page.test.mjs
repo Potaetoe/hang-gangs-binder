@@ -46,10 +46,14 @@
  *      all of them in place without moving anything; nothing is a
  *      per-row toggle.
  *   5. The one clearing function: it is what both idle expiry and a
- *      Sign-out click run, and it leaves no row, no trend node, no
- *      object URL and no stale in-memory array behind - checked at the
- *      DOM AND, separately, at the private state a units toggle would
- *      otherwise re-render from with no fetch in between.
+ *      Sign-out click run, and it leaves no row, no trend node and no
+ *      stale in-memory array behind - checked at the DOM AND,
+ *      separately, at the private state a units toggle would otherwise
+ *      re-render from with no fetch in between. The download's own
+ *      object URL is proven where it is created, in the download block
+ *      above (0.9-M2-S12, #373): the create-revoke pairing lives inside
+ *      wireDownload()'s own click handler, so this function has nothing
+ *      left to clear on that front.
  *   6. F8: a failed load writes its own honest sentence into BOTH the
  *      entries slot and the trend slot, never leaving the trend a bare
  *      runner around nothing - and each slot carries one control that
@@ -442,9 +446,17 @@ globalThis.CustomEvent = class CustomEvent {
   constructor(type, init) { this.type = type; this.detail = init && init.detail; }
 };
 globalThis.URL = globalThis.URL || {};
+// Two arrays, not one - a count of revokes alone cannot tell "every
+// created URL got revoked" from "one URL got revoked twice and another
+// leaked" (0.9-M2-S12, #373). The pairing check below reads both.
+const created = [];
 const revoked = [];
 globalThis.URL.revokeObjectURL = (url) => revoked.push(url);
-globalThis.URL.createObjectURL = () => "blob:test-" + Math.random();
+globalThis.URL.createObjectURL = () => {
+  const url = "blob:test-" + Math.random();
+  created.push(url);
+  return url;
+};
 globalThis.Blob = class Blob {};
 globalThis.AbortController = class AbortController {
   constructor() { this.signal = {}; }
@@ -632,6 +644,28 @@ check("the xlsx export carries non-blank value columns for every row",
   Array.isArray(xlsxRows) && xlsxRows.length === ENTRIES.length &&
   xlsxRows.every((row) => row[1] !== "" && row[2] !== "" && row[4] !== "" &&
     row[5] !== ""));
+
+/*
+ * 0.9-M2-S12 (#373): the create-revoke pairing IS the 0.9-M2-S2 security
+ * mandate for the download's object URL - met by construction inside
+ * wireDownload()'s own click handler, with no module-level variable
+ * (dead scaffolding, deleted this slice) standing in for it. Reading
+ * BOTH arrays, not just revoked.length, is what tells "the one URL this
+ * click made got revoked" from "some URL got revoked" - dropping the
+ * revoke call turns this red without touching what created pushed.
+ */
+check("every object URL the download click creates is revoked before " +
+  "the handler returns - the whole pairing, inside one handler, is the " +
+  "mandate's mechanism now",
+  created.length === 1 && revoked.length === 1 &&
+  revoked[0] === created[0]);
+
+const submitSourceForDownloadState = await read("../apps/web/submit.js");
+check("submit.js declares no module-level object-URL state - the " +
+  "create-use-revoke pairing above is the whole mechanism, so there is " +
+  "no downloadUrl left for anything outside wireDownload() to hold or " +
+  "null out",
+  !/\bdownloadUrl\b/.test(submitSourceForDownloadState));
 
 const toggle = page.byId("corrections-toggle");
 check("one disclosure exists, labeled with the real count, and it is " +
