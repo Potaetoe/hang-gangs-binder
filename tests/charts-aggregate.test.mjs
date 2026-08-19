@@ -678,11 +678,22 @@ check("the label: the bucket is still named, and named what DESIGN.md, " +
   "\"Charts\", calls it (F8)",
   absorbedOther.length === 1 && absorbedOther[0].label === "Other");
 
+/* The folded values are looked for INSIDE every string rather than as
+   whole ones, which is the shape the leak would actually take here: a
+   label that named what it swept up would read "Other (feedee)", not
+   "feedee". Section 4b's sweep can afford to anchor because it asks a
+   document that names nothing at all whether a value appears; this one
+   asks a document that legitimately names cells. The mutation that
+   appends the absorbed value to the label passes the anchored form and
+   reddens this one, which is why it is written this way.
+
+   `admirer` is deliberately not in the pattern: it is a drawn cell of
+   zero in this corpus, which describes nobody and is named honestly. */
 check("the label: it discloses neither which named cell was absorbed " +
   "nor how many were - no folded value is named anywhere in the answer " +
   "and the bucket carries no count of its own contents (F8)",
   absorbed.enough === true &&
-  !everyString(absorbed).some((s) => /^(feedee|gainer)$/i.test(s)) &&
+  !everyString(absorbed).some((s) => /feedee|gainer/i.test(s)) &&
   everyNumber(absorbedOther[0]).length === 1 &&
   everyNumber(absorbedOther[0])[0] === absorbedOther[0].count);
 
