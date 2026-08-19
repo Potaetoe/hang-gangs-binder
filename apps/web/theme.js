@@ -15,11 +15,16 @@
  *
  * CUSTOM IS A FIFTH SWATCH, not a new control (0.9-M2-S6, #82). It is
  * wired by the same [data-set-theme] loop as the other four - clicking
- * it calls the same apply(), which is the whole of how the named
- * palettes double as Custom's reset (design mandate 4: no new control,
- * picking a name un-presses Custom through the mechanism that was
- * already here). What is new is what apply() does WHEN the name is
- * "custom": it reads the two colors the member picked out of
+ * a NAMED palette always calls the same apply(), which is the whole of
+ * how the named palettes double as Custom's reset (design mandate 4: no
+ * new control, picking a name un-presses Custom through the mechanism
+ * that was already here). Clicking Custom itself calls apply() only
+ * when a valid pair is already on record (0.9-M2-S6 fix wave 1, F1,
+ * #82) - with nothing valid stored, the chip has nothing to activate,
+ * and the click handler below leaves the currently active named
+ * palette untouched rather than press a chip that would paint nothing.
+ * What is new when apply() DOES run with the name "custom": it reads
+ * the two colors the member picked out of
  * localStorage, runs them through BinderCustomPalette.derive() -
  * theme-init.js's own pure half, published there rather than in a
  * second <head> script because check 22 in tools/check_web.py pins the
@@ -274,6 +279,21 @@
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
       const name = b.getAttribute("data-set-theme");
+      // VALIDATE ON READ at the click site too (0.9-M2-S6 fix wave 1,
+      // F1, #82). This file's INITIAL apply() call above already
+      // declines a stored "custom" with nothing valid behind it - the
+      // click handler trusted data-set-theme's raw string instead, so
+      // pressing Custom with no saved pair pressed the chip, wrote
+      // data-theme="custom" over a page painting nothing differently
+      // (theme.css has no rule for it, so the cascade falls through to
+      // :root's own defaults), and persisted "custom" into hgb-palette
+      // - destroying the named palette that WAS on record. The opposite
+      // of "Custom reads as inactive" (design mandate 3). Declining
+      // here leaves apply(), data-theme, the meta color and the stored
+      // key all on whatever named palette was already active; the
+      // first VALID pick in pickCustom() below is what actually
+      // activates Custom.
+      if (name === "custom" && !storedCustomTokens()) return;
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
       // Picking a named palette IS the reset (design mandate 4). The

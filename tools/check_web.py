@@ -2617,7 +2617,16 @@ def footer_problems(text, themed):
         problems.append(unreadable)
         return problems
 
-    rest = inside[:span[0]] + inside[span[1]:]
+    # F2 (0.9-M2-S6 fix wave 1, #82): this used to read
+    # inside[:span[0]] + inside[span[1]:] - the text BEFORE the row
+    # concatenated with the text after it, which proves the editor is
+    # PRESENT somewhere in the footer but throws away where. An editor
+    # placed above the row landed at the front of that concatenation,
+    # so the "directly below the row" check a few lines down read
+    # `between` as empty and passed - a wrong-order footer with the
+    # whole gate green. "Directly below" is a claim about what comes
+    # AFTER the row, so that is the only text this searches now.
+    rest = inside[span[1]:]
     within = inside[span[0]:span[1]]
 
     # The custom-palette editor, cut out of `rest` the same way the row

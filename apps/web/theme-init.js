@@ -206,11 +206,16 @@
 
     const accentText = pushForContrast(accent, [bg, surface], 4.6);
 
-    // The gold role is a fixed amber hue in every shipped palette (42 in
-    // Midnight and Pink, 45 in Daylight and Contrast) rather than
-    // anything derived from the accent - "neither the page's text nor
-    // its accent" is the whole point of the role, so it does not borrow
-    // the accent's hue either.
+    // The gold role sits at nearly the same amber hue in every shipped
+    // palette - measured off theme.css's own --color-gold values:
+    // Midnight and Pink 38.5, Daylight 39.6, Contrast 38.1, all within
+    // two degrees of each other, not the 42/45 split by palette pair
+    // this comment used to claim (0.9-M2-S6 fix wave 1, F5, #82: no
+    // shipped --color-gold actually sits at 42 or 45). Fixed rather
+    // than derived from the accent either way - "neither the page's
+    // text nor its accent" is the whole point of the role. 42 below is
+    // close enough to the four measurements to read as the same amber,
+    // not a literal reproduction of them.
     const goldSat = clamp(Math.max(sat(accent) * 0.6, 45), 0, 100);
     const gold = pushForContrast(
       rgbToHex(hslToRgb([42, goldSat, dark ? 62 : 38])), [bg, surface], 4.6);
@@ -218,10 +223,16 @@
     const focus = pushForContrast(
       setLightness(accent, dark ? 78 : 25), [bg], 3.1);
 
-    // Warn is its own amber-brown in every shipped palette, independent
-    // of the accent (Pink's warn box does not turn pink) - the same
-    // fixed-hue argument gold's comment makes, at the warm hue the four
-    // shipped warn pairs already share.
+    // Warn is its own amber-brown, independent of the accent, in THREE
+    // of the four shipped palettes - Midnight 31.8, Daylight 38.0,
+    // Contrast 39.4, the same narrow band gold's comment measures
+    // above. Pink is the exception (0.9-M2-S6 fix wave 1, F6, #82):
+    // its own --color-warn-bg reads hue 5.8, nowhere near this band -
+    // but also nowhere near Pink's own accent hue (336.6), so "Pink's
+    // warn box does not turn pink" still holds even though Pink's own
+    // warn hue does not match the other three's. 32 below sits inside
+    // the band the majority share, not a literal reproduction of all
+    // four measurements.
     const warnBg = rgbToHex(hslToRgb([32, dark ? 42 : 45, dark ? 16 : 88]));
     const warnText = pushForContrast(
       setLightness(dark ? lightTone : darkTone, dark ? 78 : 28),

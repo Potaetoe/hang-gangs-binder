@@ -170,6 +170,11 @@
      
      
      
+     
+     
+     
+     
+     
     const goldSat = clamp(Math.max(sat(accent) * 0.6, 45), 0, 100);
     const gold = pushForContrast(
       rgbToHex(hslToRgb([42, goldSat, dark ? 62 : 38])), [bg, surface], 4.6);
@@ -177,6 +182,12 @@
     const focus = pushForContrast(
       setLightness(accent, dark ? 78 : 25), [bg], 3.1);
 
+     
+     
+     
+     
+     
+     
      
      
      

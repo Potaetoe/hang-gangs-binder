@@ -216,6 +216,21 @@
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
       const name = b.getAttribute("data-set-theme");
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+      if (name === "custom" && !storedCustomTokens()) return;
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
        
