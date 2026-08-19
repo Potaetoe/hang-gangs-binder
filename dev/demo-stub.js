@@ -1064,12 +1064,16 @@
    * label carrying its own copy of that number is a label free to
    * disagree with the charts underneath it - which is the demo lying
    * with every one of its own checks green. countsFor() reads the
-   * corpus; the toolbar renders what it answers.
+   * corpus; dev/demo-toolbar.js no longer paints a control for any of
+   * these rows (0.9-M2-S3 fix wave 1, F4 - the data group is one plain
+   * tombstone line now), so it is dev/demo.test.mjs that reads
+   * countsFor() directly to check the fact instead.
    *
    * `rounds` is how many of each person's weigh-ins the snapshot
-   * carries, and `null` means all of them. It is what "Add entries"
-   * advances, so the presets and the incremental button are one
-   * mechanism rather than two.
+   * carries, and `null` means all of them - a fact PRESETS still holds
+   * even though no control on the strip reads it any more, since
+   * dev/demo.test.mjs checks it directly against this array
+   * (0.9-M2-S3 fix wave 1, F4 retired the strip's per-preset controls).
    */
   const PRESETS = [
     {
@@ -1818,8 +1822,11 @@
   }
 
   /*
-   * How many weigh-ins the longest history in a corpus holds, which is
-   * the ceiling "Add entries" counts up to.
+   * How many weigh-ins the longest history in a corpus holds - the
+   * ceiling `rounds` can reach, read directly by countsFor() below and
+   * by dev/demo.test.mjs's own checks; no control on the strip reads
+   * it any more (0.9-M2-S3 fix wave 1, F4 retired the strip's
+   * per-preset controls).
    */
   function roundsIn(which) {
     return peopleOf(which).reduce(function (most, person) {
@@ -1830,7 +1837,9 @@
   /*
    * What a snapshot row is offering, in numbers read off the corpus.
    *
-   * The toolbar renders these; nothing writes "eighteen entries from
+   * dev/demo.test.mjs reads these directly now, not dev/demo-toolbar.js
+   * (0.9-M2-S3 fix wave 1, F4 - no control on the strip paints a
+   * per-row count any longer); nothing writes "eighteen entries from
    * six people" anywhere, because a label carrying its own copy of a
    * count is a label free to disagree with the charts underneath it.
    */
