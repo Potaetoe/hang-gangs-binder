@@ -21,11 +21,69 @@
 
   
 
-  const EDGE_LABEL_TARGET = 10;
+  const CAPTION_CHAR_WIDTH = 7;
 
-  function edgeLabelStride(binCount) {
-    if (!(binCount > 0)) return 1;
-    return Math.max(1, Math.ceil(binCount / EDGE_LABEL_TARGET));
+  function captionWidth(text) {
+    return String(text).length * CAPTION_CHAR_WIDTH;
+  }
+
+  
+
+  function captionBox(index, slot, text) {
+    const center = index * slot + slot / 2;
+    const half = captionWidth(text) / 2;
+    return { left: center - half, right: center + half };
+  }
+
+  function boxesOverlap(a, b) {
+    return !(a.right <= b.left || a.left >= b.right);
+  }
+
+  
+
+  function rangeCaptionPlan(labels, slot) {
+    const n = labels.length;
+    if (n === 0) return [];
+    const box = function (i) { return captionBox(i, slot, labels[i]); };
+    if (n === 1) return [0];
+
+    const painted = [0];
+    let lastBox = box(0);
+    for (let i = 1; i < n - 1; i += 1) {
+      const candidate = box(i);
+      if (!boxesOverlap(candidate, lastBox)) {
+        painted.push(i);
+        lastBox = candidate;
+      }
+    }
+    const lastCandidate = box(n - 1);
+    while (painted.length > 1 &&
+        boxesOverlap(lastCandidate, box(painted[painted.length - 1]))) {
+      painted.pop();
+    }
+    painted.push(n - 1);
+    return painted;
+  }
+
+  
+
+  function countCaptionPlan(counts, slot) {
+    const box = function (i) { return captionBox(i, slot, String(counts[i])); };
+    const order = counts.map(function (_, i) { return i; }).sort(
+      function (a, b) {
+        const priority = function (i) { return counts[i] > 0 ? 1 : 0; };
+        return priority(b) - priority(a) || a - b;
+      });
+
+    const kept = [];
+    order.forEach(function (i) {
+      const candidate = box(i);
+      const collides = kept.some(function (j) {
+        return boxesOverlap(candidate, box(j));
+      });
+      if (!collides) kept.push(i);
+    });
+    return kept.sort(function (a, b) { return a - b; });
   }
 
   
@@ -96,7 +154,9 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
-    edgeLabelStride: edgeLabelStride,
+    captionWidth: captionWidth,
+    rangeCaptionPlan: rangeCaptionPlan,
+    countCaptionPlan: countCaptionPlan,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
@@ -239,7 +299,13 @@
       return Math.max(max, bin.count);
     }, 1);
     const slot = width / bins.length;
-    const stride = edgeLabelStride(bins.length);
+
+    const counts = bins.map(function (bin) { return bin.count; });
+    const rangeLabels = bins.map(function (bin) {
+      return binLabel(bin.from[system], bin.to[system], unit);
+    });
+    const countedIndexes = new Set(countCaptionPlan(counts, slot));
+    const labeledIndexes = new Set(rangeCaptionPlan(rangeLabels, slot));
 
     node.appendChild(svg("line", {
       x1: 0, y1: baseline, x2: width, y2: baseline,
@@ -254,17 +320,18 @@
         x: x + 2, y: baseline - barHeight,
         width: Math.max(1, slot - 4), height: barHeight, rx: 2,
       }, "chart-bar"));
-      node.appendChild(svg("text", {
-        x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
-      }, "chart-value")).textContent = String(bin.count);
 
-      if (index % stride === 0 || index === bins.length - 1) {
-        const from = bin.from[system];
-        const to = bin.to[system];
+      if (countedIndexes.has(index)) {
+        node.appendChild(svg("text", {
+          x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
+        }, "chart-value")).textContent = String(bin.count);
+      }
+
+      if (labeledIndexes.has(index)) {
         const text = svg("text", {
           x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
         }, "chart-label");
-        text.textContent = binLabel(from, to, unit);
+        text.textContent = rangeLabels[index];
         node.appendChild(text);
       }
     });
@@ -277,6 +344,15 @@
   }
 
   
+
+  
+
+  const NOT_ENOUGH_FOR_CATEGORY = "Not enough people to show this.";
+
+  
+
+  const MULTIPLE_CHOICE_HINT = "Members can choose more than one here, " +
+    "so these numbers can add up to more than the group.";
 
   function renderGroups(groups) {
     const card = $("groups");
@@ -291,6 +367,15 @@
       const heading = document.createElement("h3");
       heading.textContent = group.label;
       body.appendChild(heading);
+
+      if (!group.values.length) {
+        const empty = document.createElement("p");
+        empty.className = "status";
+        empty.textContent = NOT_ENOUGH_FOR_CATEGORY;
+        body.appendChild(empty);
+        return;
+      }
+
       const measure = Fields.measure(group.field, site);
       group.values.forEach(function (cell) {
         const line = document.createElement("p");
@@ -299,6 +384,13 @@
           cell.count;
         body.appendChild(line);
       });
+
+      if (group.multiple) {
+        const hint = document.createElement("p");
+        hint.className = "muted small";
+        hint.textContent = MULTIPLE_CHOICE_HINT;
+        body.appendChild(hint);
+      }
     });
     show(card, true);
   }

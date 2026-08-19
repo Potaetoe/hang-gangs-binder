@@ -74,27 +74,106 @@
   }
 
   /*
-   * How many bands a labeled edge skips, so a fine grid still reads.
-   *
-   * The widest chartable measure - weight, imperial - grids to 53 bands
-   * over its own spec range (0.9-M2-S10's rangeOf()/gridOf()), and a
-   * caption under every one of 53 half-inch-wide bars is not something a
-   * reader can use. EDGE_LABEL_TARGET spaces captions to roughly that
-   * many across the figure regardless of how many bars it holds, always
-   * keeping the first band's own low edge and the last band's own high
-   * edge - the spec's two bounding numbers - so the axis still names
-   * where it starts and ends. A short grid (BMI's handful of bands) gets
-   * a stride of 1: every edge labeled, same as before. THE SPARSENESS IS
-   * IN THE CAPTIONS ONLY: drawBins below still draws and counts every
-   * band the response sends, empty ones included - nothing here removes
-   * a bar, only some of the text underneath it (design mandate ".chart
-   * grammar", carried from 0.9-M2-S3's control-row and figure rules).
+   * A caption's estimated width, in the SAME SVG user-unit space
+   * drawBins() paints in (a 640-wide viewBox) - conservatively, because
+   * there is no real text layout available to a pure function (owner's
+   * F1/F2 ruling on #372's review: "measured, or estimated conservatively
+   * from the caption text"). The chart figures paint captions at 11px
+   * (theme.css's .chart-label/.chart-value) in a condensed system stack;
+   * CAPTION_CHAR_WIDTH is 7 user units per character, which over-states a
+   * typical digit or letter on purpose - erring wide means this function
+   * drops a caption SOONER than a real overlap would require, never
+   * later, which is the direction a legibility guard is allowed to be
+   * wrong in.
    */
-  const EDGE_LABEL_TARGET = 10;
+  const CAPTION_CHAR_WIDTH = 7;
 
-  function edgeLabelStride(binCount) {
-    if (!(binCount > 0)) return 1;
-    return Math.max(1, Math.ceil(binCount / EDGE_LABEL_TARGET));
+  function captionWidth(text) {
+    return String(text).length * CAPTION_CHAR_WIDTH;
+  }
+
+  /* One caption's box, centered in its own slot of an evenly-spaced row
+     - shared by both plans below, so a slot's index is always read the
+     same way regardless of which row it is thinning. */
+  function captionBox(index, slot, text) {
+    const center = index * slot + slot / 2;
+    const half = captionWidth(text) / 2;
+    return { left: center - half, right: center + half };
+  }
+
+  function boxesOverlap(a, b) {
+    return !(a.right <= b.left || a.left >= b.right);
+  }
+
+  /*
+   * Which range-caption indices to paint under a row of bars, so that NO
+   * TWO PAINTED CAPTIONS OVERLAP (owner's F1/F2 ruling: "legibility is a
+   * geometry property, not a count target" - this replaces the old
+   * fixed-stride edgeLabelStride(), which kept a caption COUNT near ten
+   * while ignoring caption WIDTH, and still overlapped on both the
+   * 120-band BMI grid and the 53-band imperial-weight grid).
+   *
+   * THE FIRST AND LAST ALWAYS PAINT - they are the spec's own two
+   * bounding numbers, the axis's own start and end, so a collision is
+   * resolved by dropping an INTERIOR neighbor, never an end. The walk is
+   * a single greedy pass left to right (each interior candidate paints
+   * only if it clears the last-painted box), then a short cleanup that
+   * forces the last index in and drops back any interior captions it
+   * would otherwise collide with - so the property holds at both ends of
+   * the row, not just walking forward.
+   */
+  function rangeCaptionPlan(labels, slot) {
+    const n = labels.length;
+    if (n === 0) return [];
+    const box = function (i) { return captionBox(i, slot, labels[i]); };
+    if (n === 1) return [0];
+
+    const painted = [0];
+    let lastBox = box(0);
+    for (let i = 1; i < n - 1; i += 1) {
+      const candidate = box(i);
+      if (!boxesOverlap(candidate, lastBox)) {
+        painted.push(i);
+        lastBox = candidate;
+      }
+    }
+    const lastCandidate = box(n - 1);
+    while (painted.length > 1 &&
+        boxesOverlap(lastCandidate, box(painted[painted.length - 1]))) {
+      painted.pop();
+    }
+    painted.push(n - 1);
+    return painted;
+  }
+
+  /*
+   * Which count-caption indices to paint above the bars - the same
+   * no-overlap rule, but with no protected ends: a count caption that
+   * cannot fit simply does not paint (owner's F1/F2 ruling). NON-ZERO
+   * COUNTS WIN SLOTS OVER ZEROS: candidates are claimed in priority
+   * order (every non-zero count first, left to right, then every zero
+   * count left to right) rather than in position order, so a zero
+   * sitting between two non-zero neighbors loses its slot to whichever
+   * of them is processed first, and a non-zero band is never crowded out
+   * by a zero one reading earlier in the row.
+   */
+  function countCaptionPlan(counts, slot) {
+    const box = function (i) { return captionBox(i, slot, String(counts[i])); };
+    const order = counts.map(function (_, i) { return i; }).sort(
+      function (a, b) {
+        const priority = function (i) { return counts[i] > 0 ? 1 : 0; };
+        return priority(b) - priority(a) || a - b;
+      });
+
+    const kept = [];
+    order.forEach(function (i) {
+      const candidate = box(i);
+      const collides = kept.some(function (j) {
+        return boxesOverlap(candidate, box(j));
+      });
+      if (!collides) kept.push(i);
+    });
+    return kept.sort(function (a, b) { return a - b; });
   }
 
   /*
@@ -200,7 +279,9 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
-    edgeLabelStride: edgeLabelStride,
+    captionWidth: captionWidth,
+    rangeCaptionPlan: rangeCaptionPlan,
+    countCaptionPlan: countCaptionPlan,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
@@ -343,12 +424,15 @@
    * still holding its place on the axis, rather than a bar skipped or a
    * suppression note in its place - there is no such note to print, the
    * same render-only rule that keeps this file from inventing any other
-   * text the response did not send. Every bin's count is still printed,
-   * "0" included, so the count row and the response's own bins line up
-   * index for index.
-   *
-   * Range captions are sparser than the bars: see edgeLabelStride()'s own
-   * header for why 53 imperial weight bands cannot each carry one.
+   * text the response did not send. THE BAR ALWAYS DRAWS; ITS TWO
+   * CAPTIONS DO NOT (owner's F1/F2 ruling on #372's review). The count
+   * text above a bar and the range text below it are each thinned by
+   * countCaptionPlan()/rangeCaptionPlan() so no two painted captions in
+   * a row overlap - at the 120-band BMI grid or the 53-band imperial-
+   * weight grid, most bars carry no caption at all, and that is the
+   * fix: a caption nobody can read is worse than no caption. Nothing
+   * about which BAND is drawn changes; only some of the text under or
+   * over it does.
    */
   function drawBins(target, bins, system, unit) {
     const width = 640;
@@ -364,7 +448,13 @@
       return Math.max(max, bin.count);
     }, 1);
     const slot = width / bins.length;
-    const stride = edgeLabelStride(bins.length);
+
+    const counts = bins.map(function (bin) { return bin.count; });
+    const rangeLabels = bins.map(function (bin) {
+      return binLabel(bin.from[system], bin.to[system], unit);
+    });
+    const countedIndexes = new Set(countCaptionPlan(counts, slot));
+    const labeledIndexes = new Set(rangeCaptionPlan(rangeLabels, slot));
 
     node.appendChild(svg("line", {
       x1: 0, y1: baseline, x2: width, y2: baseline,
@@ -379,17 +469,18 @@
         x: x + 2, y: baseline - barHeight,
         width: Math.max(1, slot - 4), height: barHeight, rx: 2,
       }, "chart-bar"));
-      node.appendChild(svg("text", {
-        x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
-      }, "chart-value")).textContent = String(bin.count);
 
-      if (index % stride === 0 || index === bins.length - 1) {
-        const from = bin.from[system];
-        const to = bin.to[system];
+      if (countedIndexes.has(index)) {
+        node.appendChild(svg("text", {
+          x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
+        }, "chart-value")).textContent = String(bin.count);
+      }
+
+      if (labeledIndexes.has(index)) {
         const text = svg("text", {
           x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
         }, "chart-label");
-        text.textContent = binLabel(from, to, unit);
+        text.textContent = rangeLabels[index];
         node.appendChild(text);
       }
     });
@@ -415,6 +506,35 @@
    * (server/charts-agg.js's makeupOf(): the block describes the
    * FILTERED view, not the whole binder).
    */
+  /*
+   * F4 (0.9-M2-S11's review, #372): what a category with nothing to say
+   * looks like. server/charts-agg.js's makeupOf() deliberately sends a
+   * category with an empty `values` list when a raised floor pooled
+   * every one of its cells and the pool itself never cleared the floor
+   * either - the server's own absorb cascade ran out of named cells to
+   * fold in and gave up rather than answer a false breakdown. Unreachable
+   * at the shipped floor of 0, reachable once 0.9-M3 ships the floor as
+   * an editable setting - a bare heading with nothing under it would read
+   * as a bug rather than an honest silence, so this is the one line
+   * that fills it: the empty-view vocabulary, page-composed, exactly
+   * like the main not-enough sentence's own tone.
+   */
+  const NOT_ENOUGH_FOR_CATEGORY = "Not enough people to show this.";
+
+  /*
+   * F5 (0.9-M2-S11's review, #372): the response's own `multiple` flag,
+   * read. A field a member may answer more than once (server/
+   * charts-agg.js's own header: "on a field a member may answer more
+   * than once the lines sum to holdings rather than to people") can
+   * print a total taller than the group itself, and a reader who does
+   * not know that reads it as a miscount rather than as multiple
+   * answers. This line is the honest reading, render-only - it states a
+   * fact about the FIELD's shape, never a number the response did not
+   * already send.
+   */
+  const MULTIPLE_CHOICE_HINT = "Members can choose more than one here, " +
+    "so these numbers can add up to more than the group.";
+
   function renderGroups(groups) {
     const card = $("groups");
     const body = $("groups-body");
@@ -428,6 +548,15 @@
       const heading = document.createElement("h3");
       heading.textContent = group.label;
       body.appendChild(heading);
+
+      if (!group.values.length) {
+        const empty = document.createElement("p");
+        empty.className = "status";
+        empty.textContent = NOT_ENOUGH_FOR_CATEGORY;
+        body.appendChild(empty);
+        return;
+      }
+
       const measure = Fields.measure(group.field, site);
       group.values.forEach(function (cell) {
         const line = document.createElement("p");
@@ -436,6 +565,13 @@
           cell.count;
         body.appendChild(line);
       });
+
+      if (group.multiple) {
+        const hint = document.createElement("p");
+        hint.className = "muted small";
+        hint.textContent = MULTIPLE_CHOICE_HINT;
+        body.appendChild(hint);
+      }
     });
     show(card, true);
   }
