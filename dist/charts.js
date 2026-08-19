@@ -21,7 +21,7 @@
 
   
 
-  const CAPTION_CHAR_WIDTH = 7;
+  const CAPTION_CHAR_WIDTH = 8;
 
   function captionWidth(text) {
     return String(text).length * CAPTION_CHAR_WIDTH;

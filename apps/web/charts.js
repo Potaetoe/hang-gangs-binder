@@ -79,14 +79,23 @@
    * there is no real text layout available to a pure function (owner's
    * F1/F2 ruling on #372's review: "measured, or estimated conservatively
    * from the caption text"). The chart figures paint captions at 11px
-   * (theme.css's .chart-label/.chart-value) in a condensed system stack;
-   * CAPTION_CHAR_WIDTH is 7 user units per character, which over-states a
-   * typical digit or letter on purpose - erring wide means this function
-   * drops a caption SOONER than a real overlap would require, never
-   * later, which is the direction a legibility guard is allowed to be
-   * wrong in.
+   * (theme.css's .chart-label/.chart-value) in a condensed system stack.
+   *
+   * CAPTION_CHAR_WIDTH IS ABOVE THE WIDEST GLYPH THIS FACE ACTUALLY
+   * PAINTS, MEASURED (owner's F7 ruling on #372's review): the reviewer
+   * read getComputedTextLength() off the shipped face and found "0" at
+   * 7.53 user units and "–" (the dash binLabel() joins every range
+   * with) at 7.36 - a constant of 7 was BELOW both, so a caption made
+   * mostly of zeros and dashes under-stated its own width and the plan
+   * could approve a row that truly overlapped (reproduced at 88 bands,
+   * where the 7-unit estimate said a one-character count fits a 7.273-
+   * unit slot and the real 7.53-unit zero did not - 87 of 88 adjacent
+   * count captions actually overlapped while the plan reported clean).
+   * 8 is above both measured glyphs, which is the whole property this
+   * constant has to hold - not a target character width, a ceiling on
+   * the widest one.
    */
-  const CAPTION_CHAR_WIDTH = 7;
+  const CAPTION_CHAR_WIDTH = 8;
 
   function captionWidth(text) {
     return String(text).length * CAPTION_CHAR_WIDTH;
