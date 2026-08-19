@@ -60,14 +60,13 @@
   /*
    * One bin's range label, from the ALREADY-CHOSEN system's numbers.
    *
-   * NEVER OPEN ANY MORE (owner ruling 5, #243: "Edges come from the
-   * field spec and never move or merge"). Every edge server/charts-agg.js
-   * sends is one of the spec's own two range numbers or a bin boundary
-   * between them, so `from` and `to` are always numbers here - the
-   * "under X"/"X and up" open-edge captions server/charts-agg.js's
-   * openEdge() used to produce are retired with that function (0.9-M2-S10,
-   * #371): there is no edge left that was fitted to a member rather than
-   * to the spec, so there is nothing left to leave unlabeled.
+   * NEVER OPEN (owner ruling 5, #243: "Edges come from the field spec
+   * and never move or merge"). Every edge server/charts-agg.js sends is
+   * one of the spec's own two range numbers or a bin boundary between
+   * them, so `from` and `to` are always numbers here - there is no edge
+   * left that was fitted to a member rather than to the spec, and
+   * nothing here takes null for either argument any more (0.9-M2-S10,
+   * #371).
    */
   function binLabel(from, to, unit) {
     const suffix = unit ? " " + unit : "";
