@@ -66,18 +66,25 @@ const readText = async (path) =>
 
 const workerSrc = await readText(WORKER_PATH);
 
-/* server/worker.js imports ./store-crypto.js (0.9-M1-S6, #332), and a
-   data: module has no base URL to resolve a relative specifier against -
-   Node throws before a single check runs. The specifier is rewritten to
+/* server/worker.js imports its neighbours in server/ - ./store-crypto.js
+   (0.9-M1-S6, #332) and ./charts-agg.js (0.9-M2-S0, #351) - and a data:
+   module has no base URL to resolve a relative specifier against, so
+   Node throws before a single check runs. Each specifier is rewritten to
    the real file's absolute URL, so this still exercises the file's own
-   bytes while the import resolves. Scoped to this one specifier: a
-   second relative import should fail loudly rather than be absorbed. */
-const STORE_CRYPTO_URL =
-  pathToFileURL(ROOT + "server/store-crypto.js").href;
+   bytes while the imports resolve.
+   THE REWRITE IS NOW GENERAL, and that is a deliberate widening rather
+   than a broadened regex slipped in. Its predecessor named
+   store-crypto.js alone so that a second relative import would fail
+   loudly and be handled on purpose; a second one arrived, this is that
+   handling, and the general form is what stops the next one being a red
+   in four arms at once. It stays anchored to `./<name>.js` in server/,
+   so an import reaching outside that directory still fails loudly. */
+const serverModule = (name) => pathToFileURL(ROOT + "server/" + name).href;
 
 async function loadWorker(src) {
   return import("data:text/javascript," + encodeURIComponent(src.replace(
-    /(\bfrom\s*)"\.\/store-crypto\.js"/, '$1"' + STORE_CRYPTO_URL + '"')));
+    /(\bfrom\s*)"\.\/([\w.-]+\.js)"/g,
+    (whole, from, name) => from + '"' + serverModule(name) + '"')));
 }
 
 const { isApiPath, API_SEGMENTS, default: worker } = await loadWorker(workerSrc);

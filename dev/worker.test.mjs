@@ -29,18 +29,22 @@ const sha256Hex = (text) =>
 
 const SOURCE = fileURLToPath(new URL("../server/worker.js", import.meta.url));
 const src = await readFile(SOURCE, "utf8");
-/* server/worker.js imports ./store-crypto.js (0.9-M1-S6, #332), and a
-   data: module has no base URL to resolve a relative specifier against -
-   Node throws before a single check runs. The specifier is rewritten to
+/* server/worker.js imports its neighbours in server/ - ./store-crypto.js
+   (0.9-M1-S6, #332) and ./charts-agg.js (0.9-M2-S0, #351) - and a data:
+   module has no base URL to resolve a relative specifier against, so
+   Node throws before a single check runs. Each specifier is rewritten to
    the real file's absolute URL, so this still tests the file's real
-   bytes (the reason for the data: URL) while the import resolves. Scoped
-   to this one specifier: a second relative import should fail loudly
-   here rather than be absorbed by a broad regex. */
-const STORE_CRYPTO_URL = pathToFileURL(
-  fileURLToPath(new URL("../server/store-crypto.js", import.meta.url))).href;
+   bytes (the reason for the data: URL) while the imports resolve. The
+   rewrite is general since a second relative import arrived and was
+   handled deliberately, which is what the scoping was for; it stays
+   anchored to `./<name>.js` in server/, so an import reaching outside
+   that directory still fails loudly. */
+const serverModule = (name) => pathToFileURL(
+  fileURLToPath(new URL("../server/" + name, import.meta.url))).href;
 const { default: worker } = await import(
   "data:text/javascript," + encodeURIComponent(src.replace(
-    /(\bfrom\s*)"\.\/store-crypto\.js"/, '$1"' + STORE_CRYPTO_URL + '"'))
+    /(\bfrom\s*)"\.\/([\w.-]+\.js)"/g,
+    (whole, from, name) => from + '"' + serverModule(name) + '"'))
 );
 
 /*

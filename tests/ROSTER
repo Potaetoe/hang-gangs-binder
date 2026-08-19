@@ -26,6 +26,7 @@
 # lines starting with # are ignored.
 
 tests/bake-hygiene.test.mjs
+tests/charts-aggregate.test.mjs
 tests/ci-wiring.test.mjs
 tests/claim-vs-diff.test.mjs
 tests/entry-rows.test.mjs

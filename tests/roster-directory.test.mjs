@@ -46,18 +46,21 @@ const readText = async (path) =>
 const workerSrc = await readText(WORKER_PATH);
 const schemaSrc = await readText(SCHEMA_PATH);
 
-/* server/worker.js statically imports ./store-crypto.js; a data: module
-   has no base URL to resolve a relative specifier against, so the one
-   specifier is rewritten to the real file's absolute URL and the worker
-   still runs from its own bytes. Scoped to that one specifier so a second
-   relative import would fail loudly rather than be silently absorbed -
-   the technique tests/telegram-auth.test.mjs uses, and for the same
-   reason. Loading through a string is also what lets the mutation battery
-   below reload a modified copy. */
-const STORE_CRYPTO_URL = pathToFileURL(ROOT + "server/store-crypto.js").href;
+/* server/worker.js statically imports its neighbours in server/ -
+   ./store-crypto.js and ./charts-agg.js (0.9-M2-S0, #351); a data:
+   module has no base URL to resolve a relative specifier against, so
+   each specifier is rewritten to the real file's absolute URL and the
+   worker still runs from its own bytes. The rewrite is general since a
+   second relative import arrived and was handled deliberately (the
+   scoping's whole purpose), and stays anchored to `./<name>.js` in
+   server/ so an import reaching outside that directory still fails
+   loudly - the technique tests/telegram-auth.test.mjs uses, and for the
+   same reason. Loading through a string is also what lets the mutation
+   battery below reload a modified copy. */
+const serverModule = (name) => pathToFileURL(ROOT + "server/" + name).href;
 async function loadWorker(src) {
-  const resolved = src.replace(
-    /(\bfrom\s*)"\.\/store-crypto\.js"/, '$1"' + STORE_CRYPTO_URL + '"');
+  const resolved = src.replace(/(\bfrom\s*)"\.\/([\w.-]+\.js)"/g,
+    (whole, from, name) => from + '"' + serverModule(name) + '"');
   return import("data:text/javascript," + encodeURIComponent(resolved));
 }
 const worker = await loadWorker(workerSrc);

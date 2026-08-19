@@ -375,7 +375,11 @@ reconstruct rather than about publishing:
   **Admin surfaces** below. Suppression is by subtraction, not
   redaction — removed cells fold into an `Other` bucket that itself
   clears the floor, so within a single view the remainder cannot be
-  differenced back. Histograms merge adjacent bins.
+  differenced back. **The floor counts people, never value-holdings**,
+  for every fold including that bucket: a field a member may answer more
+  than once lets one person feed a count into every value they hold, so
+  a bucket that added those counts up could clear the floor with two
+  people behind it (#351). Histograms merge adjacent bins.
   A cut below the floor says "not enough people for this view", which
   is the honest sentence and not an error.
 - **One partition, not two.** Both unit systems report the same groups
