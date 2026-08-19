@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 574
+EXPECTED = 578
 
 
 def check(label, condition):
@@ -651,6 +651,19 @@ SWATCH_MARKUP = (
     '</div>'
 )
 
+# The custom-palette editor (0.9-M2-S6, #82): footer_problems() now
+# requires exactly this shape directly below the row, so every footer
+# fixture below that means to read as "clean" carries one. Minimal on
+# purpose - footer_problems() only reads the class and the span, and the
+# fields inside are check 27's and the picker's own arm to hold, not
+# this one's.
+EDITOR_MARKUP = (
+    '<details class="more"><summary>More</summary>'
+    '<input type="color" id="custom-bg">'
+    '<input type="color" id="custom-accent">'
+    '</details>'
+)
+
 # The control #274 removed, kept here as the thing every arm below
 # refuses rather than as a shape any page may carry.
 FLYOUT_MARKUP = (
@@ -765,7 +778,7 @@ check("the real pin is back after the stale-pin arm",
 # its destination's own name satisfies the name table exactly. Before
 # this, two of the four footers could have taken their nav back with
 # the whole gate green.
-FOOTER_OK = "<footer>%s</footer>" % SWATCH_MARKUP
+FOOTER_OK = "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP)
 
 check("a footer holding the swatch row and nothing else raises nothing",
       check_web.footer_problems(FOOTER_OK, True) == [])
@@ -773,25 +786,44 @@ check("a page that offers no palette and has no footer raises nothing",
       check_web.footer_problems("<main>Sorry.</main>", False) == [])
 
 # The link, both spellings, because the ruling is about navigation and
-# not about where it points.
+# not about where it points. The extra content sits AFTER the editor,
+# so what is being refused is still "something beside the row and its
+# editor" and not the editor's own presence.
 check("an on-site link in a footer is refused",
       any("link in its footer" in p for p in check_web.footer_problems(
-          "<footer>%s<p><a href=\"charts.html\">Muse's charts</a></p>"
-          "</footer>" % SWATCH_MARKUP, True)))
+          "<footer>%s%s<p><a href=\"charts.html\">Muse's charts</a></p>"
+          "</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
 check("an off-site link in a footer is refused",
       any("link in its footer" in p for p in check_web.footer_problems(
-          '<footer>%s<p><a href="https://example.com">Read the code</a></p>'
-          "</footer>" % SWATCH_MARKUP, True)))
+          '<footer>%s%s<p><a href="https://example.com">Read the code</a>'
+          "</p></footer>" % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
 # A link INSIDE the row would be cut out with it, so the arm reads what
 # is left rather than the whole footer - and that is the direction this
 # says out loud rather than leaving to the reader.
 check("markup beside the row is refused even with no link in it",
       any("markup in its footer" in p for p in check_web.footer_problems(
-          "<footer>%s<p><strong>Nearly</strong></p></footer>"
-          % SWATCH_MARKUP, True)))
+          "<footer>%s%s<p><strong>Nearly</strong></p></footer>"
+          % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
 check("bare words beside the row are refused",
       any("words in its footer" in p for p in check_web.footer_problems(
-          "<footer>%s Nearly nothing</footer>" % SWATCH_MARKUP, True)))
+          "<footer>%s%s Nearly nothing</footer>"
+          % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
+
+# The editor itself, both directions - the same shape the row's own arm
+# already held, one element wider.
+check("a themed page with a row and no editor is refused",
+      any("no <details class=\"more\"> custom-palette editor" in p
+          for p in check_web.footer_problems(
+              "<footer>%s</footer>" % SWATCH_MARKUP, True)))
+check("markup between the row and the editor is refused",
+      any("between the swatch row and its" in p
+          for p in check_web.footer_problems(
+              "<footer>%s<p>Wait</p>%s</footer>"
+              % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
+check("a second editor is refused",
+      any("more than one" in p for p in check_web.footer_problems(
+          "<footer>%s%s%s</footer>"
+          % (SWATCH_MARKUP, EDITOR_MARKUP, EDITOR_MARKUP), True)))
 
 # The two directions on the element itself.
 check("a themed page with no footer at all is refused",
@@ -832,20 +864,21 @@ check("and it says the arm below owns where the row went",
 check("a link inside the swatch row is refused",
       any("INSIDE its .theme-swatches row" in p
           for p in check_web.footer_problems(
-              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
+              "<footer>%s%s</footer>" % (SWATCH_MARKUP.replace(
                   "</div>",
                   '<p><a href="https://example.com">Read the code</a></p>'
-                  "</div>"), True)))
+                  "</div>"), EDITOR_MARKUP), True)))
 check("markup inside the swatch row is refused with no link in it",
       any("INSIDE its .theme-swatches row" in p
           for p in check_web.footer_problems(
-              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
-                  "</div>", "<p><strong>Nearly</strong></p></div>"), True)))
+              "<footer>%s%s</footer>" % (SWATCH_MARKUP.replace(
+                  "</div>", "<p><strong>Nearly</strong></p></div>"),
+                  EDITOR_MARKUP), True)))
 check("bare words inside the swatch row are refused",
       any("words INSIDE its .theme-swatches row" in p
           for p in check_web.footer_problems(
-              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
-                  "</div>", "Nearly nothing</div>"), True)))
+              "<footer>%s%s</footer>" % (SWATCH_MARKUP.replace(
+                  "</div>", "Nearly nothing</div>"), EDITOR_MARKUP), True)))
 # The swatches themselves are what the row is FOR, so they are cut out
 # at depth and what is left is what is read - the same move one level
 # down from the footer arm's.
@@ -1053,7 +1086,7 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 11 and all(frozen_in_place))
+      len(frozen_in_place) == 12 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -2445,9 +2478,21 @@ check("every block names a palette the table rules",
 check("every palette rules the same set of tokens",
       len({tuple(sorted(t)) for t in
            check_web.MOCKUP_PALETTES.values()}) == 1)
-# The ids theme.css defines and the ids the pages offer are one set.
-check("the ruled chips and the ruled palettes are the same ids",
-      set(check_web.MOCKUP_CHIPS) == set(check_web.MOCKUP_PALETTES))
+# The ids theme.css defines and the ids the pages offer were one set
+# until 0.9-M2-S6 (#82): "custom" is a chip with no static palette block
+# behind it BY DESIGN (design mandate 5 - its dot is painted at runtime
+# from a member's own colors, and a static swatch_problems() entry for
+# it would be exactly the fixed value the mandate refuses to let it
+# have). So the two sets differ by exactly that one id now, and the
+# stronger claim below is what still holds: every OTHER chip still names
+# a real palette, and "custom" is refused from ever meaning anything
+# other than that one, deliberate exception.
+check("every ruled chip other than custom names a ruled palette",
+      set(check_web.MOCKUP_CHIPS) - {"custom"}
+      == set(check_web.MOCKUP_PALETTES))
+check("custom is the one chip with no palette block behind it",
+      set(check_web.MOCKUP_CHIPS) - set(check_web.MOCKUP_PALETTES)
+      == {"custom"})
 
 
 check("the stylesheet the table describes has no problems",

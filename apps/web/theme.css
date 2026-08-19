@@ -1057,6 +1057,27 @@ input[type="file"] {
   max-width: 100%;
 }
 
+/*
+ * The custom-palette editor's two pickers (0.9-M2-S6, #82). Not `.field
+ * > input` alongside the text/password/select block above: a native
+ * color input's own chrome is a swatch, not a text box, and the shared
+ * rule's padding and tabular-nums would fight the browser's own
+ * rendering instead of matching it. --color-field for the same "a hole
+ * in the card" reason every other control uses it, and the border takes
+ * the strong token because the edge is the only thing saying where the
+ * control is (WCAG 1.4.11), exactly the argument beside that token's
+ * declaration above.
+ */
+input[type="color"] {
+  inline-size: 3rem;
+  block-size: 2.25rem;
+  padding: 0.1875rem;
+  background: var(--color-field);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
 /* The one place color alone is not the signal - the message under the
    field is. This just points at it. */
 input[aria-invalid="true"] { border-color: var(--color-warn-text); }
