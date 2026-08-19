@@ -109,14 +109,6 @@
     Signed out.
   </p>
 
-  <div class="card narrow" data-dev-session hidden>
-    <p class="caution">Development session</p>
-    <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in — not a Telegram sign-in.
-    </p>
-  </div>
-
   <div class="card narrow">
     <p class="runner"><span>Telegram</span></p>
     <h2>Member sign-in</h2>
@@ -134,6 +126,31 @@
     <p class="status" id="auth-status" role="status"
        aria-live="polite" hidden></p>
   </div>
+
+  <!--
+    THE PRIVACY LINE'S SLOT, not its words. DESIGN.md, "Roles and
+    vocabulary": "The privacy line is one sentence on the door... The
+    owner authors the exact sentences at the 0.9 register sitting,
+    scheduled for 0.9-M4." This slice places where that sentence lands
+    and writes none of it - the same restraint the ruled lines above
+    hold on their own wording, applied to a sentence that has not been
+    ruled yet.
+
+    Its own paragraph, muted weight, no card and no border - the
+    position is fixed by the design mandate independently of the words,
+    so the day 0.9-M4 supplies the real sentence this element's content
+    changes and nothing about where it sits does.
+
+    tests/door.test.mjs's structural check reads the id and
+    data-pending-copy below, never the sentence inside - a check
+    written against today's filler would have to be rewritten the day
+    the real words land, which is exactly the churn a placeholder
+    exists to avoid.
+  -->
+  <p class="muted" id="privacy-line" data-pending-copy="0.9-M4">
+    [Privacy line — the owner writes this sentence at the 0.9-M4
+    register sitting.]
+  </p>
 </main>
 
 <footer>

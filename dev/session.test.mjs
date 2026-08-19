@@ -16,7 +16,7 @@ const formSource = await readFile(
 // Counted AND asserted - see the note in dev/check_budget.test.py.
 // Printing the number keeps it out of prose; comparing it catches a
 // check that quietly stops running, which otherwise still prints "OK".
-const { check, report } = nodeTestSuite("session/auth", 59);
+const { check, report } = nodeTestSuite("session/auth", 55);
 
 const values = new Map();
 
@@ -44,13 +44,6 @@ globalThis.location = {
   replace(target) { redirects.push(target); },
 };
 
-const identity = { textContent: "" };
-const banner = {
-  hidden: true,
-  querySelector(selector) {
-    return selector === "[data-dev-identity]" ? identity : null;
-  },
-};
 /*
  * The rail's session home - the half of the shell session.js does not
  * paint and must not learn about. signout.js owns these three, and the
@@ -73,9 +66,6 @@ const rail = {
 
 globalThis.document = {
   readyState: "complete",
-  querySelector(selector) {
-    return selector === "[data-dev-session]" ? banner : null;
-  },
   getElementById(id) {
     return Object.prototype.hasOwnProperty.call(rail, id) ? rail[id] : null;
   },
@@ -127,14 +117,12 @@ const GOOD = {
   expiresAt: "2099-01-02T03:04:05.000Z",
   username: "SomeHandle",
   isAdmin: false,
-  isDev: true,
   telegramId: null,
 };
 const written = Session.write(GOOD);
 check("write keeps the response fields the pages need",
   written.session === "tab-token" && written.username === "somehandle" &&
-  written.isAdmin === false && written.isDev === true &&
-  written.telegramId === null);
+  written.isAdmin === false && written.telegramId === null);
 check("the stored session is immutable", Object.isFrozen(written));
 check("read recovers the tab-scoped session",
   Session.read().session === "tab-token");
@@ -145,13 +133,6 @@ location.pathname = "/your-page.html";
 redirects.length = 0;
 check("a signed-in member page is not redirected",
   Session.require().session === "tab-token" && redirects.length === 0);
-check("a development session is visibly labelled",
-  banner.hidden === false && identity.textContent === "somehandle");
-
-Session.write({ ...GOOD, session: "real-token", isDev: false });
-Session.require();
-check("a real session does not show the development banner",
-  banner.hidden === true && identity.textContent === "");
 
 values.set("hgb-session", "not json");
 check("malformed storage fails closed and is removed",
@@ -189,29 +170,17 @@ check("clear removes the credential and its header",
  * and it ran once at load and never again - so every surface it paints was
  * describing a credential that had been thrown away.
  *
- * Both directions are driven here because clear() has two callers with
- * nothing in common: a page acting on a refusal, and read() disposing of a
- * value it will not use. A fix wired into only the first leaves the second
- * painting a dead session for the rest of the tab's life, and the second is
- * the one no page calls on purpose.
+ * Both directions of that property - a direct clear() and read()'s own
+ * disposal of a rotted value - are driven against the rail further down
+ * this file rather than here: session.js painted its own surface once too,
+ * a development-session card that would have proven the same property
+ * with no other file loaded, and that card is retired (0.9-M2-S1, #352;
+ * 0.9-M2-S4, #355). The rail section below is signout.js's surface, not
+ * session.js's own, but it is the one still standing, and "the rail stops
+ * naming a member whose credential has just gone" and "a credential that
+ * rots under the tab repaints the rail as it goes" are exactly this
+ * property, proven the other way.
  */
-Session.write(GOOD);
-Session.require();
-// The precondition is captured before the act rather than asserted inside
-// the check, so a failure cannot be read two ways: this says the banner was
-// up and then came down, not merely that it is down now - which is also
-// true of an announcement that never ran at all.
-const announced = banner.hidden === false && identity.textContent === "somehandle";
-Session.clear();
-check("a session announced and then discarded leaves nothing announced",
-  announced && banner.hidden === true && identity.textContent === "");
-
-Session.write(GOOD);
-Session.require();
-values.set("hgb-session", "not json");
-check("a credential that rots under the tab is un-announced as it is dropped",
-  Session.read() === null && banner.hidden === true &&
-  identity.textContent === "");
 
 /* ------------------------------------------------------------------ */
 /* The transport, and the future widget callback that rides it.        */
@@ -418,12 +387,11 @@ check("submit.js no longer touches the prefill key at all - #172's " +
 /* The rail, which is the shell half this file must not paint - #166.  */
 
 /*
- * The development-session card above is session.js's own surface and is
- * already un-announced when the credential goes. The rail is not: it is
- * painted once by signout.js at load and, until this, never again. So a
- * credential dropped under the tab left the rail describing it, and the
- * page said "your sign-in is no longer valid" three inches from "Signed
- * in as alice" with nothing on screen to say which half was true.
+ * The rail is painted once by signout.js at load and, until this, never
+ * again. So a credential dropped under the tab left the rail describing
+ * it, and the page said "your sign-in is no longer valid" three inches
+ * from "Signed in as alice" with nothing on screen to say which half
+ * was true.
  *
  * THE DIRECTION IS THE CONTRACT, NOT JUST THE EFFECT. The store
  * announces that its credential changed and says nothing about what
@@ -458,11 +426,10 @@ redirects.length = 0;
 Session.write(GOOD);
 Session.require();
 
-// Captured before the act, for the reason the banner's arm gives: "Not
-// signed in" after the fact is also what a repaint that never happened
-// leaves behind, and the door standing open is the state the markup
-// ships in. Each arm below carries this, so none of them can pass on a
-// rail that was never painted at all.
+// Captured before the act: "Not signed in" after the fact is also what
+// a repaint that never happened leaves behind, and the door standing
+// open is the state the markup ships in. Each arm below carries this,
+// so none of them can pass on a rail that was never painted at all.
 const railHeld =
   rail["session-who"].textContent === "Signed in as somehandle" &&
   rail["sign-out"].hidden === false && rail["sign-in"].hidden === true;
