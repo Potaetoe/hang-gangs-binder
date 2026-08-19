@@ -1203,7 +1203,253 @@ check("your-page.html carries no data-dev-session hook - 0.9-M2-S4 owns " +
   !/data-dev-session/.test(yourPageHtml));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 78;
+/* 10. The prefill (issue #370): over18, gender, roles, country and     */
+/* height from the newest CURRENT entry - never weight - with the      */
+/* units radio set from entered.units; nothing prefilled with no        */
+/* history or a failed load; a member's own edit takes and stays; no    */
+/* storage is touched; Sign out leaves nothing prefilled behind; and a  */
+/* fork's added choice field flows through with no edit to form.js or   */
+/* submit.js - the same forkability property section 1 proves for       */
+/* rendering, extended to the values a control starts holding.          */
+
+// Reset to the shipped spec - section 6b above leaves BINDER_SITE
+// pointed at its own scratch copy, and nothing between there and here
+// puts it back.
+globalThis.BINDER_SITE = SITE;
+
+/*
+ * Row 23 is chronologically newest but SUPERSEDED - a prefill that read
+ * entries[0] rather than the newest entry with superseded === false
+ * would pick up its gender/country/height, and the CONTROL check below
+ * proves that would actually be visible (23 and 22 disagree on every
+ * prefilled field). Row 21 is the oldest CURRENT row, catching the same
+ * class of bug from the other end (oldest-vs-newest). Row 22 is the one
+ * every prefill check below expects.
+ */
+const PREFILL_ENTRIES = [
+  { id: 23, receivedAt: "2026-08-19T00:00:00.000Z", superseded: true,
+    record: JSON.stringify({ over18: true, weight: { lb: 220, kg: 99.8 },
+      height: { cm: 190, totalInches: 74.8, feet: 6, inches: 2.8 },
+      gender: "other", roles: ["feeder"], country: "FR",
+      entered: { units: "imperial" } }) },
+  { id: 22, receivedAt: "2026-08-18T00:00:00.000Z", superseded: false,
+    record: JSON.stringify({ over18: true, weight: { lb: 205, kg: 93.0 },
+      height: { cm: 180, totalInches: 70.9, feet: 5, inches: 10.9 },
+      gender: "nonbinary", roles: ["feeder", "admirer"], country: "CA",
+      entered: { units: "metric" } }) },
+  { id: 21, receivedAt: "2026-08-17T00:00:00.000Z", superseded: false,
+    record: JSON.stringify({ over18: true, weight: { lb: 200, kg: 90.7 },
+      height: { cm: 175, totalInches: 68.9, feet: 5, inches: 9 },
+      gender: "male", roles: ["gainer"], country: "US",
+      entered: { units: "imperial" } }) },
+];
+
+check("CONTROL: the superseded row (23) actually disagrees with the " +
+  "newest current row (22) on every prefilled field - the currency " +
+  "checks below are not vacuous",
+  JSON.parse(PREFILL_ENTRIES[0].record).gender !==
+    JSON.parse(PREFILL_ENTRIES[1].record).gender &&
+  JSON.parse(PREFILL_ENTRIES[0].record).country !==
+    JSON.parse(PREFILL_ENTRIES[1].record).country);
+
+// Calls recorded against any storage this section's harness stubs -
+// the direct probe for "ZERO storage writes anywhere in the feature"
+// (the S2 storage mandate stands; this feature gains no sibling write).
+const storageCalls = [];
+function watchedStore() {
+  return {
+    setItem() { storageCalls.push("setItem"); },
+    removeItem() { storageCalls.push("removeItem"); },
+    getItem() { storageCalls.push("getItem"); return null; },
+  };
+}
+
+/*
+ * form.js and submit.js, loaded into ONE shared document - form.js
+ * first (it renders the fields and, once this slice lands, defines the
+ * prefill bridge), then submit.js (it fetches /my-entries and, once
+ * this slice lands, calls that bridge with the newest current record).
+ * Two separate BinderUI.boot captures because each file calls boot()
+ * once at its own load time and this harness needs both promises, not
+ * just the second one overwriting the first.
+ */
+async function loadCombinedForPrefill(options) {
+  const opts = options || {};
+  const formPage = makeFormPage();
+  globalThis.document = formPage.document;
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  if (opts.site) globalThis.BINDER_SITE = opts.site;
+
+  let formBooted = null;
+  globalThis.BinderUI = {
+    byId: formPage.byId,
+    show(element, visible) { if (element) element.hidden = !visible; },
+    checkedValue(name, fallback) {
+      if (name !== "units") return fallback;
+      const chosen = formPage.document.querySelectorAll('input[name="units"]')
+        .find((input) => input.checked);
+      return chosen ? chosen.value : fallback;
+    },
+    setStatus(element, message) {
+      if (element) { element.textContent = message || ""; element.hidden = !message; }
+    },
+    boot(setUp) { formBooted = Promise.resolve(setUp()); return formBooted; },
+  };
+  globalThis.BinderSession = {
+    read() { return { username: "member" }; },
+    require() { return { username: "member" }; },
+    authorization() { return { Authorization: "Bearer token" }; },
+    clear() {},
+  };
+
+  const formSource = await read("../apps/web/form.js");
+  await import("data:text/javascript," + encodeURIComponent(formSource) +
+    "#prefill-form-" + Math.random());
+  await formBooted;
+
+  let submitBooted = null;
+  globalThis.BinderUI.boot = function (setUp) {
+    submitBooted = Promise.resolve(setUp());
+    return submitBooted;
+  };
+  globalThis.BinderSignOut = { signOut() {} };
+  globalThis.BinderXlsx = { build() { return new Uint8Array([1]); } };
+  globalThis.fetch = async () => opts.failFetch
+    ? { ok: false, status: 500, async json() { return {}; } }
+    : { ok: true, status: 200,
+        async json() { return { ok: true, entries: opts.entries || [] }; } };
+
+  const submitSource = await read("../apps/web/submit.js");
+  await import("data:text/javascript," + encodeURIComponent(submitSource) +
+    "#prefill-submit-" + Math.random());
+  await submitBooted;
+
+  return formPage;
+}
+
+const prefillPage = await loadCombinedForPrefill({ entries: PREFILL_ENTRIES });
+
+check("the age confirmation prefills from the newest CURRENT entry (row " +
+  "22), not the superseded row 23",
+  prefillPage.byId("entry-over18").checked === true);
+check("gender prefills from the newest CURRENT entry, not the superseded " +
+  "or the older current one",
+  prefillPage.byId("entry-gender").value === "nonbinary");
+check("the multi-choice affiliations prefill as the newest CURRENT " +
+  "entry's own set",
+  JSON.stringify(prefillPage.document.querySelectorAll('input[name="roles"]')
+    .filter((i) => i.checked).map((i) => i.value).sort()) ===
+  JSON.stringify(["admirer", "feeder"]));
+check("country prefills from the newest CURRENT entry",
+  prefillPage.byId("entry-country").value === "CA");
+check("height's metric box prefills from the newest CURRENT entry's cm",
+  prefillPage.byId("entry-height-metric").value === "180");
+check("height's imperial boxes prefill from the same record's fixed " +
+  "feet/inches pair, the same one buildRecord's own addHeightFeetInches " +
+  "computes",
+  prefillPage.byId("entry-height-imperial").value === "5" &&
+  prefillPage.byId("entry-height-imperial-compound").value === "10.9");
+check("the units radio is set from the newest CURRENT entry's own " +
+  "entered.units - metric here, not the imperial default this page ships",
+  prefillPage.byId("units-metric").checked === true &&
+  prefillPage.byId("units-imperial").checked === false);
+check("weight is NEVER prefilled, in either unit system - it is the new " +
+  "measurement this visit is for",
+  prefillPage.byId("entry-weight-imperial").value === "" &&
+  prefillPage.byId("entry-weight-metric").value === "");
+check("nothing is locked: a prefilled field carries no disabled or " +
+  "readonly attribute",
+  !prefillPage.byId("entry-gender").disabled &&
+  prefillPage.byId("entry-gender").getAttribute("readonly") === null &&
+  !prefillPage.byId("entry-over18").disabled &&
+  !prefillPage.byId("entry-height-imperial").disabled);
+
+prefillPage.byId("entry-gender").value = "female";
+check("editable after prefill: a member's own change actually takes and " +
+  "nothing reverts it",
+  prefillPage.byId("entry-gender").value === "female");
+
+const emptyPage = await loadCombinedForPrefill({ entries: [] });
+check("no history: the form renders exactly as today - nothing prefills",
+  emptyPage.byId("entry-over18").checked === false &&
+  emptyPage.byId("entry-gender").value === "" &&
+  emptyPage.byId("entry-country").value === "" &&
+  emptyPage.byId("entry-height-metric").value === "" &&
+  emptyPage.byId("units-imperial").checked === true);
+
+const failedPage = await loadCombinedForPrefill(
+  { entries: PREFILL_ENTRIES, failFetch: true });
+check("a failed load: the form renders exactly as today - the prefill is " +
+  "a bonus on success, never a dependency, and the failed-load state and " +
+  "retry control are untouched by this feature",
+  failedPage.byId("entry-over18").checked === false &&
+  failedPage.byId("entry-gender").value === "" &&
+  failedPage.byId("units-imperial").checked === true &&
+  Boolean(failedPage.byId("entries-slot").children
+    .find((c) => /could not be loaded/.test(c.textContent))));
+
+const originalLocalStorage = globalThis.localStorage;
+const originalSessionStorage = globalThis.sessionStorage;
+const originalIndexedDB = globalThis.indexedDB;
+storageCalls.length = 0;
+globalThis.localStorage = watchedStore();
+globalThis.sessionStorage = watchedStore();
+globalThis.indexedDB = { open() { storageCalls.push("indexedDB.open"); return {}; } };
+await loadCombinedForPrefill({ entries: PREFILL_ENTRIES });
+check("the whole prefill flow - fetch, fill, and a member's own edit - " +
+  "writes nothing to localStorage, sessionStorage or IndexedDB",
+  storageCalls.length === 0);
+globalThis.localStorage = originalLocalStorage;
+globalThis.sessionStorage = originalSessionStorage;
+globalThis.indexedDB = originalIndexedDB;
+
+const clearPage = await loadCombinedForPrefill({ entries: PREFILL_ENTRIES });
+check("CONTROL: before Sign out, the prefilled fields actually hold the " +
+  "newest entry's values",
+  clearPage.byId("entry-gender").value === "nonbinary");
+clearPage.byId("sign-out").dispatch("click");
+check("Sign out clears every prefilled field - idle expiry runs the same " +
+  "clearMemberData(), so no prefilled value outlives either exit",
+  clearPage.byId("entry-over18").checked === false &&
+  clearPage.byId("entry-gender").value === "" &&
+  clearPage.byId("entry-country").value === "" &&
+  clearPage.byId("entry-height-metric").value === "" &&
+  clearPage.byId("entry-height-imperial").value === "" &&
+  clearPage.byId("entry-height-imperial-compound").value === "" &&
+  clearPage.document.querySelectorAll('input[name="roles"]')
+    .every((i) => i.checked === false) &&
+  clearPage.byId("units-imperial").checked === true);
+
+/* THE PROPERTY ITSELF, for prefill: a scratch field added to a copy of
+   the spec (the same SCRATCH pattern section 1 and 6b use) prefills
+   with no edit to form.js or submit.js - the mapping walks the spec's
+   own field list rather than naming "gender" or "country" anywhere. */
+const SCRATCH_PREFILL_FIELD = Object.freeze({
+  ...SITE,
+  fields: Object.freeze([...SITE.fields, Object.freeze({
+    name: "vibe", kind: "choice", label: "Vibe check", term: "vibe",
+    blank: "Prefer not to say",
+    choices: [{ value: "chill", label: "Chill" }, { value: "hype", label: "Hype" }],
+    chart: true,
+  })]),
+});
+const SCRATCH_ENTRIES = [
+  { id: 31, receivedAt: "2026-08-19T00:00:00.000Z", superseded: false,
+    record: JSON.stringify({ over18: true, weight: { lb: 150, kg: 68.0 },
+      height: { cm: 165, totalInches: 65, feet: 5, inches: 5 },
+      gender: "female", roles: [], country: "US", vibe: "hype",
+      entered: { units: "imperial" } }) },
+];
+const scratchPage = await loadCombinedForPrefill(
+  { entries: SCRATCH_ENTRIES, site: SCRATCH_PREFILL_FIELD });
+check("a fork's added choice field prefills too, with no edit to form.js " +
+  "or submit.js - the forkability property, extended from rendering " +
+  "(section 1) to the values a control starts holding",
+  scratchPage.byId("entry-vibe").value === "hype");
+globalThis.BINDER_SITE = SITE;
+
+/* ------------------------------------------------------------------ */
+const EXPECTED = 95;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
