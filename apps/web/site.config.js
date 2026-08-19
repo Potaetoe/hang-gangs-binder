@@ -89,9 +89,13 @@ globalThis.BINDER_SITE = {
   /*                                                                   */
   /* `min` and `max` are what the form will accept, in that unit and   */
   /* not translated from another one: somebody typing pounds should be */
-  /* told the limit in pounds, or the form looks broken to them.       */
+  /* told the limit in pounds, or the form looks broken to them. They  */
+  /* are also the two ends of the charts' axis, since 0.9-M2-S10 fixed */
+  /* the bands to this spec instead of fitting them to the group - so  */
+  /* a wide range draws a wide, mostly empty axis, and narrowing it is */
+  /* how a fork gets a tighter one.                                    */
   /*                                                                   */
-  /* `bin` and `band` are the charts' histogram width and how it is    */
+  /* `bin` and `band` are the charts' band width and how it is         */
   /* written. The pairs are matched rather than chosen independently - */
   /* 20 lb is about 10 kg and 2 in is about 5 cm - so switching units  */
   /* does not silently redraw a distribution into a different shape.   */
@@ -199,7 +203,16 @@ globalThis.BINDER_SITE = {
       // both are worse than an index with no units at all.
       unitless: true,
       places: 1,
+      // The band width, and the two ends of the axis it is drawn on.
+      // A field with no unit table has nowhere else to keep them, and
+      // the charts need all three: since 0.9-M2-S10 the bands are fixed
+      // by this spec rather than fitted to whoever is in the group, so
+      // two views are comparable and no edge reports one member's own
+      // number. Anybody outside the range is counted in the end band
+      // nearest them, so widen it rather than lose them.
       bin: 5,
+      min: 10,
+      max: 100,
       chart: true,
     },
     {

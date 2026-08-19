@@ -1,32 +1,69 @@
 /*
- * THE ONE ROWS-TO-SERIES PATH. Opened rows in, one floored answer out.
+ * THE ONE ROWS-TO-SERIES PATH. Opened rows in, one answer out.
  *
- * DESIGN.md, "Charts": the Worker aggregates on request, and the
- * disclosure rules that governed the published document govern the live
- * one "because they were always about what a reader can reconstruct
- * rather than about publishing". This file is where every one of those
- * rules is decided. server/worker.js's GET /charts-data handler reads the
- * database, opens the ciphertext and serializes what this file returns -
- * it computes no cell of its own, and there is deliberately no second
- * path a later route could reach for.
+ * DESIGN.md, "Charts": the Worker aggregates on request, and this file is
+ * where every disclosure rule is decided. server/worker.js's GET
+ * /charts-data handler reads the database, opens the ciphertext and
+ * serializes what this file returns - it computes no cell of its own, and
+ * there is deliberately no second path a later route could reach for.
+ *
+ * THE FLOOR IS A SETTING AND ITS SHIPPED DEFAULT IS 0 (owner ruling,
+ * #243 comment 5346978974, the 2026-08-19 charts sitting). It was a
+ * constant of 5 here until that sitting re-took the whole regime across
+ * five rounds including an adversarial one. The ruling, in the owner's
+ * own words: members chose to share. Its consequence was put
+ * adversarially and accepted - a filter isolating one member shows that
+ * member's number to every signed-in member - so a one-person view
+ * drawing its true value is the design here, not a hole in it.
+ *
+ * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling, band merging
+ * and the one-partition rule all still stand below and all obey whatever
+ * floor they are given; at 0 every one of them is dormant. The way back
+ * is a number, which is why tests/charts-aggregate.test.mjs still proves
+ * the whole machinery at a floor of 5 rather than deleting those arms.
+ *
+ * THE FLOOR ARRIVES THROUGH ONE SEAM AND THE WIRE IS NOT IT.
+ * aggregate()'s fourth argument is a SETTINGS OBJECT read on the server
+ * side; floorOf() below is the only thing that interprets it, and it
+ * takes a whole non-negative number or falls back to the default. 0.9-M3's
+ * Settings page fills that object - server/worker.js's CHART_SETTINGS is
+ * the single call site it edits. Nothing a caller sends can reach it:
+ * askFor() refuses a query parameter it does not know rather than
+ * ignoring one, so `?floor=1` is a refusal a caller can see. The shape
+ * this deliberately does NOT copy is the pre-0.9 dashboard's
+ * `floor = identify ? 0 : MIN_CELL` - a caller-chosen flag on the wire
+ * that turned suppression off wholesale.
  *
  * THE FLOOR IS APPLIED BEFORE ANYTHING LEAVES. Every exported function
  * that touches a group returns output the floor has already reduced, so
  * a caller cannot hold an unfloored intermediate. That is the whole
  * reason the split is a module boundary rather than two functions in
  * worker.js: a handler holding raw counts is one `if` away from printing
- * them.
+ * them. At a floor of 0 that reduction is the identity, and the boundary
+ * is what makes raising the setting a one-line change rather than a
+ * rewrite.
  *
- * THE FLOOR IS A CONSTANT HERE AND TAKES NO INPUT. FLOOR below is 5,
- * carried across from MIN_CELL in apps/web/dashboard.js exactly as
- * DESIGN.md, "Admin surfaces", instructs the Worker's writer to carry it.
- * Nothing on the wire can lower it: aggregate() has no floor parameter,
- * askFor() refuses a query parameter it does not know rather than
- * ignoring one, and no helper below accepts a floor argument. The shape
- * this deliberately does NOT copy is the pre-0.9 dashboard's
- * `floor = identify ? 0 : MIN_CELL` - one caller-chosen flag that turned
- * suppression off wholesale. The floor becomes an admin-editable Setting
- * at 0.9-M3; until then it is this constant and nothing else.
+ * WHAT THE ANSWER CARRIES, since #371 reshaped it:
+ *
+ *   distribution   fixed bands over the field spec's own min, max and
+ *                  bin width. Categories are never bands.
+ *   trend          one point per month, the mean of the people who
+ *                  submitted in it.
+ *   groups         the GROUP-MAKEUP block: one entry per categorical
+ *                  field, each a list of count lines. This is where
+ *                  gender, affiliation and country live now - as plain
+ *                  counts of unique members rather than as an axis.
+ *
+ * THE GROUP-MAKEUP BLOCK IS NOT THE FILTER ECHO, and the two are easy to
+ * confuse into one rule. The echo hands a caller back the value THEY
+ * sent and never says what the group holds (mandate 5, unchanged: a list
+ * of which filter values exist would be a membership oracle reachable
+ * with one request). The block lists the SPEC's own values with counts,
+ * which is a chart: the same disclosure a drawn cell always was, ruled
+ * explicitly at the sitting - exact counts, small ones included, zeros
+ * listed. Each member counts once and their most recent current entry
+ * decides their category, so the block describes the same people the
+ * rest of the answer does.
  *
  * ------------------------------------------------------------------
  * THE RECORD CONTRACT, derived from apps/web/site.config.js.
@@ -94,31 +131,60 @@
  * WHAT THE FLOOR DOES NOT BOUND, said out loud because a rule stated
  * without its limit reads as a stronger promise than it is.
  *
- * Every rule here is about what ONE response discloses. A reader who
- * keeps several responses can still subtract one from another - two
- * views of the same measure under different filters, or the same view at
- * two times. DESIGN.md, "Charts", takes that channel knowingly: the
- * owner ruled on #153 to accept cumulative disclosure rather than charge
- * every member the mean's real value to close it, and the ruling's
- * premise is a members-only readership, which the session gate on
- * GET /charts-data preserves. The premise is the thing to re-take if that
- * readership ever widens.
+ * At the shipped floor of 0 the answer is the group's own figures, so
+ * there is nothing here to subtract back out: the disclosure is the
+ * ruled one and a reader keeping two responses learns what a reader
+ * keeping one already knew. What the machinery below bounds is the
+ * RAISED-floor world, and there the old limit still holds and is still
+ * worth saying: every rule is about what ONE response discloses, and a
+ * reader who keeps several can still difference two views of the same
+ * measure under different filters, or the same view at two times.
+ * DESIGN.md, "Charts", takes that channel knowingly - the owner ruled on
+ * #153 to accept it rather than charge every member the mean's real
+ * value to close it, and the #243 sitting subsumed the question by
+ * ruling the visibility itself. Both rulings rest on a members-only
+ * readership, which the session gate on GET /charts-data preserves. That
+ * premise is the thing to re-take if the readership ever widens.
  */
 import "../apps/web/site.config.js";
 import "../apps/web/fields.js";
 
 /*
- * The smallest number of PEOPLE a drawn cell, bin or trend point may
- * describe. Five, carried from apps/web/dashboard.js's MIN_CELL per
- * DESIGN.md, "Admin surfaces" - the file holding it today is one the 0.9
- * rebuild deletes, and this is the copy that outlives it.
+ * The smallest number of PEOPLE a drawn cell, band or trend point may
+ * describe, when nobody has set one: ZERO, so everything draws.
  *
- * People rather than rows, everywhere, and the distinction IS the floor.
- * One member submitting five times is one member; a floor that counted
- * rows would let a single person clear it by filling the form in five
- * times, which is exactly the disclosure it exists to prevent.
+ * DESIGN.md, "Admin surfaces", carries the setting and this default
+ * together, per the #243 ruling. Zero is a real value of the setting
+ * rather than an off switch, which is why every guard below compares
+ * against it instead of branching on whether suppression is "on": one
+ * code path, exercised at every floor, and nothing that only runs when
+ * an admin raises the number.
+ *
+ * People rather than rows, everywhere, and the distinction IS the floor
+ * once one is set. One member submitting five times is one member; a
+ * floor that counted rows would let a single person clear it by filling
+ * the form in five times, which is exactly the disclosure it exists to
+ * prevent.
  */
-const FLOOR = 5;
+const DEFAULT_FLOOR = 0;
+
+/*
+ * The floor this answer applies, from the settings the server holds.
+ *
+ * A WHOLE NON-NEGATIVE NUMBER OR NOTHING. Anything else - a bare
+ * positional argument, a string, a fraction, a negative - is the default
+ * rather than a floor, because the failure that matters now runs the
+ * other way from the one mandate 2 was written against: nothing can be
+ * lowered below zero, so what a sloppy read costs is a floor an admin
+ * SET and this file silently did not apply. A validator that accepted
+ * "5" would also accept whatever else a later caller passed by accident.
+ */
+function floorOf(settings) {
+  if (!settings || typeof settings !== "object") return DEFAULT_FLOOR;
+  const held = settings.floor;
+  return typeof held === "number" && Number.isInteger(held) && held >= 0
+    ? held : DEFAULT_FLOOR;
+}
 
 /*
  * What the fold is called - and the parenthetical is CONDITIONAL,
@@ -149,7 +215,8 @@ const FLOOR = 5;
  * no-statistics-vocabulary rule bars the register it would say it in.
  */
 const OTHER_LABEL = "Other";
-const OTHER_ALL_SMALL_LABEL = OTHER_LABEL + " (fewer than " + FLOOR + ")";
+const allSmallLabel = (floor) =>
+  OTHER_LABEL + " (fewer than " + floor + ")";
 
 /*
  * The blanks keep their own cell rather than being dropped. A chart
@@ -159,15 +226,16 @@ const OTHER_ALL_SMALL_LABEL = OTHER_LABEL + " (fewer than " + FLOOR + ")";
 const NOT_STATED_LABEL = "Not stated";
 
 /*
- * The honest sentence, and the ONLY thing a cut below the floor says.
+ * The honest sentence, and the ONLY thing a view that cannot draw says.
  *
- * DESIGN.md, "Charts", rules that a cut below the floor answers this
- * rather than an error - "which is the honest sentence and not an
- * error". It is one
- * constant rather than a string built per case, because the whole point
- * is that a group too small to draw and a filter value nobody in the
- * group holds are indistinguishable - same status, same sentence, same
- * document. A second spelling for one of them would be the oracle.
+ * DESIGN.md, "Charts": a view with nobody in it answers this rather than
+ * an error, and at the shipped floor of 0 that empty view is the only
+ * refusal left in the whole route. It stays ONE constant rather than a
+ * string built per case, because at any raised floor a group too small
+ * to draw and a filter value nobody in the group holds have to be
+ * indistinguishable - same status, same sentence, same document - and a
+ * second spelling for one of them would be the oracle. The page turns
+ * this into the broader-filter hint; the route says only what it knows.
  */
 const NOT_ENOUGH = "Not enough people for this view.";
 
@@ -408,9 +476,20 @@ function askFor(params, spec) {
     }
   }
 
+  /*
+   * A CATEGORY IS NOT A MEASURE ANY MORE (owner ruling 1, #243): gender,
+   * affiliation and country are never charted as bars, so `measure=`
+   * simply does not offer them and an ask for one is refused exactly as
+   * an unknown name is - one sentence, one shape, nothing for a caller
+   * to tell apart. Their counts did not go away; they moved to the
+   * group-makeup block every drawn answer carries. They remain FILTERS,
+   * which the ruling left untouched, and the filter half below still
+   * reads the whole measure list for that reason.
+   */
   const measures = fields.measures(site);
+  const drawable = measures.filter((one) => one.kind !== "categorical");
   const wanted = params.get("measure");
-  const measure = measures.filter((one) => one.name === wanted)[0];
+  const measure = drawable.filter((one) => one.name === wanted)[0];
   if (!measure) {
     return fault("That is not a measure this form charts.");
   }
@@ -451,67 +530,155 @@ function askFor(params, spec) {
 /* The floor's three shapes.                                            */
 
 /*
- * Equal-width bins across the data's own range, rounded outward to the
- * bin width so the axis reads in round numbers. The edges are multiples
- * of the width rather than the smallest and largest values in the group:
- * an edge fitted to the data reports somebody's real weight, which is
- * the same leak the partition rule closes, arrived at from the opposite
- * direction.
- *
- * QUANTIZING IS NOT ENOUGH FOR THE TWO OUTER EDGES, and this comment
- * claimed it was. The bin an outer edge is rounded to still derives from
- * one person - the heaviest, the lightest - so it reports that member's
- * BAND rather than their number, and a band is a person to anyone who
- * knows her (#351, fix wave 1, finding F2). The range computed here is
- * therefore internal: binsOf() below reports the two ends as open and
- * only the inner boundaries as numbers. What quantizing does close is
- * every edge between two floor-cleared bins, which is all of them once
- * the ends are gone.
+ * The most bands one grid may hold, and a spec that asks for more is a
+ * spec error rather than a big chart. It is a guard on the CONFIG, not
+ * on the data: a fork that writes a range of a million and a width of
+ * one gets a loud refusal instead of a Worker building a million objects
+ * per request out of numbers a person typed once.
  */
-function histogram(values, binWidth) {
-  if (!values.length || !(binWidth > 0)) return [];
-  let low = Infinity;
-  let high = -Infinity;
-  for (const value of values) {
-    if (value < low) low = value;
-    if (value > high) high = value;
+const MAX_BANDS = 200;
+
+/*
+ * The range one measure's grid spans, IN THE PARTITION'S OWN UNIT, read
+ * from the spec and never from the group.
+ *
+ * Owner ruling 5 (#243): "Edges come from the field spec and never move
+ * or merge." This is where that is decided, and it is the whole answer
+ * to the leak #351's fix wave 1 found (finding F2): an edge fitted to
+ * the data reported the heaviest member's band, so the ends had to be
+ * reported as open. A spec edge derives from nobody, so there is nothing
+ * left to open - and two groups drawn on one grid are comparable, which
+ * is what the owner chose it for.
+ *
+ * WHERE THE BOUNDS COME FROM, in order, all of them the spec's own:
+ *
+ *   1. The chart unit's own `min`/`max`, when it carries them. Weight
+ *      charts in pounds under the shipped spec and pounds are bounded in
+ *      pounds, so the axis reads in the round numbers the spec wrote.
+ *   2. The same system's ENTRY unit, converted. Imperial height charts
+ *      in inches, which carry no bound, because a member of that system
+ *      types feet and the spec bounds the box they look at - so the
+ *      inches axis runs between the same three and eight feet.
+ *   3. The kind's base unit, converted, for a system the spec bounds
+ *      nowhere else.
+ *
+ * A unitless measure - a computed BMI, a plain count - has no unit table
+ * to read, so its bounds are fields of the spec row itself.
+ *
+ * AND A CHARTED FIELD WITH NO RANGE ANYWHERE THROWS, the same direction
+ * apps/web/fields.js refuses an unknown derivation. The alternative is
+ * fitting the grid to whoever happens to be in the group, which is the
+ * exact thing this function exists to stop; a fork that adds a numeric
+ * field says what range it is drawn over, and finds out at once if it
+ * did not.
+ */
+function rangeOf(measure, part, site) {
+  const one = api().field(measure.name, site);
+  const complain = (why) => {
+    throw new Error('The spec charts field "' + measure.name + '" and ' +
+      why + ", so server/charts-agg.js has no fixed band edges to draw " +
+      "it on: give the field a min and a max in the spec.");
+  };
+
+  if (!measure.unitful) {
+    if (typeof one.min !== "number" || typeof one.max !== "number" ||
+        !(one.max > one.min)) {
+      complain("gives it no min and max of its own");
+    }
+    return { min: one.min, max: one.max };
   }
-  const start = Math.floor(low / binWidth) * binWidth;
-  const end = Math.ceil((high + 0.000001) / binWidth) * binWidth;
+
+  const kind = site.units.kinds[one.kind];
+  const table = kind.units;
+  const tried = [part.unit, kind.enter ? kind.enter[part.system] : null,
+    kind.base];
+  for (const name of tried) {
+    const entry = name ? table[name] : null;
+    if (!entry || typeof entry.min !== "number" ||
+        typeof entry.max !== "number") continue;
+    const rate = name === part.unit
+      ? 1 : api().factor(name, part.unit, site);
+    if (rate === null) continue;
+    const min = round(entry.min * rate, 4);
+    const max = round(entry.max * rate, 4);
+    if (max > min) return { min: min, max: max };
+  }
+  return complain("bounds no unit of its kind that converts to " +
+    part.unit);
+}
+
+/*
+ * The spec's own bands, empty, in the partition's unit.
+ *
+ * Anchored at the range's minimum rather than at a multiple of the width,
+ * because the minimum is what the spec actually wrote and a grid that
+ * started somewhere else would be this file inventing an edge again. The
+ * last band is CLIPPED to the maximum rather than overshooting it, so
+ * the two outer edges of the drawn axis are exactly the two numbers in
+ * the spec.
+ */
+function gridOf(range, width) {
+  if (!(width > 0)) {
+    throw new Error("A charted measure needs a bin width in the spec, " +
+      "and this one has none - there is no grid without it.");
+  }
+  if ((range.max - range.min) / width > MAX_BANDS) {
+    throw new Error("The spec asks for more than " + MAX_BANDS +
+      " bands between " + range.min + " and " + range.max +
+      ": widen `bin`, or narrow the range.");
+  }
   const bins = [];
-  for (let from = start; from < end; from += binWidth) {
-    bins.push({ from: round(from, 4), to: round(from + binWidth, 4),
+  for (let from = range.min; from < range.max - 1e-9;
+    from = round(from + width, 4)) {
+    bins.push({ from: from, to: round(Math.min(from + width, range.max), 4),
       count: 0 });
-  }
-  if (!bins.length) return [];
-  for (const value of values) {
-    let index = Math.floor((value - start) / binWidth);
-    if (index >= bins.length) index = bins.length - 1;   // the top edge
-    if (index < 0) index = 0;
-    bins[index].count += 1;
   }
   return bins;
 }
 
 /*
- * Histogram bins MERGED rather than bucketed.
+ * People into bands. A value the spec's own range does not cover lands
+ * in the outer band it is nearest rather than falling out of the count.
  *
- * A histogram is ordered and contiguous, so folding its small bins into
- * an "Other" would destroy the shape that makes it worth drawing.
- * Adjacent bins are combined instead until each clears the floor, which
+ * The form refuses such a value, so a record carrying one was written by
+ * something other than the form - but it is still somebody's row, and
+ * dropping it would leave the drawn counts summing to fewer than the
+ * people. The grid cannot grow to meet it either: an edge that moved for
+ * one member's number would be that member's number.
+ */
+function fill(bins, values, range, width) {
+  for (const value of values) {
+    let index = Math.floor((value - range.min) / width);
+    if (index >= bins.length) index = bins.length - 1;
+    if (index < 0) index = 0;
+    bins[index].count += 1;
+  }
+}
+
+/*
+ * Bands MERGED rather than bucketed, at a raised floor.
+ *
+ * AT A FLOOR OF 0 THIS IS THE IDENTITY, and deliberately so rather than
+ * being skipped: every band clears a floor of zero on its own, so each
+ * one is emitted alone and the drawn grid is the spec's grid, empty
+ * bands included. One path, exercised at every floor, is why the shipped
+ * world and the raised one cannot drift apart.
+ *
+ * A distribution is ordered and contiguous, so folding its small bands
+ * into an "Other" would destroy the shape that makes it worth drawing.
+ * Adjacent bands are combined instead until each clears the floor, which
  * keeps the total, keeps the order, and simply makes the tails wider -
  * and the tails are exactly where a lone heaviest or lightest person
- * sits. Widening is not the whole defense there: the two edges at the
- * very ends of the drawn range are reported as open rather than as
- * numbers, because however wide the tail bin is, its outer boundary
- * still derives from that one person. See openEdge() below.
+ * sits. The outer edges need no further treatment since #371: they are
+ * the spec's own two numbers, so a widened tail still ends where the
+ * configuration ends and reports nobody.
  *
- * A trailing remainder merges BACKWARDS into the last emitted bin rather
- * than being dropped. Dropped, the drawn counts would no longer sum to
- * the people, and the difference is the tail - which is the subtraction
- * this whole file exists to refuse.
+ * A trailing remainder merges BACKWARDS into the last emitted band
+ * rather than being dropped. Dropped, the drawn counts would no longer
+ * sum to the people, and the difference is the tail - which is the
+ * subtraction this whole file exists to refuse.
  */
-function suppressBins(bins) {
+function suppressBins(bins, floor) {
   if (!bins.length) return [];
   const out = [];
   let open = null;
@@ -519,7 +686,7 @@ function suppressBins(bins) {
     open = open === null
       ? { from: bin.from, to: bin.to, count: bin.count }
       : { from: open.from, to: bin.to, count: open.count + bin.count };
-    if (open.count >= FLOOR) {
+    if (open.count >= floor) {
       out.push(open);
       open = null;
     }
@@ -602,15 +769,19 @@ function suppressBins(bins) {
  * tests/charts-aggregate.test.mjs to flip, and it is not a call a
  * builder makes quietly.
  */
-function suppressCounts(cells, keysByAccount) {
+function suppressCounts(cells, keysByAccount, floor) {
   if (!cells.length) return [];
 
   const kept = [];
   const pooled = new Set();
   for (const cell of cells) {
-    if (cell.count === 0 || cell.count >= FLOOR) kept.push(cell);
+    if (cell.count === 0 || cell.count >= floor) kept.push(cell);
     else pooled.add(cell.value);
   }
+  /* At a floor of 0 nothing is ever pooled, so this is where the whole
+     fold turns itself off: the cells go out exactly as they were counted
+     - every value of the spec, exact, zeros included - which is the
+     group makeup the #243 ruling asks for. */
   if (!pooled.size) return cells;
 
   /* The members no named cell would describe: every value they hold is
@@ -632,7 +803,7 @@ function suppressCounts(cells, keysByAccount) {
      above it was sub-floor when it went in - so the flag belongs to the
      loop rather than to a re-examination of the pool afterwards. */
   let absorbed = false;
-  while (behind.size < FLOOR) {
+  while (behind.size < floor) {
     let index = -1;
     for (let i = 0; i < kept.length; i += 1) {
       if (kept[i].count === 0) continue;
@@ -646,10 +817,10 @@ function suppressCounts(cells, keysByAccount) {
   }
 
   const named = kept.filter((cell) => cell.count > 0);
-  if (behind.size < FLOOR || !named.length) return [];
+  if (behind.size < floor || !named.length) return [];
 
   return kept.concat([{ value: null,
-    label: absorbed ? OTHER_LABEL : OTHER_ALL_SMALL_LABEL,
+    label: absorbed ? OTHER_LABEL : allSmallLabel(floor),
     count: behind.size, bucket: "other" }]);
 }
 
@@ -685,26 +856,34 @@ function echoFilter(filter) {
 }
 
 /*
- * What too few people looks like, and it is ONE document (mandate 4).
+ * What nothing to draw looks like, and it is ONE document (mandate 4).
  *
- * A group below the floor, a filter value nobody holds, and a measure
- * nobody in the view answered all arrive here and leave with the same
- * bytes: same status, same sentence, no counts, no partition, no bin
- * residue. Telling any two of those apart would answer "does anybody in
- * this group hold that value" - which is the question the floor exists
- * to refuse, asked from outside the data.
+ * A view with nobody in it, a filter value nobody holds, a measure
+ * nobody in the view answered - and, at any raised floor, a group below
+ * it - all arrive here and leave with the same bytes: same status, same
+ * sentence, no counts, no partition, no band residue, no group makeup.
+ * Telling any two of those apart would answer "does anybody in this
+ * group hold that value", which is the question a floor exists to
+ * refuse, asked from outside the data. At the shipped floor of 0 only
+ * the empty cases can reach it, and that is ruling 7's "the only refusal
+ * state left" - but the shape is written for both worlds, because the
+ * setting is a number an admin can move.
+ *
+ * The floor it reports is the floor it applied, which is the one number
+ * in the document. A caller may read it off any drawn view anyway.
  */
-function notEnough(ask) {
+function notEnough(ask, floor) {
   return {
     ok: true,
     measure: echoMeasure(ask.measure),
     filter: echoFilter(ask.filter),
-    floor: FLOOR,
+    floor: floor,
     enough: false,
     note: NOT_ENOUGH,
     units: null,
     trend: null,
     distribution: null,
+    groups: null,
   };
 }
 
@@ -746,60 +925,66 @@ function unitsFor(measure, site) {
 }
 
 /*
- * The edge that says nothing, for the two ends of the drawn range.
+ * The distribution: the spec's own bands, filled, then reduced by
+ * whatever floor was given.
  *
- * Every drawn bin clears the floor, but the range's OUTER edges derive
- * from exactly one person at each end: a top edge of 460 lb over a group
- * whose next heaviest is 200 reports one member's band, and rounding it
- * to the grid only decides how wide that band is (#351, fix wave 1,
- * finding F2, ruled by Prime). "A weight and a height and a country is a
- * person to anyone who knows her" is the test, and an outer edge fails
- * it while meeting every counting criterion.
+ * THE GRID IS BUILT BEFORE THE VALUES ARE READ, which is the order that
+ * makes the edges independent of the group rather than merely intended
+ * to be. It also means a spec that charts a field it gave no range
+ * throws whether or not anybody answered that field, so a fork learns
+ * about it from the first request rather than from the first member.
  *
- * The INNER edges stay. Each is a boundary between two bins that each
- * cleared the floor, so it says only that at least the floor's number of
- * people sit on either side of it.
- *
- * SAME SHAPE, NULL CONTENTS, in every system - so a page reads
- * `to[system] === null` and prints "and up" rather than switching on a
- * missing field, and so nothing downstream has to learn a second edge
- * type. 0.9-M2-S3 renders these as "under X" and "X and up".
- *
- * A single drawn bin therefore has two open ends and no numbers at all:
- * it says how many people answered and nothing about where they sit,
- * which is the honest reading of a range whose every edge is an outer
- * one.
+ * A view where nobody has a value for this measure draws NOTHING rather
+ * than a grid of zeros: an empty band inside a drawn chart says "nobody
+ * here weighs that", and a whole chart of them would say "nobody
+ * answered" in a shape that looks like an answer.
  */
-function openEdge(site) {
-  const out = {};
-  for (const system of site.units.systems) out[system] = null;
-  return out;
-}
+function binsOf(people, measure, site, part, floor) {
+  const range = rangeOf(measure, part, site);
+  const bins = gridOf(range, part.bin);
 
-function binsOf(people, measure, site, part) {
   const values = [];
   for (const person of people) {
     const value = valueFor(measure, person.record, site, part);
     if (value !== null) values.push(value);
   }
-  const merged = suppressBins(histogram(values, part.bin));
+  if (!values.length) return null;
+  fill(bins, values, range, part.bin);
+
+  const merged = suppressBins(bins, floor);
   if (!merged.length) return null;
 
-  const last = merged.length - 1;
   return {
     kind: "bins",
     partition: { system: part.system, unit: part.unit, band: part.band },
-    bins: merged.map((bin, index) => ({
+    bins: merged.map((bin) => ({
       count: bin.count,
-      from: index === 0
-        ? openEdge(site) : spread(bin.from, measure, site, part),
-      to: index === last
-        ? openEdge(site) : spread(bin.to, measure, site, part),
+      from: spread(bin.from, measure, site, part),
+      to: spread(bin.to, measure, site, part),
     })),
   };
 }
 
-function cellsOf(people, measure) {
+/*
+ * One category's count lines: how many UNIQUE MEMBERS hold each value
+ * the spec lists, by their most recent current entry.
+ *
+ * `people` is one row per account already, and it is the row that is
+ * current for them - so a member with three entries is counted once and
+ * the category their newest entry names is the one they are counted in.
+ *
+ * ZEROS ARE LINES (owner ruling 1, #243). "Nobody here is an admirer"
+ * describes nobody, and printing it is what stops a reader inferring the
+ * missing values themselves. A field whose choices live outside the spec
+ * - the country list is the one - can have no zeros listed, because the
+ * list is not here to enumerate; what the group holds is what it
+ * carries, which is the same disclosure a drawn cell always was.
+ *
+ * THE BLANK IS ALWAYS A LINE TOO, even at zero. A chart without it
+ * claims a completeness the data does not have: "60% male" reads very
+ * differently from "60% of the third who answered".
+ */
+function cellsOf(people, measure, floor) {
   const counts = new Map();
   const labels = new Map();
   for (const choice of measure.choices || []) {
@@ -838,33 +1023,73 @@ function cellsOf(people, measure) {
   })).sort((a, b) => b.count - a.count ||
     String(a.value).localeCompare(String(b.value)));
 
-  if (blank > 0) {
-    cells.push({ value: null, label: NOT_STATED_LABEL, count: blank,
-      bucket: "blank" });
-  }
+  cells.push({ value: null, label: NOT_STATED_LABEL, count: blank,
+    bucket: "blank" });
 
-  const drawn = suppressCounts(cells, keysByAccount);
-  return drawn.length ? { kind: "cells", cells: drawn } : null;
+  return suppressCounts(cells, keysByAccount, floor);
 }
 
 /*
- * The trend: one point per period, and the floor applies to a point
- * exactly as it does to a cell.
+ * The group makeup: one block per categorical field, over the people
+ * this view is about.
  *
- * A trend of one line is a chart of one person - DESIGN.md, "Charts",
- * puts it as "so the floor applies to lines as it does to cells". A
- * point is an average over the
- * people who submitted in that period, so a period fewer than the floor
- * submitted in IS that chart of one person, and it is DROPPED rather
- * than zeroed - a zero would be a drawn cell asserting something about
- * those people, and a gap in the key sequence would tell a reader
- * exactly which periods were withheld.
+ * IT DESCRIBES THE FILTERED VIEW, not the whole binder, because it is
+ * part of one answer about one group - "who is in this view" beside
+ * "what this view weighs". A block computed over everybody would be a
+ * second population inside a document about the first, and a reader
+ * could difference the two.
+ *
+ * `multiple` rides along because it changes how the numbers read: on a
+ * field a member may answer more than once the lines sum to holdings
+ * rather than to people, and a page that printed a total without knowing
+ * which would print a wrong one. Every individual line is still a count
+ * of people either way - heldValues() deduplicates, so a member reaches
+ * any one line at most once.
+ *
+ * An empty list is a real answer at a raised floor: it means nothing
+ * about that category could be said. At the shipped floor of 0 it cannot
+ * happen, since nothing is ever pooled.
+ */
+function makeupOf(people, site, floor) {
+  const out = [];
+  for (const one of api().measures(site)) {
+    if (one.kind !== "categorical") continue;
+    out.push({
+      field: one.name,
+      label: one.label,
+      term: one.term,
+      multiple: one.multiple === true,
+      values: cellsOf(people, one, floor),
+    });
+  }
+  return out;
+}
+
+/*
+ * The trend: one point per period, and whatever floor was given applies
+ * to a point exactly as it does to a cell.
+ *
+ * AT THE SHIPPED FLOOR OF 0 EVERY MONTH WITH AN ENTRY DRAWS ITS TRUE
+ * MEAN (owner ruling 6, #243), one-person months included. A month
+ * nobody submitted in carries no point, because there is nothing to
+ * average - that is an absence of data rather than a suppression, and
+ * the ruling's unbroken line is drawn by bridging it on the page. The
+ * route must not fake it: a bridged value invented here would be
+ * indistinguishable from a real one in the response as well as on the
+ * screen.
+ *
+ * AT A RAISED FLOOR a period fewer than the floor submitted in is the
+ * chart of one person DESIGN.md, "Charts", refuses, and it is DROPPED
+ * rather than zeroed - a zero would be a drawn point asserting something
+ * about those people, and a gap in the key sequence would tell a reader
+ * exactly which periods were withheld. Both cases are the one comparison
+ * below, which is why they cannot come apart.
  *
  * One row per person per period, newest wins. Somebody who corrects
  * twice in a month is one person in that month's average, for the same
  * reason they are one person in a cell.
  */
-function trendOf(rows, accounts, measure, site, part) {
+function trendOf(rows, accounts, measure, site, part, floor) {
   const periods = new Map();
   for (const row of rows) {
     if (!accounts.has(row.accountId)) continue;
@@ -889,7 +1114,7 @@ function trendOf(rows, accounts, measure, site, part) {
       const value = valueFor(measure, row.record, site, part);
       if (value !== null) values.push(value);
     }
-    if (values.length < FLOOR) continue;
+    if (!values.length || values.length < floor) continue;
     let total = 0;
     for (const value of values) total += value;
     points.push({
@@ -905,21 +1130,31 @@ function trendOf(rows, accounts, measure, site, part) {
 }
 
 /*
- * The group's answer, floored.
+ * The group's answer, reduced by the floor it was given.
  *
- * THREE ARGUMENTS AND NO FOURTH. There is no floor parameter and there
- * is deliberately no room for one: the signature is the mandate in a
- * form a reader cannot miss, and every helper above reads FLOOR directly
- * rather than taking it, so no caller anywhere in this file can pass a
- * different one.
+ * FOUR ARGUMENTS, AND THE FOURTH IS THE WHOLE SEAM. `settings` is the
+ * server's own settings object and floorOf() is the only thing that
+ * reads it; every helper above takes the floor as an argument rather
+ * than reaching for a module value, so one answer applies one floor from
+ * end to end and a later caller cannot half-raise it. The mandate that
+ * no caller may lower the floor is unchanged and is enforced where it
+ * belongs rather than by the shape of this line: askFor()'s parameter
+ * set is closed, so nothing anybody sends reaches this argument.
+ *
+ * ZERO PEOPLE IS ALWAYS NOTHING TO DRAW, whatever the floor, and it is
+ * the one refusal left at the shipped default (ruling 7). It is written
+ * as its own comparison rather than folded into the floor test, because
+ * at a floor of 0 the floor test alone would let an empty view through
+ * and answer a chart of nobody.
  *
  * `rows` are ALREADY-OPENED, already-current rows - the tombstones are
  * excluded by the statement that read them, because whether a row is
  * superseded is answerable in the clear and opening a corrected row to
  * throw it away is work for nothing.
  */
-function aggregate(rows, ask, spec) {
+function aggregate(rows, ask, spec, settings) {
   const site = siteSpec(spec);
+  const floor = floorOf(settings);
   const part = partitionOf(ask.measure, site);
 
   const people = [];
@@ -929,27 +1164,22 @@ function aggregate(rows, ask, spec) {
     people.push(row);
     accounts.add(row.accountId);
   }
-  if (accounts.size < FLOOR) return notEnough(ask);
+  if (!accounts.size || accounts.size < floor) return notEnough(ask, floor);
 
-  const distribution = ask.measure.kind === "categorical"
-    ? cellsOf(people, ask.measure)
-    : binsOf(people, ask.measure, site, part);
-  if (distribution === null) return notEnough(ask);
+  const distribution = binsOf(people, ask.measure, site, part, floor);
+  if (distribution === null) return notEnough(ask, floor);
 
   return {
     ok: true,
     measure: echoMeasure(ask.measure),
     filter: echoFilter(ask.filter),
-    floor: FLOOR,
+    floor: floor,
     enough: true,
     note: null,
     units: unitsFor(ask.measure, site),
-    /* A category has no average over time, so there is no line to draw
-       and the honest answer is that there is none - not an empty one,
-       which a page would render as a chart with nothing in it. */
-    trend: ask.measure.kind === "categorical"
-      ? null : trendOf(rows, accounts, ask.measure, site, part),
+    trend: trendOf(rows, accounts, ask.measure, site, part, floor),
     distribution: distribution,
+    groups: makeupOf(people, site, floor),
   };
 }
 
@@ -985,10 +1215,6 @@ function selfSeries(rows, accountId, ask, spec) {
   if (typeof accountId !== "string" || !ACCOUNT_ID.test(accountId)) {
     throw new Error("the overlay's identity is not an account-id HMAC");
   }
-  /* A category is not a line. An empty series rather than null, so the
-     page can tell "asked for and there is nothing" from "not asked". */
-  if (ask.measure.kind === "categorical") return { points: [] };
-
   const site = siteSpec(spec);
   const part = partitionOf(ask.measure, site);
   const mine = rows.filter((row) => row.accountId === accountId)
@@ -1005,4 +1231,4 @@ function selfSeries(rows, accountId, ask, spec) {
   return { points: points };
 }
 
-export { FLOOR, askFor, aggregate, selfSeries };
+export { DEFAULT_FLOOR, askFor, aggregate, selfSeries };

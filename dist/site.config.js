@@ -39,6 +39,10 @@ globalThis.BINDER_SITE = {
    
    
    
+   
+   
+   
+   
 
   units: {
      
@@ -138,7 +142,16 @@ globalThis.BINDER_SITE = {
        
       unitless: true,
       places: 1,
+       
+       
+       
+       
+       
+       
+       
       bin: 5,
+      min: 10,
+      max: 100,
       chart: true,
     },
     {

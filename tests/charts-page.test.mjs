@@ -397,15 +397,25 @@ function response(status, body) {
 }
 
 /*
- * A fixture shaped exactly like server/charts-agg.js's real answer -
- * every field this suite reads is one that file's aggregate() actually
- * emits, not an invented shape (checked against its own exports below).
+ * A fixture shaped like server/charts-agg.js's answer - every field this
+ * suite reads is one that file's aggregate() actually emits, not an
+ * invented shape (checked against its own source in section 4 below).
+ *
+ * ONE PART OF THESE FIXTURES IS DELIBERATELY BEHIND THE ROUTE, and this
+ * is the note that says so rather than letting a reader assume
+ * otherwise. 0.9-M2-S10 (#371) retired the open outer edge: band edges
+ * now come from the field spec, so no `from`/`to` a real answer carries
+ * is ever null, and the route also carries a group-makeup block this
+ * page does not render. apps/web/charts.js still renders the older
+ * shape, and these fixtures are what IT is driven with - the page is
+ * 0.9-M2-S11's to rebuild against the landed contract, which is the
+ * condition that retires this note along with the null edges below.
  */
 const NOT_ENOUGH_FIXTURE = {
   ok: true, measure: { name: "weight", label: "Weight", term: "weight",
     kind: "bins" }, filter: { field: null, value: null }, floor: 5,
   enough: false, note: "Not enough people for this view.", units: null,
-  trend: null, distribution: null, self: null,
+  trend: null, distribution: null, groups: null, self: null,
 };
 
 {
@@ -611,9 +621,16 @@ check("server/charts-agg.js's notEnough() emits exactly the fields " +
 check("aggregate()'s success shape carries the fields the enough " +
   "fixture assumes",
   /enough: true,/.test(aggSrc) && /note: null,/.test(aggSrc));
-check("openEdge() is what produces the null from/to this suite reads " +
-  "as the open-edge case",
-  /function openEdge\(/.test(aggSrc));
+/* The one place these fixtures are AHEAD of nothing and BEHIND the
+   route: the null edges above are the retired shape, and this asserts
+   the retirement rather than the shape - so the note on the fixture
+   cannot quietly stop being true while apps/web/charts.js still renders
+   nulls (0.9-M2-S10, #371; 0.9-M2-S11 rebuilds the page against the
+   fixed bands and deletes both). */
+check("the open edge is gone from the route: no openEdge(), and the " +
+  "bands come from the spec's own range instead",
+  !/function openEdge\(/.test(aggSrc) && /function rangeOf\(/.test(aggSrc) &&
+  /function gridOf\(/.test(aggSrc));
 
 /* ------------------------------------------------------------------ */
 

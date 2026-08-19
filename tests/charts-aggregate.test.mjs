@@ -642,10 +642,16 @@ check("group makeup: exact counts, small ones included - three people " +
     .filter((c) => c.value === "nonbinary")[0].count === 3);
 check("group makeup: every value the spec lists is a line, including " +
   "the ones nobody holds",
-  groupBlock(makeup, "gender").map((c) => c.value).join() ===
-    "male,female,nonbinary,other," + null &&
+  JSON.stringify(groupBlock(makeup, "gender").map((c) => c.value).sort()) ===
+    JSON.stringify(["female", "male", "nonbinary", "other", null].sort()) &&
   groupBlock(makeup, "gender").filter((c) => c.value === "other")[0]
     .count === 0);
+check("group makeup: the named lines are ordered by how many people " +
+  "hold them, the way the ruling's own example reads them out, and the " +
+  "blank comes last",
+  groupBlock(makeup, "gender").filter((c) => c.bucket !== "blank")
+    .map((c) => c.count).every((n, i, all) => i === 0 || all[i - 1] >= n) &&
+  groupBlock(makeup, "gender").slice(-1)[0].bucket === "blank");
 check("group makeup: the blank is its own line and is always present - " +
   "a chart without it claims a completeness the data does not have",
   groupBlock(makeup, "gender").filter((c) => c.bucket === "blank")
@@ -1449,7 +1455,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && history.body.trend.points.length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 96;
+const EXPECTED = 141;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
