@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 578
+EXPECTED = 579
 
 
 def check(label, condition):
@@ -780,10 +780,32 @@ check("the real pin is back after the stale-pin arm",
 # the whole gate green.
 FOOTER_OK = "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP)
 
-check("a footer holding the swatch row and nothing else raises nothing",
+# The label used to read "the swatch row and nothing else" - false even
+# before F2, since FOOTER_OK also carries EDITOR_MARKUP, the one other
+# element the footer is required to hold (design mandate 1). "and
+# nothing else" was never true of this fixture; it was true of the
+# ROW's own neighborhood, which is what the check actually proves.
+check("a footer holding the swatch row and its editor, nothing else, "
+      "raises nothing",
       check_web.footer_problems(FOOTER_OK, True) == [])
 check("a page that offers no palette and has no footer raises nothing",
       check_web.footer_problems("<main>Sorry.</main>", False) == [])
+
+# F2 (0.9-M2-S6 fix wave 1, #82): footer_problems() used to build `rest`
+# as `inside[:span[0]] + inside[span[1]:]` - the text before the row
+# concatenated with the text after it, which throws the row's own
+# position away. An editor placed ABOVE the row landed at the FRONT of
+# that concatenation, so `between = rest[:editor_span[0]]` read empty
+# and the "sits directly below the row" check passed on a footer where
+# the editor sits above it instead. Searching inside[span[1]:] alone -
+# only what comes after the row - is what a "directly below" claim
+# actually has to prove.
+check("an editor ABOVE the row is refused as missing, not read as "
+      "satisfying the position check",
+      any("no <details class=\"more\"> custom-palette editor" in p
+          for p in check_web.footer_problems(
+              "<footer>%s%s</footer>" % (EDITOR_MARKUP, SWATCH_MARKUP),
+              True)))
 
 # The link, both spellings, because the ruling is about navigation and
 # not about where it points. The extra content sits AFTER the editor,

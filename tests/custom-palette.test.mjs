@@ -33,11 +33,24 @@
  * one - both directions, from real theme.css palettes and a synthetic
  * bad one.
  *
- * NOT COVERED HERE: theme.js's DOM wiring (the click, the two
- * <input type="color"> elements, the warning paragraph's hidden
- * attribute). That is plumbing around this arm's two functions, not a
- * second thing to prove correct, and it is exercised in a real browser
- * instead - the completion record labels that verification by hand.
+ * SECTION 4 NOW COVERS theme.js's click handler - the VALIDATE ON READ
+ * gate a reviewer's real-browser repro found missing there (0.9-M2-S6
+ * fix wave 1, F1, #82). This sentence used to exclude "theme.js's DOM
+ * wiring" wholesale and call it "exercised in a real browser instead" -
+ * that exclusion is what let the click site ship the same trust-the-
+ * raw-string bug Section 3 already held theme-init.js's pre-paint block
+ * to, unnoticed until a human clicked it by hand. Section 4 loads the
+ * real shipped apps/web/theme.js under a small stub document, the same
+ * pattern tests/door.test.mjs uses for apps/web/auth.js, and simulates
+ * the click.
+ *
+ * STILL NOT COVERED: the two <input type="color"> elements' own
+ * "input" listener (pickCustom()) and the contrast-warning paragraph's
+ * hidden attribute. Those are plumbing around derive()/contrastProblems(),
+ * which Sections 1-2 already prove correct as functions - what would be
+ * new here is DOM wiring with no decision in it, and it stays exercised
+ * in a real browser; the completion record labels that verification by
+ * hand.
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -375,8 +388,146 @@ async function runPrePaint(store) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Section 4: theme.js's click handler - the second VALIDATE ON READ    */
+/* call site (0.9-M2-S6 fix wave 1, F1, #82). A minimal stub document -  */
+/* five buttons, one dot, one meta tag, no color inputs - is enough:    */
+/* theme.js skips its <input type="color"> wiring entirely when         */
+/* getElementById finds nothing, which is the truth for every id here.  */
 
-const EXPECTED = 52;
+function themeDomStub(store) {
+  const localStorageStore = Object.assign({}, store);
+  const styleProps = {};
+  const documentElement = {
+    _attrs: {},
+    setAttribute(name, value) { this._attrs[name] = value; },
+    style: {
+      setProperty(name, value) { styleProps[name] = value; },
+      removeProperty(name) { delete styleProps[name]; },
+    },
+  };
+  const buttons = {};
+  ["midnight", "pink", "daylight", "contrast", "custom"].forEach((name) => {
+    const listeners = [];
+    buttons[name] = {
+      _pressed: null,
+      getAttribute(attr) { return attr === "data-set-theme" ? name : null; },
+      setAttribute(attr, value) { if (attr === "aria-pressed") this._pressed = value; },
+      addEventListener(type, fn) { if (type === "click") listeners.push(fn); },
+      click() { listeners.forEach((fn) => fn()); },
+    };
+  });
+  const dot = { style: {} };
+  const meta = { _content: null, setAttribute(n, v) { if (n === "content") this._content = v; } };
+  return {
+    localStorage: {
+      getItem: (key) => (key in localStorageStore ? localStorageStore[key] : null),
+      setItem: (key, value) => { localStorageStore[key] = String(value); },
+    },
+    document: {
+      documentElement: documentElement,
+      querySelectorAll(selector) {
+        if (selector === "[data-set-theme]") return Object.values(buttons);
+        if (selector === 'meta[name="theme-color"]') return [meta];
+        return [];
+      },
+      querySelector(selector) {
+        return selector === '.swatch-dot[data-palette="custom"]' ? dot : null;
+      },
+      // Every id this file asks for (custom-bg, custom-accent,
+      // custom-contrast-warning) is absent - the color-input wiring
+      // this stub does not carry, per this file's header.
+      getElementById() { return null; },
+    },
+    buttons: buttons,
+    documentElement: documentElement,
+    meta: meta,
+    store: localStorageStore,
+  };
+}
+
+const themeJsSource = await read("../apps/web/theme.js");
+
+async function runThemeClick(store, clickedName) {
+  const box = themeDomStub(store);
+  globalThis.window = globalThis;
+  globalThis.document = box.document;
+  globalThis.localStorage = box.localStorage;
+  // Never exercised: paintCustomDot() falls to getComputedStyle() only
+  // when no custom pair is on record, which every fixture below is
+  // free to hit. A real value is not needed - nothing here reads the
+  // dot's own painted color - so the stub returns empty strings.
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  tag += 1;
+  await import("data:text/javascript," +
+    encodeURIComponent(themeJsSource + "\n//theme-click-" + tag));
+  box.buttons[clickedName].click();
+  delete globalThis.window;
+  delete globalThis.document;
+  delete globalThis.localStorage;
+  delete globalThis.getComputedStyle;
+  return box;
+}
+
+// The reviewer's exact repro (F1, #82 review): Daylight saved, no
+// hgb-custom-colors record at all, one click on the Custom chip.
+{
+  const box = await runThemeClick({ "hgb-palette": "daylight" }, "custom");
+  check("F1: clicking Custom with no valid stored pair leaves data-theme "
+    + "on the named palette that was already active",
+    box.documentElement._attrs["data-theme"] === "daylight");
+  check("F1: the Custom chip does not read pressed",
+    box.buttons.custom._pressed === "false");
+  check("F1: the Daylight chip is still the one reading pressed",
+    box.buttons.daylight._pressed === "true");
+  check("F1: the meta theme-color still agrees with Daylight's own "
+    + "background, not a stale or missing value",
+    box.meta._content === "#f3eadb");
+  check("F1: hgb-palette in storage still reads \"daylight\" - the "
+    + "click did not overwrite it with \"custom\"",
+    box.store["hgb-palette"] === "daylight");
+  check("F1: no hgb-custom-colors record was written",
+    !("hgb-custom-colors" in box.store));
+}
+
+// Same shape, no named palette on record at all (a first-time visitor
+// who clicks Custom first) - the chip still declines to press and
+// nothing is persisted.
+{
+  const box = await runThemeClick({}, "custom");
+  check("F1, no prior choice: clicking Custom with no valid stored pair "
+    + "and no named palette on record writes nothing to hgb-palette",
+    !("hgb-palette" in box.store));
+  check("F1, no prior choice: the Custom chip does not read pressed",
+    box.buttons.custom._pressed === "false");
+}
+
+// Regression: a NAMED palette click is untouched by this fix.
+{
+  const box = await runThemeClick({ "hgb-palette": "daylight" }, "midnight");
+  check("F1 regression: clicking a named palette still applies and "
+    + "persists it",
+    box.documentElement._attrs["data-theme"] === "midnight" &&
+    box.store["hgb-palette"] === "midnight" &&
+    box.buttons.midnight._pressed === "true");
+}
+
+// The other direction: a VALID stored custom pair still activates
+// Custom on click - the fix narrows to "no valid pair", not "never".
+{
+  const box = await runThemeClick({
+    "hgb-palette": "daylight",
+    "hgb-custom-colors": JSON.stringify({ bg: "#120d10", accent: "#c73743" }),
+  }, "custom");
+  check("F1 other direction: clicking Custom WITH a valid stored pair "
+    + "still applies and persists it",
+    box.documentElement._attrs["data-theme"] === "custom" &&
+    box.store["hgb-palette"] === "custom" &&
+    box.buttons.custom._pressed === "true");
+}
+
+/* ------------------------------------------------------------------ */
+
+const EXPECTED = 62;
 console.log(failures
   ? "\ncustom-palette FAILED " + failures + " of " + performed + " check(s)"
   : performed !== EXPECTED
