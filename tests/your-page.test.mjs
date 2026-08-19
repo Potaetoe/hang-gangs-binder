@@ -1681,7 +1681,7 @@ check("F5: weight stays blank for the next measurement, even right after " +
   resubmitPage.byId("entry-weight-metric").value === "");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 106;
+const EXPECTED = 108;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -18,13 +18,16 @@
  * to go dead alongside it.
  *
  * THE CLEARING FUNCTION. clearMemberData() below is the one place that
- * empties the in-memory rows, the trend, the download's object URL, any
- * in-flight fetch AND every prefilled form field (#370) - called from
- * idle expiry AND from a listener on the rail's Sign out button, so a
- * member's own history cannot outlive either exit from this tab
- * (security mandate, 0.9-M2-S2). It does not touch the session or the
- * device key; BinderSignOut owns both of those and this file calls it
- * rather than duplicating it.
+ * empties the in-memory rows, the trend, any in-flight fetch AND every
+ * prefilled form field (#370) - called from idle expiry AND from a
+ * listener on the rail's Sign out button, so a member's own history
+ * cannot outlive either exit from this tab (security mandate,
+ * 0.9-M2-S2). It does not touch the session or the device key;
+ * BinderSignOut owns both of those and this file calls it rather than
+ * duplicating it. The download's object URL is not in this list
+ * (0.9-M2-S12, #373): wireDownload() below creates and revokes it
+ * synchronously inside its own click handler, so no URL outlives that
+ * handler and nothing here needs to know about it.
  */
 (function (root) {
   "use strict";
@@ -67,7 +70,6 @@
   /* clears every bit of it - shared by idle expiry and Sign out.        */
 
   let entries = [];
-  let downloadUrl = null;
   let inflight = null;
   // Prefill (#370) runs once per sign-in AND once more after every
   // successful submit (F5, review fix wave 1, Prime's ruling on #370):
@@ -91,10 +93,6 @@
     }
     entries = [];
     prefillApplied = false;
-    if (downloadUrl) {
-      URL.revokeObjectURL(downloadUrl);
-      downloadUrl = null;
-    }
     emptyOut($("entries-slot"));
     emptyOut($("trend-slot"));
     const toggle = $("corrections-toggle");
@@ -720,7 +718,11 @@
       const rows = entries.map(downloadRow);
       const bytes = root.BinderXlsx.build(DOWNLOAD_COLUMNS, rows, "Entries",
         Date.now());
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      // Create, use, revoke - all inside this one handler. This IS the
+      // security mandate 0.9-M2-S2 rules for the object URL, met by
+      // construction: no URL outlives the click that made it, so there
+      // is nothing for a module-level variable to hold or for
+      // clearMemberData() to clear (0.9-M2-S12, #373).
       const url = URL.createObjectURL(new Blob([bytes], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }));
