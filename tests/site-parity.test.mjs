@@ -64,18 +64,14 @@ const load = async (path) => {
 await load("../apps/web/site.config.js");
 await load("../apps/web/fields.js");
 // The shipped modules, loaded as the bytes they ship as. dashboard.js
-// before query.js: the query engine reads the floor and the unit table
-// off BinderDashboard rather than carrying second copies, and says so
-// in its own header.
+// and query.js are gone (0.9-M2-S3, #354, with the snapshot route
+// they read) - form.js is the one shipped module left this file has
+// anything to measure.
 await load("../apps/web/form.js");
-await load("../apps/web/dashboard.js");
-await load("../apps/web/query.js");
 
 const SITE = globalThis.BINDER_SITE;
 const F = globalThis.BinderFields;
 const FORM = globalThis.BinderForm;
-const DASH = globalThis.BinderDashboard;
-const QUERY = globalThis.BinderQuery;
 
 const WEB = HERE("../apps/web");
 const pages = {};
@@ -235,33 +231,19 @@ check("validate() enforces whichever spec it is given, not a bound baked " +
     return underShipped && okReshaped;
   })());
 
-/* ------------------------------------------------------------------ */
-/* 3. The charts' half.                                                */
-
-check("the dashboard's unit table is the spec's unit table",
-  ["metric", "imperial"].every((system) =>
-    ["weight", "height"].every((name) => {
-      const there = DASH.UNITS[system][name];
-      const here = F.measure(name).units[system];
-      return there.field === here.store && there.suffix === here.unit &&
-        there.bin === here.bin && there.band === here.band;
-    })));
-
-check("the dashboard starts in the unit system the spec starts in",
-  DASH.DEFAULT_UNITS === F.defaultSystem());
-
-// Compared as a set. The key order in query.js is neither the spec's
-// nor the picker's - your-page.html offers weight, height, BMI,
-// gender, country, affiliations - so pinning an order here would pin
-// one nothing else keeps.
-check("the query engine's splits are the spec's measures",
-  same([...Object.keys(QUERY.SPLITS)].sort(), [...F.splitNames()].sort()));
-
-check("every split carries the spec's shape and its sentence form",
-  Object.entries(QUERY.SPLITS).every(([name, split]) =>
-    split.kind === F.measure(name).kind &&
-    split.unitful === F.measure(name).unitful &&
-    split.label === F.measure(name).term));
+/*
+ * RETIRED (0.9-M2-S3, #354): "3. The charts' half" stood here, four
+ * checks measuring apps/web/dashboard.js's unit table and apps/web/
+ * query.js's splits against apps/site.config.js - "the dashboard's
+ * unit table is the spec's unit table", "the dashboard starts in the
+ * unit system the spec starts in", "the query engine's splits are the
+ * spec's measures", "every split carries the spec's shape and its
+ * sentence form". Both files are gone with the snapshot route they
+ * read. apps/web/charts.js reads apps/fields.js directly now - there
+ * is no second copy of the unit table or the measure list left to
+ * measure against the spec, which is the property tests/site-
+ * propagation.test.mjs already covers for the derivation itself.
+ */
 
 /*
  * 4. The page that asks the questions - RETIRED as a markup grep.
