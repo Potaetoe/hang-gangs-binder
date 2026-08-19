@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const read = (path) => readFile(HERE(path), "utf8");
 
-const EXPECTED = 16;
+const EXPECTED = 17;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -87,13 +87,27 @@ check("the slot sits after the sign-in card closes, wrapped in nothing new",
   (betweenAuthAndPrivacy.match(/<div\b/g) || []).length === 0 &&
   (betweenAuthAndPrivacy.match(/<\/div>/g) || []).length === 1);
 
-const privacyTag = /<p class="([^"]*)" id="privacy-line"[^>]*>/
+// The WHOLE opening tag, attribute order unconstrained - not just the
+// class attribute - because a check that only reads class="muted" has
+// nowhere to see a `hidden` or a display-suppressing `style` appended
+// after it. `[^>]*` alone let exactly that slide through once already
+// (review finding F4, #355): every structural check here stayed green
+// with `hidden style="display:none"` added to this tag, because
+// nothing was reading past the id before the closing `>`.
+const privacyTagMatch = /<p\b[^>]*\bid="privacy-line"[^>]*>/
   .exec(indexSource);
+const privacyTagText = privacyTagMatch === null ? "" : privacyTagMatch[0];
+const privacyClass = /\bclass="([^"]*)"/.exec(privacyTagText);
 check("the slot is a <p class=\"muted\">, no card and no border",
-  privacyTag !== null && privacyTag[1] === "muted");
+  privacyClass !== null && privacyClass[1] === "muted");
 check("the slot carries the pending-copy marker rather than a ruled " +
   "sentence",
   indexSource.includes('data-pending-copy="0.9-M4"'));
+check("the slot paints - no hidden attribute, no display-suppressing " +
+  "inline style",
+  privacyTagMatch !== null &&
+  !/\bhidden\b/.test(privacyTagText) &&
+  !/\bstyle\s*=\s*"[^"]*display\s*:\s*none/i.test(privacyTagText));
 
 /* ------------------------------------------------------------------ */
 /* 3. The outsider refusal renders through #auth-status - fixture-     */
