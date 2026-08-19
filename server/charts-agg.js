@@ -5,7 +5,7 @@
  * disclosure rules that governed the published document govern the live
  * one "because they were always about what a reader can reconstruct
  * rather than about publishing". This file is where every one of those
- * rules is decided. server/worker.js's GET /charts handler reads the
+ * rules is decided. server/worker.js's GET /charts-data handler reads the
  * database, opens the ciphertext and serializes what this file returns -
  * it computes no cell of its own, and there is deliberately no second
  * path a later route could reach for.
@@ -101,7 +101,7 @@
  * owner ruled on #153 to accept cumulative disclosure rather than charge
  * every member the mean's real value to close it, and the ruling's
  * premise is a members-only readership, which the session gate on
- * GET /charts preserves. The premise is the thing to re-take if that
+ * GET /charts-data preserves. The premise is the thing to re-take if that
  * readership ever widens.
  */
 import "../apps/web/site.config.js";
