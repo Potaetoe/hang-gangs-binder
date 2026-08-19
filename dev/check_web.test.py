@@ -3435,19 +3435,32 @@ check("nothing shipped is styled by anything but the one stylesheet",
 
 RULED = '<p class="status" id="signed-out">%s</p>'
 
+# index.html carries two ruled lines since the privacy-line pin (owner
+# ruling on #355, 2026-08-19), so both stand in every fixture here - the
+# same reason your-page.html's KEY_CHECK + SEALED pair does below. A
+# fixture that omitted PRIVACY_LINE would make every assertion read off
+# ITS absence instead of off the signed-out sentence under test.
+PRIVACY_LINE = (
+    '<p class="muted" id="privacy-line" data-pending-copy="0.9-M4">'
+    "[Privacy line — the owner writes this sentence at the 0.9-M4 "
+    "register sitting.]</p>")
+
 check("the ruled line is read off the element that renders it",
-      check_web.ruled_line_problems(RULED % "Signed out.", "index.html")
-      == [])
+      check_web.ruled_line_problems(
+          RULED % "Signed out." + PRIVACY_LINE, "index.html") == [])
 check("and the sentence the ruling removed is not the ruled line",
       check_web.ruled_line_problems(
-          RULED % "Signed out. This browser now holds nothing of yours.",
-          "index.html") != [])
+          RULED % "Signed out. This browser now holds nothing of yours."
+          + PRIVACY_LINE, "index.html") != [])
 check("a paragraph broken over lines still reads as one sentence",
       check_web.ruled_line_problems(
-          '<p id="signed-out">\n  Signed out.\n</p>', "index.html") == [])
+          '<p id="signed-out">\n  Signed out.\n</p>' + PRIVACY_LINE,
+          "index.html") == [])
 check("an id nothing renders is a missing ruling, not a passing one",
-      len(check_web.ruled_line_problems("<p>Signed out.</p>",
-                                        "index.html")) == 1)
+      len(check_web.ruled_line_problems(
+          "<p>Signed out.</p>" + PRIVACY_LINE, "index.html")) == 1)
+check("one ruled line missing does not excuse the page's others",
+      len(check_web.ruled_line_problems(PRIVACY_LINE, "index.html")) == 1)
 check("a page with no ruled line of its own has nothing to say",
       check_web.ruled_line_problems("<p>anything at all</p>", "404.html")
       == [])
