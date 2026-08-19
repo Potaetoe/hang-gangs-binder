@@ -27,13 +27,6 @@
  *                            Server-side opening for admins is a later
  *                            slice (0.9-M3); this route is unchanged by
  *                            0.9-M1-S6 and still hands back ciphertext.
- *   POST   /snapshot         replace the published aggregate. Admin.
- *   GET    /snapshot         return it. Members only since 2026-08-05 -
- *                            it still carries no handles and no rows,
- *                            because gating a document is not a reason
- *                            to relax what goes in it.
- *   DELETE /snapshot         take it down. Admin, and no key - see the
- *                            handler for why that matters.
  *   DELETE /submission/:id   remove one row. A member removes their own;
  *                            an admin removes anyone's. See
  *                            handleDeleteSubmission for the whole of the
@@ -58,9 +51,16 @@
  * argued there; the trade that the operator can read plaintext is ruled
  * knowingly in DESIGN.md and is not this file's to change.
  *
- * The snapshot route is the pre-0.9 client-built aggregate, kept until
- * live aggregation replaces it (0.9-M2): the page still computes it and
- * this endpoint holds the result. It carries no handles and no rows.
+ * The snapshot route - the pre-0.9 client-built aggregate this Worker
+ * held until live aggregation replaced it - is GONE (0.9-M2-S3, #354):
+ * POST/GET/DELETE /snapshot, their handlers, the `snapshots` table's
+ * writer and reader, and the CSP/config surface that reached them.
+ * apps/web/charts.html reads GET /charts instead, computed on request by
+ * server/charts-agg.js. The `snapshots` table itself stays in
+ * server/schema.sql - dropping a table is a schema migration and 0.9-M3
+ * owns that decision, the same deferral server/schema.sql already
+ * carries for `sessions.is_dev`. Deleting the one row it can hold is not
+ * a migration and is answered separately, in this slice's completion.
  *
  * Every path above is API-shaped (see isApiPath/API_SEGMENTS below);
  * everything else is a page or an asset, served by env.ASSETS rather
@@ -258,11 +258,6 @@ const MAX_ENTRY_LISTING = 500;
 // point is a precomputed aggregate on a schedule, not a bigger number,
 // and a bigger number would only move the day it happens.
 const MAX_AGGREGATE_ROWS = 10000;
-
-// A snapshot is counts, medians and histogram bins, plus at most a
-// dozen short weight histories. A few KB in practice; this is the
-// ceiling that stops the route being a place to park a file.
-const MAX_SNAPSHOT = 256 * 1024;
 
 // A login payload is a handful of short fields. Anything larger is not
 // one, and this route runs before any credential has been checked.
@@ -2067,108 +2062,6 @@ async function handleCharts(request, env, origin, caller) {
 }
 
 /*
- * One snapshot, replaced in place. There is no history kept, and that
- * is deliberate: a series of snapshots is more published data about the
- * same people, retained for nobody's benefit. The current picture is
- * the entire product.
- *
- * The body is stored as the text that arrived rather than being parsed
- * and re-serialised. This endpoint has no opinion about what a snapshot
- * contains - the page that built it does - and re-encoding here would
- * be a second place the format could change.
- */
-async function handlePublishSnapshot(request, env, origin) {
-  const body = await request.text();
-  if (!body) {
-    return json({ error: "Missing snapshot." }, 400, origin);
-  }
-  if (body.length > MAX_SNAPSHOT) {
-    return json({ error: "Snapshot too large." }, 413, origin);
-  }
-  // Parsed only to refuse something that is not JSON at all. A page
-  // reading this cannot recover from a body that will not parse, and
-  // the failure would surface there rather than here.
-  try {
-    JSON.parse(body);
-  } catch (e) {
-    return json({ error: "Snapshot must be JSON." }, 400, origin);
-  }
-
-  await env.DB.prepare(
-    "INSERT INTO snapshots (id, body, updated_at) VALUES (1, ?, ?) " +
-    "ON CONFLICT(id) DO UPDATE SET body = excluded.body, " +
-    "updated_at = excluded.updated_at"
-  )
-    .bind(body, new Date().toISOString())
-    .run();
-
-  return json({ ok: true }, 200, origin);
-}
-
-/*
- * Reading it back. A member session, because the audience is exactly
- * the people who might recognize somebody - and the gate decides who
- * reads this document, not what may go in it. It carries no handles and
- * no rows, which is why losing the session check here would be a
- * smaller failure than losing one anywhere else and is still a failure.
- * See DESIGN.md, "The charts and the snapshot".
- */
-async function handleReadSnapshot(env, origin) {
-  const row = await env.DB.prepare(
-    "SELECT body, updated_at FROM snapshots WHERE id = 1"
-  ).first();
-
-  if (!row) {
-    return json({ error: "No snapshot published yet." }, 404, origin);
-  }
-
-  // The stored text is dropped in as-is rather than parsed and
-  // re-serialised, so this endpoint stays incapable of changing a
-  // snapshot's contents. `published_at` sits beside it rather than
-  // inside it: the snapshot says when it was computed, this says when
-  // it arrived, and the two disagreeing is information.
-  const envelope = '{"ok":true,"published_at":' +
-    JSON.stringify(row.updated_at) + ',"snapshot":' + row.body + "}";
-
-  return new Response(envelope, {
-    status: 200,
-    headers: Object.assign(
-      { "Content-Type": "application/json" },
-      origin ? corsHeaders(origin) : {}
-    ),
-  });
-}
-
-/*
- * Taking it down.
- *
- * This is the one destructive route in the Worker, and it exists
- * because the alternative was worse. Without it, retracting a published
- * snapshot means opening the Cloudflare console and writing SQL - and
- * the moment someone wants to retract one is the moment they have just
- * realised it says more than they meant it to. An emergency path that
- * runs through a dashboard login and a hand-typed DELETE is not a path.
- *
- * It needs the export token and nothing else. Deliberately: the private
- * key is for reading submissions, and requiring it here would mean
- * decrypting the whole corpus in order to remove something - the wrong
- * way round, and slower at exactly the wrong time.
- *
- * Deleting nothing is a success. Someone pressing Unpublish twice, or
- * pressing it when nothing was published, has got what they wanted, and
- * an error there would read as "it did not work" and invite a retry.
- *
- * Nothing is lost that cannot be rebuilt: a snapshot is derived from
- * the submissions, which are untouched by this. The way back is to
- * press Publish again.
- */
-async function handleDeleteSnapshot(env, origin) {
-  await env.DB.prepare("DELETE FROM snapshots WHERE id = 1").run();
-
-  return json({ ok: true }, 200, origin);
-}
-
-/*
  * Who wrote a row, when the writer might be a secret rather than a
  * person. A break-glass EXPORT_TOKEN caller is an admin with no
  * account, so an audit column has to say that: inventing an account id
@@ -2655,7 +2548,7 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  */
 const API_SEGMENTS = new Set([
   "auth", "session", "me", "my-entries", "submit", "charts", "export",
-  "snapshot", "submission", "content", "membership",
+  "submission", "content", "membership",
 ]);
 
 function isApiPath(pathname) {
@@ -2761,21 +2654,6 @@ async function route(request, env, url, allowed) {
   }
   if (method === "GET" && path === "/export") {
     return handleExport(request, env, allowed, caller);
-  }
-  if (method === "POST" && path === "/snapshot") {
-    if (!admin) return unauthorized(allowed);
-    return handlePublishSnapshot(request, env, allowed);
-  }
-  if (method === "GET" && path === "/snapshot") {
-    // Members only since 2026-08-05. The document still carries no
-    // handles and no rows - gating it is not a reason to relax what
-    // goes in it. See DESIGN.md, "The charts and the snapshot".
-    if (!caller) return unauthorized(allowed);
-    return handleReadSnapshot(env, allowed);
-  }
-  if (method === "DELETE" && path === "/snapshot") {
-    if (!admin) return unauthorized(allowed);
-    return handleDeleteSnapshot(env, allowed);
   }
 
   // A member deletes their own row here, and an admin deletes anyone's -

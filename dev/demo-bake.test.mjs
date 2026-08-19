@@ -58,7 +58,7 @@ const {
   stampFor, bake,
 } = await import("./demo-bake.mjs");
 
-const { check, mustReject, report } = suite("demo bake", 37);
+const { check, mustReject, report } = suite("demo bake", 35);
 
 /* ------------------------------------------------------------------ */
 /* The manifest: what is emitted, and from where.                      */
@@ -113,20 +113,25 @@ await check("the fonts land under /demo/ so the wordmark resolves", () =>
   emitted.includes("demo/fonts/playfair-display-600-latin.woff2"));
 
 /*
- * dev/demo-corpus.js builds the published snapshots by importScripts on
- * absolute /apps/web/ paths, so those three files have to exist at that
- * prefix as well as inside the mirror. They are copied raw: a worker
- * has no document and needs no mirror edit.
+ * RETIRED (0.9-M2-S3, #354). dev/demo-corpus.js built the demo's
+ * published snapshots by importScripts on three absolute /apps/web/
+ * paths, which had to exist at that prefix as well as inside the
+ * mirror. The route it simulated is deleted on the real Worker, so
+ * demo-corpus.js imports nothing now and IMPORT_SCRIPTS is empty - the
+ * bake adds no file at a bare /apps/web/ prefix any more, and this
+ * checks that emptiness rather than three names nothing imports.
  */
-await check("the three files demo-corpus imports are emitted at /apps/web/", () =>
-  IMPORT_SCRIPTS.length === 3 &&
-  emitted.includes("apps/web/form.js") &&
-  emitted.includes("apps/web/dashboard.js") &&
-  emitted.includes("apps/web/admin.js"));
-
-await check("nothing emitted under /apps/web/ is a page", () =>
-  emitted.filter((path) => path.indexOf("apps/web/") === 0)
-    .every((path) => !path.endsWith(".html")));
+/*
+ * "nothing emitted under /apps/web/ is a page" stood here as a
+ * separate check before this retirement - now subsumed rather than
+ * dropped: the assertion two lines below is the stronger claim that
+ * NOTHING is emitted there at all, and a set with nothing in it holds
+ * no page either.
+ */
+await check("demo-corpus imports nothing, so no file is emitted at a " +
+  "bare /apps/web/ prefix", () =>
+  IMPORT_SCRIPTS.length === 0 &&
+  !emitted.some((path) => path.indexOf("apps/web/") === 0));
 
 /*
  * The demo's own files, spelled out rather than compared to DEMO_ASSETS:
@@ -303,14 +308,13 @@ await check("every baked page carries the demo's own strip", async () => {
   return true;
 });
 
-await check("the raw copies are byte-equal to what apps/web ships", async () => {
-  for (const name of IMPORT_SCRIPTS) {
-    const baked = await read("apps/web/" + name);
-    const shipped = await readFile(join(ROOT, "apps", "web", name), "utf8");
-    if (baked !== shipped) return false;
-  }
-  return true;
-});
+/*
+ * "the raw copies are byte-equal to what apps/web ships" stood here,
+ * checking every IMPORT_SCRIPTS name against its baked copy at the
+ * bare /apps/web/ prefix - vacuous now that the list is empty (0.9-M2-
+ * S3, #354) and removed rather than kept passing on zero iterations,
+ * for the same reason the check above folded into a stronger one.
+ */
 
 /*
  * THE ROOT IS THE ENTRY, AND IT LANDS ON THE SIGN-IN PAGE. A hosted
@@ -421,9 +425,18 @@ await check("the emitted tree held no directory the allowlist does not name",
     // the top-level allowlist names it too rather than the check
     // passing only because the temp directory that would have proven
     // it real is already gone (rm above runs before this check).
-    return top.has("demo") && top.has("dev") && top.has("apps") &&
+    //
+    // "apps" left the required set with IMPORT_SCRIPTS (0.9-M2-S3,
+    // #354): nothing is emitted at a bare /apps/web/ prefix any more,
+    // so requiring the directory to exist would fail on the honest
+    // case rather than catch a real regression. It also leaves the
+    // ALLOWED set - the retirement is "this never appears", not
+    // "this may appear and usually does not" - so a future bake that
+    // starts emitting one again is a directory this arm has never
+    // heard of, exactly the failure mode it exists to catch.
+    return top.has("demo") && top.has("dev") &&
       [...top].every((name) =>
-        ["demo", "dev", "apps", "index.html", "robots.txt", "404.html"]
+        ["demo", "dev", "index.html", "robots.txt", "404.html"]
           .includes(name));
   });
 

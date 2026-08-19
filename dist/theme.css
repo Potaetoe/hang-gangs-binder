@@ -1059,6 +1059,24 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
 
 
 
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-6);
+}
+
+
+
+.control-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+
+
 #charts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

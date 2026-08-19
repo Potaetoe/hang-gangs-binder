@@ -367,9 +367,6 @@ NEEDS_SUBJECT = frozenset({"used to"})
 # and pass. Whoever edits a file named below reads its entry first and
 # either clears it or says in the commit why it survived the visit.
 ALLOWLIST = {
-    ("apps/web/dashboard.js", "originally"): 1,
-    ("apps/web/dashboard.js", "used to"): 1,
-    ("dev/dashboard.test.mjs", "used to"): 2,
     ("dev/ui.test.mjs", "used to"): 1,
 }
 
@@ -417,15 +414,10 @@ CITATION_PINS = {
     ("tools/check_web.py", "OPERATIONS.md", "The keys"): 1,
     ("apps/web/admin.js", "DESIGN.md", "Key custody"): 1,
     ("apps/web/config.js", "DESIGN.md", "Key custody"): 1,
-    ("apps/web/dashboard.js", "OPERATIONS.md",
-     "Reading the submissions"): 1,
-    ("apps/web/dashboard.js", "DESIGN.md",
-     "The charts and the snapshot"): 2,
     ("apps/web/memberkey.js", "DESIGN.md", "Members hold a key too"): 1,
     ("server/schema.sql", "DESIGN.md", "The charts and the snapshot"): 1,
     ("server/worker.js", "DESIGN.md",
      "The prefill is scoped to the account"): 1,
-    ("server/worker.js", "DESIGN.md", "The charts and the snapshot"): 2,
     ("dev/crypto.test.mjs", "DESIGN.md", "Key custody"): 1,
 }
 

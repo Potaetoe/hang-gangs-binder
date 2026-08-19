@@ -165,9 +165,15 @@ stated justification. Until then it drives the pre-0.9 site.
 ## Hosting the demo off this machine
 
 `./run bake` writes that same demo to `_demo/` as ordinary static files
-— the mirror's output at real paths, the strip, the stub, the corpus
-builder and the fabricated sample. Serve that directory with anything
-at all and open its root, exactly as you drive the local one.
+— the mirror's output at real paths, the strip, the stub and the
+fabricated sample. Serve that directory with anything at all and open
+its root, exactly as you drive the local one. `demo-corpus.js` rides
+along too (`demo-bake.mjs` still names it among the demo's own files),
+but it answers "not available" rather than building anything: the
+snapshot route it used to simulate is deleted, not gated, on the real
+Worker (0.9-M2-S3, #354), and the strip's own "data" group says as
+much in one line where the presets used to be. The 0.9-M4 demo rebuild
+decides what, if anything, replaces it.
 `--out PATH` writes somewhere else; the directory is generated on
 demand and never committed.
 

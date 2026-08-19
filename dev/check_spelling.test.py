@@ -45,7 +45,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 57
+EXPECTED = 56
 
 
 def check(label, condition):
@@ -227,7 +227,7 @@ check("a phrase inside a Python string is not caught",
 # The ratchet, as a pure function over a found-set - the identical     #
 # shape dev/check_comments.test.py already proved for ALLOWLIST.      #
 
-SCANNED = ["apps/web/dashboard.js", "apps/web/theme.css"]
+SCANNED = ["apps/web/charts.js", "apps/web/theme.css"]
 
 
 def ratchet(found, pinned):
@@ -310,14 +310,13 @@ check("this check exempts its own two files",
       "tools/check_spelling.py" not in scanned
       and "dev/check_spelling.test.py" not in scanned)
 
-# The decisive pair: the ticket's own instance is gone from the tree
-# this scan reads, and it is gone because the source line changed, not
-# because the pattern stopped looking for it.
-DASHBOARD = open(os.path.join(check_spelling.REPO, "apps", "web",
-                              "dashboard.js"), encoding="utf-8").read()
-check("dashboard.js no longer says 'relabelled'",
-      "relabelled" not in DASHBOARD.lower())
-check("and the -ll- family would still catch it if it came back",
+# The ticket's own instance ("apps/web/dashboard.js:1904's `relabelled`",
+# this file's own header) is gone from the tree this scan reads for the
+# strongest possible reason: 0.9-M2-S3 (#354) deletes the whole file, not
+# only the line - so there is no file left to open and read the claim
+# off. What survives it is the pattern itself, checked directly rather
+# than through a file that might or might not exist at any given commit:
+check("the -ll- family still catches 'relabelled' wherever it appears",
       labels("// it is gone rather than relabelled\n")
       == ["-ll- doubling"])
 

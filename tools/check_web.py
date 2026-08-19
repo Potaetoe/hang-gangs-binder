@@ -1949,8 +1949,9 @@ def plain_page_problems(text, entrance):
     # nav off every page on the owner's ruling, and the sign-in page's
     # footer link was the whole of what this arm was reading there. It
     # is not a hole the ruling opened: every other page on this site
-    # needs a session, public.js returns anybody without one to the
-    # entrance, and 404.html's own way off points at it. The one page
+    # needs a session, session.js's own require() returns anybody
+    # without one to the entrance, and 404.html's own way off points
+    # at it. The one page
     # nothing can strand you on is the one every route already ends at,
     # so the requirement is stated where it means something instead of
     # being dropped.
@@ -2866,7 +2867,6 @@ LABELS = {
     "Members": "runner",
     "Membership": "runner",
     "Not open": "flag",
-    "Nothing to show": "flag",
     "Publish": "runner",
     "Published": "runner",
     # The one entry whose role has changed since it was written. It was
@@ -3221,7 +3221,7 @@ SITE_TITLE = "Hang Gang Binder"
 DESTINATIONS = {
     "404.html": "Not found",
     "admin.html": "Admin",
-    "charts.html": "Muse's charts",
+    "charts.html": "Charts",
     "index.html": "Sign in",
     "your-page.html": "Your page",
 }
@@ -3768,13 +3768,12 @@ def hard_coded_key_hits():
 MODULE_EXPORTS = {
     "admin.js": "BinderAdmin",
     "auth.js": "BinderAuth",
+    "charts.js": "BinderCharts",
     "config.js": "BINDER_CONFIG",
     "crypto.js": "BinderCrypto",
-    "dashboard.js": "BinderDashboard",
     "fields.js": "BinderFields",
     "form.js": "BinderForm",
     "memberkey.js": "BinderMemberKey",
-    "query.js": "BinderQuery",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
     "ui.js": "BinderUI",
@@ -3789,7 +3788,6 @@ MODULE_EXPORTS = {
 NO_MODULE_EXPORT = {
     "countries.js": "is two data tables the form reads",
     "nav.js": "marks the current destination in the rail and returns",
-    "public.js": "wires charts.html and calls into BinderDashboard",
     # BINDER_SITE is a data global, not a namespace of helpers - the same
     # shape BINDER_CONFIG is - but unlike BINDER_CONFIG it deliberately
     # ships UNFROZEN at this assignment: apps/web/fields.js's own header
@@ -4009,21 +4007,27 @@ def module_export_problems():
     return problems
 
 
-CHART_FILE = "dashboard.js"
+CHART_FILE = "charts.js"
 
-# What dashboard.js does instead of naming a series class: it builds one,
-# and the built name is the only place the cycle length is written down on
-# that side. Anchored on the concatenation rather than on a line number,
-# because the producer moves within its file and this shape does not.
+# apps/web/dashboard.js built a series class by cycling - "series-" +
+# (index % 6) - so that no .series-N name ever appeared as a literal
+# string; that file is gone (0.9-M2-S3, #354), and its retirement is
+# what left this file naming the successor.
 #
-# A producer spelled some other way - a named constant instead of a
-# literal, say - matches nothing here and is reported as ABSENT rather
-# than passed over. That direction is deliberate: the stylesheet's slots
-# would then be answering to a number this check cannot read, and a rule
-# that has lost its subject must say so.
-SERIES_CYCLE = re.compile(
-    r"""["'][^"']*\bseries-["']\s*\+\s*"""
-    r"""\(\s*[A-Za-z_$][\w$]*\s*%\s*(\d+)\s*\)""")
+# apps/web/charts.js has nothing to hide from a dead-code search and
+# writes its class names out whole (design mandate 6 fixes the shape at
+# exactly two series: the group average on series-0, a member's own line
+# on series-1 - there is no cycle to read a length off). So this reads a
+# literal set of slot numbers instead of a modulo length: every
+# "chart-series series-N", "chart-dot series-N" or
+# "chart-series-label series-N" found as a quoted literal names a slot in
+# use. A producer spelled some other way matches nothing here and is
+# reported as ABSENT rather than passed over, for the same reason the
+# retired cycle read was: the stylesheet's slots would be answering to
+# nothing this check can read, and a rule that has lost its subject must
+# say so.
+SERIES_LITERAL = re.compile(
+    r"""["'](?:chart-series|chart-dot|chart-series-label)\s+series-(\d+)["']""")
 
 # The stylesheet's three halves of the same number. Stroke on the line,
 # fill on the shapes meant to be solid, and the value each slot resolves
@@ -4033,10 +4037,16 @@ SERIES_FILL = re.compile(r"^(?:circle|text)\.series-(\d+)$")
 SERIES_TOKEN = re.compile(r"--color-series-(\d+)\s*:")
 
 
-def series_cycle_length(js):
-    """How many slots the chart script cycles through, or None."""
-    found = SERIES_CYCLE.search(js)
-    return int(found.group(1)) if found else None
+def series_slots_used(js):
+    """The highest slot apps/web/charts.js's own code names, or None.
+
+    Contiguous from 0 by construction - every slot from 0 up to the
+    highest named one is "in use", the same shape a cycle length always
+    described, so the range-and-compare logic below needs no change to
+    read a literal set instead of a modulo number.
+    """
+    found = [int(n) for n in SERIES_LITERAL.findall(js)]
+    return max(found) + 1 if found else None
 
 
 def stylesheet_series(css):
@@ -4071,44 +4081,57 @@ def missing_slots(slots, cycle):
 
 
 def css_series_problems(css, js):
-    """[problem] for a chart script and a stylesheet that disagree on slots.
+    """[problem] for a chart script that uses a series slot the stylesheet
+    does not style.
 
-    The trap, restated where somebody reading a failure meets it: no
-    .series-N name appears as a literal string anywhere in this
-    repository, so every one of these selectors looks unused to a search
-    and none of them is.
+    Checks one direction only, and that is a change from before this
+    slice (0.9-M2-S3, #354) rather than an oversight. apps/web/
+    dashboard.js cycled through every slot theme.css defined, so a slot
+    defined and never reached was real dead CSS; apps/web/charts.js uses
+    exactly two (design mandate 6 fixes the shape there), and theme.css
+    still carries all six, validated together as one set - color 2's
+    contrast and CVD separation were measured against colors 3, 4 and 5,
+    not against color 0 and 1 alone, so trimming the unused four would
+    mean re-deriving the ordering for whatever uses them next rather
+    than reusing work already done. The four spare slots are accepted
+    headroom, not an orphan: nothing here declares them dead, and
+    nothing needs to until a change actually removes their last reason
+    to exist. tools/check_contrast.py keeps measuring all six against
+    both backgrounds regardless, so a spare slot still cannot go
+    unmeasured while it waits.
+
+    The trap this still guards against: no .series-N name appears as a
+    literal string anywhere in this repository outside apps/web/
+    charts.js's own two, so a slot it uses but theme.css does not style
+    looks unused to a search and is not.
     """
     problems = []
-    cycle = series_cycle_length(js)
-    if cycle is None:
+    used = series_slots_used(js)
+    if used is None:
         return ["apps/web/%s composes no series class this check can read, "
-                "so nothing says how many slots theme.css must define. The "
-                "shape it reads is a string ending \"series-\" concatenated "
-                "with a modulo - if the chart now picks its slot some other "
-                "way, teach this check the new shape rather than leaving "
-                "the stylesheet's slots answering to nothing" % CHART_FILE]
-    if not cycle:
-        return ["apps/web/%s cycles through 0 series slots, so every chart "
-                "line would divide by zero picking one" % CHART_FILE]
+                "so nothing says which slots theme.css must define. The "
+                "shape it reads is a quoted \"chart-series series-N\" (or "
+                "chart-dot / chart-series-label) literal - if the chart "
+                "now picks its slot some other way, teach this check the "
+                "new shape rather than leaving the stylesheet's slots "
+                "answering to nothing" % CHART_FILE]
+    if not used:
+        return ["apps/web/%s names no series slot at all, so every chart "
+                "line would draw with no class to color it" % CHART_FILE]
 
     stroke, fill, palettes = stylesheet_series(css)
 
-    absent, extra = missing_slots(stroke, cycle)
+    absent, _extra = missing_slots(stroke, used)
     if absent:
         problems.append(
-            "apps/web/%s cycles through %d series slots and apps/web/%s "
-            "defines no .series-%s rule, so a chart line at that slot is "
-            "stroked in whatever color it inherits - which is the color "
-            "of the line beside it, on the one chart whose job is telling "
-            "two people apart"
-            % (CHART_FILE, cycle, STYLESHEET,
+            "apps/web/%s uses series slot%s %s and apps/web/%s defines no "
+            ".series-%s rule, so a chart line at that slot is stroked in "
+            "whatever color it inherits - which is the color of the line "
+            "beside it, on the one chart whose job is telling two people "
+            "apart"
+            % (CHART_FILE, "s" if len(absent) != 1 else "",
+               list(range(used)), STYLESHEET,
                ", .series-".join(str(n) for n in absent)))
-    if extra:
-        problems.append(
-            "apps/web/%s defines .series-%s, past the %d slots apps/web/%s "
-            "cycles through, so those rules render never"
-            % (STYLESHEET, ", .series-".join(str(n) for n in extra),
-               cycle, CHART_FILE))
 
     if fill != stroke:
         problems.append(
@@ -4124,14 +4147,15 @@ def css_series_problems(css, js):
             ".series-N rule above resolves to an unset custom property and "
             "the chart draws in one color" % STYLESHEET)
     for palette, slots in palettes:
-        short, over = missing_slots(slots, cycle)
-        if short or over:
+        short, _over = missing_slots(slots, used)
+        if short:
             problems.append(
-                "apps/web/%s gives \"%s\" the series values %s, and there "
-                "are %d slots to fill. A palette is copied from the one "
+                "apps/web/%s gives \"%s\" no value for series slot%s %s, "
+                "which apps/web/%s uses. A palette is copied from the one "
                 "open at the time and trimmed, and the chart only looks "
                 "wrong on that theme"
-                % (STYLESHEET, palette, sorted(slots), cycle))
+                % (STYLESHEET, palette, "s" if len(short) != 1 else "",
+                   short, CHART_FILE))
 
     return problems
 
@@ -6522,7 +6546,7 @@ PAGE_HEADERS = {
         "Admin Decrypts the submissions in this browser — nothing is "
         "uploaded.",
     "charts.html":
-        "Members Muse's charts Counts and averages — no names, no "
+        "Members Charts Counts and averages — no names, no "
         "individual entries.",
     "index.html":
         "Members Sign in Sign in once for this tab — then it is your page "

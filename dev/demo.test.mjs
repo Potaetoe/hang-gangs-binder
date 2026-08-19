@@ -70,18 +70,23 @@ const load = async (path) => {
 await load("../apps/web/site.config.js");
 await load("../apps/web/fields.js");
 await load("../apps/web/form.js");
-await load("../apps/web/dashboard.js");
 await load("../apps/web/admin.js");
 await load("./demo-stub.js");
 
 const Demo = globalThis.BinderDemo;
 const Admin = globalThis.BinderAdmin;
-const Dashboard = globalThis.BinderDashboard;
-const Form = globalThis.BinderForm;
+/*
+ * dashboard.js is retired (0.9-M2-S3, #354) - it held both MIN_CELL and
+ * the snapshotOf() this file passed into Demo.publishedFrom() to build
+ * a fake published document. The route that document simulated is
+ * deleted, not gated, so nothing here builds one any more: every check
+ * that read CORPUS, MIN_CELL, or Demo.publishedFrom's output retired
+ * with this load line, named individually where it stood.
+ */
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 186);
+const { check, mustReject, report } = suite("demo", 164);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -528,8 +533,20 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
   return seen >= 15;
 });
 
-await check("the stub answers every call apps/web makes, by verb and path", () =>
-  calls.every((one) => Demo.routeFor(one.path, one.method) !== null));
+/*
+ * The one deliberate exception (0.9-M2-S3, #354): apps/web/admin.js
+ * still calls /snapshot three times, unchanged, because admin.html is
+ * stated dead rather than patched (issue #354's own scope) - the route
+ * is deleted on the real Worker, not gated, so the honest stub answer
+ * is the same 404 an unknown path gets, and "the stub answers every
+ * call" would otherwise demand this suite pretend the route still
+ * works. Everything else apps/web calls must still resolve.
+ */
+await check("the stub answers every call apps/web makes, by verb and " +
+  "path - except admin.html's retired /snapshot calls, which the real " +
+  "Worker no longer answers either", () =>
+  calls.every((one) => one.path === "/snapshot" ||
+    Demo.routeFor(one.path, one.method) !== null));
 
 await check("a route the stub does not know is refused, not passed on", () =>
   Demo.routeFor("/something-new", "GET") === null &&
@@ -562,7 +579,9 @@ while ((workerMatch = WORKER_ROUTE.exec(workerSource)) !== null) {
 }
 
 await check("the Worker's dispatch is readable, and it is what the stub is held to", () =>
-  workerRoutes.size >= 12 && workerRoutes.has("DELETE /session") &&
+  // 11 exact-path routes as of 0.9-M2-S3 (#354), down from 14: the
+  // three POST/GET/DELETE /snapshot entries retired with the route.
+  workerRoutes.size >= 10 && workerRoutes.has("DELETE /session") &&
   workerRoutes.has("GET /me"));
 
 await check("the stub claims no verb the Worker does not route", () =>
@@ -625,7 +644,9 @@ await check("an admin identity is reported as one, and a member is not", () =>
 
 await check("a revoked session is refused on every gated route", () => {
   const state = world("member", { revoked: true });
-  return ["/me", "/my-entries", "/snapshot", "/export"].every((path) =>
+  // /snapshot left this list with the route it named (0.9-M2-S3, #354):
+  // it is not a gated route any more, it is no route at all.
+  return ["/me", "/my-entries", "/export"].every((path) =>
     ask("GET", path, state).status === 401);
 });
 
@@ -665,77 +686,21 @@ await check("a written content name reads back", () => {
   return ask("GET", "/content", written.next).body.content.hero === "Hello";
 });
 
-/* ------------------------------------------------------------------ */
-/* Publishing, and the takedown that is not the same as never.         */
-
-const CORPUS = { rich: {}, sparse: {} };
-const deps = {
-  buildRecord: Form.buildRecord,
-  entryFor: Admin.entryFor,
-  snapshotOf: Dashboard.snapshotOf,
-};
-CORPUS.rich = Demo.publishedFrom("rich", deps);
-CORPUS.sparse = Demo.publishedFrom("sparse", deps);
-// Taken beside the documents rather than when the arm runs: corpusInputs
-// stamps from the clock, so a list read a second later is a second later.
-const RICH_ROUNDS = Demo.corpusInputs("rich").map((one) => one.at);
-
-const stagedWorld = (document) =>
-  world("keyholder", { data: { staged: document, at: "2026-08-01T00:00:00Z" } });
-
-await check("publishing a snapshot makes it the one that reads back", () => {
-  const put = ask("POST", "/snapshot", stagedWorld(CORPUS.rich),
-    { counts: { entries: 3 } });
-  const read = ask("GET", "/snapshot", put.next);
-  return put.status === 200 && read.status === 200 &&
-    read.body.snapshot.counts.entries === 3;
-});
-
 /*
- * THE ARM THAT COST THE MOST. `state.published || <the staged corpus>`
- * reads the null a DELETE writes as "nothing staged yet", so unpublish
- * answers 200, the world honestly reports null, and the very next read
- * hands the same entries back. Unpublish is then indistinguishable from
- * never having pressed it.
+ * RETIRED (0.9-M2-S3, #354): "Publishing, and the takedown that is not
+ * the same as never" stood here - eight checks and the CORPUS/deps
+ * setup behind them, built from Dashboard.snapshotOf (apps/web/
+ * dashboard.js, also retired here) and driving POST/GET/DELETE
+ * /snapshot against the stub. The route is deleted on the real
+ * Worker, not gated: server/worker.js's header held it "until live
+ * aggregation replaces it (0.9-M2)" and this slice is that replacement
+ * (server/charts-agg.js, GET /charts). The stub's handler
+ * for it is gone too (dev/demo-stub.js), so every one of those checks
+ * would now be asking a question the demo cannot answer, the same
+ * failure "the stub answers every call" above states an exception for.
+ * apps/web/charts.js and tests/charts-page.test.mjs are where the
+ * live route's own checks live now.
  */
-await check("taking the snapshot down leaves nothing published", () => {
-  const gone = ask("DELETE", "/snapshot", stagedWorld(CORPUS.rich));
-  const read = ask("GET", "/snapshot", gone.next);
-  return gone.status === 200 && gone.next.published === null &&
-    read.status === 404;
-});
-
-await check("a world nobody has taken down still draws the staged corpus", () => {
-  const read = ask("GET", "/snapshot", stagedWorld(CORPUS.rich));
-  return read.status === 200 &&
-    read.body.snapshot.counts.entries === CORPUS.rich.counts.entries;
-});
-
-await check("a takedown is a takedown in the thin staging too", () => {
-  const gone = ask("DELETE", "/snapshot", stagedWorld(CORPUS.sparse));
-  return ask("GET", "/snapshot", gone.next).status === 404;
-});
-
-/*
- * And the refusal is the WORKER's, word for word. server/worker.js
- * deletes the row and then finds no row, so the live product cannot tell
- * these two apart either - a stub with a sentence of its own here would
- * be demonstrating a Worker that does not exist.
- */
-await check("the refusal after a takedown is the Worker's own sentence", () => {
-  const gone = ask("DELETE", "/snapshot", stagedWorld(CORPUS.rich));
-  const said = ask("GET", "/snapshot", gone.next).body.error;
-  return workerSource.includes(said);
-});
-
-await check("a binder nobody has staged anything in is empty, not stubbed", () =>
-  ask("GET", "/snapshot", world("member")).status === 404);
-
-await check("a poisoned published snapshot is a stated error, not a throw", () => {
-  const answer = ask("GET", "/snapshot",
-    world("keyholder", { published: "{not json" }));
-  return answer.status === 500 && /JSON/.test(answer.body.error);
-});
 
 /* ------------------------------------------------------------------ */
 /* The membership table.                                               */
@@ -1251,8 +1216,6 @@ function recordedNode(tag) {
   return it;
 }
 
-const SNAPSHOT = { counts: { entries: 7 }, series: [] };
-
 function toolbarInRecordedBrowser(options) {
   const opts = options || {};
   const page = opts.page || "admin.html";
@@ -1263,7 +1226,6 @@ function toolbarInRecordedBrowser(options) {
   const went = [];
   const reloads = [];
   const read = [];
-  const built = [];
   const dropped = [];
   const body = recordedNode("body");
   const rootStyle = {};
@@ -1333,38 +1295,9 @@ function toolbarInRecordedBrowser(options) {
       },
     sessionStorage: storeFor(store.session),
     localStorage: storeFor(store.local),
-    /*
-     * The corpus worker, recorded rather than run. What the aggregation
-     * produces has its own arms further down; what is under test here is
-     * that the press asks for the corpus and the cut it claims, and
-     * stores what comes back.
-     */
-    Worker: function (url) {
-      const worker = this;
-      built.push(String(url));
-      worker.listeners = {};
-      worker.addEventListener = (type, fn) => {
-        (worker.listeners[type] = worker.listeners[type] || []).push(fn);
-      };
-      worker.terminate = () => {};
-      worker.postMessage = (message) => {
-        built.push(message);
-        if (opts.workerFails === true) {
-          (worker.listeners.error || []).forEach((fn) =>
-            fn({ message: "the worker failed" }));
-          return;
-        }
-        (worker.listeners.message || []).forEach((fn) => fn({
-          data: {
-            ok: true,
-            snapshot: SNAPSHOT,
-            rounds: message.rounds === null || message.rounds === undefined
-              ? Demo.roundsIn(message.corpus) : message.rounds,
-            entries: SNAPSHOT.counts.entries,
-          },
-        }));
-      };
-    },
+    // The corpus worker mock (a recorded Worker simulating
+    // dev/demo-corpus.js) retired with the "-- The snapshot --"
+    // section below, which was its only caller (0.9-M2-S3, #354).
     indexedDB: opts.noDatabases === true ? {} : {
       databases: () => Promise.resolve(databases.map((name) => ({ name }))),
       deleteDatabase(name) {
@@ -1432,10 +1365,23 @@ function toolbarInRecordedBrowser(options) {
 
   return {
     bar, body, everyButton, press, startsWith, said, worldNow, settled,
-    went, reloads, read, built, dropped, store, pageNodes, rootStyle,
+    went, reloads, read, dropped, store, pageNodes, rootStyle,
     listened, jumped, observed, laidOutAt,
     labels: () => everyButton.map((one) => one.textContent),
   };
+}
+
+/*
+ * Every leaf's textContent, painted or not - recordedNode's own
+ * textContent setter empties a node's children the moment it is set
+ * (see recordedNode above), so a node carrying text has none, and this
+ * walk needs no separate leaf test.
+ */
+function allText(node, out) {
+  const found = out || [];
+  if (node.textContent) found.push(node.textContent);
+  node.children.forEach((child) => allText(child, found));
+  return found;
 }
 
 await check("the strip paints itself, and says what it is", () => {
@@ -1465,16 +1411,44 @@ await check("every identity the demo offers has a control on the strip", () => {
   return Demo.SIGN_INS.every((one) => labels.includes(one.label));
 });
 
-await check("every snapshot row has a control, with the counts on it", () => {
+/*
+ * F4's pin (0.9-M2-S3 fix wave 1, #354 comment 5342979192): the "data"
+ * group's tombstone line, driven for real through node:vm rather than
+ * grepped from source, so it cannot vanish silently the way an
+ * unpinned line could - a later edit that drops, rewords or fails to
+ * paint this sentence reddens here.
+ */
+await check("the data group states plainly that charts do not " +
+  "simulate live aggregation, in these exact words, until 0.9-M4 " +
+  "rules on what replaces the note", () => {
   const browser = toolbarInRecordedBrowser();
-  return Demo.PRESETS.every((preset) => {
-    const control = browser.startsWith(preset.label);
-    if (!control) return false;
-    if (preset.corpus === null) return control.textContent === preset.label;
-    const counts = Demo.countsFor(preset.corpus, preset.rounds);
-    return control.textContent.includes(counts.entries + "/" + counts.people);
-  });
+  return allText(browser.bar).includes(
+    "Charts go live in the demo rebuild (0.9-M4).");
 });
+
+/*
+ * "Publish" named an act nothing on the strip can perform any longer
+ * (F4): the data group's own heading is a neutral word instead, so no
+ * painted text should carry the retired verb.
+ */
+await check("nothing on the strip still says \"Publish\" - the act " +
+  "retired with the snapshot route", () => {
+  const browser = toolbarInRecordedBrowser();
+  return !allText(browser.bar).includes("Publish");
+});
+
+/*
+ * RETIRED (0.9-M2-S3, #354): "every snapshot row has a control, with
+ * the counts on it" stood here, reading a preset button off the strip
+ * for each Demo.PRESETS entry. dev/demo-toolbar.js no longer paints
+ * those buttons - the "data" group carries one plain line pointing at
+ * the 0.9-M4 demo rebuild instead (Prime's ruling on this slice's
+ * demo-tooling fork, 2026-08-19) - so there is no control left to find.
+ * Demo.PRESETS itself is untouched, and "every snapshot row is a
+ * corpus this file really builds" / "no snapshot row writes its own
+ * counts into its words" (earlier in this file) still read it
+ * directly, independent of the strip.
+ */
 
 /*
  * IT WATCHES THE STRIP, NOT THE WINDOW - and that difference is a
@@ -1606,94 +1580,22 @@ await check("a page whose box has been renamed is reported, not written to",
     return /moved under the demo/i.test(browser.said());
   });
 
-/* -- The snapshot -------------------------------------------------- */
-
-await check("a snapshot row builds its corpus and stages what comes back",
-  async () => {
-    const browser = toolbarInRecordedBrowser();
-    browser.press(browser.startsWith("Full group").textContent);
-    await browser.settled();
-    const asked = browser.built.find((one) => one && one.corpus);
-    const staged = JSON.parse(browser.store.session[Demo.STORAGE_KEYS[1]]);
-    return asked.corpus === "rich" &&
-      staged.staged.counts.entries === SNAPSHOT.counts.entries &&
-      browser.worldNow().staged.corpus === "rich" &&
-      browser.reloads.length === 1;
-  });
-
-await check("the thin row asks for the corpus under the floor", async () => {
-  const browser = toolbarInRecordedBrowser();
-  browser.press(browser.startsWith("Thin week").textContent);
-  await browser.settled();
-  return browser.built.find((one) => one && one.corpus).corpus === "sparse";
-});
-
 /*
- * Emptying clears the staged DATA and leaves `published` alone, because
- * `undefined` is never-touched and `null` is taken-down and the product
- * really has both states. Writing null here would collapse them.
+ * RETIRED (0.9-M2-S3, #354): "-- The snapshot --" stood here, seven
+ * checks driving the preset/Add-entries buttons this section's own
+ * name described - "a snapshot row builds its corpus and stages what
+ * comes back", "the thin row asks for the corpus under the floor",
+ * "the empty row stages nothing and takes nothing down", "a snapshot
+ * the browser could not build is said, not staged", "Add entries
+ * publishes one round more than is staged", "Add entries with nothing
+ * staged starts at the first round", "Add entries at the last round
+ * says so rather than doing nothing". Every one of them pressed a
+ * button dev/demo-toolbar.js no longer paints (Prime's ruling on this
+ * slice's demo-tooling fork, 2026-08-19: one plain line replaces the
+ * whole "data" group's presets). The Worker mock in
+ * toolbarInRecordedBrowser() above and the SNAPSHOT constant existed
+ * only for these checks and retire with them.
  */
-await check("the empty row stages nothing and takes nothing down", async () => {
-  const browser = toolbarInRecordedBrowser({
-    session: { [Demo.STORAGE_KEYS[1]]: JSON.stringify({ staged: SNAPSHOT }) },
-  });
-  browser.press("Empty");
-  await browser.settled();
-  return browser.store.session[Demo.STORAGE_KEYS[1]] === undefined &&
-    browser.worldNow().staged === null &&
-    !("published" in browser.worldNow()) &&
-    browser.built.length === 0;
-});
-
-await check("a snapshot the browser could not build is said, not staged",
-  async () => {
-    const browser = toolbarInRecordedBrowser({ workerFails: true });
-    browser.press(browser.startsWith("Full group").textContent);
-    await browser.settled();
-    return /could not be built/.test(browser.said()) &&
-      browser.store.session[Demo.STORAGE_KEYS[1]] === undefined &&
-      browser.reloads.length === 0;
-  });
-
-await check("Add entries publishes one round more than is staged", async () => {
-  const browser = toolbarInRecordedBrowser({
-    session: {
-      [Demo.STORAGE_KEYS[2]]: JSON.stringify({
-        staged: { corpus: "rich", rounds: 1 },
-      }),
-    },
-  });
-  browser.press("Add entries");
-  await browser.settled();
-  const asked = browser.built.find((one) => one && one.corpus);
-  return asked.corpus === "rich" && asked.rounds === 2 &&
-    browser.worldNow().staged.rounds === 2;
-});
-
-await check("Add entries with nothing staged starts at the first round",
-  async () => {
-    const browser = toolbarInRecordedBrowser();
-    browser.press("Add entries");
-    await browser.settled();
-    const asked = browser.built.find((one) => one && one.corpus);
-    return asked.corpus === "rich" && asked.rounds === 1;
-  });
-
-await check("Add entries at the last round says so rather than doing nothing",
-  async () => {
-    const browser = toolbarInRecordedBrowser({
-      session: {
-        [Demo.STORAGE_KEYS[2]]: JSON.stringify({
-          staged: { corpus: "rich", rounds: Demo.roundsIn("rich") },
-        }),
-      },
-    });
-    browser.press("Add entries");
-    await browser.settled();
-    return browser.built.length === 0 &&
-      browser.said().includes(String(Demo.roundsIn("rich"))) &&
-      browser.reloads.length === 0;
-  });
 
 /* -- Corrections --------------------------------------------------- */
 
@@ -2123,19 +2025,18 @@ await check("the strip borrows none of the product's color tokens", () =>
   !/var\(--color-/.test(toolbarCss));
 
 /* ------------------------------------------------------------------ */
-/* The corpora, measured against the shipped aggregation.              */
+/* The corpora.                                                        */
 
-const MIN_CELL = /MIN_CELL\s*=\s*(\d+)/.exec(webSource["dashboard.js"]);
-
-await check("the floor the published series needs is readable in dashboard.js", () =>
-  MIN_CELL !== null && Number(MIN_CELL[1]) >= 2);
-
-await check("the rich corpus clears the floor the published series needs", () =>
-  CORPUS.rich.counts.people >= Number(MIN_CELL[1]));
-
-await check("the sparse corpus is below it, and publishes no series", () =>
-  CORPUS.sparse.counts.people < Number(MIN_CELL[1]));
-
+/*
+ * RETIRED (0.9-M2-S3, #354): three checks stood here measuring the
+ * corpora against dashboard.js's own MIN_CELL and against
+ * Demo.publishedFrom()'s counts - "the floor the published series
+ * needs is readable in dashboard.js", "the rich corpus clears the
+ * floor...", "the sparse corpus is below it...". dashboard.js is
+ * deleted with the snapshot route it drew; the two checks below this
+ * comment read Demo.corpusInputs() directly and are independent of
+ * either, so they stay.
+ */
 await check("every rich submitter has a series with more than one point", () => {
   const rounds = {};
   Demo.corpusInputs("rich").forEach((one) => {
@@ -2150,42 +2051,22 @@ await check("the two corpora are different people", () => {
     .every((one) => !rich.has(one.handle));
 });
 
-await check("nothing published carries a handle", () =>
-  !JSON.stringify(CORPUS.rich).includes("birch_lane") &&
-  !JSON.stringify(CORPUS.rich).includes("demo_member"));
-
 /*
- * The document a snapshot row stages is a SECOND publish, so the charts
- * have a change-since figure to draw. A first document has nothing to
- * measure from and the page correctly draws no line - which is the state
- * the first round is honestly in.
+ * RETIRED (0.9-M2-S3, #354): six more checks stood here, all reading
+ * CORPUS.rich/CORPUS.sparse or calling Demo.publishedFrom() directly -
+ * "nothing published carries a handle", "the full corpus is published
+ * as a second document", "the first round is a first publish...", "a
+ * later round carries more entries...", "the cut by round agrees with
+ * the whole corpus...", "the movement is measured from a round...".
+ * Every one of them asked about the shape of a PUBLISHED DOCUMENT -
+ * privacy, round-over-round movement, the change-since figure - which
+ * is exactly the retired snapshot route's own disclosure surface.
+ * server/charts-agg.js carries that surface now (the floor counts
+ * people not holdings, open-ended histogram edges, one partition), and
+ * tests/charts-aggregate.test.mjs is where it is attacked; this file's
+ * job was only ever whether the DEMO matched the product, and there is
+ * no product route left for it to match.
  */
-await check("the full corpus is published as a second document", () =>
-  CORPUS.rich.movement !== undefined && CORPUS.rich.movement !== null);
-
-await check("the first round is a first publish, with nothing to compare", () => {
-  const first = Demo.publishedFrom("rich", deps, 1);
-  return first.movement === undefined || first.movement === null;
-});
-
-await check("a later round carries more entries than the one before it", () => {
-  const one = Demo.publishedFrom("rich", deps, 1);
-  const two = Demo.publishedFrom("rich", deps, 2);
-  return two.counts.entries > one.counts.entries &&
-    two.movement !== undefined && two.movement !== null;
-});
-
-await check("the cut by round agrees with the whole corpus at its ceiling", () =>
-  Demo.publishedFrom("rich", deps, Demo.roundsIn("rich")).counts.entries ===
-  CORPUS.rich.counts.entries);
-
-await check("the movement is measured from a round, not from a clock reading", () => {
-  const when = Date.parse(CORPUS.rich.movement.since);
-  // Both halves: it is one of this corpus's own rounds, and it is far
-  // enough back that a clock reading could not be mistaken for one.
-  return RICH_ROUNDS.some((one) => Math.abs(one - when) < 2000) &&
-    Date.now() - when > 20 * 24 * 3600 * 1000;
-});
 
 /* ------------------------------------------------------------------ */
 /* The server.                                                         */

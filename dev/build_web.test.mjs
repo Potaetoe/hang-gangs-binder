@@ -104,12 +104,17 @@ check("and says the same thing afterwards",
 check("and it is the saving #181 was ruled on",
   themeSource.length - themeBuilt.length > 40000);
 
-const dashboardSource = readFileSync(join(SOURCE, "dashboard.js"), "utf8");
+// dashboard.js was this file's subject until 0.9-M2-S3 (#354) deleted
+// it - it was the heaviest script in apps/web at the time this arm was
+// written. admin.js is the heaviest one left (bigger than dashboard.js
+// ever was), so it takes the same two checks rather than the arm
+// losing its "against the real tree, not a fixture" property.
+const adminSource = readFileSync(join(SOURCE, "admin.js"), "utf8");
 check("the heaviest script loses its comments",
-  !/\/\*|(^|[^:])\/\//.test(stripJs(dashboardSource).replace(/`[^`]*`/g, "")));
+  !/\/\*|(^|[^:])\/\//.test(stripJs(adminSource).replace(/`[^`]*`/g, "")));
 check("and its token stream is unchanged",
-  String(jsTokens(dashboardSource))
-    === String(jsTokens(stripJs(dashboardSource))));
+  String(jsTokens(adminSource))
+    === String(jsTokens(stripJs(adminSource))));
 
 /*
  * Every shipped script, not only the big one. A generator that corrupts

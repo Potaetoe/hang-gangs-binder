@@ -51,9 +51,10 @@
     try {
       root.sessionStorage.setItem(key, JSON.stringify(value));
     } catch (error) {
-      // A demo that cannot persist its world still runs; it forgets a
-      // published snapshot between pages. Failing the page over it would
-      // be worse than the thing it is reporting.
+      // A demo that cannot persist its world still runs; it forgets
+      // whatever it just staged - a signed-in identity, a seeded
+      // correction - between pages. Failing the page over it would be
+      // worse than the thing it is reporting.
     }
   }
 

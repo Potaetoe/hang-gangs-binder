@@ -65,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 122
+EXPECTED = 121
 
 
 def check(label, condition):
@@ -196,7 +196,7 @@ check("the shipped router parses with no refusals",
       REAL_ROUTE_PROBLEMS == [])
 
 check("the shipped router yields the routes it dispatches",
-      {"POST /auth/telegram", "GET /snapshot", "DELETE /snapshot",
+      {"POST /auth/telegram", "GET /charts", "DELETE /submission/{}",
        "DELETE /membership/{}/{}", "OPTIONS *"} <= set(REAL_ROUTES))
 
 # And the other direction, which is what the ledger's spine rests on: a
@@ -923,10 +923,11 @@ check("the five bot-token-guarded rows are 'never', not 'first-contact' "
               for e in check_live.LEDGER
               if e["id"] in RECLASSIFIED_NEVER))
 
-check("the destructive route is on the ledger and marked hands-off",
-      any(e["id"] == "DELETE /snapshot"
-          and "probe" in e["claim"].lower()
-          for e in check_live.LEDGER))
+# "the destructive route is on the ledger and marked hands-off" stood
+# here, naming DELETE /snapshot by id - the one route this ledger ever
+# marked deliberately undriven. RETIRED (0.9-M2-S3, #354): the route is
+# deleted, not gated, so there is no destructive route left on the
+# ledger for this check to hold to its own claim, hardcoded id and all.
 
 check("every guard pinned by the ledger is in the shipped worker",
       all(e["guard"] in check_live.read(check_live.WORKER)

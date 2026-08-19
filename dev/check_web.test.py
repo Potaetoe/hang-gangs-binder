@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 572
+EXPECTED = 573
 
 
 def check(label, condition):
@@ -1053,7 +1053,7 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 13 and all(frozen_in_place))
+      len(frozen_in_place) == 12 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -1766,15 +1766,20 @@ check("and it is the shipped directory it normally reads",
 
 
 # ------------------------------------------------------------------ #
-# Check 21: the chart series slot count, in its three places.         #
+# Check 21: the chart series slots used, against the three places the #
+# stylesheet defines them (0.9-M2-S3, #354 - rewritten from a modulo  #
+# cycle read to a literal-set read: apps/web/charts.js writes its two #
+# class names out whole rather than building one from an index, and   #
+# apps/web/dashboard.js, the file that built one, is gone).           #
 #                                                                     #
 # Every fixture below writes .series-N as a literal, and the shipped  #
-# tree never does - which is the whole reason this check exists. A    #
-# search for "series-0" across this repository finds these strings    #
-# and nothing in apps/web, while twelve live selectors and six        #
-# palettes' worth of values depend on that number.                    #
+# tree never does outside charts.js's own two - which is the whole    #
+# reason this check exists. A search for "series-2" across this       #
+# repository finds these strings and nothing real, while twelve live  #
+# selectors and six palettes' worth of values still answer to a slot  #
+# count read this way.                    #
 
-PRODUCER = 'const cls = "chart-series series-" + (index % 6);'
+PRODUCER = '"chart-series series-1", "chart-dot series-1"'
 
 
 def slots(count, palettes=1):
@@ -1791,51 +1796,63 @@ def slots(count, palettes=1):
     return css
 
 
-check("the cycle length is read out of the built class name",
-      check_web.series_cycle_length(PRODUCER) == 6)
-check("spacing in the modulo does not hide the cycle length",
-      check_web.series_cycle_length('"series-"+(i%4)') == 4)
-check("a script that composes no series class has no cycle length",
-      check_web.series_cycle_length("const cls = seriesClass(index);")
+check("the highest slot is read out of a chart-series literal",
+      check_web.series_slots_used('"chart-series series-1"') == 2)
+check("a chart-dot literal is read the same way",
+      check_web.series_slots_used('"chart-dot series-2"') == 3)
+check("a chart-series-label literal is read the same way",
+      check_web.series_slots_used('"chart-series-label series-0"') == 1)
+check("a script that composes no series class has no slots used",
+      check_web.series_slots_used("const cls = seriesClass(index);")
       is None)
 
-check("a stylesheet and a script that agree raise nothing",
+# design mandate 6 fixes the shape at two slots (0 and 1), so PRODUCER
+# names slot 1 and the stylesheet needs slots 0 and 1 both styled -
+# slots(2) below is exactly that.
+check("a stylesheet with enough slots and a script that agree raise nothing",
+      check_web.css_series_problems(slots(2), PRODUCER) == [])
+check("a stylesheet carrying more slots than the script uses is not an "
+      "orphan - the spare slots are accepted headroom now, unlike the "
+      "retired dashboard.js cycle this check used to hold to an exact "
+      "count",
       check_web.css_series_problems(slots(6), PRODUCER) == [])
 
-# The direction a dead-CSS pass produces: a slot deleted as unused.
-check("a slot the stylesheet does not define is refused",
-      any(".series-5" in p for p in check_web.css_series_problems(
-          slots(5), PRODUCER)))
-check("a slot past the cycle renders never and is refused",
-      any("render never" in p for p in check_web.css_series_problems(
-          slots(7), PRODUCER)))
+# The direction that still matters: a slot the script actually uses,
+# left unstyled.
+check("a used slot the stylesheet does not define is refused",
+      any(".series-1" in p for p in check_web.css_series_problems(
+          slots(1), PRODUCER)))
 
 check("a slot with a stroke and no fill is refused",
       any("fills" in p for p in check_web.css_series_problems(
-          slots(6).replace("circle.series-5, text.series-5 "
-                           "{ fill: var(--color-series-5); }", ""),
+          slots(2).replace("circle.series-1, text.series-1 "
+                           "{ fill: var(--color-series-1); }", ""),
           PRODUCER)))
 
-check("a palette short of a slot is refused",
-      any("copied from the one open" in p
+check("a palette short of a used slot is refused",
+      any("no value for series slot" in p
           for p in check_web.css_series_problems(
-              slots(6) + ':root[data-theme="q"] '
+              slots(2) + ':root[data-theme="q"] '
               "{ --color-series-0: red; }", PRODUCER)))
+check("a palette short of a slot the script does not use is not refused - "
+      "only the used slots are held to the palettes",
+      not any("no value for series slot" in p
+              for p in check_web.css_series_problems(
+                  slots(2) + ':root[data-theme="q"] '
+                  "{ --color-series-0: red; --color-series-1: blue; }",
+                  PRODUCER)))
 check("a stylesheet setting no series value at all is refused",
       any("sets no --color-series-N" in p
           for p in check_web.css_series_problems(
               ".series-0 { stroke: red; }"
               "circle.series-0, text.series-0 { fill: red; }",
-              '"series-" + (i % 1)')))
+              '"chart-series series-0"')))
 
 # A rule that cannot find its subject must say so. This is the arm that
 # stops the whole check from going quiet the day the chart changes shape.
 check("a producer this check cannot read is reported, not skipped",
       any("composes no series class" in p
           for p in check_web.css_series_problems(slots(6), "// nothing")))
-check("a zero-length cycle is refused rather than divided by",
-      any("divide by zero" in p for p in check_web.css_series_problems(
-          slots(6), '"series-" + (i % 0)')))
 
 # Palettes live inside @media in this stylesheet, so a reader that only
 # saw top-level blocks would find four of the six and call two of them
@@ -3539,7 +3556,7 @@ check("the shipped stylesheet passes both",
 # <header>, both on screen, whole gate green. AGENTS.md's corollary
 # exactly.
 HEADER_OK = ('<header class="stack-tight"><p class="runner">'
-             "<span>Members</span></p><h1>Muse's charts</h1>"
+             "<span>Members</span></p><h1>Charts</h1>"
              '<p class="muted" id="charts-intro">Counts and averages — no '
              "names, no individual entries.</p></header>")
 

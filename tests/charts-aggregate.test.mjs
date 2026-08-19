@@ -1196,17 +1196,21 @@ check("tombstones: a month every member has since corrected draws no " +
 check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && history.body.trend.points.length === 1);
 
-/* ================================================================== */
-/* 9. Not this slice's to touch: the snapshot routes stay alive until   */
-/* the Charts page stops reading them (0.9-M2-S3).                      */
-
-const snapshot = await call("GET", "/snapshot", { token: TOKENS[0] });
-check("non-scope: GET /snapshot is still routed - it retires with the " +
-  "page that reads it, not here",
-  snapshot.status === 404 && snapshot.body.error === "No snapshot published yet.");
+/*
+ * RETIRED (0.9-M2-S3, #354): section 9 stood here, "Not this slice's to
+ * touch: the snapshot routes stay alive until the Charts page stops
+ * reading them" - a deliberate non-scope pin from 0.9-M2-S0 pointing at
+ * THIS slice as the one that closes it. It is closed: server/worker.js
+ * no longer routes /snapshot at all (deletion, not gating), so a call
+ * to it now falls to env.ASSETS.fetch exactly like any other unknown
+ * path - this file stubs no ASSETS binding, on purpose, the same
+ * reason tests/route-precedence.test.mjs gives for its own stub env
+ * carrying none; that file is where the retired route's own checks
+ * live now, driven against a real ASSETS stub.
+ */
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 91;
+const EXPECTED = 90;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

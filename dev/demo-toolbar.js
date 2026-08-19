@@ -30,7 +30,10 @@
     throw new Error("demo-toolbar.js loaded without demo-boot.js.");
   }
 
-  const [WHO_KEY, DATA_KEY, WORLD_KEY] = Demo.STORAGE_KEYS;
+  // The middle key (was DATA_KEY, the staged snapshot) has no reader
+  // left in this file - see the note on the retired publish/buildSnapshot
+  // block below - so it is skipped rather than bound to an unused name.
+  const [WHO_KEY, , WORLD_KEY] = Demo.STORAGE_KEYS;
 
   /*
    * The product's own session key, written out here because it is the
@@ -240,97 +243,14 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* The published snapshot.                                             */
-
-  /*
-   * Built by the shipped aggregation in a worker, for the reason
-   * dev/demo-corpus.js opens with: apps/web/admin.js and
-   * apps/web/dashboard.js wire themselves to a document when there is
-   * one, and a worker has none - so only the pure halves run, and what
-   * the charts draw is what the product computes.
-   */
-  function buildSnapshot(corpus, rounds) {
-    return new Promise(function (resolve) {
-      let worker;
-      try {
-        worker = new Worker("/dev/demo-corpus.js");
-      } catch (error) {
-        resolve({ ok: false, why: (error && error.message) || String(error) });
-        return;
-      }
-      worker.addEventListener("message", function (event) {
-        worker.terminate();
-        resolve(event.data);
-      });
-      worker.addEventListener("error", function (event) {
-        worker.terminate();
-        resolve({ ok: false, why: event.message || "the worker failed" });
-      });
-      worker.postMessage({ corpus: corpus, rounds: rounds });
-    });
-  }
-
-  async function publish(corpus, rounds) {
-    if (corpus === null) {
-      /*
-       * Emptying is a write of the DATA, not of `published`.
-       *
-       * demo-stub.js reads `published: undefined` as never-touched and
-       * `published: null` as taken-down, and those two are a property
-       * the product really has. Writing null here to mean "no preset"
-       * would collapse them, and a takedown pressed on the admin page
-       * would stop being distinguishable from a binder nobody has
-       * published in.
-       */
-      try {
-        root.sessionStorage.removeItem(DATA_KEY);
-      } catch (error) {
-        say("This browser refused to clear the staged snapshot.");
-        return;
-      }
-      patchWorld({ staged: null });
-      again();
-      return;
-    }
-
-    say("Building the snapshot from the shipped code…");
-    const built = await buildSnapshot(corpus, rounds);
-    if (!built.ok) {
-      say("The snapshot could not be built (" + built.why + "), so the " +
-        "charts report no figures. Everything else still runs.");
-      return;
-    }
-    try {
-      root.sessionStorage.setItem(DATA_KEY, JSON.stringify({
-        staged: built.snapshot,
-        at: new Date().toISOString(),
-      }));
-    } catch (error) {
-      say("The snapshot is too large for this browser's session storage, " +
-        "so nothing was staged.");
-      return;
-    }
-    patchWorld({ staged: { corpus: corpus, rounds: built.rounds } });
-    again();
-  }
-
-  function stagedNow() {
-    const staged = readWorld().staged;
-    return staged && staged.corpus ? staged : null;
-  }
-
-  async function addEntries() {
-    const staged = stagedNow();
-    const corpus = staged === null ? "rich" : staged.corpus;
-    const at = staged === null ? 0 : Number(staged.rounds) || 0;
-    const of = Demo.roundsIn(corpus);
-    if (at >= of) {
-      say("Every round this corpus has is already published - " + of +
-        " of " + of + ". Press a snapshot row to start over.");
-      return;
-    }
-    await publish(corpus, at + 1);
-  }
+  /* The published snapshot - RETIRED (0.9-M2-S3, #354). This section    */
+  /* used to build a fake snapshot in a Web Worker (dev/demo-corpus.js)  */
+  /* and stage it for the demo's charts to draw; the route it simulated */
+  /* is deleted, not gated, on the real Worker (server/worker.js), so   */
+  /* the demo now says as much in one line (see the "data" group in     */
+  /* paint() below) instead of building one it cannot draw from - the   */
+  /* 0.9-M4 demo rebuild decides what replaces this, per the milestone  */
+  /* list in AGENTS.md.                                                 */
 
   /* ------------------------------------------------------------------ */
   /* Corrections, and the clock.                                         */
@@ -433,20 +353,23 @@
     const key = enablerFor("key");
     who.appendChild(button(key.label, key.what, fillKeyBox));
 
+    // Publish and the presets it staged are gone with the snapshot
+    // route (0.9-M2-S3, #354): there is no shipped aggregation left to
+    // build a fake one from, and a button that failed on every press
+    // would be a worse demo than no button - "the demo must not lie OR
+    // mystify" (Prime's ruling on this slice's demo-tooling fork,
+    // 2026-08-19). One plain line stands where the preset buttons and
+    // "Add entries" did; the honest fact is that this demo does not
+    // show charts until 0.9-M4 decides how the demo simulates live
+    // aggregation, or whether it keeps this note instead.
     const data = group(bar, enablerFor("snapshot").label);
-    Demo.PRESETS.forEach(function (preset) {
-      const counts = Demo.countsFor(preset.corpus, preset.rounds);
-      // The numbers are read off the corpus rather than written on the
-      // control, so a label cannot disagree with the charts under it.
-      const label = preset.corpus === null ? preset.label
-        : preset.label + " " + counts.entries + "/" + counts.people;
-      data.appendChild(button(label, preset.what, function () {
-        publish(preset.corpus, preset.rounds);
-      }));
-    });
-
-    const grow = enablerFor("grow");
-    data.appendChild(button(grow.label, grow.what, addEntries));
+    // .demo-group-name rather than a new class - the ruling on this
+    // fork asked for one plain line, not new styling, and this class
+    // already reads as muted, secondary text beside a group's name.
+    const note = document.createElement("span");
+    note.className = "demo-group-name";
+    note.textContent = "Charts go live in the demo rebuild (0.9-M4).";
+    data.appendChild(note);
 
     const corrections = enablerFor("corrections");
     data.appendChild(button(corrections.label, corrections.what,

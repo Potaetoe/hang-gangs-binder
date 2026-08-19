@@ -57,7 +57,7 @@
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
-      <li><a href="charts.html">Muse's charts</a></li>
+      <li><a href="charts.html">Charts</a></li>
       <li><a href="admin.html">Admin</a></li>
     </ul>
   </nav>
@@ -505,9 +505,9 @@
     <div class="tool" id="publish-card" hidden>
       <p class="runner"><span>Publish</span></p>
       <p>
-        Sends the charts above to <a href="charts.html">Muse's
-        charts</a>, replacing what is there now — counts and medians,
-        no handles and no rows.
+        Sends the charts above to <a href="charts.html">Charts</a>,
+        replacing what is there now — counts and medians, no handles
+        and no rows.
       </p>
 
       <div class="field">
@@ -614,9 +614,17 @@
 
 </div>
 
+<!-- dashboard.js retired with the snapshot route it drew (0.9-M2-S3,
+     #354): the surviving BinderDashboard.snapshotOf() calls in
+     admin.js now throw TypeError, which is what "the Publish
+     control goes dead-in-water" means in practice - admin.html itself
+     is stated dead rather than patched, and dies whole at 0.9-M3
+     (DESIGN.md, "Admin surfaces"). This tag is removed rather than
+     left dangling because a <script src> naming a file that does not
+     exist is a stronger, more legible signal than a 404 nobody reads
+     the network panel to see. -->
 <script src="config.js"></script>
 <script src="crypto.js"></script>
-<script src="dashboard.js"></script>
 <script src="xlsx.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
