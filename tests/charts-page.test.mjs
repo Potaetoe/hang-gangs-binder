@@ -533,6 +533,18 @@ const ENOUGH_FIXTURE = {
     byId.get("download").hidden === false &&
     byId.get("download").download === "charts.json");
 
+  /*
+   * Owner ruling 1, #243: the measure select itself offers only
+   * drawableMeasures() - populateMeasure() is wired to it, not to
+   * Fields.measures() directly. measureFixture() carries a categorical
+   * "gender" entry beside "weight" precisely so a regression back to
+   * the unfiltered list has something to catch here.
+   */
+  const measureOptions = byId.get("measure").children.map((c) => c.value);
+  check("the measure select offers only numeric measures - the " +
+    "categorical fixture entry (gender) is never one of its options",
+    measureOptions.length === 1 && measureOptions[0] === "weight");
+
   const svg = byId.get("figure-distribution").querySelector("svg");
   const labels = svg.children.filter((c) => c.tag === "text")
     .map((c) => c._text);
