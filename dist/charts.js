@@ -71,6 +71,17 @@
 
   
 
+  function groupCellLabel(measure, cell, countries) {
+    if (measure && measure.choicesFrom === "countries" &&
+        cell.bucket !== "blank") {
+      const table = countries || {};
+      return table[cell.value] || cell.label;
+    }
+    return cell.label;
+  }
+
+  
+
   function chartsURL(endpoint, ask) {
     const url = new URL(endpoint + "/charts-data");
     url.searchParams.set("measure", ask.measure);
@@ -90,6 +101,7 @@
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
     valueChoices: valueChoices,
+    groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
   };
 
@@ -274,13 +286,17 @@
       show(card, false);
       return;
     }
+    const site = root.BINDER_SITE;
     groups.forEach(function (group) {
       const heading = document.createElement("h3");
       heading.textContent = group.label;
       body.appendChild(heading);
+      const measure = Fields.measure(group.field, site);
       group.values.forEach(function (cell) {
         const line = document.createElement("p");
-        line.textContent = cell.label + ": " + cell.count;
+        line.textContent =
+          groupCellLabel(measure, cell, root.BINDER_COUNTRIES) + ": " +
+          cell.count;
         body.appendChild(line);
       });
     });
@@ -415,16 +431,26 @@
 
   
 
-  let downloadUrl = null;
+  let lastAnswerText = null;
 
   function offerDownload(text) {
-    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-    downloadUrl = URL.createObjectURL(
-      new Blob([text], { type: "application/json" }));
-    const link = $("download");
-    link.href = downloadUrl;
-    link.download = "charts.json";
-    link.hidden = false;
+    lastAnswerText = text;
+    $("download").hidden = false;
+  }
+
+  function wireDownload() {
+    $("download").addEventListener("click", function () {
+      if (!lastAnswerText) return;
+      const url = URL.createObjectURL(
+        new Blob([lastAnswerText], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "charts.json";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
   }
 
    
@@ -527,5 +553,6 @@
     $("show-me").addEventListener("click", function () {
       showMe();
     });
+    wireDownload();
   }
 })(globalThis);

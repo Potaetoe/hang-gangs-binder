@@ -153,6 +153,29 @@
     });
   }
 
+  /*
+   * One group-makeup cell's own display text.
+   *
+   * A field whose choices live outside the spec - country is the one -
+   * sends no real label of its own: server/charts-agg.js's cellsOf()
+   * puts the code in `label` as a placeholder ("the value stands in for
+   * it and the page that holds the list renders the name"), so this is
+   * where that rendering happens - the same country table
+   * apps/web/countries.js loads for the filter-value control, looked up
+   * by the code the response actually holds. The blank cell keeps its
+   * own real label ("Not stated") on every field, country included, so
+   * it is excluded here rather than looked up against a table that was
+   * never going to hold a null key.
+   */
+  function groupCellLabel(measure, cell, countries) {
+    if (measure && measure.choicesFrom === "countries" &&
+        cell.bucket !== "blank") {
+      const table = countries || {};
+      return table[cell.value] || cell.label;
+    }
+    return cell.label;
+  }
+
   /* The request GET /charts-data answers to. `self=1` always: there is
      no separate control for the member's own overlay (design mandate 2
      names six controls and this is not one of them) - DESIGN.md,
@@ -182,6 +205,7 @@
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
     valueChoices: valueChoices,
+    groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
   };
 
@@ -381,11 +405,14 @@
    * The group-makeup block: plain count lines, no chart machinery (owner
    * ruling 1, #243) - no bars, no track, no .chart-* classes, just the
    * response's own `groups` printed as text. One heading per categorical
-   * field, one line per value, "<label>: <count>" verbatim - zeros
-   * included, because a zero here is the response's own line and not
-   * this page's to drop. Re-runs on every render, so a filtered answer's
-   * counts replace an unfiltered one's rather than sitting stale beside
-   * it (server/charts-agg.js's makeupOf(): the block describes the
+   * field, one line per value, "<label>: <count>" - zeros included,
+   * because a zero here is the response's own line and not this page's
+   * to drop. The count is always the response's own number, untouched;
+   * the LABEL is groupCellLabel()'s call, verbatim for every field
+   * except country's real names, which this page derives (see its own
+   * header). Re-runs on every render, so a filtered answer's counts
+   * replace an unfiltered one's rather than sitting stale beside it
+   * (server/charts-agg.js's makeupOf(): the block describes the
    * FILTERED view, not the whole binder).
    */
   function renderGroups(groups) {
@@ -396,13 +423,17 @@
       show(card, false);
       return;
     }
+    const site = root.BINDER_SITE;
     groups.forEach(function (group) {
       const heading = document.createElement("h3");
       heading.textContent = group.label;
       body.appendChild(heading);
+      const measure = Fields.measure(group.field, site);
       group.values.forEach(function (cell) {
         const line = document.createElement("p");
-        line.textContent = cell.label + ": " + cell.count;
+        line.textContent =
+          groupCellLabel(measure, cell, root.BINDER_COUNTRIES) + ": " +
+          cell.count;
         body.appendChild(line);
       });
     });
@@ -566,20 +597,40 @@
     renderGroups(answer.groups);
   }
 
-  /* Download: the route's own bytes, unparsed and unreformatted
-     (security mandate 6). The same object is offered whether the cut
-     was enough or not - a not-enough answer is a small, honest
-     document and there is no reason to withhold it. */
-  let downloadUrl = null;
+  /*
+   * Download: the route's own bytes, unparsed and unreformatted
+   * (security mandate 6). The same object is offered whether the cut
+   * was enough or not - a not-enough answer is a small, honest document
+   * and there is no reason to withhold it.
+   *
+   * CREATE, USE, REVOKE - ALL INSIDE THE CLICK HANDLER (0.9-M2-S12,
+   * #373, carried to this file's rebuild). The route's own answer text
+   * is remembered so the handler has bytes to build a Blob from, but the
+   * object URL itself never outlives the click that made it: no
+   * persisted object-URL variable at module scope, nothing left for a
+   * future exit handler to clear - the same shape submit.js's own
+   * download uses since #373 deleted its dead scaffolding of that kind.
+   */
+  let lastAnswerText = null;
 
   function offerDownload(text) {
-    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-    downloadUrl = URL.createObjectURL(
-      new Blob([text], { type: "application/json" }));
-    const link = $("download");
-    link.href = downloadUrl;
-    link.download = "charts.json";
-    link.hidden = false;
+    lastAnswerText = text;
+    $("download").hidden = false;
+  }
+
+  function wireDownload() {
+    $("download").addEventListener("click", function () {
+      if (!lastAnswerText) return;
+      const url = URL.createObjectURL(
+        new Blob([lastAnswerText], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "charts.json";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -684,5 +735,6 @@
     $("show-me").addEventListener("click", function () {
       showMe();
     });
+    wireDownload();
   }
 })(globalThis);

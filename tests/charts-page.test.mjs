@@ -216,6 +216,34 @@ check("a choicesFrom field reads the page's own table, sorted by " +
   countryChoices[0].label === "Albania" &&
   countryChoices[1].label === "United States");
 
+/* groupCellLabel: the country carry (S12's review, #373; the wake to
+   this file). server/charts-agg.js sends `label: value` (the code) as
+   a placeholder for a choicesFrom field; this page derives the real
+   name from `value` through its own countries table. */
+const countryMeasureFixture = { name: "country", choicesFrom: "countries" };
+const genderMeasureFixture = { name: "gender", choices: [] };
+const COUNTRY_TABLE = { US: "United States" };
+check("a country cell's display text is looked up by value, not " +
+  "trusted from the response's own label placeholder",
+  Charts.groupCellLabel(countryMeasureFixture,
+    { value: "US", label: "US", count: 5, bucket: null }, COUNTRY_TABLE) ===
+  "United States");
+check("a code the table does not hold falls back to the response's " +
+  "own label rather than rendering nothing",
+  Charts.groupCellLabel(countryMeasureFixture,
+    { value: "ZZ", label: "ZZ", count: 1, bucket: null }, COUNTRY_TABLE) ===
+  "ZZ");
+check("the blank cell keeps its own real label even on a choicesFrom " +
+  "field - it is not a code to look up",
+  Charts.groupCellLabel(countryMeasureFixture,
+    { value: null, label: "Not stated", count: 3, bucket: "blank" },
+    COUNTRY_TABLE) === "Not stated");
+check("a field with real spec labels (gender) passes its label " +
+  "straight through, untouched by the country table",
+  Charts.groupCellLabel(genderMeasureFixture,
+    { value: "male", label: "Male", count: 10, bucket: null },
+    COUNTRY_TABLE) === "Male");
+
 /* ------------------------------------------------------------------ */
 /* 3. Driven end to end: a minimal DOM, a fixture fetch, real events.   */
 
@@ -273,6 +301,11 @@ function node(tag) {
     }
     return null;
   };
+  // apps/web/charts.js's wireDownload() builds a throwaway <a>, appends
+  // it, calls .click() and removes it (0.9-M2-S12, #373's pattern) - a
+  // no-op here for the same reason every other real-DOM method on this
+  // stub is one: nothing in this file inspects a real navigation.
+  el.click = () => {};
   Object.defineProperty(el, "textContent", {
     get: () => el._text,
     set: (v) => { el._text = String(v); el.children.length = 0; },
@@ -340,7 +373,14 @@ function buildDom(opts) {
   unitsMetric.value = "metric";
   const unitsInputs = [unitsImperial, unitsMetric];
 
+  // apps/web/charts.js's wireDownload() (0.9-M2-S12, #373's pattern)
+  // builds a throwaway <a>, appends it to document.body, clicks it and
+  // removes it - a stub with no body at all would leave that call
+  // reading undefined, the same gap noted against your-page.test.mjs's
+  // own makeFormPage() before it grew one.
+  const body = node("body");
   const doc = {
+    body,
     getElementById: (id) => byId.get(id) || null,
     createElement: (tag) => node(tag),
     createElementNS: (_ns, tag) => node(tag),
@@ -366,6 +406,8 @@ function measureFixture() {
     { name: "gender", label: "Gender", term: "gender", kind: "categorical",
       choices: [{ value: "male", label: "Male" },
                 { value: "female", label: "Female" }] },
+    { name: "country", label: "Country", term: "country",
+      kind: "categorical", choicesFrom: "countries" },
   ];
 }
 
@@ -381,10 +423,20 @@ async function driven(fetchImpl, opts) {
   const options = opts || {};
   const { doc, byId, unitsInputs } = buildDom(options);
   const calls = [];
+  // The create-revoke pairing (0.9-M2-S12, #373's pattern, carried to
+  // this file's own rebuild): two arrays rather than a count, because a
+  // count alone cannot tell "every created URL got revoked" from "one
+  // got revoked twice and another leaked".
+  const created = [];
+  const revoked = [];
   const g = globalThis;
   g.document = doc;
-  g.URL.createObjectURL = () => "blob:test";
-  g.URL.revokeObjectURL = () => {};
+  g.URL.createObjectURL = () => {
+    const url = "blob:test-" + created.length;
+    created.push(url);
+    return url;
+  };
+  g.URL.revokeObjectURL = (url) => { revoked.push(url); };
   g.BinderUI = undefined;
   g.BinderSession = {
     require: () => ({ session: "tok" }),
@@ -397,7 +449,7 @@ async function driven(fetchImpl, opts) {
     defaultSystem: () => options.defaultSystem || "imperial",
   };
   g.BINDER_SITE = { fields: [] };
-  g.BINDER_COUNTRIES = {};
+  g.BINDER_COUNTRIES = { US: "United States", AL: "Albania" };
   g.BINDER_CONFIG = { endpoint: "https://w.example" };
   g.fetch = async (url, init) => {
     calls.push(String(url));
@@ -412,7 +464,7 @@ async function driven(fetchImpl, opts) {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await pressShowMe(byId);
 
-  return { byId, calls, unitsInputs };
+  return { byId, doc, calls, unitsInputs, created, revoked };
 }
 
 async function pressShowMe(byId) {
@@ -516,6 +568,21 @@ const ENOUGH_FIXTURE = {
         { value: "nonbinary", label: "Non-binary", count: 0, bucket: null },
         { value: null, label: "Not stated", count: 2, bucket: "blank" },
       ] },
+    /*
+     * Country: the hard case (server/charts-agg.js's own header, since
+     * the 2026-08-19 sitting, #371 comment 5347769320). Its choices live
+     * outside the spec, so the route lists no zeros - only the codes the
+     * group really holds - and `label` is the code itself, a
+     * placeholder the response's own comment says the page holding the
+     * list is meant to replace. No "Other" entry, no non-binary-shaped
+     * zero row: two codes present, the blank line always included.
+     */
+    { field: "country", label: "Country", term: "country", multiple: false,
+      values: [
+        { value: "US", label: "US", count: 5, bucket: null },
+        { value: "AL", label: "AL", count: 1, bucket: null },
+        { value: null, label: "Not stated", count: 3, bucket: "blank" },
+      ] },
   ],
   self: { points: [
     { at: "2026-06-05T00:00:00.000Z", value: { metric: 79, imperial: 174.2 } },
@@ -528,10 +595,9 @@ const ENOUGH_FIXTURE = {
   check("a real answer draws - the status line names the measure, " +
     "not an error",
     byId.get("status")._text.includes("Weight"));
-  check("download is offered once a response exists, holding the " +
-    "route's own bytes",
-    byId.get("download").hidden === false &&
-    byId.get("download").download === "charts.json");
+  check("download is offered once a response exists - the button is " +
+    "unhidden",
+    byId.get("download").hidden === false);
 
   /*
    * Owner ruling 1, #243: the measure select itself offers only
@@ -612,16 +678,115 @@ const ENOUGH_FIXTURE = {
     .map((c) => c._text);
   check("the group makeup card is shown once a drawn answer arrives",
     byId.get("groups").hidden === false);
-  check("the group makeup heading names the field, from the response",
-    groupsBody.children.some((c) => c.tag === "h3" && c._text === "Gender"));
-  check("every value line reads \"<label>: <count>\" verbatim from the " +
-    "response, zeros and the blank cell included, in the response's " +
-    "own order - no chart machinery, no bars",
-    groupsLines.length === 4 &&
+  check("the group makeup heading names each field, from the response, " +
+    "one per categorical field",
+    groupsBody.children.some((c) => c.tag === "h3" && c._text === "Gender") &&
+    groupsBody.children.some((c) => c.tag === "h3" && c._text === "Country"));
+  check("every gender value line reads \"<label>: <count>\" verbatim " +
+    "from the response, zeros and the blank cell included, in the " +
+    "response's own order - no chart machinery, no bars",
+    groupsLines.length === 7 &&
     groupsLines[0] === "Male: 10" &&
     groupsLines[1] === "Female: 8" &&
     groupsLines[2] === "Non-binary: 0" &&
     groupsLines[3] === "Not stated: 2");
+  /*
+   * The country carry (Prime's wake, S12's review #373): the response
+   * sends `label: "US"` (the code, a placeholder) for a choicesFrom
+   * field, and this page is the one holding apps/web/countries.js's own
+   * table - groupCellLabel() looks the real name up from `value`, never
+   * trusting `label` for this field. The blank line keeps its own real
+   * label untouched, because it is not a country code to look up.
+   */
+  check("country lines render the real name looked up from the code " +
+    "(value), not the code the response's own label placeholder holds - " +
+    "the blank line is untouched",
+    groupsLines[4] === "United States: 5" &&
+    groupsLines[5] === "Albania: 1" &&
+    groupsLines[6] === "Not stated: 3");
+}
+
+/*
+ * The download's create-use-revoke pairing (0.9-M2-S12, #373, and the
+ * carry to this file's rebuild). apps/web/charts.js used to keep a
+ * module-level `downloadUrl` assigned once a response arrived and
+ * revoked only lazily on the NEXT press - a URL that could sit open for
+ * the rest of the tab's life. wireDownload()'s click handler now
+ * creates, uses and revokes the object URL synchronously, every press,
+ * matching submit.js's own shape since #373 deleted its dead
+ * downloadUrl scaffolding - so there is no module-level state left for
+ * anything to leak on any exit, by construction rather than by a
+ * clearing call this page would have to remember to make.
+ */
+{
+  const { byId, doc, created, revoked } = await driven(() =>
+    response(200, ENOUGH_FIXTURE));
+
+  await byId.get("download").dispatch("click");
+
+  // Two arrays, not a count (0.9-M2-S12, #373): a count alone cannot
+  // tell "the one URL this click made got revoked" from "some URL,
+  // possibly a stale one, got revoked" or "one got revoked twice while
+  // another leaked" - dropping the revoke call turns this red without
+  // touching what created pushed, which is the pairing a mutation has
+  // to be able to break.
+  check("clicking download creates exactly one object URL and revokes " +
+    "exactly that same one before the handler returns - create, use, " +
+    "revoke, all inside the one click",
+    created.length === 1 && revoked.length === 1 &&
+    revoked[0] === created[0]);
+  check("the throwaway trigger anchor is removed from document.body " +
+    "after the click - nothing outlives the handler",
+    doc.body.children.length === 0);
+
+  const chartsSourceForDownloadState = await read("../apps/web/charts.js");
+  check("apps/web/charts.js declares no module-level downloadUrl - the " +
+    "create-use-revoke pairing above is the whole mechanism, so there " +
+    "is nothing left for anything outside wireDownload() to hold or " +
+    "null out",
+    !/\bdownloadUrl\b/.test(chartsSourceForDownloadState));
+}
+
+/*
+ * DISTRIBUTION: NULL IS A DIFFERENT ANSWER FROM A GRID WHOSE BANDS ALL
+ * READ ZERO (server/charts-agg.js's own header, since S10's fix wave,
+ * #371 F3 - carried to this file on the S11 rebase wake). The two must
+ * never render the same way: `distribution: null` (always paired with
+ * `enough: false` on the wire, NOT_ENOUGH_FIXTURE above) is the honest
+ * sentence with nothing drawn, and a real grid that happens to be
+ * entirely zero-count is still a DRAWN answer - every band its own
+ * zero-height slot, the every-band-draws property above, not the
+ * not-enough state in disguise. The branch this page keys off is
+ * `answer.enough` alone, never a read of the bins' own counts - this
+ * arm is what would catch a regression to "an all-zero distribution
+ * looks like enough:false" reasoning, which the response contract
+ * explicitly forbids.
+ */
+{
+  const allZero = Object.assign({}, ENOUGH_FIXTURE, {
+    distribution: {
+      kind: "bins",
+      partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+      bins: [
+        { count: 0, from: { metric: 20, imperial: 44 },
+          to: { metric: 70, imperial: 154 } },
+        { count: 0, from: { metric: 70, imperial: 154 },
+          to: { metric: 90, imperial: 198 } },
+      ],
+    },
+  });
+  const { byId } = await driven(() => response(200, allZero));
+  check("an all-zero grid still draws - the figures are shown, never " +
+    "the not-enough sentence",
+    byId.get("status")._text.includes("Weight") &&
+    !byId.get("status")._text.includes("Not enough"));
+  const svg = byId.get("figure-distribution").querySelector("svg");
+  const barCounts = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-value").map((c) => c._text);
+  check("both zero bands drew their own zero-height slot, index for " +
+    "index - the same every-band-draws property, not a suppressed or " +
+    "collapsed grid",
+    barCounts.length === 2 && barCounts[0] === "0" && barCounts[1] === "0");
 }
 
 /*
