@@ -210,9 +210,42 @@ globalThis.BINDER_SITE = {
       // two views are comparable and no edge reports one member's own
       // number. Anybody outside the range is counted in the end band
       // nearest them, so widen it rather than lose them.
+      //
+      // THESE TWO NUMBERS ARE DERIVED FROM THE FORM'S OWN BOUNDS, not
+      // picked for looking reasonable (owner ruling, #371 comment
+      // 5347769320: "in a gaining community the high end IS the
+      // story"). A cap chosen by eye redraws everybody past it as the
+      // top band's neighbor, and here that was every member above a
+      // BMI of 100 - all of them typing weights and heights this form
+      // accepts. The arithmetic, from the `units` bounds above:
+      //
+      //   lightest / tallest   the lightest weight any unit admits is
+      //                        44 lb = 19.96 kg, the tallest height is
+      //                        250 cm = 2.50 m, so the lowest BMI the
+      //                        form can produce is 19.96 / 2.50^2 = 3.2
+      //   heaviest / shortest  500 kg over 3 ft = 0.9144 m gives
+      //                        500 / 0.9144^2 = 598.0
+      //
+      // Every unit of a kind is asked, not just the charted one: a
+      // member types kilograms or pounds, feet or centimeters, and each
+      // carries its own bounds in its own numbers. Both ends are then
+      // rounded OUTWARD onto this row's own `bin` grid - down to 0, up
+      // to 600 - so the axis is a whole number of bands and neither end
+      // rounds in past a value the form allows. Narrowing either number
+      // starts clipping real members; widening the form's bounds above
+      // means re-deriving these.
+      //
+      // `bin` stays at 5, which is the finest round width the derived
+      // range can carry: 600 / 5 = 120 bands, under the 200-band guard
+      // in server/charts-agg.js, where 600 / 2 = 300 would be refused
+      // as a spec error. It also means the stretch of the axis members
+      // actually stand on is drawn at exactly the resolution it was
+      // before the range was derived. Most of the 120 bands read zero
+      // for a small group, which is the shape the owner chose: an empty
+      // band is an empty slot.
       bin: 5,
-      min: 10,
-      max: 100,
+      min: 0,
+      max: 600,
       chart: true,
     },
     {

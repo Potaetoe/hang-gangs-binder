@@ -149,9 +149,42 @@ globalThis.BINDER_SITE = {
        
        
        
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
       bin: 5,
-      min: 10,
-      max: 100,
+      min: 0,
+      max: 600,
       chart: true,
     },
     {

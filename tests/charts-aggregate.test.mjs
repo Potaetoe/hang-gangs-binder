@@ -19,11 +19,14 @@
  *      as a positive claim so that a later change quietly reviving
  *      suppression reddens.
  *   2. THE MACHINERY, at floor 5. Nothing was ripped out - the Other
- *      bucket, person-pooling, band merging and the one-partition rule
- *      all still exist and still obey whatever floor the setting holds.
- *      Every proof of them survives here, parameterized on the raised
- *      floor rather than deleted, because the way back is a number and a
- *      number nobody proves is not a way back.
+ *      bucket, person-pooling and band merging all still exist and still
+ *      obey whatever floor the setting holds. Every proof of them
+ *      survives here, parameterized on the raised floor rather than
+ *      deleted, because the way back is a number and a number nobody
+ *      proves is not a way back. The one-partition arms in section 3b
+ *      are NOT part of that world: that rule obeys no floor and holds at
+ *      every one, which is why its arms run at both (#371, the S10
+ *      review, finding F1).
  *
  * THE FLOOR REACHES THIS FILE THROUGH THE SETTINGS SEAM AND NOWHERE
  * ELSE. aggregate()'s fourth argument is a settings object; 0.9-M3's
@@ -650,7 +653,7 @@ check("one partition: over " + checked + " random groups at the raised " +
 /* exactly what this refuses: BMI has no unit table to keep bounds in, */
 /* so the numbers in the spec row are the whole axis, and a cap chosen */
 /* for looking reasonable silently redraws everybody past it as the    */
-/* top band's neighbour. These arms compute the bounds the form really */
+/* top band's neighbor. These arms compute the bounds the form really  */
 /* admits and hold the spec to covering them, so a later narrowing     */
 /* reddens here rather than in a chart nobody checks.                  */
 
@@ -1580,7 +1583,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 141;
+const EXPECTED = 147;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
