@@ -808,9 +808,12 @@ check("the id on screen is the session's, not whatever /me answered with",
   foreignId.elements["member-telegram-id"].textContent === "10");
 
 /*
- * A development sign-in has none to show. POST /auth/dev mints an
- * account for a subject string rather than for a Telegram user, so it
- * answers with a null id, and both halves matter here: an empty field
+ * A development session has none to show: it belongs to a subject
+ * string rather than to a Telegram user, so its id is null. No route
+ * mints such a session - the local sign-in is gone (0.9-M2-S1, #352)
+ * and this arm hands the page the shape directly, which is also the
+ * only way such a session reaches a real page. Both halves matter
+ * here: an empty field
  * with the line still painted reads as "Your Telegram id:" followed by
  * nothing, which looks like a broken page rather than like a session
  * that has no such id.

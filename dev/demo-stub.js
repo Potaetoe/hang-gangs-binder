@@ -394,7 +394,6 @@
    */
   const ROUTES = [
     { path: "/auth/telegram", methods: ["POST"] },
-    { path: "/auth/dev", methods: ["POST"] },
     { path: "/session", methods: ["DELETE"] },
     { path: "/me", methods: ["GET"] },
     { path: "/my-entries", methods: ["GET"] },
@@ -781,9 +780,10 @@
    * nobody; #58's line paints from whichever one signs in, so the id has
    * to travel the whole way from the picker's press to that line.
    *
-   * The opposite case - a development session, whose id is null, where
-   * the line correctly stays hidden - is not staged here. POST /auth/dev
-   * answers null by construction, so proving it needs the real route.
+   * The opposite case - a session whose id is null, where the line
+   * correctly stays hidden - is not staged here. Every sign-in this stub
+   * answers carries an id, so a null one has no door in the demo; the
+   * page-side guard for it is armed in dev/submit.test.mjs instead.
    */
   const MEMBER_TELEGRAM_ID = "6204915773";
 
@@ -921,19 +921,6 @@
         ? who.telegramId : opts.telegramId,
     };
   }
-
-  /*
-   * The development sign-in's identity, kept apart from SIGN_INS.
-   *
-   * POST /auth/dev is a route of the product, not a person the picker
-   * offers, and its whole demonstrable property is the null Telegram id
-   * that keeps #58's line hidden. Putting it in the picker's list would
-   * put a row there that the deployed site has no door for.
-   */
-  const DEV_SIGN_IN = {
-    id: "dev", label: "Development", handle: "demo_dev", isAdmin: false,
-    telegramId: null, lands: "your-page.html",
-  };
 
   /* ---------------------------------------------------------------- */
   /* What the toolbar is, and what each of its controls stages.       */
@@ -1377,34 +1364,27 @@
     // control this demo most wants driven.
     if (state.revoked === true) {
       const noCredential = (route === "/content" && method === "GET") ||
-        route === "/auth/telegram" || route === "/auth/dev";
+        route === "/auth/telegram";
       if (!noCredential) {
         return { status: REFUSED.status, body: REFUSED.body, next: next };
       }
     }
 
     /*
-     * The sign-in routes, answered from what the page POSTED.
+     * The sign-in route, answered from what the page POSTED.
      *
      * The demo's picker chooses an identity and hands the page a widget
      * payload; auth.js posts it; this reads the id back out. That order
      * is the whole reason the picker is worth having - the session a
      * driver ends up holding is one the product's own sign-in produced,
      * not one the demo wrote into storage behind it.
-     *
-     * The development route answers a null Telegram id by construction,
-     * which is what keeps #58's line correctly hidden on that arm.
      */
-    if (route === "/auth/telegram" || route === "/auth/dev") {
-      const posted = route === "/auth/dev"
-        ? null : signInForTelegramId((request.body || {}).id);
-      const chosen = route === "/auth/dev" ? DEV_SIGN_IN
-        : (posted || signInFor("member"));
-      const session = route === "/auth/dev"
-        ? sessionFor(DEV_SIGN_IN, { telegramId: null, isDev: true })
-        : sessionFor(chosen, {
-          telegramId: String((request.body || {}).id || chosen.telegramId),
-        });
+    if (route === "/auth/telegram") {
+      const posted = signInForTelegramId((request.body || {}).id);
+      const chosen = posted || signInFor("member");
+      const session = sessionFor(chosen, {
+        telegramId: String((request.body || {}).id || chosen.telegramId),
+      });
       next.session = session;
       next.signedInAs = chosen.id;
       // A sign-in is a live credential again, whatever the last one did.
@@ -2034,7 +2014,6 @@
     TOOLBAR: TOOLBAR,
     ENABLERS: ENABLERS,
     SIGN_INS: SIGN_INS,
-    DEV_SIGN_IN: DEV_SIGN_IN,
     KEY_BOXES: KEY_BOXES,
     PRESETS: PRESETS,
     CLOCK_STEPS: CLOCK_STEPS,

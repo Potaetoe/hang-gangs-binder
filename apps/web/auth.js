@@ -1,13 +1,19 @@
 /*
  * Sign-in transport, deliberately separate from the page that will render
- * the Telegram widget. The widget supplies one payload; local
- * development supplies another. Downstream of the POST, both responses are
- * the same session and travel through the same code here.
+ * the Telegram widget. The widget supplies the payload; the POST and
+ * everything downstream of it live here.
+ *
+ * AUTH_PATHS stays a list of one. It is an allowlist rather than a
+ * parameter check, so the cost of the extra element is nil and the
+ * benefit is that adding a second sign-in door has to be a deliberate
+ * edit here as well as a route on the Worker - which is the property
+ * that made removing the local development door a two-line change rather
+ * than an archaeology exercise (0.9-M2-S1, #352).
  */
 (function (root) {
   "use strict";
 
-  const AUTH_PATHS = ["/auth/telegram", "/auth/dev"];
+  const AUTH_PATHS = ["/auth/telegram"];
   const UI = root.BinderUI;
 
   function statusElement() {

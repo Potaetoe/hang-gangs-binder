@@ -470,7 +470,7 @@ await check("the endpoint reader finds the calls that are plainly there", () =>
   callsHas("GET", "/me") && callsHas("GET", "/my-entries") &&
   callsHas("POST", "/submit") &&
   callsHas("GET", "/snapshot") && callsHas("GET", "/export") &&
-  callsHas("POST", "/auth/telegram") && callsHas("POST", "/auth/dev"));
+  callsHas("POST", "/auth/telegram"));
 
 /*
  * The verb arm stated separately from the path arm, because the failure
@@ -880,10 +880,11 @@ await check("a stranger signs in as an ordinary member, as the Worker allows", (
     answer.body.telegramId === "999999";
 });
 
-await check("the development route answers a null Telegram id", () => {
+await check("a route the Worker does not serve is not answered here " +
+  "either - the stub mirrors the product's surface, and POST /auth/dev " +
+  "left it (0.9-M2-S1, #352)", () => {
   const answer = ask("POST", "/auth/dev", world(null), {});
-  return answer.status === 200 && answer.body.telegramId === null &&
-    answer.body.isDev === true;
+  return answer.status === 404;
 });
 
 await check("a lookup by Telegram id finds the identity and refuses a stranger", () =>

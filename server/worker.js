@@ -4,7 +4,6 @@
  * The routes:
  *
  *   POST   /auth/telegram    verify a login payload, issue a session.
- *   POST   /auth/dev         development only; 404 everywhere else.
  *   DELETE /session          end the session presented, now.
  *   GET    /me               what this account has on record.
  *   GET    /my-entries       this account's own rows: an id, a receipt
@@ -27,7 +26,10 @@
  *                            to relax what goes in it.
  *   DELETE /snapshot         take it down. Admin, and no key - see the
  *                            handler for why that matters.
- *   DELETE /submission/:id   remove one row. Admin.
+ *   DELETE /submission/:id   remove one row. A member removes their own;
+ *                            an admin removes anyone's. See
+ *                            handleDeleteSubmission for the whole of the
+ *                            difference between the two.
  *   GET    /content          the site copy an admin has set. The one
  *                            route here that answers without a
  *                            credential - see handleReadContent.
@@ -93,16 +95,13 @@
  *                             replaced by them - groupStanding() says
  *                             why this one keeps a secret arm for good.
  *   ALLOWED_ORIGINS           optional, comma-separated
- *   DEV_LOGIN_SECRET          DEVELOPMENT ONLY. Its absence is what
- *                             turns POST /auth/dev off. Never set this
- *                             on production. RETIRING - see below.
  *
  * Tables: `submissions`, `sessions`, `snapshots`, `site_content`,
  * `membership`, `auth_replay`. server/schema.sql is the whole database
  * and each table's own block there carries its reasoning.
  *
  * ---------------------------------------------------------------------
- * THREE MECHANISMS IN THIS FILE THE 0.9 RECORD RETIRES, AND WHAT IS
+ * TWO MECHANISMS IN THIS FILE THE 0.9 RECORD RETIRES, AND WHAT IS
  * TRUE OF THEM TODAY (0.9-M1-S5, #331).
  *
  * They are named here rather than only in an issue because a
@@ -122,22 +121,23 @@
  *      bypass - a list that skips the membership check is a way in that
  *      outlives the reason it was added. Retired with the same surface,
  *      since the same routes maintain it.
- *   3. POST /auth/dev and DEV_LOGIN_SECRET. The reason it exists is
- *      that Telegram will not bind the widget to localhost; sit now has
- *      a real bot, a real test group and a bound domain (DESIGN.md,
- *      "The bot is temporary" - two bots by design, sit's permanently
- *      its own), so local work signs in for real. Retired by the
- *      milestone that rebuilds the member pages (0.9-M2), which is what
- *      also removes the development-session card the flag paints.
  *
- * NONE OF THE THREE IS REACHABLE ON sit, and the guard is this code
- * rather than an operator remembering: each reads a binding sit does
- * not set, and each fails closed when it is absent. idList() of an
- * unset secret is the empty list, so neither id list grants anybody
- * anything; handleDevAuth answers 404 whenever DEV_LOGIN_SECRET is
- * unset, before it looks at anything else. What is NOT code-guarded is
- * somebody setting one of those bindings, or writing a `membership`
- * row - both would work, which is exactly why they are listed here.
+ * NEITHER IS REACHABLE ON sit, and the guard is this code rather than an
+ * operator remembering: each reads a binding sit does not set, and each
+ * fails closed when it is absent. idList() of an unset secret is the
+ * empty list, so neither id list grants anybody anything. What is NOT
+ * code-guarded is somebody setting one of those bindings, or writing a
+ * `membership` row - both would work, which is exactly why they are
+ * listed here.
+ *
+ * AND UNREACHABLE IS NOT ABSENT, which is the whole reason each entry
+ * names the milestone that DELETES it rather than resting on the guard.
+ * A mechanism gated on a binding comes back the moment somebody sets
+ * that binding, on any deployment, and no amount of failing closed
+ * changes that; only the deletion does. This list is therefore a work
+ * order, and an entry is discharged by its milestone taking the code
+ * out - which is what 0.9-M2 did with the local sign-in door this file
+ * carried third (0.9-M2-S1, #352).
  * ---------------------------------------------------------------------
  */
 
@@ -482,16 +482,12 @@ async function accountIdFor(env, subject) {
  * reach it (DESIGN.md, "The identifier is the whole problem"). So the
  * shape is asserted here rather than trusted: sixty-four lowercase hex
  * characters, the same ACCOUNT_ID pattern the account id is written
- * with. A dev session is NOT refused as a result, and that is correct:
- * handleDevAuth stores accountIdFor(env, "dev:" + subject) - the HMAC of
- * the namespaced subject, sixty-four hex characters - as the session's
- * account id, so a dev caller submits and reads like any account. Mandate
- * 1 holds not because dev is excluded but because the value bound into the
- * crypto is that HMAC, never a raw "dev:" subject or a raw id: the "dev:"
- * namespacing happens inside accountIdFor, BEFORE the derivation, so only
- * the un-invertible id ever reaches a seal or an open. What this throw
- * guards against is a RAW identity - a bare numeric id, a user.id, or an
- * un-HMAC'd "dev:" subject string - reaching the crypto. This throws
+ * with. What this throw guards against is a RAW identity - a bare
+ * numeric id, a user.id, or an un-HMAC'd "dev:"-namespaced string -
+ * reaching the crypto. The "dev:" spelling is named among them because a
+ * namespaced subject is still a subject: it is only safe once it has
+ * been through accountIdFor, and a session row written by hand can carry
+ * whatever its author typed (0.9-M2-S1, #352). This throws
  * rather than returning a refusal shape a caller chose: on a Worker
  * signing real members in it can only fire on a bug, and a bug that binds
  * a row to the wrong identity must be loud, not a 4xx a page interprets.
@@ -720,8 +716,8 @@ function json(body, status, origin) {
  */
 function tokenMatches(given, expected) {
   // An unset secret is not a match with anything, including "". Every
-  // caller already guards this - `Boolean(env.EXPORT_TOKEN)` and the
-  // DEV_LOGIN_SECRET check both refuse before getting here - but a
+  // caller already guards this - `Boolean(env.EXPORT_TOKEN)` refuses
+  // before getting here - but a
   // comparison that throws when the secret is missing turns a forgotten
   // guard into a crash rather than a refusal, and a crash is a worse
   // way to find out. Found by mutation testing on 2026-08-05, which
@@ -1077,13 +1073,23 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  * session keeps working as the member session it also is; the person is
  * still in the group. Ending a session is DELETE /session.
  *
- * A development session is exempt, because its adminness never came from
- * either list: a "dev:"-namespaced account id cannot be a numeric id's
- * HMAC, so checking it there would drop every dev admin instantly. What
- * minted it was DEV_LOGIN_SECRET, so that is what is re-read for it -
- * the same "must be SET" shape handleDevAuth uses, so turning the dev
- * login off also drops the sessions it issued. What that exemption does
- * NOT buy is the authority to write an admin row; see the router.
+ * THE LISTS ARE THE ONLY SOURCE OF ADMINNESS HERE, and a session row
+ * carrying is_dev = 1 gets no exemption from them. No route in this
+ * Worker writes that flag, so a row that has it was written straight
+ * into D1 - a `wrangler d1 execute`, a restored backup - and it is
+ * refused for the ordinary reason every other session is: a
+ * "dev:"-namespaced account id cannot be a numeric Telegram id's HMAC,
+ * so it is in neither list and this re-read makes it a member.
+ *
+ * That is the fail-closed direction, and it is worth saying out loud
+ * because the tempting shape is the other one. An exemption reading the
+ * adminness of such a row out of a binding is an exemption that hands
+ * admin authority to whoever can write one row, on any deployment where
+ * that binding is set (0.9-M2-S1, #352). The flag stays in the schema
+ * and `caller.isDev` still refuses an admin-row write, which costs
+ * nothing and is a second wall on the same hand-written row; dropping
+ * the column is a schema migration for the milestone that owns the
+ * table.
  */
 async function sessionFor(env, token) {
   if (!token) return null;
@@ -1143,9 +1149,7 @@ async function sessionFor(env, token) {
   const isDev = row.is_dev === 1;
   let isAdmin = row.is_admin === 1;
   if (isAdmin) {
-    isAdmin = isDev
-      ? Boolean(env.DEV_LOGIN_SECRET)
-      : (await adminAccountIds(env)).has(row.account_id);
+    isAdmin = (await adminAccountIds(env)).has(row.account_id);
   }
 
   /*
@@ -1442,77 +1446,6 @@ async function handleTelegramAuth(request, env, origin) {
     username: String(user.username).toLowerCase(),
     isAdmin: isAdmin,
     isDev: false,
-  }, 200, origin);
-}
-
-/*
- * Signing in locally, and the one deliberate hole in all of this.
- *
- * The login widget is bound to one domain and Telegram will not accept
- * localhost, so a development environment cannot mint a member session
- * the ordinary way. Rather than let local work stop at the session
- * boundary, this exists - and because it is a hole in the boundary that
- * now enforces everything, the whole of its design is which way it
- * fails.
- *
- * Four conditions, every one failing closed:
- *
- *   1. DEV_LOGIN_SECRET must be SET. Absent, the route does not exist.
- *      This is the same shape as Boolean(env.EXPORT_TOKEN) above, and a
- *      guard written the other way up is the entire risk in one line.
- *   2. The caller presents it, compared the same constant-time way.
- *   3. The Origin must be loopback. Positive matching rather than a deny
- *      list, so this route never has to know what production is and
- *      therefore cannot be wrong about it.
- *   4. Anything else is a 404, not a 401. A production deployment does
- *      not advertise a route it will not serve.
- *
- * dev/worker.test.mjs asserts 1 and 3 directly. Those are the most
- * important assertions in that file: the others protect the data, and
- * these protect the boundary that protects the data.
- */
-function isLoopback(origin) {
-  return /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin || "");
-}
-
-async function handleDevAuth(request, env, origin) {
-  const missing = json({ error: "Not found." }, 404, origin);
-  if (!env.DEV_LOGIN_SECRET) return missing;
-  if (!isLoopback(origin)) return missing;
-
-  const body = await request.text();
-  if (body.length > MAX_AUTH_BODY) return missing;
-
-  let payload;
-  try {
-    payload = JSON.parse(body);
-  } catch (e) {
-    return missing;
-  }
-  if (typeof payload.secret !== "string") return missing;
-  if (!tokenMatches(payload.secret, env.DEV_LOGIN_SECRET)) return missing;
-
-  const subject = String(payload.subject || "").trim();
-  if (!subject) {
-    return json({ error: "A subject is needed." }, 400, origin);
-  }
-
-  // "dev:" is namespacing rather than decoration. A real account id
-  // derives from a numeric Telegram id, so a prefixed subject can never
-  // collide with one even if the two environments were somehow handed
-  // the same ACCOUNT_SECRET.
-  const accountId = await accountIdFor(env, "dev:" + subject);
-  const isAdmin = payload.admin === true;
-  const session = await issueSession(env, accountId, isAdmin, true);
-
-  return json({
-    ok: true,
-    session: session.token,
-    expiresAt: session.expiresAt,
-    username: subject.toLowerCase(),
-    isAdmin: isAdmin,
-    isDev: true,
-    telegramId: null,
   }, 200, origin);
 }
 
@@ -2380,19 +2313,18 @@ async function handleAddMembership(request, env, origin, caller) {
   /*
    * A development session may not write an admin row.
    *
-   * POST /auth/dev mints an admin whose authority comes from
-   * DEV_LOGIN_SECRET and nothing else, which is harmless only while the
-   * table grants nothing. A row written from a local login is a real
-   * admin row, and after a flip to table-only it is the whole
-   * authority. So a dev session keeps every power it had over the data
-   * and loses this one; it may still manage the always-allow list,
-   * which is what makes a local admin page workable at all.
+   * NOTHING MINTS ONE ANY MORE - the local sign-in that did was removed
+   * with its binding (0.9-M2-S1, #352) - so the only session that can
+   * reach this carrying is_dev is a row written straight into D1. That
+   * makes this refusal narrower than it was and worth MORE, not less: a
+   * hand-written session is exactly the caller who should not be able to
+   * turn itself into a durable admin row, which outlives the session and
+   * is the whole authority once the flip to table-only happens.
    *
    * There is deliberately no escape hatch. A second secret to gate the
-   * exception is a second secret to forget, and on production
-   * DEV_LOGIN_SECRET is unset and no dev session can exist - so this
-   * refusal costs that deployment nothing and is a real boundary on
-   * every other one.
+   * exception is a second secret to forget, and no route here issues the
+   * flag at all - so this refusal costs every deployment nothing and is
+   * a real boundary on any database somebody has written to by hand.
    *
    * It stands ahead of every shape check below, and in the router's own
    * words - the same bytes every other refusal here gives - so a caller
@@ -2614,13 +2546,15 @@ async function route(request, env, url, allowed) {
     return json({ error: "Origin not allowed." }, 403, null);
   }
 
-  // The two sign-in routes are the only ones that answer without a
-  // credential, because issuing one is what they are for.
+  // The one route that answers without a credential, because issuing one
+  // is what it is for. There is no local sign-in beside it: a second
+  // credential-issuing door gated on a binding is a door that opens
+  // wherever that binding is set, and this Worker has none (0.9-M2-S1,
+  // #352). Anything else under /auth falls through to this function's
+  // closing 404, which is the answer a path this Worker does not serve
+  // gets - not a route declining to answer.
   if (method === "POST" && path === "/auth/telegram") {
     return handleTelegramAuth(request, env, allowed);
-  }
-  if (method === "POST" && path === "/auth/dev") {
-    return handleDevAuth(request, env, allowed);
   }
 
   // Everything below needs to know who is asking, so it is resolved
@@ -2719,11 +2653,14 @@ async function route(request, env, url, allowed) {
   // real one are the same refusal to anybody who may not read the list
   // at all.
   //
-  // A development session is an admin that may not touch the admin
-  // list - handleAddMembership argues that in full. The role is in the
-  // path here, so the refusal is in the router where the rest of the
-  // gate is; on POST it is the first thing past the body parse, which
-  // is the earliest the role is knowable at all.
+  // A session flagged `is_dev` is not an admin by virtue of the flag:
+  // adminness is read from the admin lists alone, so such a session is
+  // a member unless its account id sits in one. The flag buys a second
+  // refusal on top of that - a caller carrying it may not touch the
+  // admin list at all, which handleAddMembership argues in full. The
+  // role is in the path here, so the refusal is in the router where the
+  // rest of the gate is; on POST it is the first thing past the body
+  // parse, which is the earliest the role is knowable at all.
   if (method === "GET" && path === "/membership") {
     if (!admin) return unauthorized(allowed);
     return handleReadMembership(env, allowed);
