@@ -18,7 +18,8 @@
  *   1. The aggregator as the pure function it is. Rows in, one floored
  *      answer out - no crypto, no D1, no session. Every disclosure rule
  *      is decided here, so this is where they are armed: the floor both
- *      directions, the Other-bucket fold, adjacent-bin merging, the
+ *      directions, the Other-bucket fold and the sentence its label
+ *      makes about what it folded, adjacent-bin merging, the
  *      one-partition property over random groups, and the
  *      one-line-is-one-person rule.
  *   2. The route end to end through the real fetch(), with real
@@ -627,6 +628,99 @@ check("people not holdings: a multiple-choice measure is a measure this " +
   globalThis.BinderFields.measure("roles").multiple === true);
 
 /* ================================================================== */
+/* 4c. The bucket's label describes what the bucket actually holds.     */
+/*                                                                     */
+/* 0.9-M2-S7 (#362), raised by 0.9-M2-S3's review of record as F8 and  */
+/* reproduced there through the live route. The label was ONE static   */
+/* string, and its parenthetical is a claim about the values folded    */
+/* into the bucket: each of them is held by fewer than the floor's     */
+/* number of people. Pooling alone cannot break that claim - a cell is */
+/* pooled only when it is sub-floor. The ABSORB CASCADE can and does:  */
+/* it takes the smallest NAMED cell, which cleared the floor, so the   */
+/* bucket then folds a value eight people hold under a label saying    */
+/* every value in it is held by fewer than five.                       */
+/*                                                                     */
+/* The count beside the label is never the parenthetical's subject - a */
+/* drawn bucket clears the floor by construction, so "Other (fewer     */
+/* than 5)" has always sat beside a number of five or more. That is    */
+/* what let the false sentence hide: only a corpus where the two       */
+/* readings disagree about the FOLDED VALUES makes it visible.         */
+
+/* The reviewer's corpus, reproduced: twelve members hold feeder alone,
+   eight hold feedee alone, two hold feeder with gainer. gainer is held
+   by two and pools - but it hides nobody, because both its holders are
+   drawn in feeder - so the cascade absorbs the smallest named cell,
+   feedee at eight, and the bucket stands for those eight members. */
+const absorbedRows = [];
+for (let i = 0; i < 12; i += 1) absorbedRows.push(rolesRow(i, ["feeder"]));
+for (let i = 0; i < 8; i += 1) absorbedRows.push(rolesRow(20 + i, ["feedee"]));
+for (let i = 0; i < 2; i += 1) {
+  absorbedRows.push(rolesRow(40 + i, ["feeder", "gainer"]));
+}
+const absorbed = agg.aggregate(absorbedRows, ask("measure=roles"));
+const absorbedCells = drawnOf(absorbed).cells;
+const absorbedOther = absorbedCells.filter((c) => c.bucket === "other");
+
+check("the label: the reviewer's corpus draws what the review reported " +
+  "- one named cell of fourteen beside a bucket of eight (F8)",
+  absorbed.enough === true && absorbedOther.length === 1 &&
+  absorbedOther[0].count === 8 &&
+  absorbedCells.some((c) => c.value === "feeder" && c.count === 14));
+
+check("the label: a bucket the cascade fed a named cell no longer " +
+  "claims every value in it is sub-floor - the parenthetical is gone, " +
+  "and with it the only number the label ever carried (F8)",
+  absorbedOther.length === 1 &&
+  !/fewer/i.test(String(absorbedOther[0].label)) &&
+  !/\d/.test(String(absorbedOther[0].label)));
+
+check("the label: the bucket is still named, and named what DESIGN.md, " +
+  "\"Charts\", calls it (F8)",
+  absorbedOther.length === 1 && absorbedOther[0].label === "Other");
+
+/* The folded values are looked for INSIDE every string rather than as
+   whole ones, which is the shape the leak would actually take here: a
+   label that named what it swept up would read "Other (feedee)", not
+   "feedee". Section 4b's sweep can afford to anchor because it asks a
+   document that names nothing at all whether a value appears; this one
+   asks a document that legitimately names cells. The mutation that
+   appends the absorbed value to the label passes the anchored form and
+   reddens this one, which is why it is written this way.
+
+   `admirer` is deliberately not in the pattern: it is a drawn cell of
+   zero in this corpus, which describes nobody and is named honestly. */
+check("the label: it discloses neither which named cell was absorbed " +
+  "nor how many were - no folded value is named anywhere in the answer " +
+  "and the bucket carries no count of its own contents (F8)",
+  absorbed.enough === true &&
+  !everyString(absorbed).some((s) => /feedee|gainer/i.test(s)) &&
+  everyNumber(absorbedOther[0]).length === 1 &&
+  everyNumber(absorbedOther[0])[0] === absorbedOther[0].count);
+
+/* The other direction, on the corpus section 4b already proved absorbs
+   nothing: twelve hold feeder and five more hold one rare affiliation
+   each, so the pool hides five people on its own and every value in the
+   bucket really is held by fewer than the floor's number. The sentence
+   is true there and stays. */
+check("the label: a bucket holding only sub-floor remainders keeps the " +
+  "parenthetical, which is true of it - every value it folded is held " +
+  "by fewer than the floor's number of people (F8)",
+  atPool.enough === true &&
+  drawnOf(atPool).cells.filter((c) => c.bucket === "other")
+    .every((c) => c.label === "Other (fewer than " + FLOOR + ")"));
+
+/* The fence: this is a label, and nothing about which cells draw or
+   fold may have moved with it. Asked against the corpus rather than
+   against the answer's own arithmetic, by the same helper section 4b
+   uses. */
+check("the label: naming the bucket honestly moved no cell - every " +
+  "drawn cell still describes at least the floor's number of people, " +
+  "and the bucket still counts the members no named cell describes (F8)",
+  everyCellClearsTheFloor(absorbedRows, "roles", absorbed) &&
+  absorbedOther[0].count ===
+    peopleBehind(absorbedRows, "roles", absorbedCells).hidden.size);
+
+/* ================================================================== */
 /* 5. One partition, not two (mandate 6).                              */
 
 /* The widely spread group from section 3: with the outer edges open
@@ -1210,7 +1304,7 @@ check("tombstones: the correction's own month is the one that draws",
  */
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 90;
+const EXPECTED = 96;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

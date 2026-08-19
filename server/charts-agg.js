@@ -5,7 +5,7 @@
  * disclosure rules that governed the published document govern the live
  * one "because they were always about what a reader can reconstruct
  * rather than about publishing". This file is where every one of those
- * rules is decided. server/worker.js's GET /charts handler reads the
+ * rules is decided. server/worker.js's GET /charts-data handler reads the
  * database, opens the ciphertext and serializes what this file returns -
  * it computes no cell of its own, and there is deliberately no second
  * path a later route could reach for.
@@ -101,7 +101,7 @@
  * owner ruled on #153 to accept cumulative disclosure rather than charge
  * every member the mean's real value to close it, and the ruling's
  * premise is a members-only readership, which the session gate on
- * GET /charts preserves. The premise is the thing to re-take if that
+ * GET /charts-data preserves. The premise is the thing to re-take if that
  * readership ever widens.
  */
 import "../apps/web/site.config.js";
@@ -121,11 +121,35 @@ import "../apps/web/fields.js";
 const FLOOR = 5;
 
 /*
- * What the fold is called. It names the floor rather than any value a
- * member holds - mandate 5's "the Other label carries no member-typed
- * values" - and the floor is in the answer beside it anyway.
+ * What the fold is called - and the parenthetical is CONDITIONAL,
+ * because it is a claim about the contents rather than part of the name.
+ *
+ * The name is the one DESIGN.md, "Charts", gives the bucket, and it
+ * carries no value a member holds: mandate 5's "the Other label carries
+ * no member-typed values". The parenthetical asserts something further -
+ * that every value folded in here is held by fewer than the floor's
+ * number of people. True of the pool, which takes only sub-floor cells.
+ * FALSE the moment the absorb cascade in suppressCounts() feeds the
+ * bucket a NAMED cell, because a named cell had cleared the floor
+ * (0.9-M2-S3's review of record, F8, #362: 12 [feeder], 8 [feedee] and
+ * 2 [feeder, gainer] drew "Other (fewer than 5)" beside a count of 8,
+ * and the 8 was a feedee cell the cascade had absorbed).
+ *
+ * The count printed beside the label never was the parenthetical's
+ * subject - a drawn bucket clears the floor by construction, so this
+ * string has always sat next to a number of five or more. That is why
+ * the false sentence took a corpus to see rather than a reading.
+ *
+ * DROPPING IT IS THE WHOLE DISCLOSURE, deliberately. A reader of a
+ * plain "Other" learns that the sub-floor claim could not be made and
+ * nothing else: not which named cell was absorbed, not how many were,
+ * not what any of them counted. A label that said more - a count of
+ * absorbed cells, a "one value above the floor" - would describe the
+ * very cells the fold exists to stop describing, and DESIGN.md's
+ * no-statistics-vocabulary rule bars the register it would say it in.
  */
-const OTHER_LABEL = "Other (fewer than " + FLOOR + ")";
+const OTHER_LABEL = "Other";
+const OTHER_ALL_SMALL_LABEL = OTHER_LABEL + " (fewer than " + FLOOR + ")";
 
 /*
  * The blanks keep their own cell rather than being dropped. A chart
@@ -556,7 +580,10 @@ function suppressBins(bins) {
  * bucket and no breakdown at all. One named cell beside the bucket is
  * fine and is deliberately not rejected - "male 19, Other 5" identifies
  * nobody, and suppressing it would throw away a true and harmless
- * answer.
+ * answer. It costs the label its parenthetical too: an absorbed cell
+ * had cleared the floor, so the bucket can no longer say every value in
+ * it is sub-floor and is named plainly instead - see OTHER_LABEL above,
+ * which carries that argument.
  *
  * AN EMPTY POOL STILL RUNS THE CASCADE, which is a ruled choice and the
  * expensive one. On a multiple-choice field every holder of a rare value
@@ -599,6 +626,12 @@ function suppressCounts(cells, keysByAccount) {
   };
 
   let behind = hidden();
+  /* Whether a floor-cleared value is now folded in here, which is
+     exactly the condition the label's parenthetical is false under. The
+     cascade is the only thing that can put one in the pool - everything
+     above it was sub-floor when it went in - so the flag belongs to the
+     loop rather than to a re-examination of the pool afterwards. */
+  let absorbed = false;
   while (behind.size < FLOOR) {
     let index = -1;
     for (let i = 0; i < kept.length; i += 1) {
@@ -608,14 +641,16 @@ function suppressCounts(cells, keysByAccount) {
     if (index === -1) break;
     pooled.add(kept[index].value);
     kept.splice(index, 1);
+    absorbed = true;
     behind = hidden();
   }
 
   const named = kept.filter((cell) => cell.count > 0);
   if (behind.size < FLOOR || !named.length) return [];
 
-  return kept.concat([{ value: null, label: OTHER_LABEL, count: behind.size,
-    bucket: "other" }]);
+  return kept.concat([{ value: null,
+    label: absorbed ? OTHER_LABEL : OTHER_ALL_SMALL_LABEL,
+    count: behind.size, bucket: "other" }]);
 }
 
 /* ------------------------------------------------------------------ */
