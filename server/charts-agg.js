@@ -48,6 +48,35 @@
  *                     read in their kind's BASE unit.
  *   consent           a boolean, and never charted.
  *
+ * AND THE ENVELOPE THE SPEC DOES NOT NAME. A record carries four fields
+ * that are not fields of the form, and a writer told only about the
+ * measured half above would drop them (#351, fix wave 1, finding F3):
+ *
+ *   record            the RECORD's own version byte, 1 today. It is not
+ *                     the envelope version the seal carries: that one
+ *                     says how the bytes are sealed, this one says what
+ *                     the fields inside mean, and they change for
+ *                     different reasons. A stored format that changes
+ *                     takes a new number and a decoder for both, never
+ *                     a regenerated fixture - so 0.9-M2-S2, which
+ *                     writes these records, walks into the stored-
+ *                     format law the moment it omits this.
+ *   submittedAt       an ISO timestamp from the SUBMITTER's clock. Not
+ *                     the time anything here buckets on: see the
+ *                     received_at paragraph below, which is the one a
+ *                     submitter cannot choose.
+ *   telegram          the handle the submitter signed in with.
+ *   entered           { units, weight, height } - exactly what the
+ *                     submitter typed, before any conversion.
+ *
+ * HOW THIS FILE HANDLES THEM: it reads SPEC-NAMED fields and nothing
+ * else. valueFor() and heldValues() both look a measure's own name up
+ * in the record, and none of the four is a measure, so no response can
+ * carry one - the handle in particular is out of reach by construction
+ * rather than by a filter somebody has to remember to keep.
+ * tests/charts-aggregate.test.mjs seals rows carrying all four and
+ * sweeps a drawn answer for the handle's own value, which is the pin.
+ *
  * A value a record carries that the spec's choice list does not is
  * counted as unstated rather than drawn, which is what keeps a label in
  * a response from ever being something a member's browser wrote. A field
@@ -404,6 +433,16 @@ function askFor(params, spec) {
  * an edge fitted to the data reports somebody's real weight, which is
  * the same leak the partition rule closes, arrived at from the opposite
  * direction.
+ *
+ * QUANTIZING IS NOT ENOUGH FOR THE TWO OUTER EDGES, and this comment
+ * claimed it was. The bin an outer edge is rounded to still derives from
+ * one person - the heaviest, the lightest - so it reports that member's
+ * BAND rather than their number, and a band is a person to anyone who
+ * knows her (#351, fix wave 1, finding F2). The range computed here is
+ * therefore internal: binsOf() below reports the two ends as open and
+ * only the inner boundaries as numbers. What quantizing does close is
+ * every edge between two floor-cleared bins, which is all of them once
+ * the ends are gone.
  */
 function histogram(values, binWidth) {
   if (!values.length || !(binWidth > 0)) return [];
@@ -438,7 +477,10 @@ function histogram(values, binWidth) {
  * Adjacent bins are combined instead until each clears the floor, which
  * keeps the total, keeps the order, and simply makes the tails wider -
  * and the tails are exactly where a lone heaviest or lightest person
- * sits.
+ * sits. Widening is not the whole defense there: the two edges at the
+ * very ends of the drawn range are reported as open rather than as
+ * numbers, because however wide the tail bin is, its outer boundary
+ * still derives from that one person. See openEdge() below.
  *
  * A trailing remainder merges BACKWARDS into the last emitted bin rather
  * than being dropped. Dropped, the drawn counts would no longer sum to
@@ -470,57 +512,109 @@ function suppressBins(bins) {
 /*
  * Categorical counts with every small cell folded into one bucket.
  *
- * The bucket has to clear the floor ITSELF, or it is the singleton
- * wearing a hat - one country with one person in it becomes "Other: 1",
- * which discloses exactly what it was meant to hide. So small cells are
- * pooled, and if the pool is still short the next-smallest named cell is
- * absorbed until it clears.
+ * THE BUCKET COUNTS PEOPLE, NEVER VALUE-HOLDINGS, and on a
+ * multiple-choice field those are different numbers. One member who
+ * holds three affiliations feeds a count into three cells, so pooling
+ * the COUNTS of small cells clears a floor of five with two people
+ * behind it - and the cell that exists to hide those two then describes
+ * exactly them, their complete affiliation sets recoverable from it
+ * (#351, fix wave 1, finding F1; `roles` is the live instance). So the
+ * pool is a set of ACCOUNTS: the members whose every held value is
+ * small, meaning no named cell would describe them at all. That set's
+ * SIZE is what the floor is applied to, what the absorb loop terminates
+ * on, and what the bucket reports.
+ *
+ * A NAMED CELL NEEDS NO SUCH TREATMENT and is deliberately left alone.
+ * heldValues() deduplicates, so a member reaches any one cell at most
+ * once and a named cell's count already IS the number of people it
+ * describes - on a single-choice field and a multiple-choice one alike.
+ * The asymmetry is multiplicity: a person reaches many cells, so only a
+ * rule that spans cells has to count people rather than add counts.
  *
  * Subtraction is the attack this survives, not redaction. A reader knows
  * the population, so drawing US 8, GB 5, CA 3 against 24 people
  * discloses CA outright and would also disclose it if CA were simply
  * dropped and the rest left to sum to 21. Everything removed lands in
- * the bucket, so the drawn cells always sum to the population and
- * nothing is recoverable by arithmetic.
+ * the bucket, so no member falls out of the picture: every one of them
+ * is described by a named cell they hold or by the bucket.
  *
- * A zero survives. "Nobody here is an admirer" describes no one.
+ * WHAT IS NOT TRUE, AND WAS CLAIMED HERE, is that the drawn cells sum
+ * to the population. They do on a single-choice field, which is what
+ * makes the CA subtraction above possible there and is why the bucket
+ * exists at all. On a multiple-choice field they sum to HOLDINGS -
+ * eighteen members holding twenty-six affiliations are twenty-six drawn
+ * counts - and no floor rule changes that.
  *
- * Two ways there is nothing safe to say, and both answer with nothing:
- * the bucket never reached the floor, so it is still describing too few
- * people; or every cell went into it, leaving one bucket and no
- * breakdown at all. One named cell beside the bucket is fine and is
- * deliberately not rejected - "male 19, Other 5" identifies nobody, and
- * suppressing it would throw away a true and harmless answer.
+ * A zero survives. "Nobody here is an admirer" describes no one, so it
+ * is neither pooled nor absorbed.
+ *
+ * THE ABSORB CASCADE, and what it costs. When the pooled set is short
+ * of the floor the smallest named cell is absorbed into it and the set
+ * is recomputed, until it clears or nothing is left to absorb. Two ways
+ * there is then nothing safe to say, and both answer with nothing: the
+ * pool never reached the floor; or every cell went into it, leaving one
+ * bucket and no breakdown at all. One named cell beside the bucket is
+ * fine and is deliberately not rejected - "male 19, Other 5" identifies
+ * nobody, and suppressing it would throw away a true and harmless
+ * answer.
+ *
+ * AN EMPTY POOL STILL RUNS THE CASCADE, which is a ruled choice and the
+ * expensive one. On a multiple-choice field every holder of a rare value
+ * may also hold a common one, so nobody is hidden and the pooled set is
+ * empty - and an empty set is short of the floor, so the cascade eats
+ * the named cells and the view answers not-enough. The alternative
+ * considered and refused (Prime, 2026-08-18, on this file's fix wave):
+ * treat an empty pool as nothing-to-hide and simply drop the small
+ * cells. That is redaction, which DESIGN.md, "Charts", names as the
+ * thing suppression is not, and the argument that it leaks nothing rests
+ * on drawn cells not summing to the population - true here, but a
+ * hypothesis about reader arithmetic that nobody has pressure-tested.
+ * THE REVISIT TRIGGER: if 0.9-M2-S3 finds the affiliations chart dead on
+ * realistic corpora, that evidence goes to the owner as a ruled
+ * decision - it is one guard here and one arm in
+ * tests/charts-aggregate.test.mjs to flip, and it is not a call a
+ * builder makes quietly.
  */
-function suppressCounts(cells) {
+function suppressCounts(cells, keysByAccount) {
   if (!cells.length) return [];
 
   const kept = [];
-  const small = [];
+  const pooled = new Set();
   for (const cell of cells) {
     if (cell.count === 0 || cell.count >= FLOOR) kept.push(cell);
-    else small.push(cell);
+    else pooled.add(cell.value);
   }
-  if (!small.length) return cells;
+  if (!pooled.size) return cells;
 
-  let other = 0;
-  for (const cell of small) other += cell.count;
+  /* The members no named cell would describe: every value they hold is
+     in the pool. Recomputed after each absorption rather than unioned
+     in, so one predicate decides the whole thing and an absorbed cell's
+     holders count only if the pool really covers everything they hold. */
+  const hidden = () => {
+    const out = new Set();
+    for (const [account, keys] of keysByAccount) {
+      if (keys.every((key) => pooled.has(key))) out.add(account);
+    }
+    return out;
+  };
 
-  while (other < FLOOR) {
+  let behind = hidden();
+  while (behind.size < FLOOR) {
     let index = -1;
     for (let i = 0; i < kept.length; i += 1) {
       if (kept[i].count === 0) continue;
       if (index === -1 || kept[i].count < kept[index].count) index = i;
     }
     if (index === -1) break;
-    other += kept[index].count;
+    pooled.add(kept[index].value);
     kept.splice(index, 1);
+    behind = hidden();
   }
 
   const named = kept.filter((cell) => cell.count > 0);
-  if (other < FLOOR || !named.length) return [];
+  if (behind.size < FLOOR || !named.length) return [];
 
-  return kept.concat([{ value: null, label: OTHER_LABEL, count: other,
+  return kept.concat([{ value: null, label: OTHER_LABEL, count: behind.size,
     bucket: "other" }]);
 }
 
@@ -616,6 +710,37 @@ function unitsFor(measure, site) {
   return out;
 }
 
+/*
+ * The edge that says nothing, for the two ends of the drawn range.
+ *
+ * Every drawn bin clears the floor, but the range's OUTER edges derive
+ * from exactly one person at each end: a top edge of 460 lb over a group
+ * whose next heaviest is 200 reports one member's band, and rounding it
+ * to the grid only decides how wide that band is (#351, fix wave 1,
+ * finding F2, ruled by Prime). "A weight and a height and a country is a
+ * person to anyone who knows her" is the test, and an outer edge fails
+ * it while meeting every counting criterion.
+ *
+ * The INNER edges stay. Each is a boundary between two bins that each
+ * cleared the floor, so it says only that at least the floor's number of
+ * people sit on either side of it.
+ *
+ * SAME SHAPE, NULL CONTENTS, in every system - so a page reads
+ * `to[system] === null` and prints "and up" rather than switching on a
+ * missing field, and so nothing downstream has to learn a second edge
+ * type. 0.9-M2-S3 renders these as "under X" and "X and up".
+ *
+ * A single drawn bin therefore has two open ends and no numbers at all:
+ * it says how many people answered and nothing about where they sit,
+ * which is the honest reading of a range whose every edge is an outer
+ * one.
+ */
+function openEdge(site) {
+  const out = {};
+  for (const system of site.units.systems) out[system] = null;
+  return out;
+}
+
 function binsOf(people, measure, site, part) {
   const values = [];
   for (const person of people) {
@@ -625,13 +750,16 @@ function binsOf(people, measure, site, part) {
   const merged = suppressBins(histogram(values, part.bin));
   if (!merged.length) return null;
 
+  const last = merged.length - 1;
   return {
     kind: "bins",
     partition: { system: part.system, unit: part.unit, band: part.band },
-    bins: merged.map((bin) => ({
+    bins: merged.map((bin, index) => ({
       count: bin.count,
-      from: spread(bin.from, measure, site, part),
-      to: spread(bin.to, measure, site, part),
+      from: index === 0
+        ? openEdge(site) : spread(bin.from, measure, site, part),
+      to: index === last
+        ? openEdge(site) : spread(bin.to, measure, site, part),
     })),
   };
 }
@@ -644,13 +772,23 @@ function cellsOf(people, measure) {
     labels.set(choice.value, choice.label);
   }
 
+  /* Which cells each PERSON lands in, carried beside the counts because
+     the floor is applied to people and a multiple-choice member lands in
+     several. The blank cell is one of them, keyed by null exactly as the
+     answer keys it, so somebody who stated nothing is a member the
+     bucket can stand for rather than a hole in the bookkeeping. `people`
+     is one row per account already, so the account is the key. */
+  const keysByAccount = new Map();
+
   let blank = 0;
   for (const person of people) {
     const held = heldValues(measure, person.record);
     if (!held.length) {
       blank += 1;
+      keysByAccount.set(person.accountId, [null]);
       continue;
     }
+    keysByAccount.set(person.accountId, held);
     for (const value of held) counts.set(value, (counts.get(value) || 0) + 1);
   }
 
@@ -670,7 +808,7 @@ function cellsOf(people, measure) {
       bucket: "blank" });
   }
 
-  const drawn = suppressCounts(cells);
+  const drawn = suppressCounts(cells, keysByAccount);
   return drawn.length ? { kind: "cells", cells: drawn } : null;
 }
 
