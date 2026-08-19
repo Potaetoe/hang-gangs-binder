@@ -48,7 +48,9 @@
  *      otherwise re-render from with no fetch in between.
  *   6. F8: a failed load writes its own honest sentence into BOTH the
  *      entries slot and the trend slot, never leaving the trend a bare
- *      runner around nothing.
+ *      runner around nothing - and each slot carries one control that
+ *      re-fires the read in place, proven by a stub that fails once and
+ *      then succeeds (0.9-M2-S8, #365).
  *   7. F3: the delete flow's 2xx guard and clearMemberData's abort, each
  *      armed both directions - a refused delete shows the retry message
  *      and requests no reload; a confirmed one does; an in-flight GET
@@ -732,8 +734,17 @@ async function loadSubmitWithFailedFetch() {
   };
   globalThis.BinderSignOut = { signOut() {} };
   globalThis.BinderXlsx = { build() { return new Uint8Array([1]); } };
-  globalThis.fetch = async () => ({ ok: false, status: 500,
-    async json() { return {}; } });
+  // Fails on the first call and succeeds on every one after it, so the
+  // retry arm below can drive a real recovery rather than asserting a
+  // click was merely wired to something.
+  fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    if (fetchCalls === 1) return { ok: false, status: 500,
+      async json() { return {}; } };
+    return { ok: true, status: 200,
+      async json() { return { ok: true, entries: ENTRIES }; } };
+  };
 
   const submitSource = await read("../apps/web/submit.js");
   await import("data:text/javascript," +
@@ -741,15 +752,66 @@ async function loadSubmitWithFailedFetch() {
   await booted;
 }
 
+let fetchCalls = 0;
+
 await loadSubmitWithFailedFetch();
 const trendSlotOnFailure = page.byId("trend-slot");
+const entriesSlotOnFailure = page.byId("entries-slot");
+
+const sentenceIn = (slot) => slot.children
+  .find((child) => /could not be loaded/.test(child.textContent));
+const buttonIn = (slot) => slot.children.find((child) => child.tag === "button");
+
 check("a failed load writes the entries slot's own honest sentence",
-  page.byId("entries-slot").children.length === 1 &&
-  /could not be loaded/.test(page.byId("entries-slot").children[0].textContent));
+  Boolean(sentenceIn(entriesSlotOnFailure)));
 check("and the trend slot too - not left bare while the runner stays in " +
   "flow around nothing",
-  trendSlotOnFailure.children.length === 1 &&
-  /could not be loaded/.test(trendSlotOnFailure.children[0].textContent));
+  Boolean(sentenceIn(trendSlotOnFailure)));
+
+/* ------------------------------------------------------------------ */
+/* The retry control (0.9-M2-S8, #365, the owner's own request). The    */
+/* sentence used to say "reload the page" and offer nothing to press -  */
+/* a whole-page reload to recover from one failed read. Each failed     */
+/* slot now carries exactly one button, in the page's existing          */
+/* .secondary grammar, and pressing it re-fires the SAME load in place. */
+
+for (const [name, slot] of [
+  ["entries", entriesSlotOnFailure], ["trend", trendSlotOnFailure],
+]) {
+  const button = buttonIn(slot);
+  check(`the ${name} slot's failed state carries exactly one control, a ` +
+    "secondary button, and no longer tells anybody to reload the page",
+    Boolean(button) &&
+    slot.children.filter((c) => c.tag === "button").length === 1 &&
+    button.className === "secondary" &&
+    button.getAttribute("type") === "button" &&
+    !/reload the page/.test(slot.children.map((c) => c.textContent).join(" ")));
+}
+
+const callsBeforeRetry = fetchCalls;
+await buttonIn(entriesSlotOnFailure).dispatch("click");
+check("pressing it re-fires the read - one more request, not a navigation",
+  fetchCalls === callsBeforeRetry + 1);
+
+check("and a successful retry replaces the failure with the real rows, " +
+  "in place",
+  allRows(page.byId("entries-slot")).length > 0 &&
+  !sentenceIn(page.byId("entries-slot")));
+check("the trend slot recovers with it - one read redraws both sections",
+  page.byId("trend-slot").children.length > 0 &&
+  !sentenceIn(page.byId("trend-slot")));
+
+/* The trend slot's own button, proven separately: two slots each
+   carrying a control that re-fires the same load is what the ticket
+   asks for, and a check that only ever pressed one of them would not
+   notice the other being inert. */
+await loadSubmitWithFailedFetch();
+const trendRetry = buttonIn(page.byId("trend-slot"));
+const callsBeforeTrendRetry = fetchCalls;
+await trendRetry.dispatch("click");
+check("the trend slot's own control re-fires the read too",
+  fetchCalls === callsBeforeTrendRetry + 1 &&
+  allRows(page.byId("entries-slot")).length > 0);
 
 /* ------------------------------------------------------------------ */
 /* F3 (review of record on #353, finding F3): clearMemberData() aborts  */
@@ -1130,7 +1192,7 @@ check("your-page.html carries no data-dev-session hook - 0.9-M2-S4 owns " +
   !/data-dev-session/.test(yourPageHtml));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 71;
+const EXPECTED = 77;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

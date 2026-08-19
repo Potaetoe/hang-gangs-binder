@@ -1,6 +1,6 @@
 /*
  * The Worker aggregates on request, armed. 0.9-M2-S0 (#351), over
- * server/charts-agg.js and the GET /charts route in server/worker.js.
+ * server/charts-agg.js and the GET /charts-data route in server/worker.js.
  *
  *     node tests/charts-aggregate.test.mjs
  *
@@ -467,7 +467,7 @@ check("Other: a set of singletons that cannot pool draws nothing at all",
 /*                                                                     */
 /* Fix wave 1, finding F1 (#351, review of record) - the finding that  */
 /* blocked the landing. `roles` is `multiple: true` and `chart: true`, */
-/* live at GET /charts?measure=roles, and on such a field one member   */
+/* live at GET /charts-data?measure=roles, and on such a field one member   */
 /* feeds a count into EVERY value they hold. A bucket that pooled the  */
 /* COUNTS of small cells therefore cleared a floor of five with two    */
 /* people behind it, and the cell that exists to hide those two        */
@@ -985,15 +985,15 @@ for (let i = 0; i < FLOOR + 2; i += 1) {
   });
 }
 
-const noSession = await call("GET", "/charts?measure=weight");
+const noSession = await call("GET", "/charts-data?measure=weight");
 check("route: charts need a member session (401)", noSession.status === 401);
 
-const breakGlass = await call("GET", "/charts?measure=weight",
+const breakGlass = await call("GET", "/charts-data?measure=weight",
   { token: EXPORT_TOKEN });
 check("route: a break-glass caller has no account and is refused (401)",
   breakGlass.status === 401);
 
-const drawn = await call("GET", "/charts?measure=weight",
+const drawn = await call("GET", "/charts-data?measure=weight",
   { token: TOKENS[0] });
 check("route: a member session draws (200)", drawn.status === 200);
 check("route: the response is private and never stored (mandate 6)",
@@ -1009,14 +1009,14 @@ check("route: the drawn body carries a distribution built from the " +
 
 /* Mandate 2 at the route: a floor named on the wire is refused, and the
    floor in the answer is the module's own either way. */
-const lowered = await call("GET", "/charts?measure=weight&floor=1",
+const lowered = await call("GET", "/charts-data?measure=weight&floor=1",
   { token: TOKENS[0] });
 check("route: a floor named on the wire is refused (400), not honored " +
   "and not ignored (mandate 2)", lowered.status === 400);
 check("route: the answer reports the module's floor",
   drawn.body.floor === FLOOR);
 
-const badMeasure = await call("GET", "/charts?measure=telegram",
+const badMeasure = await call("GET", "/charts-data?measure=telegram",
   { token: TOKENS[0] });
 check("route: a measure the spec does not chart is refused (400)",
   badMeasure.status === 400);
@@ -1024,7 +1024,7 @@ check("route: a measure the spec does not chart is refused (400)",
 /* Mandate 5: the filter echoes the caller's own value and enumerates
    nothing. The group here is all US, so a JP filter is a value nobody
    holds - and the answer must not say so by naming what people do hold. */
-const echoed = await call("GET", "/charts?measure=weight&filter=country&value=JP",
+const echoed = await call("GET", "/charts-data?measure=weight&filter=country&value=JP",
   { token: TOKENS[0] });
 check("route: the filter echoes back exactly the caller's own value " +
   "(mandate 5)",
@@ -1046,7 +1046,7 @@ check("route: the filter echo carries the caller's own field and value " +
     JSON.stringify(["field", "value"]));
 
 const badValue = await call("GET",
-  "/charts?measure=weight&filter=country&value=not-a-country",
+  "/charts-data?measure=weight&filter=country&value=not-a-country",
   { token: TOKENS[0] });
 check("route: a filter value outside the config-derived allowlist is " +
   "refused (400) - the allowlist is a repository file, so this " +
@@ -1054,9 +1054,9 @@ check("route: a filter value outside the config-derived allowlist is " +
 
 /* Mandate 3: the overlay is keyed by the session and by nothing on the
    wire. Two members ask the same question and get their own line. */
-const mineA = await call("GET", "/charts?measure=weight&self=1",
+const mineA = await call("GET", "/charts-data?measure=weight&self=1",
   { token: TOKENS[0] });
-const mineB = await call("GET", "/charts?measure=weight&self=1",
+const mineB = await call("GET", "/charts-data?measure=weight&self=1",
   { token: TOKENS[1] });
 check("self: the overlay comes back in its own field, never merged into " +
   "the group series (mandate 3)",
@@ -1073,14 +1073,14 @@ check("self: the overlay is absent unless it is asked for",
   drawn.body.self === null);
 
 const impersonated = await call("GET",
-  "/charts?measure=weight&self=" + acct(1), { token: TOKENS[0] });
+  "/charts-data?measure=weight&self=" + acct(1), { token: TOKENS[0] });
 check("self: a caller-supplied identity cannot be named at all - the " +
   "flag is a boolean and anything else is refused (mandate 3)",
   impersonated.status === 400);
 
 for (const attempt of ["account", "accountId", "subject", "handle", "member"]) {
   const named = await call("GET",
-    "/charts?measure=weight&self=1&" + attempt + "=" + acct(1),
+    "/charts-data?measure=weight&self=1&" + attempt + "=" + acct(1),
     { token: TOKENS[0] });
   check("self: naming another account through `" + attempt + "` is " +
     "refused (400) rather than resolved (mandate 3)", named.status === 400);
@@ -1122,7 +1122,7 @@ await fetchWorker(new Request("https://sit.example/submit", {
     "Content-Type": "application/json" },
   body: JSON.stringify({ record: JSON.stringify(record(88, 168)) }),
 }), loneEnv);
-const lonely = await loneCall("/charts?measure=weight&self=1");
+const lonely = await loneCall("/charts-data?measure=weight&self=1");
 check("self: a member alone in the corpus still gets their own line " +
   "while the group answers not-enough - their data, their line",
   lonely.status === 200 && lonely.body.enough === false &&
@@ -1139,7 +1139,7 @@ await call("POST", "/submit", {
   body: { record: JSON.stringify(record(140, 170, "male", ["feeder"], "US")),
     supersedes: corrected.id },
 });
-const afterCorrection = await call("GET", "/charts?measure=weight",
+const afterCorrection = await call("GET", "/charts-data?measure=weight",
   { token: TOKENS[0] });
 check("correction: a member who corrects a row is still one person in " +
   "the group - the tombstone is excluded by the read, not counted",
@@ -1186,7 +1186,7 @@ for (let i = 0; i < HIST_TOKENS.length; i += 1) {
       supersedes: mineRow.id },
   });
 }
-const history = await callOn(histEnv, "GET", "/charts?measure=weight",
+const history = await callOn(histEnv, "GET", "/charts-data?measure=weight",
   { token: HIST_TOKENS[0] });
 check("tombstones: a month every member has since corrected draws no " +
   "point - the read excludes superseded rows rather than averaging " +

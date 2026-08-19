@@ -134,8 +134,12 @@ check("a unitless measure's label carries no unit token",
 
 /* chartsURL: self=1 always, filter+value only together. */
 const bare = new URL(Charts.chartsURL("https://w.example", { measure: "weight" }));
-check("the bare request names only measure and self",
-  bare.pathname === "/charts" &&
+/* /charts-data, not /charts (0.9-M2-S8, #365): the route was renamed
+   out of the way of this page's own basename, because the assets
+   layer's html_handling redirects /charts.html to /charts and the
+   router answered there. The PAGE keeps its name; the ROUTE moved. */
+check("the bare request names the renamed route, plus measure and self",
+  bare.pathname === "/charts-data" &&
   bare.searchParams.get("measure") === "weight" &&
   bare.searchParams.get("self") === "1" &&
   bare.searchParams.get("filter") === null);
@@ -406,8 +410,10 @@ const NOT_ENOUGH_FIXTURE = {
 
 {
   const { byId, calls } = await driven(() => response(200, NOT_ENOUGH_FIXTURE));
-  check("Show me fires exactly one GET /charts, never /snapshot",
-    calls.length === 1 && calls[0].includes("/charts") &&
+  check("Show me fires exactly one GET /charts-data, never /snapshot " +
+    "and never the page's own /charts URL",
+    calls.length === 1 &&
+    new URL(calls[0]).pathname === "/charts-data" &&
     !calls.some((u) => u.includes("/snapshot")));
   check("a floored cut renders the route's own sentence as content, " +
     "verbatim - never a string this page composed",
