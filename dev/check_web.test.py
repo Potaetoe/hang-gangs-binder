@@ -780,26 +780,25 @@ check("the real pin is back after the stale-pin arm",
 # the whole gate green.
 FOOTER_OK = "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP)
 
-# The label used to read "the swatch row and nothing else" - false even
-# before F2, since FOOTER_OK also carries EDITOR_MARKUP, the one other
-# element the footer is required to hold (design mandate 1). "and
-# nothing else" was never true of this fixture; it was true of the
-# ROW's own neighborhood, which is what the check actually proves.
+# "Nothing else" names the ROW's own neighborhood, not the whole
+# footer - FOOTER_OK also carries EDITOR_MARKUP, the one other element
+# the footer is required to hold (design mandate 1), so a label
+# claiming the fixture holds the row "and nothing else" describes it
+# wrong even though the assertion below is right.
 check("a footer holding the swatch row and its editor, nothing else, "
       "raises nothing",
       check_web.footer_problems(FOOTER_OK, True) == [])
 check("a page that offers no palette and has no footer raises nothing",
       check_web.footer_problems("<main>Sorry.</main>", False) == [])
 
-# F2 (0.9-M2-S6 fix wave 1, #82): footer_problems() used to build `rest`
-# as `inside[:span[0]] + inside[span[1]:]` - the text before the row
-# concatenated with the text after it, which throws the row's own
-# position away. An editor placed ABOVE the row landed at the FRONT of
-# that concatenation, so `between = rest[:editor_span[0]]` read empty
-# and the "sits directly below the row" check passed on a footer where
-# the editor sits above it instead. Searching inside[span[1]:] alone -
-# only what comes after the row - is what a "directly below" claim
-# actually has to prove.
+# Wrong-order fixture (F2, 0.9-M2-S6 fix wave 1, #82): footer_problems()
+# has to prove POSITION here, not merely presence. Concatenating the
+# text before the row onto the text after it - rather than searching
+# strictly after the row - would let an editor placed ABOVE the row
+# land at the front of that concatenation, reading `between` as empty
+# and satisfying "sits directly below the row" on a footer where it
+# sits above instead. This fixture is what a position-blind reader
+# fails and a position-aware one refuses.
 check("an editor ABOVE the row is refused as missing, not read as "
       "satisfying the position check",
       any("no <details class=\"more\"> custom-palette editor" in p

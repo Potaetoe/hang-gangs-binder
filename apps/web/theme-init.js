@@ -209,13 +209,13 @@
     // The gold role sits at nearly the same amber hue in every shipped
     // palette - measured off theme.css's own --color-gold values:
     // Midnight and Pink 38.5, Daylight 39.6, Contrast 38.1, all within
-    // two degrees of each other, not the 42/45 split by palette pair
-    // this comment used to claim (0.9-M2-S6 fix wave 1, F5, #82: no
-    // shipped --color-gold actually sits at 42 or 45). Fixed rather
-    // than derived from the accent either way - "neither the page's
-    // text nor its accent" is the whole point of the role. 42 below is
-    // close enough to the four measurements to read as the same amber,
-    // not a literal reproduction of them.
+    // two degrees of each other (0.9-M2-S6 fix wave 1, F5, #82: no
+    // shipped --color-gold actually sits at 42 or 45, the values a
+    // stale draft of this comment once split by palette pair). Fixed
+    // rather than derived from the accent either way - "neither the
+    // page's text nor its accent" is the whole point of the role. 42
+    // below is close enough to the four measurements to read as the
+    // same amber, not a literal reproduction of them.
     const goldSat = clamp(Math.max(sat(accent) * 0.6, 45), 0, 100);
     const gold = pushForContrast(
       rgbToHex(hslToRgb([42, goldSat, dark ? 62 : 38])), [bg, surface], 4.6);
