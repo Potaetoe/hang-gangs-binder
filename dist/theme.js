@@ -136,6 +136,18 @@
   let stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
 
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+  if (stored === "custom" && !storedCustomTokens()) stored = null;
+
   
 
   if (!buttons.length) {
@@ -209,7 +221,14 @@
        
        
        
-      if (warning && name !== "custom") warning.hidden = true;
+       
+       
+       
+       
+       
+       
+      if (name === "custom") showWarning(storedCustomTokens());
+      else if (warning) warning.hidden = true;
     });
   });
 })();

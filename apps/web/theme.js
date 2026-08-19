@@ -167,6 +167,18 @@
   let stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
 
+  // VALIDATE ON READ, the same rule theme-init.js's own pre-paint block
+  // holds (0.9-M2-S6 security mandate): a stored "custom" record with
+  // no valid colors behind it is not a choice this file can honor.
+  // theme-init.js already declined to write data-theme for exactly this
+  // shape - without this, apply() below would press the Custom chip and
+  // set data-theme="custom" anyway, on a page that in fact painted
+  // nothing differently, which is the opposite of "Custom reads as
+  // inactive" (design mandate 3). Falls through to preferred() instead,
+  // the same resting state a first-time visitor gets and the DoD's own
+  // words: a corrupted value "falls back to the named palette".
+  if (stored === "custom" && !storedCustomTokens()) stored = null;
+
   /*
    * The error page is the one page here with no palette control, so it
    * reaches this file with nothing to wire. Every other page offers the
@@ -267,7 +279,14 @@
       // Picking a named palette IS the reset (design mandate 4). The
       // warning is Custom's own honesty about Custom's own colors, and
       // it has nothing to say about a palette that carries none.
-      if (warning && name !== "custom") warning.hidden = true;
+      // Pressing Custom itself has to SYNC the warning rather than
+      // leave it at whatever the last-visited palette left it as: a
+      // member who saved a failing pair, switched away, and switched
+      // back is looking at Custom's own colors again, and the warning
+      // is what stays honest about THOSE, not about the click that
+      // most recently touched it.
+      if (name === "custom") showWarning(storedCustomTokens());
+      else if (warning) warning.hidden = true;
     });
   });
 })();
