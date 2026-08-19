@@ -1031,7 +1031,8 @@ const ENOUGH_FIXTURE = {
     texts[2] === hintText);
   check("F5: the hint line is render-only prose, not a count - it " +
     "carries a muted tone, distinct from an ordinary value line",
-    paragraphs[2].attrs.class === "muted small");
+    paragraphs[2] !== undefined && paragraphs[2].attrs.class ===
+    "muted small");
   check("F5: a multiple:false category shows no such hint - its own " +
     "last value line is the row's last line too, nothing appended " +
     "after it, even though the earlier multiple:true category's own " +
