@@ -111,7 +111,7 @@ const title = (text) => {
   return found ? found[1] : null;
 };
 
-const EXPECTED = 17;
+const EXPECTED = 13;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {

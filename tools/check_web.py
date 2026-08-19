@@ -2867,7 +2867,6 @@ LABELS = {
     "Members": "runner",
     "Membership": "runner",
     "Not open": "flag",
-    "Optional": "runner",
     "Publish": "runner",
     "Published": "runner",
     # The one entry whose role has changed since it was written. It was
@@ -4130,8 +4129,9 @@ def css_series_problems(css, js):
             "whatever color it inherits - which is the color of the line "
             "beside it, on the one chart whose job is telling two people "
             "apart"
-            % (CHART_FILE, "s" if len(absent) != 1 else "", sorted(used),
-               STYLESHEET, ", .series-".join(str(n) for n in absent)))
+            % (CHART_FILE, "s" if len(absent) != 1 else "",
+               list(range(used)), STYLESHEET,
+               ", .series-".join(str(n) for n in absent)))
 
     if fill != stroke:
         problems.append(
