@@ -41,7 +41,6 @@
    
 
   let entries = [];
-  let downloadUrl = null;
   let inflight = null;
    
    
@@ -65,10 +64,6 @@
     }
     entries = [];
     prefillApplied = false;
-    if (downloadUrl) {
-      URL.revokeObjectURL(downloadUrl);
-      downloadUrl = null;
-    }
     emptyOut($("entries-slot"));
     emptyOut($("trend-slot"));
     const toggle = $("corrections-toggle");
@@ -637,7 +632,11 @@
       const rows = entries.map(downloadRow);
       const bytes = root.BinderXlsx.build(DOWNLOAD_COLUMNS, rows, "Entries",
         Date.now());
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+       
+       
+       
+       
+       
       const url = URL.createObjectURL(new Blob([bytes], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }));
