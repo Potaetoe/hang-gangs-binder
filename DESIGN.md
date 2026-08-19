@@ -555,8 +555,9 @@ Worker's secret.
   directory and any member's entries. The unified idle timer is what
   bounds it, and it bounds a tab left open rather than a machine handed
   over.
-- **A member sampling the charts over time**, per the #153 channel
-  above.
+- **A member sampling the charts over time or across filters**, per the
+  #153 channel above, extended to the filter dimension by owner ruling
+  on #351 (comment 5335392952).
 
 ## What is deliberately not here
 

@@ -4,18 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  The same policy as the other pages. This page has no key or plaintext,
-  but it does hold the member session that authorizes its snapshot read.
-
-  It is kept anyway because "this page has nothing to protect" is a
-  claim about today. A page that starts without a policy is a page
-  nobody adds one to later.
+  The same policy as the other member pages. This page has no key or
+  plaintext, but it does hold the member session that authorizes its
+  GET /charts read.
 
   crypto.js is deliberately not loaded. There is nothing here to
   decrypt, and a page that cannot decrypt cannot be talked into it.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev https://hgbinderworker-sit.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Muse's charts — Hang Gang Binder</title>
+<title>Charts — Hang Gang Binder</title>
 <meta name="description" content="Aggregate submission numbers for signed-in members. No names, no individual entries.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
@@ -44,7 +41,7 @@
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
-      <li><a href="charts.html">Muse's charts</a></li>
+      <li><a href="charts.html">Charts</a></li>
       <li><a href="admin.html">Admin</a></li>
     </ul>
   </nav>
@@ -63,18 +60,11 @@
 
 <header class="stack-tight">
   <p class="runner"><span>Members</span></p>
-  <h1>Muse's charts</h1>
-  <!-- Ruled word for word (#275, from the register bar on #265). Two
-       things left with the old line and neither is a loss the page can
-       recover on its own: the flirt, because rule 4 admits no voice
-       survivors and says so over #191's third rule explicitly; and
-       "middles", because a coinage compresses like all prose and this
-       one had a plain word waiting.
-
-       What the page does NOT show is the half a member is trusting it
-       about, so it is still here, still literal, and now the second
-       half of the only sentence rather than the fourth clause of it.
-       tools/check_web.py's RULED_LINES pins the whole of it. -->
+  <h1>Charts</h1>
+  <!-- Ruled word for word (#275, from the register bar on #265) - this
+       sentence is a privacy claim, not a Muse line, and 0.9-M2-S3
+       leaves it exactly as the owner ruled it. tools/check_web.py's
+       RULED_LINES pins the whole of it. -->
   <p class="muted" id="charts-intro">
     Counts and averages — no names, no individual entries.
   </p>
@@ -90,49 +80,64 @@
     </p>
   </div>
 
-  <!-- Shown instead of the charts when there is nothing to draw. -->
-  <div class="card" id="closed" hidden>
-    <p class="flag">Nothing to show</p>
-    <p data-reason></p>
-  </div>
+  <!--
+    The control row: filter, measure, picture toggle, units, show-me,
+    download - one card, one row, this order (0.9-M2-S3 design mandate
+    2). Filter and Measure are "what to ask"; Picture and Units are "how
+    to see it"; Show-me and Download sit at the row's end. Nothing here
+    fetches on its own - GET /charts fires only when Show-me is pressed.
+  -->
+  <div class="card">
+    <div class="control-row">
 
-  <div class="stack" id="tool" hidden>
+      <!-- Filter: a two-step select. The field list and every value
+           list come from apps/site.config.js (through fields.js) -
+           never from a response. GET /charts deliberately never
+           enumerates which values a group holds (the membership-oracle
+           rule DESIGN.md's "The identifier is the whole problem" names),
+           so this page must not try to rebuild that list from anything
+           the server says. -->
+      <div class="field">
+        <label for="filter-field">Filter</label>
+        <select id="filter-field">
+          <option value="">Everyone</option>
+        </select>
+      </div>
 
-    <div class="card">
-      <p class="status" id="status" role="status" aria-live="polite"></p>
-      <!--
-        The age of the figures, always visible and never rounded to
-        "recently". A dashboard quietly showing last month's numbers is
-        worse than one that admits it is stale, and the ordinary
-        failure of whatever refreshes this is silence rather than an
-        error.
-      -->
-      <p class="hint" id="freshness"></p>
-    </div>
+      <div class="field" id="filter-value-field" hidden>
+        <label for="filter-value">Value</label>
+        <select id="filter-value"></select>
+      </div>
 
-    <div class="card" id="dashboard">
+      <!-- Measure: the chartable-measure list. There is no statistic
+           picker any more - the trend line is always the mean and its
+           label is "average" (DESIGN.md, "Charts"). -->
+      <div class="field">
+        <label for="measure">Measure</label>
+        <select id="measure"></select>
+      </div>
+
+      <!-- Picture toggle. Two views of one figure - the surviving
+           legitimate use of the tab grammar (0.9-M2-S2 removes tabs as
+           PAGE structure; this is not that). The Trend tab is hidden
+           for a categorical measure, whose route answer carries
+           trend: null - charts.js disables rather than shows an empty
+           pane. -->
       <fieldset class="field">
-        <legend>Count</legend>
-        <div class="choices">
-          <label class="choice">
-            <input type="radio" name="basis" value="people" checked>
-            <span>One per person (latest)</span>
-          </label>
-          <label class="choice">
-            <input type="radio" name="basis" value="entries">
-            <span>Every entry</span>
-          </label>
+        <legend>Picture</legend>
+        <div role="tablist" aria-label="Picture">
+          <button type="button" role="tab" id="picture-tab-trend"
+            aria-controls="figure-trend" aria-selected="true">Trend</button>
+          <button type="button" role="tab" id="picture-tab-distribution"
+            aria-controls="figure-distribution"
+            aria-selected="false">Distribution</button>
         </div>
-        <!-- #265 row 24. "Adds a row" is the storage's noun for the
-             thing this reader's own page calls an entry, and the second
-             sentence explained the site's architecture to somebody who
-             came to read a number. -->
-        <p class="hint">
-          Anyone who weighs in again adds a new entry rather than
-          replacing the old one, so these are two different questions.
-        </p>
       </fieldset>
 
+      <!-- Units. The route answers every system in one document; this
+           picks which system's numbers to read off it rather than
+           asking again or converting anything here (0.9-M2-S3 security
+           mandate 2). -->
       <fieldset class="field">
         <legend>Units</legend>
         <div class="choices">
@@ -145,135 +150,63 @@
             <span>Metric</span>
           </label>
         </div>
-        <p class="hint">
-          Both systems are published, so this picks one rather than
-          converting.
-        </p>
       </fieldset>
 
-      <div id="charts"></div>
-    </div>
-
-    <!--
-      #85's question card. Hidden until public.js finds query.js loaded,
-      because a card of controls that answer nothing is worse than no
-      card: the panels above are this page's job and they do not need
-      the engine.
-
-      There is no source control here and no floor control, and that is
-      the design rather than an omission. query.js has two sources - the
-      floored published document, and a member's own rows with no floor
-      at all - and this page holds exactly one of those things. The floor
-      arrives from the source, so nothing a member can touch on this page
-      can name one. See the longer note in public.js.
-    -->
-    <div class="card" id="question" hidden>
-      <h2>Ask a question</h2>
-      <p class="muted small">
-        The same published figures, asked your way — counting and units
-        come from the two choices above.
-      </p>
-
-      <div class="stack" id="q-controls">
-        <div class="field">
-          <label for="q-split">About</label>
-          <select id="q-split">
-            <option value="gender">Gender</option>
-            <option value="country">Country</option>
-            <option value="roles">Feedism affiliations</option>
-            <option value="bmi">BMI</option>
-            <option value="weight">Weight</option>
-            <option value="height">Height</option>
-          </select>
-        </div>
-
-        <fieldset class="field" id="q-measure-field">
-          <legend>Measure</legend>
-          <div class="choices">
-            <label class="choice">
-              <input type="radio" name="q-measure" value="count" checked>
-              <span>How many</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="q-measure" value="median">
-              <span>The median</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="q-measure" value="mean">
-              <span>The mean</span>
-            </label>
-          </div>
-          <!-- "Middle" was a coinage and rule 4 admits no voice
-               survivors (#275). The word the owner's own ruled header
-               uses for this family is "averages", and it is true of
-               both radios above. -->
-          <p class="hint">
-            Only weight, height and BMI can be averaged.
-          </p>
-        </fieldset>
-
-        <fieldset class="field" id="q-widen-field">
-          <legend>Bands</legend>
-          <div class="choices">
-            <label class="choice">
-              <input type="radio" name="q-widen" value="1" checked>
-              <span>As published</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="q-widen" value="2">
-              <span>Two at a time</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="q-widen" value="3">
-              <span>Three at a time</span>
-            </label>
-          </div>
-          <p class="hint">
-            Wider bands are the published bands added together — nothing
-            here splits one.
-          </p>
-        </fieldset>
-
-        <fieldset class="field" id="q-merge-field">
-          <legend>Combine</legend>
-          <div class="choices" id="q-merge-labels"></div>
-          <label for="q-merge-name">Call them</label>
-          <input type="text" id="q-merge-name" autocomplete="off">
-          <p class="hint">
-            Tick two or more and they are counted as one — the list only
-            offers groups these figures already show.
-          </p>
-        </fieldset>
+      <div class="control-row-actions">
+        <button type="button" id="show-me" class="primary">Show me</button>
+        <a id="download" class="secondary" download hidden>Download</a>
       </div>
 
-      <p class="status" id="q-status" role="status" aria-live="polite"></p>
-      <div id="answer"></div>
+    </div>
+  </div>
+
+  <!--
+    Everything below stays hidden until a session, a response and
+    something to draw all exist (0.9-M2-S3 design mandate 7). The
+    status line is the one place every real state gets its own
+    sentence - loading, not enough, or drawn - and it is also where the
+    not-enough sentence renders: a plain paragraph inside this ordinary
+    card, replacing the figure in place, with no icon, no red and no
+    dismiss (mandate 4). It is content on a 200, styled no differently
+    from any other state (security mandate 4).
+  -->
+  <div class="card" id="results" hidden>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <div id="picture-trend" role="tabpanel" aria-labelledby="picture-tab-trend">
+      <figure class="chart" id="figure-trend">
+        <svg viewBox="0 0 640 280" role="img" aria-label="Trend over time"></svg>
+      </figure>
     </div>
 
-    <div class="card">
-      <p class="runner"><span>What this is</span></p>
-      <p class="muted small">
-        <a href="index.html">Add yours</a>, if you have not.
-      </p>
-      <!-- The long form of the header's second half, behind the ruled
-           reveal (#275). The heading already carries the claim a member
-           is trusting this page about - "no names, no individual
-           entries" - and this is the same claim spelled out for whoever
-           wants to see how it is kept. Not deleted: a privacy claim
-           moves, it does not evaporate. -->
-      <details class="more">
-        <summary>More</summary>
-        <p>
-          These figures are worked out from the submissions and
-          published as totals. Nothing on this page identifies anybody:
-          there are no Telegram handles in it, and no individual
-          entries — only how many, how much on average, and how the
-          answers are spread. Where a weight history is shown, the
-          people in it are numbered rather than named, and renumbered
-          every time this is republished.
-        </p>
-      </details>
+    <div id="picture-distribution" role="tabpanel" hidden
+      aria-labelledby="picture-tab-distribution">
+      <figure class="chart" id="figure-distribution">
+        <svg viewBox="0 0 640 320" role="img" aria-label="Distribution"></svg>
+      </figure>
     </div>
+  </div>
+
+  <div class="card">
+    <p class="runner"><span>What this is</span></p>
+    <p class="muted small">
+      <a href="index.html">Add yours</a>, if you have not.
+    </p>
+    <!-- The long form of the header's second half, behind the ruled
+         reveal (#275). "The Worker aggregates on request" replaces the
+         retired publish/unpublish story (DESIGN.md, "Charts"); the
+         privacy claim itself is unchanged. -->
+    <details class="more">
+      <summary>More</summary>
+      <p>
+        The Worker works these figures out from the submissions when
+        you press Show me, rather than reading something published
+        earlier. Nothing on this page identifies anybody: there are no
+        Telegram handles in it, and no individual entries — only how
+        many, how much on average, and how the answers are spread. A
+        view too small to describe safely says so instead of drawing.
+      </p>
+    </details>
   </div>
 </main>
 
@@ -304,24 +237,15 @@
 </div>
 
 <script src="config.js"></script>
-<script src="dashboard.js"></script>
-<!-- After dashboard.js, whose namespace this reads: query.js takes the
-     suppression floor, the snapshot builder and the unit table from
-     BinderDashboard rather than keeping second copies, because a second
-     copy of MIN_CELL is a floor that can be lowered in one file and not
-     the other. It looks them up when a source is built rather than at
-     load, and says which module is missing if it cannot.
-
-     admin.html deliberately does not load this. The instrument reads
-     the whole document already; the question card is the member's way
-     of asking a floored one something it was not published with. -->
-<script src="query.js"></script>
+<script src="site.config.js"></script>
+<script src="fields.js"></script>
+<script src="countries.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <!-- After config.js: the revoke reads BINDER_CONFIG.endpoint. See the
      note in your-page.html. -->
 <script src="signout.js"></script>
-<script src="public.js"></script>
+<script src="charts.js"></script>
 <script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>

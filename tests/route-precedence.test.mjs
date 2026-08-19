@@ -111,6 +111,15 @@ check("a page path is not API-shaped",
   !isApiPath("/") && !isApiPath("/index.html") &&
   !isApiPath("/your-page.html") && !isApiPath("/404.html"));
 
+/* The retired /snapshot route (0.9-M2-S3, #354): deletion, not gating -
+   the S1 precedent this slice's security mandate names, "the route no
+   longer exists is stronger than fail-closed". "snapshot" left
+   API_SEGMENTS in the same change that deleted the three handlers, so
+   this is no longer a route that refuses; it is a path this Worker
+   does not know at all, indistinguishable from any other page path. */
+check("the retired /snapshot route is no longer API-shaped",
+  !isApiPath("/snapshot"));
+
 check("a nested asset path is not API-shaped",
   !isApiPath("/fonts/dm-sans-400-latin.woff2") &&
   !isApiPath("/theme.css") && !isApiPath("/favicon.svg"));
@@ -260,6 +269,41 @@ async function get(worker_, path, headers) {
     calls[0] === "/fonts/dm-sans-400-latin.woff2");
 }
 
+/*
+ * The retired /snapshot route, driven end to end (0.9-M2-S3, #354,
+ * security mandate 5). POST/GET/DELETE all delegate to env.ASSETS.fetch
+ * now, session or admin or nobody alike - the mandate's "with and
+ * without a stored row, session and admin alike" is answered more
+ * strongly than a 401-vs-404 pair could: isApiPath("/snapshot") is
+ * false, so route()'s very first line returns env.ASSETS.fetch(request)
+ * before the origin gate, before callerFor and before env.DB is ever
+ * touched. Sending a bearer token here and getting the identical
+ * delegation is what proves that - a stub env with no DB binding would
+ * throw if callerFor ran, and it does not throw. env.ASSETS.fetch
+ * itself always answers 200 in this stub; the real 404 a caller sees in
+ * production is Cloudflare's own not_found_handling on a directory with
+ * no /snapshot file, which is dist/'s own shape and not this Worker's -
+ * DESIGN.md's "the route no longer exists" is exactly that a 404 comes
+ * from nothing being there, never from a handler refusing.
+ */
+for (const method of ["GET", "POST", "DELETE"]) {
+  for (const [label, headers] of [
+    ["nobody", { Origin: "http://localhost:8124" }],
+    ["a bearer token", { Origin: "http://localhost:8124",
+      Authorization: "Bearer whatever-token" }],
+  ]) {
+    const request = new Request("https://example.workers.dev/snapshot", {
+      method: method, headers: headers,
+    });
+    const env = assetsStub();
+    const response = await worker.fetch(request, env);
+    check(`retired route: ${method} /snapshot as ${label} delegates to ` +
+      "env.ASSETS.fetch rather than being answered by the router",
+      response.status === 200 && env.calls.length === 1 &&
+      env.calls[0] === "/snapshot");
+  }
+}
+
 /* An allowed Origin, so these reach the route table rather than the
    403 "Origin not allowed" every API-shaped path without one gets
    first - that gate is what proves these paths never became assets,
@@ -353,7 +397,7 @@ check("mutation: a dropped Referrer-Policy line is caught",
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 29;
+const EXPECTED = 36;
 console.log(failures
   ? `\nroute-precedence FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

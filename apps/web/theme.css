@@ -1607,6 +1607,29 @@ circle.series-3, text.series-3 { fill: var(--color-series-3); }
 circle.series-4, text.series-4 { fill: var(--color-series-4); }
 circle.series-5, text.series-5 { fill: var(--color-series-5); }
 
+/*
+ * The charts control row (0.9-M2-S3, #354, design mandate 2): one card,
+ * one row, six .field-shaped controls in a fixed order. Wraps on a
+ * narrow viewport rather than scrolling, because six controls in a
+ * horizontal scroller is a control a thumb cannot find.
+ */
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-6);
+}
+
+/* Show-me and Download, ranked below and pushed to the row's end on a
+   wide window - `margin-left: auto` is inert once the row wraps, which
+   is what lets the same markup read correctly at both widths. */
+.control-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
 /* Two charts abreast on a wide window. A histogram 84rem across is not
    more informative, just longer to look at. */
 #charts {
