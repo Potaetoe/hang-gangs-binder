@@ -3,29 +3,7 @@
 (function (root) {
   "use strict";
 
-   
-   
-   
-  const KG_PER_LB = 0.45359237;
-  const CM_PER_IN = 2.54;
-  const IN_PER_FT = 12;
-
-  
-
-
-   
-   
-   
-   
-  const LIMITS = {
-    kg: { min: 20, max: 500 },
-    lb: { min: 44, max: 1100 },
-    cm: { min: 100, max: 250 },
-    ft: { min: 3, max: 8 },
-  };
-
-  const GENDERS = ["male", "female", "nonbinary", "other"];
-  const ROLES = ["feeder", "feedee", "gainer", "admirer"];
+  const F = root.BinderFields;
 
    
    
@@ -33,19 +11,14 @@
    
   const HANDLE = /^[a-z0-9_]{5,32}$/;
 
+   
+   
+   
+  const RECORD_VERSION = 1;
+
   function round(value, places) {
     const factor = Math.pow(10, places);
     return Math.round(value * factor) / factor;
-  }
-
-  
-
-  function normalizeTelegram(text) {
-    let value = String(text == null ? "" : text).trim();
-    value = value.replace(/^https?:\/\//i, "");
-    value = value.replace(/^(?:www\.)?t(?:elegram)?\.me\//i, "");
-    value = value.replace(/^@+/, "");
-    return value.toLowerCase();
   }
 
   function isBlank(text) {
@@ -61,50 +34,225 @@
     return Number.isFinite(number) ? number : null;
   }
 
-  function weightFromKg(kg) {
-    return { kg: round(kg, 1), lb: round(kg / KG_PER_LB, 1) };
-  }
-
-  function weightFromLb(lb) {
-    return { kg: round(lb * KG_PER_LB, 1), lb: round(lb, 1) };
-  }
-
   
 
-  function heightFrom(totalInches) {
-    let feet = Math.floor(totalInches / IN_PER_FT);
-    let inches = round(totalInches - feet * IN_PER_FT, 1);
-     
-     
-    if (inches >= IN_PER_FT) {
-      feet += 1;
-      inches = 0;
-    }
-    return {
-      cm: round(totalInches * CM_PER_IN, 1),
-      totalInches: round(totalInches, 1),
-      feet: feet,
-      inches: inches,
-    };
-  }
-
-  function heightFromCm(cm) {
-    return heightFrom(cm / CM_PER_IN);
-  }
-
-  function heightFromFeetInches(feet, inches) {
-    return heightFrom(feet * IN_PER_FT + inches);
+  function normalizeTelegram(text) {
+    let value = String(text == null ? "" : text).trim();
+    value = value.replace(/^https?:\/\//i, "");
+    value = value.replace(/^(?:www\.)?t(?:elegram)?\.me\//i, "");
+    value = value.replace(/^@+/, "");
+    return value.toLowerCase();
   }
 
   function between(value, limit) {
     return value >= limit.min && value <= limit.max;
   }
 
+   
+   
+
   
 
-  function validate(input, sessionUsername) {
+  function planField(field, given) {
+    const base = {
+      name: field.name,
+      kind: field.kind,
+      label: field.label,
+      term: field.term,
+      required: field.required === true,
+    };
+
+    if (field.kind === "consent" || field.kind === "count") return base;
+
+    if (field.kind === "choice") {
+      return Object.assign(base, {
+        multiple: field.multiple === true,
+        blank: typeof field.blank === "string" ? field.blank : null,
+        choicesFrom: field.choicesFrom || null,
+        choices: field.choicesFrom ? null : (field.choices || []).slice(),
+      });
+    }
+
+     
+     
+    const limits = F.limits(given);
+    const units = {};
+    F.systems(given).forEach(function (system) {
+      const unit = F.enterUnit(field.kind, system, given);
+      const compoundUnit = F.compoundUnit(unit, given);
+      units[system] = {
+        unit: unit,
+        limits: limits[unit] || null,
+        compoundUnit: compoundUnit,
+        compoundLimits: compoundUnit ? limits[compoundUnit] || null : null,
+      };
+    });
+    return Object.assign(base, { unitKind: field.kind, units: units });
+  }
+
+  
+
+  function plan(given) {
+    return F.names(given)
+      .map(function (name) { return F.field(name, given); })
+      .filter(function (field) { return field.kind !== "computed"; })
+      .map(function (field) { return planField(field, given); });
+  }
+
+   
+   
+
+  
+
+  function parseMeasuredAmount(field, system, input, given) {
+    const unit = F.enterUnit(field.kind, system, given);
+    const compoundUnit = F.compoundUnit(unit, given);
+    const main = parseNumber(input.values[field.name]);
+    if (main === null) return { ok: false, unit: unit, compoundUnit: compoundUnit };
+
+    if (!compoundUnit) {
+      return { ok: true, unit: unit, compoundUnit: null, amount: main,
+        mainValue: main };
+    }
+
+    const compoundRaw = input.values[field.name + "Compound"];
+    const compoundValue = isBlank(compoundRaw) ? 0 : parseNumber(compoundRaw);
+    if (compoundValue === null) {
+      return { ok: false, unit: unit, compoundUnit: compoundUnit,
+        compoundBad: true };
+    }
+    const compoundInMain = F.convert(compoundValue, compoundUnit, unit, given);
+    return { ok: true, unit: unit, compoundUnit: compoundUnit,
+      amount: main + (compoundInMain || 0), mainValue: main,
+      compoundValue: compoundValue };
+  }
+
+  
+
+  function measuredValueFrom(kind, unit, amount, given) {
+    const table = F.unitsOf(kind, given);
+    const out = {};
+    Object.keys(table).forEach(function (candidate) {
+      if (!table[candidate].store) return;
+      const value = F.convert(amount, unit, candidate, given);
+      if (value !== null) out[table[candidate].store] = round(value, 1);
+    });
+    return out;
+  }
+
+  
+
+  function addHeightFeetInches(record) {
+    if (!record || typeof record.height !== "object") return;
+    const totalInches = record.height.totalInches;
+    if (typeof totalInches !== "number") return;
+    let feet = Math.floor(totalInches / 12);
+    let inches = round(totalInches - feet * 12, 1);
+    if (inches >= 12) { feet += 1; inches = 0; }
+    record.height.feet = feet;
+    record.height.inches = inches;
+  }
+
+  
+
+  function enteredText(name, input, given) {
+    let field;
+    try { field = F.field(name, given); } catch (error) { return ""; }
+    const parsed = parseMeasuredAmount(field, input.units, input, given);
+    if (!parsed.ok) return "";
+    const main = String(input.values[name]).trim() + " " + parsed.unit;
+    if (!parsed.compoundUnit) return main;
+    const compoundRaw = input.values[name + "Compound"];
+    return main + " " +
+      (isBlank(compoundRaw) ? "0" : String(compoundRaw).trim()) + " " +
+      parsed.compoundUnit;
+  }
+
+   
+   
+   
+   
+   
+
+  function validateMeasured(field, input, given) {
+    const system = input.units;
+    const unit = F.enterUnit(field.kind, system, given);
+    const compoundUnit = F.compoundUnit(unit, given);
+    const limits = F.limits(given);
+    const main = parseNumber(input.values[field.name]);
+
+    if (!compoundUnit) {
+      if (main === null) {
+        return [{ field: field.name,
+          message: "Enter " + field.term + " in " + unit + ", as a number." }];
+      }
+      if (limits[unit] && !between(main, limits[unit])) {
+        return [{ field: field.name,
+          message: "That " + field.term + " is outside what this form " +
+            "accepts (" + limits[unit].min + " to " + limits[unit].max +
+            " " + unit + ") — check the units." }];
+      }
+      return [];
+    }
+
+    if (main === null) {
+      return [{ field: field.name,
+        message: "Enter " + field.term + " as " + unit + " and " +
+          compoundUnit + "." }];
+    }
+    const compoundRaw = input.values[field.name + "Compound"];
+    const compoundBlank = isBlank(compoundRaw);
+    const compound = compoundBlank ? 0 : parseNumber(compoundRaw);
+    if (compound === null) {
+      return [{ field: field.name,
+        message: "The " + compoundUnit + " part is not a number — leave " +
+          "it empty for a round number of " + unit + "." }];
+    }
+    const perMain = F.convert(1, unit, compoundUnit, given);
+    if (Number.isFinite(perMain) && (compound < 0 || compound >= perMain)) {
+      return [{ field: field.name,
+        message: compoundUnit[0].toUpperCase() + compoundUnit.slice(1) +
+          "s go from 0 to " + (perMain - 1) + " - anything more is " +
+          "another " + unit + "." }];
+    }
+    if (limits[unit] && !between(main, limits[unit])) {
+      return [{ field: field.name,
+        message: "That " + field.term + " is outside what this form " +
+          "accepts (" + limits[unit].min + " to " + limits[unit].max +
+          " " + unit + ")." }];
+    }
+    return [];
+  }
+
+  function validateOne(field, input, given) {
+    if (field.kind === "consent") {
+      if (field.required && input.values[field.name] !== true) {
+        return [{ field: field.name,
+          message: field.label + " — tick the box to continue." }];
+      }
+      return [];
+    }
+    if (field.kind === "choice") {
+      if (!field.required) return [];
+      const value = input.values[field.name];
+      const empty = field.multiple
+        ? !(Array.isArray(value) && value.length)
+        : (value === undefined || value === null || value === "");
+      return empty
+        ? [{ field: field.name, message: field.label + " is required." }]
+        : [];
+    }
+    if (field.kind === "count") {
+      if (!field.required) return [];
+      return parseNumber(input.values[field.name]) === null
+        ? [{ field: field.name, message: field.label + " is required." }]
+        : [];
+    }
+    return validateMeasured(field, input, given);
+  }
+
+  function validate(input, sessionUsername, given) {
     const problems = [];
-    const imperial = input.units === "imperial";
 
     
 
@@ -128,196 +276,81 @@
       });
     }
 
-    const weightUnit = imperial ? "lb" : "kg";
-    const weight = parseNumber(imperial ? input.weightLb : input.weightKg);
-    if (weight === null) {
-      problems.push({
-        field: "weight",
-        message: "Enter your weight in " + weightUnit + ", as a number.",
-      });
-    } else if (!between(weight, LIMITS[weightUnit])) {
-      problems.push({
-        field: "weight",
-        message: "That weight is outside what this form accepts (" +
-          LIMITS[weightUnit].min + " to " + LIMITS[weightUnit].max + " " +
-          weightUnit + ") — check the units.",
-      });
-    }
-
-    if (imperial) {
-      const feet = parseNumber(input.heightFeet);
-      const inches = isBlank(input.heightInches)
-        ? 0 : parseNumber(input.heightInches);
-      if (feet === null) {
-        problems.push({
-          field: "height",
-          message: "Enter your height as feet and inches.",
-        });
-      } else if (inches === null) {
-        problems.push({
-          field: "height",
-          message: "The inches part is not a number — leave it empty for " +
-            "a round number of feet.",
-        });
-      } else if (inches < 0 || inches >= IN_PER_FT) {
-        problems.push({
-          field: "height",
-          message: "Inches go from 0 to 11 - anything more is another foot.",
-        });
-      } else if (!between(feet, LIMITS.ft)) {
-        problems.push({
-          field: "height",
-          message: "That height is outside what this form accepts (" +
-            LIMITS.ft.min + " to " + LIMITS.ft.max + " feet).",
-        });
-      }
-    } else {
-      const cm = parseNumber(input.heightCm);
-      if (cm === null) {
-        problems.push({
-          field: "height",
-          message: "Enter your height in cm, as a number.",
-        });
-      } else if (!between(cm, LIMITS.cm)) {
-        problems.push({
-          field: "height",
-          message: "That height is outside what this form accepts (" +
-            LIMITS.cm.min + " to " + LIMITS.cm.max + " cm) — check the " +
-            "units.",
-        });
-      }
-    }
-
-     
-     
-    if (input.over18 !== true) {
-      problems.push({
-        field: "over18",
-        message: "This form is 18+ only — tick the box to confirm.",
-      });
-    }
+    F.names(given).forEach(function (name) {
+      const field = F.field(name, given);
+      if (field.kind === "computed") return;
+      problems.push.apply(problems, validateOne(field, input, given));
+    });
 
     return problems;
   }
 
-  
-
-  function enteredHeightCm(input) {
-    if (input.units === "imperial") {
-      const feet = parseNumber(input.heightFeet);
-      const inches = isBlank(input.heightInches)
-        ? 0 : parseNumber(input.heightInches);
-      if (feet === null || inches === null) return null;
-      return heightFromFeetInches(feet, inches).cm;
-    }
-    const cm = parseNumber(input.heightCm);
-    return cm === null ? null : heightFromCm(cm).cm;
-  }
-
-  function spellHeight(height, imperial) {
-    return imperial
-      ? height.feet + " ft " + height.inches + " in"
-      : height.cm + " cm";
-  }
+   
+   
 
   
 
-  const HEIGHT_CHANGE_CM = 5;
-
-  function heightChangeNotice(input, previousCm) {
-     
-     
-     
-     
-     
-    if (typeof previousCm !== "number" || !Number.isFinite(previousCm)) {
-      return null;
-    }
-    const entered = enteredHeightCm(input);
-     
-     
-    if (entered === null) return null;
-    if (Math.abs(entered - previousCm) <= HEIGHT_CHANGE_CM) return null;
-
-    const imperial = input.units === "imperial";
-    return {
-      field: "height",
-       
-       
-       
-       
-       
-      message: "This browser remembers your last height as " +
-        spellHeight(heightFromCm(previousCm), imperial) +
-        ", and this entry says " +
-        spellHeight(heightFromCm(entered), imperial) +
-        " — add it again to confirm.",
-    };
-  }
-
-  
-
-  function buildRecord(input, now, sessionUsername) {
+  function buildRecord(input, now, sessionUsername, given) {
     const telegram = normalizeTelegram(sessionUsername);
     if (!telegram) {
       throw new Error("A verified session username is required.");
     }
 
-    const imperial = input.units === "imperial";
-
-    let weight;
-    let height;
-    let enteredWeight;
-    let enteredHeight;
-
-    if (imperial) {
-      const lb = parseNumber(input.weightLb);
-      const feet = parseNumber(input.heightFeet);
-      const inches = isBlank(input.heightInches)
-        ? 0 : parseNumber(input.heightInches);
-      weight = weightFromLb(lb);
-      height = heightFromFeetInches(feet, inches);
-      enteredWeight = String(input.weightLb).trim() + " lb";
-      enteredHeight = String(input.heightFeet).trim() + " ft " +
-        (isBlank(input.heightInches) ? "0" : String(input.heightInches).trim()) +
-        " in";
-    } else {
-      const kg = parseNumber(input.weightKg);
-      const cm = parseNumber(input.heightCm);
-      weight = weightFromKg(kg);
-      height = heightFromCm(cm);
-      enteredWeight = String(input.weightKg).trim() + " kg";
-      enteredHeight = String(input.heightCm).trim() + " cm";
-    }
-
-    const roles = Array.isArray(input.roles)
-      ? input.roles.filter(function (r) { return ROLES.indexOf(r) !== -1; })
-      : [];
-
-    const gender = GENDERS.indexOf(input.gender) !== -1 ? input.gender : null;
-    const country = /^[A-Z]{2}$/.test(String(input.country || ""))
-      ? input.country : null;
-
-    return {
-       
-       
-       
-       
-      record: 1,
+    const record = {
+      record: RECORD_VERSION,
       submittedAt: new Date(now).toISOString(),
       telegram: telegram,
-      weight: weight,
-      height: height,
-      entered: {
-        units: imperial ? "imperial" : "metric",
-        weight: enteredWeight,
-        height: enteredHeight,
-      },
-      gender: gender,
-      roles: roles,
-      country: country,
-      over18: true,
     };
+
+    F.names(given).forEach(function (name) {
+      const field = F.field(name, given);
+      if (field.kind === "computed") return;  
+
+      if (field.kind === "consent") {
+        record[name] = input.values[name] === true;
+        return;
+      }
+      if (field.kind === "count") {
+        record[name] = parseNumber(input.values[name]);
+        return;
+      }
+      if (field.kind === "choice") {
+        if (field.multiple) {
+          const chosen = Array.isArray(input.values[name])
+            ? input.values[name] : [];
+          const allowed = field.choicesFrom ? null : F.choiceValues(name, given);
+          record[name] = allowed
+            ? chosen.filter(function (v) { return allowed.indexOf(v) !== -1; })
+            : chosen.slice();
+          return;
+        }
+        const raw = input.values[name];
+        const allowed = field.choicesFrom ? null : F.choiceValues(name, given);
+        record[name] = (raw && (allowed === null || allowed.indexOf(raw) !== -1))
+          ? raw : null;
+        return;
+      }
+       
+      const parsed = parseMeasuredAmount(field, input.units, input, given);
+      record[name] = parsed.ok
+        ? measuredValueFrom(field.kind, parsed.unit, parsed.amount, given)
+        : {};
+    });
+
+     
+     
+    addHeightFeetInches(record);
+
+     
+     
+     
+    record.entered = {
+      units: input.units,
+      weight: enteredText("weight", input, given),
+      height: enteredText("height", input, given),
+    };
+
+    return record;
   }
 
    
@@ -325,19 +358,14 @@
    
    
   root.BinderForm = Object.freeze({
-    KG_PER_LB: KG_PER_LB,
-    CM_PER_IN: CM_PER_IN,
-    LIMITS: LIMITS,
-    GENDERS: GENDERS,
-    ROLES: ROLES,
+    RECORD_VERSION: RECORD_VERSION,
+    HANDLE: HANDLE,
     normalizeTelegram: normalizeTelegram,
     parseNumber: parseNumber,
-    weightFromKg: weightFromKg,
-    weightFromLb: weightFromLb,
-    heightFromCm: heightFromCm,
-    heightFromFeetInches: heightFromFeetInches,
+    plan: plan,
+    measuredValueFrom: measuredValueFrom,
+    parseMeasuredAmount: parseMeasuredAmount,
     validate: validate,
-    heightChangeNotice: heightChangeNotice,
     buildRecord: buildRecord,
   });
 
@@ -350,26 +378,241 @@
   const $ = UI.byId;
   const show = UI.show;
 
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    (children || []).forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+    if (!attrs) return node;
+    Object.keys(attrs).forEach(function (key) {
+      if (key === "text") node.textContent = attrs[key];
+      else if (key === "class") node.className = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    return node;
+  }
+
   
+
+  function buildMeasuredField(entry) {
+    const wrap = el("div", { class: "field" });
+    F.systems().forEach(function (system) {
+      const spec = entry.units[system];
+      const row = el("div", { class: "row", "data-units": system });
+      const mainId = "entry-" + entry.name + "-" + system;
+      row.appendChild(el("input", {
+        type: "text", id: mainId, "data-field": entry.name,
+        "data-system": system, inputmode: "decimal", autocomplete: "off",
+        "aria-describedby": "error-" + entry.name,
+      }));
+      row.appendChild(el("span", { class: "suffix", text: spec.unit }));
+      if (spec.compoundUnit) {
+        row.appendChild(el("input", {
+          type: "text", id: mainId + "-compound", "data-field": entry.name,
+          "data-system": system, "data-compound": "true",
+          inputmode: "decimal", autocomplete: "off",
+          "aria-describedby": "error-" + entry.name,
+        }));
+        row.appendChild(el("span", { class: "suffix", text: spec.compoundUnit }));
+      }
+      const labeled = el("div", {}, [
+        el("label", { for: mainId, text: entry.label }),
+        row,
+      ]);
+      labeled.setAttribute("data-units-group", system);
+      wrap.appendChild(labeled);
+    });
+    wrap.appendChild(el("p", {
+      class: "field-error", id: "error-" + entry.name, hidden: "",
+    }));
+    return wrap;
+  }
+
+  
+
+  function buildChoiceField(entry) {
+    if (entry.multiple) {
+      const fieldset = el("fieldset", { class: "field" }, [
+        el("legend", { text: entry.label }),
+      ]);
+      const choices = el("div", { class: "choices" });
+      (entry.choices || []).forEach(function (choice) {
+        choices.appendChild(el("label", { class: "choice" }, [
+          el("input", { type: "checkbox", name: entry.name,
+            value: choice.value }),
+          el("span", { text: choice.label }),
+        ]));
+      });
+      fieldset.appendChild(choices);
+      fieldset.appendChild(el("p", {
+        class: "field-error", id: "error-" + entry.name, hidden: "",
+      }));
+      return fieldset;
+    }
+
+    const select = el("select", { id: "entry-" + entry.name });
+    select.appendChild(el("option", { value: "", text: entry.blank || "" }));
+    if (entry.choicesFrom) {
+      const countries = root.BINDER_COUNTRIES || {};
+      Object.keys(countries).sort(function (a, b) {
+        return countries[a].localeCompare(countries[b]);
+      }).forEach(function (code) {
+        select.appendChild(el("option", { value: code, text: countries[code] }));
+      });
+    } else {
+      (entry.choices || []).forEach(function (choice) {
+        select.appendChild(el("option", { value: choice.value,
+          text: choice.label }));
+      });
+    }
+    return el("div", { class: "field" }, [
+      el("label", { for: "entry-" + entry.name, text: entry.label }),
+      select,
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
+    ]);
+  }
+
+  function buildConsentField(entry) {
+    return el("div", { class: "field" }, [
+      el("label", { class: "choice" }, [
+        el("input", { type: "checkbox", id: "entry-" + entry.name,
+          "data-field": entry.name,
+          "aria-describedby": "error-" + entry.name }),
+        el("span", { text: entry.label }),
+      ]),
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
+    ]);
+  }
+
+  function buildCountField(entry) {
+    return el("div", { class: "field" }, [
+      el("label", { for: "entry-" + entry.name, text: entry.label }),
+      el("input", { type: "text", id: "entry-" + entry.name,
+        "data-field": entry.name, inputmode: "numeric", autocomplete: "off",
+        "aria-describedby": "error-" + entry.name }),
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
+    ]);
+  }
+
+  
+
+  function renderFields(container) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    plan().forEach(function (entry) {
+      let node;
+      if (entry.kind === "consent") node = buildConsentField(entry);
+      else if (entry.kind === "choice") node = buildChoiceField(entry);
+      else if (entry.kind === "count") node = buildCountField(entry);
+      else node = buildMeasuredField(entry);
+      container.appendChild(node);
+    });
+  }
+
+  function currentUnits() {
+    return UI.checkedValue("units", F.defaultSystem());
+  }
+
+  
+
+  function applyUnits(container) {
+    const units = currentUnits();
+    Array.prototype.forEach.call(
+      container.querySelectorAll("[data-units-group]"),
+      function (group) {
+        show(group, group.getAttribute("data-units-group") === units);
+      });
+  }
+
+  function readValues(container) {
+    const values = {};
+    plan().forEach(function (entry) {
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        values[entry.name] = Boolean(box && box.checked);
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        values[entry.name] = Array.prototype.map.call(
+          container.querySelectorAll(
+            'input[name="' + entry.name + '"]:checked'),
+          function (input) { return input.value; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        values[entry.name] = field ? field.value : "";
+        return;
+      }
+      const units = currentUnits();
+      const main = $("entry-" + entry.name + "-" + units);
+      values[entry.name] = main ? main.value : "";
+      const compoundField = $("entry-" + entry.name + "-" + units + "-compound");
+      if (compoundField) values[entry.name + "Compound"] = compoundField.value;
+    });
+    return values;
+  }
+
+  function inputsFor(name) {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('[data-field="' + name + '"]'));
+  }
+
+  function clearProblems() {
+    plan().forEach(function (entry) {
+      const slot = $("error-" + entry.name);
+      if (slot) {
+        slot.textContent = "";
+        slot.hidden = true;
+      }
+      inputsFor(entry.name).forEach(function (input) {
+        input.removeAttribute("aria-invalid");
+      });
+    });
+  }
+
+  function showProblems(problems) {
+    clearProblems();
+    problems.forEach(function (problem) {
+      const slot = $("error-" + problem.field);
+      if (slot) {
+        slot.textContent = problem.message;
+        slot.hidden = false;
+      }
+      inputsFor(problem.field).forEach(function (input) {
+        input.setAttribute("aria-invalid", "true");
+      });
+    });
+    const first = problems[0] && $("error-" + problems[0].field);
+    if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  
+
+  function logDetail(detail) {
+    if (detail && root.console && typeof root.console.warn === "function") {
+      root.console.warn("binder: " + detail);
+    }
+  }
 
   UI.boot(setUp, function (error) {
     show($("submission"), false);
     const closed = $("closed");
     show(closed, true);
     if (closed) {
-      closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so the form is hidden — " +
-        "nothing you type would be sent." +
-        (error && error.message ? " (" + error.message + ")" : "");
+      const reason = closed.querySelector("[data-reason]");
+      if (reason) {
+        reason.textContent = "This page did not start up correctly, so " +
+          "the form is hidden — nothing you type would be sent." +
+          (error && error.message ? " (" + error.message + ")" : "");
+      }
     }
   });
 
   function setUp() {
     const form = $("submission");
+    const container = $("entry-fields");
     const submit = $("submit");
     const status = $("status");
-    const closed = $("closed");
-    const done = $("done");
     const config = root.BINDER_CONFIG || {};
     if (!root.BinderSession) {
       throw new Error("This page did not load its session handling.");
@@ -379,221 +622,35 @@
      
      
      
+     
     if (!member) {
       show(form, false);
       return;
     }
 
-    
-
-    const unavailable = root.BinderCrypto
-      ? root.BinderCrypto.unavailableReason()
-      : "This page did not load its encryption, so nothing can be sent " +
-        "— reload.";
-
-     
-     
-     
-     
-    const noKey = !config.publicKey
-      ? "Weigh-ins are closed until this binder publishes a key."
-      : null;
-
-    
-
-    UI.showFingerprint($("key-fingerprint"), config.publicKey);
-
-    const blocked = unavailable || noKey;
-    if (blocked) {
+    if (!config.endpoint) {
       show(form, false);
-      show(closed, true);
-      if (closed) closed.querySelector("[data-reason]").textContent = blocked;
+      show($("closed"), true);
+      const reason = $("closed") && $("closed").querySelector("[data-reason]");
+      if (reason) {
+        reason.textContent = "This site is not set up to reach the " +
+          "service that keeps your entries.";
+      }
       return;
     }
 
-    
-
-    const country = $("country");
-    const countries = root.BINDER_COUNTRIES || {};
-
-    function addOptions(parent, codes) {
-      codes.forEach(function (code) {
-         
-         
-         
-        if (!countries[code]) return;
-        const option = document.createElement("option");
-        option.value = code;
-        option.textContent = countries[code];
-        parent.appendChild(option);
-      });
-    }
-
-    function addGroup(label, codes) {
-      const group = document.createElement("optgroup");
-      group.label = label;
-      addOptions(group, codes);
-      country.appendChild(group);
-    }
-
-    const promoted = root.BINDER_COUNTRIES_PROMOTED || [];
-    if (promoted.length) addGroup("Most common", promoted);
-
-    const alphabetical = Object.keys(countries).sort(function (a, b) {
-      return countries[a].localeCompare(countries[b]);
-    });
-    if (promoted.length) {
-      addGroup("All countries", alphabetical);
-    } else {
-      addOptions(country, alphabetical);
-    }
-
-    
-
-    const FIELDS = ["weight", "height", "over18"];
-
-     
-     
-     
-    function inputsFor(field) {
-      return Array.prototype.slice.call(
-        document.querySelectorAll('[data-field="' + field + '"]'));
-    }
-
-    function clearProblems() {
-      FIELDS.forEach(function (field) {
-        const slot = $("error-" + field);
-        if (slot) {
-          slot.textContent = "";
-          slot.hidden = true;
-        }
-        inputsFor(field).forEach(function (input) {
-          input.removeAttribute("aria-invalid");
-        });
-      });
-    }
-
-    function showProblems(problems) {
-      clearProblems();
-      problems.forEach(function (problem) {
-        const slot = $("error-" + problem.field);
-        if (slot) {
-          slot.textContent = problem.message;
-          slot.hidden = false;
-        }
-        inputsFor(problem.field).forEach(function (input) {
-          input.setAttribute("aria-invalid", "true");
-        });
-      });
-      const first = problems[0] && $("error-" + problems[0].field);
-      if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-
-    
-
-    const groups = { metric: $("metric-fields"), imperial: $("imperial-fields") };
-    const unitInputs = Array.prototype.slice.call(
-      document.querySelectorAll('input[name="units"]'));
-
-     
-     
-     
-     
-    function currentUnits() {
-      return UI.checkedValue("units", "imperial");
-    }
-
-    function applyUnits() {
-      const units = currentUnits();
-      show(groups.metric, units === "metric");
-      show(groups.imperial, units === "imperial");
-      clearProblems();
-    }
-
-    unitInputs.forEach(function (input) {
-      input.addEventListener("change", applyUnits);
-    });
-    applyUnits();
-
-    function readForm() {
-      const session = root.BinderSession.read();
-      return {
-        sessionUsername: session ? session.username : null,
-        units: currentUnits(),
-        weightKg: $("weight-kg").value,
-        weightLb: $("weight-lb").value,
-        heightCm: $("height-cm").value,
-        heightFeet: $("height-ft").value,
-        heightInches: $("height-in").value,
-        gender: $("gender").value,
-        roles: Array.prototype.slice
-          .call(document.querySelectorAll('input[name="roles"]:checked'))
-          .map(function (input) { return input.value; }),
-        country: $("country").value,
-        over18: $("over18").checked,
-      };
-    }
+    renderFields(container);
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { input.addEventListener("change", function () {
+        applyUnits(container);
+        clearProblems();
+      }); });
+    applyUnits(container);
 
     function say(message, tone) {
       UI.setStatus(status, message, tone);
     }
-
-    
-
-    function logDetail(detail) {
-      if (detail && root.console && typeof root.console.warn === "function") {
-        root.console.warn("binder: " + detail);
-      }
-    }
-
-    
-
-    let baselineCm = null;
-    document.addEventListener("binder:height-baseline", function (event) {
-      baselineCm = event && event.detail ? event.detail.lastHeightCm : null;
-    });
-
-    
-
-    let accountId = null;
-    document.addEventListener("binder:account", function (event) {
-      accountId = event && event.detail ? event.detail.accountId : null;
-    });
-
-    
-
-    async function memberKey() {
-      const keys = root.BinderMemberKey;
-      const sealer = root.BinderCrypto;
-      if (!keys || typeof keys.ensure !== "function" || !accountId) return null;
-      if (!sealer || typeof sealer.encryptTo !== "function") return null;
-      let key = null;
-      try {
-        key = await keys.ensure(accountId);
-      } catch (error) {
-         
-         
-         
-         
-        return null;
-      }
-      return key && typeof key.publicKeyBase64 === "string" &&
-        key.publicKeyBase64 ? key : null;
-    }
-
-    
-
-    async function seal(record) {
-      const key = await memberKey();
-      return key
-        ? root.BinderCrypto.encryptTo(
-          record, [config.publicKey, key.publicKeyBase64])
-        : root.BinderCrypto.encrypt(record, config.publicKey);
-    }
-
-    
-
-    let confirmedHeightCm = null;
 
     form.addEventListener("submit", async function (event) {
        
@@ -602,64 +659,46 @@
        
       event.preventDefault();
 
-      const input = readForm();
-      const problems = validate(input, input.sessionUsername);
+      const session = root.BinderSession.read();
+      const input = {
+        units: currentUnits(),
+        values: readValues(container),
+      };
+      const problems = validate(input, session ? session.username : null);
       if (problems.length) {
+        
+
         const sessionProblem = problems.find(function (problem) {
           return problem.field === "telegram";
         });
-        say(sessionProblem ? sessionProblem.message : "",
-          sessionProblem ? "bad" : null);
+        say((sessionProblem || problems[0]).message, "bad");
         showProblems(problems);
         return;
       }
       clearProblems();
 
-      
-
-      const notice = heightChangeNotice(input, baselineCm);
-      const enteredCm = enteredHeightCm(input);
-      if (notice && enteredCm !== confirmedHeightCm) {
-        confirmedHeightCm = enteredCm;
-        showProblems([notice]);
-        return;
-      }
-
       submit.disabled = true;
-      say("Encrypting…", null);
+      say("Sending…", null);
 
       let record = null;
-      let blob;
       try {
-        record = buildRecord(input, Date.now(), input.sessionUsername);
-        blob = await seal(record);
+        record = buildRecord(input, Date.now(),
+          session ? session.username : null);
       } catch (error) {
         submit.disabled = false;
-         
-         
-         
-         
-         
-         
-         
-         
-        logDetail(error && error.message ? error.message : "send preparation " +
-          "failed with no message");
-        say(record === null
-          ? "Nothing was sent — reload and try again."
-          : "Nothing was sent — the site's key is not usable, so tell an " +
-            "admin.", "bad");
+        logDetail(error && error.message ? error.message
+          : "record building failed with no message");
+        say("Nothing was sent — reload and try again.", "bad");
         return;
       }
 
-      say("Sending…", null);
       try {
         const response = await fetch(config.endpoint + "/submit", {
           method: "POST",
           headers: Object.assign(
             { "Content-Type": "application/json" },
             root.BinderSession.authorization()),
-          body: JSON.stringify({ ciphertext: blob }),
+          body: JSON.stringify({ record: JSON.stringify(record) }),
         });
         
 
@@ -676,43 +715,24 @@
             const body = await response.json();
             detail = body && body.error ? " " + body.error : "";
           } catch (e) {   }
-          
-
           logDetail("submission refused with " + response.status + "." +
             detail);
           throw new Error("The service could not answer just now." + detail);
         }
       } catch (error) {
         submit.disabled = false;
-         
-         
-         
-         
         logDetail(error && error.message ? error.message
           : "the submission could not be sent");
         say("Nothing was stored — try again.", "bad");
         return;
       }
 
-      
+      document.dispatchEvent(new CustomEvent("binder:submitted"));
 
-      document.dispatchEvent(new CustomEvent("binder:submitted", {
-        detail: { heightCm: record.height.cm },
-      }));
-
-      show(form, false);
-      say("", null);
-      show(done, true);
-      done.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
-
-    
-
-    document.addEventListener("binder:add-entry-shown", function () {
-      if (done.hidden) return;
-      show(done, false);
-      show(form, true);
-      show($("repeat-note"), true);
+      submit.disabled = false;
+      form.reset();
+      applyUnits(container);
+      say("Added — it now shows in your entries below.", null);
     });
   }
 })(globalThis);

@@ -24,6 +24,11 @@ const load = async (path) => {
 };
 
 await load("../apps/web/admin.js");
+// form.js's pure half reads apps/web/fields.js, which reads
+// apps/web/site.config.js - both have to be loaded first, exactly as
+// your-page.html's own <script> order does (0.9-M2-S2, #353).
+await load("../apps/web/site.config.js");
+await load("../apps/web/fields.js");
 await load("../apps/web/form.js");
 await load("../apps/web/crypto.js");
 
@@ -487,16 +492,18 @@ await check("the two wrong-key cards are not the same sentence", () =>
 
 await check("a submitted record survives encryption and reaches the CSV",
   async () => {
+    // 0.9-M2-S2 (#353) rewrote form.js's buildRecord() to a spec-derived
+    // shape - {units, values: {name: string|boolean|array, ...}} - in
+    // place of the hand-kept {weightLb, heightFeet, heightInches, ...}
+    // this test used before. This admin pipeline check still wants a
+    // real record BinderForm actually builds, so it moves with the new
+    // input shape rather than constructing one by hand.
     const record = globalThis.BinderForm.buildRecord({
-      telegram: "@SomeHandle",
       units: "imperial",
-      weightLb: "200",
-      heightFeet: "5",
-      heightInches: "10",
-      gender: "male",
-      roles: ["feedee", "gainer"],
-      country: "US",
-      over18: true,
+      values: {
+        over18: true, weight: "200", height: "5", heightCompound: "10",
+        gender: "male", roles: ["feedee", "gainer"], country: "US",
+      },
     }, Date.UTC(2026, 7, 4, 12, 0, 0), "@SomeHandle");
 
     const blob = await globalThis.BinderCrypto.encrypt(

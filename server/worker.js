@@ -1786,7 +1786,7 @@ async function handleSubmit(request, env, origin, caller) {
 
   // The record is the row's PLAINTEXT, and this Worker seals it. It is
   // opaque to this route on purpose: what a record contains is the
-  // form's business (apps/site.config.js, form-as-data), not the store's,
+  // form's business (apps/web/site.config.js, form-as-data), not the store's,
   // and validating fields here would be a second place the shape could
   // drift from the one the page enforces. The bound is on bytes because
   // the ceiling is a storage fact, not a character count.

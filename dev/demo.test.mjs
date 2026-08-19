@@ -64,6 +64,11 @@ const load = async (path) => {
   await import("data:text/javascript," + encodeURIComponent(src));
 };
 
+// form.js's pure half reads apps/web/fields.js, which reads
+// apps/web/site.config.js - both load first, the same order
+// your-page.html's own <script> tags use (0.9-M2-S2, #353).
+await load("../apps/web/site.config.js");
+await load("../apps/web/fields.js");
 await load("../apps/web/form.js");
 await load("../apps/web/dashboard.js");
 await load("../apps/web/admin.js");
@@ -465,9 +470,16 @@ const callsHas = (method, path) =>
  * calls nothing, and it would make the checks below pass vacuously
  * forever. So the extractor is asserted to work before its output is
  * trusted - the same shape as check_web.py's parser having a suite.
+ *
+ * GET /me dropped out of this list at 0.9-M2-S2 (#353): your-page.html's
+ * rebuilt entries list, trend and delete all read GET /my-entries
+ * directly, and the account-summary card GET /me answered for is gone
+ * with the tabs it stood in. The route itself is unchanged and the
+ * checks below that exercise it directly (F3 and the ones after it)
+ * still do - this list only names calls a real page still makes.
  */
 await check("the endpoint reader finds the calls that are plainly there", () =>
-  callsHas("GET", "/me") && callsHas("GET", "/my-entries") &&
+  callsHas("GET", "/my-entries") && callsHas("DELETE", "/submission/") &&
   callsHas("POST", "/submit") &&
   callsHas("GET", "/snapshot") && callsHas("GET", "/export") &&
   callsHas("POST", "/auth/telegram"));

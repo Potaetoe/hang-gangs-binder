@@ -1,482 +1,175 @@
 /*
- * The member panel around the submission form.
+ * Everything on your-page.html besides the form itself: the trend line,
+ * the entries list, a member's own delete, the download, and idle
+ * expiry.
  *
- * Counts come only from GET /me. The form announces when the Worker has
- * accepted a submission, and this file responds by reading /me again; it
- * never guesses that the count rose by one. It also reads and writes the
- * device-local prefill: the measurements, the optional fields, the age
- * confirmation, and the height the last stored row carried. That prefill
- * is not a credential, but it is cleartext body data - the same fields
- * the encryption exists to protect - so signing out removes it with the
- * session, and the erasing is signout.js's, because Sign out is in the
- * rail on three pages and this file is loaded on one of them.
+ * WHAT THIS FILE NO LONGER DOES. The tabs, the account-summary card, the
+ * Telegram-id line and the personal history read through client-side
+ * decryption are all gone with the client seal (DESIGN.md, "Trust
+ * model: the Worker reads") - GET /my-entries now hands back plaintext
+ * directly, because the Worker opened it. There is nothing left here to
+ * decrypt and nothing left to prefill: the device-memory store #172
+ * built is dead with the mechanism it existed to remember.
  *
- * A member cannot read their own previous entry: every submission is
- * sealed to the keyholder before it leaves the browser, so there is no
- * server-side answer to "what did I say last time" and this store is the
- * only place an answer can come from. That is why the page says out loud
- * that it is this browser remembering rather than the account - see
- * #172, and #173 for the durable version.
+ * THE CLEARING FUNCTION. clearMemberData() below is the one place that
+ * empties the in-memory rows, the trend, the download's object URL and
+ * any in-flight fetch - called from idle expiry AND from a listener on
+ * the rail's Sign out button, so a member's own history cannot outlive
+ * either exit from this tab (security mandate, 0.9-M2-S2). It does not
+ * touch the session or the device key; BinderSignOut owns both of those
+ * and this file calls it rather than duplicating it.
  */
 (function (root) {
   "use strict";
 
   if (typeof document === "undefined") return;
 
-  const SignOut = root.BinderSignOut;
-
-  /*
-   * Borrowed rather than declared. Two files touch this value - the one
-   * that writes it and the one that erases it on sign-out - and a
-   * second copy of the name is a rename waiting to leave the erase
-   * pointing at a key nobody writes any more. dev/session.test.mjs
-   * asserts the two are the same constant.
-   */
-  const PREFILL_KEY = SignOut.prefillKey;
-  const SUBMITTED_EVENT = "binder:submitted";
-
-  // The other direction: form.js tells this file a row was stored, and this
-  // file tells form.js the form is on screen again. Two events rather than
-  // one shared object, so neither file reaches into the other's elements.
-  const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
-
-  // The third direction: what this browser remembers, told to the guard
-  // that compares against it. form.js cannot read this store - the
-  // account scoping that decides whether the value may be shown at all
-  // lives here - so the number crosses on an event like the other two.
-  const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
-
-  // The fourth: whose account this is, told to the file that seals the
-  // entry - #85. GET /me is this file's request and the id is the only
-  // thing memberkey.js will file a key under, so form.js can neither
-  // fetch it nor derive it; it crosses the same way the height does,
-  // rather than either file reaching into the other.
-  const ACCOUNT_EVENT = "binder:account";
-
-  // Typed into, so they save on `input`.
-  const FIELD_IDS = [
-    "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
-  ];
-
-  // Chosen rather than typed, so they save on `change` - a select and a
-  // checkbox change rather than take input. Wiring them to the list
-  // above is the mistake to avoid: it restores these fields forever
-  // while recording nothing a member does to them.
-  const CHOICE_IDS = ["gender", "country", "over18"];
   const UI = root.BinderUI;
   const Session = root.BinderSession;
   const $ = UI.byId;
   const show = UI.show;
 
-  UI.boot(setUp, function (error) {
-    show($("member-tabs"), false);
-    show($("your-entries-pane"), false);
-    show($("add-entry-pane"), false);
-    detail(error && error.message ? error.message : "boot failed with no " +
-      "message");
-    setStatus("This page did not start correctly, so what is on record " +
-      "may be missing.", true);
-  });
-
-  /*
-   * The technical half of a failure, written where a developer looks -
-   * #265 rows 13, 16, 48 and 49.
-   *
-   * "This member panel did not start correctly", "the account summary",
-   * "the server answered 404", and query.js's own refusals all named
-   * something a member has no word for: a module, a route's noun, a
-   * status code, the engine's vocabulary. None of it is discarded -
-   * a page that fails and says nothing about why is worse for everybody
-   * - it is addressed to the reader who can use it.
-   */
   function detail(technical) {
-    if (technical && root.console &&
-        typeof root.console.warn === "function") {
+    if (technical && root.console && typeof root.console.warn === "function") {
       root.console.warn("binder: " + technical);
     }
   }
 
-  /* The card's own words, with the engine's kept for the console. The
-   * arrangement query.js's `refuse` describes, read from this side. */
-  function plainly(error, fallback) {
-    detail(error && error.message ? error.message : "refused with no message");
-    return error && typeof error.plain === "string" && error.plain
-      ? error.plain
-      : fallback;
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    (children || []).forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+    if (!attrs) return node;
+    Object.keys(attrs).forEach(function (key) {
+      if (key === "text") node.textContent = attrs[key];
+      else if (key === "class") node.className = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    return node;
   }
 
-  function localStore() {
+  function emptyOut(node) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* State held for the life of the tab, and the one function that       */
+  /* clears every bit of it - shared by idle expiry and Sign out.        */
+
+  let entries = [];
+  let downloadUrl = null;
+  let inflight = null;
+
+  function clearMemberData() {
+    if (inflight) {
+      inflight.abort();
+      inflight = null;
+    }
+    entries = [];
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      downloadUrl = null;
+    }
+    emptyOut($("entries-slot"));
+    emptyOut($("trend-slot"));
+    const toggle = $("corrections-toggle");
+    if (toggle && toggle.parentNode) toggle.parentNode.removeChild(toggle);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reading a record back, in the member's chosen units.                */
+
+  /*
+   * GET /my-entries hands back each row's `record` as the JSON STRING
+   * store-crypto's openRow() decoded it to (server/worker.js's own
+   * handleMyEntries never parses it - handleCharts does, for its own
+   * reasons, and that is what made this file's omission invisible: the
+   * suite's own fixture handed objects, never the string shape the
+   * Worker actually sends). Parsed HERE, once, right after the fetch, so
+   * every reader below (weightDisplay, heightDisplay, bmiOf, the trend,
+   * the delete confirmation, the xlsx export) sees an object exactly as
+   * it always assumed.
+   *
+   * A row that will not parse is not a reason to fail the whole listing
+   * - the Worker already fails closed on a row that will not DECRYPT
+   * (openRow throws and the request answers 500), so a plaintext string
+   * this file cannot read as JSON is a narrower, later failure with a
+   * narrower, honest answer: that one row's record becomes null, which
+   * every existing reader below already treats as "nothing to show"
+   * (the em-dash cells, the trend's own filter(Boolean)) rather than a
+   * crash. The row itself still renders - its date, its delete control -
+   * because a member's ability to see and remove a row must not depend
+   * on this file being able to read its contents back.
+   */
+  function parseRecord(raw) {
+    if (typeof raw !== "string") return null;
     try {
-      return root.localStorage || null;
+      return JSON.parse(raw);
     } catch (error) {
+      detail("a stored record did not parse as JSON");
       return null;
     }
   }
 
-  /*
-   * The prefill belongs to one account, and the check is here rather than
-   * in the key name - #56.
-   *
-   * sessionStorage dies with the tab and localStorage does not, so without
-   * this check a member who closes the tab instead of signing out leaves
-   * their entry behind for whoever signs in next on that browser - not
-   * only weight and height, but gender, country, affiliations and an age
-   * confirmation. Sign out erases it, which is the path nobody takes.
-   *
-   * Carrying the id inside the value rather than in the key is what makes
-   * the migration fall out of the comparison: a prefill written before this
-   * existed has no `accountId`, does not match, and is discarded on the
-   * first load. Keying by name would have left that one stranded and
-   * readable forever, which is the exposure rather than a tidiness problem.
-   *
-   * `expected` of null - no account to attribute it to, which is what a
-   * break-glass caller gets from /me - discards rather than restores. A
-   * prefill shown without knowing whose it is IS the bug.
-   *
-   * Every rejection erases, and there is one place that does it - #65.
-   * A value this page will not read is unusable by definition, so nothing
-   * is weighed against removing it, and a rejection that merely returns
-   * leaves weight and height readable on a shared device for the next
-   * person. Spreading the erase across the guards is what makes the fifth
-   * guard somebody adds silently keep the data, so the shape here is a
-   * single accept and one exit: to keep a prefill it has to pass all of
-   * them at once.
-   */
-  function readPrefill(expected) {
-    const store = localStore();
-    if (!store) return null;
-    try {
-      const value = JSON.parse(store.getItem(PREFILL_KEY));
-      if (value && typeof value === "object" && expected &&
-          value.accountId === expected &&
-          (value.units === "imperial" || value.units === "metric")) {
-        return value;
-      }
-    } catch (error) {
-      // A value that will not parse is erased below with every other
-      // rejection; the catch is here so a hostile store cannot throw
-      // past it.
-    }
-    clearPrefill();
-    return null;
-  }
-
-  // The same erase the sign-out performs, called here whenever a stored
-  // prefill is rejected. One implementation rather than two, so a
-  // rejection on this page and a sign-out from any page cannot end up
-  // meaning different things.
-  const clearPrefill = SignOut.clearPrefill;
-
-  function fieldValue(id) {
-    const field = $(id);
-    return field && typeof field.value === "string" ? field.value : "";
-  }
-
   function currentUnits() {
-    const chosen = Array.prototype.find.call(
-      document.querySelectorAll('input[name="units"]'),
-      function (input) { return input.checked; });
-    return chosen ? chosen.value : "imperial";
+    return UI.checkedValue("units", root.BinderFields.defaultSystem());
   }
 
-  function checkedRoles() {
-    return Array.prototype.map.call(
-      document.querySelectorAll('input[name="roles"]:checked'),
-      function (input) { return input.value; });
+  function weightDisplay(record, system) {
+    const F = root.BinderFields;
+    const held = record && record.weight;
+    if (!held || typeof held !== "object") return null;
+    const unit = F.measure("weight").units[system].unit;
+    const store = F.measure("weight").units[system].store;
+    const value = held[store];
+    return typeof value === "number" ? { value: value, unit: unit } : null;
   }
 
-  function isChecked(id) {
-    const field = $(id);
-    return Boolean(field && field.checked);
-  }
-
-  /*
-   * The height the last accepted row carried, in cm, or null on a device
-   * that has never had one accepted here.
-   *
-   * The only value in this store that is not a draft of the form. Every
-   * other field is whatever is in the boxes right now; this one moves on
-   * the announcement that a row was stored and at no other time, which
-   * is what keeps the guard from comparing an entry against itself. Held
-   * in a variable as well as in the store because savePrefill rewrites
-   * the whole record on every keystroke and would otherwise drop it.
-   */
-  let lastHeightCm = null;
-
-  function usableHeight(value) {
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
-  }
-
-  // Announced rather than returned: form.js owns the guard and this file
-  // owns the store, and neither reads the other's state. A baseline of
-  // null is still worth saying - it is the honest answer for a fresh
-  // device, and form.js treats it as no guard at all.
-  function announceBaseline() {
-    document.dispatchEvent(new CustomEvent(HEIGHT_BASELINE_EVENT, {
-      detail: { lastHeightCm: lastHeightCm },
-    }));
-  }
-
-  /*
-   * Whose device-local data this is, as reported by /me. Held rather than
-   * re-read because savePrefill runs on every keystroke and must not write
-   * an unattributed prefill: if /me has not answered, or answered with no
-   * account, there is nothing to scope the data to and it is not stored.
-   * Refusing to write is the safe direction - the cost is a lost
-   * convenience, and the alternative cost is handing somebody else's
-   * body data to whoever is at this browser.
-   */
-  let account = null;
-
-  /*
-   * Announced rather than exposed, and announced on every /me that
-   * answers rather than once.
-   *
-   * form.js holds whatever arrives and asks memberkey.js for a key under
-   * it at seal time, so what has to be true is that the id is known
-   * before somebody presses Send - not that it was known at load. A
-   * refresh that comes back with no account announces null, which is the
-   * honest answer and the one that costs an entry its second recipient
-   * rather than sealing it to the wrong member.
-   */
-  function announceAccount() {
-    document.dispatchEvent(new CustomEvent(ACCOUNT_EVENT, {
-      detail: { accountId: account },
-    }));
-  }
-
-  function savePrefill() {
-    const store = localStore();
-    if (!store || !account) return;
-    const value = {
-      accountId: account,
-      units: currentUnits(),
-      weightLb: fieldValue("weight-lb"),
-      heightFeet: fieldValue("height-ft"),
-      heightInches: fieldValue("height-in"),
-      weightKg: fieldValue("weight-kg"),
-      heightCm: fieldValue("height-cm"),
-      gender: fieldValue("gender"),
-      country: fieldValue("country"),
-      roles: checkedRoles(),
-      over18: isChecked("over18"),
-      lastHeightCm: lastHeightCm,
-    };
-    try { store.setItem(PREFILL_KEY, JSON.stringify(value)); }
-    catch (error) { /* A blocked store leaves an ordinary empty prefill. */ }
-  }
-
-  function restorePrefill() {
-    const value = readPrefill(account);
-    if (!value) return;
-
-    /*
-     * Restoring writes, and the order below is what keeps it from
-     * writing over what it is restoring.
-     *
-     * Selecting the units radio fires `change`, and `change` saves - so
-     * that dispatch is the LAST thing this function does, after every
-     * field it is going to set. A save that runs part-way through reads
-     * the boxes it has not reached yet, finds them empty, and stores
-     * that: the member's gender, country and affiliations are erased by
-     * the act of restoring them. `lastHeightCm` is worse, because the
-     * form has no box for it and nothing can recover it afterwards.
-     */
-    lastHeightCm = usableHeight(value.lastHeightCm);
-
-    const fields = {
-      "weight-lb": value.weightLb,
-      "height-ft": value.heightFeet,
-      "height-in": value.heightInches,
-      "weight-kg": value.weightKg,
-      "height-cm": value.heightCm,
-    };
-    Object.keys(fields).forEach(function (id) {
-      const field = $(id);
-      if (field && typeof fields[id] === "string") field.value = fields[id];
-    });
-
-    const unitInputs = Array.prototype.slice.call(
-      document.querySelectorAll('input[name="units"]'));
-    unitInputs.forEach(function (input) {
-      input.checked = input.value === value.units;
-    });
-
-    const gender = $("gender");
-    if (gender && typeof value.gender === "string") gender.value = value.gender;
-    const country = $("country");
-    if (country && typeof value.country === "string") {
-      country.value = value.country;
+  function heightDisplay(record, system) {
+    const F = root.BinderFields;
+    const held = record && record.height;
+    if (!held || typeof held !== "object") return null;
+    const unit = F.measure("height").units[system].unit;
+    const store = F.measure("height").units[system].store;
+    const value = held[store];
+    if (typeof value !== "number") return null;
+    if (system === "imperial") {
+      const feet = Math.floor(value / 12);
+      const inches = Math.round((value - feet * 12) * 10) / 10;
+      return { value: value, unit: unit, text: feet + " ft " + inches + " in" };
     }
-    const roles = Array.isArray(value.roles) ? value.roles : [];
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="roles"]'),
-      function (input) { input.checked = roles.indexOf(input.value) !== -1; });
-
-    /*
-     * The 18+ bit is restored in one direction only. A stored `false` is
-     * indistinguishable from a member who has not answered yet, and this
-     * is the one assertion the form still asks them to make - so the
-     * absence of a memory leaves the box exactly as the markup ships it.
-     */
-    const over18 = value.over18 === true;
-    if (over18) {
-      const box = $("over18");
-      if (box) box.checked = true;
-    }
-
-    /*
-     * The two sentences that keep a prefilled form from reading as an
-     * account that followed the member here. They are revealed only when
-     * something was restored, and the 18+ line only when the box was
-     * actually ticked for them - an explanation of a tick that did not
-     * happen is its own small lie.
-     */
-    show($("over18-remembered"), over18);
-    show($("prefill-note"), true);
-
-    /*
-     * Last, for the reason at the top of this function: this is the one
-     * line here that triggers a save, and it must find every restored
-     * field already in place. It is also how form.js learns which pair
-     * of measurement boxes to show, so it cannot simply be dropped.
-     */
-    const selected = unitInputs.find(function (input) { return input.checked; });
-    if (selected) selected.dispatchEvent(new Event("change", { bubbles: true }));
-
-    announceBaseline();
+    return { value: value, unit: unit, text: value + " " + unit };
   }
 
-  function setStatus(message, bad) {
-    const status = $("member-panel-status");
-    if (!status) return;
-    status.textContent = message || "";
-    status.className = "status" + (bad ? " bad" : "");
-    status.hidden = !message;
+  function bmiOf(record) {
+    const F = root.BinderFields;
+    const weight = record && record.weight;
+    const height = record && record.height;
+    const kg = weight && typeof weight.kg === "number" ? weight.kg : null;
+    const cm = height && typeof height.cm === "number" ? height.cm : null;
+    if (kg === null || cm === null || cm <= 0) return null;
+    const bmi = F.measure("bmi");
+    return bmi.compute({ weight: kg, height: cm });
   }
 
-  function chooseTab(name) {
-    const entries = name === "entries";
-    show($("your-entries-pane"), entries);
-    show($("add-entry-pane"), !entries);
-
-    /*
-     * Announce that the form is being shown, rather than reaching into it -
-     * #64. After a submission form.js replaces the form with a confirmation
-     * card, and before this the tab led back to that card with no way to the
-     * form but a reload. What to do about it is form.js's decision: it owns
-     * that swap, and this file does not know those two elements exist.
-     */
-    if (!entries) {
-      document.dispatchEvent(new CustomEvent(ADD_ENTRY_SHOWN_EVENT));
-    }
-
-    const entriesTab = $("your-entries-tab");
-    const addTab = $("add-entry-tab");
-    if (entriesTab) {
-      entriesTab.setAttribute("aria-selected", String(entries));
-      entriesTab.setAttribute("tabindex", entries ? "0" : "-1");
-    }
-    if (addTab) {
-      addTab.setAttribute("aria-selected", String(!entries));
-      addTab.setAttribute("tabindex", entries ? "-1" : "0");
-    }
+  function formatDate(iso) {
+    const at = Date.parse(iso);
+    if (!Number.isFinite(at)) return "—";
+    return new Date(at).toLocaleDateString(undefined,
+      { year: "numeric", month: "short", day: "numeric" });
   }
 
-  /*
-   * The rows a correction replaced - #193.
-   *
-   * GET /me reports them beside the effective count rather than
-   * subtracting them in silence, and the reason is in handleMe: a count
-   * that does not move looks the same whether a correction landed or
-   * was refused. That argument only reaches the member if a screen
-   * carries the second number. Drop this function and the count goes
-   * back to shrinking with nothing on the page accounting for the
-   * difference, which is the member reading it as the correction
-   * having eaten an entry.
-   *
-   * Not validated the way `entries` is. A missing or malformed field
-   * hides the line and leaves the rest of the panel alone, because
-   * refusing to draw a count over a second number the page does not
-   * control turns an older Worker into a dead panel - and the count is
-   * what the member came for. Zero is the same silence for the same
-   * reason it is on screen: there is nothing to say.
-   *
-   * The noun is written here rather than in the markup so that one row
-   * reads as one correction.
-   */
-  function renderCorrections(payload) {
-    const count = Number.isInteger(payload.superseded) && payload.superseded > 0
-      ? payload.superseded
-      : 0;
-    const field = $("member-corrections");
-    if (field) {
-      field.textContent = count === 0
-        ? ""
-        : String(count) + (count === 1 ? " correction" : " corrections");
-    }
-    show($("member-corrections-line"), count > 0);
-  }
+  /* ------------------------------------------------------------------ */
+  /* Delete: two-step, row-scoped, naming the row's own date and value.  */
 
-  function renderAccount(payload) {
-    $("member-entry-count").textContent = String(payload.entries);
-    renderCorrections(payload);
-    const last = $("member-last-at");
-    if (payload.lastAt == null) {
-      last.dateTime = "";
-      last.textContent = "No entries yet";
-      return;
-    }
-
-    const at = Date.parse(payload.lastAt);
-    if (!Number.isFinite(at)) {
-      last.dateTime = "";
-      last.textContent = "We cannot read when that was";
-      return;
-    }
-    last.dateTime = payload.lastAt;
-    last.textContent = new Date(at).toLocaleString();
-  }
-
-  /*
-   * The member's own numeric Telegram id, from the session and from
-   * nowhere else - #58.
-   *
-   * The Worker returns it at sign-in for one purpose: somebody being
-   * made an admin has to put that number in ADMIN_TELEGRAM_IDS, and a
-   * page showing it is what keeps them from asking a third-party bot
-   * for it - which is how a real numeric id reaches somebody nobody
-   * here controls. Leaving it unrendered is what sends people there.
-   *
-   * The session is the source because the sign-in response is the only
-   * thing that ever saw the id. Nothing on this page can derive it, and
-   * /me deliberately does not carry it: a page drawing a number from
-   * the account summary would be telling somebody what to configure on
-   * the word of a route that never knew it.
-   *
-   * A development session has none - POST /auth/dev mints an account
-   * for a subject string rather than for a Telegram user, so it answers
-   * with null - and the line stays hidden for it. "Your Telegram id:"
-   * followed by nothing reads as a broken page, and the person reading
-   * it is on their way to configure something.
-   */
-  function showTelegramId(session) {
-    const numeric = session && session.telegramId;
-    const field = $("member-telegram-id");
-    if (field) field.textContent = numeric || "";
-    show($("member-telegram-id-line"), Boolean(numeric));
-  }
-
-  async function refreshPanel() {
+  async function deleteEntry(id, statusLine) {
     const config = root.BINDER_CONFIG || {};
-    if (!config.endpoint) {
-      setStatus("This site is not set up to reach the service that keeps " +
-        "your entries.", true);
-      return;
-    }
-
+    if (!config.endpoint) return false;
     try {
-      const response = await fetch(config.endpoint + "/me", {
+      const response = await fetch(config.endpoint + "/submission/" + id, {
+        method: "DELETE",
         headers: Session.authorization(),
       });
       if (response.status === 401) {
@@ -484,270 +177,308 @@
         if (root.location && typeof root.location.replace === "function") {
           root.location.replace("index.html");
         }
-        return;
+        return false;
       }
-      if (!response.ok) {
-        detail("the /me route answered " + response.status);
-        throw new Error("");
+      if (response.status < 200 || response.status >= 300) {
+        detail("DELETE /submission/" + id + " answered " + response.status);
+        statusLine.textContent = "That entry could not be removed — try again.";
+        statusLine.hidden = false;
+        return false;
       }
-      const payload = await response.json();
-      if (!payload || payload.ok !== true ||
-          !Number.isInteger(payload.entries) || payload.entries < 0) {
-        detail("the /me route answered with no usable account summary");
-        throw new Error("");
-      }
-      // Validated like the count is, rather than trusted: a non-string here
-      // would silently scope the prefill to nothing and read as "not my
-      // data" forever, which looks like the feature simply not working.
-      account = typeof payload.accountId === "string" && payload.accountId
-        ? payload.accountId
-        : null;
-      announceAccount();
-      renderAccount(payload);
-      setStatus("", false);
+      return true;
     } catch (error) {
-      // One sentence for every way this can fail, because a member's
-      // next act is the same in all of them - #265 row 49, which found
-      // the route's own noun said twice in one line.
-      detail(error && error.message ? error.message : "the /me route " +
-        "could not be reached");
-      setStatus("Your entry count could not be refreshed — reload the " +
-        "page.", true);
+      detail(error && error.message ? error.message : "the delete could not " +
+        "be sent");
+      statusLine.textContent = "That entry could not be removed — try again.";
+      statusLine.hidden = false;
+      return false;
     }
   }
 
-  /* ---------------------------------------------------------------- */
-  /* Your own history, opened in this browser - #85's personal arm.    */
-
   /*
-   * The member's own rows, fetched sealed and opened here.
-   *
-   * THE WHOLE SHAPE IN ONE PARAGRAPH. GET /my-entries answers with this
-   * account's rows and their ciphertext; memberkey.js holds a P-256 key
-   * this browser generated and cannot export; crypto.js tries that key
-   * against each row and opens the ones it was a recipient of;
-   * query.js's `personalSource` turns what opened into a source with no
-   * floor; `BinderDashboard.renderAnswer` draws the answer. Nothing
-   * decrypted leaves this function's own frame, nothing decrypted is
-   * stored anywhere, and the service saw none of it.
-   *
-   * WHY THE FLOOR IS ZERO HERE AND IS NOT ON charts.html. The
-   * published document is other people, so every cell of it was reduced
-   * to at least MIN_CELL before it was published. These rows are one
-   * person's own, and suppressing a member's own March because March
-   * held one entry would be hiding somebody's data from themselves. The
-   * difference is structural rather than a flag: two different builder
-   * functions, and `run` takes the floor from the source, so there is
-   * no sentence in the engine's language that asks for floor 0 over
-   * anybody else's data.
-   *
-   * EVERY WAY THIS CAN COME UP EMPTY HAS ITS OWN SENTENCE, because they
-   * are not the same event to the person reading them: a browser that
-   * cannot keep a key, a browser whose key is new, a history sealed
-   * before this feature existed, and a page that could not reach the
-   * service are four different things to do next. A single "nothing to
-   * show" would be one answer to four questions.
+   * The confirm step replaces the row's action cell in place - no
+   * modal, no <form> around it so there is no default-submit button for
+   * Enter to reach, and the id travels as a path segment rather than a
+   * query string.
    */
-  function historyStatus(message, bad) {
-    const line = $("history-status");
-    if (!line) return;
-    line.textContent = message || "";
-    line.className = bad ? "status bad" : "status";
-    show(line, Boolean(message));
+  function buildActionCell(row, system, onDeleted) {
+    const cell = el("td");
+    const status = el("p", { class: "status", hidden: "" });
+
+    function showConfirm() {
+      emptyOut(cell);
+      const weight = weightDisplay(row.record, system);
+      const named = (weight ? weight.value + " " + weight.unit : "that entry") +
+        " from " + formatDate(row.receivedAt);
+      cell.appendChild(el("p", { class: "muted small",
+        text: "Delete the entry (" + named + ")? This cannot be undone." }));
+      const yes = el("button", { type: "button", class: "secondary",
+        text: "Yes, delete" });
+      const no = el("button", { type: "button", class: "secondary",
+        text: "Cancel" });
+      yes.addEventListener("click", async function () {
+        yes.disabled = true;
+        no.disabled = true;
+        const ok = await deleteEntry(row.id, status);
+        if (ok) onDeleted();
+        else showButton();
+      });
+      no.addEventListener("click", showButton);
+      cell.appendChild(el("div", { class: "row buttons" }, [yes, no]));
+      cell.appendChild(status);
+    }
+
+    function showButton() {
+      emptyOut(cell);
+      const button = el("button", { type: "button", class: "secondary",
+        text: "Delete" });
+      button.addEventListener("click", showConfirm);
+      cell.appendChild(button);
+      cell.appendChild(status);
+    }
+
+    showButton();
+    return cell;
   }
 
-  /*
-   * A stored row and its opened record, in the shape the snapshot
-   * builder reads.
-   *
-   * NO HANDLE. The record carries one and this deliberately drops it.
-   * `personalSource` builds its snapshot with `identify: true`, which
-   * captions every series line "@" + telegram - and a caption naming
-   * the one person looking at it tells them nothing they do not know
-   * while putting a handle in a structure the listeners below hold for
-   * the life of the tab. The pane is the member's own; a label does not
-   * need the handle. It also empties `quality.handleChanges` at the
-   * source rather than only scrubbing it afterwards.
-   *
-   * WHAT ACTUALLY MAKES THESE ROWS THEIRS, said plainly because the
-   * obvious answer is wrong. `personalSource` refuses a list belonging
-   * to more than one person, and that guard CANNOT FIRE from this call
-   * site: it counts through BinderDashboard.peopleCount, which keys on
-   * `accountId` first, and the line below stamps every row with the one
-   * account unconditionally - so the count is one however many members'
-   * rows arrived. The guard is real for a caller that passes rows
-   * through; here it is a tautology.
-   *
-   * The mechanism that does the work is server-side: the account clause
-   * in GET /my-entries' statement, bound from the session and with
-   * nothing on the wire to point it elsewhere. dev/worker.test.mjs
-   * proves it by partition - the two accounts' listings are disjoint
-   * and together they are the whole table. Do not read the guard below
-   * as a second line of defence, because from here it is not one.
-   */
-  function historyEntry(row, record) {
-    const weight = record.weight || {};
-    const height = record.height || {};
-    const entered = record.entered || {};
-    return {
-      id: row.id,
-      accountId: account,
-      receivedAt: row.receivedAt,
-      submittedAt: record.submittedAt,
-      kg: weight.kg, lb: weight.lb,
-      cm: height.cm, totalInches: height.totalInches,
-      feet: height.feet, inches: height.inches,
-      enteredUnits: entered.units,
-      enteredWeight: entered.weight,
-      enteredHeight: entered.height,
-      gender: record.gender,
-      roles: Array.isArray(record.roles) ? record.roles.slice() : [],
-      country: record.country,
-      over18: record.over18 === true,
-      recordVersion: record.record,
-    };
+  /* ------------------------------------------------------------------ */
+  /* The entries list: current rows in flow, replaced ones muted in      */
+  /* place, one disclosure for the whole list.                           */
+
+  function renderEntries(container, onChanged) {
+    emptyOut(container);
+    const system = currentUnits();
+
+    if (!entries.length) {
+      container.appendChild(el("p", { class: "muted",
+        text: "Nothing recorded yet — fill in the form above and it " +
+          "starts here." }));
+      return;
+    }
+
+    const supersededCount = entries.filter(function (e) { return e.superseded; })
+      .length;
+    if (supersededCount > 0) {
+      const toggle = el("button", { type: "button", id: "corrections-toggle",
+        class: "secondary",
+        text: "Show " + supersededCount +
+          (supersededCount === 1 ? " replaced row" : " replaced rows") });
+      let revealed = false;
+      toggle.addEventListener("click", function () {
+        revealed = !revealed;
+        toggle.textContent = revealed
+          ? "Hide replaced rows"
+          : "Show " + supersededCount +
+            (supersededCount === 1 ? " replaced row" : " replaced rows");
+        Array.prototype.forEach.call(
+          container.querySelectorAll("tr[data-superseded]"),
+          function (row) { row.hidden = !revealed; });
+      });
+      container.appendChild(toggle);
+    }
+
+    const wrap = el("div", { class: "table-scroll" });
+    const table = el("table", { class: "tabular" });
+    table.appendChild(el("thead", {}, [
+      el("tr", {}, [
+        el("th", { text: "date" }), el("th", { text: "weight" }),
+        el("th", { text: "height" }), el("th", { text: "bmi" }),
+        el("th", { text: "" }),
+      ]),
+    ]));
+    const tbody = el("tbody");
+
+    entries.forEach(function (row) {
+      const weight = weightDisplay(row.record, system);
+      const height = heightDisplay(row.record, system);
+      const bmi = bmiOf(row.record);
+      const tr = el("tr", row.superseded
+        ? { class: "muted", "data-superseded": "1", hidden: "" } : {});
+      tr.appendChild(el("td", { text: formatDate(row.receivedAt) }));
+      tr.appendChild(el("td", { text: weight ? weight.value + " " + weight.unit : "—" }));
+      tr.appendChild(el("td", { text: height ? height.text : "—" }));
+      tr.appendChild(el("td", { text: bmi === null ? "—" : String(bmi) }));
+      tr.appendChild(buildActionCell(row, system, onChanged));
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    container.appendChild(wrap);
   }
 
-  /*
-   * What the listeners are allowed to keep, and nothing else.
-   *
-   * The source below outlives this function: every control's handler
-   * closes over it, so whatever is in it sits in memory for the life of
-   * the tab. `personalSource` builds its snapshot with `identify: true`
-   * - the keyholder's own setting - which is right for the numbers and
-   * wrong for everything beside them, because that setting also fills
-   * in a data-quality panel and a per-person series that exist for
-   * somebody auditing OTHER people's rows.
-   *
-   * `run` reads exactly one member of this document: `bases[basis]`.
-   * That is checkable rather than asserted - it is the only
-   * `source.snapshot.` read in apps/web/query.js. So everything else
-   * goes, and what survives the frame that decrypted these rows is the
-   * partitions the chart is drawn from: counts by category and
-   * histogram bins, already reduced from the rows rather than being
-   * them.
-   *
-   * WHAT IS DELETED AND WHY EACH ONE. `quality` is heightChanges and
-   * handleChanges - a member's measurement disagreements listed out,
-   * which the pane never draws. `series` is the per-person line, whose
-   * points are unquantized under `identify` and whose label is the
-   * handle. `counts` and `movement` are summary numbers nothing here
-   * renders. None of it is a secret from the member; all of it is
-   * retained plaintext with no reader, and the rule this follows is
-   * DESIGN.md's positional one at the smallest scale - plaintext exists
-   * where it must and nowhere else.
-   *
-   * Deleting rather than rebuilding, because the object has to stay the
-   * one `personalSource` made: `run` refuses a source it did not build,
-   * which is what stops a caller hand-making a floor-0 source over
-   * somebody else's document. A copy would not be that object.
-   */
-  function scrub(snapshot) {
-    delete snapshot.quality;
-    delete snapshot.series;
-    delete snapshot.counts;
-    delete snapshot.movement;
-  }
+  /* ------------------------------------------------------------------ */
+  /* The trend: one hand-rolled SVG line over the current rows' weight.  */
 
-  /*
-   * Ask the engine, draw the answer.
-   *
-   * The source is built ONCE and kept, because rebuilding it per
-   * question would decrypt the rows again for every keystroke - and
-   * because the plaintext that built it is already gone by then. What
-   * survives this function is a snapshot: counts, medians and bins over
-   * the member's own numbers, which is what they came to read.
-   */
-  function askHistory(source) {
-    const Query = root.BinderQuery;
-    const answerAt = $("history-answer");
-    const split = $("h-split").value;
-    const shape = Query.SPLITS[split];
-    if (!shape || !answerAt) return;
+  function renderTrend(container) {
+    emptyOut(container);
+    const system = currentUnits();
+    const current = entries.filter(function (e) { return !e.superseded; });
+    const points = current
+      .map(function (e) {
+        const at = Date.parse(e.receivedAt);
+        const w = weightDisplay(e.record, system);
+        return Number.isFinite(at) && w ? { t: at, v: w.value, unit: w.unit }
+          : null;
+      })
+      .filter(Boolean)
+      .sort(function (a, b) { return a.t - b.t; });
 
-    const bins = shape.kind === "bins";
-    /* A middle needs numbers to work with, so the measure is offered
-     * only for the binned splits - the same rule the published card
-     * follows, because it is the engine's rule and not a page's. */
-    const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
-    show($("h-measure-field"), bins);
+    if (points.length < 2) {
+      container.appendChild(el("p", { class: "muted",
+        text: current.length
+          ? "One entry isn't a trend yet — add another and a line " +
+            "appears here."
+          : "Nothing recorded yet — fill in the form above and it " +
+            "starts here." }));
+      return;
+    }
+
+    const W = 600, H = 200, MARGIN_L = 40, MARGIN_B = 20, MARGIN_T = 10;
+    const minT = points[0].t, maxT = points[points.length - 1].t;
+    const values = points.map(function (p) { return p.v; });
+    let minV = Math.min.apply(null, values), maxV = Math.max.apply(null, values);
+    if (minV === maxV) { minV -= 1; maxV += 1; }
+
+    function x(t) {
+      return maxT === minT ? MARGIN_L
+        : MARGIN_L + (t - minT) / (maxT - minT) * (W - MARGIN_L - 10);
+    }
+    function y(v) {
+      return MARGIN_T + (1 - (v - minV) / (maxV - minV)) * (H - MARGIN_T - MARGIN_B);
+    }
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Your weight trend, " + points.length +
+      " entries");
+
+    function line(x1, y1, x2, y2, cls) {
+      const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+      l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+      l.setAttribute("class", cls);
+      return l;
+    }
+    svg.appendChild(line(MARGIN_L, MARGIN_T, MARGIN_L, H - MARGIN_B, "chart-axis"));
+    svg.appendChild(line(MARGIN_L, H - MARGIN_B, W - 10, H - MARGIN_B, "chart-axis"));
+
+    function labelAt(px, py, value, anchor) {
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", px); t.setAttribute("y", py);
+      t.setAttribute("class", "chart-label");
+      if (anchor) t.setAttribute("text-anchor", anchor);
+      t.textContent = value;
+      return t;
+    }
+    svg.appendChild(labelAt(MARGIN_L - 6, y(maxV) + 4, Math.round(maxV), "end"));
+    svg.appendChild(labelAt(MARGIN_L - 6, y(minV) + 4, Math.round(minV), "end"));
+
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("class", "chart-series series-0");
+    polyline.setAttribute("points",
+      points.map(function (p) { return x(p.t) + "," + y(p.v); }).join(" "));
+    svg.appendChild(polyline);
+
+    const last = points[points.length - 1];
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", x(last.t)); dot.setAttribute("cy", y(last.v));
+    dot.setAttribute("r", 3);
+    dot.setAttribute("class", "chart-dot series-0");
+    svg.appendChild(dot);
+
+    const figure = el("figure", { class: "chart chart-wide" }, [
+      el("figcaption", { text: "Your weight" }),
+      svg,
+    ]);
+    container.appendChild(figure);
 
     /*
-     * ONE QUERY OBJECT, ASKED AND DESCRIBED. Two literals here would be
-     * two questions - and the one that draws the chart and the one that
-     * captions it would drift on whichever member was omitted from the
-     * second. That is not hypothetical: a caption built without `units`
-     * reads "(imperial)" over a metric chart, because `describe`
-     * normalizes an absent units the same way `run` does and neither
-     * has any way to know the other was asked something else.
+     * The one-line conversion notice (design mandate 3): shown only when
+     * some charted entry was typed in a different system than it is
+     * being drawn in now.
      */
-    const query = {
-      // Entries, always. "How many people" over one person's own rows is
-      // one person, and their history is the thing being asked about -
-      // so the basis follows from what the source is rather than from a
-      // control offering a question with one answer.
-      basis: "entries",
-      split: split,
-      measure: measure,
-      // The form's own units choice, which is this page's only one. A
-      // second control here would let one page hold two answers to the
-      // same question.
-      units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
-    };
-
-    let answer;
-    try {
-      answer = Query.run(source, query);
-    } catch (error) {
-      // The engine's own words are precise and are written in the
-      // engine's nouns; this pane's controls say About and Measure.
-      // #265 row 16 - the card gets the same claim in its own labels
-      // and the console keeps the rest.
-      historyStatus(plainly(error, "That question could not be asked."),
-        true);
-      return;
+    const other = system === "metric" ? "imperial" : "metric";
+    const otherUnit = root.BinderFields.measure("weight").units[other].unit;
+    const converted = current.some(function (e) {
+      return e.record && e.record.entered && e.record.entered.units === other;
+    });
+    if (converted) {
+      container.appendChild(el("p", { class: "hint",
+        text: "Shown in " + points[0].unit + " — entries logged in " +
+          otherUnit + " were converted." }));
     }
-    historyStatus("", false);
-    root.BinderDashboard.renderAnswer(answerAt, answer, Query.describe(query));
   }
 
-  async function openHistory() {
+  /* ------------------------------------------------------------------ */
+  /* The download: built in-page from rows already fetched, via          */
+  /* xlsx.js only. Revoked immediately, filename date-stamped.           */
+
+  const DOWNLOAD_COLUMNS = [
+    "date", "weight_lb", "weight_kg", "height_ft_in", "height_cm", "bmi",
+    "corrected",
+  ];
+
+  function downloadRow(entry) {
+    const weight = entry.record && entry.record.weight;
+    const height = entry.record && entry.record.height;
+    const feetInches = heightDisplay(entry.record, "imperial");
+    const bmi = bmiOf(entry.record);
+    return [
+      formatDate(entry.receivedAt),
+      weight && typeof weight.lb === "number" ? weight.lb : "",
+      weight && typeof weight.kg === "number" ? weight.kg : "",
+      feetInches ? feetInches.text : "",
+      height && typeof height.cm === "number" ? height.cm : "",
+      bmi === null ? "" : bmi,
+      entry.superseded ? "yes" : "",
+    ];
+  }
+
+  function fileName(now) {
+    const date = new Date(now).toISOString().slice(0, 10);
+    return "your-entries-" + date + ".xlsx";
+  }
+
+  function wireDownload() {
+    const button = $("download");
+    if (!button) return;
+    button.addEventListener("click", function () {
+      if (!entries.length || !root.BinderXlsx) return;
+      const rows = entries.map(downloadRow);
+      const bytes = root.BinderXlsx.build(DOWNLOAD_COLUMNS, rows, "Entries",
+        Date.now());
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      const url = URL.createObjectURL(new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }));
+      const link = el("a", { href: url, download: fileName(Date.now()) });
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Fetching the list and drawing both sections from one response.      */
+
+  async function loadEntries() {
     const config = root.BINDER_CONFIG || {};
-    const Keys = root.BinderMemberKey;
-    const Crypto = root.BinderCrypto;
-    const Query = root.BinderQuery;
-    const card = $("your-history");
-
-    /* Any of these missing is a page that did not fully load, not a
-     * member with nothing to read. The account card above still paints,
-     * because counts do not need a key. */
-    if (!card || !Keys || !Crypto || !Query || !root.BinderDashboard ||
-        !config.endpoint || !account) {
-      return;
-    }
-    show(card, true);
-
-    const key = await Keys.ensure(account);
-    if (!key) {
-      // The store's own reason goes to the console rather than onto the
-      // end of the sentence (#275, rule 1): it names IndexedDB and
-      // private browsing, and a member who cannot keep a key does the
-      // same thing either way.
-      detail(Keys.unavailableReason() || "this browser keeps no key");
-      historyStatus("This browser cannot keep a key of your own, so your " +
-        "entries stay sealed here.", false);
-      return;
-    }
-
-    let rows;
+    if (!config.endpoint) return;
+    const trendSlot = $("trend-slot");
+    const entriesSlot = $("entries-slot");
+    if (inflight) inflight.abort();
+    const controller = new AbortController();
+    inflight = controller;
     try {
       const response = await fetch(config.endpoint + "/my-entries", {
         headers: Session.authorization(),
+        signal: controller.signal,
       });
+      if (inflight !== controller) return; // superseded by a later call
       if (response.status === 401) {
-        // The same handling the account summary above uses, and for the
-        // same reason: a credential the endpoint refuses is one this tab
-        // must stop holding.
         Session.clear();
         if (root.location && typeof root.location.replace === "function") {
           root.location.replace("index.html");
@@ -755,211 +486,174 @@
         return;
       }
       if (!response.ok) {
-        detail("the /my-entries route answered " + response.status);
+        detail("GET /my-entries answered " + response.status);
         throw new Error("");
       }
       const payload = await response.json();
-      rows = payload && payload.ok === true && Array.isArray(payload.entries)
-        ? payload.entries : null;
-      if (!rows) {
-        detail("the /my-entries route answered with no usable listing");
+      if (!payload || payload.ok !== true || !Array.isArray(payload.entries)) {
+        detail("GET /my-entries answered with no usable listing");
         throw new Error("");
       }
+      entries = payload.entries.map(function (entry) {
+        return Object.assign({}, entry, { record: parseRecord(entry.record) });
+      });
     } catch (error) {
-      detail(error && error.message ? error.message : "the /my-entries " +
-        "route could not be reached");
-      historyStatus("Your entries could not be fetched — reload the page.",
-        true);
-      return;
-    }
-
-    if (!rows.length) {
-      historyStatus("No entries yet — weigh in and this fills up.", false);
-      return;
-    }
-
-    /*
-     * One at a time, and a row that will not open is COUNTED rather than
-     * skipped. Three causes, and all three are ordinary: a row stored
-     * before this browser had a key, a row from a device that is gone,
-     * and a row from before a sign-out here destroyed the key that would
-     * have opened it - the last is a documented price rather than a
-     * fault, and it is the one a member is most likely to meet. All
-     * three are exactly the rows an admin can unseal. Dropping them
-     * silently would leave a member reading an answer over fewer entries
-     * than they have, with nothing on the page saying so.
-     */
-    const entries = [];
-    let sealed = 0;
-    for (const row of rows) {
-      try {
-        entries.push(historyEntry(row,
-          await Crypto.decrypt(row.ciphertext, key.privateKey)));
-      } catch (error) {
-        sealed += 1;
+      if (error && error.name === "AbortError") return;
+      detail(error && error.message ? error.message : "the entries listing " +
+        "could not be fetched");
+      if (entriesSlot) {
+        emptyOut(entriesSlot);
+        entriesSlot.appendChild(el("p", { class: "muted",
+          text: "Your entries could not be loaded — reload the page." }));
       }
-    }
-
-    /*
-     * The noun travels with the number - the same move the corrections
-     * line makes two cards up, for the same reason. The ruled sentence
-     * is "4 rows can't be opened here" (#275), and a slot filled with a
-     * bare digit renders "1 rows" on the one member who has exactly one
-     * of these, which is the tell of a number pasted into a sentence.
-     */
-    const sealedCount = $("history-sealed-count");
-    if (sealedCount) {
-      sealedCount.textContent = sealed === 1 ? "1 row" : sealed + " rows";
-    }
-    /*
-     * The partial line belongs to an answer, so it is shown only when
-     * there is one - #265 row 17, which was only visible rendered.
-     *
-     * With nothing opened, both sentences printed together: the sealed
-     * count claiming rows are "not in the answer above" with the
-     * controls hidden and no answer above at all, directly under a
-     * sentence saying the same thing at length, and "Ask an admin to
-     * unlock them." twice in four lines. One state, one sentence.
-     */
-    show($("history-sealed"), sealed > 0 && entries.length > 0);
-
-    if (!entries.length) {
-      /*
-       * FOUR CAUSES, AND THE LAST TWO ARE THE ONES THIS PAGE OWES AN
-       * EXPLANATION FOR, because both happen on the very device the
-       * member is holding and both otherwise read as a fault.
-       *
-       * Signing out destroys the device key on purpose - the whole point
-       * is that a shared browser hands nobody the previous member's
-       * history - so a member who signs out and back in finds everything
-       * sealed where they are sitting.
-       *
-       * The fourth is this page's own timing. form.js can only widen a
-       * seal to an account it has been told about, and it is told on the
-       * event this module fires once /me answers; nothing gates Send on
-       * that answer, deliberately, because blocking a submission on a
-       * request that may never return is the worse failure. So a member
-       * on a slow connection who fills the form and presses Send
-       * immediately gets a keyholder-only row, permanently, on a browser
-       * that holds a perfectly good key.
-       *
-       *
-       * NO CAUSES ON SCREEN, FOUR IN THIS COMMENT, and that is #275's
-       * ruling rather than a loss of the argument above. Two of them
-       * printed until now, and the pair was already a compromise: all
-       * four produced a paragraph a member had to parse to learn one
-       * thing they could act on, and none of the four - not one -
-       * changes what they do about it. A cause a reader cannot act on
-       * is the definition of the clause rule 1 takes out.
-       *
-       * What the sentence keeps is the effect and the remedy, in the
-       * words its sibling above uses for the partial case, because a
-       * member who reads either of them is in the same position and
-       * there is no reason for two answers.
-       */
-      historyStatus("None of your entries can be opened here. " +
-        "Ask an admin.", false);
+      // The trend section stays in flow even on a failed load - its own
+      // comment on your-page.html says so ("the empty-state sentence
+      // lives in the slot rather than an axis with no line on it"), and
+      // a bare runner with nothing under it is exactly the state that
+      // comment rules out. Writing here rather than leaving whatever the
+      // slot held before this call - a stale trend from a prior success
+      // would read as current data about a request that just failed.
+      if (trendSlot) {
+        emptyOut(trendSlot);
+        trendSlot.appendChild(el("p", { class: "muted",
+          text: "Your trend could not be loaded — reload the page." }));
+      }
       return;
+    } finally {
+      if (inflight === controller) inflight = null;
     }
 
-    let source;
-    try {
-      source = Query.personalSource(entries, Date.now());
-      scrub(source.snapshot);
-    } catch (error) {
-      // The member sentence renders alone - the register bar's rule 5
-      // (#275). The house sentence that stood in front of it named the
-      // pane the reader is already looking at, and pushed the half they
-      // could act on into second place.
-      historyStatus(
-        plainly(error, "Your entries could not be read as a history."),
-        true);
-      return;
-    }
-
-    show($("history-controls"), true);
-    $("h-split").addEventListener("change", function () { askHistory(source); });
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="h-measure"]'),
-      function (input) {
-        input.addEventListener("change", function () { askHistory(source); });
-      });
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="units"]'),
-      function (input) {
-        input.addEventListener("change", function () { askHistory(source); });
-      });
-    askHistory(source);
+    renderTrend(trendSlot);
+    renderEntries(entriesSlot, function () { loadEntries(); });
   }
 
-  /*
-   * The one path that moves the baseline: a row the Worker accepted.
-   *
-   * form.js announces the height the stored record actually carried, so
-   * what the next entry is measured against is what was sealed rather
-   * than a second reading of the boxes. A send that was refused
-   * announces nothing and therefore moves nothing - the same property
-   * the confirmation card already relies on, applied to the value that
-   * decides whether a member gets asked about their next height.
-   */
-  function rememberHeight(event) {
-    const cm = usableHeight(event && event.detail
-      ? event.detail.heightCm : null);
-    if (cm === null) return;
-    lastHeightCm = cm;
-    savePrefill();
-    announceBaseline();
+  /* ------------------------------------------------------------------ */
+  /* Walking away from the machine - the same warn-then-expire timer     */
+  /* admin.html carries (DESIGN.md, "Sessions": "Idle expiry is one      */
+  /* rule everywhere"). Ten minutes idle, two minutes' warning, shorter  */
+  /* than the Worker's own SESSION_IDLE_MINUTES window so this page      */
+  /* always acts first, on its own initiative.                          */
+
+  const IDLE_WINDOW = Object.freeze({
+    idleMs: 10 * 60 * 1000,
+    warnMs: 2 * 60 * 1000,
+  });
+
+  function idleVerdict(lastInteraction, now, limits) {
+    const bounds = limits || IDLE_WINDOW;
+    const idle = now - lastInteraction;
+    if (!Number.isFinite(lastInteraction) || !Number.isFinite(now) ||
+        !(idle >= 0)) {
+      return { state: "expired", msLeft: 0 };
+    }
+    const msLeft = bounds.idleMs - idle;
+    if (msLeft <= 0) return { state: "expired", msLeft: 0 };
+    return {
+      state: msLeft <= bounds.warnMs ? "warning" : "active",
+      msLeft: msLeft,
+    };
   }
+
+  function idleNotice(verdict) {
+    if (!verdict || verdict.state !== "warning") return "";
+    const seconds = Math.ceil(verdict.msLeft / 1000);
+    const rest = seconds % 60;
+    return "Nobody has touched this page for a while. It shows your own " +
+      "entries, so it will clear itself and sign you out in " +
+      Math.floor(seconds / 60) + ":" + (rest < 10 ? "0" : "") + rest +
+      ". Any key, click, touch or wheel keeps it open.";
+  }
+
+  function wireIdle() {
+    const INTERACTION = ["pointerdown", "keydown", "wheel", "touchstart"];
+    const TICK_MS = 1000;
+    let lastInteraction = Date.now();
+    let warned = false;
+    let ticker = null;
+
+    function hideWarning() {
+      if (!warned) return;
+      warned = false;
+      show($("idle-warning"), false);
+    }
+    function markInteraction() {
+      lastInteraction = Date.now();
+      hideWarning();
+    }
+    for (const type of INTERACTION) {
+      document.addEventListener(type, markInteraction, {
+        capture: true, passive: true,
+      });
+    }
+
+    function endForIdle() {
+      root.clearInterval(ticker);
+      clearMemberData();
+      root.BinderSignOut.signOut();
+    }
+
+    function checkAttention() {
+      const verdict = idleVerdict(lastInteraction, Date.now());
+      if (verdict.state === "expired") {
+        endForIdle();
+        return;
+      }
+      if (verdict.state !== "warning") {
+        hideWarning();
+        return;
+      }
+      const countdown = $("idle-countdown");
+      if (countdown) countdown.textContent = idleNotice(verdict);
+      if (warned) return;
+      warned = true;
+      show($("idle-warning"), true);
+      const stay = $("idle-stay");
+      if (stay) stay.focus();
+    }
+
+    ticker = root.setInterval(checkAttention, TICK_MS);
+    const stay = $("idle-stay");
+    if (stay) stay.addEventListener("click", markInteraction);
+  }
+
+  /* ------------------------------------------------------------------ */
+
+  UI.boot(setUp, function (error) {
+    detail(error && error.message ? error.message : "boot failed with no " +
+      "message");
+  });
 
   async function setUp() {
     if (!Session) throw new Error("This page did not load session handling.");
     const session = Session.require();
     if (!session) return;
 
-    FIELD_IDS.forEach(function (id) {
-      const field = $(id);
-      if (field) field.addEventListener("input", savePrefill);
-    });
+    // Sign out clears the session and the device key on its own
+    // (signout.js); this page's own data goes with the same click,
+    // ahead of the navigation - both listeners are on the same button
+    // and neither depends on the other's order.
+    const signOutButton = $("sign-out");
+    if (signOutButton) signOutButton.addEventListener("click", clearMemberData);
+
     Array.prototype.forEach.call(
       document.querySelectorAll('input[name="units"]'),
-      function (input) { input.addEventListener("change", savePrefill); });
-    CHOICE_IDS.forEach(function (id) {
-      const field = $(id);
-      if (field) field.addEventListener("change", savePrefill);
+      function (input) {
+        input.addEventListener("change", function () {
+          renderTrend($("trend-slot"));
+          renderEntries($("entries-slot"), function () { loadEntries(); });
+        });
+      });
+
+    // form.js owns the record and the POST; this file owns the list.
+    // Refreshing from the server rather than splicing the new row in
+    // locally means the list always reflects what the Worker actually
+    // stored, including the receipt time it stamped.
+    document.addEventListener("binder:submitted", function () {
+      loadEntries();
     });
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="roles"]'),
-      function (input) { input.addEventListener("change", savePrefill); });
 
-    const entriesTab = $("your-entries-tab");
-    const addTab = $("add-entry-tab");
-    if (entriesTab) {
-      entriesTab.addEventListener("click", function () { chooseTab("entries"); });
-    }
-    if (addTab) {
-      addTab.addEventListener("click", function () { chooseTab("add"); });
-    }
-    document.addEventListener(SUBMITTED_EVENT, refreshPanel);
-    document.addEventListener(SUBMITTED_EVENT, rememberHeight);
-
-    show($("member-tabs"), true);
-    chooseTab("entries");
-    showTelegramId(session);
-
-    // The prefill is restored AFTER /me, not before, and the order is the
-    // whole point of #56: the account id that says whose data this is only
-    // arrives with that response. Restoring first would paint the previous
-    // member's measurements for as long as the request takes, which is the
-    // exposure this closed - briefly, but into a screen somebody is looking
-    // at.
-    await refreshPanel();
-    restorePrefill();
-    // After refreshPanel(), because the account id it validates is what
-    // says whose key this is - and #56's rule is that a key or a value
-    // scoped to nobody is a key or a value shown to the wrong member.
-    // Not awaited by setUp's own callers: opening a history is a read
-    // that can take as long as it takes, and the form above it must not
-    // wait on it to become usable.
-    await openHistory();
+    wireDownload();
+    wireIdle();
+    await loadEntries();
   }
 })(globalThis);

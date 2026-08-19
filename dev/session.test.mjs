@@ -392,25 +392,27 @@ check("the sign-in page does not load the sign-out act",
   !coverSource.includes('src="signout.js"'));
 
 /*
- * The prefill key exists in two files' orbit now: signout.js declares
- * it and erases it, submit.js borrows it to read and write. Two
- * literals would be a rename away from a sign-out that erases a key
- * nobody writes any more - silent, and only visible as somebody else's
- * measurements on a shared browser, which is exactly what #56 was
- * filed for.
- *
- * So the constant is asserted to have ONE home. The negative half is
- * the load-bearing one: a second copy in submit.js is what this
- * forbids, and it would pass every behavioral check in the suite next
- * door for as long as the two strings happened to agree.
+ * apps/web/submit.js does not touch the prefill key (#172's whole
+ * device-memory mechanism is not part of it): the Worker answers "what
+ * did I say last time" itself, so there is nothing left for a page to
+ * read back from a local store. apps/web/signout.js still declares the
+ * constant and still erases it on Sign out (clearPrefill() is
+ * unconditional best-effort cleanup, harmless whether anything ever
+ * wrote the key or not), so the erase is still checked below.
+ * apps/web/submit.js DOES call root.BinderSignOut.signOut() from its own
+ * clearing function, for a reason that has nothing to do with the
+ * prefill key - and a regex that only asked "does 'BinderSignOut' appear
+ * in submit.js" cannot tell that call apart from a genuine borrow of the
+ * key, which is why the check below asks about the key by name instead.
  */
 const submitSource = await readFile(
   new URL("../apps/web/submit.js", import.meta.url), "utf8");
 check("the prefill key is declared in signout.js",
   /const PREFILL_KEY = "hgb-submit-prefill";/.test(signOutSource));
-check("submit.js borrows that key rather than declaring a second copy",
+check("submit.js no longer touches the prefill key at all - #172's " +
+  "device-memory mechanism is retired from this file (0.9-M2-S2)",
   !/"hgb-submit-prefill"/.test(submitSource) &&
-  /BinderSignOut|SignOut\.prefillKey/.test(submitSource));
+  !/prefillKey/.test(submitSource));
 
 /* ------------------------------------------------------------------ */
 /* The rail, which is the shell half this file must not paint - #166.  */

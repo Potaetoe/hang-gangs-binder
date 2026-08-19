@@ -4,17 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  Everything this page is allowed to load, and nothing else. This is the
-  page that holds plaintext in memory before encrypting it: an injected
-  script that runs before the encryption step sees exactly what the
-  design exists to hide. The policy also enforces the rule DESIGN.md
-  states in prose - nothing third-party where plaintext is in reach.
+  Everything this page is allowed to load, and nothing else. Rows are
+  encrypted at rest by the Worker under a secret only it holds
+  (DESIGN.md, "Trust model: the Worker reads") - this page holds
+  plaintext only long enough to post it and to show a member their own
+  history back, so an injected script here reaches what the design
+  already trusts the Worker with rather than a secret this page keeps.
+  The policy also enforces the rule DESIGN.md states in prose - nothing
+  third-party where plaintext is in reach.
 
   connect-src names both Workers exactly, and nothing else - not the whole
   of workers.dev, which would let an injected script post elsewhere on
   the same host. Change it here and in config.js together; the build
   fails if they disagree. form-action 'none' is here because this page
-  now has a <form>: the browser refuses a native submit, so a bug that
+  has a <form>: the browser refuses a native submit, so a bug that
   bypasses the submit handler cannot navigate the fields anywhere in the
   clear. frame-ancestors and report-uri are ignored in a <meta> policy,
   so they are not written here - a header would be needed, and GitHub
@@ -22,7 +25,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev https://hgbinderworker-sit.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Your page — Hang Gang Binder</title>
-<meta name="description" content="Your page in the Hang Gang's binder. Entries are encrypted in your browser before they are sent.">
+<meta name="description" content="Your page in the Hang Gang's binder. Fill the form and it joins your own history.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <!-- Dark's --bg, the default palette. theme.js rewrites this to match
@@ -66,11 +69,10 @@
   </a>
 
   <!-- admin.html is in this list on instruction, and it costs nothing:
-       the page is public and useless without both secrets - DESIGN.md
-       has said so since the beginning under "Key custody". What it
-       gains is the keyholder not having to remember a URL nothing
-       links to. The entry says what it needs, so nobody follows it
-       expecting a page they can use. -->
+       the page is public and useless without an admin session - a
+       visitor who lands on it meets the same door as everywhere else.
+       The entry says what it needs, so nobody follows it expecting a
+       page they can use. -->
   <nav aria-label="Site">
     <ul class="rail-links">
       <li><a href="your-page.html">Your page</a></li>
@@ -104,386 +106,50 @@
   </p>
 </header>
 
+<!--
+  Walking away from the machine. Idle expiry is one rule everywhere
+  (DESIGN.md, "Sessions"): this page shows a member their own history,
+  so it carries the same warn-then-expire timer admin.html does, wired
+  in submit.js's wireIdle(). The card stays out of the tab order until
+  the countdown actually starts, which is what `hidden` gives it for
+  doing nothing, and that is what this card exists to describe.
+-->
+<div class="card narrow" id="idle-warning" hidden>
+  <p class="caution">About to clear itself</p>
+  <p id="idle-countdown"></p>
+  <div class="row">
+    <button type="button" id="idle-stay" class="primary"
+            aria-describedby="idle-countdown">Stay on this page</button>
+  </div>
+</div>
+
+<!--
+  One page, stacked: form, then trend, then entries (DESIGN.md, "Your
+  page"). Three sections, always in flow - no tabs, no pane switching,
+  and no shared outer card: .stack's own gap separates them, and each
+  one carries its own runner label rather than a repeated <h1>.
+-->
 <main class="stack">
 
-  <div class="card" data-dev-session hidden>
-    <p class="caution">Development session</p>
-    <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in — not a Telegram sign-in.
-    </p>
-  </div>
+  <section class="card" id="entry-section">
+    <p class="runner"><span>Add an entry</span></p>
 
-  <!-- A tablist that contains only tabs. Sign out belongs in the rail,
-       where the session has one home on every page rather than only on
-       this one, and a control that is not a tab sitting inside
-       role="tablist" is announced as one.
-
-       The strip is not a card, and that is structural rather than
-       cosmetic. A bordered box holding two tabs, sitting on top of a
-       bordered box holding the pane they switch, is two containers for
-       one control - and the selected tab's mark takes the accent color,
-       which theme.css measures against the page rather than against a
-       card. -->
-  <div class="stack-tight" id="member-tabs" hidden>
-    <div role="tablist" aria-label="Your page">
-      <button type="button" id="your-entries-tab" role="tab"
-              aria-controls="your-entries-pane" aria-selected="true">
-        On record
-      </button>
-      <button type="button" id="add-entry-tab" role="tab"
-              aria-controls="add-entry-pane" aria-selected="false"
-              tabindex="-1">
-        Weigh in
-      </button>
-    </div>
-    <p class="status" id="member-panel-status" role="status"
-       aria-live="polite" hidden></p>
-  </div>
-
-  <!-- Both panes start hidden. submit.js reveals exactly one only after
-       BinderSession.require() confirms that this tab holds a member session. -->
-  <section class="stack" id="your-entries-pane" role="tabpanel"
-           aria-labelledby="your-entries-tab" hidden>
-    <!-- No heading. The tab that opened this pane is the heading, and
-         aria-labelledby already says so; restating its own label one
-         line below it orients nobody - #68's fourth candidate. -->
-    <div class="card">
-      <p class="runner"><span>Your account</span></p>
-      <p>
-        Entries stored: <strong id="member-entry-count">&mdash;</strong>
-      </p>
-      <!--
-        The rows a correction replaced, beside the count rather than
-        subtracted from it. The count above is the effective one, so
-        without this line a member who fixed a mistake watches their
-        number shrink with nothing on the page accounting for the
-        difference - which reads as the correction having eaten an
-        entry. GET /me carries the second number for exactly this;
-        handleMe in server/worker.js argues it at length.
-
-        `hidden` is the resting state and submit.js reveals it, because
-        most members on most days have corrected nothing, and a line
-        reading "0 corrections" invites the question of what a
-        correction is from the one person who has never made one.
-
-        "Corrections" and not the field's name: `superseded` is the
-        column and `tombstone` is DESIGN.md's word for what it leaves,
-        and neither is how this product speaks to somebody who fixed a
-        typo. The count itself is written by submit.js, noun included,
-        because "1 corrections" is the tell of a number pasted into a
-        sentence.
-
-        And "entries", not "rows" - #265 row 28. This line stood two
-        lines under "Entries stored" calling the same things by the
-        storage's noun, which is the argument above losing to itself
-        inside its own paragraph.
-      -->
-      <p class="muted small" id="member-corrections-line" hidden>
-        Plus <strong id="member-corrections"></strong> resting behind them
-        &mdash; entries you replaced, kept rather than erased.
-      </p>
-      <p class="muted small">
-        Last submitted: <time id="member-last-at">Checking&hellip;</time>
-      </p>
-      <!--
-        Their own number, on a screen their own session opened, and it
-        is here because there is nowhere else it can be read. DESIGN.md's
-        membership-oracle argument is about ids sitting beside rows,
-        where anyone holding the database tests one against a guessed
-        handle; this is shown to one person, about themselves, and
-        stored nowhere new - session.js already keeps it for the tab.
-
-        `hidden` is the resting state and submit.js reveals it, because
-        a development session has no such id and a line reading "Your
-        Telegram id:" followed by nothing would send somebody off to
-        configure a blank.
-      -->
-      <p class="muted small" id="member-telegram-id-line" hidden>
-        Your Telegram id: <strong id="member-telegram-id"></strong> &mdash;
-        needed only if you are being made an admin.
-      </p>
-      <!-- The card's why, behind the ruled reveal (#275). What it
-           explains is where the numbers above came from and where their
-           contents are opened - true, worth having, and not what
-           anybody opened this card to find out. -->
-      <details class="more">
-        <summary>More</summary>
-        <p>
-          These are counts, and when the service received each entry.
-          What is inside each one is opened below, in this browser, with
-          a key only this browser has.
-        </p>
-      </details>
+    <!--
+      Shown instead of the form when the site is not set up to reach the
+      Worker. form.js fills in why.
+    -->
+    <div class="card" id="closed" hidden>
+      <p class="flag">Not open</p>
+      <p data-reason></p>
     </div>
 
     <!--
-      Your own history, opened here and nowhere else - #85's personal
-      arm.
-
-      WHAT MAKES THIS DIFFERENT FROM THE PAGE THAT LOOKS LIKE IT.
-      charts.html asks the same engine the same shapes of question
-      over the PUBLISHED document, every cell of which the keyholder's
-      browser already reduced to at least MIN_CELL people. This card
-      asks over one member's own rows with no floor at all, because
-      their own data is theirs and a floor here would hide somebody's
-      own March from them for holding one entry. The two are not two
-      settings of one control: they are different sources, built by
-      different functions, and the floor arrives from the source rather
-      than from anything a question can name.
-
-      There is no source control here and none there, and that is the
-      boundary rather than a simplification of it.
-
-      Everything below is hidden until submit.js has a key, rows, and
-      something that opened - not because the states are unlikely, but
-      because each of them has its own sentence in #history-status and a
-      card of empty controls above a blank answer is not one of them.
+      form.js renders one control per field in apps/web/site.config.js,
+      in the order the spec lists them, into #entry-fields - no field is
+      hand-kept here, so a fork that edits its fields gets a matching
+      form with no edit to this page.
     -->
-    <!-- A heading rather than a runner, which is the shape charts.html's
-         question card already uses for the same component asked the same
-         way. A runner names the section a card stands in, and this card
-         stands in the one "Your account" above it already names; the
-         label registry in tools/check_web.py is the vocabulary for those,
-         and this is not one. -->
-    <div class="card" id="your-history" hidden>
-      <h2>Your entries, opened</h2>
-
-      <p class="status" id="history-status" role="status"
-         aria-live="polite" hidden></p>
-
-      <!--
-        Two controls, and the ones that are missing are the point.
-
-        No counting choice: over one person's own rows, "how many
-        people" collapses a history to its latest row, which is the one
-        question a personal snapshot cannot be for. So the basis is
-        entries, decided by what the source IS rather than offered.
-
-        No combining and no widening either. Both levers exist so that a
-        coarsening stays a union of cells that each cleared a floor -
-        and this source has no floor. Offering them would be ceremony
-        over a safety property that is not in play here.
-
-        Units are not repeated: the form's own units choice is this
-        page's single one, and a second control would let one page hold
-        two answers to the same question.
-      -->
-      <div class="stack" id="history-controls" hidden>
-        <div class="field">
-          <label for="h-split">About</label>
-          <select id="h-split">
-            <option value="weight">Weight</option>
-            <option value="height">Height</option>
-            <option value="bmi">BMI</option>
-            <option value="gender">Gender</option>
-            <option value="country">Country</option>
-            <option value="roles">Feedism affiliations</option>
-          </select>
-        </div>
-
-        <fieldset class="field" id="h-measure-field">
-          <legend>Measure</legend>
-          <div class="choices">
-            <label class="choice">
-              <input type="radio" name="h-measure" value="count" checked>
-              <span>How many</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="h-measure" value="median">
-              <span>The median</span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="h-measure" value="mean">
-              <span>The mean</span>
-            </label>
-          </div>
-          <!-- The same sentence charts.html carries, moved with it -
-               "middle" was a coinage and rule 4 admits no voice
-               survivors (#275). query.js's member half of this refusal
-               reads the same words. -->
-          <p class="hint">
-            Only weight, height and BMI can be averaged.
-          </p>
-        </fieldset>
-      </div>
-
-      <div id="history-answer"></div>
-
-      <!--
-        Rows this browser cannot open are COUNTED AND NAMED, never
-        dropped. admin.html already follows that rule for rows a rotated
-        key cannot read, and the reason is the same in both places: an
-        answer quietly computed over fewer rows than the member has is
-        an answer they cannot tell from a correct one.
-
-        COUNT, EFFECT, REMEDY - the shape the owner ruled on #275, and
-        the whole of what this line may carry. The causes went: "sealed
-        on another device" is one of four ways a row ends up unopenable
-        here, it was the wrong one for the member most likely to read
-        this, and none of the four changes what they do next. "Not in
-        the answer above" went with them, because a member reading a
-        count of rows that cannot be opened already knows those rows are
-        not in the answer.
-
-        The noun is written by submit.js with the number, so this
-        element is a slot rather than a digit: "1 rows" is the tell of a
-        number pasted into a sentence, and the corrections line above
-        makes the same move for the same reason.
-      -->
-      <p class="muted small" id="history-sealed" hidden>
-        <strong id="history-sealed-count"></strong> can't be opened
-        here. Ask an admin.
-      </p>
-
-      <!-- The privacy why, behind the ruled reveal (#275) and at the
-           foot of the card rather than above the answer. It stood
-           between the heading and the first thing this card shows,
-           which is a member reading a paragraph about custody before
-           they have seen a single one of their own entries. The claim
-           itself is unchanged and is still on the page. -->
-      <details class="more">
-        <summary>More</summary>
-        <p>
-          These were unsealed in this browser with a key that never
-          leaves it. Nothing here was sent anywhere to be read, and the
-          service cannot read any of it.
-        </p>
-      </details>
-    </div>
-  </section>
-
-  <section class="stack" id="add-entry-pane" role="tabpanel"
-           aria-labelledby="add-entry-tab" hidden>
-
-  <!--
-    Shown instead of the form when the browser cannot encrypt, or when
-    no key is published. Both are states a submitter can do nothing
-    about, so they are said plainly rather than left as a button that
-    does not work. form.js fills in which one it is.
-  -->
-  <div class="card" id="closed" hidden>
-    <p class="flag">Not open</p>
-    <p data-reason></p>
-  </div>
-
-  <!-- Shown in place of the form once a submission is stored. -->
-  <div class="card" id="done" hidden>
-    <p class="flag">Received</p>
-    <p><strong>That's it — you're in the binder.</strong></p>
-    <!-- Three facts a member does not have to act on to have finished,
-         behind the ruled reveal (#275): what happened to the entry, how
-         long the session lasts, and what a second weigh-in does. The
-         chip and the sentence above are the acknowledgement. -->
-    <details class="more">
-      <summary>More</summary>
-      <p>
-        Your entry was encrypted in this browser before it was sent, so
-        only the keyholder can read it. Your session stays in this tab;
-        close it when you are finished. If your numbers change, just
-        fill the form again — a new entry is added rather than
-        replacing the old one.
-      </p>
-    </details>
-  </div>
-
-  <!--
-    Shown when the form is reopened after a submission in this tab. It is a
-    reassurance, not a caution: a repeat entry is the weight history, and
-    wording it as a warning would talk members out of the data the published
-    series is made of. See #64.
-  -->
-  <p class="hint" id="repeat-note" hidden>
-    Filling the form in again adds another entry — your earlier one is
-    kept, not replaced.
-  </p>
-
-  <!--
-    Shown by submit.js only when something was actually carried forward.
-
-    The words have one job beyond politeness, and #172's ruling turns on
-    it: a prefilled form looks like an account that followed the member
-    here, and it is not one. What filled these boxes is this browser's
-    own storage, so a new phone opens a blank form and the height guard
-    on it does not exist. A member who believes their account remembers
-    them is a member who will not notice either.
-
-    Hidden in the markup rather than revealed by default, because a
-    device with nothing stored has nothing to say and a note claiming a
-    memory that is not there is the same lie in the other direction.
-
-    Both halves of #172's ruling survive the compression to one clause
-    and a pointer (#275): the source, which is what stops a member
-    believing an account followed them here, and the lifetime, which is
-    what stops them believing it is permanent. What went is the
-    inference between the two - that another phone starts them blank -
-    which follows from the first half for anybody who needs it.
-  -->
-  <p class="hint" id="prefill-note" hidden>
-    Filled in from this browser, not your account — signing out erases
-    it.
-  </p>
-
-  <!--
-    One card, because this is one act.
-
-    #68 counted this form arriving as five bordered boxes - the age
-    confirmation alone in one, the numbers in another, the optional
-    fields in a third, the button in a fourth - and named the cost: the
-    eye is asked to cross a border between "confirm your age" and "type
-    your weight", which are two halves of the same thing. The borders
-    were doing work that spacing and one section name do better, so the
-    boxes are gone and the running head below is the only division left.
-
-    Nothing is merged that was actually separate: #closed and #done stay
-    their own cards above, because they replace this form rather than
-    living inside it.
-  -->
-  <form class="card" id="submission" novalidate>
-
-      <!--
-        The verified session supplies the identifier now. This is the one
-        required assertion the member still makes in the form, so it stays
-        before the optional fields rather than being buried by the button.
-      -->
-      <div class="field">
-        <label class="choice">
-          <input type="checkbox" id="over18" data-field="over18"
-                 aria-describedby="error-over18">
-          <span>I confirm I am 18 or older.</span>
-        </label>
-        <!--
-          Why the box above is already ticked, shown by submit.js only
-          when it ticked it. The confirmation is a fact about a person
-          rather than about a measurement, so asking every week is asking
-          the same question of somebody who has answered it - but a box
-          that arrives ticked with no explanation is a box a member did
-          not tick, on the one assertion this form still asks them to
-          make. It says where the answer came from, and the box stays
-          editable rather than locked.
-        -->
-        <p class="hint" id="over18-remembered" hidden>
-          Remembered from your last entry — untick it if that is wrong.
-        </p>
-        <p class="field-error" id="error-over18" hidden></p>
-      </div>
-
-      <!--
-        Imperial first and checked. It is what most of the people this
-        form is for will type, and a default is not a neutral choice -
-        it is what gets used.
-
-        Changing it is safe here in a way it would not be in most forms,
-        and the reason is worth knowing before anyone changes it back:
-        every row stores both systems plus the `entered` string, so the
-        default decides what someone types, not what is recorded. No
-        stored row means anything different because of this line.
-
-        The markup's own hidden attributes must agree with the checked
-        radio. applyUnits() fixes them at DOMContentLoaded, but the
-        browser paints before that runs, and a form that shows the wrong
-        pair of boxes for a frame is a form somebody starts typing into.
-      -->
+    <form id="submission" novalidate>
       <fieldset class="field">
         <legend>Units</legend>
         <div class="choices">
@@ -498,195 +164,104 @@
         </div>
       </fieldset>
 
-      <!--
-        Two sets of inputs, not one pair that changes label. Switching
-        the toggle must not silently reinterpret 200 lb as 200 kg, and
-        the only way to be sure it cannot is for the other system's
-        numbers to live somewhere else. form.js hides one group.
-      -->
-      <div id="imperial-fields" class="pair">
-        <div class="field">
-          <label for="weight-lb">Weight</label>
-          <div class="row">
-            <input type="text" id="weight-lb" data-field="weight"
-                   inputmode="decimal" autocomplete="off" placeholder="200"
-                   aria-describedby="error-weight">
-            <span class="suffix">lb</span>
-          </div>
-        </div>
-        <div class="field">
-          <label for="height-ft">Height</label>
-          <div class="row">
-            <input type="text" id="height-ft" data-field="height"
-                   inputmode="numeric" autocomplete="off" placeholder="5"
-                   aria-label="Height, feet" aria-describedby="error-height">
-            <span class="suffix">ft</span>
-            <input type="text" id="height-in" data-field="height"
-                   inputmode="decimal" autocomplete="off" placeholder="10"
-                   aria-label="Height, inches" aria-describedby="error-height">
-            <span class="suffix">in</span>
-          </div>
-        </div>
-      </div>
+      <div id="entry-fields"></div>
 
-      <div id="metric-fields" class="pair" hidden>
-        <div class="field">
-          <label for="weight-kg">Weight</label>
-          <div class="row">
-            <input type="text" id="weight-kg" data-field="weight"
-                   inputmode="decimal" autocomplete="off" placeholder="90"
-                   aria-describedby="error-weight">
-            <span class="suffix">kg</span>
-          </div>
-        </div>
-        <div class="field">
-          <label for="height-cm">Height</label>
-          <div class="row">
-            <input type="text" id="height-cm" data-field="height"
-                   inputmode="decimal" autocomplete="off" placeholder="178"
-                   aria-describedby="error-height">
-            <span class="suffix">cm</span>
-          </div>
-        </div>
-      </div>
-
-      <p class="field-error" id="error-weight" hidden></p>
-      <p class="field-error" id="error-height" hidden></p>
-
-      <!-- The one division this form needs, and a section name with a
-           rule running off it is what draws it. Everything above is
-           required; everything below is not. -->
-      <p class="runner"><span>Optional</span></p>
-
-      <!--
-        The values are unchanged - "roles" in the record, and feeder /
-        feedee / gainer / admirer within it. Only the label a submitter
-        reads has changed, which is exactly the split countries.js was
-        built around: rename what is displayed without touching a single
-        stored row.
-      -->
-      <fieldset class="field">
-        <!-- One spelling for one name - #265 row 31. The chart panel
-             this fills has said "Feedism affiliations" since #127, and
-             dev/dashboard-render.test.mjs pins that one; this legend
-             was the copy that drifted, parenthetical plural and all. -->
-        <legend>Feedism affiliations</legend>
-        <div class="choices">
-          <label class="choice">
-            <input type="checkbox" name="roles" value="feeder"><span>Feeder</span>
-          </label>
-          <label class="choice">
-            <input type="checkbox" name="roles" value="feedee"><span>Feedee</span>
-          </label>
-          <label class="choice">
-            <input type="checkbox" name="roles" value="gainer"><span>Gainer</span>
-          </label>
-          <label class="choice">
-            <input type="checkbox" name="roles" value="admirer"><span>Fat admirer</span>
-          </label>
-        </div>
-      </fieldset>
-
-      <div class="pair">
-        <div class="field">
-          <label for="gender">Gender</label>
-          <select id="gender">
-            <option value="">Prefer not to say</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="nonbinary">Non-binary</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="country">Country</label>
-          <!-- Options are added by form.js from countries.js. -->
-          <select id="country">
-            <option value="">Prefer not to say</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- The submit moment, and the one label on this page that is
-           worth a warm word: "Submit" names the mechanism, and this
-           names what actually happens - the entry joins the binder the
-           rail is called after. Nothing rewrites this label at runtime
-           and no name table pins it, so the words are this page's own
-           (#73). -->
       <button type="submit" id="submit" class="primary">
         Add to the binder
       </button>
 
       <p class="status" id="status" role="status" aria-live="polite" hidden></p>
 
-      <!-- One clause (#275). The second sentence said what the block
-           below this form says at length, which is one fact with two
-           homes - and this is the copy of it a member meets while their
-           finger is on the button. -->
       <p class="hint">
-        Everything above is encrypted in this browser before it is sent.
+        Entries are stored to your account when you press Add. There is
+        no date field: today's date is what gets recorded.
       </p>
-  </form>
-
-  <!-- Not a card. This explains the form rather than asking anything of
-       the reader, and a bordered box around it makes it look like one
-       more thing to fill in. #68 says the explanatory copy is carrying
-       real weight and should survive whatever happens to the structure
-       around it; #275 rules where it survives, which is behind the
-       reveal at the foot rather than in front of the act. -->
-  <div class="stack-tight">
-    <p class="runner"><span>How your entry is handled</span></p>
-    <!--
-      A page that was changed to use an attacker's key could change this
-      display too. The page is not the anchor: the pinned group message is.
-      Printing the live key exposes a mismatch, while check_web.py pins the
-      production key outside config.js so printing an old key while using a
-      replacement cannot pass the build.
-    -->
-    <!--
-      One clause, ruled word for word (#275, from the register bar on
-      #265). Trust copy is not a special class - rule 3 says so by name,
-      and this sentence is the one it names.
-
-      WHAT SURVIVED THE COMPRESSION IS THE ACT: compare, against the
-      group's pinned code, before submitting. What went is the branch -
-      "if they are different, do not submit, tell an admin" - and it
-      went because it is the only thing a member can do with a mismatch
-      anyway. A reader told to compare who finds two codes that differ
-      does not need a sentence to stop them; a reader who never compares
-      was not saved by the second sentence either.
-
-      The <code> element, its id, and the 32-character value
-      UI.showFingerprint writes into it are security parameters and did
-      not move. It stands OUTSIDE the sentence now rather than inside
-      it: theme.css already blocks it onto a line of its own, and a
-      value sitting in the paragraph is a value the ruled sentence would
-      have to render around - which is the one thing
-      tools/check_web.py's pin over that element cannot allow.
-    -->
-    <p class="muted small" id="key-check">
-      Compare with the group's pinned code before submitting.
-    </p>
-    <code id="key-fingerprint" hidden></code>
-
-    <!-- What the section's own name promises, behind the ruled reveal
-         (#275). It stood ABOVE the one sentence here that asks a member
-         to do something, so the act arrived last and the explanation
-         first; now the act is the block and the explanation is the
-         reveal. Nothing in it changed. -->
-    <details class="more">
-      <summary>More</summary>
-      <p>
-        Your submission is encrypted in your browser before it is sent,
-        so the service storing it cannot read it. Only the person
-        holding the key can — and that key is not kept online. Your
-        username is not stored in the clear anywhere.
-      </p>
-    </details>
-  </div>
+    </form>
   </section>
+
+  <!--
+    The trend: one hand-rolled SVG line over the member's own weight
+    history, drawn by submit.js from the same GET /my-entries response
+    the list below reads. Stays in flow even with nothing to draw yet -
+    the empty-state sentence lives in the slot rather than an axis with
+    no line on it.
+  -->
+  <section class="card" id="trend-section">
+    <p class="runner"><span>Your trend</span></p>
+    <div id="trend-slot"></div>
+  </section>
+
+  <!--
+    The entries list: date, weight, height, BMI, newest first. A row a
+    correction replaced stays at its chronological position, muted,
+    behind the one disclosure submit.js renders when there is anything
+    to reveal. A member deletes their own row from here, two steps, no
+    trace and no admin notice (DESIGN.md, "Admin accounts and
+    deletion").
+  -->
+  <section class="card" id="entries-section">
+    <p class="runner"><span>Your entries</span></p>
+    <div id="entries-slot"></div>
+    <div class="row" id="download-row">
+      <button type="button" id="download" class="secondary">
+        Download your entries
+      </button>
+    </div>
+  </section>
+
 </main>
+
+<!--
+  One clause in front (#275's register bar), the why behind the ruled
+  reveal - the same shape admin.html and charts.html use, and the
+  reason your-page.html still needs at least one <details class="more">
+  even with the client seal gone: DESIGN.md, "Trust model: the Worker
+  reads" changed WHAT this section says, not whether an explanation
+  belongs behind a fold rather than in front of the reader.
+-->
+<div class="stack-tight">
+  <p class="runner"><span>How your entry is handled</span></p>
+  <p class="muted small">
+    Your entries are stored encrypted, under a secret only this service
+    holds.
+  </p>
+  <details class="more">
+    <summary>More</summary>
+    <p>
+      A raw copy of the database reveals nothing on its own, but whoever
+      runs this service can read entries when there is a reason to - the
+      same way they could answer a takedown or fix a mistyped entry.
+      There is no key for you to keep or compare.
+    </p>
+  </details>
+</div>
+
+<!--
+  The pre-leave notice's SLOT, not its words (#294 F3, ruled 2026-08-14).
+  A comment marking a placeholder is not a mechanism - ./run build
+  strips comments, so the fix-wave review (#353 comment 5337542314,
+  F7) found this slot shipping invented member-facing copy in dist
+  with no marker left to say it was never ruled. The fix adopts the
+  door's own slot mechanism exactly (index.html's privacy-line, #355
+  comment 5337476261): bracketed filler that cannot read as shipped
+  copy, plus a data-pending-copy ATTRIBUTE - build strips comments,
+  never attributes, so this is what actually survives to dist. The
+  owner authors the exact sentence at the 0.9-M4 register sitting;
+  this slice places where it lands and writes none of it - deliberately
+  plain rather than styled as a warning, matching every other .hint on
+  this page.
+
+  tools/check_web.py's RULED_LINES pins the filler text below under the
+  same #355 ruling: a swap-in - the real sentence at M4, or anything
+  else, at any time - touches that pin in the same change or the gate
+  catches the drift.
+-->
+<div class="stack-tight">
+  <p class="hint" id="pre-leave-notice" data-pending-copy="0.9-M4">
+    [Pre-leave notice — the owner writes this sentence at the 0.9-M4
+    register sitting.]
+  </p>
+</div>
 
 <footer>
   <!--
@@ -734,26 +309,9 @@
 </div>
 
 <script src="config.js"></script>
+<script src="site.config.js"></script>
+<script src="fields.js"></script>
 <script src="countries.js"></script>
-<script src="crypto.js"></script>
-<!-- The member's own device key, and the engine that turns their opened
-     rows into an answer.
-
-     memberkey.js is before submit.js because submit.js asks it for a
-     key while painting the panel. Nothing else on this page reads it:
-     signing out destroys the key's database from signout.js directly,
-     which is what lets the two other signed-in pages carry the Sign out
-     button without this file and still destroy the key.
-
-     query.js needs dashboard.js loaded first: it reads the suppression
-     floor, the snapshot builder and the unit table out of
-     BinderDashboard rather than carrying second copies, and it says so
-     in its own header. dashboard.js is also what draws the answer -
-     `renderAnswer` takes an answer and a caption and never mentions
-     BinderQuery, so no drawing code lives on this page. -->
-<script src="memberkey.js"></script>
-<script src="dashboard.js"></script>
-<script src="query.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <!-- After config.js, and that order is load-bearing: signing out asks
@@ -761,8 +319,16 @@
      BINDER_CONFIG.endpoint. Before session.js it would also have no
      credential store to clear. -->
 <script src="signout.js"></script>
-<script src="submit.js"></script>
+<!-- form.js reads BinderFields (loaded above) to render the entry
+     fields and build the record; submit.js reads BinderFields to
+     display a stored record back and to build the download. Neither
+     loads crypto.js or memberkey.js: the client seal is gone from this
+     page (DESIGN.md, "Trust model: the Worker reads") and the Worker
+     now answers "what did I say last time" itself, so there is nothing
+     left here to decrypt and nothing left to prefill. -->
 <script src="form.js"></script>
+<script src="xlsx.js"></script>
+<script src="submit.js"></script>
 <script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>

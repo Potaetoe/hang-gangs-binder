@@ -653,7 +653,7 @@ check("one partition: the partition names the system it was binned in " +
     globalThis.BINDER_SITE.units.default);
 
 /* The edges are the partition's own edges CONVERTED through the spec's
-   ratio and through nothing else. Checked against apps/fields.js rather
+   ratio and through nothing else. Checked against apps/web/fields.js rather
    than against the answer's other system, because the split check below
    compares the systems to each other and a conversion wrong by one
    constant in every system moves them together - true of the shape and

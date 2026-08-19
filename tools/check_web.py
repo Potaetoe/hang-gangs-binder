@@ -83,13 +83,15 @@ day a check is added:
    from being mutated is the export roster's to enforce (check 15); this
    pin is the half a freeze rule reading assignments cannot see.
 
-6. Nothing *sends a submission* to the network except through crypto.js.
-   This is the design's one rule restated as something a machine can check:
-   submission plaintext never leaves the browser. A named exemption records
-   the one other body the site sends: auth.js forwards a sign-in payload and
-   must run on the page that deliberately does not load crypto.js. Every
-   other sender must name BinderCrypto, and every page loading one must
-   actually load crypto.js.
+6. Nothing *sends a submission* to the network except through crypto.js -
+   PRE-0.9-M2-S2's rule, still enforced for what still carries it (admin.html's
+   export decrypts client-side). DESIGN.md, "Trust model: the Worker reads"
+   retired the rule itself for entry submission: rows are sealed by the
+   Worker under its own secret now, not by the browser, so form.js posts
+   plaintext on purpose and is a named exemption for exactly that reason -
+   the same shape auth.js already was for a sign-in payload. Every other
+   sender must name BinderCrypto, and every page loading one must actually
+   load crypto.js.
 
    Sending, not touching. An earlier version of this check counted any
    fetch at all, which was right while every page here either submitted
@@ -1429,8 +1431,18 @@ SENDS_TO_NETWORK = re.compile(
 # recognizing scripts that send a request body. Authentication is the one
 # body with a different purpose, and naming it here keeps that exception
 # narrow and reviewable instead of weakening the rule for every sender.
+#
+# form.js joined this list at 0.9-M2-S2 (#353) for the reason DESIGN.md's
+# "Trust model: the Worker reads" states outright: all client-side crypto
+# is gone, and rows are sealed by the Worker under a secret only it holds
+# rather than by this page. There is no crypto.js call for form.js to
+# make any more - the check this exemption narrows is retired for this
+# page's whole surface, not weakened for it.
 UNENCRYPTED_SENDERS = {
     "auth.js": "forwards a sign-in payload and stores the issued session",
+    "form.js": "posts the record's plaintext for the Worker to seal at "
+               "rest - there is no client-side encryption on this page "
+               "any more (DESIGN.md, 'Trust model: the Worker reads')",
 }
 
 
@@ -2845,6 +2857,7 @@ LABEL_ROLES = {
 # site that no longer exists.
 LABELS = {
     "About to clear itself": "caution",
+    "Add an entry": "runner",
     "Before you close this": "caution",
     "Charts": "runner",
     "Development session": "caution",
@@ -2854,10 +2867,8 @@ LABELS = {
     "Membership": "runner",
     "Not open": "flag",
     "Nothing to show": "flag",
-    "Optional": "runner",
     "Publish": "runner",
     "Published": "runner",
-    "Received": "flag",
     # The one entry whose role has changed since it was written. It was
     # a `flag` while Result was an outcome in a box of its own; #178
     # made the instrument's tools into sections, so Result now names one
@@ -2869,7 +2880,8 @@ LABELS = {
     "Telegram": "runner",
     "Unavailable": "flag",
     "What this is": "runner",
-    "Your account": "runner",
+    "Your entries": "runner",
+    "Your trend": "runner",
 }
 
 # The one component the three roles above stand in for. Refused in the
@@ -3628,7 +3640,18 @@ UNIT_SYSTEMS = ("imperial", "metric")
 
 
 def units_default_problem():
-    """A description of the units default contradicting itself, or None."""
+    """A description of the units default contradicting itself, or None.
+
+    NARROWED AT 0.9-M2-S2 (#353) to the one half that is still
+    hand-kept markup. form.js renders every field's boxes into
+    #entry-fields at runtime, tagged `data-units-group`, so there is no
+    static #imperial-fields/#metric-fields group left that could ship
+    hidden or visible wrong: the page paints nothing there until the
+    script runs, and applyUnits() picks the group from the same radio
+    checked below. What remains worth checking is that radio itself:
+    exactly one `units` radio ships checked, or the form opens with no
+    unit system selected or with two.
+    """
     path = os.path.join(WEB, FORM_PAGE)
     if not os.path.exists(path):
         return None  # check 1's to report
@@ -3648,25 +3671,6 @@ def units_default_problem():
         return ("%s has %d units radio marked checked, not exactly one - the "
                 "form would open with no unit system selected, or with two"
                 % (FORM_PAGE, len(checked)))
-
-    hidden = {}
-    for system in UNIT_SYSTEMS:
-        group = re.search(r'<div[^>]*id="%s-fields"[^>]*>' % system, text, re.I)
-        if not group:
-            return ("%s has no #%s-fields group, so the units toggle has "
-                    "nothing to show" % (FORM_PAGE, system))
-        hidden[system] = bool(re.search(r"\bhidden\b", group.group(0), re.I))
-
-    wanted = checked[0]
-    other = UNIT_SYSTEMS[1 - UNIT_SYSTEMS.index(wanted)]
-    if hidden[wanted]:
-        return ("%s checks the %s radio but ships #%s-fields hidden, so the "
-                "form paints with no inputs at all until applyUnits() runs"
-                % (FORM_PAGE, wanted, wanted))
-    if not hidden[other]:
-        return ("%s checks the %s radio but does not ship #%s-fields hidden, "
-                "so the form paints both unit systems at once"
-                % (FORM_PAGE, wanted, other))
     return None
 
 
@@ -3767,6 +3771,7 @@ MODULE_EXPORTS = {
     "config.js": "BINDER_CONFIG",
     "crypto.js": "BinderCrypto",
     "dashboard.js": "BinderDashboard",
+    "fields.js": "BinderFields",
     "form.js": "BinderForm",
     "memberkey.js": "BinderMemberKey",
     "query.js": "BinderQuery",
@@ -3785,7 +3790,17 @@ NO_MODULE_EXPORT = {
     "countries.js": "is two data tables the form reads",
     "nav.js": "marks the current destination in the rail and returns",
     "public.js": "wires charts.html and calls into BinderDashboard",
-    "submit.js": "wires your-page.html and calls into BinderForm",
+    # BINDER_SITE is a data global, not a namespace of helpers - the same
+    # shape BINDER_CONFIG is - but unlike BINDER_CONFIG it deliberately
+    # ships UNFROZEN at this assignment: apps/web/fields.js's own header
+    # explains why the freeze has to happen on the first READ instead of
+    # at load, so a MODULE_EXPORTS pin here would fail the very freeze
+    # rule that gap is designed around. NON_NAMESPACE_GLOBALS below is
+    # where that is recorded, landed at 0.9-M2-S2 (#353) alongside the
+    # file's move into apps/web/.
+    "site.config.js": "assigns BINDER_SITE - see NON_NAMESPACE_GLOBALS",
+    "submit.js": "wires your-page.html's trend, its entries list, its "
+                 "download and idle expiry",
     "theme-init.js": "sets the pre-paint theme attribute and returns",
     "theme.js": "wires the palette controls in place",
 }
@@ -3798,9 +3813,9 @@ NO_MODULE_EXPORT = {
 # Note what these are NOT: an assertion that freezing them would be wrong,
 # only that they are data or a callback rather than a namespace of helpers
 # the freeze rule was written for. BINDER_CONFIG is deliberately absent from
-# this list: it carries the publicKey form.js encrypts to, so a script that
-# rewrites it redirects every submission to a key the keyholder does not
-# hold. It is held to the freeze rule through MODULE_EXPORTS and locked
+# this list: it carries the endpoint every page on it writes to, so a script
+# that rewrites it redirects every submission somewhere the site did not
+# choose. It is held to the freeze rule through MODULE_EXPORTS and locked
 # non-writable by config_environments, not exempted here - do not move it
 # back.
 NON_NAMESPACE_GLOBALS = {
@@ -3810,6 +3825,10 @@ NON_NAMESPACE_GLOBALS = {
         "the promoted country codes, which check 9 reconciles",
     ("auth.js", "onTelegramAuth"):
         "the callback Telegram's widget invokes by name from its own script",
+    ("site.config.js", "BINDER_SITE"):
+        "the form's field spec, deliberately unfrozen at this assignment - "
+        "apps/web/fields.js freezes it on the first read instead, so that "
+        "the freeze holds whichever of the two <script> tags loads first",
 }
 
 # `root.`, `globalThis.`, `window.` and `self.` all reach the same
@@ -6255,10 +6274,25 @@ RULED_LINES = {
     "index.html": {
         "signed-out": "Signed out.",
     },
+    # your-page.html's OLD two ruled lines here - the sealed-rows count
+    # and "Compare with the group's pinned code before submitting" -
+    # retired with the client seal they were both about (0.9-M2-S2,
+    # #353): DESIGN.md, "Trust model: the Worker reads" ends the
+    # browser-side decrypt those sentences described and the public-key
+    # comparison they asked a member to perform.
+    #
+    # "pre-leave-notice" is not ruled copy either - it is the 0.9-M4
+    # placeholder for the pre-leave notice (#294 F3), pinned by the same
+    # owner ruling that pins the door page's own equivalent slot (#355
+    # comment 5337476261, carried into this page by the #353 fix-wave
+    # review, finding F7). The pin does not claim the bracketed filler is
+    # governed prose; it claims the SLOT's contents are governed, so a
+    # swap-in - the real sentence at M4, or anything else, at any time -
+    # has to touch this line in the same change rather than drift past
+    # the gate unnoticed. At M4 the pin and the sentence move together.
     "your-page.html": {
-        "history-sealed": "{} can't be opened here. Ask an admin.",
-        "key-check": "Compare with the group's pinned code before "
-                     "submitting.",
+        "pre-leave-notice": "[Pre-leave notice — the owner writes this "
+                             "sentence at the 0.9-M4 register sitting.]",
     },
     "charts.html": {
         "charts-intro":
@@ -6681,10 +6715,7 @@ def main():
 
     problem = units_default_problem()
     if problem:
-        problems.append(
-            "%s. The checked radio and the visible field group are the same "
-            "decision written twice; applyUnits() hides the disagreement a "
-            "moment after the browser has already shown it." % problem)
+        problems.append("%s." % problem)
 
     for name, problem in unencrypted_paths():
         problems.append(
