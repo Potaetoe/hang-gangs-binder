@@ -234,9 +234,17 @@ function allowedOrigins(env) {
  * page could ride: such a page cannot attach that header without
  * turning the request into one that needs a preflight, and the
  * preflight carries an Origin this Worker refuses. The session stays
- * the whole gate - nothing below admits a caller it did not admit
- * before, which is what tests/origin-gate.test.mjs asserts in both
- * directions.
+ * the whole gate - nothing below admits a caller past a CREDENTIAL
+ * check it did not already pass, which is what
+ * tests/origin-gate.test.mjs asserts from both sides: a no-Origin read
+ * with no credential is still 401, and a forged token is still 401.
+ *
+ * ONE ROUTE DID WIDEN, deliberately, and it is named here rather than
+ * left for a reader to find: GET /content answers without a credential
+ * by design, so admitting an absent Origin hands a no-Origin read the
+ * site's own copy where it used to get a 403. That is the intent - the
+ * copy is what an unauthenticated page renders - and the arm asserts
+ * the widening rather than only the refusals.
  *
  * STATE-CHANGING METHODS KEEP REFUSING AN ABSENT ORIGIN. A browser
  * always sends Origin on POST and DELETE, so the refusal costs a real
@@ -314,7 +322,7 @@ const MAX_ENTRY_LISTING = 500;
 
 // How many rows one aggregation reads, and why a cap is here at all.
 //
-// GET /charts opens EVERY current row in the corpus - the group is the
+// GET /charts-data opens EVERY current row in the corpus - the group is the
 // subject, so there is no account clause to bound it the way
 // MAX_ENTRY_LISTING bounds one member's listing. Each row costs one
 // AES-GCM open, so the number is a CPU bound rather than a response

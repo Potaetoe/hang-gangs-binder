@@ -788,10 +788,21 @@ for (const [name, slot] of [
     !/reload the page/.test(slot.children.map((c) => c.textContent).join(" ")));
 }
 
+const entriesRetry = buttonIn(entriesSlotOnFailure);
 const callsBeforeRetry = fetchCalls;
-await buttonIn(entriesSlotOnFailure).dispatch("click");
+await entriesRetry.dispatch("click");
 check("pressing it re-fires the read - one more request, not a navigation",
   fetchCalls === callsBeforeRetry + 1);
+
+/* The node held above is the one that was pressed, not whatever the
+   redraw put in the slot afterwards - which is the only way to see this
+   at all, since a successful retry replaces the control outright. Its
+   own comment in submit.js claims it is disabled for the life of the
+   attempt; without this the claim is a sentence nothing falsifies, and
+   a second press racing the first is what it exists to prevent. */
+check("and the control disables itself as it fires, so a second press " +
+  "cannot start a race against the read already running",
+  entriesRetry.disabled === true);
 
 check("and a successful retry replaces the failure with the real rows, " +
   "in place",
@@ -1192,7 +1203,7 @@ check("your-page.html carries no data-dev-session hook - 0.9-M2-S4 owns " +
   !/data-dev-session/.test(yourPageHtml));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 77;
+const EXPECTED = 78;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

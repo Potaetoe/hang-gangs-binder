@@ -35,8 +35,8 @@ tests/entry-rows.test.mjs
 tests/fleet-status.test.mjs
 tests/mockup-tokens.test.mjs
 tests/operations-bot-rotation.test.mjs
-tests/origin-gate.test.mjs
 tests/operations-sit-procedure.test.mjs
+tests/origin-gate.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
 tests/roster-directory.test.mjs

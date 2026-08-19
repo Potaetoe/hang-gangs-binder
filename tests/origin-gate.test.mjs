@@ -301,15 +301,30 @@ check("Sec-Fetch-Site is NOT applied where an Origin is present and " +
 /* ------------------------------------------------------------------ */
 /* 7. Caching: what the answer varies by.                              */
 
+/*
+ * Sampled PER RESPONSE-BUILDER, not per answer shape, and that is the
+ * whole point of the list: three of these come out of json()/corsHeaders
+ * and would all stay green while a builder that sets its own headers
+ * dropped Vary entirely. Every Response this Worker constructs by hand
+ * gets its own row here - handleCharts' below, and the preflight refusal
+ * in section 8 - because a `Vary` written once per builder is a header
+ * that can be deleted once per builder.
+ */
+const varies = (response) => {
+  const vary = String(response.headers.get("Vary") || "");
+  return /\bOrigin\b/.test(vary) && /\bSec-Fetch-Site\b/.test(vary);
+};
+
 for (const [label, response] of [
   ["a no-CORS answer", meAbsent],
   ["a CORS answer", allowedRead],
   ["a refusal", submitAbsent],
+  ["the charts answer, whose Response handleCharts builds itself rather " +
+    "than through json()", chartsAbsent],
 ]) {
-  const vary = String(response.headers.get("Vary") || "");
   check(`${label} names both request headers it varies by, so no shared ` +
     "cache can serve one caller's answer to another",
-    /\bOrigin\b/.test(vary) && /\bSec-Fetch-Site\b/.test(vary));
+    varies(response));
 }
 
 /* ------------------------------------------------------------------ */
@@ -327,6 +342,18 @@ const preflightAbsent = await call("OPTIONS", "/submit", {});
 check("a preflight with no Origin at all is 403 - a real preflight " +
   "always carries one, so this shape is not a browser",
   preflightAbsent.status === 403);
+
+/* The preflight refusal is the OTHER hand-built Response, and it is the
+   one most easily left bare: it carries no body and no CORS headers, so
+   nothing else about it would notice a missing Vary. Both refusals are
+   asserted because both are what a cache would key. */
+for (const [label, response] of [
+  ["a preflight refused for a foreign Origin", preflightForeign],
+  ["a preflight refused for an absent Origin", preflightAbsent],
+]) {
+  check(`${label} names both request headers it varies by too`,
+    varies(response));
+}
 
 /* ------------------------------------------------------------------ */
 /* 9. Nothing anywhere hands out a wildcard.                           */
@@ -375,7 +402,7 @@ check("mutation: the old one-question gate refuses the same-origin read " +
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 34;
+const EXPECTED = 37;
 console.log(failures
   ? `\norigin-gate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
