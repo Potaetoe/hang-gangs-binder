@@ -830,6 +830,20 @@ check("bare words beside the row are refused",
           "<footer>%s%s Nearly nothing</footer>"
           % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
 
+# Before-the-row fixture (F2, 0.9-M2-S6 fix wave 2, #82): fix wave 1's
+# own rest = inside[span[1]:] made the editor search position-aware, but
+# every arm below it reads from that SAME `rest` - so content sitting
+# BEFORE the row stopped being read by anything, not just by the editor
+# search. An off-site link placed ahead of the row satisfied "no link in
+# its footer" the moment wave 1 landed, the exact hole the pre-#274
+# footers used to hide nav in - re-opened one page earlier than before.
+# This fixture is what wave 1's footer_problems() PASSES silently and
+# this wave's refuses.
+check("a link ahead of the row is refused",
+      any("link in its footer" in p for p in check_web.footer_problems(
+          "<footer><p><a href=\"https://example.com\">Read the code</a>"
+          "</p>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
+
 # The editor itself, both directions - the same shape the row's own arm
 # already held, one element wider.
 check("a themed page with a row and no editor is refused",
