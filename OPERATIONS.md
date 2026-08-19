@@ -440,9 +440,19 @@ a session, with the site's `Origin` header set.
 | Answer | Meaning |
 | --- | --- |
 | a refusal (401) | the Worker is up and the route is gated, which is the healthy answer |
-| `Origin not allowed.` (403) | the `Origin` header was omitted — not a fault |
+| `Origin not allowed.` (403) on a **GET** | the origin sent is not one this deployment allows — a real fault when it is the site's own |
+| `Origin not allowed.` (403) with **no** `Origin` header on a POST or a DELETE | the configured answer, not a fault: a browser always sends `Origin` on those |
 | a 404 | that Worker does not have this route: an older build is deployed |
 | a 500 | a table the route reads is missing |
+
+**A GET with no `Origin` header is admitted** (0.9-M2-S8, #365), and
+that is the row this table used to get wrong: a browser attaches
+`Origin` to POST and to cross-origin fetch and to nothing else, so
+refusing it refused the site every read of its own pages. Such a GET
+reaches the route and earns the route's own 401; the answer carries no
+`Access-Control-Allow-Origin`, because there is no origin to echo.
+`server/worker.js`'s `originAdmits()` carries the whole argument,
+including why the session rather than the origin is the gate.
 
 Send the site's own origin — the Worker's `workers.dev` subdomain until
 1.0 registers a custom domain — and the localhost origin on `sit`, and

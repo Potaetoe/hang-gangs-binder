@@ -6,7 +6,7 @@
 <!--
   The same policy as the other member pages. This page has no key or
   plaintext, but it does hold the member session that authorizes its
-  GET /charts read.
+  GET /charts-data read.
 
   crypto.js is deliberately not loaded. There is nothing here to
   decrypt, and a page that cannot decrypt cannot be talked into it.
@@ -85,14 +85,14 @@
     download - one card, one row, this order (0.9-M2-S3 design mandate
     2). Filter and Measure are "what to ask"; Picture and Units are "how
     to see it"; Show-me and Download sit at the row's end. Nothing here
-    fetches on its own - GET /charts fires only when Show-me is pressed.
+    fetches on its own - GET /charts-data fires only when Show-me is pressed.
   -->
   <div class="card">
     <div class="control-row">
 
       <!-- Filter: a two-step select. The field list and every value
            list come from apps/site.config.js (through fields.js) -
-           never from a response. GET /charts deliberately never
+           never from a response. GET /charts-data deliberately never
            enumerates which values a group holds (the membership-oracle
            rule DESIGN.md's "The identifier is the whole problem" names),
            so this page must not try to rebuild that list from anything

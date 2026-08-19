@@ -828,10 +828,17 @@ check("and it is that constant the group check is bounded by",
 {
   const { value } = await withSeams(botAnswering(memberAnswer), () =>
     send(worker, sitEnv(makeDb()), "GET", "/me", {}));
-  check("the same route with no Origin header answers 403 " +
-    "'Origin not allowed.' - not a fault, exactly as the table says",
-    value.status === 403 && value.body &&
-    value.body.error === "Origin not allowed.");
+  // 401, not the 403 this check pinned until 0.9-M2-S8 (#365). A GET
+  // with no Origin header is what every same-origin read looks like,
+  // so the gate admits it and the SESSION refuses it - which is the
+  // answer OPERATIONS.md's check table now names as healthy. The whole
+  // three-state gate is tests/origin-gate.test.mjs's subject; this
+  // check is here because OPERATIONS.md's table is what it pins.
+  check("the same route with NO Origin header answers 401 - the gate " +
+    "admits a same-origin read and the credential refuses it, exactly " +
+    "as the table says",
+    value.status === 401 && value.body &&
+    value.body.error === "Not authorized.");
 }
 
 {

@@ -694,7 +694,7 @@ await check("a written content name reads back", () => {
  * /snapshot against the stub. The route is deleted on the real
  * Worker, not gated: server/worker.js's header held it "until live
  * aggregation replaces it (0.9-M2)" and this slice is that replacement
- * (server/charts-agg.js, GET /charts). The stub's handler
+ * (server/charts-agg.js, GET /charts-data). The stub's handler
  * for it is gone too (dev/demo-stub.js), so every one of those checks
  * would now be asking a question the demo cannot answer, the same
  * failure "the stub answers every call" above states an exception for.

@@ -6,7 +6,7 @@
  *
  *     node tests/route-precedence.test.mjs
  *
- * THREE FACTS, THREE-WAYS CHECKED.
+ * FOUR FACTS, DERIVED FROM THE FILES THAT HOLD THEM.
  *
  * 1. server/worker.js's isApiPath()/API_SEGMENTS decide, in code, which
  *    paths this Worker answers itself. Imported through a data: URL,
@@ -31,6 +31,13 @@
  *    below derives both sets from their own file and asserts equality
  *    - the guard the wrangler.toml and worker.js comments both point
  *    at as living here.
+ * 4. AND NEITHER SET MAY NAME A PAGE (0.9-M2-S8, #365). The assets
+ *    layer's html_handling answers /x.html with a redirect to /x, so an
+ *    API segment sharing a page's basename makes that page unreachable
+ *    at its own URL - the router answers the API's refusal instead. The
+ *    page basenames are read from apps/web/ at run time rather than
+ *    listed here, because a list written down is what let the /charts
+ *    collision arrive with nobody noticing.
  *
  * MUTATION EVIDENCE (both directions, run by hand while writing this
  * arm and reported in 0.9-M1-S3's completion): route precedence
@@ -45,7 +52,7 @@
  * lives entirely in wrangler.toml and belongs with its own parser
  * rather than duplicated against a second one.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -328,6 +335,65 @@ const ALLOWED = { Origin: "http://localhost:8124" };
 }
 
 /* ------------------------------------------------------------------ */
+/* 4a. NO API SEGMENT MAY SHARE A PAGE'S BASENAME (0.9-M2-S8, #365).    */
+/*                                                                     */
+/* The defect this section exists for. The static-assets layer's        */
+/* html_handling drops the extension: a request for /charts.html is     */
+/* answered with a 307 to /charts, and the browser follows it. When     */
+/* "charts" was ALSO an API segment, run_worker_first sent that second  */
+/* request straight into this router, which answered the API's refusal  */
+/* instead of the page - the charts page was unreachable at its own     */
+/* natural URL, and the owner navigating to it met                      */
+/* {"error":"Origin not allowed."}. The route was renamed rather than   */
+/* the page, because the page's name is what a person types.            */
+/*                                                                     */
+/* Derived from the directory rather than from a list written here: a   */
+/* pinned list of page names would go stale the moment somebody adds a  */
+/* page, which is precisely how this collision arrived unnoticed.       */
+
+const pageBasenames = new Set((await readdir(ROOT + "apps/web"))
+  .filter((name) => name.endsWith(".html"))
+  .map((name) => name.slice(0, -".html".length)));
+
+check("apps/web/ really was read (a directory that answered nothing " +
+  "would make the collision check below pass on an empty set)",
+  pageBasenames.size > 0 && pageBasenames.has("charts"));
+
+function shadowed(segments, pages) {
+  return [...segments].filter((segment) => pages.has(segment));
+}
+
+check("no API segment shares a page's basename - html_handling would " +
+  "redirect that page to the API route and the router would answer in " +
+  "its place",
+  shadowed(API_SEGMENTS, pageBasenames).length === 0);
+
+check("the charts route is no longer named for the charts page",
+  !API_SEGMENTS.has("charts") && API_SEGMENTS.has("charts-data"));
+
+/* mutation: the collision put back */
+check("mutation: an API segment named after a page is caught",
+  shadowed(new Set([...API_SEGMENTS, "charts"]), pageBasenames)
+    .length === 1);
+
+/* The redirect chain itself, in the two steps this router can decide.
+   Cloudflare's own html_handling issues the 307 (nothing in Node can
+   run that layer), but BOTH ends of the chain are this router's
+   decision, and both must land on assets or the page is unreachable. */
+for (const path of ["/charts.html", "/charts"]) {
+  const { response, calls } = await get(worker, path, {});
+  check(`the charts page chain step ${path} is delegated to env.ASSETS.` +
+    "fetch - it ends at HTML, never at this router's JSON",
+    response.status === 200 && calls.length === 1 && calls[0] === path);
+}
+
+{
+  const { calls } = await get(worker, "/charts-data", ALLOWED);
+  check("and the renamed route is still the router's own - /charts-data " +
+    "never reaches env.ASSETS.fetch", calls.length === 0);
+}
+
+/* ------------------------------------------------------------------ */
 /* Mutation evidence: precedence inverted.                             */
 
 const inverted = workerSrc.replace(
@@ -397,7 +463,7 @@ check("mutation: a dropped Referrer-Policy line is caught",
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 36;
+const EXPECTED = 43;
 console.log(failures
   ? `\nroute-precedence FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

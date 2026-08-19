@@ -15,7 +15,7 @@
  *                            naming the row it supersedes. The body
  *                            carries the plaintext record; this Worker
  *                            seals it at rest. Needs a member session.
- *   GET    /charts           aggregate the whole corpus on request and
+ *   GET    /charts-data      aggregate the whole corpus on request and
  *                            answer one filter and one measure: the
  *                            trend and the distribution, with the
  *                            suppression floor already applied by
@@ -23,6 +23,10 @@
  *                            session. The Worker opens every current row
  *                            to compute it - DESIGN.md, "Charts": "The
  *                            Worker aggregates on request".
+ *                            NOT /charts, which is the charts PAGE's own
+ *                            URL - see API_SEGMENTS below for why a
+ *                            route named after a page makes that page
+ *                            unreachable (0.9-M2-S8, #365).
  *   GET    /export           return every row, sealed as stored. Admin.
  *                            Server-side opening for admins is a later
  *                            slice (0.9-M3); this route is unchanged by
@@ -55,8 +59,8 @@
  * held until live aggregation replaced it - is GONE (0.9-M2-S3, #354):
  * POST/GET/DELETE /snapshot, their handlers, the `snapshots` table's
  * writer and reader, and the CSP/config surface that reached them.
- * apps/web/charts.html reads GET /charts instead, computed on request by
- * server/charts-agg.js. The `snapshots` table itself stays in
+ * apps/web/charts.html reads GET /charts-data instead, computed on
+ * request by server/charts-agg.js. The `snapshots` table itself stays in
  * server/schema.sql - dropping a table is a schema migration and 0.9-M3
  * owns that decision, the same deferral server/schema.sql already
  * carries for `sessions.is_dev`. Deleting the one row it can hold is not
@@ -197,6 +201,86 @@ function allowedOrigins(env) {
   return DEFAULT_ORIGINS;
 }
 
+/*
+ * WHETHER A REQUEST MAY REACH THE ROUTE TABLE AT ALL, which is a
+ * different question from WHICH origin gets echoed back in the CORS
+ * headers. The two were one value until 0.9-M2-S8 (#365), and
+ * conflating them refused every read the site made of itself.
+ *
+ * A browser attaches an Origin header to POST and to cross-origin
+ * fetch, and to nothing else - not to a same-origin GET fetch, not to
+ * an address-bar navigation. So `allowedOrigins(env).includes(null)`
+ * was false, and the page's own GET /my-entries came back 403 while the
+ * POST a second earlier succeeded. The owner met exactly that at the
+ * first M2 sitting: entries saved, nothing read back.
+ *
+ * THREE STATES, NOT TWO:
+ *
+ *   present and allowed   the route table, plus CORS headers echoing it.
+ *   present and foreign   403, every method. Unchanged by this slice.
+ *   absent                the route table on GET only, and no
+ *                         Access-Control-Allow-Origin at all - never
+ *                         `*` and never the literal "null", either of
+ *                         which would hand a foreign page read access
+ *                         to a credentialed answer. fetch() passes null
+ *                         to json(), so corsHeaders is simply skipped.
+ *
+ * WHY ADMITTING AN ABSENT ORIGIN ON A READ IS SAFE, said out loud
+ * because the origin check is the only thing here that looks like CSRF
+ * protection and this weakens it. Authority on this Worker is
+ * `Authorization: Bearer <session token>`, which the page reads out of
+ * sessionStorage and sets per request (bearerToken/callerFor below).
+ * There are no cookies, so there is no ambient credential a cross-site
+ * page could ride: such a page cannot attach that header without
+ * turning the request into one that needs a preflight, and the
+ * preflight carries an Origin this Worker refuses. The session stays
+ * the whole gate - nothing below admits a caller past a CREDENTIAL
+ * check it did not already pass, which is what
+ * tests/origin-gate.test.mjs asserts from both sides: a no-Origin read
+ * with no credential is still 401, and a forged token is still 401.
+ *
+ * ONE ROUTE IS WIDER FOR IT, deliberately, and it is named here rather
+ * than left for a reader to find: GET /content answers without a
+ * credential by design, so on that one route an absent Origin reaches
+ * the site's own copy rather than a 403. That is the intent - the copy
+ * is what an unauthenticated page renders - and the arm asserts the
+ * widening rather than only the refusals.
+ *
+ * STATE-CHANGING METHODS KEEP REFUSING AN ABSENT ORIGIN. A browser
+ * always sends Origin on POST and DELETE, so the refusal costs a real
+ * caller nothing and is one more thing a non-browser caller would have
+ * to get right on top of forging a session token.
+ *
+ * SEC-FETCH-SITE CORROBORATES, AND ONLY HERE. If the browser sent it,
+ * the request must be same-origin or none (an address-bar navigation);
+ * cross-site and same-site are refused. It is deliberately NOT applied
+ * where an Origin is present and allowed: a deployment that serves its
+ * pages from a different host than this Worker - which is the whole
+ * reason ALLOWED_ORIGINS exists - is cross-site by construction and
+ * would refuse itself. An absent header is not a refusal either; a
+ * non-browser caller simply omits it, and this header is corroboration
+ * rather than the gate.
+ */
+function originAdmits(request, env) {
+  const origin = request.headers.get("Origin");
+  if (origin !== null) return allowedOrigins(env).includes(origin);
+  if (request.method !== "GET") return false;
+  const site = request.headers.get("Sec-Fetch-Site");
+  return site === null || site === "same-origin" || site === "none";
+}
+
+/*
+ * The two request headers that change this Worker's answer, named once.
+ *
+ * Origin decides between the route table and a 403; Sec-Fetch-Site
+ * corroborates an absent Origin (originAdmits above). Every API answer
+ * carries this, including the ones with no Access-Control-Allow-Origin
+ * at all - a shared cache keyed on the URL alone could otherwise serve
+ * one caller's answer to another, and "no CORS headers" is not the same
+ * as "does not vary by Origin".
+ */
+const VARY = "Origin, Sec-Fetch-Site";
+
 // The plaintext a member may submit in one row, bounded before it is
 // sealed. A weigh-in is a handful of short fields; this is generous for
 // that and small enough that MAX_ENTRY_LISTING rows stay a bounded
@@ -238,7 +322,7 @@ const MAX_ENTRY_LISTING = 500;
 
 // How many rows one aggregation reads, and why a cap is here at all.
 //
-// GET /charts opens EVERY current row in the corpus - the group is the
+// GET /charts-data opens EVERY current row in the corpus - the group is the
 // subject, so there is no account clause to bound it the way
 // MAX_ENTRY_LISTING bounds one member's listing. Each row costs one
 // AES-GCM open, so the number is a CPU bound rather than a response
@@ -735,7 +819,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
+    Vary: VARY,
   };
 }
 
@@ -743,7 +827,7 @@ function json(body, status, origin) {
   return new Response(JSON.stringify(body), {
     status: status,
     headers: Object.assign(
-      { "Content-Type": "application/json" },
+      { "Content-Type": "application/json", Vary: VARY },
       origin ? corsHeaders(origin) : {}
     ),
   });
@@ -2055,6 +2139,7 @@ async function handleCharts(request, env, origin, caller) {
       {
         "Content-Type": "application/json",
         "Cache-Control": "private, no-store",
+        Vary: VARY,
       },
       origin ? corsHeaders(origin) : {}
     ),
@@ -2545,9 +2630,22 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  * precedence.test.mjs derives both lists from the two files and fails
  * if they ever name a different set - the guard a hand-kept comment
  * cannot give itself.
+ *
+ * AND NO SEGMENT HERE MAY BE A PAGE'S BASENAME. The static-assets
+ * layer's html_handling answers a request for /x.html with a redirect
+ * to /x, and the browser follows it - so a segment named after a page
+ * makes that page unreachable at its own URL: the redirect lands on a
+ * run_worker_first pattern and this router answers the API's refusal
+ * where the HTML should be. "charts" was exactly that, and the charts
+ * page was unreachable until the ROUTE was renamed /charts-data
+ * (0.9-M2-S8, #365) - the route moved rather than the page, because the
+ * page's name is what a person types. tests/route-precedence.test.mjs
+ * reads apps/web/ at run time and fails on any new collision; do not
+ * turn that into a list written down here, because a list written down
+ * is how this one arrived unnoticed.
  */
 const API_SEGMENTS = new Set([
-  "auth", "session", "me", "my-entries", "submit", "charts", "export",
+  "auth", "session", "me", "my-entries", "submit", "charts-data", "export",
   "submission", "content", "membership",
 ]);
 
@@ -2562,7 +2660,7 @@ function isApiPath(pathname) {
  * see fetch() for why an escaped throw is a refusal shape this Worker
  * does not otherwise have.
  */
-async function route(request, env, url, allowed) {
+async function route(request, env, url, allowed, admitted) {
   const path = url.pathname;
   const method = request.method;
 
@@ -2581,12 +2679,23 @@ async function route(request, env, url, allowed) {
    */
   if (!isApiPath(path)) return env.ASSETS.fetch(request);
 
+  // The preflight is unchanged by 0.9-M2-S8 and gates on `allowed`
+  // rather than on `admitted`: a real preflight always carries an
+  // Origin, so a preflight without one is not a browser and has nothing
+  // to be told.
   if (method === "OPTIONS") {
-    if (!allowed) return new Response(null, { status: 403 });
+    if (!allowed) {
+      return new Response(null, { status: 403, headers: { Vary: VARY } });
+    }
     return new Response(null, { status: 204, headers: corsHeaders(allowed) });
   }
 
-  if (!allowed) {
+  // `admitted`, not `allowed` - the two are different questions and
+  // originAdmits() carries the whole argument. In one line: `allowed`
+  // is the origin to echo back and is null for a same-origin read,
+  // which has no Origin header to echo; refusing on it refused the site
+  // its own reads (#365).
+  if (!admitted) {
     return json({ error: "Origin not allowed." }, 403, null);
   }
 
@@ -2648,7 +2757,7 @@ async function route(request, env, url, allowed) {
   // there is no member whose line the overlay would be. Nothing is
   // withheld from that caller: GET /export is the whole corpus, and an
   // aggregate of it is a strictly smaller answer.
-  if (method === "GET" && path === "/charts") {
+  if (method === "GET" && path === "/charts-data") {
     if (!caller || !caller.accountId) return unauthorized(allowed);
     return handleCharts(request, env, allowed, caller);
   }
@@ -2759,9 +2868,10 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
     const allowed = allowedOrigins(env).includes(origin) ? origin : null;
+    const admitted = originAdmits(request, env);
 
     try {
-      return await route(request, env, url, allowed);
+      return await route(request, env, url, allowed, admitted);
     } catch (e) {
       console.log(JSON.stringify({
         event: "unhandled",

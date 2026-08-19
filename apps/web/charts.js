@@ -2,7 +2,7 @@
  * Charts: filter, measure, two pictures, no snapshot (0.9-M2-S3, #354).
  *
  * RENDER-ONLY, ON PURPOSE (security mandate 1). This file prints the
- * fields GET /charts hands back and does no suppression arithmetic of
+ * fields GET /charts-data hands back and does no suppression arithmetic of
  * its own: no floor threshold defined here under any name, no pooling
  * of small cells, no merging of bins, no second binning pass over
  * numbers the route already grouped. server/charts-agg.js is the one
@@ -13,7 +13,7 @@
  * query.js and apps/web/public.js are deleted by this same change:
  * nothing of theirs is carried forward in any form.
  *
- * THE UNITS TOGGLE NEVER RE-BINS. GET /charts answers every unit
+ * THE UNITS TOGGLE NEVER RE-BINS. GET /charts-data answers every unit
  * system in one document - a bin's `from`/`to` and a trend point's
  * `average` are both {metric: ..., imperial: ...} - so switching units
  * re-reads a different key of the SAME cached answer rather than
@@ -23,7 +23,7 @@
  *
  * THE FILTER AND MEASURE VALUE LISTS COME FROM apps/site.config.js,
  * never from a response (security mandate 2; design mandate 2). GET
- * /charts deliberately never enumerates which values a group holds -
+ * /charts-data deliberately never enumerates which values a group holds -
  * DESIGN.md, "The identifier is the whole problem" - so rebuilding
  * that list from anything the server said would open the membership
  * oracle the route's own shape refuses.
@@ -110,14 +110,20 @@
     });
   }
 
-  /* The request GET /charts answers to. `self=1` always: there is no
-     separate control for the member's own overlay (design mandate 2
+  /* The request GET /charts-data answers to. `self=1` always: there is
+     no separate control for the member's own overlay (design mandate 2
      names six controls and this is not one of them) - DESIGN.md,
      "Charts", has it as a property of the Trend picture, not a toggle,
      and asking for it costs nothing on a categorical measure, which
-     answers {points: []}. */
+     answers {points: []}.
+
+     THE ROUTE IS NOT NAMED /charts, and must never be renamed to it:
+     this page is charts.html, the assets layer redirects /charts.html
+     to /charts, and a route sitting there answers in the page's place -
+     which is what made this page unreachable until 0.9-M2-S8 (#365).
+     server/worker.js's API_SEGMENTS comment carries the whole rule. */
   function chartsURL(endpoint, ask) {
-    const url = new URL(endpoint + "/charts");
+    const url = new URL(endpoint + "/charts-data");
     url.searchParams.set("measure", ask.measure);
     if (ask.filter) {
       url.searchParams.set("filter", ask.filter);
@@ -225,7 +231,7 @@
   }
 
   /* The Trend tab, hidden rather than shown empty for a categorical
-     measure - GET /charts answers trend: null for one (design mandate
+     measure - GET /charts-data answers trend: null for one (design mandate
      5), and this reacts to the measure select alone, with no fetch. */
   function reactToMeasure(site) {
     const measure = Fields.measure($("measure").value, site);
