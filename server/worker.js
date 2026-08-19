@@ -1626,9 +1626,14 @@ const SUPERSEDED =
  * What this account has on record. Counts and dates, never contents -
  * the Worker could not read the contents if it wanted to.
  *
- * isDev travels with it so the page can say out loud that it is running
- * on a development session. One that looks like a real session is worse
- * than no development session at all.
+ * isDev travels with it and NO PAGE READS IT (0.9-M2-S4, #355 removed
+ * the card that announced a development session, and tests/door.test.mjs
+ * pins that session.js carries no such field). It is still reported
+ * because the flag itself is live behind the door: the admin-write
+ * refusals below take `caller.isDev` and refuse an admin-row write from
+ * a session Telegram never authenticated, so an operator reading /me can
+ * see which kind of session they hold. Whether the field and the
+ * `sessions.is_dev` column survive at all is 0.9-M3's question.
  *
  * accountId is returned so the page can tell whose device-local data it
  * is looking at - #56. It is safe to hand over and safe for the browser

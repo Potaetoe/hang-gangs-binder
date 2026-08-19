@@ -7,32 +7,12 @@
 (function (root) {
   "use strict";
 
-  /*
-   * The pinned anchor contains 32 base64 characters, so this length is a
-   * security parameter rather than presentation. Base64 carries six bits
-   * per character and every uncompressed P-256 point starts with 0x04; a
-   * shorter prefix, especially below the 16-character floor, can be ground
-   * out by generating keys until one matches.
-   */
-  const KEY_FINGERPRINT_LENGTH = 32;
-
   function byId(id) {
     return document.getElementById(id);
   }
 
   function show(element, visible) {
     if (element) element.hidden = !visible;
-  }
-
-  function showFingerprint(element, publicKey) {
-    if (!element) return;
-    if (typeof publicKey !== "string" || !publicKey) {
-      element.textContent = "";
-      element.hidden = true;
-      return;
-    }
-    element.textContent = publicKey.slice(0, KEY_FINGERPRINT_LENGTH);
-    element.hidden = false;
   }
 
   function checkedValue(name, fallback) {
@@ -81,7 +61,6 @@
   root.BinderUI = Object.freeze({
     byId,
     show,
-    showFingerprint,
     checkedValue,
     setStatus,
     boot,

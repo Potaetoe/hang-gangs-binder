@@ -3773,7 +3773,6 @@ MODULE_EXPORTS = {
     "crypto.js": "BinderCrypto",
     "fields.js": "BinderFields",
     "form.js": "BinderForm",
-    "memberkey.js": "BinderMemberKey",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
     "ui.js": "BinderUI",
@@ -4358,7 +4357,7 @@ def module_captures(js):
 # file-wide guard regex is satisfied by a dead guard, or by the guard's
 # own text inside a string, while the real use goes unguarded.
 #
-# The property is earned by EXECUTION instead, in dev/memberkey.test.mjs:
+# The property is earned by EXECUTION instead, in dev/signout.test.mjs:
 # it reads THIS table and fails if it holds a row whose deferred read is
 # not demonstrated by loading the shipped bytes under a recording global.
 # Adding a row here is therefore two changes, and the second one is the

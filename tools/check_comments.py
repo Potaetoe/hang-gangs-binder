@@ -414,7 +414,6 @@ CITATION_PINS = {
     ("tools/check_web.py", "OPERATIONS.md", "The keys"): 1,
     ("apps/web/admin.js", "DESIGN.md", "Key custody"): 1,
     ("apps/web/config.js", "DESIGN.md", "Key custody"): 1,
-    ("apps/web/memberkey.js", "DESIGN.md", "Members hold a key too"): 1,
     ("server/schema.sql", "DESIGN.md", "The charts and the snapshot"): 1,
     ("server/worker.js", "DESIGN.md",
      "The prefill is scoped to the account"): 1,

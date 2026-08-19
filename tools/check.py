@@ -110,7 +110,14 @@ PYTHON_SUITE_SUFFIX = ".test.py"
 # nobody added here was never run and the gate was green (#204).
 NODE_SUITES = [
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
-    ("member device key custody", "dev/memberkey.test.mjs"),
+    # "member device key custody" retired with apps/web/memberkey.js
+    # (0.9-M2-S5, #356): no page loaded the module once your-page.html
+    # stopped sealing, so its custody rules, key generation and storage
+    # arms had no surface left. What the suite also proved - that Sign
+    # out destroys the database those keys are still sitting in on real
+    # devices - moved to the row below, which is the whole of what
+    # survived it.
+    ("sign-out erasure + the ordering ratchet", "dev/signout.test.mjs"),
     # "form record building", "form wiring + reopen after submit" and
     # "member panel + failed-send guard" retired with your-page.html's
     # tabs, its hand-kept field list and its client-side seal

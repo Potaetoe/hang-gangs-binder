@@ -65,9 +65,8 @@
    * The name is written down twice, here and in auth.js, because
    * index.html does not load this file - it must not offer an act there
    * is no session for - so the reader cannot borrow the constant the
-   * way submit.js borrows the prefill key. That is the arrangement
-   * KEY_DB_NAME already lives under, and dev/session.test.mjs compares
-   * the two literals for the same reason: a rename on one side alone
+   * way submit.js borrows the prefill key. dev/session.test.mjs
+   * compares the two literals: a rename on one side alone
    * leaves a sign-out marking a page nobody reads and a door waiting on
    * a mark nobody writes, both silent.
    */
@@ -146,39 +145,38 @@
   }
 
   /*
-   * The member's device key, destroyed here rather than where it is
-   * made.
+   * The member's device key, destroyed here although nothing here makes
+   * one any more.
    *
-   * DESIGN.md's Encryption section already says signing out destroys it,
-   * and names the price out loud: getting a history back afterwards
-   * costs a re-seal request to an admin. That price was accepted on
-   * #56's own reasoning, with more at stake rather than less - the
-   * prefill is one measurement a member typed, and this key opens
-   * everything they have ever submitted. A browser two people share
-   * must not hand the second one the first one's history.
+   * NOTHING WRITES THIS DATABASE TODAY. The client seal is gone with the
+   * keys (DESIGN.md, "Trust model: the Worker reads"), and 0.9-M2-S5
+   * (#356) deleted apps/web/memberkey.js, the module that filled it. The
+   * destruction stays anyway, and that is a ruling rather than an
+   * oversight: every browser that visited the old pages is still
+   * carrying `hgb-member-key`, holding a private key that opens
+   * everything that member ever submitted, and the only code that can
+   * remove it from those browsers is code they load. A device is not
+   * cleaned up by a deployment. This line is the cleanup.
    *
    * IT IS DESTROYED FROM HERE AND UNCONDITIONALLY, because IndexedDB is
    * origin-wide. The key sits in this origin whatever page the member is
    * standing on, so destruction cannot depend on which modules that page
-   * happened to load - and memberkey.js is loaded by one signed-in page
-   * of three. Reaching through it is how sign-out came to destroy
-   * nothing on charts.html and admin.html, which are the two pages a
-   * member is most likely to leave from (#257). That is the same
+   * happened to load. Reaching through a key module is how sign-out came
+   * to destroy nothing on charts.html and admin.html, which are the two
+   * pages a member is most likely to leave from (#257). That is the same
    * argument the prefill's key makes above, and it is why both acts live
    * in the module every signed-in page runs.
    *
    * DELETING THE DATABASE, not the row. A delete of one key leaves the
-   * store, the database and anything else in it behind - and anything
-   * else is precisely the foreign records the erase rule in
-   * memberkey.js exists to remove. Sign out means this device retains
-   * nothing of this member's, and a deleted database is a claim a reader
-   * can check.
+   * store, the database and anything else in it behind. Sign out means
+   * this device retains nothing of this member's, and a deleted database
+   * is a claim a reader can check.
    *
-   * The name is written down twice, here and in memberkey.js, because
-   * that file is not on two of these pages to be asked. A rename on
-   * either side would leave sign-out deleting a database nobody made,
-   * with no symptom at all, so dev/memberkey.test.mjs compares the two
-   * literals.
+   * The name is now written down HERE ALONE, which is why
+   * dev/signout.test.mjs pins the literal itself rather than comparing
+   * two files. A rename here with no second copy to disagree would leave
+   * sign-out deleting a database nobody ever made while the real one
+   * survives, and that failure has no symptom at all.
    *
    * ONE NAME, AND NOTHING ENUMERATED. Sign out is in the rail on
    * admin.html too, where the keyholder's imported working copy lives in

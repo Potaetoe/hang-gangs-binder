@@ -43,7 +43,7 @@ const UI = globalThis.BinderUI;
  * a confident summary over the checks that still reached. See
  * dev/harness.mjs.
  */
-const { check, report } = nodeTestSuite("ui.js", 27);
+const { check, report } = nodeTestSuite("ui.js", 22);
 
 check("the shipped file exposes one frozen helper object",
   UI && Object.isFrozen(UI));
@@ -109,56 +109,6 @@ check("boot reports an asynchronous setup failure",
 check("ui.js contains no network operation",
   !source.includes("fetch") && !source.includes("POST"));
 
-/*
- * The key fingerprint - #36.
- *
- * #29 published the production key's first 32 base64 characters to the
- * Telegram group as an out-of-band anchor. An anchor is only half a
- * mechanism: comparing against it needs the value the browser is actually
- * about to encrypt with, and that meant view-source on config.js.
- *
- * The length is not a free choice. Base64 carries 6 bits a character and
- * every uncompressed P-256 point starts 0x04, so a short prefix is ground
- * out by generating keys until one matches. 32 is what was published, and
- * matching it is the point - a fingerprint the group cannot compare
- * against is decorative.
- */
-const KEY = "BEKFlvIzxk0/nOTskgzbKfYoqmMW3ds4EmUpn6rqx9rD1d5PhnxXT9kD"
-  + "917khzW07MUT2yAX18Wc7rD4K0BTSQ8=";
-const OTHER = "BL4L1Ap1ZybmyIfJ8wJuaV1hUMtTmtMPaE//xgG5GdS5tH8Atk24Mqkw"
-  + "NaVx5OMST/OsDWMJ5l4fSsvlFKZKyrc=";
-
-const slot = { textContent: "", hidden: true, className: "" };
-UI.showFingerprint(slot, KEY);
-check("the rendered fingerprint is the key's first 32 characters",
-  slot.textContent === KEY.slice(0, 32));
-check("a rendered fingerprint is 32 characters, the length #29 published",
-  slot.textContent.length === 32);
-check("rendering a fingerprint reveals its element",
-  slot.hidden === false);
-
-/*
- * The assertion that carries this slice. A hard-coded fingerprint - the
- * failure mode #36 names - satisfies every check above forever, and only
- * this one can tell the difference.
- */
-const first = slot.textContent;
-UI.showFingerprint(slot, OTHER);
-check("changing the configured key changes what is rendered",
-  slot.textContent === OTHER.slice(0, 32) && slot.textContent !== first);
-
-/*
- * An unknown hostname gets no key at all - config.js has no production
- * fallback, deliberately. Showing "null" or an empty box beside the words
- * "compare this" is worse than showing nothing, because it invites a
- * comparison against a value that does not exist.
- */
-UI.showFingerprint(slot, null);
-check("no configured key renders nothing rather than an empty anchor",
-  slot.textContent === "" && slot.hidden === true);
-UI.showFingerprint(null, KEY);
-check("showFingerprint tolerates an optional missing element", true);
-
 const CRYPTO_ACCESS = /\bcrypto\s*\.\s*(?:subtle|getRandomValues|randomUUID)\b/;
 const SUBTLE_CALL = /\bsubtle\s*\.\s*[A-Za-z_$][\w$]*\s*\(/;
 check("ui.js contains no Web Crypto access",
@@ -168,22 +118,29 @@ const signInSource = await readFile(
   new URL("../apps/web/index.html", import.meta.url), "utf8");
 
 /*
- * A fingerprint slot on your-page.html, its pinned-code sentence, and
- * form.js filling it from the configured key are all retired with the
- * client seal they were about (0.9-M2-S2, #353): DESIGN.md, "Trust
- * model: the Worker reads" ends both the browser-side comparison and
- * the public key a member would have compared. showFingerprint() itself
- * stays in ui.js - it is a generic truncate-and-reveal helper, not
- * crypto, and the checks right above this comment already exercise it
- * directly - but nothing calls it from a page any more, which the next
- * two checks confirm rather than merely assume.
+ * THE FINGERPRINT IS GONE FROM UI.JS TOO, and these are the arms that
+ * keep it gone.
+ *
+ * 0.9-M2-S2 (#353) removed your-page.html's slot, its pinned-code
+ * sentence and form.js's call, and left `showFingerprint` standing as a
+ * generic truncate-and-reveal helper. 0.9-M2-S5 (#356) took the helper
+ * as well: DESIGN.md, "Trust model: the Worker reads" ends the public
+ * key a member would have compared, so the length it truncated to was a
+ * security parameter about a comparison nobody makes and the helper had
+ * no caller anywhere in the tree. A named helper with no caller is the
+ * shape a page grows a new one from.
+ *
+ * What is checked here is the whole of what is left to check: the
+ * export list does not carry it, and no page carries a slot for it.
  */
-check("no shipped page calls showFingerprint any more - the function's " +
-  "only caller retired with it",
-  !(await readFile(new URL("../apps/web/form.js", import.meta.url), "utf8"))
-    .includes("showFingerprint"));
-check("and your-page.html carries no key-fingerprint slot for it to fill",
+check("ui.js publishes no fingerprint helper at all",
+  !Object.keys(UI).some((name) => /fingerprint/i.test(name)) &&
+  !/fingerprint/i.test(source));
+check("and your-page.html carries no key-fingerprint slot for one",
   !(await readFile(new URL("../apps/web/your-page.html", import.meta.url),
+    "utf8")).includes("key-fingerprint"));
+check("and theme.css styles no such slot either",
+  !(await readFile(new URL("../apps/web/theme.css", import.meta.url),
     "utf8")).includes("key-fingerprint"));
 
 /*
