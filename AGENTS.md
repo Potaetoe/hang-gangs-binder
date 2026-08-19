@@ -366,12 +366,15 @@ implemented it. Say which it is.
   world (`README.md`'s Status box is the live fact). **Never edit
   `dist/` by hand.** Neither directory takes a test hook, a fixture, a
   development-only global or a `?sample=` hook.
-- **`apps/` also holds source that is neither the site nor published.**
-  `apps/site.config.js` and `apps/fields.js` sit beside `apps/web/`,
-  not inside it, and nothing in either directory above is derived from
-  them yet — 0.9-M2 is what moves the spec into the shipped tree and
-  loads it there. Adding a file at the top of `apps/` is therefore a
-  decision about what a page may read, not a tidying choice.
+- **The form's field spec lives inside `apps/web/`, not beside it.**
+  `apps/web/site.config.js` (the file a fork edits) and
+  `apps/web/fields.js` (the only thing that reads it) moved there at
+  0.9-M2-S2 (#353): a `<script>` tag in a shipped page can only reach
+  files under the tree `./run build` publishes, and your-page.html is
+  the first page to load them. `server/charts-agg.js` reads the same
+  two files by the same path. Adding a field-spec file anywhere in
+  `apps/web/` is a decision about what a page may read, not a tidying
+  choice.
 - **`main` is not a release today** — the GitHub Pages deploy job that
   once published on every push retired 2026-08-13; nothing publishes
   until 1.0's Worker deploy replaces it. Work goes to `accounts` until
