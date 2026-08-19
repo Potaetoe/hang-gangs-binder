@@ -95,17 +95,17 @@ const DEMO_DATA = [
 export const DEMO_ASSETS = DEMO_FILES.concat(DEMO_DATA);
 
 /*
- * dev/demo-corpus.js builds the published snapshot inside a Web
- * Worker, and reaches the shipped aggregation by importScripts on
- * absolute /apps/web/ paths. A worker has no document, so those files
- * run their pure halves and need no mirror edit - they are copied raw.
- *
- * Named here rather than parsed out of demo-corpus.js: a reader that
- * scanned for importScripts would emit whatever that call names, which
- * is the same delegation of the emitted set that the allowlist exists
- * to refuse.
+ * Empty (0.9-M2-S3, #354): dev/demo-corpus.js imports nothing, because
+ * the snapshot route it simulated - by importScripts on absolute
+ * /apps/web/ paths naming form.js, apps/web/dashboard.js and admin.js -
+ * is deleted on the real Worker, not gated. This list names none of
+ * those any more rather than pointing at a file that no longer exists.
+ * Kept as a named export, empty, rather than deleted outright:
+ * dev/demo-bake.test.mjs's manifest check reads it to know how many
+ * /apps/web/ files the bake must additionally emit for the corpus
+ * worker, and an empty list is the honest answer - none, now.
  */
-export const IMPORT_SCRIPTS = ["form.js", "dashboard.js", "admin.js"];
+export const IMPORT_SCRIPTS = [];
 
 export const OUT_DEFAULT = "_demo";
 
@@ -119,10 +119,10 @@ export const OUT_DEFAULT = "_demo";
  * `./run bake` on an unbuilt checkout must not emit last week's build.
  * The published site is dist/ and it has its own gate stage saying so.
  *
- * The demo's absolute /apps/web/ paths below are the other half of this:
- * they name where the corpus worker reads its scripts from, and pointing
- * the bake at a different tree while those stay put is how a manifest
- * comes to describe files nobody emitted.
+ * WEB below is the other half of this: it names the tree webEntriesOf()
+ * walks to mirror every page and asset, and pointing the bake at a
+ * different tree while it stays put is how a manifest comes to
+ * describe files nobody emitted.
  */
 const WEB = "apps/web/";
 const MIRROR = "demo/";
@@ -397,19 +397,15 @@ export function manifestFor(webEntries, raw) {
   }
 
   /*
-   * The three files the corpus worker loads by an absolute /apps/web/
-   * path. A worker has no document, so those files run their pure
-   * halves and need no mirror edit - they are copied raw, at the exact
-   * prefix demo-corpus.js asks for. Nothing under this prefix is a
-   * page, and the suite asserts it: a page emitted outside /demo/ is a
-   * page without dev/demo-boot.js on it.
-   *
-   * AN ARGUMENT, so the refusal above is a checked branch rather than a
-   * described one. Everything else this function emits comes from
-   * constants in this file, and a guard whose input nobody can vary is
-   * a guard nothing can falsify - dev/demo-bake.test.mjs hands it a path
-   * off the allowlist and reads the refusal. The one caller passes
-   * nothing and gets the same list either way.
+   * The files the corpus worker loaded by an absolute /apps/web/ path,
+   * back when it built anything - RETIRED with the snapshot route they
+   * mirrored (0.9-M2-S3, #354; see IMPORT_SCRIPTS above). IMPORT_SCRIPTS
+   * is empty now, so this emits nothing and the loop below runs zero
+   * times; left in place rather than deleted because the refusal it
+   * feeds is still a checked branch dev/demo-bake.test.mjs drives with
+   * a path off the allowlist; the one real caller passes nothing and
+   * gets the same
+   * (now-empty) list either way.
    */
   const extra = new Set(raw === undefined
     ? IMPORT_SCRIPTS.map((name) => WEB + name) : raw);

@@ -612,19 +612,6 @@ async function loadAdmin(session, options = {}) {
     render() {},
   };
   /*
-   * What the public page is currently serving, which this stub has to
-   * MODEL rather than pretend is constant.
-   *
-   * A stub that answered the same document to every read would say
-   * "publishing changes nothing about what is published" and "taking the
-   * page down leaves it up" - two false claims, and the checks that lean
-   * on this would pass against a page that kept a dead anchor forever.
-   * So a POST replaces it and a DELETE clears it, which is what the
-   * Worker does.
-   */
-  let live = options.published || null;
-
-  /*
    * What GET /membership answers, and what it answers NEXT.
    *
    * A list rather than a value, because half of what this pane promises
@@ -673,27 +660,23 @@ async function loadAdmin(session, options = {}) {
     if (url.endsWith("/export") && method === "GET") {
       return response(200, { ok: true, submissions: SUBMISSIONS });
     }
-    if (url.endsWith("/snapshot") && method === "GET") {
-      // 404 unless a scenario says something is already published. A
-      // document on the public page is what the next one measures its
-      // combined-weight movement against, and nothing else on this page
-      // can supply it - the public page holds one document and the
-      // Worker never parses what it stores.
-      //
-      // `live` rather than reaching for options.published here: this
-      // function's own second parameter is called `options` too, and it
-      // is the fetch init the page passed. Reading the scenario's
-      // document off it silently answered 404 for every scenario and
-      // made the anchor look like something the page never kept.
-      return live
-        ? response(200, { ok: true, snapshot: live })
-        : response(404, { error: "No snapshot." });
-    }
-    if (url.endsWith("/snapshot") && method === "POST") {
-      live = JSON.parse(request.options.body);
-    }
-    if (url.endsWith("/snapshot") && method === "DELETE") {
-      live = null;
+    /*
+     * The retired route (0.9-M2-S3, #354), modeled honestly rather than
+     * left simulating a document that can no longer exist: GET, POST and
+     * DELETE all answer 404 now, because the route this page's Publish
+     * card calls no longer exists on the real Worker at all - deletion,
+     * not gating (the same S1 precedent DESIGN.md's Charts section
+     * argues from). admin.html is stated dead rather than patched
+     * (issue #354's own scope), so admin.js's three fetch("/snapshot")
+     * calls are unchanged and now always take their failure branch,
+     * which is what "the Publish control goes dead-in-water" means in
+     * practice. Checks asserting a working publish/unpublish/read cycle
+     * are gone with the route, rather than kept passing against one
+     * that no longer exists - see this file's own retirement comments
+     * for exactly which.
+     */
+    if (url.endsWith("/snapshot")) {
+      return response(404, { error: "Not found." });
     }
     return response(200, { ok: true });
   };
@@ -814,11 +797,6 @@ check("publish carries the admin session",
   snapshotPosts.length === 1 &&
   authorization(snapshotPosts[0]) === SESSION_AUTH);
 
-/* Read here, before the deletion scenarios below publish again: this
-   site had nothing on its public page, and the first document a site
-   ever makes has nothing to measure from. A fabricated anchor would
-   report the whole group's weight as its first month's gain (#73). */
-const firstEverAnchor = admin.snapshots.at(-1).options.previous;
 /*
  * THE ROW IS NAMED; THE ENGINE'S REASON IS NOT ON SCREEN - #275's rule 5
  * and rule 1 read together.
@@ -890,52 +868,21 @@ check("deletion removes only that row from live state without refetching",
   lastSnapshot && JSON.stringify(lastSnapshot.ids) === JSON.stringify([99]));
 
 /*
- * The publish pipeline carries the document it replaces - #73.
- *
- * A combined-weight delta needs an anchor, and the anchor has to be a
- * property of the document rather than the reader's clock, or two people
- * opening the same bytes an hour apart see different movements. Only
- * this page can supply it: the public page holds one document with
- * nothing to compare against, and the Worker stores the body verbatim
- * without ever parsing it.
- *
- * What is asserted here is the WIRING - that the current document
- * reaches snapshotOf as `previous`, and that a stale one never does.
- * Whether the delta it produces is safe to publish is dashboard.js's
- * floor, and dev/dashboard.test.mjs is where that is attacked.
+ * RETIRED (0.9-M2-S3, #354): four checks stood here for the anchor a
+ * republish measures its combined-weight delta from - "publishing
+ * measures from the document already on the public page", "...measures
+ * from nothing", "the next document measures from the one just
+ * published", "taking the page down drops the anchor with it". Each
+ * depended on GET /snapshot answering a real, evolving document, which
+ * the route retiring (deletion, not gating - the S1 precedent) makes
+ * permanently unreachable: `publishedNow` in apps/web/admin.js can now
+ * only ever be null, so every one of those four claims would either be
+ * vacuously true or simply false forever, neither of which is a check
+ * worth keeping. The mock's dashboard.js/query.js-shaped snapshot
+ * simulation is the dead surface this removal follows; the delta
+ * arithmetic itself was never this file's claim to make - dashboard.js
+ * held the floor it depended on, and dashboard.js is also retired here.
  */
-const LIVE = {
-  snapshot: 1,
-  generated: "2026-07-01T00:00:00.000Z",
-  counts: { entries: 9, people: 9 },
-  bases: { people: {}, entries: {} },
-};
-
-const republish = await loadAdmin(ADMIN, { published: LIVE });
-await republish.elements.run.click();
-await republish.elements.publish.click();
-check("publishing measures from the document already on the public page",
-  republish.snapshots.at(-1).options.previous === LIVE);
-
-check("publishing with nothing published measures from nothing",
-  firstEverAnchor === null);
-
-await republish.elements.publish.click();
-check("the next document measures from the one just published, not the old one",
-  // The page re-reads what is live after publishing, so a second press
-  // moves the anchor forward. A stuck anchor would publish the same
-  // month's movement twice and then double it.
-  republish.snapshots.at(-1).options.previous !== LIVE &&
-  republish.snapshots.at(-1).options.previous !== null);
-
-await republish.elements.unpublish.click();
-await republish.elements.publish.click();
-check("taking the page down drops the anchor with it",
-  // The document is gone from the public page, so measuring the next
-  // one from it would print the difference against something nobody can
-  // see any more. Held as its own check because the failure is silent:
-  // a kept anchor produces a perfectly plausible number.
-  republish.snapshots.at(-1).options.previous === null);
 
 /*
  * A ticked box that publishes nothing, and the card that said nothing
@@ -967,25 +914,18 @@ check("the preview still shows the document it is describing",
   JSON.parse(withheld.elements["publish-preview-body"].textContent)
     .seriesWithheld === true);
 
-await withheld.elements.publish.click();
-check("publishing repeats what the document does not contain",
-  // The keyholder may never press the preview. The moment they publish
-  // is the last one at which the omission can still be told to them.
-  withheld.elements["publish-status"].textContent.startsWith("Published.") &&
-  withheld.elements["publish-status"].textContent.includes(
-    "Weight over time is not in it"));
-
-const included = await loadAdmin(ADMIN, { seriesWithheld: false });
-await included.elements.run.click();
-included.elements["publish-series"].checked = true;
-await included.elements["publish-preview"].click();
-await included.elements.publish.click();
-
-check("a document that carries the series says nothing about withholding",
-  // The other direction. A card that reported a withholding on every
-  // publish would be noise, and noise is how a real one stops being read.
-  !included.elements["publish-status"].textContent.includes("not in it") &&
-  included.elements["publish-status"].textContent.startsWith("Published."));
+/*
+ * RETIRED (0.9-M2-S3, #354): "publishing repeats what the document does
+ * not contain" and "a document that carries the series says nothing
+ * about withholding" stood here, both asserting a post-publish
+ * confirmation that started "Published." - the success branch of
+ * apps/web/admin.js's own $("publish") handler. POST /snapshot always
+ * 404s now (the route is gone, not merely gated), so that branch is
+ * unreachable and the card reads "It could not be published." on every
+ * press; the two checks above this comment (the PREVIEW, which never
+ * calls fetch) still cover the withheld-series disclosure the removed
+ * pair was the second half of.
+ */
 
 /*
  * The key this device keeps - #70.
@@ -1500,18 +1440,18 @@ check("a refused export ends the session and leaves",
   named(deadExport.elements.status) && Session.read() === null &&
   redirects.includes("index.html"));
 
-/* Unpublish and publish both need something on the public page first:
- * the button is only offered when there is a document to take down. */
-const deadUnpublish = await loadAdmin(ADMIN, {
-  published: LIVE,
-  refuse: (method, path) => method === "DELETE" && path === "/snapshot"
-    ? DEAD : null,
-});
-await deadUnpublish.elements.unpublish.click();
-await settle();
-check("a refused unpublish ends the session and leaves",
-  named(deadUnpublish.elements["unpublish-status"]) &&
-  Session.read() === null && redirects.includes("index.html"));
+/*
+ * RETIRED (0.9-M2-S3, #354): "a refused unpublish ends the session and
+ * leaves" stood here, seeded with `published: LIVE` so the Unpublish
+ * button would render at all - it is offered only when
+ * refreshPublishedState() sees a document, per apps/web/admin.js's own
+ * `show($("unpublish"), ...)` calls a few lines above this file's fetch
+ * stub. GET /snapshot now always 404s (the route is gone, not merely
+ * gated), so that button never renders in this suite or in a real
+ * browser - the scenario has no button left to press. "a refused
+ * publish ends the session and leaves" below covers the same session-
+ * refusal claim on the sibling route that IS still reachable.
+ */
 
 const deadPublish = await loadAdmin(ADMIN, {
   refuse: (method, path) => method === "POST" && path === "/snapshot"

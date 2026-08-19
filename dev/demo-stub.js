@@ -399,7 +399,10 @@
     { path: "/my-entries", methods: ["GET"] },
     { path: "/submit", methods: ["POST"] },
     { path: "/export", methods: ["GET"] },
-    { path: "/snapshot", methods: ["GET", "POST", "DELETE"] },
+    // /snapshot retired with 0.9-M2-S3 (#354): deletion, not gating, so
+    // it is gone from this table rather than kept and refused - the
+    // cross-check against server/worker.js's own routes below would
+    // fail otherwise, since that file no longer answers it either.
     { path: "/content", methods: ["GET", "POST"] },
     { path: "/membership", methods: ["GET", "POST"] },
   ];
@@ -1293,8 +1296,9 @@
    *
    * Pure on purpose: it takes the world and returns the answer plus the
    * world that follows, so dev/demo.test.mjs can drive a whole sequence -
-   * publish, then read back - with no browser and no server. The browser
-   * half stores what comes back and does nothing else.
+   * sign out, then read the next request's refusal - with no browser
+   * and no server. The browser half stores what comes back and does
+   * nothing else.
    *
    * `proxy` is a same-origin path the caller should fetch for real. The
    * export rows are a committed file in this repository, so handing back
@@ -1304,7 +1308,8 @@
     const method = String(request.method || "GET").toUpperCase();
     const route = routeFor(request.path, method);
     const state = world || {};
-    const data = state.data || {};
+    // state.data held the staged snapshot for the retired /snapshot
+    // handler (0.9-M2-S3, #354); nothing here reads it any more.
     const next = Object.assign({}, state);
 
     /*
@@ -1459,86 +1464,11 @@
       };
     }
 
-    if (route === "/snapshot") {
-      if (method === "POST") {
-        next.published = request.body;
-        next.publishedAt = new Date().toISOString();
-        return { status: 200, body: { ok: true }, next: next };
-      }
-      if (method === "DELETE") {
-        next.published = null;
-        return { status: 200, body: { ok: true }, next: next };
-      }
-      /*
-       * A TAKEDOWN IS NOT THE SAME WORLD AS ONE NOBODY HAS PUBLISHED IN.
-       *
-       * Written as an `undefined` test rather than as `state.published
-       * || <the staged corpus>`, because `||` reads the null a DELETE
-       * writes as "nothing staged yet": the press answers 200, the
-       * world honestly reports `published: null`, and the very next
-       * read hands back the same entries from the same people.
-       * Unpublish is then indistinguishable from never having pressed
-       * it, which is the one thing UAT A10.1 exists to accept.
-       *
-       * `undefined` is never-touched and `null` is taken-down, and the
-       * two survive the trip through this demo's sessionStorage because
-       * JSON keeps a null and drops an undefined. The toolbar's Publish
-       * row writes the staged document into `data` and leaves
-       * `published` alone, so a snapshot preset and a takedown stay two
-       * different facts about the same world.
-       */
-      const published = state.published === undefined
-        ? data.staged
-        : state.published;
-      /*
-       * And the refusal is the WORKER's, word for word. server/worker.js
-       * deletes the row and then finds no row, so the live product
-       * cannot tell these two apart either - a stub with a sentence of
-       * its own here would be demonstrating a Worker that does not
-       * exist, which is how a demo lies while every one of its own
-       * checks passes.
-       */
-      if (!published) {
-        return {
-          status: 404,
-          body: { error: "No snapshot published yet." },
-          next: next,
-        };
-      }
-      /*
-       * The published snapshot arrives from the demo's own
-       * sessionStorage, and anything in a browser's storage can be
-       * edited by whoever is sitting at it. An uncaught SyntaxError here
-       * escapes the replaced fetch as an unhandled rejection: the page
-       * stops, with nothing on screen saying the demo's own storage is
-       * what broke rather than the product.
-       */
-      let snapshot = published;
-      if (typeof published === "string") {
-        try {
-          snapshot = JSON.parse(published);
-        } catch (error) {
-          return {
-            status: 500,
-            body: {
-              error: "The published snapshot in this demo's storage " +
-                "could not be read as JSON. Press Reset to stage it again.",
-            },
-            next: next,
-          };
-        }
-      }
-
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          published_at: state.publishedAt || new Date().toISOString(),
-          snapshot: snapshot,
-        },
-        next: next,
-      };
-    }
+    // The /snapshot handler is retired with the route itself
+    // (0.9-M2-S3, #354) - removed rather than left answering, so
+    // routeFor() above returns null for it and this function's own
+    // unknown-route fallback is what a call now meets, which is what
+    // happens against the real Worker too.
 
     if (route === "/content") {
       if (method === "GET") {

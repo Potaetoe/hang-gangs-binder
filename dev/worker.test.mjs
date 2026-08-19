@@ -118,8 +118,7 @@ const EXECUTED_GUARD_ARMS = DatabaseSync ? 6 : 0;
  * A D1 binding that remembers what it was asked to store.
  *
  * It reads just enough of the SQL to tell the tables apart, because
- * they behave differently in the ways that matter: snapshots replaces
- * rather than appends and is read with first(); sessions is looked up
+ * they behave differently in the ways that matter: sessions is looked up
  * by one key, swept by expiry, and has one row's deadline moved forward
  * when it is used; submissions appends, counts per account, can lose a
  * row, and answers the two lookups a correction is checked against;
@@ -132,7 +131,6 @@ const EXECUTED_GUARD_ARMS = DatabaseSync ? 6 : 0;
  */
 let stored = [];
 let sessions = [];
-let snapshot = null;
 let content = [];
 let roster = [];
 // The member directory a verified sign-in refreshes (0.9-M1-S11, #340;
@@ -216,7 +214,6 @@ let batchRejects = null;
 function reset() {
   stored = [];
   sessions = [];
-  snapshot = null;
   content = [];
   roster = [];
   replay = new Map();
@@ -272,7 +269,6 @@ const DB = {
     const table = /auth_replay/i.test(sql) ? "auth_replay"
       : /site_content/i.test(sql) ? "site_content"
       : /membership/i.test(sql) ? "membership"
-      : /snapshots/i.test(sql) ? "snapshots"
       : /sessions/i.test(sql) ? "sessions"
       : /\bdirectory\b/i.test(sql) ? "directory"
       : "submissions";
@@ -411,10 +407,7 @@ const DB = {
         }
         return { meta: { changes: 0 } };
       }
-      if (table === "snapshots") {
-        if (verb === "DELETE") snapshot = null;
-        else snapshot = { body: a[0], updated_at: a[1] };
-      } else if (table === "sessions") {
+      if (table === "sessions") {
         if (verb === "DELETE") {
           if (/token_hash/i.test(sql)) {
             // Revoking removes exactly the row presented. A stub that
@@ -633,7 +626,6 @@ const DB = {
     };
 
     const read = (a) => {
-      if (table === "snapshots") return snapshot;
       if (table === "sessions") {
         return sessions.find((s) => s.token_hash === a[0]) || null;
       }
@@ -1004,7 +996,7 @@ globalThis.fetch = async () => new Response(
  * hide one, because the two totals differ by exactly the arms named
  * above.
  */
-const { check, report } = suite("worker.js", 310 + EXECUTED_GUARD_ARMS);
+const { check, report } = suite("worker.js", 294 + EXECUTED_GUARD_ARMS);
 
 async function statusOf(label, promise, want) {
   const res = await promise;
@@ -1228,12 +1220,12 @@ const matrix = [
   ["GET", "/export", MEMBER, 401],
   ["GET", "/export", ADMIN, 200],
   ["GET", "/export", "sekrit-token-value", 200],
-  ["GET", "/snapshot", null, 401],
-  ["GET", "/snapshot", MEMBER, 404],
-  ["POST", "/snapshot", MEMBER, 401],
-  ["POST", "/snapshot", ADMIN, 200],
-  ["DELETE", "/snapshot", MEMBER, 401],
-  ["DELETE", "/snapshot", ADMIN, 200],
+  // The /snapshot route is gone (0.9-M2-S3, #354), deleted rather than
+  // gated - it is no longer API-shaped at all, so a table row here
+  // asking who is refused would be asking a question this route no
+  // longer poses. tests/route-precedence.test.mjs is where that fact
+  // now lives, driven against a real ASSETS stub this file's stub env
+  // does not carry (see the comment on the /auth/whatever row below).
   ["DELETE", "/submission/1", null, 401],
   // A member may delete THEIR OWN row since 0.9-M1-S6 (#332; DESIGN.md,
   // "Admin accounts and deletion": their data, their delete), so this is
@@ -1297,7 +1289,10 @@ const matrix = [
 
 // One body per POST route rather than one shape for all of them. A
 // single "whatever this route wants" object would let a route that
-// stopped reading its body pass every row above.
+// stopped reading its body pass every row above. Every POST row in the
+// matrix names an entry here - there is deliberately no fallback, so a
+// row added without one throws rather than posting a body that means
+// nothing to the route it names.
 const MATRIX_BODY = {
   "/submit": { record: "{\"w\":1}" },
   "/content": { name: "matrix", value: "A line of copy." },
@@ -1307,7 +1302,7 @@ const MATRIX_BODY = {
 for (const [method, path, token, want] of matrix) {
   const headers = token === null ? good : bearer(token);
   const body = method === "POST"
-    ? JSON.stringify(MATRIX_BODY[path] || { snapshot: 1 })
+    ? JSON.stringify(MATRIX_BODY[path])
     : undefined;
   await statusOf(`${method} ${path} as ${who(token)}`,
     call(method, path, { headers, body }), want);
@@ -1550,66 +1545,9 @@ await statusOf("a Worker with no bot token refuses cleanly rather than throwing"
 globalThis.fetch = realFetch;
 
 /* ------------------------------------------------------------------ */
-/* The snapshot. Unchanged except for who may read it.                 */
+/* Submission validation, and ALLOWED_ORIGINS.                         */
 
 reset();
-const A = (await (await signIn({ id: 99 })).clone().json()).session;
-
-const publishedBody = JSON.stringify({ snapshot: 1, counts: { entries: 2 } });
-await call("POST", "/snapshot", { headers: bearer(A), body: publishedBody });
-check("the snapshot is stored exactly as sent",
-  snapshot !== null && snapshot.body === publishedBody);
-
-const readBack = await (await call("GET", "/snapshot",
-  { headers: bearer(A) })).json();
-check("the published snapshot reads back inside its envelope",
-  readBack.ok === true && typeof readBack.published_at === "string" &&
-  readBack.snapshot.counts.entries === 2);
-
-await call("POST", "/snapshot", { headers: bearer(A),
-  body: JSON.stringify({ snapshot: 1, counts: { entries: 9 } }) });
-/*
- * The null branch is about what this file can REPORT, not about a state
- * the Worker reaches. Nothing here publishes without an admin session,
- * so a null snapshot means adminness itself broke - and dereferencing it
- * throws at file scope, which takes the process down and silences every
- * arm below this line rather than adding one failing row. The arms below
- * this point are most of the suite, so a mutation anywhere near
- * adminness stopped being reportable and started being an abort with one
- * candidate cause and three hundred candidate victims.
- *
- * It must still FAIL rather than pass: `snapshot !== null` guards the
- * dereference and is part of the condition, so a suite that published
- * nothing says so on this row instead of skipping it.
- */
-check("publishing replaces rather than appends",
-  snapshot !== null && JSON.parse(snapshot.body).counts.entries === 9,
-  snapshot === null ? "nothing was published" : "");
-
-await statusOf("a snapshot that is not JSON is refused",
-  call("POST", "/snapshot", { headers: bearer(A), body: "{{{" }), 400);
-await statusOf("an empty snapshot is refused",
-  call("POST", "/snapshot", { headers: bearer(A), body: "" }), 400);
-await statusOf("an oversize snapshot is refused",
-  call("POST", "/snapshot", { headers: bearer(A),
-    body: JSON.stringify({ pad: "A".repeat(300000) }) }), 413);
-
-check("a refused publish leaves the previous snapshot alone",
-  snapshot !== null && JSON.parse(snapshot.body).counts.entries === 9);
-
-await call("DELETE", "/snapshot", { headers: bearer(A) });
-check("an authorized DELETE takes the snapshot down", snapshot === null);
-await statusOf("reading after a delete is 404 again",
-  call("GET", "/snapshot", { headers: bearer(A) }), 404);
-
-/* Deleting nothing is a success. Someone pressing Unpublish twice has
- * got what they wanted, and an error would read as "it did not work"
- * and invite a retry against a system that already did the thing. */
-await statusOf("unpublishing twice is not an error",
-  call("DELETE", "/snapshot", { headers: bearer(A) }), 200);
-
-/* ------------------------------------------------------------------ */
-/* Submission validation, and ALLOWED_ORIGINS.                         */
 
 const M = (await (await signIn({})).clone().json()).session;
 const post = (body) => call("POST", "/submit", { headers: bearer(M), body });
@@ -1754,11 +1692,16 @@ await statusOf("it exports while 99 is still in ADMIN_TELEGRAM_IDS",
 const demoted = { ...env, ADMIN_TELEGRAM_IDS: "12345" };
 await statusOf("the same session cannot export once 99 is off the list",
   call("GET", "/export", { headers: bearer(STALE_ADMIN) }, demoted), 401);
-await statusOf("nor publish a snapshot",
-  call("POST", "/snapshot", { headers: bearer(STALE_ADMIN),
-    body: JSON.stringify({ snapshot: 1 }) }, demoted), 401);
-await statusOf("nor take one down",
-  call("DELETE", "/snapshot", { headers: bearer(STALE_ADMIN) }, demoted), 401);
+// The /snapshot route these two checks drove against is gone
+// (0.9-M2-S3, #354); POST /content and DELETE /membership/... are the
+// same admin gate on the two methods GET /export does not cover, so the
+// demotion claim stays proved across POST and DELETE alike.
+await statusOf("nor write the site copy",
+  call("POST", "/content", { headers: bearer(STALE_ADMIN),
+    body: JSON.stringify({ name: "matrix", value: "x" }) }, demoted), 401);
+await statusOf("nor remove a membership row",
+  call("DELETE", "/membership/admin/" + FIXTURE_4242,
+    { headers: bearer(STALE_ADMIN) }, demoted), 401);
 /*
  * Nor delete somebody else's row - and since 0.9-M1-S6 (#332) that is
  * proved by the row SURVIVING rather than by a 401. A demoted admin is
