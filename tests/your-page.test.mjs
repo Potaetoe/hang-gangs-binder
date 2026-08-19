@@ -312,6 +312,14 @@ function makeElement(id, registry) {
       attrs[key] = String(value);
       if (key === "hidden") this.hidden = true;
       if (key === "id" && registry) registry.set(String(value), node);
+      // Real DOM reflects the value ATTRIBUTE onto the .value PROPERTY
+      // for a checkbox this way (buildChoiceField's multiple branch
+      // never sets .value directly, only setAttribute("value", ...)) -
+      // without this, a stub checkbox's .value stays "" forever and
+      // prefillFields()'s own input.value comparison could never match
+      // one, which would be a gap in this harness rather than in the
+      // module it is testing.
+      if (key === "value") this.value = String(value);
     },
     getAttribute(key) {
       return Object.prototype.hasOwnProperty.call(attrs, key) ? attrs[key] : null;

@@ -26,6 +26,7 @@
 
   const UI = root.BinderUI;
   const Session = root.BinderSession;
+  const Form = root.BinderForm;
   const $ = UI.byId;
   const show = UI.show;
 
@@ -61,6 +62,15 @@
   let entries = [];
   let downloadUrl = null;
   let inflight = null;
+  // Prefill (#370) runs at most once per sign-in - a member's own edits
+  // after that must never be clobbered by a later loadEntries() call
+  // (a retry, or the reload binder:submitted triggers after they add
+  // their next entry). Reset alongside `entries` below, which is what
+  // "the clearing function's coverage extends to any prefill state it
+  // holds" means: idle expiry or Sign out leaves this tab able to
+  // prefill again for whoever signs in next, rather than stuck refusing
+  // to.
+  let prefillApplied = false;
 
   function clearMemberData() {
     if (inflight) {
@@ -68,6 +78,8 @@
       inflight = null;
     }
     entries = [];
+    prefillApplied = false;
+    clearPrefilledFields();
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       downloadUrl = null;
@@ -76,6 +88,180 @@
     emptyOut($("trend-slot"));
     const toggle = $("corrections-toggle");
     if (toggle && toggle.parentNode) toggle.parentNode.removeChild(toggle);
+  }
+
+  /*
+   * The newest CURRENT entry - the same currency the entries list
+   * itself renders by (renderEntries()'s own `!e.superseded` filter,
+   * and GET /my-entries' own newest-first order, which this file never
+   * re-sorts). A superseded row is not the newest truth even when it
+   * sits first in the list, so this is `.find()`, not `entries[0]`.
+   */
+  function newestCurrentRecord() {
+    const current = entries.find(function (e) { return !e.superseded; });
+    return current && current.record && typeof current.record === "object"
+      ? current.record : null;
+  }
+
+  function prefillFromEntries() {
+    if (prefillApplied) return;
+    const record = newestCurrentRecord();
+    if (!record) return;
+    prefillApplied = true;
+    prefillFields(record);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The prefill itself (issue #370): over18, gender, roles, country and */
+  /* height, from the newest CURRENT entry above - never weight, the new */
+  /* measurement this visit is for. Lives here rather than in form.js    */
+  /* because form.js's own frozen export (BinderForm) is the PURE half   */
+  /* its header describes, loaded under Node with no document by         */
+  /* tests/your-page.test.mjs section 1-3 - a second DOM-touching global  */
+  /* from that file would need its own line in tools/check_web.py's      */
+  /* MODULE_EXPORTS, for one caller. This file already publishes nothing  */
+  /* (NO_MODULE_EXPORT's own entry for it), so these stay ordinary        */
+  /* unexported functions, reaching form.js only through BinderForm.plan()*/
+  /* - already frozen, already exported, already the spec-derived field   */
+  /* list renderFields() builds controls from.                            */
+  /*                                                                       */
+  /* WHY THIS WALKS Form.plan() INSTEAD OF NAMING FIELDS. Every kind       */
+  /* except weight and height is filled by one generic branch keyed on    */
+  /* the spec's own kind - consent, choice (single or multiple), count -  */
+  /* which is what makes a fork's added choice field prefill with no edit */
+  /* here, the same forkability property renderFields() gives to          */
+  /* rendering itself (tests/your-page.test.mjs section 1, widened in     */
+  /* section 10 to prove it for prefill too). Weight is excluded by name  */
+  /* because the ticket rules it out categorically, not because the spec  */
+  /* says anything different about its kind; height is filled by name for */
+  /* the same reason form.js's own addHeightFeetInches() is - "ft" carries*/
+  /* no `store` of its own (site.config.js's own comment on the length    */
+  /* kind's compound pair), so there is no generic store to read the      */
+  /* imperial main box back from, and buildRecord() already computed the  */
+  /* fixed feet/inches pair that box needs.                               */
+
+  function heightBoxes() {
+    return {
+      cm: $("entry-height-metric"),
+      feet: $("entry-height-imperial"),
+      inches: $("entry-height-imperial-compound"),
+    };
+  }
+
+  function fillHeight(height) {
+    if (!height || typeof height !== "object") return;
+    const boxes = heightBoxes();
+    if (boxes.cm && typeof height.cm === "number") boxes.cm.value = String(height.cm);
+    if (boxes.feet && typeof height.feet === "number") {
+      boxes.feet.value = String(height.feet);
+    }
+    if (boxes.inches && typeof height.inches === "number") {
+      boxes.inches.value = String(height.inches);
+    }
+  }
+
+  /*
+   * Mirrors form.js's own applyUnits(): the row for the checked unit
+   * system shown, every other one hidden, via the same data-units-group
+   * attribute buildMeasuredField() writes. Needed here because setting
+   * `.checked` on a radio programmatically fires no "change" event in a
+   * real browser, so form.js's own listener (wired to that event) never
+   * runs on its own - and duplicating five lines is cheaper than a
+   * second cross-file global for the one caller that needs them.
+   */
+  function applyUnitsVisibility() {
+    const container = $("entry-fields");
+    if (!container) return;
+    const units = currentUnits();
+    Array.prototype.forEach.call(
+      container.querySelectorAll("[data-units-group]"),
+      function (group) {
+        show(group, group.getAttribute("data-units-group") === units);
+      });
+  }
+
+  function prefillFields(record) {
+    if (!Form || !record || typeof record !== "object") return;
+    const container = $("entry-fields");
+    Form.plan().forEach(function (entry) {
+      if (entry.name === "weight") return; // never weight - #370.
+      if (entry.name === "height") { fillHeight(record.height); return; }
+      if (!(entry.name in record)) return;
+      const value = record[entry.name];
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        if (box) box.checked = value === true;
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        const chosen = Array.isArray(value) ? value : [];
+        Array.prototype.forEach.call(
+          container.querySelectorAll('input[name="' + entry.name + '"]'),
+          function (input) { input.checked = chosen.indexOf(input.value) !== -1; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        if (field) {
+          field.value = value === null || value === undefined ? "" : String(value);
+        }
+      }
+    });
+
+    const units = record.entered && record.entered.units;
+    if (units === "metric" || units === "imperial") {
+      Array.prototype.forEach.call(
+        document.querySelectorAll('input[name="units"]'),
+        function (input) { input.checked = input.value === units; });
+      applyUnitsVisibility();
+    }
+  }
+
+  /*
+   * The reverse: what a member's own prior answers must not survive
+   * past, on a device somebody else might sit down at next. Called from
+   * clearMemberData() above - the one function idle expiry and Sign out
+   * both run - so this is "the clearing function's coverage extends to
+   * any prefill state it holds" from the ticket, not a second clearing
+   * mechanism. Clears exactly what prefillFields() can set and nothing
+   * else: a member's own not-yet-submitted weight was never prefilled,
+   * so it is not reset here either.
+   */
+  function clearPrefilledFields() {
+    if (!Form) return;
+    const container = $("entry-fields");
+    Form.plan().forEach(function (entry) {
+      if (entry.name === "weight") return;
+      if (entry.name === "height") {
+        const boxes = heightBoxes();
+        if (boxes.cm) boxes.cm.value = "";
+        if (boxes.feet) boxes.feet.value = "";
+        if (boxes.inches) boxes.inches.value = "";
+        return;
+      }
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        if (box) box.checked = false;
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        Array.prototype.forEach.call(
+          container.querySelectorAll('input[name="' + entry.name + '"]'),
+          function (input) { input.checked = false; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        if (field) field.value = "";
+      }
+    });
+
+    const F = root.BinderFields;
+    const fallback = F ? F.defaultSystem() : "imperial";
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { input.checked = input.value === fallback; });
+    applyUnitsVisibility();
   }
 
   /* ------------------------------------------------------------------ */
@@ -553,6 +739,7 @@
 
     renderTrend(trendSlot);
     renderEntries(entriesSlot, function () { loadEntries(); });
+    prefillFromEntries();
   }
 
   /* ------------------------------------------------------------------ */

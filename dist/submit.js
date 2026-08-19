@@ -7,6 +7,7 @@
 
   const UI = root.BinderUI;
   const Session = root.BinderSession;
+  const Form = root.BinderForm;
   const $ = UI.byId;
   const show = UI.show;
 
@@ -42,6 +43,15 @@
   let entries = [];
   let downloadUrl = null;
   let inflight = null;
+   
+   
+   
+   
+   
+   
+   
+   
+  let prefillApplied = false;
 
   function clearMemberData() {
     if (inflight) {
@@ -49,6 +59,8 @@
       inflight = null;
     }
     entries = [];
+    prefillApplied = false;
+    clearPrefilledFields();
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       downloadUrl = null;
@@ -57,6 +69,160 @@
     emptyOut($("trend-slot"));
     const toggle = $("corrections-toggle");
     if (toggle && toggle.parentNode) toggle.parentNode.removeChild(toggle);
+  }
+
+  
+
+  function newestCurrentRecord() {
+    const current = entries.find(function (e) { return !e.superseded; });
+    return current && current.record && typeof current.record === "object"
+      ? current.record : null;
+  }
+
+  function prefillFromEntries() {
+    if (prefillApplied) return;
+    const record = newestCurrentRecord();
+    if (!record) return;
+    prefillApplied = true;
+    prefillFields(record);
+  }
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+
+  function heightBoxes() {
+    return {
+      cm: $("entry-height-metric"),
+      feet: $("entry-height-imperial"),
+      inches: $("entry-height-imperial-compound"),
+    };
+  }
+
+  function fillHeight(height) {
+    if (!height || typeof height !== "object") return;
+    const boxes = heightBoxes();
+    if (boxes.cm && typeof height.cm === "number") boxes.cm.value = String(height.cm);
+    if (boxes.feet && typeof height.feet === "number") {
+      boxes.feet.value = String(height.feet);
+    }
+    if (boxes.inches && typeof height.inches === "number") {
+      boxes.inches.value = String(height.inches);
+    }
+  }
+
+  
+
+  function applyUnitsVisibility() {
+    const container = $("entry-fields");
+    if (!container) return;
+    const units = currentUnits();
+    Array.prototype.forEach.call(
+      container.querySelectorAll("[data-units-group]"),
+      function (group) {
+        show(group, group.getAttribute("data-units-group") === units);
+      });
+  }
+
+  function prefillFields(record) {
+    if (!Form || !record || typeof record !== "object") return;
+    const container = $("entry-fields");
+    Form.plan().forEach(function (entry) {
+      if (entry.name === "weight") return;  
+      if (entry.name === "height") { fillHeight(record.height); return; }
+      if (!(entry.name in record)) return;
+      const value = record[entry.name];
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        if (box) box.checked = value === true;
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        const chosen = Array.isArray(value) ? value : [];
+        Array.prototype.forEach.call(
+          container.querySelectorAll('input[name="' + entry.name + '"]'),
+          function (input) { input.checked = chosen.indexOf(input.value) !== -1; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        if (field) {
+          field.value = value === null || value === undefined ? "" : String(value);
+        }
+      }
+    });
+
+    const units = record.entered && record.entered.units;
+    if (units === "metric" || units === "imperial") {
+      Array.prototype.forEach.call(
+        document.querySelectorAll('input[name="units"]'),
+        function (input) { input.checked = input.value === units; });
+      applyUnitsVisibility();
+    }
+  }
+
+  
+
+  function clearPrefilledFields() {
+    if (!Form) return;
+    const container = $("entry-fields");
+    Form.plan().forEach(function (entry) {
+      if (entry.name === "weight") return;
+      if (entry.name === "height") {
+        const boxes = heightBoxes();
+        if (boxes.cm) boxes.cm.value = "";
+        if (boxes.feet) boxes.feet.value = "";
+        if (boxes.inches) boxes.inches.value = "";
+        return;
+      }
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        if (box) box.checked = false;
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        Array.prototype.forEach.call(
+          container.querySelectorAll('input[name="' + entry.name + '"]'),
+          function (input) { input.checked = false; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        if (field) field.value = "";
+      }
+    });
+
+    const F = root.BinderFields;
+    const fallback = F ? F.defaultSystem() : "imperial";
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { input.checked = input.value === fallback; });
+    applyUnitsVisibility();
   }
 
    
@@ -490,6 +656,7 @@
 
     renderTrend(trendSlot);
     renderEntries(entriesSlot, function () { loadEntries(); });
+    prefillFromEntries();
   }
 
    
