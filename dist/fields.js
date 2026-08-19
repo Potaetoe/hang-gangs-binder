@@ -56,7 +56,7 @@
   function spec(given) {
     const site = given || root.BINDER_SITE;
     if (!site) {
-      throw new Error("apps/site.config.js has not been loaded, so " +
+      throw new Error("apps/web/site.config.js has not been loaded, so " +
         "nothing knows what this form asks: it goes in a <script> tag " +
         "before this file, or it is passed in.");
     }
@@ -70,7 +70,7 @@
     all.forEach(function (one) {
       if (KINDS.indexOf(one.kind) === -1) {
         throw new Error('The spec gives field "' + one.name + '" the kind "' +
-          one.kind + '", and apps/fields.js implements only: ' +
+          one.kind + '", and apps/web/fields.js implements only: ' +
           KINDS.join(", ") + ".");
       }
     });
@@ -263,7 +263,7 @@
       const derivation = DERIVATIONS[one.derivation];
       if (!derivation) {
         throw new Error('The spec asks for a "' + one.derivation +
-          '" derivation on field "' + one.name + '", and apps/fields.js ' +
+          '" derivation on field "' + one.name + '", and apps/web/fields.js ' +
           "implements no such thing.");
       }
       measure.from = one.from;

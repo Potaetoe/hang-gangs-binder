@@ -62,6 +62,18 @@
    
    
 
+  
+
+  function parseRecord(raw) {
+    if (typeof raw !== "string") return null;
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      detail("a stored record did not parse as JSON");
+      return null;
+    }
+  }
+
   function currentUnits() {
     return UI.checkedValue("units", root.BinderFields.defaultSystem());
   }
@@ -436,7 +448,9 @@
         detail("GET /my-entries answered with no usable listing");
         throw new Error("");
       }
-      entries = payload.entries;
+      entries = payload.entries.map(function (entry) {
+        return Object.assign({}, entry, { record: parseRecord(entry.record) });
+      });
     } catch (error) {
       if (error && error.name === "AbortError") return;
       detail(error && error.message ? error.message : "the entries listing " +
@@ -445,6 +459,18 @@
         emptyOut(entriesSlot);
         entriesSlot.appendChild(el("p", { class: "muted",
           text: "Your entries could not be loaded — reload the page." }));
+      }
+       
+       
+       
+       
+       
+       
+       
+      if (trendSlot) {
+        emptyOut(trendSlot);
+        trendSlot.appendChild(el("p", { class: "muted",
+          text: "Your trend could not be loaded — reload the page." }));
       }
       return;
     } finally {

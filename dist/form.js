@@ -428,6 +428,8 @@
     return wrap;
   }
 
+  
+
   function buildChoiceField(entry) {
     if (entry.multiple) {
       const fieldset = el("fieldset", { class: "field" }, [
@@ -442,6 +444,9 @@
         ]));
       });
       fieldset.appendChild(choices);
+      fieldset.appendChild(el("p", {
+        class: "field-error", id: "error-" + entry.name, hidden: "",
+      }));
       return fieldset;
     }
 
@@ -463,6 +468,7 @@
     return el("div", { class: "field" }, [
       el("label", { for: "entry-" + entry.name, text: entry.label }),
       select,
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
     ]);
   }
 
@@ -660,11 +666,12 @@
       };
       const problems = validate(input, session ? session.username : null);
       if (problems.length) {
+        
+
         const sessionProblem = problems.find(function (problem) {
           return problem.field === "telegram";
         });
-        say(sessionProblem ? sessionProblem.message : "",
-          sessionProblem ? "bad" : null);
+        say((sessionProblem || problems[0]).message, "bad");
         showProblems(problems);
         return;
       }

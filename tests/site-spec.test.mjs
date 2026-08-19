@@ -3,8 +3,8 @@
  *
  *     node tests/site-spec.test.mjs
  *
- * Subject: apps/site.config.js, the file a fork edits, and
- * apps/fields.js, the only thing that reads it.
+ * Subject: apps/web/site.config.js, the file a fork edits, and
+ * apps/web/fields.js, the only thing that reads it.
  *
  * WHY THIS LIVES IN tests/ AND CARRIES ITS OWN RUNNER. The 0.9 wave
  * treats the dev/ apparatus as ending with the surfaces it describes
@@ -32,7 +32,7 @@ const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 /* `tag` is not decoration: a data: URL is its own module specifier, so
    the same file imported twice with the same bytes is served from the
    module cache and evaluated once. Section 5 needs a SECOND, ignorant
-   copy of apps/fields.js in this process, and the tag is what makes the
+   copy of apps/web/fields.js in this process, and the tag is what makes the
    specifier differ. */
 const load = async (path, tag) => {
   const source = await readFile(HERE(path), "utf8");
@@ -65,7 +65,7 @@ check("the spec is one object", SITE && typeof SITE === "object");
 
 // In the order the pages will load them - the config's <script> tag
 // first - the spec is frozen before anything reads it at all. This is
-// the narrower of the two guarantees and the reason apps/fields.js
+// the narrower of the two guarantees and the reason apps/web/fields.js
 // still freezes at load as well as on the read: the gap it closes is
 // between that file evaluating and the page's first derivation, which
 // is a whole page render. Nothing above this line reads the spec, so
@@ -302,7 +302,7 @@ check("converting across kinds is refused rather than answered",
  * either file pins which comes first. Everything above loads the config
  * first, which is the safe order and therefore the one that cannot
  * catch this: with the reader first, the freeze used to happen while
- * apps/fields.js evaluated and root.BINDER_SITE was not there yet, so
+ * apps/web/fields.js evaluated and root.BINDER_SITE was not there yet, so
  * deepFreeze returned on its first guard, nothing threw, every
  * derivation went on working, and the spec stayed editable for the life
  * of the page. A conditional property with no error behind it is the
@@ -311,7 +311,7 @@ check("converting across kinds is refused rather than answered",
  * edited after it renders) did not.
  *
  * So this section loads them the other way round in this same process.
- * The shipped pair is put aside, a second copy of apps/fields.js is
+ * The shipped pair is put aside, a second copy of apps/web/fields.js is
  * evaluated with no spec in sight, and both halves are asserted: a read
  * before any spec exists is refused loudly, and a read after the spec
  * arrives freezes it exactly as the shipped order does.
@@ -330,7 +330,7 @@ check("the reader loaded first derives nothing, and says so loudly",
       EARLY.measures();
       return false;
     } catch (error) {
-      return String(error.message).includes("apps/site.config.js");
+      return String(error.message).includes("apps/web/site.config.js");
     }
   })());
 

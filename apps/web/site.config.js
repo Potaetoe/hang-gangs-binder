@@ -5,8 +5,8 @@
  * and what your form asks. Everything the site shows about either -
  * the name over the door, the tab titles, the boxes on the weigh-in
  * form, the list of things the charts can draw - is derived from what
- * is written below. apps/fields.js is where the deriving happens; you
- * should not have to open it.
+ * is written below. apps/web/fields.js is where the deriving happens;
+ * you should not have to open it.
  *
  * HOW TO CHANGE THE GROUP'S NAME. Change `group.name`. That is the
  * whole of it. A name kept by hand in five pages and a checker fails
@@ -33,14 +33,14 @@
  *              BMI is the one here. A computed row names the fields it
  *              is worked out `from` and the `derivation` that does the
  *              arithmetic, and the arithmetic itself lives in
- *              apps/fields.js - the one thing on this page that is
+ *              apps/web/fields.js - the one thing on this page that is
  *              code rather than data, because arbitrary arithmetic is
  *              not something a table can hold safely.
  *   consent    a box somebody ticks. Never charted.
  *
  * WHAT MAY BE WRITTEN HERE. Text, numbers, true/false, lists and
  * tables of them - and comments, as many as are useful. No functions,
- * no arithmetic, nothing computed: apps/fields.js reads this file as
+ * no arithmetic, nothing computed: apps/web/fields.js reads this file as
  * DATA, and 0.9-M2 loads it with a <script> tag into the page that
  * handles cleartext, where anything cleverer than a value is code
  * running beside the encryption. Nothing refuses it for you yet - a

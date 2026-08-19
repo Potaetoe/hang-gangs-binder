@@ -123,14 +123,6 @@
   </div>
 </div>
 
-<div class="card narrow" data-dev-session hidden>
-  <p class="caution">Development session</p>
-  <p class="muted small">
-    Signed in as <strong data-dev-identity></strong> through the local
-    test sign-in — not a Telegram sign-in.
-  </p>
-</div>
-
 <!--
   One page, stacked: form, then trend, then entries (DESIGN.md, "Your
   page"). Three sections, always in flow - no tabs, no pane switching,
@@ -245,17 +237,29 @@
 </div>
 
 <!--
-  The pre-leave notice (#294 F3, ruled 2026-08-14). MECHANISM ONLY: the
-  exact wording is authored at the 0.9-M4 register sitting, and the
-  sentence below is a placeholder that names what it will say rather
-  than the shipped copy - it is deliberately plain rather than styled as
-  a warning, matching every other .hint on this page.
+  The pre-leave notice's SLOT, not its words (#294 F3, ruled 2026-08-14).
+  A comment marking a placeholder is not a mechanism - ./run build
+  strips comments, so the fix-wave review (#353 comment 5337542314,
+  F7) found this slot shipping invented member-facing copy in dist
+  with no marker left to say it was never ruled. The fix adopts the
+  door's own slot mechanism exactly (index.html's privacy-line, #355
+  comment 5337476261): bracketed filler that cannot read as shipped
+  copy, plus a data-pending-copy ATTRIBUTE - build strips comments,
+  never attributes, so this is what actually survives to dist. The
+  owner authors the exact sentence at the 0.9-M4 register sitting;
+  this slice places where it lands and writes none of it - deliberately
+  plain rather than styled as a warning, matching every other .hint on
+  this page.
+
+  tools/check_web.py's RULED_LINES pins the filler text below under the
+  same #355 ruling: a swap-in - the real sentence at M4, or anything
+  else, at any time - touches that pin in the same change or the gate
+  catches the drift.
 -->
 <div class="stack-tight">
-  <p class="hint" id="pre-leave-notice">
-    <!-- PLACEHOLDER — real wording ships at the 0.9-M4 register sitting. -->
-    Leaving the group? Delete your own entries first, or ask an admin to
-    remove them afterward.
+  <p class="hint" id="pre-leave-notice" data-pending-copy="0.9-M4">
+    [Pre-leave notice — the owner writes this sentence at the 0.9-M4
+    register sitting.]
   </p>
 </div>
 

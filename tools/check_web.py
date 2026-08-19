@@ -6283,9 +6283,9 @@ RULED_LINES = {
     #
     # "pre-leave-notice" is not ruled copy either - it is the 0.9-M4
     # placeholder for the pre-leave notice (#294 F3), pinned by the same
-    # owner ruling that pins index.html's "privacy-line" (#355 comment
-    # 5337476261, carried into this page by the #353 fix-wave review,
-    # finding F7). The pin does not claim the bracketed filler is
+    # owner ruling that pins the door page's own equivalent slot (#355
+    # comment 5337476261, carried into this page by the #353 fix-wave
+    # review, finding F7). The pin does not claim the bracketed filler is
     # governed prose; it claims the SLOT's contents are governed, so a
     # swap-in - the real sentence at M4, or anything else, at any time -
     # has to touch this line in the same change rather than drift past

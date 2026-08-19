@@ -29,12 +29,12 @@
  * at 0.9-M3; until then it is this constant and nothing else.
  *
  * ------------------------------------------------------------------
- * THE RECORD CONTRACT, derived from apps/site.config.js.
+ * THE RECORD CONTRACT, derived from apps/web/site.config.js.
  *
  * A row's plaintext is opaque to POST /submit on purpose, so this file
  * is the first thing that has an opinion about its shape - and it takes
  * that opinion from the spec rather than from a list written here. For a
- * field named N in apps/site.config.js:
+ * field named N in apps/web/site.config.js:
  *
  *   weight / length   record[N] is an object keyed by the unit table's
  *                     own `store` names: record.weight.kg,
@@ -150,7 +150,7 @@ const NOT_ENOUGH = "Not enough people for this view.";
 /*
  * The allowlist for a choice field that keeps its list somewhere else.
  *
- * apps/site.config.js's `choicesFrom` points at a list a page loads -
+ * apps/web/site.config.js's `choicesFrom` points at a list a page loads -
  * apps/web/countries.js is the one that exists - and that file assigns
  * to `window`, which a Worker does not have. So the Worker's allowlist
  * for such a field is the SHAPE its list is keyed by, declared here in
@@ -164,7 +164,7 @@ const NOT_ENOUGH = "Not enough people for this view.";
  * holds gets, so admitting one discloses nothing.
  *
  * A `choicesFrom` name this file has never heard of THROWS rather than
- * being waved through, the same direction apps/fields.js refuses an
+ * being waved through, the same direction apps/web/fields.js refuses an
  * unknown derivation: answering would mean validating a filter against
  * no rule at all.
  */
@@ -197,10 +197,10 @@ function num(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/* apps/fields.js's exports, read at call time. Both imports above assign
-   to globalThis, and reading them here rather than at module scope keeps
-   this file indifferent to the order a bundler evaluates them in - the
-   same reason apps/fields.js resolves its own spec inside spec(). */
+/* apps/web/fields.js's exports, read at call time. Both imports above
+   assign to globalThis, and reading them here rather than at module scope
+   keeps this file indifferent to the order a bundler evaluates them in -
+   the same reason apps/web/fields.js resolves its own spec inside spec(). */
 function api() {
   return globalThis.BinderFields;
 }
@@ -247,7 +247,7 @@ function partitionOf(measure, site) {
  * either, which is the same overlay attack the partition rule closes,
  * arriving through the decimal point.
  *
- * The factor comes from apps/fields.js, which computes it from the
+ * The factor comes from apps/web/fields.js, which computes it from the
  * spec's own `per` numbers - so there is exactly one place a conversion
  * can be wrong and it is the spec's table.
  */
@@ -265,7 +265,7 @@ function spread(value, measure, site, part) {
 }
 
 /* A source field's value in its kind's BASE unit, which is what a
-   computed field's arithmetic is defined against (apps/fields.js's
+   computed field's arithmetic is defined against (apps/web/fields.js's
    DERIVATIONS take kg and cm). The base's `store` name is read from the
    spec rather than assumed, so a fork that stores its base under another
    property still derives. */
@@ -364,7 +364,7 @@ function fault(message) {
  *
  * EVERY REFUSAL HERE IS ABOUT THE CONFIGURATION, NEVER ABOUT THE GROUP.
  * The measure list, the filter list and the choice values are all in
- * apps/site.config.js, which anybody may read in the repository - so a
+ * apps/web/site.config.js, which anybody may read in the repository - so a
  * 400 from this function discloses exactly what a fork's own config file
  * already says, and nothing about who is in the binder. What a caller
  * must never be able to tell apart is a filter value nobody holds from

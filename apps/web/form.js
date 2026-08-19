@@ -791,12 +791,10 @@
          * write into), so the general status line is the only place a
          * member ever sees it. Every other problem DOES get its own
          * inline slot from showProblems() below, but the status line
-         * still says something rather than nothing (0.9-M2-S2 fix wave
-         * 1, finding F6): a required choice with no error slot used to
-         * refuse in total silence, and closing that gap at the field
-         * means nothing if the general status stays blank too - a
-         * member scanning the top of the form for what went wrong
-         * would see no acknowledgment that anything did.
+         * still says something rather than nothing: a silent field-level
+         * refusal with a blank status line leaves a member scanning the
+         * top of the form with no acknowledgment that anything went
+         * wrong at all.
          */
         const sessionProblem = problems.find(function (problem) {
           return problem.field === "telegram";
