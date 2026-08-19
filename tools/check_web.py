@@ -2618,24 +2618,24 @@ def footer_problems(text, themed):
         return problems
 
     # F2 (0.9-M2-S6 fix wave 1, #82): "directly below the row" is a
-    # claim about what comes AFTER the row, so that is the only text
-    # this searches. Concatenating inside[:span[0]] (before the row)
-    # onto inside[span[1]:] (after it) would prove the editor is
-    # PRESENT somewhere in the footer while throwing away where - an
-    # editor placed above the row would land at the front of that
-    # concatenation, reading `between` a few lines down as empty and
-    # passing the position check on a footer where the editor actually
-    # sits above the row.
-    rest = inside[span[1]:]
+    # claim about what comes AFTER the row, so the EDITOR SEARCH reads
+    # only that text. Concatenating inside[:span[0]] (before the row)
+    # onto inside[span[1]:] (after it) before this search would prove
+    # the editor is PRESENT somewhere in the footer while throwing away
+    # where - an editor placed above the row would land at the front of
+    # that concatenation, reading `between` a few lines down as empty
+    # and passing the position check on a footer where the editor
+    # actually sits above the row.
+    after_row = inside[span[1]:]
     within = inside[span[0]:span[1]]
 
-    # The custom-palette editor, cut out of `rest` the same way the row
-    # was cut out of `inside` - the one element besides the row a themed
-    # footer may now hold (0.9-M2-S6, design mandate 1). Required rather
-    # than merely allowed: every themed page carries the same fifth chip,
-    # so every themed page owes the editor it opens, the same parity the
-    # four named palettes already hold.
-    editor = THEME_EDITOR_DETAILS.search(rest)
+    # The custom-palette editor, cut out of `after_row` the same way the
+    # row was cut out of `inside` - the one element besides the row a
+    # themed footer may now hold (0.9-M2-S6, design mandate 1). Required
+    # rather than merely allowed: every themed page carries the same
+    # fifth chip, so every themed page owes the editor it opens, the
+    # same parity the four named palettes already hold.
+    editor = THEME_EDITOR_DETAILS.search(after_row)
     if not editor:
         problems.append(
             "offers a palette and carries no <details class=\"more\"> "
@@ -2646,12 +2646,12 @@ def footer_problems(text, themed):
             "colors from")
         return problems
 
-    editor_span, editor_unreadable = element_span(rest, editor)
+    editor_span, editor_unreadable = element_span(after_row, editor)
     if editor_unreadable:
         problems.append(editor_unreadable)
         return problems
 
-    between = rest[:editor_span[0]]
+    between = after_row[:editor_span[0]]
     if between.strip():
         problems.append(
             "carries markup or words between the swatch row and its "
@@ -2660,7 +2660,22 @@ def footer_problems(text, themed):
             "(design mandate 1), so anything there is the footer "
             "drifting again")
 
-    rest = rest[editor_span[1]:]
+    # F2 (0.9-M2-S6 fix wave 2, #82): only the EDITOR SEARCH above needs
+    # position preserved - "directly below" is a claim about order, and
+    # order only means something relative to the row. The link/markup/
+    # words arms below make no positional claim at all ("the footer is
+    # the row and its editor, and nothing else" - order-blind by the
+    # ruling's own words), so they read for everything that ISN'T the
+    # row or the editor: what came before the row, plus what's left of
+    # `after_row` once the editor's own span is cut out of it. Wave 1
+    # fixed the editor search by narrowing `rest` to after_row and then
+    # reused that SAME narrowed `rest` for these arms too - so content
+    # before the row (an off-site link, markup, bare words) stopped
+    # being read by anything, the exact hole #274 closed reopened one
+    # page earlier. Confirmed by the new before-the-row fixture in
+    # dev/check_web.test.py: it passes wave 1's function silently and
+    # is refused here.
+    rest = inside[:span[0]] + after_row[editor_span[1]:]
     if THEME_EDITOR_DETAILS.search(rest):
         problems.append(
             "carries more than one <details class=\"more\"> custom-"
