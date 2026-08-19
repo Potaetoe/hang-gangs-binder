@@ -16,11 +16,21 @@
  * member's number to every signed-in member - so a one-person view
  * drawing its true value is the design here, not a hole in it.
  *
- * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling, band merging
- * and the one-partition rule all still stand below and all obey whatever
- * floor they are given; at 0 every one of them is dormant. The way back
- * is a number, which is why tests/charts-aggregate.test.mjs still proves
- * the whole machinery at a floor of 5 rather than deleting those arms.
+ * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling and band
+ * merging all still stand below and all obey whatever floor they are
+ * given; at 0 each of them is the IDENTITY - reached by the same code
+ * path a raised floor takes, rather than skipped. The way back is a
+ * number, which is why tests/charts-aggregate.test.mjs still proves the
+ * whole machinery at a floor of 5 rather than deleting those arms.
+ *
+ * THE ONE-PARTITION RULE IS NOT ON THAT LIST, and reading it as one of
+ * them is the mistake worth naming here. It takes no floor - partitionOf()
+ * and spread() below have no floor to take - and it holds at EVERY floor,
+ * 0 included, because it is not a suppression rule: it is what stops two
+ * independently-binned unit systems being overlaid into a finer reading
+ * than either of them gives. #243 ruling 4 grouped it with the machinery
+ * above, which is a grouping by where the code sits and not by what the
+ * setting reaches (#371, the S10 review, finding F1).
  *
  * THE FLOOR ARRIVES THROUGH ONE SEAM AND THE WIRE IS NOT IT.
  * aggregate()'s fourth argument is a SETTINGS OBJECT read on the server
@@ -43,16 +53,67 @@
  * is what makes raising the setting a one-line change rather than a
  * rewrite.
  *
- * WHAT THE ANSWER CARRIES, since #371 reshaped it:
+ * WHAT THE ANSWER CARRIES, since #371 reshaped it. This is the RESPONSE
+ * CONTRACT, stated whole here rather than only inside the functions that
+ * build it: the page's builder reads this header, and a shape they have
+ * to reconstruct from suppressBins() and a spec comment is a shape they
+ * will get wrong (#371, the S10 review, finding F3).
  *
  *   distribution   fixed bands over the field spec's own min, max and
  *                  bin width. Categories are never bands.
+ *
+ *                  EVERY BAND THE SPEC ASKS FOR IS PRESENT, THE EMPTY
+ *                  ONES INCLUDED, each reading `count: 0`. The page
+ *                  draws an empty slot and never rebuilds the grid to
+ *                  find the gaps - the gaps are the shape, and dropping
+ *                  a zero band would redraw the axis shorter for a
+ *                  small group, which is exactly the comparability the
+ *                  fixed grid was chosen for.
+ *
+ *                  THE TWO OUTER EDGES ARE THE SPEC'S OWN MINIMUM AND
+ *                  MAXIMUM - `bins[0].from` and the last band's `to` -
+ *                  and no edge is ever null: the open edge #351 needed
+ *                  died with the data-derived edge that made it
+ *                  necessary. Every edge is an object keyed by unit
+ *                  system, one number per system, all of them the
+ *                  partition's own edge converted.
+ *
+ *                  A view where nobody has a value for the measure
+ *                  draws NOTHING - `distribution: null` and the honest
+ *                  sentence - which is a different answer from a grid
+ *                  whose bands all read zero, and the page has to tell
+ *                  them apart.
+ *
  *   trend          one point per month, the mean of the people who
- *                  submitted in it.
+ *                  submitted in it. A month nobody submitted in carries
+ *                  NO POINT; bridging the gap so the line is unbroken
+ *                  is the page's job, because a value invented here
+ *                  would be indistinguishable from a measured one.
+ *
  *   groups         the GROUP-MAKEUP block: one entry per categorical
- *                  field, each a list of count lines. This is where
- *                  gender, affiliation and country live now - as plain
- *                  counts of unique members rather than as an axis.
+ *                  field, `{ field, label, term, multiple, values }`,
+ *                  and `values` is that field's count lines. This is
+ *                  where gender, affiliation and country live now - as
+ *                  plain counts of unique members rather than as an
+ *                  axis. `multiple` is there because it changes how the
+ *                  lines read: on a field a member may answer more than
+ *                  once they sum to holdings rather than to people.
+ *
+ *                  EVERY VALUE THE SPEC LISTS IS A LINE, the ones
+ *                  nobody holds included, reading `count: 0` - printing
+ *                  them is what stops a reader inferring the missing
+ *                  values themselves. A line is
+ *                  `{ value, label, count, bucket }`.
+ *
+ *                  THE BLANK IS ALWAYS A LINE TOO, `value: null` with
+ *                  `bucket: "blank"`, even at zero: a chart without it
+ *                  claims a completeness the data does not have.
+ *
+ *                  A field whose choices live outside the spec lists no
+ *                  zeros - `country` is the one - because the list is
+ *                  not here to enumerate. Those lines are the codes the
+ *                  group really holds, and they carry no label, so the
+ *                  page holding the list renders the name.
  *
  * THE GROUP-MAKEUP BLOCK IS NOT THE FILTER ECHO, and the two are easy to
  * confuse into one rule. The echo hands a caller back the value THEY
@@ -64,6 +125,16 @@
  * listed. Each member counts once and their most recent current entry
  * decides their category, so the block describes the same people the
  * rest of the answer does.
+ *
+ * THE COUNTRY LINES ARE THE HARD CASE AND THEY HAVE THEIR OWN YES. That
+ * field's choices live outside the spec, so its lines can only be the
+ * codes the group actually holds - which is the one place the block
+ * comes closest to the enumeration mandate 5 refuses, and it does it in
+ * every filtered view as well. The owner ruled it explicitly on
+ * 2026-08-19 (#371 comment 5347769320): "the group sees its own makeup;
+ * the members-only door is what protects it". So the protection here is
+ * the session gate on GET /charts-data and not a rule inside this file,
+ * and widening the readership is what would re-take the question.
  *
  * ------------------------------------------------------------------
  * THE RECORD CONTRACT, derived from apps/web/site.config.js.
@@ -660,9 +731,12 @@ function fill(bins, values, range, width) {
  *
  * AT A FLOOR OF 0 THIS IS THE IDENTITY, and deliberately so rather than
  * being skipped: every band clears a floor of zero on its own, so each
- * one is emitted alone and the drawn grid is the spec's grid, empty
- * bands included. One path, exercised at every floor, is why the shipped
- * world and the raised one cannot drift apart.
+ * one is emitted alone. One path, exercised at every floor, is why the
+ * shipped world and the raised one cannot drift apart. What that leaves
+ * on the wire - every band the spec asks for, the empty ones reading
+ * zero - is part of the response contract, and that contract is stated
+ * whole in this file's header under WHAT THE ANSWER CARRIES, where a
+ * page's builder reads it.
  *
  * A distribution is ordered and contiguous, so folding its small bands
  * into an "Other" would destroy the shape that makes it worth drawing.
@@ -983,6 +1057,10 @@ function binsOf(people, measure, site, part, floor) {
  * THE BLANK IS ALWAYS A LINE TOO, even at zero. A chart without it
  * claims a completeness the data does not have: "60% male" reads very
  * differently from "60% of the third who answered".
+ *
+ * The reasons are here; the SHAPE these lines arrive in is in this
+ * file's header under WHAT THE ANSWER CARRIES, which is the one place a
+ * page's builder has to read.
  */
 function cellsOf(people, measure, floor) {
   const counts = new Map();

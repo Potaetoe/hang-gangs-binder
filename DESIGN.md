@@ -385,7 +385,14 @@ drawing its true value is this design working, not a hole in it.
   "Other: 0"). **Each member counts once, and their most recent entry
   decides their current category**; the filter uses that same
   latest-entry person rule. Asking for a category as a measure is
-  refused exactly as an unknown measure is.
+  refused exactly as an unknown measure is. **The country lines name the
+  countries the group really holds**, in filtered views as well — the
+  owner ruled that one explicitly on 2026-08-19 (#371 comment
+  5347769320), since a list whose choices live outside the spec can carry
+  no zeros and so says which countries are present: *"the group sees its
+  own makeup; the members-only door is what protects it."* That door is
+  the protection, which is why widening the readership re-takes this
+  question.
 - **Distributions draw on fixed bands from the spec.** The edges are
   the field's own minimum, maximum and band width; they never move to
   fit the data and never merge. Every band with at least one person
@@ -393,6 +400,13 @@ drawing its true value is this design working, not a hole in it.
   no suppression notes. Fixed edges are what makes two views
   comparable, and they are also why no edge can report the heaviest
   member's band the way an edge fitted to the group did (#351, F2).
+  **A range is set so that no form-valid member draws clipped** — for a
+  computed field with no unit table of its own, that means deriving it
+  from the form's own bounds rather than picking a cap that looks
+  reasonable (owner ruling, 2026-08-19, #371 comment 5347769320: *"in a
+  gaining community the high end IS the story"*). The arithmetic sits
+  beside the numbers in `apps/web/site.config.js`, which is their one
+  home.
 - **Every month with data draws its true mean, and lines never break.**
   Truly empty months are bridged on the page, and a bridged segment
   looks exactly like a real one. The member's own "You" line follows
@@ -403,9 +417,11 @@ drawing its true value is this design working, not a hole in it.
 
 **The suppression machinery stays, and the floor is a number an admin
 can move.** Nothing was ripped out of `server/charts-agg.js`: the
-`Other` bucket, person-pooling, band merging and the one-partition rule
-all remain and obey whatever floor the setting holds. At 0 they are
-dormant. The way back is a number, so this group's choice is not every
+`Other` bucket, person-pooling and band merging all remain and obey
+whatever floor the setting holds. At 0 each of them is the identity,
+reached by the same code path a raised floor takes rather than skipped —
+and the one-partition rule below is not one of them, because it obeys no
+floor at all. The way back is a number, so this group's choice is not every
 fork's fate — the setting and its shipped default are stated with the
 other Settings defaults under **Admin surfaces** below, and
 `tests/charts-aggregate.test.mjs` proves the machinery at a raised
@@ -426,9 +442,13 @@ What a raised floor then means:
 
 **One partition, not two.** Both unit systems report the same groups
 under converted edges — at every floor, because it is not a suppression
-rule. Two independently-binned partitions can be differenced back into
-sub-floor cells, demonstrated in 2899 of 3000 random groups, which is
-why this is a rule rather than a caution.
+rule and takes no floor at all. Two independently-binned partitions can
+be differenced back into sub-floor cells, demonstrated in 2899 of 3000
+random groups, which is why this is a rule rather than a caution. The
+#243 sitting's ruling 4 listed it among the suppression machinery above;
+that grouping is about where the code sits, not about what the setting
+reaches, and this paragraph is the sentence that governs (#371, the
+0.9-M2-S10 review, finding F1).
 
 **A weight and a height and a country is a person to anyone who knows
 her**, with or without a name column. That sentence is still the test
