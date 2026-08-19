@@ -30,7 +30,6 @@
       expiresAt: new Date(expires).toISOString(),
       username: value.username.trim().toLowerCase(),
       isAdmin: value.isAdmin === true,
-      isDev: value.isDev === true,
       telegramId: value.telegramId == null ? null : String(value.telegramId),
     });
   }
@@ -68,7 +67,7 @@
     if (announcing) return;
     announcing = true;
     try {
-      announce(null);
+      announce();
     } finally {
       announcing = false;
     }
@@ -126,7 +125,7 @@
      
      
      
-    announce(value);
+    announce();
     return value;
   }
 
@@ -146,17 +145,6 @@
     return segment.indexOf(".") === -1 ? segment + ".html" : segment;
   }
 
-  function paintDevelopmentCard(value) {
-    if (typeof document === "undefined") return;
-    const banner = document.querySelector("[data-dev-session]");
-    if (!banner) return;
-
-    const development = Boolean(value && value.isDev);
-    banner.hidden = !development;
-    const identity = banner.querySelector("[data-dev-identity]");
-    if (identity) identity.textContent = development ? value.username : "";
-  }
-
   const listeners = [];
 
   
@@ -167,8 +155,7 @@
 
   
 
-  function announce(value) {
-    paintDevelopmentCard(value);
+  function announce() {
     for (let i = 0; i < listeners.length; i += 1) {
       try {
         listeners[i]();
@@ -188,7 +175,7 @@
 
   function requireSession() {
     const value = read();
-    announce(value);
+    announce();
     if (!value && pageName() !== "index.html") redirectToSignIn();
     return value;
   }
@@ -202,10 +189,4 @@
     require: requireSession,
     onChange,
   });
-
-   
-   
-   
-   
-  if (typeof document !== "undefined") announce(read());
 })(globalThis);

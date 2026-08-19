@@ -30,6 +30,7 @@ tests/charts-aggregate.test.mjs
 tests/charts-page.test.mjs
 tests/ci-wiring.test.mjs
 tests/claim-vs-diff.test.mjs
+tests/door.test.mjs
 tests/entry-rows.test.mjs
 tests/fleet-status.test.mjs
 tests/mockup-tokens.test.mjs

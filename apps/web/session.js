@@ -36,7 +36,6 @@
       expiresAt: new Date(expires).toISOString(),
       username: value.username.trim().toLowerCase(),
       isAdmin: value.isAdmin === true,
-      isDev: value.isDev === true,
       telegramId: value.telegramId == null ? null : String(value.telegramId),
     });
   }
@@ -116,7 +115,7 @@
     if (announcing) return;
     announcing = true;
     try {
-      announce(null);
+      announce();
     } finally {
       announcing = false;
     }
@@ -174,7 +173,7 @@
     // reacting to sign-out and silently not to sign-in - the same class
     // of half-wired shell #166 is about. It is announced after the store
     // succeeds, so nothing paints a session this function then refuses.
-    announce(value);
+    announce();
     return value;
   }
 
@@ -206,27 +205,21 @@
     return segment.indexOf(".") === -1 ? segment + ".html" : segment;
   }
 
-  function paintDevelopmentCard(value) {
-    if (typeof document === "undefined") return;
-    const banner = document.querySelector("[data-dev-session]");
-    if (!banner) return;
-
-    const development = Boolean(value && value.isDev);
-    banner.hidden = !development;
-    const identity = banner.querySelector("[data-dev-identity]");
-    if (identity) identity.textContent = development ? value.username : "";
-  }
-
   const listeners = [];
 
   /*
    * Who to tell when the stored credential changes.
    *
-   * The card above is this file's own surface. The rail's "Signed in as
-   * <name>" is signout.js's, and neither this file nor the next surface
-   * to need the same treatment should be the place that knows about the
-   * other's markup: the store says its credential changed, and whoever
-   * paints from a session subscribes and looks again (#166).
+   * The rail's "Signed in as <name>" is signout.js's markup, and this
+   * file must not know it exists: the store says its credential
+   * changed, and whoever paints from a session subscribes and looks
+   * again (#166). session.js painted its own surface here once too - a
+   * development-session card, keyed to a flag only the local sign-in
+   * route could set. Neither the route nor the flag nor the card
+   * survives it (0.9-M2-S1, #352; 0.9-M2-S4, #355), and the rail's
+   * listener needed no edit either time, because it was never told
+   * what the other surface looked like - which is the whole argument
+   * for a subscription over a direct reach.
    *
    * NOTHING IS HANDED TO THE LISTENER, AND THAT IS THE POINT. A listener
    * given a copy can paint from a credential the store has already moved
@@ -245,8 +238,7 @@
    * token into a broken page at a moment nobody chose - and would stop
    * the listeners after it from hearing at all.
    */
-  function announce(value) {
-    paintDevelopmentCard(value);
+  function announce() {
     for (let i = 0; i < listeners.length; i += 1) {
       try {
         listeners[i]();
@@ -266,7 +258,7 @@
 
   function requireSession() {
     const value = read();
-    announce(value);
+    announce();
     if (!value && pageName() !== "index.html") redirectToSignIn();
     return value;
   }
@@ -280,10 +272,4 @@
     require: requireSession,
     onChange,
   });
-
-  // Every interactive page loads this file, including admin's break-glass
-  // path. Announce a stored development session everywhere, but let each page
-  // choose when it requires one: submit does now; dashboard and admin gain
-  // their route-specific gates in their own later slices.
-  if (typeof document !== "undefined") announce(read());
 })(globalThis);
