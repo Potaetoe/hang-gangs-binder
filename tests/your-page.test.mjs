@@ -3,7 +3,11 @@
  * (#353 comment 5337542314) to close what the review of record found
  * unarmed or unproven: the record read-back's real (string) shape, the
  * delete flow, the download, form.js's own DOM half, and the pre-leave
- * slot's mechanism.
+ * slot's mechanism. Widened again for 0.9-M2-S9 (#370, section 10) and
+ * its own review fix wave 1: the prefill's container-absent throw path
+ * (F1), its mapping by spec KIND rather than field name (F2), the two
+ * guards that mapping depends on (F4), and re-prefilling from the entry
+ * a member just saved (F5, Prime's ruling).
  *
  *     node tests/your-page.test.mjs
  *
@@ -64,6 +68,16 @@
  *      - a bracketed filler plus a data-pending-copy attribute an HTML
  *      comment cannot give, since ./run build strips comments and never
  *      touches attributes.
+ *   10. The prefill (#370): over18, gender, roles, country and every
+ *      measured field except weight, from the newest CURRENT entry;
+ *      nothing prefilled with no history or a failed load; a member's
+ *      own edit takes and survives an ORDINARY reload (F4); Sign out
+ *      clears it; and the forkability property extended from rendering
+ *      to prefill, for a choice-kind, a length-kind AND a weight-kind
+ *      field under names the shipped spec never uses (F2). Also: a
+ *      throw with #entry-fields unreachable does not strand Sign out's
+ *      own teardown (F1), and a successful submit's own reload
+ *      re-prefills from what was just saved (F5).
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -1012,6 +1026,13 @@ function makeFormPage() {
   const dispatched = [];
   const doc = {
     getElementById: byId,
+    // F1, review fix wave 1: `body` already existed as a local variable
+    // here (used to build the tree above) but was never attached to the
+    // returned document stub - invisible until a check first drove
+    // wireDownload()'s own `document.body.appendChild(...)` through this
+    // harness, which nothing had before this fix wave's container-absent
+    // arm.
+    body: body,
     createElement(tag) {
       const node = makeElement("created-" + tag, elements);
       node.tag = tag;
@@ -1377,6 +1398,28 @@ check("editable after prefill: a member's own change actually takes and " +
   "nothing reverts it",
   prefillPage.byId("entry-gender").value === "female");
 
+/*
+ * F4 (review fix wave 1): the prefillApplied guard's real path. A
+ * confirmed delete fires an ORDINARY reload through renderEntries()'s
+ * own onChanged callback (loadEntries() again, same as a retry) - the
+ * exact shape of second call the guard exists to survive. Deleting the
+ * `if (prefillApplied) return;` line in prefillFromEntries() reddens
+ * this specific check: without it, this same reload re-runs
+ * prefillFields() and reverts the edit above back to record 22's own
+ * "nonbinary".
+ */
+const prefillCurrentRows = allRows(prefillPage.byId("entries-slot"));
+const prefillDeleteCell =
+  prefillCurrentRows[1].children[prefillCurrentRows[1].children.length - 1];
+await findTag(prefillDeleteCell, "button").dispatch("click"); // "Delete"
+await prefillDeleteCell.children[1].children[0].dispatch("click"); // "Yes, delete"
+await new Promise((resolve) => setTimeout(resolve, 0));
+check("F4: the prefillApplied guard's real path - a later ORDINARY " +
+  "reload (here, the one a confirmed delete fires through its own " +
+  "onChanged callback) does not re-run the prefill and clobber the " +
+  "member's own edit above",
+  prefillPage.byId("entry-gender").value === "female");
+
 const emptyPage = await loadCombinedForPrefill({ entries: [] });
 check("no history: the form renders exactly as today - nothing prefills",
   emptyPage.byId("entry-over18").checked === false &&
@@ -1431,21 +1474,36 @@ check("Sign out clears every prefilled field - idle expiry runs the same " +
 /* THE PROPERTY ITSELF, for prefill: a scratch field added to a copy of
    the spec (the same SCRATCH pattern section 1 and 6b use) prefills
    with no edit to form.js or submit.js - the mapping walks the spec's
-   own field list rather than naming "gender" or "country" anywhere. */
+   own field list rather than naming "gender" or "country" anywhere.
+   Widened for F2 (review fix wave 1) with the reviewer's own fork rig
+   shape: a length-kind field and a weight-kind field, both under names
+   the shipped spec never uses, proving the mapping is read from KIND
+   rather than from "height" or "weight" as literal strings. */
 const SCRATCH_PREFILL_FIELD = Object.freeze({
   ...SITE,
-  fields: Object.freeze([...SITE.fields, Object.freeze({
-    name: "vibe", kind: "choice", label: "Vibe check", term: "vibe",
-    blank: "Prefer not to say",
-    choices: [{ value: "chill", label: "Chill" }, { value: "hype", label: "Hype" }],
-    chart: true,
-  })]),
+  fields: Object.freeze([...SITE.fields,
+    Object.freeze({
+      name: "vibe", kind: "choice", label: "Vibe check", term: "vibe",
+      blank: "Prefer not to say",
+      choices: [{ value: "chill", label: "Chill" }, { value: "hype", label: "Hype" }],
+      chart: true,
+    }),
+    Object.freeze({
+      name: "waist", kind: "length", label: "Waist", term: "waist",
+      chart: true,
+    }),
+    Object.freeze({
+      name: "grip", kind: "weight", label: "Grip load", term: "grip load",
+      chart: true,
+    }),
+  ]),
 });
 const SCRATCH_ENTRIES = [
   { id: 31, receivedAt: "2026-08-19T00:00:00.000Z", superseded: false,
     record: JSON.stringify({ over18: true, weight: { lb: 150, kg: 68.0 },
       height: { cm: 165, totalInches: 65, feet: 5, inches: 5 },
       gender: "female", roles: [], country: "US", vibe: "hype",
+      waist: { cm: 90, totalInches: 35.4 }, grip: { kg: 45, lb: 99.2 },
       entered: { units: "imperial" } }) },
 ];
 const scratchPage = await loadCombinedForPrefill(
@@ -1454,10 +1512,142 @@ check("a fork's added choice field prefills too, with no edit to form.js " +
   "or submit.js - the forkability property, extended from rendering " +
   "(section 1) to the values a control starts holding",
   scratchPage.byId("entry-vibe").value === "hype");
+check("F2: a fork's added LENGTH-kind field prefills too, mapped by kind " +
+  "- not a second literal name check standing beside \"height\"",
+  scratchPage.byId("entry-waist-metric").value === "90");
+check("F2: ...its imperial boxes too, split via the spec's own ft/in " +
+  "conversion factor rather than anything specific to \"height\"",
+  scratchPage.byId("entry-waist-imperial").value === "2" &&
+  scratchPage.byId("entry-waist-imperial-compound").value === "11.4");
+check("F2: a fork's added WEIGHT-kind field is skipped BY KIND, not by " +
+  "the literal name \"weight\" - it stays empty even though its own " +
+  "record carries a value, the same rule the shipped weight field " +
+  "follows",
+  scratchPage.byId("entry-grip-metric").value === "" &&
+  scratchPage.byId("entry-grip-imperial").value === "");
 globalThis.BINDER_SITE = SITE;
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 95;
+/* F1 (review fix wave 1): a throw inside clearPrefilledFields() must    */
+/* never strand the rest of clearMemberData()'s own teardown - the       */
+/* reviewer's own scenario is #entry-fields itself unreachable to        */
+/* submit.js (form.js's own onError hid the form; submit.js still        */
+/* fetched and still owns Sign out). Simulated by swapping BinderUI.byId */
+/* to one that answers null for "entry-fields" ONLY once submit.js loads */
+/* - form.js loads first, against the real container, so its own         */
+/* renderFields() still succeeds; this arm is about submit.js's own read */
+/* of a container it can no longer find, not a form that never rendered. */
+
+async function loadForContainerAbsent() {
+  const formPage = makeFormPage();
+  globalThis.document = formPage.document;
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+  let formBooted = null;
+  globalThis.BinderUI = {
+    byId: formPage.byId,
+    show(element, visible) { if (element) element.hidden = !visible; },
+    checkedValue(name, fallback) {
+      if (name !== "units") return fallback;
+      const chosen = formPage.document.querySelectorAll('input[name="units"]')
+        .find((input) => input.checked);
+      return chosen ? chosen.value : fallback;
+    },
+    setStatus(element, message) {
+      if (element) { element.textContent = message || ""; element.hidden = !message; }
+    },
+    boot(setUp) { formBooted = Promise.resolve(setUp()); return formBooted; },
+  };
+  globalThis.BinderSession = {
+    read() { return { username: "member" }; },
+    require() { return { username: "member" }; },
+    authorization() { return { Authorization: "Bearer token" }; },
+    clear() {},
+  };
+  const formSource = await read("../apps/web/form.js");
+  await import("data:text/javascript," + encodeURIComponent(formSource) +
+    "#container-absent-form-" + Math.random());
+  await formBooted;
+
+  // submit.js's own $ is captured from HERE on - "entry-fields" now
+  // reads null for it, the reviewer's own scenario (F1), while form.js
+  // (already loaded, above) keeps working from what it already rendered.
+  let submitBooted = null;
+  globalThis.BinderUI.byId = (id) =>
+    id === "entry-fields" ? null : formPage.byId(id);
+  globalThis.BinderUI.boot = function (setUp) {
+    submitBooted = Promise.resolve(setUp());
+    return submitBooted;
+  };
+  globalThis.BinderSignOut = { signOut() {} };
+  globalThis.BinderXlsx = { build() { return new Uint8Array([1]); } };
+  globalThis.fetch = async () => ({
+    ok: true, status: 200,
+    async json() { return { ok: true, entries: PREFILL_ENTRIES }; },
+  });
+
+  const submitSource = await read("../apps/web/submit.js");
+  await import("data:text/javascript," + encodeURIComponent(submitSource) +
+    "#container-absent-submit-" + Math.random());
+  await submitBooted;
+  return formPage;
+}
+
+const containerAbsentPage = await loadForContainerAbsent();
+check("CONTROL: before Sign out, the trend and entries slots hold the " +
+  "loaded rows - the clear below actually has something to erase",
+  containerAbsentPage.byId("trend-slot").children.length > 0 &&
+  containerAbsentPage.byId("entries-slot").children.length > 0);
+containerAbsentPage.byId("sign-out").dispatch("click");
+check("F1: with #entry-fields unreachable, Sign out still empties the " +
+  "entries slot - a throw inside clearPrefilledFields() no longer " +
+  "strands the teardown ahead of it in clearMemberData()",
+  containerAbsentPage.byId("entries-slot").children.length === 0);
+check("F1: and the trend slot too",
+  containerAbsentPage.byId("trend-slot").children.length === 0);
+
+/* ------------------------------------------------------------------ */
+/* F5 (Prime's ruling on #370, review fix wave 1): a successful submit  */
+/* is the ONE reload allowed to re-prefill - form.js dispatches         */
+/* binder:submitted only once the Worker has actually accepted the      */
+/* write (section 6a above), so this is the one signal trustworthy      */
+/* enough to let the guard run again. Driven here by dispatching that    */
+/* same event directly against a fetch mock swapped to answer the entry  */
+/* just saved as the newest CURRENT row - the member's own next reload,  */
+/* not form.js's submit wiring, is what this file is answerable for.     */
+
+const resubmitPage = await loadCombinedForPrefill({ entries: PREFILL_ENTRIES });
+check("CONTROL: before any resubmit, the ORIGINAL newest entry prefilled",
+  resubmitPage.byId("entry-gender").value === "nonbinary" &&
+  resubmitPage.byId("units-metric").checked === true);
+
+const JUST_SAVED_ENTRY = {
+  id: 99, receivedAt: "2026-08-19T13:00:00.000Z", superseded: false,
+  record: JSON.stringify({ over18: true, weight: { lb: 180, kg: 81.6 },
+    height: { cm: 185, totalInches: 72.8 }, gender: "male",
+    roles: ["admirer"], country: "FR", entered: { units: "imperial" } }),
+};
+globalThis.fetch = async () => ({ ok: true, status: 200,
+  async json() { return { ok: true,
+    entries: [JUST_SAVED_ENTRY].concat(
+      PREFILL_ENTRIES.map((e) => Object.assign({}, e, { superseded: true }))) }; } });
+resubmitPage.document.dispatchEvent({ type: "binder:submitted" });
+await new Promise((resolve) => setTimeout(resolve, 0));
+
+check("F5: after a successful submit, the stable fields re-prefill from " +
+  "the entry JUST SAVED, not the one that prefilled before it",
+  resubmitPage.byId("entry-gender").value === "male" &&
+  resubmitPage.byId("entry-country").value === "FR" &&
+  resubmitPage.byId("entry-height-metric").value === "185");
+check("F5: and the units radio follows what was actually just submitted",
+  resubmitPage.byId("units-imperial").checked === true &&
+  resubmitPage.byId("units-metric").checked === false);
+check("F5: weight stays blank for the next measurement, even right after " +
+  "a submit that carried one",
+  resubmitPage.byId("entry-weight-imperial").value === "" &&
+  resubmitPage.byId("entry-weight-metric").value === "");
+
+/* ------------------------------------------------------------------ */
+const EXPECTED = 106;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
