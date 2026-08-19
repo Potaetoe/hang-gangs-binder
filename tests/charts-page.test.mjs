@@ -157,8 +157,66 @@ check("binLabel never invents an open-edge shape for a real answer's " +
  */
 check("captionWidth is proportional to the text length - the estimate " +
   "basis is character count, stated in the function's own header",
-  Charts.captionWidth("0") === 7 && Charts.captionWidth("12") === 14 &&
+  Charts.captionWidth("0") === 8 && Charts.captionWidth("12") === 16 &&
   Charts.captionWidth("") === 0);
+
+/*
+ * F7 (0.9-M2-S11's second review, #372): the estimate has to stay ABOVE
+ * every glyph the shipped face actually paints, not just above a
+ * plausible-looking round number - CAPTION_CHAR_WIDTH === 7 passed
+ * every hand-picked case above while sitting BELOW the real "0" and "–"
+ * the reviewer measured with getComputedTextLength() in the shipped
+ * face, which is exactly how a conservative-by-construction claim went
+ * quietly false. This fixture is that outside measurement, not this
+ * file's own guess: it is the reviewer's reported data, kept here as
+ * data rather than re-derived, so this arm cannot be satisfied by
+ * captionWidth() grading its own homework the way noPaintedPairOverlaps()
+ * used to (F7's own second half - that helper computed its boxes with
+ * captionWidth() itself, so a wrong constant could never fail the check
+ * built from it).
+ *
+ * PROVENANCE: getComputedTextLength() read off the shipped chart face
+ * at the .chart-label/.chart-value 11px size, reported in the review of
+ * record on #372 (the F7 finding). "0" is the narrowest digit a count
+ * caption ever prints alone; "–" is the dash binLabel() joins every
+ * range caption with, so both sit on the actual hot path.
+ */
+const MEASURED_GLYPH_WIDTHS = { "0": 7.53, "–": 7.36 };
+check("CAPTION_CHAR_WIDTH sits at or above every real glyph width the " +
+  "reviewer measured in the shipped face - the estimate is a ceiling " +
+  "on the widest glyph, not a guess that happened to clear the old " +
+  "hand-picked cases",
+  Charts.captionWidth("x") >= Math.max(MEASURED_GLYPH_WIDTHS["0"],
+    MEASURED_GLYPH_WIDTHS["–"]));
+
+/*
+ * The reviewer's own reproduction, driven through the real plan: 88
+ * bands is the exact band count where a 7-unit estimate approved a row
+ * that truly overlapped (slot 7.273 u; the real "0" measures 7.53 u,
+ * wider than its own slot). A single-character count caption ("0") in
+ * every band is the worst case for THIS regression specifically - the
+ * shortest possible caption, which is exactly what let 7 pass unnoticed
+ * where a longer caption would have tripped some other check first.
+ */
+const repro88Slot = 640 / 88;
+const repro88Counts = new Array(88).fill(0);
+
+/* The regression's own arithmetic, stated as two plain facts before
+   the plan is asked to do anything: the real glyph (7.53 u) does not
+   fit beside a copy of itself in an 88-band slot (7.273 u), so two
+   adjacent all-zero captions truly overlap - but the OLD constant (7)
+   sits below the slot too, which is exactly how it missed this. */
+check("F7: the real measured glyph does not clear the 88-band slot - " +
+  "two adjacent zero captions truly overlap at this band count",
+  MEASURED_GLYPH_WIDTHS["0"] > repro88Slot);
+check("F7: the pre-fix constant (7) sat BELOW that same slot, which is " +
+  "how it approved a row that really overlapped",
+  7 <= repro88Slot);
+
+check("F7's own 88-band repro, driven through the real plan: the " +
+  "fixed constant refuses to approve 88 zero-count captions in a row " +
+  "- the false-clean result the review reported is closed",
+  Charts.countCaptionPlan(repro88Counts, repro88Slot).length < 88);
 
 /* A controlled, hand-verifiable case: three captions far enough apart
    that none can possibly overlap (a slot ten times any caption's own
@@ -1213,7 +1271,7 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 79;
+const EXPECTED = 83;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
