@@ -642,6 +642,104 @@ check("one partition: over " + checked + " random groups at the raised " +
   "system's band (mandate 6)", checked > 20 && splits === 0);
 
 /* ================================================================== */
+/* 3c. The BMI axis is DERIVED from the form's own bounds.             */
+/*                                                                     */
+/* Owner ruling, #371 comment 5347769320: the range derives from the   */
+/* form's bounds so that NO form-valid member draws clipped - "in a    */
+/* gaining community the high end IS the story". A hand-picked cap is  */
+/* exactly what this refuses: BMI has no unit table to keep bounds in, */
+/* so the numbers in the spec row are the whole axis, and a cap chosen */
+/* for looking reasonable silently redraws everybody past it as the    */
+/* top band's neighbour. These arms compute the bounds the form really */
+/* admits and hold the spec to covering them, so a later narrowing     */
+/* reddens here rather than in a chart nobody checks.                  */
+
+/*
+ * The widest value the FORM would accept for one kind, in that kind's
+ * base unit.
+ *
+ * Every unit of the kind is asked, not just the one this system charts:
+ * a member types kilograms or pounds, feet or centimeters, and each unit
+ * carries its own bounds in its own numbers (44 lb is not 20 kg). The
+ * widest of them is what "form-valid" means, so it is what an axis has
+ * to cover.
+ */
+function formBounds(kindName) {
+  const kind = SITE.units.kinds[kindName];
+  let low = null;
+  let high = null;
+  for (const name of Object.keys(kind.units)) {
+    const unit = kind.units[name];
+    if (typeof unit.min === "number") {
+      const value = unit.min * unit.per;
+      if (low === null || value < low) low = value;
+    }
+    if (typeof unit.max === "number") {
+      const value = unit.max * unit.per;
+      if (high === null || value > high) high = value;
+    }
+  }
+  return { min: low, max: high };
+}
+
+const KG = formBounds("weight");
+const CM = formBounds("length");
+const BMI_SPEC = SITE.fields.filter((one) => one.name === "bmi")[0];
+
+/* apps/web/fields.js's own derivation, written out here rather than
+   called, so this arm does not check the spec with the code it is
+   checking the spec against. */
+const bmiOf = (kg, cm) => kg / ((cm / 100) * (cm / 100));
+
+/* The lightest form-valid member at the tallest form-valid height, and
+   the heaviest at the shortest - the two ends of what the form can
+   produce. */
+const BMI_LOW = bmiOf(KG.min, CM.max);
+const BMI_HIGH = bmiOf(KG.max, CM.min);
+
+check("derived BMI axis: the spec's range covers every BMI the form " +
+  "itself will accept, so no form-valid member is drawn outside it",
+  BMI_SPEC.min <= BMI_LOW && BMI_SPEC.max >= BMI_HIGH);
+check("derived BMI axis: the two ends are those bounds rounded OUTWARD " +
+  "onto the spec's own band grid - a whole number of bands, and no end " +
+  "rounded in past a value the form allows",
+  BMI_SPEC.min === Math.floor(BMI_LOW / BMI_SPEC.bin) * BMI_SPEC.bin &&
+  BMI_SPEC.max === Math.ceil(BMI_HIGH / BMI_SPEC.bin) * BMI_SPEC.bin);
+check("derived BMI axis: the band width keeps the grid under the " +
+  "MAX_BANDS guard in server/charts-agg.js, so the derived range is a " +
+  "chart the Worker will actually build rather than a spec error",
+  (BMI_SPEC.max - BMI_SPEC.min) / BMI_SPEC.bin <= 200);
+
+/*
+ * The member the cap used to lose. 320 kg at 1.70 m is a BMI near 111 -
+ * every part of it inside what the form accepts - and under a range that
+ * stopped at 100 she was counted in the top band beside people forty
+ * points lighter. Her band is now her own.
+ */
+const extremeRows = evenGroup(4).concat([
+  row(acct(90), "2026-08-01T00:00:00.000Z",
+    record(320, 170, "female", ["gainer"], "US")),
+]);
+const extreme = atShippedFloor(extremeRows, "measure=bmi");
+const extremeBins = drawnOf(extreme).bins;
+const EXTREME_BMI = bmiOf(320, 170);
+const hers = extremeBins.filter((bin) =>
+  bin.from.metric <= EXTREME_BMI && bin.to.metric > EXTREME_BMI);
+
+check("derived BMI axis: a form-valid extreme member draws in the band " +
+  "her own number falls in, and that band is not the last one on the axis",
+  extreme.enough === true && hers.length === 1 && hers[0].count === 1 &&
+  extremeBins.indexOf(hers[0]) < extremeBins.length - 1);
+check("derived BMI axis: the top band counts nobody - nothing is piled " +
+  "against the end of the axis by a range too short for the form",
+  extremeBins.length > 0 && extremeBins[extremeBins.length - 1].count === 0);
+check("derived BMI axis: the grid spans the spec's whole range at the " +
+  "spec's own width, and everybody with a BMI is counted once in it",
+  extremeBins.length ===
+    Math.ceil((BMI_SPEC.max - BMI_SPEC.min) / BMI_SPEC.bin) &&
+  extremeBins.reduce((n, b) => n + b.count, 0) === extremeRows.length);
+
+/* ================================================================== */
 /* 4. The group makeup: exact counts of unique members, zeros listed.   */
 /*                                                                     */
 /* Owner ruling 1 (#243): gender, affiliation and country are never    */
