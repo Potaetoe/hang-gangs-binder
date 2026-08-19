@@ -16,16 +16,24 @@
 
   function binLabel(from, to, unit) {
     const suffix = unit ? " " + unit : "";
-    if (from === null && to === null) {
-      return "Everyone in this view";
-    }
-    if (from === null) {
-      return "under " + String(to) + suffix;
-    }
-    if (to === null) {
-      return String(from) + suffix + " and up";
-    }
     return String(from) + suffix + "–" + String(to) + suffix;
+  }
+
+  
+
+  const EDGE_LABEL_TARGET = 10;
+
+  function edgeLabelStride(binCount) {
+    if (!(binCount > 0)) return 1;
+    return Math.max(1, Math.ceil(binCount / EDGE_LABEL_TARGET));
+  }
+
+  
+
+  function drawableMeasures(Fields, site) {
+    return Fields.measures(site).filter(function (one) {
+      return one.kind !== "categorical";
+    });
   }
 
   
@@ -77,8 +85,10 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
+    edgeLabelStride: edgeLabelStride,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
+    drawableMeasures: drawableMeasures,
     valueChoices: valueChoices,
     chartsURL: chartsURL,
   };
@@ -143,7 +153,7 @@
 
   function populateMeasure(site) {
     const select = $("measure");
-    Fields.measures(site).forEach(function (measure) {
+    drawableMeasures(Fields, site).forEach(function (measure) {
       const option = document.createElement("option");
       option.value = measure.name;
       option.textContent = measure.label;
@@ -169,17 +179,6 @@
       select.appendChild(option);
     });
     show(wrap, true);
-  }
-
-  
-
-  function reactToMeasure(site) {
-    const measure = Fields.measure($("measure").value, site);
-    const categorical = measure.kind === "categorical";
-    show($("picture-tab-trend"), !categorical);
-    if (categorical && $("picture-tab-trend").getAttribute("aria-selected") === "true") {
-      selectPicture("distribution");
-    }
   }
 
    
@@ -214,42 +213,6 @@
 
   
 
-  function drawCells(target, cells) {
-    const width = 640;
-    const rowHeight = 30;
-    const labelWidth = 190;
-    const rightMargin = 56;
-    const top = 10;
-    const barArea = width - labelWidth - rightMargin;
-    const height = top * 2 + cells.length * rowHeight;
-    const node = target.querySelector("svg");
-    node.setAttribute("viewBox", "0 0 " + width + " " + height);
-    clearSvg(node);
-
-    const most = cells.reduce(function (max, cell) {
-      return Math.max(max, cell.count);
-    }, 1);
-
-    cells.forEach(function (cell, index) {
-      const y = top + index * rowHeight;
-      node.appendChild(svg("text", { x: 0, y: y + 15 }, "chart-label"))
-        .textContent = cell.label;
-      node.appendChild(svg("rect", {
-        x: labelWidth, y: y + 3, width: barArea, height: 16, rx: 3,
-      }, "chart-track"));
-      node.appendChild(svg("rect", {
-        x: labelWidth, y: y + 3,
-        width: Math.max(1, (cell.count / most) * barArea),
-        height: 16, rx: 3,
-      }, "chart-bar"));
-      node.appendChild(svg("text", {
-        x: labelWidth + barArea + 8, y: y + 15,
-      }, "chart-value")).textContent = String(cell.count);
-    });
-  }
-
-  
-
   function drawBins(target, bins, system, unit) {
     const width = 640;
     const height = 320;
@@ -264,13 +227,16 @@
       return Math.max(max, bin.count);
     }, 1);
     const slot = width / bins.length;
+    const stride = edgeLabelStride(bins.length);
 
     node.appendChild(svg("line", {
       x1: 0, y1: baseline, x2: width, y2: baseline,
     }, "chart-axis"));
 
     bins.forEach(function (bin, index) {
-      const barHeight = Math.max(1, (bin.count / most) * (baseline - top));
+      const barHeight = bin.count > 0
+        ? Math.max(1, (bin.count / most) * (baseline - top))
+        : 0;
       const x = index * slot;
       node.appendChild(svg("rect", {
         x: x + 2, y: baseline - barHeight,
@@ -280,26 +246,45 @@
         x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
       }, "chart-value")).textContent = String(bin.count);
 
-      const from = bin.from[system];
-      const to = bin.to[system];
-      const label = binLabel(from, to, unit);
-      const text = svg("text", {
-        x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
-      }, "chart-label");
-      text.textContent = label;
-      node.appendChild(text);
+      if (index % stride === 0 || index === bins.length - 1) {
+        const from = bin.from[system];
+        const to = bin.to[system];
+        const text = svg("text", {
+          x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
+        }, "chart-label");
+        text.textContent = binLabel(from, to, unit);
+        node.appendChild(text);
+      }
     });
   }
 
   function drawDistribution(answer, system) {
     const target = $("figure-distribution");
-    const distribution = answer.distribution;
     const unit = unitFor(answer, system);
-    if (distribution.kind === "cells") {
-      drawCells(target, distribution.cells);
-    } else {
-      drawBins(target, distribution.bins, system, unit);
+    drawBins(target, answer.distribution.bins, system, unit);
+  }
+
+  
+
+  function renderGroups(groups) {
+    const card = $("groups");
+    const body = $("groups-body");
+    body.textContent = "";
+    if (!groups || !groups.length) {
+      show(card, false);
+      return;
     }
+    groups.forEach(function (group) {
+      const heading = document.createElement("h3");
+      heading.textContent = group.label;
+      body.appendChild(heading);
+      group.values.forEach(function (cell) {
+        const line = document.createElement("p");
+        line.textContent = cell.label + ": " + cell.count;
+        body.appendChild(line);
+      });
+    });
+    show(card, true);
   }
 
   
@@ -389,6 +374,10 @@
     }
   }
 
+  
+
+  const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
+
    
    
    
@@ -402,9 +391,10 @@
 
     if (!answer.enough) {
       status.className = "status";
-      status.textContent = answer.note;
+      status.textContent = answer.note + " " + BROADER_FILTER_HINT;
       show($("picture-trend"), false);
       show($("picture-distribution"), false);
+      renderGroups(null);
       return;
     }
 
@@ -412,17 +402,15 @@
     status.textContent = "Showing " + answer.measure.label + ".";
 
     const system = currentSystem();
-    const categorical = answer.measure.kind === "categorical";
-    show($("picture-tab-trend"), !categorical);
-    if (categorical) selectPicture("distribution");
-
-    if (!categorical) drawTrend(answer, system);
+    drawTrend(answer, system);
     drawDistribution(answer, system);
 
     const selected = $("picture-tab-trend").getAttribute("aria-selected") ===
       "true";
-    show($("picture-trend"), selected && !categorical);
-    show($("picture-distribution"), !selected || categorical);
+    show($("picture-trend"), selected);
+    show($("picture-distribution"), !selected);
+
+    renderGroups(answer.groups);
   }
 
   
@@ -526,13 +514,9 @@
 
     populateFilterField(site);
     populateMeasure(site);
-    reactToMeasure(site);
 
     $("filter-field").addEventListener("change", function () {
       populateFilterValue(site);
-    });
-    $("measure").addEventListener("change", function () {
-      reactToMeasure(site);
     });
     $("picture-tab-trend").addEventListener("click", function () {
       selectPicture("trend");

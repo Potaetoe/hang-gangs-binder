@@ -1,5 +1,7 @@
 /*
- * Charts: filter, measure, two pictures, no snapshot (0.9-M2-S3, #354).
+ * Charts: filter, measure, two pictures, a group-makeup block, no
+ * snapshot (0.9-M2-S3, #354; reshaped by the 2026-08-19 charts ruling,
+ * #243 comment 5346978974, and 0.9-M2-S10/S11).
  *
  * RENDER-ONLY, ON PURPOSE (security mandate 1). This file prints the
  * fields GET /charts-data hands back and does no suppression arithmetic of
@@ -12,6 +14,17 @@
  * apps/web/dashboard.js's identical algorithm. That file, apps/web/
  * query.js and apps/web/public.js are deleted by this same change:
  * nothing of theirs is carried forward in any form.
+ *
+ * WHAT THE RULING CHANGED HERE. Categorical measures (gender,
+ * affiliation, country) left the `measure` list - drawableMeasures()
+ * below is the filter that keeps them out, mirroring
+ * server/charts-agg.js's askFor() so the two lists cannot drift apart.
+ * Their counts did not disappear: they render as the group-makeup
+ * block, plain count lines with no chart machinery, from the response's
+ * own `groups` field. Distributions draw the spec's fixed bands
+ * whole - every band the response sends gets a bar, empty ones
+ * included - and no edge is ever open any more, so binLabel() below
+ * takes two plain numbers and nothing else.
  *
  * THE UNITS TOGGLE NEVER RE-BINS. GET /charts-data answers every unit
  * system in one document - a bin's `from`/`to` and a trend point's
@@ -45,27 +58,58 @@
   }
 
   /*
-   * The open-ended edge labels (design mandate 3; server/charts-agg.js's
-   * openEdge()). `from` and `to` are the ALREADY-CHOSEN system's numbers
-   * for one bin - null means that edge is open, and an open edge never
-   * gets a number, invented or otherwise.
+   * One bin's range label, from the ALREADY-CHOSEN system's numbers.
    *
-   * Both open at once is the real single-bin case, not a bug
-   * (server/charts-agg.js's own header): the honest label names no
-   * numeric edge at all.
+   * NEVER OPEN ANY MORE (owner ruling 5, #243: "Edges come from the
+   * field spec and never move or merge"). Every edge server/charts-agg.js
+   * sends is one of the spec's own two range numbers or a bin boundary
+   * between them, so `from` and `to` are always numbers here - the
+   * "under X"/"X and up" open-edge captions server/charts-agg.js's
+   * openEdge() used to produce are retired with that function (0.9-M2-S10,
+   * #371): there is no edge left that was fitted to a member rather than
+   * to the spec, so there is nothing left to leave unlabeled.
    */
   function binLabel(from, to, unit) {
     const suffix = unit ? " " + unit : "";
-    if (from === null && to === null) {
-      return "Everyone in this view";
-    }
-    if (from === null) {
-      return "under " + String(to) + suffix;
-    }
-    if (to === null) {
-      return String(from) + suffix + " and up";
-    }
     return String(from) + suffix + "–" + String(to) + suffix;
+  }
+
+  /*
+   * How many bands a labeled edge skips, so a fine grid still reads.
+   *
+   * The widest chartable measure - weight, imperial - grids to 53 bands
+   * over its own spec range (0.9-M2-S10's rangeOf()/gridOf()), and a
+   * caption under every one of 53 half-inch-wide bars is not something a
+   * reader can use. EDGE_LABEL_TARGET spaces captions to roughly that
+   * many across the figure regardless of how many bars it holds, always
+   * keeping the first band's own low edge and the last band's own high
+   * edge - the spec's two bounding numbers - so the axis still names
+   * where it starts and ends. A short grid (BMI's handful of bands) gets
+   * a stride of 1: every edge labeled, same as before. THE SPARSENESS IS
+   * IN THE CAPTIONS ONLY: drawBins below still draws and counts every
+   * band the response sends, empty ones included - nothing here removes
+   * a bar, only some of the text underneath it (design mandate ".chart
+   * grammar", carried from 0.9-M2-S3's control-row and figure rules).
+   */
+  const EDGE_LABEL_TARGET = 10;
+
+  function edgeLabelStride(binCount) {
+    if (!(binCount > 0)) return 1;
+    return Math.max(1, Math.ceil(binCount / EDGE_LABEL_TARGET));
+  }
+
+  /*
+   * The chartable measures - numeric ones only (owner ruling 1, #243).
+   * Gender, affiliation and country left the measure list; their counts
+   * moved to the group-makeup block instead (renderGroups() below).
+   * Mirrors server/charts-agg.js's askFor() - `measures.filter(m => m.kind
+   * !== "categorical")` - so a measure this page offers and a measure the
+   * route accepts can never drift apart.
+   */
+  function drawableMeasures(Fields, site) {
+    return Fields.measures(site).filter(function (one) {
+      return one.kind !== "categorical";
+    });
   }
 
   /* A linear map from one closed interval to another. Degenerate domains
@@ -113,9 +157,7 @@
   /* The request GET /charts-data answers to. `self=1` always: there is
      no separate control for the member's own overlay (design mandate 2
      names six controls and this is not one of them) - DESIGN.md,
-     "Charts", has it as a property of the Trend picture, not a toggle,
-     and asking for it costs nothing on a categorical measure, which
-     answers {points: []}.
+     "Charts", has it as a property of the Trend picture, not a toggle.
 
      THE ROUTE IS NOT NAMED /charts, and must never be renamed to it:
      this page is charts.html, the assets layer redirects /charts.html
@@ -136,8 +178,10 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
+    edgeLabelStride: edgeLabelStride,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
+    drawableMeasures: drawableMeasures,
     valueChoices: valueChoices,
     chartsURL: chartsURL,
   };
@@ -202,7 +246,7 @@
 
   function populateMeasure(site) {
     const select = $("measure");
-    Fields.measures(site).forEach(function (measure) {
+    drawableMeasures(Fields, site).forEach(function (measure) {
       const option = document.createElement("option");
       option.value = measure.name;
       option.textContent = measure.label;
@@ -228,18 +272,6 @@
       select.appendChild(option);
     });
     show(wrap, true);
-  }
-
-  /* The Trend tab, hidden rather than shown empty for a categorical
-     measure - GET /charts-data answers trend: null for one (design mandate
-     5), and this reacts to the measure select alone, with no fetch. */
-  function reactToMeasure(site) {
-    const measure = Fields.measure($("measure").value, site);
-    const categorical = measure.kind === "categorical";
-    show($("picture-tab-trend"), !categorical);
-    if (categorical && $("picture-tab-trend").getAttribute("aria-selected") === "true") {
-      selectPicture("distribution");
-    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -278,46 +310,23 @@
       : null;
   }
 
-  /* Categorical cells: a horizontal meter per cell, the shape
-     .chart-track/.chart-bar already carry site-wide. Every label is
-     printed verbatim from the response - "Other (fewer than 5)" and
-     "Not stated" are the route's own words, not this page's. */
-  function drawCells(target, cells) {
-    const width = 640;
-    const rowHeight = 30;
-    const labelWidth = 190;
-    const rightMargin = 56;
-    const top = 10;
-    const barArea = width - labelWidth - rightMargin;
-    const height = top * 2 + cells.length * rowHeight;
-    const node = target.querySelector("svg");
-    node.setAttribute("viewBox", "0 0 " + width + " " + height);
-    clearSvg(node);
-
-    const most = cells.reduce(function (max, cell) {
-      return Math.max(max, cell.count);
-    }, 1);
-
-    cells.forEach(function (cell, index) {
-      const y = top + index * rowHeight;
-      node.appendChild(svg("text", { x: 0, y: y + 15 }, "chart-label"))
-        .textContent = cell.label;
-      node.appendChild(svg("rect", {
-        x: labelWidth, y: y + 3, width: barArea, height: 16, rx: 3,
-      }, "chart-track"));
-      node.appendChild(svg("rect", {
-        x: labelWidth, y: y + 3,
-        width: Math.max(1, (cell.count / most) * barArea),
-        height: 16, rx: 3,
-      }, "chart-bar"));
-      node.appendChild(svg("text", {
-        x: labelWidth + barArea + 8, y: y + 15,
-      }, "chart-value")).textContent = String(cell.count);
-    });
-  }
-
-  /* A histogram: vertical bars along a baseline, with the open-ended
-     edge labels design mandate 3 asks for underneath. */
+  /*
+   * A histogram: vertical bars along a baseline, one per band the
+   * response sends, in the response's own order - never pooled, merged
+   * or dropped (render-only, security mandate 1).
+   *
+   * EVERY BAND DRAWS (owner ruling 5, #243). A band with at least one
+   * person gets its true bar; a band with nobody is a ZERO-HEIGHT SLOT
+   * still holding its place on the axis, rather than a bar skipped or a
+   * suppression note in its place - there is no such note to print, the
+   * same render-only rule that keeps this file from inventing any other
+   * text the response did not send. Every bin's count is still printed,
+   * "0" included, so the count row and the response's own bins line up
+   * index for index.
+   *
+   * Range captions are sparser than the bars: see edgeLabelStride()'s own
+   * header for why 53 imperial weight bands cannot each carry one.
+   */
   function drawBins(target, bins, system, unit) {
     const width = 640;
     const height = 320;
@@ -332,13 +341,16 @@
       return Math.max(max, bin.count);
     }, 1);
     const slot = width / bins.length;
+    const stride = edgeLabelStride(bins.length);
 
     node.appendChild(svg("line", {
       x1: 0, y1: baseline, x2: width, y2: baseline,
     }, "chart-axis"));
 
     bins.forEach(function (bin, index) {
-      const barHeight = Math.max(1, (bin.count / most) * (baseline - top));
+      const barHeight = bin.count > 0
+        ? Math.max(1, (bin.count / most) * (baseline - top))
+        : 0;
       const x = index * slot;
       node.appendChild(svg("rect", {
         x: x + 2, y: baseline - barHeight,
@@ -348,26 +360,54 @@
         x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
       }, "chart-value")).textContent = String(bin.count);
 
-      const from = bin.from[system];
-      const to = bin.to[system];
-      const label = binLabel(from, to, unit);
-      const text = svg("text", {
-        x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
-      }, "chart-label");
-      text.textContent = label;
-      node.appendChild(text);
+      if (index % stride === 0 || index === bins.length - 1) {
+        const from = bin.from[system];
+        const to = bin.to[system];
+        const text = svg("text", {
+          x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
+        }, "chart-label");
+        text.textContent = binLabel(from, to, unit);
+        node.appendChild(text);
+      }
     });
   }
 
   function drawDistribution(answer, system) {
     const target = $("figure-distribution");
-    const distribution = answer.distribution;
     const unit = unitFor(answer, system);
-    if (distribution.kind === "cells") {
-      drawCells(target, distribution.cells);
-    } else {
-      drawBins(target, distribution.bins, system, unit);
+    drawBins(target, answer.distribution.bins, system, unit);
+  }
+
+  /*
+   * The group-makeup block: plain count lines, no chart machinery (owner
+   * ruling 1, #243) - no bars, no track, no .chart-* classes, just the
+   * response's own `groups` printed as text. One heading per categorical
+   * field, one line per value, "<label>: <count>" verbatim - zeros
+   * included, because a zero here is the response's own line and not
+   * this page's to drop. Re-runs on every render, so a filtered answer's
+   * counts replace an unfiltered one's rather than sitting stale beside
+   * it (server/charts-agg.js's makeupOf(): the block describes the
+   * FILTERED view, not the whole binder).
+   */
+  function renderGroups(groups) {
+    const card = $("groups");
+    const body = $("groups-body");
+    body.textContent = "";
+    if (!groups || !groups.length) {
+      show(card, false);
+      return;
     }
+    groups.forEach(function (group) {
+      const heading = document.createElement("h3");
+      heading.textContent = group.label;
+      body.appendChild(heading);
+      group.values.forEach(function (cell) {
+        const line = document.createElement("p");
+        line.textContent = cell.label + ": " + cell.count;
+        body.appendChild(line);
+      });
+    });
+    show(card, true);
   }
 
   /* The trend line: the group average on series-0 (the accent slot)
@@ -376,7 +416,16 @@
      (design mandate 6; server/charts-agg.js's selfSeries()). One
      shared chronological axis: a trend point's period ("2026-08")
      becomes the first of that month, a self point's `at` is its own
-     receipt timestamp. */
+     receipt timestamp.
+
+     LINES NEVER BREAK (owner ruling 6, #243). server/charts-agg.js's
+     trendOf() sends one point per period that actually has an entry - a
+     month nobody submitted in carries no point at all, never a null one
+     - so groupPoints/selfPoints below are already just the real points,
+     in order. drawSeries() draws ONE polyline through whatever arrives,
+     with no per-segment styling, so a gap of one month and a gap of six
+     produce the identical unbroken segment: the bridging IS drawing what
+     the response sent, nothing dashed or faded for the months between. */
   function drawTrend(answer, system) {
     const target = $("figure-trend");
     const node = target.querySelector("svg");
@@ -472,12 +521,23 @@
     }
   }
 
+  /*
+   * The only refusal left at the shipped floor of 0 (owner ruling 7,
+   * #243): zero matching entries. server/charts-agg.js's note is the
+   * honest sentence, printed verbatim exactly as before - it never
+   * varies with the cause, so this page still cannot compose it. What
+   * ruling 7 adds is a broader-filter hint alongside it: fixed text,
+   * naming no filter value and no count, so it discloses nothing the
+   * route's own silence did not already withhold.
+   */
+  const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
+
   /* ------------------------------------------------------------------ */
   /* The not-enough state and the drawn state. Design mandate 4: one     */
-  /* document for every too-few cause, a plain paragraph inside this     */
-  /* card, replacing the figure in place, no icon, no red, no dismiss -  */
-  /* and security mandate 4: content on a 200, indistinguishable from    */
-  /* any other floored cut in markup or timing.                          */
+  /* document for the one too-few cause left, a plain paragraph inside   */
+  /* this card, replacing the figures in place, no icon, no red, no      */
+  /* dismiss - and security mandate 4: content on a 200, indistinguish-  */
+  /* able from the drawn state in markup or timing.                     */
 
   function renderAnswer(answer) {
     const status = $("status");
@@ -485,9 +545,10 @@
 
     if (!answer.enough) {
       status.className = "status";
-      status.textContent = answer.note;
+      status.textContent = answer.note + " " + BROADER_FILTER_HINT;
       show($("picture-trend"), false);
       show($("picture-distribution"), false);
+      renderGroups(null);
       return;
     }
 
@@ -495,17 +556,15 @@
     status.textContent = "Showing " + answer.measure.label + ".";
 
     const system = currentSystem();
-    const categorical = answer.measure.kind === "categorical";
-    show($("picture-tab-trend"), !categorical);
-    if (categorical) selectPicture("distribution");
-
-    if (!categorical) drawTrend(answer, system);
+    drawTrend(answer, system);
     drawDistribution(answer, system);
 
     const selected = $("picture-tab-trend").getAttribute("aria-selected") ===
       "true";
-    show($("picture-trend"), selected && !categorical);
-    show($("picture-distribution"), !selected || categorical);
+    show($("picture-trend"), selected);
+    show($("picture-distribution"), !selected);
+
+    renderGroups(answer.groups);
   }
 
   /* Download: the route's own bytes, unparsed and unreformatted
@@ -613,13 +672,9 @@
 
     populateFilterField(site);
     populateMeasure(site);
-    reactToMeasure(site);
 
     $("filter-field").addEventListener("change", function () {
       populateFilterValue(site);
-    });
-    $("measure").addEventListener("change", function () {
-      reactToMeasure(site);
     });
     $("picture-tab-trend").addEventListener("click", function () {
       selectPicture("trend");
