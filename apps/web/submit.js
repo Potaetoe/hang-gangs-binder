@@ -1,23 +1,30 @@
 /*
  * Everything on your-page.html besides the form itself: the trend line,
- * the entries list, a member's own delete, the download, and idle
- * expiry.
+ * the entries list, a member's own delete, the download, idle expiry,
+ * and the form's own prefill from the newest entry (#370).
  *
  * WHAT THIS FILE NO LONGER DOES. The tabs, the account-summary card, the
  * Telegram-id line and the personal history read through client-side
  * decryption are all gone with the client seal (DESIGN.md, "Trust
  * model: the Worker reads") - GET /my-entries now hands back plaintext
  * directly, because the Worker opened it. There is nothing left here to
- * decrypt and nothing left to prefill: the device-memory store #172
- * built is dead with the mechanism it existed to remember.
+ * decrypt: the device-memory store #172 built is dead with the
+ * mechanism it existed to remember.
+ *
+ * WHAT IS HERE INSTEAD (#370) is a different kind of prefill from the
+ * one #172 built: filled from the Worker's own answer to "what did this
+ * member say last time", never from anything remembered on this device
+ * - so it carries none of #172's privacy cost and needs no local store
+ * to go dead alongside it.
  *
  * THE CLEARING FUNCTION. clearMemberData() below is the one place that
- * empties the in-memory rows, the trend, the download's object URL and
- * any in-flight fetch - called from idle expiry AND from a listener on
- * the rail's Sign out button, so a member's own history cannot outlive
- * either exit from this tab (security mandate, 0.9-M2-S2). It does not
- * touch the session or the device key; BinderSignOut owns both of those
- * and this file calls it rather than duplicating it.
+ * empties the in-memory rows, the trend, the download's object URL, any
+ * in-flight fetch AND every prefilled form field (#370) - called from
+ * idle expiry AND from a listener on the rail's Sign out button, so a
+ * member's own history cannot outlive either exit from this tab
+ * (security mandate, 0.9-M2-S2). It does not touch the session or the
+ * device key; BinderSignOut owns both of those and this file calls it
+ * rather than duplicating it.
  */
 (function (root) {
   "use strict";
@@ -62,14 +69,19 @@
   let entries = [];
   let downloadUrl = null;
   let inflight = null;
-  // Prefill (#370) runs at most once per sign-in - a member's own edits
-  // after that must never be clobbered by a later loadEntries() call
-  // (a retry, or the reload binder:submitted triggers after they add
-  // their next entry). Reset alongside `entries` below, which is what
-  // "the clearing function's coverage extends to any prefill state it
-  // holds" means: idle expiry or Sign out leaves this tab able to
-  // prefill again for whoever signs in next, rather than stuck refusing
-  // to.
+  // Prefill (#370) runs once per sign-in AND once more after every
+  // successful submit (F5, review fix wave 1, Prime's ruling on #370):
+  // a member's own edits in between must never be clobbered by an
+  // ORDINARY reload (a retry, a delete's own refresh), which is what
+  // this guard is for - but the entry a member just saved becomes the
+  // newest CURRENT one, and re-typing what did not change on their next
+  // entry is exactly what the owner asked this feature to stop, so the
+  // binder:submitted listener below resets this guard on its own,
+  // deliberately, rather than leaving it blocked until the next sign-in.
+  // Reset alongside `entries` here too, which is what "the clearing
+  // function's coverage extends to any prefill state it holds" means:
+  // idle expiry or Sign out leaves this tab able to prefill again for
+  // whoever signs in next, rather than stuck refusing to.
   let prefillApplied = false;
 
   function clearMemberData() {
@@ -79,7 +91,6 @@
     }
     entries = [];
     prefillApplied = false;
-    clearPrefilledFields();
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       downloadUrl = null;
@@ -88,6 +99,13 @@
     emptyOut($("trend-slot"));
     const toggle = $("corrections-toggle");
     if (toggle && toggle.parentNode) toggle.parentNode.removeChild(toggle);
+    // Last, not first (F1, review fix wave 1): a throw inside this call -
+    // #entry-fields itself gone, or Form.plan() throwing on a malformed
+    // fork spec (form.js's own onError already hid the form; this file
+    // still fetched) - must never strand the erasure above it. The null
+    // guard on the container inside clearPrefilledFields() covers the
+    // common case; this ordering covers every OTHER way it could throw.
+    clearPrefilledFields();
   }
 
   /*
@@ -113,51 +131,96 @@
 
   /* ------------------------------------------------------------------ */
   /* The prefill itself (issue #370): over18, gender, roles, country and */
-  /* height, from the newest CURRENT entry above - never weight, the new */
-  /* measurement this visit is for. Lives here rather than in form.js    */
-  /* because form.js's own frozen export (BinderForm) is the PURE half   */
-  /* its header describes, loaded under Node with no document by         */
-  /* tests/your-page.test.mjs section 1-3 - a second DOM-touching global  */
-  /* from that file would need its own line in tools/check_web.py's      */
-  /* MODULE_EXPORTS, for one caller. This file already publishes nothing  */
-  /* (NO_MODULE_EXPORT's own entry for it), so these stay ordinary        */
-  /* unexported functions, reaching form.js only through BinderForm.plan()*/
-  /* - already frozen, already exported, already the spec-derived field   */
-  /* list renderFields() builds controls from.                            */
-  /*                                                                       */
-  /* WHY THIS WALKS Form.plan() INSTEAD OF NAMING FIELDS. Every kind       */
-  /* except weight and height is filled by one generic branch keyed on    */
-  /* the spec's own kind - consent, choice (single or multiple), count -  */
-  /* which is what makes a fork's added choice field prefill with no edit */
-  /* here, the same forkability property renderFields() gives to          */
-  /* rendering itself (tests/your-page.test.mjs section 1, widened in     */
-  /* section 10 to prove it for prefill too). Weight is excluded by name  */
-  /* because the ticket rules it out categorically, not because the spec  */
-  /* says anything different about its kind; height is filled by name for */
-  /* the same reason form.js's own addHeightFeetInches() is - "ft" carries*/
-  /* no `store` of its own (site.config.js's own comment on the length    */
-  /* kind's compound pair), so there is no generic store to read the      */
-  /* imperial main box back from, and buildRecord() already computed the  */
-  /* fixed feet/inches pair that box needs.                               */
+  /* every measured field EXCEPT weight, from the newest CURRENT entry   */
+  /* above. Lives here rather than in form.js because form.js's own      */
+  /* frozen export (BinderForm) is the PURE half its header describes,   */
+  /* loaded under Node with no document by tests/your-page.test.mjs      */
+  /* section 1-3 - a second DOM-touching global from that file would     */
+  /* need its own line in tools/check_web.py's MODULE_EXPORTS, for one   */
+  /* caller. This file already publishes nothing (NO_MODULE_EXPORT's own  */
+  /* entry for it), so these stay ordinary unexported functions, reach-   */
+  /* ing form.js only through BinderForm.plan() - already frozen,         */
+  /* already exported, already the spec-derived field list renderFields()*/
+  /* builds controls from.                                                */
+  /*                                                                        */
+  /* WHY THIS WALKS Form.plan() AND ITS OWN KIND, NEVER A FIELD NAME (F2,   */
+  /* review fix wave 1). Every kind is filled by one generic branch keyed   */
+  /* on the SPEC's own kind - consent, choice (single or multiple), count,  */
+  /* and weight/length together as "measured" (F.isMeasured) - which is     */
+  /* what makes a fork's added field of ANY of those kinds prefill with no  */
+  /* edit here, the same forkability property renderFields() gives to       */
+  /* rendering itself (tests/your-page.test.mjs section 1, widened in       */
+  /* section 10 to prove it for prefill too, for a length-kind field AND a  */
+  /* weight-kind one under names the shipped spec never used). The earlier  */
+  /* shape checked `entry.name === "height"` and `entry.name === "weight"`  */
+  /* literally, which rendered correctly for the shipped spec but never     */
+  /* fired for a fork's field of the same KIND under a different name -     */
+  /* falsifying this file's own forkability claim: a fork's length-kind     */
+  /* field never got a fill call at all, and a fork's weight-kind field was */
+  /* only ever skipped by accident (no branch matched it), not by rule.     */
+  /* Weight is still excluded categorically - the ticket rules it out - but */
+  /* by `entry.kind === "weight"`, checked from INSIDE the measured branch  */
+  /* rather than as an earlier standalone return, so a mutation that        */
+  /* deletes the one line watches weight actually get filled by the same    */
+  /* code length does, rather than silently falling through to nothing      */
+  /* changing (F4: a guard a mutation cannot see fail is not armed).        */
 
-  function heightBoxes() {
-    return {
-      cm: $("entry-height-metric"),
-      feet: $("entry-height-imperial"),
-      inches: $("entry-height-imperial-compound"),
-    };
+  /*
+   * Any weight- or length-kind field's boxes, filled from its own record
+   * value - driven entirely by the spec's own unit/store metadata
+   * (F.unitsOf, F.systems, F.convert), the same tables buildMeasuredField()
+   * (form.js) reads to build the boxes in the first place. A compound unit
+   * (feet next to inches) has no store of its own - its total lives under
+   * the OTHER unit's store - and the split back into the two boxes uses
+   * the spec's own conversion factor rather than a hardcoded 12, with the
+   * same carry-over guard form.js's own addHeightFeetInches() applies for
+   * "height" specifically: a generic field gets the same correctness with
+   * nothing here naming it.
+   */
+  function fillMeasured(entry, value) {
+    if (!value || typeof value !== "object") return;
+    const F = root.BinderFields;
+    const table = F.unitsOf(entry.kind);
+    F.systems().forEach(function (system) {
+      const spec = entry.units[system];
+      if (!spec) return;
+      const mainBox = $("entry-" + entry.name + "-" + system);
+      if (!spec.compoundUnit) {
+        const store = table[spec.unit] && table[spec.unit].store;
+        if (mainBox && store && typeof value[store] === "number") {
+          mainBox.value = String(value[store]);
+        }
+        return;
+      }
+      const compoundStore = table[spec.compoundUnit] &&
+        table[spec.compoundUnit].store;
+      const total = compoundStore ? value[compoundStore] : null;
+      if (typeof total !== "number") return;
+      const perMain = F.convert(1, spec.unit, spec.compoundUnit);
+      if (!Number.isFinite(perMain) || perMain <= 0) return;
+      let mainAmount = Math.floor(total / perMain);
+      let compoundAmount = Math.round((total - mainAmount * perMain) * 10) / 10;
+      if (compoundAmount >= perMain) { mainAmount += 1; compoundAmount = 0; }
+      if (mainBox) mainBox.value = String(mainAmount);
+      const compoundBox = $("entry-" + entry.name + "-" + system + "-compound");
+      if (compoundBox) compoundBox.value = String(compoundAmount);
+    });
   }
 
-  function fillHeight(height) {
-    if (!height || typeof height !== "object") return;
-    const boxes = heightBoxes();
-    if (boxes.cm && typeof height.cm === "number") boxes.cm.value = String(height.cm);
-    if (boxes.feet && typeof height.feet === "number") {
-      boxes.feet.value = String(height.feet);
-    }
-    if (boxes.inches && typeof height.inches === "number") {
-      boxes.inches.value = String(height.inches);
-    }
+  /* The reverse of fillMeasured() above - every box it could have set,
+     back to empty, for the same weight-or-length entry. */
+  function clearMeasured(entry) {
+    const F = root.BinderFields;
+    F.systems().forEach(function (system) {
+      const spec = entry.units[system];
+      if (!spec) return;
+      const mainBox = $("entry-" + entry.name + "-" + system);
+      if (mainBox) mainBox.value = "";
+      if (spec.compoundUnit) {
+        const compoundBox = $("entry-" + entry.name + "-" + system + "-compound");
+        if (compoundBox) compoundBox.value = "";
+      }
+    });
   }
 
   /*
@@ -183,9 +246,22 @@
   function prefillFields(record) {
     if (!Form || !record || typeof record !== "object") return;
     const container = $("entry-fields");
+    // Same guard as clearPrefilledFields() below, for the same reason
+    // (F1, review fix wave 1): a container this absent means there is no
+    // form here to fill, and prefillFromEntries() runs from inside
+    // loadEntries() - a throw here would propagate out of setUp()'s own
+    // await and skip wireDownload()/wireIdle() entirely, not merely fail
+    // to prefill.
+    if (!container) return;
+    const F = root.BinderFields;
     Form.plan().forEach(function (entry) {
-      if (entry.name === "weight") return; // never weight - #370.
-      if (entry.name === "height") { fillHeight(record.height); return; }
+      if (F.isMeasured(entry)) {
+        // Never the measurement this visit is FOR - #370's ruling, by
+        // kind rather than by name (F2/F4, review fix wave 1).
+        if (entry.kind === "weight") return;
+        fillMeasured(entry, record[entry.name]);
+        return;
+      }
       if (!(entry.name in record)) return;
       const value = record[entry.name];
       if (entry.kind === "consent") {
@@ -230,13 +306,23 @@
   function clearPrefilledFields() {
     if (!Form) return;
     const container = $("entry-fields");
+    // Matches applyUnitsVisibility()'s own guard, a dozen lines up -
+    // #entry-fields absent (form.js's own onError hid the form; this
+    // file still fetched) is a throw waiting here without it, ahead of
+    // the entries-slot/trend-slot/download-URL erasure clearMemberData()
+    // runs alongside this call; a real sign-out would leave all three
+    // behind with the session already gone. clearMemberData() calls this
+    // LAST, so even a throw this guard does not catch (Form.plan()
+    // itself, on a malformed fork spec) cannot strand that erasure - the
+    // ordering is the whole guarantee; this guard only removes the most
+    // common way there was ever anything to catch.
+    if (!container) return;
+    const F = root.BinderFields;
     Form.plan().forEach(function (entry) {
-      if (entry.name === "weight") return;
-      if (entry.name === "height") {
-        const boxes = heightBoxes();
-        if (boxes.cm) boxes.cm.value = "";
-        if (boxes.feet) boxes.feet.value = "";
-        if (boxes.inches) boxes.inches.value = "";
+      if (F.isMeasured(entry)) {
+        if (entry.kind === "weight") return; // never touched - never
+        // prefilled either, so there is nothing of it to clear.
+        clearMeasured(entry);
         return;
       }
       if (entry.kind === "consent") {
@@ -256,8 +342,7 @@
       }
     });
 
-    const F = root.BinderFields;
-    const fallback = F ? F.defaultSystem() : "imperial";
+    const fallback = F.defaultSystem();
     Array.prototype.forEach.call(
       document.querySelectorAll('input[name="units"]'),
       function (input) { input.checked = input.value === fallback; });
@@ -864,6 +949,15 @@
     // locally means the list always reflects what the Worker actually
     // stored, including the receipt time it stamped.
     document.addEventListener("binder:submitted", function () {
+      // A successful submit is the ONE reload allowed to re-prefill (F5,
+      // review fix wave 1, Prime's ruling on #370): form.js dispatches
+      // this event only once the Worker has actually accepted the write
+      // (tests/your-page.test.mjs section 6a proves the three refusals
+      // fire no event), so the entry just saved really is the newest
+      // CURRENT one by the time this runs. Every OTHER reload (a retry,
+      // a delete) leaves the guard alone, so an edit typed since the
+      // first prefill still survives those.
+      prefillApplied = false;
       loadEntries();
     });
 
