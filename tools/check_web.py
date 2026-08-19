@@ -6294,9 +6294,19 @@ def styling_exclusivity_problems():
 # sentence around it rather than over a number no file holds. Every
 # other slot in these pages is a whole element too, so the marker needs
 # no escape.
+#
+# "privacy-line" is not ruled copy - it is the 0.9-M4 placeholder,
+# pinned by owner ruling on #355 (2026-08-19). The pin does not claim
+# the bracketed filler is governed prose; it claims the SLOT's contents
+# are governed, so a swap-in - the real sentence at M4, or anything
+# else, at any time - has to touch this line in the same change rather
+# than drift past the gate unnoticed. At M4 the pin and the sentence
+# move together.
 RULED_LINES = {
     "index.html": {
         "signed-out": "Signed out.",
+        "privacy-line": "[Privacy line — the owner writes this "
+                         "sentence at the 0.9-M4 register sitting.]",
     },
     # your-page.html's OLD two ruled lines here - the sealed-rows count
     # and "Compare with the group's pinned code before submitting" -
