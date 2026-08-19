@@ -782,8 +782,12 @@ check("and nothing is broken that is not pinned, at any multiplicity",
 # is trued and the count is left standing - and none of them leaves a
 # trace anywhere else, so the entry has to be what fails.
 INVENTED = ("tools/check_docs.py", "AGENTS.md", "The review bar")
-OVERCOUNTED = ("apps/web/memberkey.js", "DESIGN.md",
-               "Members hold a key too")
+# A REAL pin standing at 1, so raising it to 2 is a claim about this
+# tree rather than about a fixture. It was apps/web/memberkey.js's
+# "Members hold a key too" until that file was deleted (0.9-M2-S5,
+# #356); admin.js's is the same shape and dies the same way, when 0.9-M3
+# rewrites the admin pages and clears their key-world comments.
+OVERCOUNTED = ("apps/web/admin.js", "DESIGN.md", "Key custody")
 
 check("a pin whose citation is not broken is reported",
       len(check_comments.citation_pin_problems(

@@ -33,6 +33,7 @@ tests/claim-vs-diff.test.mjs
 tests/door.test.mjs
 tests/entry-rows.test.mjs
 tests/fleet-status.test.mjs
+tests/member-page-imports.test.mjs
 tests/mockup-tokens.test.mjs
 tests/operations-bot-rotation.test.mjs
 tests/operations-sit-procedure.test.mjs

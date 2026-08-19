@@ -1053,7 +1053,7 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 12 and all(frozen_in_place))
+      len(frozen_in_place) == 11 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -1949,10 +1949,12 @@ check("every shipped page holds the loading shape",
 # The button and the module are one thing, and this is the rule that
 # keeps them one. Destroying the member's device key lives in
 # signout.js, which every page offering Sign out already loads, rather
-# than in the key module - IndexedDB is origin-wide, and two of the
-# three pages that offer the button never load memberkey.js, so a
-# destruction reached through it destroys nothing on exactly those
-# pages. That is #257, and it shipped.
+# than in a key module - IndexedDB is origin-wide, and a destruction
+# reached through a module two of the three pages never loaded destroyed
+# nothing on exactly those pages. That is #257, and it shipped. The key
+# module itself is gone now (0.9-M2-S5, #356) and the destruction is
+# not: devices the old pages wrote to still hold that database, and only
+# code they load can remove it.
 #
 # Which leaves exactly one way for a future page to reopen it: ship the
 # control and not the module. Nothing else in this file says a page must
@@ -2049,40 +2051,52 @@ check("a publisher absent from the page entirely is refused",
 # admits it. Every arm here drives a SYNTHETIC table rather than the
 # shipped one, which is #257's doing: the shipped table is empty now, and
 # an arm reading it would pass by describing nothing at all. Exercised
-# against sources this tree does not contain for the same reason - a rule
+# against a pair this tree does not ship for the same reason - a rule
 # tested only against the one file it was written for is a rule that says
 # yes to whatever that file happens to do, and this one is an exemption,
 # so it is the rule most able to turn into a hole.
-DEFERRED = ("signout.js", "BinderMemberKey")
+#
+# The pair is signout.js reading `BinderXlsx`, and it is synthetic in the
+# way that matters: xlsx.js is real and publishes that namespace, but it
+# is on two pages while signout.js is on three, which is the shape an
+# exemption would ever be asked for.
+#
+# BOTH HALVES OF THE PAIR MUST BE REAL, and that is the constraint to
+# read before editing this. run_order_problems() resolves a namespace to
+# its publisher through MODULE_EXPORTS and skips a namespace no module
+# publishes - so a pair invented out of thin air leaves every arm below
+# judging nothing and passing, which is the armed-looking-and-inert shape
+# this file refuses everywhere else.
+DEFERRED = ("signout.js", "BinderXlsx")
 SYNTHETIC = {DEFERRED: "a reason, which is what admits the row"}
 
 # The shipped table, in the one direction it can still be read. Nothing
 # is exempt here: sign-out destroys the device key's database itself
 # rather than reading a namespace two of the three pages that offer Sign
 # out never publish. A row coming back has to earn the exemption by
-# execution again, and dev/memberkey.test.mjs is where that is said.
+# execution again, and dev/signout.test.mjs is where that is said.
 check("nothing in this tree is exempt from the ordering rule",
       check_web.DEFERRED_CAPTURES == {})
 
 check("a declared deferred capture is exempt from the ordering rule",
       check_web.run_order_problems(
-          ["signout.js"], {"signout.js": {"BinderMemberKey"}},
+          ["signout.js"], {"signout.js": {"BinderXlsx"}},
           SYNTHETIC) == [])
 # The pair, not the namespace. Another script reading the same namespace
 # without a declaration of its own gets no exemption from this one -
 # otherwise one entry would quietly cover the whole tree.
 check("the exemption is per script, not per namespace",
-      any("never loads memberkey.js" in p for p in
+      any("never loads xlsx.js" in p for p in
           check_web.run_order_problems(
-              ["submit.js"], {"submit.js": {"BinderMemberKey"}},
+              ["submit.js"], {"submit.js": {"BinderXlsx"}},
               SYNTHETIC)))
 # And the same capture with nothing declared, which is what this tree
 # ships. Without this the arm above could be passing because the rule
 # exempts everything rather than because it read the table.
 check("and with nothing declared the ordering rule judges every capture",
-      any("never loads memberkey.js" in p for p in
+      any("never loads xlsx.js" in p for p in
           check_web.run_order_problems(
-              ["signout.js"], {"signout.js": {"BinderMemberKey"}}, {})))
+              ["signout.js"], {"signout.js": {"BinderXlsx"}}, {})))
 
 # WHAT THIS FILE MAY AND MAY NOT ASSERT ABOUT THE EXEMPTION.
 #
@@ -2094,12 +2108,12 @@ check("and with nothing declared the ordering rule judges every capture",
 # property, and no rewriting of a proxy fixes that.
 #
 # The property is earned by running the shipped bytes, in
-# dev/memberkey.test.mjs, which reads the table below and fails if a
+# dev/signout.test.mjs, which reads the table below and fails if a
 # declared namespace is touched during load. What is left here is what
 # Python over text can honestly say: the row exists, it carries a reason,
 # and it names a script that really reads the namespace.
-READS = ('(function (root) { function go() { const keys = '
-         'root.BinderMemberKey; if (keys) keys.forget(); } })(globalThis);')
+READS = ('(function (root) { function go() { const write = '
+         'root.BinderXlsx; if (write) write.book(); } })(globalThis);')
 
 check("a declared pair whose script really reads the namespace is fine",
       check_web.deferred_capture_problems(

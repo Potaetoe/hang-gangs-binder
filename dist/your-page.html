@@ -322,8 +322,8 @@
 <!-- form.js reads BinderFields (loaded above) to render the entry
      fields and build the record; submit.js reads BinderFields to
      display a stored record back and to build the download. Neither
-     loads crypto.js or memberkey.js: the client seal is gone from this
-     page (DESIGN.md, "Trust model: the Worker reads") and the Worker
+     loads crypto.js: the client seal is gone from this page
+     (DESIGN.md, "Trust model: the Worker reads") and the Worker
      now answers "what did I say last time" itself, so there is nothing
      left here to decrypt and nothing left to prefill. -->
 <script src="form.js"></script>

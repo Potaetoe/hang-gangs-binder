@@ -172,19 +172,21 @@ CAUSES = {
 # is a line in a diff somebody reads, which is the whole point. Take one
 # off the moment a row can be pinned or performed instead.
 #
-# Three rows currently rest on something no file here can check: one
+# Two rows currently rest on something no file here can check: one
 # "production-secret" row on the production id list and account secret,
-# one "off-machine" row on the submit-page fingerprint, and "the Telegram
-# widget rendering and its callback", whose cause is "off-machine" rather
-# than something server/wrangler.toml's ALLOWED_ORIGINS shape can
-# corroborate, because BotFather's /setdomain is an owner act no shell
-# here can perform or see the result of (0.9-M1-S3, #329).
+# and "the Telegram widget rendering and its callback", whose cause is
+# "off-machine" rather than something server/wrangler.toml's
+# ALLOWED_ORIGINS shape can corroborate, because BotFather's /setdomain
+# is an owner act no shell here can perform or see the result of
+# (0.9-M1-S3, #329).
 #
 # It came down from four when the development sign-in's route was removed
-# and its production-secret row went with it (0.9-M2-S1, #352). That is
-# the ratchet working in the direction it is built for: deleting the
-# mechanism is the cheapest way a trusted claim ever stops being owed.
-UNCORROBORATED_CEILING = 3
+# and its production-secret row went with it (0.9-M2-S1, #352), and from
+# three when the key fingerprint members were asked to compare went with
+# the client seal (0.9-M2-S5, #356). That is the ratchet working in the
+# direction it is built for: deleting the mechanism is the cheapest way a
+# trusted claim ever stops being owed.
+UNCORROBORATED_CEILING = 2
 
 # The batch is due when the OWED count reaches this, or before any
 # cutover, whichever comes first. Owed is the `never` rows plus the
@@ -663,34 +665,17 @@ LEDGER = [
                 "The account card on the same page read its count back "
                 "from the service"),
     },
-    # #85's headline claim, and it is a `never` for a reason a suite can
-    # state about itself. dev/form-wiring.test.mjs drives the shipped
-    # form.js against real WebCrypto and a real non-extractable P-256
-    # pair, so the seal and the open are proven - but its IndexedDB is a
-    # stub that keeps the REFERENCE it was handed, where a real store
-    # structure-clones. A CryptoKey survives that clone and this suite
-    # never asks it to, so "the key a real browser filed away opens what
-    # an earlier visit sealed" is a browser claim and Node may not make
-    # it. Node-honest and browser-unperformed is exactly the shape #157
-    # says belongs here rather than in a pull request body.
-    #
-    # The rule is stated here in full rather than by pointing at the row
-    # above it. A row is retired the moment its subject leaves - the
-    # reduced-motion row went out with the entrance animation - so a
-    # pointer to "the row above" resolves to nothing the first time a
-    # neighbor is retired, and a reader following it finds no such row
-    # and no way to learn what the precedent was.
-    {
-        "id": "your-page.html, the member's own seal",
-        "surface": "page",
-        "claim": "an entry a real browser sealed opens under the device "
-                 "key that browser generated - the private half filed "
-                 "into IndexedDB by one visit, read back by a later one, "
-                 "and never readable as bytes by anything",
-        "covers": ["apps/web/your-page.html", "apps/web/form.js",
-                   "apps/web/crypto.js", "apps/web/memberkey.js"],
-        "status": "never",
-    },
+    # "your-page.html, the member's own seal" stood here and is RETIRED
+    # (0.9-M2-S5, #356). It was #85's headline claim - an entry a real
+    # browser sealed, opening under the device key that browser
+    # generated - and it is retired for the reason a row is ever retired
+    # here rather than moved to `never`: its subject left. There is no
+    # member device key, no client seal and no apps/web/memberkey.js to
+    # file one away with; the Worker seals what it stores (DESIGN.md,
+    # "Trust model: the Worker reads"), and tests/store-crypto.test.mjs
+    # is where that is proven. A `never` row for a mechanism that no
+    # longer exists reads as an outstanding verification debt forever,
+    # which is the opposite of what this ledger is for.
     {
         "id": "your-page.html, a live 401",
         "surface": "page",
@@ -1160,16 +1145,14 @@ LEDGER = [
         "status": "first-contact",
         "cause": "production-secret",
     },
-    {
-        "id": "the submit page fingerprint against the pinned message",
-        "surface": "flow",
-        "claim": "the fingerprint members are asked to compare lives "
-                 "in a Telegram group, which no page here and no shell "
-                 "here can see",
-        "covers": ["apps/web/your-page.html"],
-        "status": "first-contact",
-        "cause": "off-machine",
-    },
+    # "the submit page fingerprint against the pinned message" stood here
+    # and is RETIRED (0.9-M2-S5, #356). Nobody is asked to compare a
+    # fingerprint any more: DESIGN.md's "Trust model: the Worker reads"
+    # retired the admin key box, the key fingerprint and the whole
+    # compare-it-yourself ceremony with them, and your-page.html carries
+    # no slot to print one into. The row's subject left, so the row goes
+    # rather than sitting as a first-contact debt against a ritual that
+    # will never happen.
 ]
 
 
