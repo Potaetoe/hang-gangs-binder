@@ -239,12 +239,12 @@ function allowedOrigins(env) {
  * tests/origin-gate.test.mjs asserts from both sides: a no-Origin read
  * with no credential is still 401, and a forged token is still 401.
  *
- * ONE ROUTE DID WIDEN, deliberately, and it is named here rather than
- * left for a reader to find: GET /content answers without a credential
- * by design, so admitting an absent Origin hands a no-Origin read the
- * site's own copy where it used to get a 403. That is the intent - the
- * copy is what an unauthenticated page renders - and the arm asserts
- * the widening rather than only the refusals.
+ * ONE ROUTE IS WIDER FOR IT, deliberately, and it is named here rather
+ * than left for a reader to find: GET /content answers without a
+ * credential by design, so on that one route an absent Origin reaches
+ * the site's own copy rather than a 403. That is the intent - the copy
+ * is what an unauthenticated page renders - and the arm asserts the
+ * widening rather than only the refusals.
  *
  * STATE-CHANGING METHODS KEEP REFUSING AN ABSENT ORIGIN. A browser
  * always sends Origin on POST and DELETE, so the refusal costs a real
