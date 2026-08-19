@@ -7,6 +7,7 @@
 
   const UI = root.BinderUI;
   const Session = root.BinderSession;
+  const Form = root.BinderForm;
   const $ = UI.byId;
   const show = UI.show;
 
@@ -42,6 +43,20 @@
   let entries = [];
   let downloadUrl = null;
   let inflight = null;
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+  let prefillApplied = false;
 
   function clearMemberData() {
     if (inflight) {
@@ -49,6 +64,7 @@
       inflight = null;
     }
     entries = [];
+    prefillApplied = false;
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       downloadUrl = null;
@@ -57,6 +73,224 @@
     emptyOut($("trend-slot"));
     const toggle = $("corrections-toggle");
     if (toggle && toggle.parentNode) toggle.parentNode.removeChild(toggle);
+     
+     
+     
+     
+     
+     
+    clearPrefilledFields();
+  }
+
+  
+
+  function newestCurrentRecord() {
+    const current = entries.find(function (e) { return !e.superseded; });
+    return current && current.record && typeof current.record === "object"
+      ? current.record : null;
+  }
+
+  function prefillFromEntries() {
+    if (prefillApplied) return;
+    const record = newestCurrentRecord();
+    if (!record) return;
+    prefillApplied = true;
+    prefillFields(record);
+  }
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+
+  
+
+  function fillMeasured(entry, value) {
+    if (!value || typeof value !== "object") return;
+    const F = root.BinderFields;
+    const table = F.unitsOf(entry.kind);
+    F.systems().forEach(function (system) {
+      const spec = entry.units[system];
+      if (!spec) return;
+      const mainBox = $("entry-" + entry.name + "-" + system);
+      if (!spec.compoundUnit) {
+        const store = table[spec.unit] && table[spec.unit].store;
+        if (mainBox && store && typeof value[store] === "number") {
+          mainBox.value = String(value[store]);
+        }
+        return;
+      }
+      const compoundStore = table[spec.compoundUnit] &&
+        table[spec.compoundUnit].store;
+      const total = compoundStore ? value[compoundStore] : null;
+      if (typeof total !== "number") return;
+      const perMain = F.convert(1, spec.unit, spec.compoundUnit);
+      if (!Number.isFinite(perMain) || perMain <= 0) return;
+      let mainAmount = Math.floor(total / perMain);
+      let compoundAmount = Math.round((total - mainAmount * perMain) * 10) / 10;
+      if (compoundAmount >= perMain) { mainAmount += 1; compoundAmount = 0; }
+      if (mainBox) mainBox.value = String(mainAmount);
+      const compoundBox = $("entry-" + entry.name + "-" + system + "-compound");
+      if (compoundBox) compoundBox.value = String(compoundAmount);
+    });
+  }
+
+  
+
+  function clearMeasured(entry) {
+    const F = root.BinderFields;
+    F.systems().forEach(function (system) {
+      const spec = entry.units[system];
+      if (!spec) return;
+      const mainBox = $("entry-" + entry.name + "-" + system);
+      if (mainBox) mainBox.value = "";
+      if (spec.compoundUnit) {
+        const compoundBox = $("entry-" + entry.name + "-" + system + "-compound");
+        if (compoundBox) compoundBox.value = "";
+      }
+    });
+  }
+
+  
+
+  function applyUnitsVisibility() {
+    const container = $("entry-fields");
+    if (!container) return;
+    const units = currentUnits();
+    Array.prototype.forEach.call(
+      container.querySelectorAll("[data-units-group]"),
+      function (group) {
+        show(group, group.getAttribute("data-units-group") === units);
+      });
+  }
+
+  function prefillFields(record) {
+    if (!Form || !record || typeof record !== "object") return;
+    const container = $("entry-fields");
+     
+     
+     
+     
+     
+     
+    if (!container) return;
+    const F = root.BinderFields;
+    Form.plan().forEach(function (entry) {
+      if (F.isMeasured(entry)) {
+         
+         
+        if (entry.kind === "weight") return;
+        fillMeasured(entry, record[entry.name]);
+        return;
+      }
+      if (!(entry.name in record)) return;
+      const value = record[entry.name];
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        if (box) box.checked = value === true;
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        const chosen = Array.isArray(value) ? value : [];
+        Array.prototype.forEach.call(
+          container.querySelectorAll('input[name="' + entry.name + '"]'),
+          function (input) { input.checked = chosen.indexOf(input.value) !== -1; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        if (field) {
+          field.value = value === null || value === undefined ? "" : String(value);
+        }
+      }
+    });
+
+    const units = record.entered && record.entered.units;
+    if (units === "metric" || units === "imperial") {
+      Array.prototype.forEach.call(
+        document.querySelectorAll('input[name="units"]'),
+        function (input) { input.checked = input.value === units; });
+      applyUnitsVisibility();
+    }
+  }
+
+  
+
+  function clearPrefilledFields() {
+    if (!Form) return;
+    const container = $("entry-fields");
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    if (!container) return;
+    const F = root.BinderFields;
+    Form.plan().forEach(function (entry) {
+      if (F.isMeasured(entry)) {
+        if (entry.kind === "weight") return;  
+         
+        clearMeasured(entry);
+        return;
+      }
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        if (box) box.checked = false;
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        Array.prototype.forEach.call(
+          container.querySelectorAll('input[name="' + entry.name + '"]'),
+          function (input) { input.checked = false; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        if (field) field.value = "";
+      }
+    });
+
+    const fallback = F.defaultSystem();
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { input.checked = input.value === fallback; });
+    applyUnitsVisibility();
   }
 
    
@@ -490,6 +724,7 @@
 
     renderTrend(trendSlot);
     renderEntries(entriesSlot, function () { loadEntries(); });
+    prefillFromEntries();
   }
 
    
@@ -614,6 +849,15 @@
      
      
     document.addEventListener("binder:submitted", function () {
+       
+       
+       
+       
+       
+       
+       
+       
+      prefillApplied = false;
       loadEntries();
     });
 
