@@ -464,6 +464,42 @@
   /* ------------------------------------------------------------------ */
   /* Fetching the list and drawing both sections from one response.      */
 
+  /*
+   * What a failed load leaves in a slot: the honest sentence, and one
+   * control that re-fires THIS read (0.9-M2-S8, #365, the owner's own
+   * request from the first M2 sitting).
+   *
+   * The sentence names no remedy of its own - no "reload the page" -
+   * because the control beside it is the remedy, and a whole-page
+   * reload is not one this page can ask for: it would throw away the
+   * form a member may have half-filled to recover from one failed read.
+   * BOTH slots carry a control rather than one, because either one is
+   * where a member happens to be looking when the failure appears, and
+   * both re-fire the same single read: GET /my-entries answers this
+   * page's entries AND its trend, so there is nothing narrower to
+   * retry and no way for the two controls to disagree.
+   *
+   * The button is built here rather than shipped hidden in the markup
+   * because the slot is emptied on every draw - a control in the HTML
+   * would be removed by the first emptyOut() and never come back.
+   */
+  function failedLoad(slot, sentence) {
+    if (!slot) return;
+    emptyOut(slot);
+    slot.appendChild(el("p", { class: "muted", text: sentence }));
+    const again = el("button", { type: "button", class: "secondary",
+      text: "Try again" });
+    again.addEventListener("click", function () {
+      // Disabled for the life of this attempt, so a second press cannot
+      // start a race against the first - loadEntries() aborts an
+      // in-flight read, and this node is replaced outright by whatever
+      // the next draw writes into the slot, success or failure alike.
+      again.disabled = true;
+      loadEntries();
+    });
+    slot.appendChild(again);
+  }
+
   async function loadEntries() {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) return;
@@ -501,11 +537,7 @@
       if (error && error.name === "AbortError") return;
       detail(error && error.message ? error.message : "the entries listing " +
         "could not be fetched");
-      if (entriesSlot) {
-        emptyOut(entriesSlot);
-        entriesSlot.appendChild(el("p", { class: "muted",
-          text: "Your entries could not be loaded — reload the page." }));
-      }
+      failedLoad(entriesSlot, "Your entries could not be loaded.");
       // The trend section stays in flow even on a failed load - its own
       // comment on your-page.html says so ("the empty-state sentence
       // lives in the slot rather than an axis with no line on it"), and
@@ -513,11 +545,7 @@
       // comment rules out. Writing here rather than leaving whatever the
       // slot held before this call - a stale trend from a prior success
       // would read as current data about a request that just failed.
-      if (trendSlot) {
-        emptyOut(trendSlot);
-        trendSlot.appendChild(el("p", { class: "muted",
-          text: "Your trend could not be loaded — reload the page." }));
-      }
+      failedLoad(trendSlot, "Your trend could not be loaded.");
       return;
     } finally {
       if (inflight === controller) inflight = null;

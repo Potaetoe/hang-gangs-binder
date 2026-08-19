@@ -418,6 +418,25 @@
    
    
 
+  
+
+  function failedLoad(slot, sentence) {
+    if (!slot) return;
+    emptyOut(slot);
+    slot.appendChild(el("p", { class: "muted", text: sentence }));
+    const again = el("button", { type: "button", class: "secondary",
+      text: "Try again" });
+    again.addEventListener("click", function () {
+       
+       
+       
+       
+      again.disabled = true;
+      loadEntries();
+    });
+    slot.appendChild(again);
+  }
+
   async function loadEntries() {
     const config = root.BINDER_CONFIG || {};
     if (!config.endpoint) return;
@@ -455,11 +474,7 @@
       if (error && error.name === "AbortError") return;
       detail(error && error.message ? error.message : "the entries listing " +
         "could not be fetched");
-      if (entriesSlot) {
-        emptyOut(entriesSlot);
-        entriesSlot.appendChild(el("p", { class: "muted",
-          text: "Your entries could not be loaded — reload the page." }));
-      }
+      failedLoad(entriesSlot, "Your entries could not be loaded.");
        
        
        
@@ -467,11 +482,7 @@
        
        
        
-      if (trendSlot) {
-        emptyOut(trendSlot);
-        trendSlot.appendChild(el("p", { class: "muted",
-          text: "Your trend could not be loaded — reload the page." }));
-      }
+      failedLoad(trendSlot, "Your trend could not be loaded.");
       return;
     } finally {
       if (inflight === controller) inflight = null;

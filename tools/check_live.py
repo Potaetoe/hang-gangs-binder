@@ -442,7 +442,7 @@ LEDGER = [
                 "only"),
     },
     {
-        "id": "GET /charts",
+        "id": "GET /charts-data",
         "surface": "route",
         "claim": "the Worker aggregates the whole corpus on request and "
                  "answers one filter and one measure with the "
@@ -707,7 +707,7 @@ LEDGER = [
     # Both rows below were "performed" for the pre-0.9 page: a member
     # session reading the published snapshot, and the same forged-token
     # 401 rehearsal every gated page gets its own row for. 0.9-M2-S3
-    # (#354) rebuilds the page around GET /charts instead - apps/web/
+    # (#354) rebuilds the page around GET /charts-data instead - apps/web/
     # public.js is gone with the snapshot it read - so both claims are
     # now about a page nobody has driven live yet, and RESET to "never"
     # rather than left "performed" against a page that no longer
@@ -717,10 +717,14 @@ LEDGER = [
     {
         "id": "charts.html",
         "surface": "page",
-        "claim": "a member session draws a real figure from GET /charts "
-                 "- the filter and measure controls, a picture toggle "
-                 "that reads one cached answer twice, and the honest "
-                 "not-enough sentence on a floored cut",
+        "claim": "a member session draws a real figure from GET "
+                 "/charts-data - the filter and measure controls, a "
+                 "picture toggle that reads one cached answer twice, "
+                 "and the honest not-enough sentence on a floored cut. "
+                 "AND THE PAGE IS REACHABLE AT ITS OWN URL: navigating "
+                 "to charts.html follows the assets layer's redirect to "
+                 "/charts and lands on HTML, not on a route's JSON "
+                 "(0.9-M2-S8, #365 - the route moved to /charts-data)",
         "covers": ["apps/web/charts.html", "apps/web/charts.js"],
         "status": "never",
     },
@@ -790,63 +794,86 @@ LEDGER = [
     # a discharged claim lands when it is about no single route and no
     # single page - the origin gate is in front of every route, and the
     # signed-out bounce is a property of the pages together.
+    # THE TWO ROWS BELOW LOST A THIRD OF THEIR CLAIM AT 0.9-M2-S8
+    # (#365). Each said "no origin at all is refused in bytes identical
+    # to a foreign origin", and each was honestly performed against a
+    # Worker where that held. It no longer does, on purpose: an absent
+    # Origin is what every same-origin read looks like, and refusing it
+    # refused the site every read of its own pages. The two halves that
+    # ARE still true - a foreign origin refused, the allowed origin
+    # admitted as far as the route's own 401 - keep their evidence,
+    # because that evidence is still about the shipped behavior. The
+    # third state is not silently dropped: it is its own `never` row
+    # below, which is the ledger's whole point.
     {
-        "id": "the origin gate, all three answers",
+        "id": "the origin gate, both refusals it still makes",
         "surface": "flow",
         "claim": "an allowed origin reaches the handler and is refused "
-                 "on its credential, while a foreign origin and no "
-                 "origin at all are refused by the gate in bytes "
-                 "identical to each other",
+                 "on its credential, while a foreign origin is refused "
+                 "by the gate itself",
         "covers": ["server/worker.js", "server/wrangler.toml"],
         "status": "performed",
         "performed": dict(
             REHEARSAL,
             how="GET /snapshot answered 401 for http://127.0.0.1:8124 "
                 "and for http://localhost:8124, and 403 for "
-                "https://potaetoe.github.io and for a request with no "
-                "Origin header. The three answers together are the "
-                "check: the first alone cannot tell a working gate from "
-                "a Worker that allows everything, and a probe that "
-                "forgets the header reads exactly like a foreign origin "
-                "being refused. http://127.0.0.1:8130 - a delegated "
-                "slice's own assigned port - also answered 403, which "
-                "is the mechanical reason live verification has been "
-                "unreachable from every slice but the one holding 8124. "
-                "GET /snapshot is retired (0.9-M2-S3, #354, deletion "
-                "not gating), so this exact probe can no longer be "
-                "reissued - a re-verifier today runs the same "
-                "three-way origin probe against GET /charts instead, "
+                "https://potaetoe.github.io. The pair is the check: the "
+                "401 alone cannot tell a working gate from a Worker "
+                "that allows everything. http://127.0.0.1:8130 - a "
+                "delegated slice's own assigned port - also answered "
+                "403, which is the mechanical reason live verification "
+                "has been unreachable from every slice but the one "
+                "holding 8124. The same probe also drove a request with "
+                "NO Origin header and read 403; that answer is not "
+                "carried here, because 0.9-M2-S8 (#365) makes it 401 "
+                "and the absent-Origin state is its own row below. GET "
+                "/snapshot is retired (0.9-M2-S3, #354, deletion not "
+                "gating), so this exact probe cannot be reissued - a "
+                "re-verifier today runs it against GET /charts-data, "
                 "the API-shaped route now standing in the gate's path"),
     },
     {
-        "id": "the origin gate on production, all three answers",
+        "id": "the origin gate admits a same-origin read",
+        "surface": "flow",
+        "claim": "a GET carrying NO Origin header - which is what every "
+                 "same-origin read and every address-bar navigation "
+                 "looks like on the wire - reaches the route and earns "
+                 "the route's own answer, while carrying no Access-"
+                 "Control-Allow-Origin of any kind; and the same "
+                 "request as a POST or a DELETE is still refused by the "
+                 "gate (0.9-M2-S8, #365)",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "the origin gate on production, both refusals it still makes",
         "surface": "flow",
         "claim": "the gate in front of every route on the live "
-                 "deployment refuses a foreign origin and a request "
-                 "carrying no origin at all in identical bytes, and "
-                 "admits the published origin as far as the route's own "
-                 "refusal",
+                 "deployment refuses a foreign origin, and admits the "
+                 "published origin as far as the route's own refusal",
         "covers": ["server/worker.js", "server/wrangler.toml"],
         "status": "performed",
         "performed": dict(
             PRODUCTION,
             how="GET /snapshot against the production Worker three "
-                "times, differing only in the Origin header. No header "
-                "at all and https://example.com both answered 403 "
+                "times, differing only in the Origin header. "
+                "https://example.com answered 403 "
                 '{"error":"Origin not allowed."} with no CORS header of '
                 "any kind; https://potaetoe.github.io answered 401 "
                 "carrying Access-Control-Allow-Origin for that origin, "
-                "Vary: Origin and Max-Age 86400. The three together are "
-                "the check: the 403 alone cannot tell a working gate "
-                "from a Worker refusing everything, and a probe that "
-                "forgets the header reads exactly like a foreign origin "
-                "being refused. Read-only GETs, which is the whole of "
-                "what a slice holding no credential may drive against "
-                "this deployment. GET /snapshot is retired (0.9-M2-S3, "
-                "#354, deletion not gating), so this exact probe can no "
-                "longer be reissued - a re-verifier today runs the same "
-                "three-way origin probe against GET /charts instead, "
-                "still read-only and still credential-free at the gate"),
+                "Vary: Origin and Max-Age 86400. The pair is the check: "
+                "the 403 alone cannot tell a working gate from a Worker "
+                "refusing everything. The third probe, with no Origin "
+                "header, also read 403; that answer is not carried "
+                "here, because 0.9-M2-S8 (#365) makes it the route's "
+                "own 401 and the absent-Origin state is its own row "
+                "above. Read-only GETs, which is the whole of what a "
+                "slice holding no credential may drive against this "
+                "deployment. GET /snapshot is retired (0.9-M2-S3, "
+                "#354, deletion not gating), so this exact probe cannot "
+                "be reissued - a re-verifier today runs it against GET "
+                "/charts-data, still read-only and still credential-"
+                "free at the gate"),
     },
     {
         "id": "the signed-out bounce, with nothing announced",

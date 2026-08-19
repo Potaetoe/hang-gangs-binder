@@ -196,7 +196,7 @@ check("the shipped router parses with no refusals",
       REAL_ROUTE_PROBLEMS == [])
 
 check("the shipped router yields the routes it dispatches",
-      {"POST /auth/telegram", "GET /charts", "DELETE /submission/{}",
+      {"POST /auth/telegram", "GET /charts-data", "DELETE /submission/{}",
        "DELETE /membership/{}/{}", "OPTIONS *"} <= set(REAL_ROUTES))
 
 # And the other direction, which is what the ledger's spine rests on: a

@@ -78,8 +78,13 @@ const STORE_SECRET = "origin arm store secret / not a real one / v1";
  * green - the failure this whole file is a response to, in miniature.
  */
 function makeDb(sessionRow) {
-  const answer = (sql) => {
-    if (/FROM sessions WHERE token_hash/i.test(sql)) return sessionRow;
+  const answer = (sql, args) => {
+    if (/FROM sessions WHERE token_hash/i.test(sql)) {
+      // Keyed on the bound hash, not handed back to whoever asks: a
+      // stub that answers every token turns "the session is still the
+      // gate" into a sentence nothing tests.
+      return args[0] === sessionRow.token_hash ? sessionRow : null;
+    }
     if (/UPDATE sessions SET expires_at/i.test(sql)) return { meta: {} };
     if (/FROM submissions AS mine/i.test(sql)) {
       // handleMe's aggregate reads through first(); handleMyEntries'
@@ -92,12 +97,15 @@ function makeDb(sessionRow) {
     if (/FROM site_content/i.test(sql)) return { results: [] };
     throw new Error("unmodelled statement: " + sql);
   };
-  const bound = (sql) => ({
-    first: async () => answer(sql),
-    all: async () => answer(sql),
-    run: async () => answer(sql),
+  const bound = (sql, args) => ({
+    first: async () => answer(sql, args),
+    all: async () => answer(sql, args),
+    run: async () => answer(sql, args),
   });
-  return { prepare: (sql) => Object.assign(bound(sql), { bind: () => bound(sql) }) };
+  return {
+    prepare: (sql) => Object.assign(bound(sql, []),
+      { bind: (...args) => bound(sql, args) }),
+  };
 }
 
 const future = new Date(Date.now() + 3600_000).toISOString();

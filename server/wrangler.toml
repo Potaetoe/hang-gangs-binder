@@ -38,9 +38,14 @@ compatibility_date = "2026-08-04"
 # scroll past.
 #
 # A preview URL publishes every deployed version at its own permanent
-# hostname. Nothing leaks through one: the origin check rejects a
-# request with no Origin header, and both secrets still gate what they
-# gated. What it does leave behind is every past version of this Worker,
+# hostname. Nothing leaks through one: every route that answers anything
+# about a member needs a session token that only a real sign-in issues,
+# and both secrets still gate what they gated. (The sentence here used
+# to rest on "the origin check rejects a request with no Origin header"
+# instead - it does not, since 0.9-M2-S8/#365: an absent Origin is what
+# every same-origin read looks like, and refusing it refused the site
+# its own pages. The session was always the load-bearing half.) What a
+# preview URL does leave behind is every past version of this Worker,
 # reachable forever, which is a surface that buys nothing here - there
 # is no staging branch and no preview environment by design, because a
 # push to main is the release. See DESIGN.md, "What is deliberately not
@@ -78,11 +83,19 @@ preview_urls = false
 # set from its own constant; tests/route-precedence.test.mjs parses
 # both files and fails if the two ever name a different set - the
 # guard a hand-kept comment cannot give itself.
+#
+# AND NO PATTERN HERE MAY NAME A PAGE. html_handling is left at its
+# default, which answers /x.html with a redirect to /x - so a pattern
+# named after a page sends that page's own URL into the Worker and the
+# router answers the API's refusal where the HTML should be. "/charts"
+# was exactly that against apps/web/charts.html, and the route was
+# renamed /charts-data rather than the page (0.9-M2-S8, #365). The same
+# test file reads apps/web/ and fails on any new collision.
 [assets]
 directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "404-page"
-run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts", "/export", "/submission/*", "/content", "/content/*", "/membership", "/membership/*" ]
+run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts-data", "/export", "/submission/*", "/content", "/content/*", "/membership", "/membership/*" ]
 
 # The site allowed to POST here. Set this and the Worker never needs
 # editing - see the comment above DEFAULT_ORIGINS in worker.js.
@@ -283,7 +296,7 @@ preview_urls = false
 directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "404-page"
-run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts", "/export", "/submission/*", "/content", "/content/*", "/membership", "/membership/*" ]
+run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts-data", "/export", "/submission/*", "/content", "/content/*", "/membership", "/membership/*" ]
 
 # sit's own workers.dev origin joins localhost (0.9-M1-S3, #329): the
 # Worker now serves the static site from its own origin (DESIGN.md,

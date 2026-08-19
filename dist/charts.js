@@ -64,7 +64,7 @@
   
 
   function chartsURL(endpoint, ask) {
-    const url = new URL(endpoint + "/charts");
+    const url = new URL(endpoint + "/charts-data");
     url.searchParams.set("measure", ask.measure);
     if (ask.filter) {
       url.searchParams.set("filter", ask.filter);
