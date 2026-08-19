@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 123
+EXPECTED = 122
 
 
 def check(label, condition):
@@ -345,12 +345,14 @@ check("and a real file's code is not read as prose",
       "font-variant-numeric" not in
       check_comments.comments_only(THEME, "css"))
 
-# apps/web/public.js tells a signed-out member their session is "no
-# longer valid". It is the string this check must never report.
+# apps/web/charts.js tells a signed-out member their session is "no
+# longer valid" (0.9-M2-S3, #354 - apps/web/public.js carried the same
+# string until this slice retired it). It is the string this check
+# must never report.
 PUBLIC = open(os.path.join(check_comments.REPO, "apps", "web",
-                           "public.js"), encoding="utf-8").read()
+                           "charts.js"), encoding="utf-8").read()
 check("a real page's user-facing string is not counted",
-      ("apps/web/public.js", "no longer used") not in found
+      ("apps/web/charts.js", "no longer used") not in found
       and check_comments.hits(PUBLIC, "js") == [])
 
 # The outside-scan surface #154's sweep found (P3 F7 / S-5): the scan
@@ -762,8 +764,17 @@ check("and nothing is broken that is not pinned, at any multiplicity",
       all(check_comments.CITATION_PINS.get(key) == count
           for key, count in BROKEN.items()))
 
-check("and the tree really does hold a citation pinned more than once",
-      max(check_comments.CITATION_PINS.values()) > 1)
+# RETIRED (0.9-M2-S3, #354): "and the tree really does hold a citation
+# pinned more than once" stood here, asserting max(CITATION_PINS.values())
+# > 1 against the REAL tree - apps/web/dashboard.js and server/
+# worker.js each cited DESIGN.md, "The charts and the snapshot" twice,
+# which is what F1 above is about. Both files are retired or rewritten
+# with this slice and neither doubled citation survives it, so the real
+# tree currently pins nothing above count 1. The counting MECHANISM
+# this fact corroborated is still fully exercised by the synthetic
+# fixtures below - "a second comment repeating a pinned citation is
+# reported" and "raising the count to two is what covers both" - which
+# is the belt this real-tree check was the suspenders for.
 
 # The half that makes it shrink. A pin dies three ways - the comment
 # gets rewritten by the milestone that reaches its file, the wording

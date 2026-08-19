@@ -442,25 +442,6 @@ LEDGER = [
                 "only"),
     },
     {
-        "id": "POST /snapshot",
-        "surface": "route",
-        "claim": "publishing writes a document carrying no handles and "
-                 "no individual rows",
-        "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="the document was read as raw bytes before it was "
-                "sent, which is the only order in which this claim can "
-                "be checked at all: counts, medians and bins, no "
-                "handles, no individual rows and no ids, identified "
-                "false, and the series labelled generically. The "
-                "suppression floor was watched withholding whole "
-                "breakdowns rather than publishing stubs - gender and "
-                "country came back as empty lists - and a document "
-                "that merely omits nothing could not have shown that"),
-    },
-    {
         "id": "GET /charts",
         "surface": "route",
         "claim": "the Worker aggregates the whole corpus on request and "
@@ -486,94 +467,6 @@ LEDGER = [
                  "least the floor's number of members, and watch the "
                  "no-store header arrive",
         "covers": ["server/worker.js", "server/charts-agg.js"],
-        "status": "never",
-    },
-    {
-        "id": "GET /snapshot",
-        "surface": "route",
-        "claim": "a signed-in member reads the published document back, "
-                 "which is the half a refusal cannot show: a route that "
-                 "refuses everybody refuses a signed-out reader too",
-        "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="a member session read the published document back on "
-                "charts.html - the combined-weight hero, an entries "
-                "and people line agreeing with what had been "
-                "submitted, a freshness line and the distributions. "
-                "The signed-out refusal below is what this pairs with: "
-                "a Worker refusing everybody would have answered that "
-                "one in exactly the same bytes"),
-    },
-    {
-        "id": "GET /snapshot, a signed-out reader",
-        "surface": "route",
-        "claim": "a reader carrying no credential is refused by the "
-                 "route rather than by the origin gate in front of it",
-        "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            REHEARSAL,
-            how='401 {"error":"Not authorized."} from an allowed '
-                "origin with no credential, against the gate's 403 "
-                '{"error":"Origin not allowed."} - two different '
-                "refusals, so the 401 is the route's own"),
-    },
-    # The same claim against the other Worker, and a separate row rather
-    # than a re-dating of the one above: they are about two deployments,
-    # and one status cannot describe both. Read it beside its twin - the
-    # pair is what the arm grouping in the report exists to keep apart.
-    {
-        "id": "GET /snapshot, a signed-out reader on production",
-        "surface": "route",
-        "claim": "the route's own refusal on the deployment the cutover "
-                 "is about, and the far side of it is unobservable "
-                 "without a credential - so what a signed-out reader "
-                 "can establish about production stops at the 401",
-        "covers": ["server/worker.js"],
-        "status": "performed",
-        "performed": dict(
-            PRODUCTION,
-            how='401 {"error":"Not authorized."} from '
-                "https://potaetoe.github.io carrying no Authorization "
-                "header, against 403 for the same request with the "
-                "Origin header removed - two different refusals, so the "
-                "401 is the route's own and not the gate's. This is the "
-                "DESIGNED uncredentialed answer and not a fault: the "
-                "dispatch block refuses a caller-less request before "
-                "handleReadSnapshot runs, so the "
-                '"No snapshot published yet." 404 behind it cannot be '
-                "reached from here, and whether production carries a "
-                "published document is not observable without a "
-                "session"),
-    },
-    # The row the two above stop short of, written down here rather than
-    # left in a pull request body - AGENTS.md is explicit that a live
-    # claim nobody could perform belongs in the ledger, and #157 is what
-    # happens when it does not. It stays `never` and it stays debt: it
-    # is not first-contact, because production EXISTS and the claim is
-    # reachable there today. What it costs is a credential, which is
-    # what puts it outside a delegated slice rather than outside the
-    # project.
-    {
-        "id": "GET /snapshot, a credentialed read on production",
-        "surface": "route",
-        "claim": "a caller the production Worker accepts reads the "
-                 "route past its session gate and learns whether a "
-                 "document is published - the designed 404 when none "
-                 "is, which is the answer no uncredentialed probe can "
-                 "distinguish from a refusal",
-        "covers": ["server/worker.js"],
-        "status": "never",
-    },
-    {
-        "id": "DELETE /snapshot",
-        "surface": "route",
-        "claim": "no automated probe drives this route: it is the one "
-                 "destructive door here, it stays hand-driven, and a "
-                 "suite that could reach it is a suite that will",
-        "covers": ["server/worker.js"],
         "status": "never",
     },
     {
@@ -811,40 +704,35 @@ LEDGER = [
                 "deployed Worker; the token was cleared and the page "
                 "replaced itself with index.html"),
     },
+    # Both rows below were "performed" for the pre-0.9 page: a member
+    # session reading the published snapshot, and the same forged-token
+    # 401 rehearsal every gated page gets its own row for. 0.9-M2-S3
+    # (#354) rebuilds the page around GET /charts instead - apps/web/
+    # public.js is gone with the snapshot it read - so both claims are
+    # now about a page nobody has driven live yet, and RESET to "never"
+    # rather than left "performed" against a page that no longer
+    # exists. Live-driving the rebuilt page is real debt this table
+    # keeps rather than one this slice happens to owe: neither claim
+    # was reachable from an isolated agent worktree with no credential.
     {
         "id": "charts.html",
         "surface": "page",
-        "claim": "the published figures paint from a real snapshot",
-        "covers": ["apps/web/charts.html", "apps/web/public.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="read as a member: the combined-weight hero first, "
-                "before any chart, entries and people agreeing with "
-                "what had been submitted, a freshness line, the "
-                "distributions, and a privacy paragraph that matched "
-                "what the document actually carried. A second publish "
-                "with nothing changed drew the movement line stating "
-                "its own suppression - too few entries have moved to "
-                "say by how much - rather than a blank, a blank being "
-                "the different and false claim that nothing changed. "
-                "That the figures paint is this row. That every "
-                "suppressed cell paints legibly is not: defects were "
-                "filed against three that do not"),
+        "claim": "a member session draws a real figure from GET /charts "
+                 "- the filter and measure controls, a picture toggle "
+                 "that reads one cached answer twice, and the honest "
+                 "not-enough sentence on a floored cut",
+        "covers": ["apps/web/charts.html", "apps/web/charts.js"],
+        "status": "never",
     },
     {
         "id": "charts.html, a live 401",
         "surface": "page",
-        "claim": "a refused session clears the token and the page says "
-                 "so where it stands, rather than redirecting",
-        "covers": ["apps/web/charts.html", "apps/web/public.js"],
-        "status": "performed",
-        "performed": dict(
-            REHEARSAL,
-            how="the same forged token; the token was cleared, the page "
-                "stayed put and read \"Your sign-in is no longer "
-                "valid.\" Three pages answer a live 401 three different "
-                "ways, so one row could not have covered them"),
+        "claim": "a refused session says so where the page stands, "
+                 "rather than redirecting - matching your-page.html's "
+                 "and admin.html's own live-401 rows, each in the "
+                 "words their page uses",
+        "covers": ["apps/web/charts.html", "apps/web/charts.js"],
+        "status": "never",
     },
     {
         "id": "admin.html",
@@ -959,14 +847,18 @@ LEDGER = [
                  "a request that earns a 401 has still announced the "
                  "reader to the Worker",
         "covers": ["apps/web/session.js", "apps/web/submit.js",
-                   "apps/web/public.js", "apps/web/admin.js"],
+                   "apps/web/charts.js", "apps/web/admin.js"],
         "status": "performed",
         "performed": dict(
             REHEARSAL,
             how="with sessionStorage empty, your-page.html, charts.html "
                 "and admin.html each sent the reader to index.html; no "
                 "form, no figures and no key box painted, and the "
-                "network panel stayed empty on all three"),
+                "network panel stayed empty on all three. The charts.html "
+                "leg was rehearsed against the pre-0.9-M2-S3 page - the "
+                "call is now apps/web/charts.js's own Session.require(), "
+                "unchanged in shape, but not re-rehearsed against the "
+                "rebuilt page's real bytes (#354)"),
     },
     {
         "id": "the import-once, return-later key flow",
@@ -989,23 +881,14 @@ LEDGER = [
                 "paste, which is the half that a key merely accepted "
                 "cannot show"),
     },
-    {
-        "id": "charts painted from decrypted rows",
-        "surface": "flow",
-        "claim": "a chart is drawn from rows a live Worker returned, "
-                 "rather than asserted in Node with no layout engine",
-        "covers": ["apps/web/dashboard.js", "apps/web/admin.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="the first human view of that SVG: weight over time "
-                "drew a real slope for the two people carrying two "
-                "entries and a single point for the three carrying "
-                "one, and the distributions and the height panel "
-                "populated. Every assertion about this drawing until "
-                "the run was made in Node, with no layout engine and "
-                "no pixels"),
-    },
+    # "charts painted from decrypted rows" stood here - a flow row for
+    # apps/web/dashboard.js's SVG drawing, sighted once in a browser
+    # against admin.html's Publish preview. RETIRED (0.9-M2-S3, #354):
+    # dashboard.js is deleted with the snapshot route it drew, admin.html
+    # is stated dead rather than patched, and the concern this row named
+    # - a chart drawn from real data rather than asserted in Node with no
+    # layout engine - now belongs to the "charts.html" row above, which
+    # is `never` until the rebuilt page gets its own live sighting.
     # Two rows, because one status cannot describe both parties to the
     # refusal. A pair of corrections fired from a console arrives at
     # the Worker serialized, so the 409 comes from the ordinary check
@@ -1083,27 +966,10 @@ LEDGER = [
                 "so what round-tripped is the browser's WebCrypto and "
                 "not any shipped page's policy"),
     },
-    {
-        "id": "query.js frozen in a browser engine",
-        "surface": "flow",
-        "claim": "the shipped bytes publish BinderQuery and the freeze "
-                 "holds under the engine that will run them, rather "
-                 "than only under Node's loader",
-        "covers": ["apps/web/query.js"],
-        "status": "performed",
-        "performed": dict(
-            SITTING,
-            how="loaded in a browser: BinderQuery published, "
-                "Object.isFrozen answering true on it, the whole "
-                "contract present, and describe() answering with its "
-                "caption. The exported-objects-are-frozen rule is "
-                "asserted everywhere else by a Node suite, and a "
-                "loader is not an engine. What this does NOT say is "
-                "that anything loads the file in the course of using "
-                "the site: no page in apps/web requests it, which is a "
-                "decision about whether it should ship yet and not "
-                "something a run can settle"),
-    },
+    # "query.js frozen in a browser engine" stood here - the row's own
+    # claim already said "no page in apps/web requests it", and 0.9-M2-S3
+    # (#354) deletes the file outright with the snapshot-era system it
+    # served. Nothing left to be evidence about.
 
     # ---- flow: reachable on sit now, not yet driven.
     #
