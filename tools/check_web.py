@@ -2471,6 +2471,17 @@ SUMMARY = re.compile(r"<summary\b[^>]*>(.*?)</summary>", re.S | re.I)
 SWATCH_GROUP = re.compile(
     r"<(\w+)\b[^>]*\bclass\s*=\s*[\"'][^\"']*\btheme-swatches\b[^>]*>", re.I)
 
+# The custom-palette editor (0.9-M2-S6, #82) - the one exception the
+# footer-is-the-row-and-nothing-else ruling now carries, per the design
+# mandate settled 2026-08-19: the two color pickers live in a native
+# <details class="more"> directly below the swatch row, the site's own
+# disclosure grammar rather than a new floating panel. Found by the same
+# class check 27's more_disclosure_problems() already enforces on every
+# <details> on these pages, so this arm and that one read one shape
+# rather than two.
+THEME_EDITOR_DETAILS = re.compile(
+    r"<(\w+)\b[^>]*\bclass\s*=\s*[\"'][^\"']*\bmore\b[^>]*>", re.I)
+
 # One page's footer, read whole. Non-greedy to the first closing tag
 # rather than depth-aware, because a footer cannot nest a footer - and
 # a page carrying two of them is refused by the arm rather than read.
@@ -2547,12 +2558,13 @@ def element_span(text, found):
 def footer_problems(text, themed):
     """[problem] for one page's footer against the owner's ruling on #274.
 
-    The footer is the swatch row and nothing else, so this reads what is
-    left after the row is cut out. That is the arm with reach: an
-    off-site href is invisible to DESTINATIONS and to the anti-stranding
-    arm alike, and an on-site link spelling its destination's own name
-    satisfies the name table exactly - so before this, two of the four
-    footers could take their nav back with the whole gate green.
+    The footer is the swatch row, its custom-palette editor since
+    0.9-M2-S6 (#82), and nothing else - so this reads what is left after
+    both are cut out. That is the arm with reach: an off-site href is
+    invisible to DESTINATIONS and to the anti-stranding arm alike, and an
+    on-site link spelling its destination's own name satisfies the name
+    table exactly - so before this, two of the four footers could take
+    their nav back with the whole gate green.
     """
     problems = []
     footers = FOOTER.findall(text)
@@ -2605,8 +2617,70 @@ def footer_problems(text, themed):
         problems.append(unreadable)
         return problems
 
-    rest = inside[:span[0]] + inside[span[1]:]
+    # F2 (0.9-M2-S6 fix wave 1, #82): "directly below the row" is a
+    # claim about what comes AFTER the row, so the EDITOR SEARCH reads
+    # only that text. Concatenating inside[:span[0]] (before the row)
+    # onto inside[span[1]:] (after it) before this search would prove
+    # the editor is PRESENT somewhere in the footer while throwing away
+    # where - an editor placed above the row would land at the front of
+    # that concatenation, reading `between` a few lines down as empty
+    # and passing the position check on a footer where the editor
+    # actually sits above the row.
+    after_row = inside[span[1]:]
     within = inside[span[0]:span[1]]
+
+    # The custom-palette editor, cut out of `after_row` the same way the
+    # row was cut out of `inside` - the one element besides the row a
+    # themed footer may now hold (0.9-M2-S6, design mandate 1). Required
+    # rather than merely allowed: every themed page carries the same
+    # fifth chip, so every themed page owes the editor it opens, the
+    # same parity the four named palettes already hold.
+    editor = THEME_EDITOR_DETAILS.search(after_row)
+    if not editor:
+        problems.append(
+            "offers a palette and carries no <details class=\"more\"> "
+            "custom-palette editor directly below its swatch row. "
+            "0.9-M2-S6 ships the editor on every themed page - the "
+            "Custom chip in the row above needs it to mean anything - so "
+            "a page missing it is one member cannot reach their own "
+            "colors from")
+        return problems
+
+    editor_span, editor_unreadable = element_span(after_row, editor)
+    if editor_unreadable:
+        problems.append(editor_unreadable)
+        return problems
+
+    between = after_row[:editor_span[0]]
+    if between.strip():
+        problems.append(
+            "carries markup or words between the swatch row and its "
+            "<details class=\"more\"> custom-palette editor. The editor "
+            "sits directly below the row with nothing between them "
+            "(design mandate 1), so anything there is the footer "
+            "drifting again")
+
+    # F2 (0.9-M2-S6 fix wave 2, #82): only the EDITOR SEARCH above needs
+    # position preserved - "directly below" is a claim about order, and
+    # order only means something relative to the row. The link/markup/
+    # words arms below make no positional claim at all ("the footer is
+    # the row and its editor, and nothing else" - order-blind by the
+    # ruling's own words), so they read for everything that ISN'T the
+    # row or the editor: what came before the row, plus what's left of
+    # `after_row` once the editor's own span is cut out of it. Wave 1
+    # fixed the editor search by narrowing `rest` to after_row and then
+    # reused that SAME narrowed `rest` for these arms too - so content
+    # before the row (an off-site link, markup, bare words) stopped
+    # being read by anything, the exact hole #274 closed reopened one
+    # page earlier. Confirmed by the new before-the-row fixture in
+    # dev/check_web.test.py: it passes wave 1's function silently and
+    # is refused here.
+    rest = inside[:span[0]] + after_row[editor_span[1]:]
+    if THEME_EDITOR_DETAILS.search(rest):
+        problems.append(
+            "carries more than one <details class=\"more\"> custom-"
+            "palette editor in its footer. One picker, reused on every "
+            "page, is the whole point of the mechanism")
 
     for _ in FOOTER_ANCHOR.findall(rest):
         problems.append(
@@ -3775,6 +3849,14 @@ MODULE_EXPORTS = {
     "form.js": "BinderForm",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
+    # The one export theme-init.js carries (0.9-M2-S6, #82): the custom-
+    # palette math, published from the pre-paint script rather than from
+    # a second <head> script because check 22 below pins the head to
+    # exactly one. theme.js captures it at the end of the body; see
+    # loading_problems()'s own PREPAINT_SCRIPT seed for why that capture
+    # is in-order despite theme-init.js never appearing in a page's body
+    # run.
+    "theme-init.js": "BinderCustomPalette",
     "ui.js": "BinderUI",
     "xlsx.js": "BinderXlsx",
 }
@@ -3798,7 +3880,6 @@ NO_MODULE_EXPORT = {
     "site.config.js": "assigns BINDER_SITE - see NON_NAMESPACE_GLOBALS",
     "submit.js": "wires your-page.html's trend, its entries list, its "
                  "download and idle expiry",
-    "theme-init.js": "sets the pre-paint theme attribute and returns",
     "theme.js": "wires the palette controls in place",
 }
 
@@ -4515,7 +4596,20 @@ def loading_problems():
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
         for problem in page_loading_problems(text):
             problems.append((name, problem))
-        for problem in run_order_problems(page_script_run(text), captures):
+        # PREPAINT_SCRIPT is not part of page_script_run() - that
+        # function's own docstring is "the site's own scripts, in the
+        # order they execute", and the pre-paint one is a different kind
+        # of script, blocking in the head rather than classic at the end
+        # of the body. It still runs before every one of them, which is
+        # exactly check 22's own guarantee a few hundred lines up - so
+        # for the ordering question alone, it is seeded in at the front
+        # rather than left for the loop below to read as a publisher
+        # that never ran. Since 0.9-M2-S6 (#82) it is a publisher
+        # (BinderCustomPalette, in MODULE_EXPORTS), and without this seed
+        # every page capturing it would fail order for a script that in
+        # fact always runs first.
+        run = [PREPAINT_SCRIPT, *page_script_run(text)]
+        for problem in run_order_problems(run, captures):
             problems.append((name, problem))
         for problem in sign_out_wiring_problems(text):
             problems.append((name, problem))
@@ -4944,11 +5038,19 @@ MOCKUP_PALETTES = {
 # cross-page agreement stay check 23's, so neither arm restates the
 # other: 23 says the four copies agree, this says the word they agree on
 # is the ruled one.
+#
+# "custom" joined the four at 0.9-M2-S6 (#82), settled by the design
+# consult 2026-08-19 rather than by a mockup revision: the consult is
+# BINDING in the mockup's place for this one ticket (the injected
+# mandate says so), because the chip's own dot is painted at runtime
+# from a member's own colors and has no fixed value the mockup could
+# ever rule the way it rules the other four's.
 MOCKUP_CHIPS = {
     "midnight": "Midnight",
     "pink": "Pink",
     "daylight": "Daylight",
     "contrast": "Contrast",
+    "custom": "Custom",
 }
 
 # What a stale chip pin is attributed to, when there is no page to

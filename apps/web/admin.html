@@ -609,7 +609,38 @@
       ><span class="swatch-dot" data-palette="daylight"></span></button>
     <button type="button" data-set-theme="contrast" aria-label="Contrast"
       ><span class="swatch-dot" data-palette="contrast"></span></button>
+    <button type="button" data-set-theme="custom" aria-label="Custom"
+      ><span class="swatch-dot" data-palette="custom"></span></button>
   </div>
+  <!--
+    The custom-palette editor (0.9-M2-S6, #82) - a native
+    <details class="more"> directly below the row, the site's own
+    disclosure grammar rather than a new floating panel (the flyout
+    question #274 deferred to this ticket, settled by the design
+    mandate 2026-08-19). Closed by default on every page, exactly the
+    ".more" shape check 27 already holds every card's why-prose to: the
+    class, the word "More", and no `open`. Two colors, everything else
+    derived - the picker asks for nothing more, per the design
+    mandate's own limit on new vocabulary.
+  -->
+  <details class="more">
+    <summary>More</summary>
+    <div class="stack">
+      <div class="pair">
+        <div class="field">
+          <label for="custom-bg">Background</label>
+          <input type="color" id="custom-bg" value="#120d10">
+        </div>
+        <div class="field">
+          <label for="custom-accent">Accent</label>
+          <input type="color" id="custom-accent" value="#c73743">
+        </div>
+      </div>
+      <p class="hint">Everything else is worked out from these two.</p>
+      <p class="field-error" id="custom-contrast-warning" hidden
+        >This background and text may be hard to read together.</p>
+    </div>
+  </details>
 </footer>
 
 </div>
