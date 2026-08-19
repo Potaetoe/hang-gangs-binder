@@ -447,15 +447,20 @@ LEDGER = [
         "id": "GET /charts-data",
         "surface": "route",
         "claim": "the Worker aggregates the whole corpus on request and "
-                 "answers one filter and one measure with the "
-                 "suppression floor already applied (0.9-M2-S0, #351). "
+                 "answers one filter and one measure - the trend, the "
+                 "fixed-band distribution and the group makeup - with "
+                 "the floor the settings hold already applied (0.9-M2-"
+                 "S0, #351; reshaped by 0.9-M2-S10, #371, to the owner's "
+                 "charts ruling at #243 comment 5346978974). "
                  "tests/charts-aggregate.test.mjs decides every "
                  "disclosure rule off-line against real seals - the "
-                 "floor both directions, the Other-bucket fold, "
-                 "adjacent-bin merging, one partition over random "
-                 "groups, and a sub-floor trend period dropped rather "
-                 "than zeroed - so the rules themselves need no live "
-                 "run. THREE HALVES STAY LIVE-ONLY, and each is a "
+                 "shipped floor of 0 drawing every cell, band and month "
+                 "at its true value, the band edges coming from the "
+                 "spec and never from the data, the group makeup's "
+                 "unique-member counting, and the whole suppression "
+                 "machinery re-proved at a raised floor - so the rules "
+                 "themselves need no live run. THREE HALVES STAY "
+                 "LIVE-ONLY, and each is a "
                  "database or a platform doing something a stub cannot "
                  "be wrong about: D1 applying the NOT EXISTS tombstone "
                  "predicate over real rows rather than an array filter "
@@ -465,9 +470,9 @@ LEDGER = [
                  "saying so; and the CPU an aggregation really costs, "
                  "since every current row is opened per request and a "
                  "Worker has a limit a Node process does not. Read one "
-                 "measure with a filter and without, on a corpus of at "
-                 "least the floor's number of members, and watch the "
-                 "no-store header arrive",
+                 "measure with a filter and without, on a corpus with "
+                 "several members and a correction among them, and "
+                 "watch the no-store header arrive",
         "covers": ["server/worker.js", "server/charts-agg.js"],
         "status": "never",
     },

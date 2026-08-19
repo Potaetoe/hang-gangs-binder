@@ -344,10 +344,10 @@ shared browser's `localStorage` is a privacy cost buying nothing.
 gender, an affiliation, a country. **The measures derive from the
 form's field spec** — every numeric field charts, weight and height and
 computed BMI today — so a fork that edits its fields gets matching
-charts with no chart code to write. The spec carries kind and unit
-metadata, which is what lets conversion and computed fields derive too;
-it is `apps/web/site.config.js` and this page is one of the two things
-it exists for.
+charts with no chart code to write. The spec carries kind, unit and
+range metadata, which is what lets conversion, computed fields and the
+band edges derive too; it is `apps/web/site.config.js` and this page is
+one of the two things it exists for.
 
 - **Both pictures behind one toggle**: the trend over time, and the
   distribution now.
@@ -365,43 +365,105 @@ snapshot document and its freshness line are all gone, along with the
 class of failure where the figures on screen were as old as the last
 time somebody remembered to press a button.
 
-The disclosure rules that governed the published document govern the
-live one, because they were always about what a **reader** can
-reconstruct rather than about publishing:
+**The group sees its own figures. The suppression floor ships at 0.**
+The owner re-took the whole disclosure regime at the charts sitting of
+2026-08-19 — five rounds of questions including an adversarial one, the
+record at #243 comment 5346978974 — and this section is that ruling.
+It supersedes what stood here, the floor default in the #228 record,
+the #153 cumulative-channel acceptance and the #351 cross-filter
+acceptance, all of which described a regime the owner has now ruled off
+by default, eyes open. Put adversarially and accepted in the owner's own
+words: **"members chose to share."** The consequence was stated plainly
+and accepted with it — *a filter isolating one member shows that
+member's number to every signed-in member* — so a one-person view
+drawing its true value is this design working, not a hole in it.
 
-- **A drawn cell describes at least the floor's number of people**, and
-  the floor is a group setting rather than a constant — on by default
-  and starting at 5, stated with the other Settings defaults under
-  **Admin surfaces** below. Suppression is by subtraction, not
-  redaction — removed cells fold into an `Other` bucket that itself
-  clears the floor, so within a single view the remainder cannot be
-  differenced back. **The floor counts people, never value-holdings**,
-  for every fold including that bucket: a field a member may answer more
-  than once lets one person feed a count into every value they hold, so
-  a bucket that added those counts up could clear the floor with two
-  people behind it (#351). Histograms merge adjacent bins.
-  A cut below the floor says "not enough people for this view", which
-  is the honest sentence and not an error.
-- **One partition, not two.** Both unit systems report the same groups
-  under converted edges. Two independently-binned partitions can be
-  differenced back into sub-floor cells — demonstrated in 2899 of 3000
-  random groups, which is why this is a rule rather than a caution.
+- **Categories are counted, never charted.** Gender, affiliation and
+  country are never bars. In their place the page carries a **group
+  makeup** block of plain count lines — one line per value, exact
+  counts including small ones and zeros ("Men: 10", "Non-binary: 2",
+  "Other: 0"). **Each member counts once, and their most recent entry
+  decides their current category**; the filter uses that same
+  latest-entry person rule. Asking for a category as a measure is
+  refused exactly as an unknown measure is. **The country lines name the
+  countries the group really holds**, in filtered views as well — the
+  owner ruled that one explicitly on 2026-08-19 (#371 comment
+  5347769320), since a list whose choices live outside the spec can carry
+  no zeros and so says which countries are present: *"the group sees its
+  own makeup; the members-only door is what protects it."* That door is
+  the protection, which is why widening the readership re-takes this
+  question.
+- **Distributions draw on fixed bands from the spec.** The edges are
+  the field's own minimum, maximum and band width; they never move to
+  fit the data and never merge. Every band with at least one person
+  draws its true count, an empty band is an empty slot, and there are
+  no suppression notes. Fixed edges are what makes two views
+  comparable, and they are also why no edge can report the heaviest
+  member's band the way an edge fitted to the group did (#351, F2).
+  **A range is set so that no form-valid member draws clipped** — for a
+  computed field with no unit table of its own, that means deriving it
+  from the form's own bounds rather than picking a cap that looks
+  reasonable (owner ruling, 2026-08-19, #371 comment 5347769320: *"in a
+  gaining community the high end IS the story"*). The arithmetic sits
+  beside the numbers in `apps/web/site.config.js`, which is their one
+  home.
+- **Every month with data draws its true mean, and lines never break.**
+  Truly empty months are bridged on the page, and a bridged segment
+  looks exactly like a real one. The member's own "You" line follows
+  the same rule.
+- **The empty view is the only refusal left.** Zero matching entries
+  answers "not enough people for this view" plus a hint to widen the
+  filter — the honest sentence, not an error and not a status code.
+
+**The suppression machinery stays, and the floor is a number an admin
+can move.** Nothing was ripped out of `server/charts-agg.js`: the
+`Other` bucket, person-pooling and band merging all remain and obey
+whatever floor the setting holds. At 0 each of them is the identity,
+reached by the same code path a raised floor takes rather than skipped —
+and the one-partition rule below is not one of them, because it obeys no
+floor at all. The way back is a number, so this group's choice is not every
+fork's fate — the setting and its shipped default are stated with the
+other Settings defaults under **Admin surfaces** below, and
+`tests/charts-aggregate.test.mjs` proves the machinery at a raised
+floor so that raising it stays a supported act rather than a hope.
+What a raised floor then means:
+
+- **A drawn cell describes at least the floor's number of people.**
+  Suppression is by subtraction, not redaction — removed cells fold
+  into an `Other` bucket that itself clears the floor, so within a
+  single view the remainder cannot be differenced back. **The floor
+  counts people, never value-holdings**, for every fold including that
+  bucket: a field a member may answer more than once lets one person
+  feed a count into every value they hold, so a bucket that added those
+  counts up could clear the floor with two people behind it (#351).
+  Adjacent bands merge rather than being dropped.
 - **A trend of one line is a chart of one person**, so the floor
   applies to lines as it does to cells.
-- **A weight and a height and a country is a person to anyone who knows
-  her**, with or without a name column. That sentence is the reason for
-  every rule above and is the test to apply to a new view.
 
-**Live aggregation changes when the old cumulative-disclosure channel
-is open, not whether.** A count and a mean multiply back to a total,
-so a reader who keeps two views taken at different times can compute
-the movement between them whatever the floor declined to print; the
-owner ruled on #153 to accept that channel rather than charge every
-member the mean's real value to close it. What live charts change is
-that the reader no longer waits for a publish. The ruling's premise is
-untouched — it is argued from a members-only readership, which the
-members-only rule above preserves — and it is the premise to re-take
-if that readership ever widens.
+**One partition, not two.** Both unit systems report the same groups
+under converted edges — at every floor, because it is not a suppression
+rule and takes no floor at all. Two independently-binned partitions can
+be differenced back into sub-floor cells, demonstrated in 2899 of 3000
+random groups, which is why this is a rule rather than a caution. The
+#243 sitting's ruling 4 listed it among the suppression machinery above;
+that grouping is about where the code sits, not about what the setting
+reaches, and this paragraph is the sentence that governs (#371, the
+0.9-M2-S10 review, finding F1).
+
+**A weight and a height and a country is a person to anyone who knows
+her**, with or without a name column. That sentence is still the test
+to apply to a new view; what the sitting changed is the answer this
+group gives for the views it already has, not the question.
+
+**The cumulative-disclosure channel is subsumed rather than
+outstanding.** A count and a mean multiply back to a total, so a reader
+who keeps two views can compute the movement between them; the owner
+ruled on #153 to accept that channel, and the #351 ruling extended the
+acceptance to filters. At a floor of 0 there is nothing left for that
+arithmetic to recover that the response did not already say. Both
+rulings, and this one, rest on a **members-only readership**, which the
+members-only rule above preserves — that premise is what to re-take if
+the readership ever widens.
 
 ## Roles and vocabulary
 
@@ -443,19 +505,21 @@ suppression floor, the purge window's length, and bot health —
 
 Its two editable controls ship with **ruled defaults**, and they are
 written here because a builder implements this page from this document.
-Both come from the design record (#228 comment 5287071398): the floor
-from Part 3 and its open-items list, the window from Part 4.
+The window comes from the design record (#228 comment 5287071398,
+Part 4); the floor's default was re-taken at the charts sitting and
+comes from #243 comment 5346978974.
 
-- **The suppression floor is on by default, and it starts at 5.** The
-  5 is not invented here: it is what `MIN_CELL` holds in
-  `apps/web/dashboard.js`, and the setting inherits that rather than
-  picking a new one — the record schedules the value itself as an open
-  item, to be re-taken when this page ships it as editable and not
-  before. The number is written out rather than only pointed at
-  because the file holding it today is one the 0.9 rebuild deletes:
-  whoever writes the Worker's copy carries the 5 across, and this line
-  is what they carry it from. A group never starts with the floor off —
-  turning it off is an admin's deliberate act.
+- **The suppression floor ships at 0, and it is a whole number an admin
+  raises.** The record's open item on the value was closed at the
+  2026-08-19 charts sitting, in the direction of visibility: this group
+  chose to show its own figures, and **Charts** above carries the
+  ruling and the consequence the owner accepted with it. Zero is a
+  value of the setting rather than an off switch — the machinery reads
+  it on every request and applies it, so an admin typing 5 gets exactly
+  the regime the earlier record described, unchanged and still proven.
+  The Worker holds the default in one place,
+  `server/charts-agg.js`'s `DEFAULT_FLOOR`, and this page edits the
+  setting that overrides it.
 - **The purge window is 30 days by default.** It is the length of the
   countdown a confirmed departure starts, and the two guards stated
   with it above — a "cannot check" never starts a clock, a
@@ -555,9 +619,16 @@ Worker's secret.
   directory and any member's entries. The unified idle timer is what
   bounds it, and it bounds a tab left open rather than a machine handed
   over.
-- **A member sampling the charts over time or across filters**, per the
-  #153 channel above, extended to the filter dimension by owner ruling
-  on #351 (comment 5335392952).
+- **Members seeing each other's contributions to the figures.** Not a
+  channel to sample any more: it is the ruled default. The charts draw
+  every cell, band and month at its true value, so a filter that
+  isolates one member shows that member's number to every signed-in
+  member. Put adversarially at the 2026-08-19 charts sitting and
+  accepted in the owner's own words — "members chose to share" — with
+  the one-person view named as the price (#243 comment 5346978974).
+  The earlier acceptances of the same disclosure arriving by arithmetic
+  (#153 over time, #351 across filters) are subsumed by it. An admin
+  who wants the old regime raises the floor; see **Charts**.
 
 ## What is deliberately not here
 

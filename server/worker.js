@@ -17,8 +17,9 @@
  *                            seals it at rest. Needs a member session.
  *   GET    /charts-data      aggregate the whole corpus on request and
  *                            answer one filter and one measure: the
- *                            trend and the distribution, with the
- *                            suppression floor already applied by
+ *                            trend, the distribution and the group
+ *                            makeup, with the suppression floor the
+ *                            settings hold already applied by
  *                            server/charts-agg.js. Needs a member
  *                            session. The Worker opens every current row
  *                            to compute it - DESIGN.md, "Charts": "The
@@ -2078,11 +2079,15 @@ const CHART_ROWS =
  *
  * THIS HANDLER COMPUTES NO CELL (0.9-M2-S0, #351, security mandate 1).
  * It reads rows, opens them, and hands them to server/charts-agg.js,
- * which applies the floor before it returns anything - so there is no
- * moment in this function where an unfloored count exists, and no second
- * path a later route could take to the same data. The self overlay comes
- * from its own function keyed on the session's account (mandate 3) and
- * is attached as its own field, never merged into the group series.
+ * which applies whatever floor the settings hold before it returns
+ * anything - so there is no moment in this function where a count
+ * charts-agg did not decide exists, and no second path a later route
+ * could take to the same data. That is why the mandate survives the
+ * shipped floor being 0: the boundary is about who decides, and raising
+ * the setting changes one object rather than this function. The self
+ * overlay comes from its own function keyed on the session's account
+ * (mandate 3) and is attached as its own field, never merged into the
+ * group series.
  *
  * A ROW THAT WILL NOT OPEN FAILS THE WHOLE READ, exactly as it does at
  * GET /my-entries: openRow throws store-crypto's StoreFormatError on
@@ -2107,6 +2112,25 @@ const CHART_ROWS =
  * cache holding it is a copy of the group's numbers sitting somewhere
  * the session gate does not reach.
  */
+
+/*
+ * THE CHARTS SETTINGS, AND THE ONE SEAM THE FLOOR ARRIVES THROUGH.
+ *
+ * server/charts-agg.js reads `floor` from this object and falls back to
+ * its own shipped default of 0 when it is absent, which is what this
+ * empty table means today: the floor ships off, per the owner's ruling
+ * at the 2026-08-19 charts sitting (#243 comment 5346978974). 0.9-M3's
+ * Settings page replaces this constant with a read of the stored
+ * setting, and that is the entire change - one call site, one object,
+ * validated on arrival.
+ *
+ * NOTHING ON THE WIRE REACHES IT. askFor() refuses a query parameter it
+ * does not know, so `?floor=1` is a 400 rather than a lowered floor
+ * (0.9-M2-S0 security mandate 2), and this table is built here from
+ * server-side state alone.
+ */
+const CHART_SETTINGS = Object.freeze({});
+
 async function handleCharts(request, env, origin, caller) {
   const accountId = rowIdentity(caller.accountId);
 
@@ -2135,7 +2159,7 @@ async function handleCharts(request, env, origin, caller) {
     });
   }
 
-  const answer = aggregate(opened, asked.ask);
+  const answer = aggregate(opened, asked.ask, undefined, CHART_SETTINGS);
   answer.self = selfSeries(opened, accountId, asked.ask);
 
   return new Response(JSON.stringify(answer), {
