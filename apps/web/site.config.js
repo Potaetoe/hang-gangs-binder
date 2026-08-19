@@ -55,11 +55,11 @@
  * freely. Rename a `name` and the rows collected under the old one
  * stop being found.
  *
- * WHERE THIS FILE IS GOING. It is written as a browser script -
- * `globalThis.BINDER_SITE = ...` - so that when 0.9-M2 rebuilds the
- * member pages to render from it, it moves into apps/web/ and is
- * loaded with a <script> tag, unchanged. Today the gate and the
- * derivations read it and the pages do not; see #278.
+ * WRITTEN AS A BROWSER SCRIPT ON PURPOSE. `globalThis.BINDER_SITE = ...`
+ * is what lets this file sit in apps/web/ and load with a plain
+ * <script> tag, unchanged - your-page.html is the first page to do so
+ * (0.9-M2-S2, #353), reading it through apps/web/fields.js exactly as
+ * tests/site-spec.test.mjs and server/charts-agg.js already did.
  */
 globalThis.BINDER_SITE = {
 

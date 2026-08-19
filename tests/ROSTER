@@ -47,3 +47,4 @@ tests/store-crypto.test.mjs
 tests/telegram-auth.test.mjs
 tests/worktree-contract.test.mjs
 tests/wrangler-sit.test.mjs
+tests/your-page.test.mjs

@@ -4,7 +4,7 @@
  *
  *     node tests/site-propagation.test.mjs
  *
- * Subject: apps/site.config.js and apps/fields.js (#278; the 0.9
+ * Subject: apps/web/site.config.js and apps/web/fields.js (#278; the 0.9
  * design record on #228, Part 3 - "a fork that edits fields gets
  * matching charts with zero chart code").
  *
@@ -15,12 +15,14 @@
  * happen, which is the whole of the claim.
  *
  * WHAT IT DOES NOT CLAIM, and this is the half worth writing down. It
- * does NOT claim the field appears as a control on the weigh-in form.
- * It cannot: your-page.html renders its fields from markup today, and
- * 0.9-M2 is the slice that rebuilds that page to read this spec. An
- * arm asserting rendering here would have to fake it. So the rendering
- * half of the contract is stated as a forward requirement on the M2
- * ticket instead of being asserted where it is not true.
+ * does NOT claim the field appears as a control on the entry form -
+ * that is tests/your-page.test.mjs's claim now (0.9-M2-S2, #353), over
+ * apps/web/form.js's own render plan. This arm and that one prove two
+ * different links in the same chain: this one is the derivation layer
+ * (site.config.js -> fields.js), that one is the rendering layer
+ * (fields.js -> form.js's plan()) - and neither substitutes for the
+ * other, because a field can arrive correctly in one and still be
+ * dropped by the other.
  *
  * WHY A COUNT FIELD IS THE SCRATCH ONE. `count` is the kind with no
  * unit table and no consumer in the shipped tree - so it exercises the
@@ -40,8 +42,8 @@ const load = async (path) => {
   await import("data:text/javascript," + encodeURIComponent(source));
 };
 
-await load("../apps/site.config.js");
-await load("../apps/fields.js");
+await load("../apps/web/site.config.js");
+await load("../apps/web/fields.js");
 
 const SITE = globalThis.BINDER_SITE;
 const F = globalThis.BinderFields;

@@ -1,21 +1,29 @@
 /*
- * What apps/web ships today, measured against the spec it will read.
+ * What apps/web ships, measured against the spec it reads or is
+ * measured against, page by page.
  *
  *     node tests/site-parity.test.mjs
  *
- * Subject: apps/site.config.js against apps/web - the pages' wordmarks,
- * titles and meta descriptions, favicon.svg's accessible name, form.js's
- * factors, limits and choices, dashboard.js's unit table, query.js's
- * splits, and your-page.html's own markup.
+ * Subject: apps/web/site.config.js against apps/web - the pages'
+ * wordmarks, titles and meta descriptions, favicon.svg's accessible
+ * name, dashboard.js's unit table, query.js's splits.
  *
- * A MEASUREMENT, NOT A DERIVATION, AND THAT IS THE POINT OF IT. 0.9-M0
- * adds the spec and changes not one byte of apps/web: the member pages
- * are rebuilt at 0.9-M2 and read the spec then (#278, and the fork
- * ruling on that ticket). Between now and then the two are two copies
- * of one set of facts, which is the condition this file exists for.
- * The day somebody moves a limit in form.js, renames a choice in
- * your-page.html, or spells the group's name a fifth way, this goes
- * red and names both sides.
+ * TWO KINDS OF CLAIM LIVE IN THIS FILE NOW, AND SECTION 2 IS WHERE THEY
+ * SPLIT. Sections 1 and 3 are still A MEASUREMENT, NOT A DERIVATION:
+ * admin.html, charts.html and index.html do not read the spec yet (0.9-M3
+ * and 0.9-M2-S3 rebuild the ones that do), so dashboard.js and query.js
+ * are two copies of one set of facts and this file is what keeps a
+ * hand-moved limit or a renamed choice from drifting silently. Section 2
+ * used to measure form.js and your-page.html the same way; 0.9-M2-S2
+ * (#353) rebuilt both to READ apps/web/fields.js directly, so "does
+ * form.js's hand-kept KG_PER_LB equal the spec's" stopped being an
+ * honest question - form.js has no hand-kept constant left to compare.
+ * What replaced it proves the derivation is REAL rather than trivial: a
+ * scratch spec with different bounds and choices is handed to form.js's
+ * own plan()/validate(), and the assertion is that its answers move with
+ * the scratch spec rather than staying pinned to the shipped one -
+ * tests/your-page.test.mjs is the file that owns the shipped-spec
+ * rendering claim now, section 1 of its own header explains the split.
  *
  * WHAT IT DOES NOT DO IS EDIT THOSE PAGES, or the checks that already
  * pin them. The old apparatus keeps its own wordmark and label pins
@@ -53,8 +61,8 @@ const load = async (path) => {
     encodeURIComponent(await read(path)));
 };
 
-await load("../apps/site.config.js");
-await load("../apps/fields.js");
+await load("../apps/web/site.config.js");
+await load("../apps/web/fields.js");
 // The shipped modules, loaded as the bytes they ship as. dashboard.js
 // before query.js: the query engine reads the floor and the unit table
 // off BinderDashboard rather than carrying second copies, and says so
@@ -63,6 +71,7 @@ await load("../apps/web/form.js");
 await load("../apps/web/dashboard.js");
 await load("../apps/web/query.js");
 
+const SITE = globalThis.BINDER_SITE;
 const F = globalThis.BinderFields;
 const FORM = globalThis.BinderForm;
 const DASH = globalThis.BinderDashboard;
@@ -106,7 +115,7 @@ const title = (text) => {
   return found ? found[1] : null;
 };
 
-const EXPECTED = 21;
+const EXPECTED = 17;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -179,18 +188,52 @@ check("the favicon's accessible name is the config's group and site",
   faviconName !== null && faviconName[1] === owner + "'s " + binder);
 
 /* ------------------------------------------------------------------ */
-/* 2. The form's arithmetic and its choices.                           */
+/* 2. form.js's rendering and validation really derive from the spec -  */
+/*    proved by handing it a spec that disagrees with the shipped one   */
+/*    and watching its answers move, not by comparing two readings of   */
+/*    the same file (which a hardcoded constant would also pass).       */
 
-check("form.js's pound is the spec's pound",
-  FORM.KG_PER_LB === F.factor("lb", "kg"));
-check("form.js's inch is the spec's inch",
-  FORM.CM_PER_IN === F.factor("in", "cm"));
-check("form.js's limits are the spec's limits",
-  same(FORM.LIMITS, F.limits()));
-check("form.js's genders are the spec's gender choices",
-  same(FORM.GENDERS, F.choiceValues("gender")));
-check("form.js's affiliations are the spec's affiliation choices",
-  same(FORM.ROLES, F.choiceValues("roles")));
+const RESHAPED = Object.freeze({
+  ...SITE,
+  fields: SITE.fields.map((field) => field.name !== "gender" ? field
+    : Object.freeze({ ...field, blank: "Not answering",
+      choices: Object.freeze([{ value: "x", label: "X" }]) })),
+  units: {
+    ...SITE.units,
+    kinds: {
+      ...SITE.units.kinds,
+      weight: { ...SITE.units.kinds.weight,
+        units: { ...SITE.units.kinds.weight.units,
+          lb: { ...SITE.units.kinds.weight.units.lb, min: 1, max: 2 } } },
+    },
+  },
+});
+
+check("form.js's weight bound moves with a spec that changes it",
+  FORM.plan(RESHAPED).find((e) => e.name === "weight")
+    .units.imperial.limits.max === 2 &&
+  FORM.plan().find((e) => e.name === "weight").units.imperial.limits.max
+    === F.limits().lb.max);
+
+check("form.js's choice list moves with a spec that changes it",
+  same(FORM.plan(RESHAPED).find((e) => e.name === "gender").choices,
+    [{ value: "x", label: "X" }]) &&
+  same(FORM.plan().find((e) => e.name === "gender").choices,
+    SITE.fields.find((f) => f.name === "gender").choices));
+
+check("validate() enforces whichever spec it is given, not a bound baked " +
+  "into form.js - 1.5 lb is within RESHAPED's 1-2 lb bound and far below " +
+  "the shipped spec's 44 lb floor, so it tells the two apart",
+  (() => {
+    const input = { units: "imperial", values: { over18: true,
+      weight: "1.5", height: "5", heightCompound: "10", gender: "male",
+      roles: [], country: "" } };
+    const underShipped = FORM.validate(input, "member")
+      .some((p) => p.field === "weight");
+    const okReshaped = !FORM.validate(input, "member", RESHAPED)
+      .some((p) => p.field === "weight");
+    return underShipped && okReshaped;
+  })());
 
 /* ------------------------------------------------------------------ */
 /* 3. The charts' half.                                                */
@@ -220,30 +263,29 @@ check("every split carries the spec's shape and its sentence form",
     split.unitful === F.measure(name).unitful &&
     split.label === F.measure(name).term));
 
-/* ------------------------------------------------------------------ */
-/* 4. The page that asks the questions.                                */
-
-const yourPage = pages["your-page.html"];
-
-// A computed field is not asked for, which is what makes it computed.
-// The three spellings are the three this page uses: an id for a single
-// control, `data-field` for a field spread over more than one input,
-// and `name` for a group of checkboxes.
-check("your-page.html still asks for every field the spec declares",
-  F.names().filter((name) => F.field(name).kind !== "computed")
-    .every((name) => yourPage.includes('id="' + name + '"') ||
-      yourPage.includes('data-field="' + name + '"') ||
-      yourPage.includes('name="' + name + '"')));
-
-check("your-page.html still labels the measured fields as the spec does",
-  ["weight", "height"].every((name) =>
-    yourPage.includes(">" + F.labels()[name] + "</label>")));
-
-check("your-page.html still offers every choice the spec declares",
-  ["gender", "roles"].every((name) =>
-    F.measure(name).choices.every((choice) =>
-      yourPage.includes('value="' + choice.value + '"') &&
-      yourPage.includes(">" + choice.label + "<"))));
+/*
+ * 4. The page that asks the questions - RETIRED as a markup grep.
+ *
+ * your-page.html no longer carries a hand-kept field list to grep: its
+ * fields are rendered at runtime by form.js's renderFields(), reading
+ * apps/web/fields.js exactly as section 2 above just proved. Asking
+ * whether the SHIPPED HTML mentions 'id="weight"' would be asking about
+ * bytes this page no longer ships - the field markup does not exist
+ * until a browser runs the script - so the honest version of this
+ * question is "does your-page.html load the two files it renders from,
+ * in an order that works", which is what is left of it.
+ */
+check("your-page.html loads the spec before the reader that renders it, " +
+  "and both before form.js",
+  (() => {
+    const order = [...pages["your-page.html"]
+      .matchAll(/<script src="([^"]+)">/g)]
+      .map((m) => m[1]);
+    const at = (name) => order.indexOf(name);
+    return at("site.config.js") !== -1 && at("fields.js") !== -1 &&
+      at("form.js") !== -1 &&
+      at("site.config.js") < at("form.js") && at("fields.js") < at("form.js");
+  })());
 
 console.log(failures
   ? `\nsite-parity FAILED ${failures} of ${performed} check(s)`

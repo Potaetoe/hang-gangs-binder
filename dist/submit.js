@@ -5,326 +5,120 @@
 
   if (typeof document === "undefined") return;
 
-  const SignOut = root.BinderSignOut;
-
-  
-
-  const PREFILL_KEY = SignOut.prefillKey;
-  const SUBMITTED_EVENT = "binder:submitted";
-
-   
-   
-   
-  const ADD_ENTRY_SHOWN_EVENT = "binder:add-entry-shown";
-
-   
-   
-   
-   
-  const HEIGHT_BASELINE_EVENT = "binder:height-baseline";
-
-   
-   
-   
-   
-   
-  const ACCOUNT_EVENT = "binder:account";
-
-   
-  const FIELD_IDS = [
-    "weight-lb", "height-ft", "height-in", "weight-kg", "height-cm",
-  ];
-
-   
-   
-   
-   
-  const CHOICE_IDS = ["gender", "country", "over18"];
   const UI = root.BinderUI;
   const Session = root.BinderSession;
   const $ = UI.byId;
   const show = UI.show;
 
-  UI.boot(setUp, function (error) {
-    show($("member-tabs"), false);
-    show($("your-entries-pane"), false);
-    show($("add-entry-pane"), false);
-    detail(error && error.message ? error.message : "boot failed with no " +
-      "message");
-    setStatus("This page did not start correctly, so what is on record " +
-      "may be missing.", true);
-  });
-
-  
-
   function detail(technical) {
-    if (technical && root.console &&
-        typeof root.console.warn === "function") {
+    if (technical && root.console && typeof root.console.warn === "function") {
       root.console.warn("binder: " + technical);
     }
   }
 
-  
-
-  function plainly(error, fallback) {
-    detail(error && error.message ? error.message : "refused with no message");
-    return error && typeof error.plain === "string" && error.plain
-      ? error.plain
-      : fallback;
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    (children || []).forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+    if (!attrs) return node;
+    Object.keys(attrs).forEach(function (key) {
+      if (key === "text") node.textContent = attrs[key];
+      else if (key === "class") node.className = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    return node;
   }
 
-  function localStore() {
-    try {
-      return root.localStorage || null;
-    } catch (error) {
-      return null;
+  function emptyOut(node) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+   
+   
+   
+
+  let entries = [];
+  let downloadUrl = null;
+  let inflight = null;
+
+  function clearMemberData() {
+    if (inflight) {
+      inflight.abort();
+      inflight = null;
     }
-  }
-
-  
-
-  function readPrefill(expected) {
-    const store = localStore();
-    if (!store) return null;
-    try {
-      const value = JSON.parse(store.getItem(PREFILL_KEY));
-      if (value && typeof value === "object" && expected &&
-          value.accountId === expected &&
-          (value.units === "imperial" || value.units === "metric")) {
-        return value;
-      }
-    } catch (error) {
-       
-       
-       
+    entries = [];
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      downloadUrl = null;
     }
-    clearPrefill();
-    return null;
+    emptyOut($("entries-slot"));
+    emptyOut($("trend-slot"));
+    const toggle = $("corrections-toggle");
+    if (toggle && toggle.parentNode) toggle.parentNode.removeChild(toggle);
   }
 
    
    
-   
-   
-  const clearPrefill = SignOut.clearPrefill;
-
-  function fieldValue(id) {
-    const field = $(id);
-    return field && typeof field.value === "string" ? field.value : "";
-  }
 
   function currentUnits() {
-    const chosen = Array.prototype.find.call(
-      document.querySelectorAll('input[name="units"]'),
-      function (input) { return input.checked; });
-    return chosen ? chosen.value : "imperial";
+    return UI.checkedValue("units", root.BinderFields.defaultSystem());
   }
 
-  function checkedRoles() {
-    return Array.prototype.map.call(
-      document.querySelectorAll('input[name="roles"]:checked'),
-      function (input) { return input.value; });
+  function weightDisplay(record, system) {
+    const F = root.BinderFields;
+    const held = record && record.weight;
+    if (!held || typeof held !== "object") return null;
+    const unit = F.measure("weight").units[system].unit;
+    const store = F.measure("weight").units[system].store;
+    const value = held[store];
+    return typeof value === "number" ? { value: value, unit: unit } : null;
   }
 
-  function isChecked(id) {
-    const field = $(id);
-    return Boolean(field && field.checked);
+  function heightDisplay(record, system) {
+    const F = root.BinderFields;
+    const held = record && record.height;
+    if (!held || typeof held !== "object") return null;
+    const unit = F.measure("height").units[system].unit;
+    const store = F.measure("height").units[system].store;
+    const value = held[store];
+    if (typeof value !== "number") return null;
+    if (system === "imperial") {
+      const feet = Math.floor(value / 12);
+      const inches = Math.round((value - feet * 12) * 10) / 10;
+      return { value: value, unit: unit, text: feet + " ft " + inches + " in" };
+    }
+    return { value: value, unit: unit, text: value + " " + unit };
   }
 
-  
+  function bmiOf(record) {
+    const F = root.BinderFields;
+    const weight = record && record.weight;
+    const height = record && record.height;
+    const kg = weight && typeof weight.kg === "number" ? weight.kg : null;
+    const cm = height && typeof height.cm === "number" ? height.cm : null;
+    if (kg === null || cm === null || cm <= 0) return null;
+    const bmi = F.measure("bmi");
+    return bmi.compute({ weight: kg, height: cm });
+  }
 
-  let lastHeightCm = null;
-
-  function usableHeight(value) {
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  function formatDate(iso) {
+    const at = Date.parse(iso);
+    if (!Number.isFinite(at)) return "—";
+    return new Date(at).toLocaleDateString(undefined,
+      { year: "numeric", month: "short", day: "numeric" });
   }
 
    
    
-   
-   
-  function announceBaseline() {
-    document.dispatchEvent(new CustomEvent(HEIGHT_BASELINE_EVENT, {
-      detail: { lastHeightCm: lastHeightCm },
-    }));
-  }
 
-  
-
-  let account = null;
-
-  
-
-  function announceAccount() {
-    document.dispatchEvent(new CustomEvent(ACCOUNT_EVENT, {
-      detail: { accountId: account },
-    }));
-  }
-
-  function savePrefill() {
-    const store = localStore();
-    if (!store || !account) return;
-    const value = {
-      accountId: account,
-      units: currentUnits(),
-      weightLb: fieldValue("weight-lb"),
-      heightFeet: fieldValue("height-ft"),
-      heightInches: fieldValue("height-in"),
-      weightKg: fieldValue("weight-kg"),
-      heightCm: fieldValue("height-cm"),
-      gender: fieldValue("gender"),
-      country: fieldValue("country"),
-      roles: checkedRoles(),
-      over18: isChecked("over18"),
-      lastHeightCm: lastHeightCm,
-    };
-    try { store.setItem(PREFILL_KEY, JSON.stringify(value)); }
-    catch (error) {   }
-  }
-
-  function restorePrefill() {
-    const value = readPrefill(account);
-    if (!value) return;
-
-    
-
-    lastHeightCm = usableHeight(value.lastHeightCm);
-
-    const fields = {
-      "weight-lb": value.weightLb,
-      "height-ft": value.heightFeet,
-      "height-in": value.heightInches,
-      "weight-kg": value.weightKg,
-      "height-cm": value.heightCm,
-    };
-    Object.keys(fields).forEach(function (id) {
-      const field = $(id);
-      if (field && typeof fields[id] === "string") field.value = fields[id];
-    });
-
-    const unitInputs = Array.prototype.slice.call(
-      document.querySelectorAll('input[name="units"]'));
-    unitInputs.forEach(function (input) {
-      input.checked = input.value === value.units;
-    });
-
-    const gender = $("gender");
-    if (gender && typeof value.gender === "string") gender.value = value.gender;
-    const country = $("country");
-    if (country && typeof value.country === "string") {
-      country.value = value.country;
-    }
-    const roles = Array.isArray(value.roles) ? value.roles : [];
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="roles"]'),
-      function (input) { input.checked = roles.indexOf(input.value) !== -1; });
-
-    
-
-    const over18 = value.over18 === true;
-    if (over18) {
-      const box = $("over18");
-      if (box) box.checked = true;
-    }
-
-    
-
-    show($("over18-remembered"), over18);
-    show($("prefill-note"), true);
-
-    
-
-    const selected = unitInputs.find(function (input) { return input.checked; });
-    if (selected) selected.dispatchEvent(new Event("change", { bubbles: true }));
-
-    announceBaseline();
-  }
-
-  function setStatus(message, bad) {
-    const status = $("member-panel-status");
-    if (!status) return;
-    status.textContent = message || "";
-    status.className = "status" + (bad ? " bad" : "");
-    status.hidden = !message;
-  }
-
-  function chooseTab(name) {
-    const entries = name === "entries";
-    show($("your-entries-pane"), entries);
-    show($("add-entry-pane"), !entries);
-
-    
-
-    if (!entries) {
-      document.dispatchEvent(new CustomEvent(ADD_ENTRY_SHOWN_EVENT));
-    }
-
-    const entriesTab = $("your-entries-tab");
-    const addTab = $("add-entry-tab");
-    if (entriesTab) {
-      entriesTab.setAttribute("aria-selected", String(entries));
-      entriesTab.setAttribute("tabindex", entries ? "0" : "-1");
-    }
-    if (addTab) {
-      addTab.setAttribute("aria-selected", String(!entries));
-      addTab.setAttribute("tabindex", entries ? "-1" : "0");
-    }
-  }
-
-  
-
-  function renderCorrections(payload) {
-    const count = Number.isInteger(payload.superseded) && payload.superseded > 0
-      ? payload.superseded
-      : 0;
-    const field = $("member-corrections");
-    if (field) {
-      field.textContent = count === 0
-        ? ""
-        : String(count) + (count === 1 ? " correction" : " corrections");
-    }
-    show($("member-corrections-line"), count > 0);
-  }
-
-  function renderAccount(payload) {
-    $("member-entry-count").textContent = String(payload.entries);
-    renderCorrections(payload);
-    const last = $("member-last-at");
-    if (payload.lastAt == null) {
-      last.dateTime = "";
-      last.textContent = "No entries yet";
-      return;
-    }
-
-    const at = Date.parse(payload.lastAt);
-    if (!Number.isFinite(at)) {
-      last.dateTime = "";
-      last.textContent = "We cannot read when that was";
-      return;
-    }
-    last.dateTime = payload.lastAt;
-    last.textContent = new Date(at).toLocaleString();
-  }
-
-  
-
-  function showTelegramId(session) {
-    const numeric = session && session.telegramId;
-    const field = $("member-telegram-id");
-    if (field) field.textContent = numeric || "";
-    show($("member-telegram-id-line"), Boolean(numeric));
-  }
-
-  async function refreshPanel() {
+  async function deleteEntry(id, statusLine) {
     const config = root.BINDER_CONFIG || {};
-    if (!config.endpoint) {
-      setStatus("This site is not set up to reach the service that keeps " +
-        "your entries.", true);
-      return;
-    }
-
+    if (!config.endpoint) return false;
     try {
-      const response = await fetch(config.endpoint + "/me", {
+      const response = await fetch(config.endpoint + "/submission/" + id, {
+        method: "DELETE",
         headers: Session.authorization(),
       });
       if (response.status === 401) {
@@ -332,168 +126,301 @@
         if (root.location && typeof root.location.replace === "function") {
           root.location.replace("index.html");
         }
-        return;
+        return false;
       }
-      if (!response.ok) {
-        detail("the /me route answered " + response.status);
-        throw new Error("");
+      if (response.status < 200 || response.status >= 300) {
+        detail("DELETE /submission/" + id + " answered " + response.status);
+        statusLine.textContent = "That entry could not be removed — try again.";
+        statusLine.hidden = false;
+        return false;
       }
-      const payload = await response.json();
-      if (!payload || payload.ok !== true ||
-          !Number.isInteger(payload.entries) || payload.entries < 0) {
-        detail("the /me route answered with no usable account summary");
-        throw new Error("");
-      }
-       
-       
-       
-      account = typeof payload.accountId === "string" && payload.accountId
-        ? payload.accountId
-        : null;
-      announceAccount();
-      renderAccount(payload);
-      setStatus("", false);
+      return true;
     } catch (error) {
-       
-       
-       
-      detail(error && error.message ? error.message : "the /me route " +
-        "could not be reached");
-      setStatus("Your entry count could not be refreshed — reload the " +
-        "page.", true);
+      detail(error && error.message ? error.message : "the delete could not " +
+        "be sent");
+      statusLine.textContent = "That entry could not be removed — try again.";
+      statusLine.hidden = false;
+      return false;
     }
   }
 
+  
+
+  function buildActionCell(row, system, onDeleted) {
+    const cell = el("td");
+    const status = el("p", { class: "status", hidden: "" });
+
+    function showConfirm() {
+      emptyOut(cell);
+      const weight = weightDisplay(row.record, system);
+      const named = (weight ? weight.value + " " + weight.unit : "that entry") +
+        " from " + formatDate(row.receivedAt);
+      cell.appendChild(el("p", { class: "muted small",
+        text: "Delete the entry (" + named + ")? This cannot be undone." }));
+      const yes = el("button", { type: "button", class: "secondary",
+        text: "Yes, delete" });
+      const no = el("button", { type: "button", class: "secondary",
+        text: "Cancel" });
+      yes.addEventListener("click", async function () {
+        yes.disabled = true;
+        no.disabled = true;
+        const ok = await deleteEntry(row.id, status);
+        if (ok) onDeleted();
+        else showButton();
+      });
+      no.addEventListener("click", showButton);
+      cell.appendChild(el("div", { class: "row buttons" }, [yes, no]));
+      cell.appendChild(status);
+    }
+
+    function showButton() {
+      emptyOut(cell);
+      const button = el("button", { type: "button", class: "secondary",
+        text: "Delete" });
+      button.addEventListener("click", showConfirm);
+      cell.appendChild(button);
+      cell.appendChild(status);
+    }
+
+    showButton();
+    return cell;
+  }
+
    
    
+   
 
-  
+  function renderEntries(container, onChanged) {
+    emptyOut(container);
+    const system = currentUnits();
 
-  function historyStatus(message, bad) {
-    const line = $("history-status");
-    if (!line) return;
-    line.textContent = message || "";
-    line.className = bad ? "status bad" : "status";
-    show(line, Boolean(message));
-  }
-
-  
-
-  function historyEntry(row, record) {
-    const weight = record.weight || {};
-    const height = record.height || {};
-    const entered = record.entered || {};
-    return {
-      id: row.id,
-      accountId: account,
-      receivedAt: row.receivedAt,
-      submittedAt: record.submittedAt,
-      kg: weight.kg, lb: weight.lb,
-      cm: height.cm, totalInches: height.totalInches,
-      feet: height.feet, inches: height.inches,
-      enteredUnits: entered.units,
-      enteredWeight: entered.weight,
-      enteredHeight: entered.height,
-      gender: record.gender,
-      roles: Array.isArray(record.roles) ? record.roles.slice() : [],
-      country: record.country,
-      over18: record.over18 === true,
-      recordVersion: record.record,
-    };
-  }
-
-  
-
-  function scrub(snapshot) {
-    delete snapshot.quality;
-    delete snapshot.series;
-    delete snapshot.counts;
-    delete snapshot.movement;
-  }
-
-  
-
-  function askHistory(source) {
-    const Query = root.BinderQuery;
-    const answerAt = $("history-answer");
-    const split = $("h-split").value;
-    const shape = Query.SPLITS[split];
-    if (!shape || !answerAt) return;
-
-    const bins = shape.kind === "bins";
-    
-
-    const measure = bins ? UI.checkedValue("h-measure", "count") : "count";
-    show($("h-measure-field"), bins);
-
-    
-
-    const query = {
-       
-       
-       
-       
-      basis: "entries",
-      split: split,
-      measure: measure,
-       
-       
-       
-      units: UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS),
-    };
-
-    let answer;
-    try {
-      answer = Query.run(source, query);
-    } catch (error) {
-       
-       
-       
-       
-      historyStatus(plainly(error, "That question could not be asked."),
-        true);
+    if (!entries.length) {
+      container.appendChild(el("p", { class: "muted",
+        text: "Nothing recorded yet — fill in the form above and it " +
+          "starts here." }));
       return;
     }
-    historyStatus("", false);
-    root.BinderDashboard.renderAnswer(answerAt, answer, Query.describe(query));
+
+    const supersededCount = entries.filter(function (e) { return e.superseded; })
+      .length;
+    if (supersededCount > 0) {
+      const toggle = el("button", { type: "button", id: "corrections-toggle",
+        class: "secondary",
+        text: "Show " + supersededCount +
+          (supersededCount === 1 ? " replaced row" : " replaced rows") });
+      let revealed = false;
+      toggle.addEventListener("click", function () {
+        revealed = !revealed;
+        toggle.textContent = revealed
+          ? "Hide replaced rows"
+          : "Show " + supersededCount +
+            (supersededCount === 1 ? " replaced row" : " replaced rows");
+        Array.prototype.forEach.call(
+          container.querySelectorAll("tr[data-superseded]"),
+          function (row) { row.hidden = !revealed; });
+      });
+      container.appendChild(toggle);
+    }
+
+    const wrap = el("div", { class: "table-scroll" });
+    const table = el("table", { class: "tabular" });
+    table.appendChild(el("thead", {}, [
+      el("tr", {}, [
+        el("th", { text: "date" }), el("th", { text: "weight" }),
+        el("th", { text: "height" }), el("th", { text: "bmi" }),
+        el("th", { text: "" }),
+      ]),
+    ]));
+    const tbody = el("tbody");
+
+    entries.forEach(function (row) {
+      const weight = weightDisplay(row.record, system);
+      const height = heightDisplay(row.record, system);
+      const bmi = bmiOf(row.record);
+      const tr = el("tr", row.superseded
+        ? { class: "muted", "data-superseded": "1", hidden: "" } : {});
+      tr.appendChild(el("td", { text: formatDate(row.receivedAt) }));
+      tr.appendChild(el("td", { text: weight ? weight.value + " " + weight.unit : "—" }));
+      tr.appendChild(el("td", { text: height ? height.text : "—" }));
+      tr.appendChild(el("td", { text: bmi === null ? "—" : String(bmi) }));
+      tr.appendChild(buildActionCell(row, system, onChanged));
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    container.appendChild(wrap);
   }
 
-  async function openHistory() {
+   
+   
+
+  function renderTrend(container) {
+    emptyOut(container);
+    const system = currentUnits();
+    const current = entries.filter(function (e) { return !e.superseded; });
+    const points = current
+      .map(function (e) {
+        const at = Date.parse(e.receivedAt);
+        const w = weightDisplay(e.record, system);
+        return Number.isFinite(at) && w ? { t: at, v: w.value, unit: w.unit }
+          : null;
+      })
+      .filter(Boolean)
+      .sort(function (a, b) { return a.t - b.t; });
+
+    if (points.length < 2) {
+      container.appendChild(el("p", { class: "muted",
+        text: current.length
+          ? "One entry isn't a trend yet — add another and a line " +
+            "appears here."
+          : "Nothing recorded yet — fill in the form above and it " +
+            "starts here." }));
+      return;
+    }
+
+    const W = 600, H = 200, MARGIN_L = 40, MARGIN_B = 20, MARGIN_T = 10;
+    const minT = points[0].t, maxT = points[points.length - 1].t;
+    const values = points.map(function (p) { return p.v; });
+    let minV = Math.min.apply(null, values), maxV = Math.max.apply(null, values);
+    if (minV === maxV) { minV -= 1; maxV += 1; }
+
+    function x(t) {
+      return maxT === minT ? MARGIN_L
+        : MARGIN_L + (t - minT) / (maxT - minT) * (W - MARGIN_L - 10);
+    }
+    function y(v) {
+      return MARGIN_T + (1 - (v - minV) / (maxV - minV)) * (H - MARGIN_T - MARGIN_B);
+    }
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Your weight trend, " + points.length +
+      " entries");
+
+    function line(x1, y1, x2, y2, cls) {
+      const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+      l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+      l.setAttribute("class", cls);
+      return l;
+    }
+    svg.appendChild(line(MARGIN_L, MARGIN_T, MARGIN_L, H - MARGIN_B, "chart-axis"));
+    svg.appendChild(line(MARGIN_L, H - MARGIN_B, W - 10, H - MARGIN_B, "chart-axis"));
+
+    function labelAt(px, py, value, anchor) {
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", px); t.setAttribute("y", py);
+      t.setAttribute("class", "chart-label");
+      if (anchor) t.setAttribute("text-anchor", anchor);
+      t.textContent = value;
+      return t;
+    }
+    svg.appendChild(labelAt(MARGIN_L - 6, y(maxV) + 4, Math.round(maxV), "end"));
+    svg.appendChild(labelAt(MARGIN_L - 6, y(minV) + 4, Math.round(minV), "end"));
+
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("class", "chart-series series-0");
+    polyline.setAttribute("points",
+      points.map(function (p) { return x(p.t) + "," + y(p.v); }).join(" "));
+    svg.appendChild(polyline);
+
+    const last = points[points.length - 1];
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", x(last.t)); dot.setAttribute("cy", y(last.v));
+    dot.setAttribute("r", 3);
+    dot.setAttribute("class", "chart-dot series-0");
+    svg.appendChild(dot);
+
+    const figure = el("figure", { class: "chart chart-wide" }, [
+      el("figcaption", { text: "Your weight" }),
+      svg,
+    ]);
+    container.appendChild(figure);
+
+    
+
+    const other = system === "metric" ? "imperial" : "metric";
+    const otherUnit = root.BinderFields.measure("weight").units[other].unit;
+    const converted = current.some(function (e) {
+      return e.record && e.record.entered && e.record.entered.units === other;
+    });
+    if (converted) {
+      container.appendChild(el("p", { class: "hint",
+        text: "Shown in " + points[0].unit + " — entries logged in " +
+          otherUnit + " were converted." }));
+    }
+  }
+
+   
+   
+   
+
+  const DOWNLOAD_COLUMNS = [
+    "date", "weight_lb", "weight_kg", "height_ft_in", "height_cm", "bmi",
+    "corrected",
+  ];
+
+  function downloadRow(entry) {
+    const weight = entry.record && entry.record.weight;
+    const height = entry.record && entry.record.height;
+    const feetInches = heightDisplay(entry.record, "imperial");
+    const bmi = bmiOf(entry.record);
+    return [
+      formatDate(entry.receivedAt),
+      weight && typeof weight.lb === "number" ? weight.lb : "",
+      weight && typeof weight.kg === "number" ? weight.kg : "",
+      feetInches ? feetInches.text : "",
+      height && typeof height.cm === "number" ? height.cm : "",
+      bmi === null ? "" : bmi,
+      entry.superseded ? "yes" : "",
+    ];
+  }
+
+  function fileName(now) {
+    const date = new Date(now).toISOString().slice(0, 10);
+    return "your-entries-" + date + ".xlsx";
+  }
+
+  function wireDownload() {
+    const button = $("download");
+    if (!button) return;
+    button.addEventListener("click", function () {
+      if (!entries.length || !root.BinderXlsx) return;
+      const rows = entries.map(downloadRow);
+      const bytes = root.BinderXlsx.build(DOWNLOAD_COLUMNS, rows, "Entries",
+        Date.now());
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      const url = URL.createObjectURL(new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }));
+      const link = el("a", { href: url, download: fileName(Date.now()) });
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+  }
+
+   
+   
+
+  async function loadEntries() {
     const config = root.BINDER_CONFIG || {};
-    const Keys = root.BinderMemberKey;
-    const Crypto = root.BinderCrypto;
-    const Query = root.BinderQuery;
-    const card = $("your-history");
-
-    
-
-    if (!card || !Keys || !Crypto || !Query || !root.BinderDashboard ||
-        !config.endpoint || !account) {
-      return;
-    }
-    show(card, true);
-
-    const key = await Keys.ensure(account);
-    if (!key) {
-       
-       
-       
-       
-      detail(Keys.unavailableReason() || "this browser keeps no key");
-      historyStatus("This browser cannot keep a key of your own, so your " +
-        "entries stay sealed here.", false);
-      return;
-    }
-
-    let rows;
+    if (!config.endpoint) return;
+    const trendSlot = $("trend-slot");
+    const entriesSlot = $("entries-slot");
+    if (inflight) inflight.abort();
+    const controller = new AbortController();
+    inflight = controller;
     try {
       const response = await fetch(config.endpoint + "/my-entries", {
         headers: Session.authorization(),
+        signal: controller.signal,
       });
+      if (inflight !== controller) return;  
       if (response.status === 401) {
-         
-         
-         
         Session.clear();
         if (root.location && typeof root.location.replace === "function") {
           root.location.replace("index.html");
@@ -501,150 +428,160 @@
         return;
       }
       if (!response.ok) {
-        detail("the /my-entries route answered " + response.status);
+        detail("GET /my-entries answered " + response.status);
         throw new Error("");
       }
       const payload = await response.json();
-      rows = payload && payload.ok === true && Array.isArray(payload.entries)
-        ? payload.entries : null;
-      if (!rows) {
-        detail("the /my-entries route answered with no usable listing");
+      if (!payload || payload.ok !== true || !Array.isArray(payload.entries)) {
+        detail("GET /my-entries answered with no usable listing");
         throw new Error("");
       }
+      entries = payload.entries;
     } catch (error) {
-      detail(error && error.message ? error.message : "the /my-entries " +
-        "route could not be reached");
-      historyStatus("Your entries could not be fetched — reload the page.",
-        true);
-      return;
-    }
-
-    if (!rows.length) {
-      historyStatus("No entries yet — weigh in and this fills up.", false);
-      return;
-    }
-
-    
-
-    const entries = [];
-    let sealed = 0;
-    for (const row of rows) {
-      try {
-        entries.push(historyEntry(row,
-          await Crypto.decrypt(row.ciphertext, key.privateKey)));
-      } catch (error) {
-        sealed += 1;
+      if (error && error.name === "AbortError") return;
+      detail(error && error.message ? error.message : "the entries listing " +
+        "could not be fetched");
+      if (entriesSlot) {
+        emptyOut(entriesSlot);
+        entriesSlot.appendChild(el("p", { class: "muted",
+          text: "Your entries could not be loaded — reload the page." }));
       }
-    }
-
-    
-
-    const sealedCount = $("history-sealed-count");
-    if (sealedCount) {
-      sealedCount.textContent = sealed === 1 ? "1 row" : sealed + " rows";
-    }
-    
-
-    show($("history-sealed"), sealed > 0 && entries.length > 0);
-
-    if (!entries.length) {
-      
-
-      historyStatus("None of your entries can be opened here. " +
-        "Ask an admin.", false);
       return;
+    } finally {
+      if (inflight === controller) inflight = null;
     }
 
-    let source;
-    try {
-      source = Query.personalSource(entries, Date.now());
-      scrub(source.snapshot);
-    } catch (error) {
-       
-       
-       
-       
-      historyStatus(
-        plainly(error, "Your entries could not be read as a history."),
-        true);
-      return;
-    }
-
-    show($("history-controls"), true);
-    $("h-split").addEventListener("change", function () { askHistory(source); });
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="h-measure"]'),
-      function (input) {
-        input.addEventListener("change", function () { askHistory(source); });
-      });
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="units"]'),
-      function (input) {
-        input.addEventListener("change", function () { askHistory(source); });
-      });
-    askHistory(source);
+    renderTrend(trendSlot);
+    renderEntries(entriesSlot, function () { loadEntries(); });
   }
 
-  
+   
+   
+   
+   
+   
+   
 
-  function rememberHeight(event) {
-    const cm = usableHeight(event && event.detail
-      ? event.detail.heightCm : null);
-    if (cm === null) return;
-    lastHeightCm = cm;
-    savePrefill();
-    announceBaseline();
+  const IDLE_WINDOW = Object.freeze({
+    idleMs: 10 * 60 * 1000,
+    warnMs: 2 * 60 * 1000,
+  });
+
+  function idleVerdict(lastInteraction, now, limits) {
+    const bounds = limits || IDLE_WINDOW;
+    const idle = now - lastInteraction;
+    if (!Number.isFinite(lastInteraction) || !Number.isFinite(now) ||
+        !(idle >= 0)) {
+      return { state: "expired", msLeft: 0 };
+    }
+    const msLeft = bounds.idleMs - idle;
+    if (msLeft <= 0) return { state: "expired", msLeft: 0 };
+    return {
+      state: msLeft <= bounds.warnMs ? "warning" : "active",
+      msLeft: msLeft,
+    };
   }
+
+  function idleNotice(verdict) {
+    if (!verdict || verdict.state !== "warning") return "";
+    const seconds = Math.ceil(verdict.msLeft / 1000);
+    const rest = seconds % 60;
+    return "Nobody has touched this page for a while. It shows your own " +
+      "entries, so it will clear itself and sign you out in " +
+      Math.floor(seconds / 60) + ":" + (rest < 10 ? "0" : "") + rest +
+      ". Any key, click, touch or wheel keeps it open.";
+  }
+
+  function wireIdle() {
+    const INTERACTION = ["pointerdown", "keydown", "wheel", "touchstart"];
+    const TICK_MS = 1000;
+    let lastInteraction = Date.now();
+    let warned = false;
+    let ticker = null;
+
+    function hideWarning() {
+      if (!warned) return;
+      warned = false;
+      show($("idle-warning"), false);
+    }
+    function markInteraction() {
+      lastInteraction = Date.now();
+      hideWarning();
+    }
+    for (const type of INTERACTION) {
+      document.addEventListener(type, markInteraction, {
+        capture: true, passive: true,
+      });
+    }
+
+    function endForIdle() {
+      root.clearInterval(ticker);
+      clearMemberData();
+      root.BinderSignOut.signOut();
+    }
+
+    function checkAttention() {
+      const verdict = idleVerdict(lastInteraction, Date.now());
+      if (verdict.state === "expired") {
+        endForIdle();
+        return;
+      }
+      if (verdict.state !== "warning") {
+        hideWarning();
+        return;
+      }
+      const countdown = $("idle-countdown");
+      if (countdown) countdown.textContent = idleNotice(verdict);
+      if (warned) return;
+      warned = true;
+      show($("idle-warning"), true);
+      const stay = $("idle-stay");
+      if (stay) stay.focus();
+    }
+
+    ticker = root.setInterval(checkAttention, TICK_MS);
+    const stay = $("idle-stay");
+    if (stay) stay.addEventListener("click", markInteraction);
+  }
+
+   
+
+  UI.boot(setUp, function (error) {
+    detail(error && error.message ? error.message : "boot failed with no " +
+      "message");
+  });
 
   async function setUp() {
     if (!Session) throw new Error("This page did not load session handling.");
     const session = Session.require();
     if (!session) return;
 
-    FIELD_IDS.forEach(function (id) {
-      const field = $(id);
-      if (field) field.addEventListener("input", savePrefill);
-    });
+     
+     
+     
+     
+    const signOutButton = $("sign-out");
+    if (signOutButton) signOutButton.addEventListener("click", clearMemberData);
+
     Array.prototype.forEach.call(
       document.querySelectorAll('input[name="units"]'),
-      function (input) { input.addEventListener("change", savePrefill); });
-    CHOICE_IDS.forEach(function (id) {
-      const field = $(id);
-      if (field) field.addEventListener("change", savePrefill);
+      function (input) {
+        input.addEventListener("change", function () {
+          renderTrend($("trend-slot"));
+          renderEntries($("entries-slot"), function () { loadEntries(); });
+        });
+      });
+
+     
+     
+     
+     
+    document.addEventListener("binder:submitted", function () {
+      loadEntries();
     });
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="roles"]'),
-      function (input) { input.addEventListener("change", savePrefill); });
 
-    const entriesTab = $("your-entries-tab");
-    const addTab = $("add-entry-tab");
-    if (entriesTab) {
-      entriesTab.addEventListener("click", function () { chooseTab("entries"); });
-    }
-    if (addTab) {
-      addTab.addEventListener("click", function () { chooseTab("add"); });
-    }
-    document.addEventListener(SUBMITTED_EVENT, refreshPanel);
-    document.addEventListener(SUBMITTED_EVENT, rememberHeight);
-
-    show($("member-tabs"), true);
-    chooseTab("entries");
-    showTelegramId(session);
-
-     
-     
-     
-     
-     
-     
-    await refreshPanel();
-    restorePrefill();
-     
-     
-     
-     
-     
-     
-    await openHistory();
+    wireDownload();
+    wireIdle();
+    await loadEntries();
   }
 })(globalThis);

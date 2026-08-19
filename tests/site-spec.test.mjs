@@ -40,8 +40,8 @@ const load = async (path, tag) => {
     encodeURIComponent(tag ? source + "\n//" + tag : source));
 };
 
-await load("../apps/site.config.js");
-await load("../apps/fields.js");
+await load("../apps/web/site.config.js");
+await load("../apps/web/fields.js");
 
 const SITE = globalThis.BINDER_SITE;
 const F = globalThis.BinderFields;
@@ -321,7 +321,7 @@ const SHIPPED_FIELDS = globalThis.BinderFields;
 delete globalThis.BINDER_SITE;
 delete globalThis.BinderFields;
 
-await load("../apps/fields.js", "reader-first");
+await load("../apps/web/fields.js", "reader-first");
 const EARLY = globalThis.BinderFields;
 
 check("the reader loaded first derives nothing, and says so loudly",
@@ -334,7 +334,7 @@ check("the reader loaded first derives nothing, and says so loudly",
     }
   })());
 
-await load("../apps/site.config.js", "reader-first");
+await load("../apps/web/site.config.js", "reader-first");
 const LATE = globalThis.BINDER_SITE;
 EARLY.names();
 

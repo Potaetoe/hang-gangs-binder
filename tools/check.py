@@ -111,9 +111,12 @@ PYTHON_SUITE_SUFFIX = ".test.py"
 NODE_SUITES = [
     ("crypto round trip + v1 fixture", "dev/crypto.test.mjs"),
     ("member device key custody", "dev/memberkey.test.mjs"),
-    ("form record building", "dev/form.test.mjs"),
-    ("form wiring + reopen after submit", "dev/form-wiring.test.mjs"),
-    ("member panel + failed-send guard", "dev/submit.test.mjs"),
+    # "form record building", "form wiring + reopen after submit" and
+    # "member panel + failed-send guard" retired with your-page.html's
+    # tabs, its hand-kept field list and its client-side seal
+    # (0.9-M2-S2, #353) - dev/form.test.mjs, dev/form-wiring.test.mjs and
+    # dev/submit.test.mjs all guarded exactly those mechanisms and
+    # nothing else. tests/your-page.test.mjs is what replaced them.
     ("admin CSV + formula guard", "dev/admin.test.mjs"),
     ("admin session + row deletion", "dev/admin-session.test.mjs"),
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),

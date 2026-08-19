@@ -1053,7 +1053,7 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 12 and all(frozen_in_place))
+      len(frozen_in_place) == 13 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -1194,23 +1194,26 @@ check("an ordinary paragraph is not a label",
       check_web.page_labels("<p class='muted'>a sentence</p>") == [])
 
 # Both directions on the inventory, which is the arm that makes adding a
-# label an act that has to declare its job.
+# label an act that has to declare its job. "Not open" stands in for the
+# retired "Received" fixture (0.9-M2-S2, #353 dropped the confirmation
+# card the word named, along with "Optional" and "Your account") - any
+# LABELS entry still pinned "flag" makes the same point.
 check("a label carrying a declared role raises nothing",
-      check_web.page_label_problems('<p class="flag">Received</p>') == [])
+      check_web.page_label_problems('<p class="flag">Not open</p>') == [])
 check("a label nobody has given a job is refused",
       any("names no job" in p for p in check_web.page_label_problems(
           '<p class="runner">Very nearly done</p>')))
 check("a label doing a different job from the one declared is refused",
       any("says it is" in p for p in check_web.page_label_problems(
-          '<p class="runner">Received</p>')))
+          '<p class="runner">Not open</p>')))
 
 # The overload itself, in the form #68 found it: an outcome wearing the
 # section-name component, which is what made `Received` look like
-# `Optional`.
+# `Optional` (both retired since; see the comment above).
 check("an outcome dressed as a section name names both roles",
-      any('"Received" as "runner"' in p and '"flag"' in p
+      any('"Not open" as "runner"' in p and '"flag"' in p
           for p in check_web.page_label_problems(
-              '<p class="runner">Received</p>')))
+              '<p class="runner">Not open</p>')))
 
 # The retired component, refused in the markup and in the stylesheet.
 check("a page still wearing the retired label component is refused",
@@ -3432,30 +3435,42 @@ check("a page with no ruled line of its own has nothing to say",
       check_web.ruled_line_problems("<p>anything at all</p>", "404.html")
       == [])
 
-# The runtime slot. submit.js writes the count, so the pin is over the
-# sentence around it - and an EMPTY element is what stands in, because a
-# filled one is a page shipping a number.
-#
-# your-page.html carries two ruled lines, so both stand in every fixture
-# here: a page missing one of them is a real problem, and a fixture that
-# omitted it would make every assertion below read off that absence
-# instead of off the sentence under test.
-KEY_CHECK = ('<p id="key-check">Compare with the group\'s pinned code '
-             "before submitting.</p>")
-SEALED = ('<p class="muted small" id="history-sealed">'
-          '<strong id="history-sealed-count"></strong> '
-          "can't be opened here. Ask an admin.</p>")
+# The runtime slot: a ruled line rendered by an element the page fills
+# at runtime rather than by static prose, matched with `{}` standing in
+# for the part a script writes. RULED_LINES carried this shape over
+# your-page.html's sealed-rows count until 0.9-M2-S2 (#353) retired that
+# line with the client seal it described - see RULED_LINES' own comment.
+# The property under test is general (ruled_line_problems() over ANY
+# `{}` slot), so it is exercised here with a synthetic fixture rather
+# than a real page's now-shorter list.
+SLOT_PAGE = "test-fixture-two-ruled-lines.html"
+check_web.RULED_LINES[SLOT_PAGE] = {
+    "key-check": "Compare with the group's pinned code before "
+                 "submitting.",
+    "history-sealed": "{} can't be opened here. Ask an admin.",
+}
+try:
+    KEY_CHECK = ('<p id="key-check">Compare with the group\'s pinned code '
+                 "before submitting.</p>")
+    SEALED = ('<p class="muted small" id="history-sealed">'
+              '<strong id="history-sealed-count"></strong> '
+              "can't be opened here. Ask an admin.</p>")
 
-check("an element the page fills at runtime is read as a slot",
-      check_web.ruled_line_problems(KEY_CHECK + SEALED, "your-page.html")
-      == [])
-check("and a slot standing empty of its sentence still fails",
-      len(check_web.ruled_line_problems(
-          KEY_CHECK + '<p id="history-sealed"><strong '
-          'id="history-sealed-count"></strong> were sealed on another '
-          "device.</p>", "your-page.html")) == 1)
-check("one ruled line missing does not excuse the page's others",
-      len(check_web.ruled_line_problems(SEALED, "your-page.html")) == 1)
+    check("an element the page fills at runtime is read as a slot",
+          check_web.ruled_line_problems(KEY_CHECK + SEALED, SLOT_PAGE)
+          == [])
+    check("and a slot standing empty of its sentence still fails",
+          len(check_web.ruled_line_problems(
+              KEY_CHECK + '<p id="history-sealed"><strong '
+              'id="history-sealed-count"></strong> were sealed on another '
+              "device.</p>", SLOT_PAGE)) == 1)
+    check("one ruled line missing does not excuse the page's others",
+          len(check_web.ruled_line_problems(SEALED, SLOT_PAGE)) == 1)
+finally:
+    # A dict this suite injected is a dict this suite removes - left in
+    # place it would be a fake page every later arm in this run has to
+    # treat as real, including the door-count arms further down.
+    del check_web.RULED_LINES[SLOT_PAGE]
 
 MORE = ('<details class="more"><summary>More</summary><p>why</p></details>')
 

@@ -43,7 +43,7 @@ const UI = globalThis.BinderUI;
  * a confident summary over the checks that still reached. See
  * dev/harness.mjs.
  */
-const { check, report } = nodeTestSuite("ui.js", 28);
+const { check, report } = nodeTestSuite("ui.js", 27);
 
 check("the shipped file exposes one frozen helper object",
   UI && Object.isFrozen(UI));
@@ -164,20 +164,27 @@ const SUBTLE_CALL = /\bsubtle\s*\.\s*[A-Za-z_$][\w$]*\s*\(/;
 check("ui.js contains no Web Crypto access",
   !CRYPTO_ACCESS.test(source) && !SUBTLE_CALL.test(source));
 
-const submitSource = await readFile(
-  new URL("../apps/web/your-page.html", import.meta.url), "utf8");
 const signInSource = await readFile(
   new URL("../apps/web/index.html", import.meta.url), "utf8");
-const formSource = await readFile(
-  new URL("../apps/web/form.js", import.meta.url), "utf8");
 
-check("the submission page carries a slot for the fingerprint",
-  /id="key-fingerprint"/.test(submitSource));
-check("the submission page says what to compare the fingerprint against",
-  /pinned/i.test(submitSource) && /group/i.test(submitSource));
-check("the page is filled from the configured key at runtime",
-  /showFingerprint\(/.test(formSource)
-  && /publicKey/.test(formSource));
+/*
+ * A fingerprint slot on your-page.html, its pinned-code sentence, and
+ * form.js filling it from the configured key are all retired with the
+ * client seal they were about (0.9-M2-S2, #353): DESIGN.md, "Trust
+ * model: the Worker reads" ends both the browser-side comparison and
+ * the public key a member would have compared. showFingerprint() itself
+ * stays in ui.js - it is a generic truncate-and-reveal helper, not
+ * crypto, and the checks right above this comment already exercise it
+ * directly - but nothing calls it from a page any more, which the next
+ * two checks confirm rather than merely assume.
+ */
+check("no shipped page calls showFingerprint any more - the function's " +
+  "only caller retired with it",
+  !(await readFile(new URL("../apps/web/form.js", import.meta.url), "utf8"))
+    .includes("showFingerprint"));
+check("and your-page.html carries no key-fingerprint slot for it to fill",
+  !(await readFile(new URL("../apps/web/your-page.html", import.meta.url),
+    "utf8")).includes("key-fingerprint"));
 
 /*
  * The base64-key-literal assertion used to live here, guarding your-page.html

@@ -1,66 +1,41 @@
 /*
- * The form. The only page in this project that holds cleartext.
+ * The entry form, rendered from the spec rather than hand-kept.
  *
- * It reads what was typed, turns it into a record, hands that record to
- * crypto.js, and posts the base64 that comes back. Nothing else leaves
- * this file - in particular the fields themselves never touch fetch().
- * tools/check_web.py enforces the weaker, checkable version of that
- * rule: anything here that can reach the network must also name
- * BinderCrypto.
+ * apps/web/site.config.js says which fields exist, of what kind, in
+ * what units and within what bounds; apps/web/fields.js turns that into
+ * shapes this file can read. Nothing here names "weight" or "height" as
+ * a special case except the one place the record CONTRACT itself is
+ * fixed regardless of the spec - see `enteredText` below and
+ * server/charts-agg.js's header, "AND THE ENVELOPE THE SPEC DOES NOT
+ * NAME". Everywhere else, a field the spec adds gets a box, a bound and
+ * a place in the record with no edit to this file - that property is
+ * what tests/site-propagation.test.mjs proves for the derivation layer
+ * and tests/your-page.test.mjs proves for this file's rendering.
  *
  * Two halves, split on purpose:
  *
- *   1. Pure functions - normalizing, converting, validating, building
+ *   1. Pure functions - the plan a form would render, validation, and
  *      the record. No DOM, no network, no clock beyond one injected
- *      timestamp. Exported as BinderForm so dev/form.test.mjs can load
- *      this exact file under Node, the same arrangement crypto.js and
- *      server/worker.js already use.
- *   2. The wiring, which only runs when there is a document.
+ *      timestamp. Exported as BinderForm so a suite can load this exact
+ *      file under Node, the same arrangement server/worker.js's own
+ *      pure half is loaded under.
+ *   2. The wiring, which only runs when there is a document: it turns
+ *      the plan into real elements and turns what a member typed back
+ *      into the values the pure half reads.
  *
- * The split is not tidiness. The conversion arithmetic is the part that
- * can be wrong without anything looking wrong: a bad factor produces a
- * plausible number, seals it, and the mistake is only visible on export
- * day when every row is quietly off by 2.2. That half is testable, so
- * it is tested.
+ * WHAT THIS FILE NO LONGER DOES. Sealing before send is gone with every
+ * other client-side crypto (DESIGN.md, "Trust model: the Worker reads"):
+ * this file posts the record as plain JSON and the Worker seals it at
+ * rest. The device-memory prefill and the height-change guard built on
+ * it are gone too (#172's whole mechanism) - the server now answers
+ * "what did I say last time", so a local copy bought nothing but a
+ * privacy cost. tools/check_web.py's UNENCRYPTED_SENDERS names this
+ * file for the same reason auth.js is already named there.
  */
 (function (root) {
   "use strict";
 
-  // Exact by definition, both of them - the international pound and the
-  // international inch. No approximations here: these two numbers decide
-  // what every stored row says.
-  const KG_PER_LB = 0.45359237;
-  const CM_PER_IN = 2.54;
-  const IN_PER_FT = 12;
-
-  /*
-   * Every row carries both unit systems, whichever one was typed.
-   *
-   * The alternative was storing the canonical metric value plus the raw
-   * text and converting at export. That puts this same arithmetic in
-   * admin.html, where it would be a second copy free to drift from this
-   * one, and it makes a CSV that cannot be read without running the
-   * conversion again. Storing both costs a few bytes inside a blob that
-   * is already padded to an AES block.
-   *
-   * What is NOT derived is `entered`: exactly what the submitter typed,
-   * kept verbatim. Rounding is lossy in both directions, and the honest
-   * answer to "what did they actually say" is worth one string.
-   */
-
-  // Bounds are per unit system rather than derived from one canonical
-  // pair, so the message a submitter reads is in the units they are
-  // looking at. A form that answers "between 20 and 500" to someone
-  // typing pounds is a form that looks broken.
-  const LIMITS = {
-    kg: { min: 20, max: 500 },
-    lb: { min: 44, max: 1100 },
-    cm: { min: 100, max: 250 },
-    ft: { min: 3, max: 8 },
-  };
-
-  const GENDERS = ["male", "female", "nonbinary", "other"];
-  const ROLES = ["feeder", "feedee", "gainer", "admirer"];
+  const F = root.BinderFields;
 
   // Telegram's own rule: 5-32 characters, letters, digits and
   // underscores. Checking it here means a typo is caught while the
@@ -68,23 +43,14 @@
   // message four months later.
   const HANDLE = /^[a-z0-9_]{5,32}$/;
 
+  // The record's own contract, exported so a mismatch against
+  // server/charts-agg.js's header is a constant compared once rather
+  // than a shape rebuilt in every reader.
+  const RECORD_VERSION = 1;
+
   function round(value, places) {
     const factor = Math.pow(10, places);
     return Math.round(value * factor) / factor;
-  }
-
-  /*
-   * "@Handle", "handle", "t.me/handle" and "https://t.me/handle" all
-   * name the same person, and all four get pasted. Everything below is
-   * removal only - nothing is invented, so a handle that survives is
-   * one the submitter actually typed.
-   */
-  function normalizeTelegram(text) {
-    let value = String(text == null ? "" : text).trim();
-    value = value.replace(/^https?:\/\//i, "");
-    value = value.replace(/^(?:www\.)?t(?:elegram)?\.me\//i, "");
-    value = value.replace(/^@+/, "");
-    return value.toLowerCase();
   }
 
   function isBlank(text) {
@@ -104,65 +70,276 @@
     return Number.isFinite(number) ? number : null;
   }
 
-  function weightFromKg(kg) {
-    return { kg: round(kg, 1), lb: round(kg / KG_PER_LB, 1) };
-  }
-
-  function weightFromLb(lb) {
-    return { kg: round(lb * KG_PER_LB, 1), lb: round(lb, 1) };
-  }
-
   /*
-   * One height, spelled four ways. feet/inches are derived from the
-   * total rather than carried alongside it, so they cannot disagree
-   * with it.
+   * "@Handle", "handle", "t.me/handle" and "https://t.me/handle" all
+   * name the same person, and all four get pasted. Everything below is
+   * removal only - nothing is invented, so a handle that survives is
+   * one the submitter actually typed.
    */
-  function heightFrom(totalInches) {
-    let feet = Math.floor(totalInches / IN_PER_FT);
-    let inches = round(totalInches - feet * IN_PER_FT, 1);
-    // Rounding the remainder can reach a full foot - 71.98in is 5ft
-    // 11.98in, which rounds to 5ft 12in. Carry it.
-    if (inches >= IN_PER_FT) {
-      feet += 1;
-      inches = 0;
-    }
-    return {
-      cm: round(totalInches * CM_PER_IN, 1),
-      totalInches: round(totalInches, 1),
-      feet: feet,
-      inches: inches,
-    };
-  }
-
-  function heightFromCm(cm) {
-    return heightFrom(cm / CM_PER_IN);
-  }
-
-  function heightFromFeetInches(feet, inches) {
-    return heightFrom(feet * IN_PER_FT + inches);
+  function normalizeTelegram(text) {
+    let value = String(text == null ? "" : text).trim();
+    value = value.replace(/^https?:\/\//i, "");
+    value = value.replace(/^(?:www\.)?t(?:elegram)?\.me\//i, "");
+    value = value.replace(/^@+/, "");
+    return value.toLowerCase();
   }
 
   function between(value, limit) {
     return value >= limit.min && value <= limit.max;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* The plan: what the form must ask, derived from the spec alone.      */
+
   /*
-   * Every problem with a filled-in form, as [{ field, message }].
-   *
-   * All of them at once rather than the first: a form that reveals one
-   * fault per attempt is three round trips for someone who mistyped
-   * two things.
+   * One field's shape, in the vocabulary the wiring below builds a
+   * control from. `kind` here is the spec's own kind, unlike
+   * apps/web/fields.js's `measures()` which folds several kinds into
+   * "bins" / "categorical" for a chart's purposes - this file needs to
+   * know whether a field takes one box or two, which is a rendering
+   * question rather than a charting one.
    */
-  function validate(input, sessionUsername) {
+  function planField(field, given) {
+    const base = {
+      name: field.name,
+      kind: field.kind,
+      label: field.label,
+      term: field.term,
+      required: field.required === true,
+    };
+
+    if (field.kind === "consent" || field.kind === "count") return base;
+
+    if (field.kind === "choice") {
+      return Object.assign(base, {
+        multiple: field.multiple === true,
+        blank: typeof field.blank === "string" ? field.blank : null,
+        choicesFrom: field.choicesFrom || null,
+        choices: field.choicesFrom ? null : (field.choices || []).slice(),
+      });
+    }
+
+    // weight / length: one box per unit system, a second beside it when
+    // the system's unit is compound (feet next to inches).
+    const limits = F.limits(given);
+    const units = {};
+    F.systems(given).forEach(function (system) {
+      const unit = F.enterUnit(field.kind, system, given);
+      const compoundUnit = F.compoundUnit(unit, given);
+      units[system] = {
+        unit: unit,
+        limits: limits[unit] || null,
+        compoundUnit: compoundUnit,
+        compoundLimits: compoundUnit ? limits[compoundUnit] || null : null,
+      };
+    });
+    return Object.assign(base, { unitKind: field.kind, units: units });
+  }
+
+  /*
+   * Every field worth a control, in the form's order - a computed field
+   * is never asked for, which is what makes it computed (#278's own
+   * rule, restated for rendering rather than for charting).
+   */
+  function plan(given) {
+    return F.names(given)
+      .map(function (name) { return F.field(name, given); })
+      .filter(function (field) { return field.kind !== "computed"; })
+      .map(function (field) { return planField(field, given); });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reading one measured field's typed amount, in its own enter unit.   */
+
+  /*
+   * `input.values` carries whatever the wiring collected: `values[name]`
+   * for a field's main box, `values[name + "Compound"]` for the second
+   * one when the field's plan entry says there is one. This is the one
+   * function both validate() and buildRecord() call, so the two can
+   * never disagree about what was typed.
+   */
+  function parseMeasuredAmount(field, system, input, given) {
+    const unit = F.enterUnit(field.kind, system, given);
+    const compoundUnit = F.compoundUnit(unit, given);
+    const main = parseNumber(input.values[field.name]);
+    if (main === null) return { ok: false, unit: unit, compoundUnit: compoundUnit };
+
+    if (!compoundUnit) {
+      return { ok: true, unit: unit, compoundUnit: null, amount: main,
+        mainValue: main };
+    }
+
+    const compoundRaw = input.values[field.name + "Compound"];
+    const compoundValue = isBlank(compoundRaw) ? 0 : parseNumber(compoundRaw);
+    if (compoundValue === null) {
+      return { ok: false, unit: unit, compoundUnit: compoundUnit,
+        compoundBad: true };
+    }
+    const compoundInMain = F.convert(compoundValue, compoundUnit, unit, given);
+    return { ok: true, unit: unit, compoundUnit: compoundUnit,
+      amount: main + (compoundInMain || 0), mainValue: main,
+      compoundValue: compoundValue };
+  }
+
+  /*
+   * A measured amount, converted to every unit the kind's table names -
+   * apps/web/site.config.js's `store` property says which key each one
+   * writes, exactly as server/charts-agg.js's header requires
+   * (record[name].kg, record[name].lb, and so on). A unit with no
+   * `store` - imperial length's "ft" - is compound-only and is never a
+   * key of its own; the total it describes already reached this
+   * function as `amount` in `unit`.
+   */
+  function measuredValueFrom(kind, unit, amount, given) {
+    const table = F.unitsOf(kind, given);
+    const out = {};
+    Object.keys(table).forEach(function (candidate) {
+      if (!table[candidate].store) return;
+      const value = F.convert(amount, unit, candidate, given);
+      if (value !== null) out[table[candidate].store] = round(value, 1);
+    });
+    return out;
+  }
+
+  /*
+   * height.feet / height.inches, added to the "height" field's own
+   * value only - not derived from the spec's unit table, because
+   * neither is a `store` name any unit there declares: a compound entry
+   * (feet next to inches) is a way to TYPE an amount, not a second
+   * property every length-kind field owes a reader. This one field
+   * keeps them anyway because the pin comment on #353 (issue 5335377958)
+   * is explicit that the record matches the pre-0.9 one exactly, and
+   * the pre-0.9 record carried both alongside cm and totalInches -
+   * admin.js's CSV still reads them by name. Silent no-op on a fork
+   * that renamed "height" away, same as enteredText() above.
+   */
+  function addHeightFeetInches(record) {
+    if (!record || typeof record.height !== "object") return;
+    const totalInches = record.height.totalInches;
+    if (typeof totalInches !== "number") return;
+    let feet = Math.floor(totalInches / 12);
+    let inches = round(totalInches - feet * 12, 1);
+    if (inches >= 12) { feet += 1; inches = 0; }
+    record.height.feet = feet;
+    record.height.inches = inches;
+  }
+
+  /*
+   * The typed string a record's `entered` envelope keeps for weight and
+   * height - "200 lb", "5 ft 10 in", "90 kg". Fixed to these two names
+   * regardless of the spec: server/charts-agg.js's header lists `entered
+   * {units, weight, height}` as part of the envelope the spec does not
+   * name, matching the pre-0.9 record exactly, so this is not derived
+   * the way the rest of buildRecord is. A spec with no field named
+   * "weight" or "height" gets an empty string here rather than a throw -
+   * the envelope is best-effort on a fork that renamed them, and the
+   * spec-named half of the record is unaffected either way.
+   */
+  function enteredText(name, input, given) {
+    let field;
+    try { field = F.field(name, given); } catch (error) { return ""; }
+    const parsed = parseMeasuredAmount(field, input.units, input, given);
+    if (!parsed.ok) return "";
+    const main = String(input.values[name]).trim() + " " + parsed.unit;
+    if (!parsed.compoundUnit) return main;
+    const compoundRaw = input.values[name + "Compound"];
+    return main + " " +
+      (isBlank(compoundRaw) ? "0" : String(compoundRaw).trim()) + " " +
+      parsed.compoundUnit;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Validation: every problem with a filled-in form, as                */
+  /* [{ field, message }]. All of them at once rather than the first -   */
+  /* a form that reveals one fault per attempt is three round trips for  */
+  /* someone who mistyped two things.                                   */
+
+  function validateMeasured(field, input, given) {
+    const system = input.units;
+    const unit = F.enterUnit(field.kind, system, given);
+    const compoundUnit = F.compoundUnit(unit, given);
+    const limits = F.limits(given);
+    const main = parseNumber(input.values[field.name]);
+
+    if (!compoundUnit) {
+      if (main === null) {
+        return [{ field: field.name,
+          message: "Enter " + field.term + " in " + unit + ", as a number." }];
+      }
+      if (limits[unit] && !between(main, limits[unit])) {
+        return [{ field: field.name,
+          message: "That " + field.term + " is outside what this form " +
+            "accepts (" + limits[unit].min + " to " + limits[unit].max +
+            " " + unit + ") — check the units." }];
+      }
+      return [];
+    }
+
+    if (main === null) {
+      return [{ field: field.name,
+        message: "Enter " + field.term + " as " + unit + " and " +
+          compoundUnit + "." }];
+    }
+    const compoundRaw = input.values[field.name + "Compound"];
+    const compoundBlank = isBlank(compoundRaw);
+    const compound = compoundBlank ? 0 : parseNumber(compoundRaw);
+    if (compound === null) {
+      return [{ field: field.name,
+        message: "The " + compoundUnit + " part is not a number — leave " +
+          "it empty for a round number of " + unit + "." }];
+    }
+    const perMain = F.convert(1, unit, compoundUnit, given);
+    if (Number.isFinite(perMain) && (compound < 0 || compound >= perMain)) {
+      return [{ field: field.name,
+        message: compoundUnit[0].toUpperCase() + compoundUnit.slice(1) +
+          "s go from 0 to " + (perMain - 1) + " - anything more is " +
+          "another " + unit + "." }];
+    }
+    if (limits[unit] && !between(main, limits[unit])) {
+      return [{ field: field.name,
+        message: "That " + field.term + " is outside what this form " +
+          "accepts (" + limits[unit].min + " to " + limits[unit].max +
+          " " + unit + ")." }];
+    }
+    return [];
+  }
+
+  function validateOne(field, input, given) {
+    if (field.kind === "consent") {
+      if (field.required && input.values[field.name] !== true) {
+        return [{ field: field.name,
+          message: field.label + " — tick the box to continue." }];
+      }
+      return [];
+    }
+    if (field.kind === "choice") {
+      if (!field.required) return [];
+      const value = input.values[field.name];
+      const empty = field.multiple
+        ? !(Array.isArray(value) && value.length)
+        : (value === undefined || value === null || value === "");
+      return empty
+        ? [{ field: field.name, message: field.label + " is required." }]
+        : [];
+    }
+    if (field.kind === "count") {
+      if (!field.required) return [];
+      return parseNumber(input.values[field.name]) === null
+        ? [{ field: field.name, message: field.label + " is required." }]
+        : [];
+    }
+    return validateMeasured(field, input, given);
+  }
+
+  function validate(input, sessionUsername, given) {
     const problems = [];
-    const imperial = input.units === "imperial";
 
     /*
      * The one-argument form preserves validation for unverified input in
-     * the pure API. The page passes the Worker's verified session username
-     * explicitly: it must exist, but this page must not reject a real
-     * Telegram account merely because its local HANDLE rule is narrower
-     * than the identity provider's.
+     * the pure API. The page passes the Worker's verified session
+     * username explicitly: it must exist, but this page must not reject
+     * a real Telegram account merely because its local HANDLE rule is
+     * narrower than the identity provider's.
      */
     const fromSession = sessionUsername !== undefined;
     const handle = normalizeTelegram(
@@ -184,260 +361,106 @@
       });
     }
 
-    const weightUnit = imperial ? "lb" : "kg";
-    const weight = parseNumber(imperial ? input.weightLb : input.weightKg);
-    if (weight === null) {
-      problems.push({
-        field: "weight",
-        message: "Enter your weight in " + weightUnit + ", as a number.",
-      });
-    } else if (!between(weight, LIMITS[weightUnit])) {
-      problems.push({
-        field: "weight",
-        message: "That weight is outside what this form accepts (" +
-          LIMITS[weightUnit].min + " to " + LIMITS[weightUnit].max + " " +
-          weightUnit + ") — check the units.",
-      });
-    }
-
-    if (imperial) {
-      const feet = parseNumber(input.heightFeet);
-      const inches = isBlank(input.heightInches)
-        ? 0 : parseNumber(input.heightInches);
-      if (feet === null) {
-        problems.push({
-          field: "height",
-          message: "Enter your height as feet and inches.",
-        });
-      } else if (inches === null) {
-        problems.push({
-          field: "height",
-          message: "The inches part is not a number — leave it empty for " +
-            "a round number of feet.",
-        });
-      } else if (inches < 0 || inches >= IN_PER_FT) {
-        problems.push({
-          field: "height",
-          message: "Inches go from 0 to 11 - anything more is another foot.",
-        });
-      } else if (!between(feet, LIMITS.ft)) {
-        problems.push({
-          field: "height",
-          message: "That height is outside what this form accepts (" +
-            LIMITS.ft.min + " to " + LIMITS.ft.max + " feet).",
-        });
-      }
-    } else {
-      const cm = parseNumber(input.heightCm);
-      if (cm === null) {
-        problems.push({
-          field: "height",
-          message: "Enter your height in cm, as a number.",
-        });
-      } else if (!between(cm, LIMITS.cm)) {
-        problems.push({
-          field: "height",
-          message: "That height is outside what this form accepts (" +
-            LIMITS.cm.min + " to " + LIMITS.cm.max + " cm) — check the " +
-            "units.",
-        });
-      }
-    }
-
-    // Not a formality. It is recorded with the row because the row is
-    // the only place it can be recorded - there are no accounts here.
-    if (input.over18 !== true) {
-      problems.push({
-        field: "over18",
-        message: "This form is 18+ only — tick the box to confirm.",
-      });
-    }
+    F.names(given).forEach(function (name) {
+      const field = F.field(name, given);
+      if (field.kind === "computed") return;
+      problems.push.apply(problems, validateOne(field, input, given));
+    });
 
     return problems;
   }
 
-  /*
-   * The entered height in cm, or null when there is nothing readable to
-   * convert. Separate from validate() because two callers need the
-   * number rather than the complaint: the guard below, and the wiring
-   * that has to say what height a stored row actually carried.
-   */
-  function enteredHeightCm(input) {
-    if (input.units === "imperial") {
-      const feet = parseNumber(input.heightFeet);
-      const inches = isBlank(input.heightInches)
-        ? 0 : parseNumber(input.heightInches);
-      if (feet === null || inches === null) return null;
-      return heightFromFeetInches(feet, inches).cm;
-    }
-    const cm = parseNumber(input.heightCm);
-    return cm === null ? null : heightFromCm(cm).cm;
-  }
-
-  function spellHeight(height, imperial) {
-    return imperial
-      ? height.feet + " ft " + height.inches + " in"
-      : height.cm + " cm";
-  }
+  /* ------------------------------------------------------------------ */
+  /* The record, matching server/charts-agg.js's header exactly.         */
 
   /*
-   * Is this height a big enough departure from the last one to be worth
-   * asking about? A notice as { field, message }, or null for silence.
+   * Assumes validate() came back empty; callers that skip it get
+   * whatever they deserve. The session username is mandatory even then:
+   * without it the record builder refuses rather than falling back to
+   * member-editable input.
    *
-   * A person's height does not move, so a large jump between entries is
-   * a typo - and nothing in LIMITS can see it, because LIMITS asks
-   * whether one number is a possible height and 3 ft is one. That is how
-   * 91.4cm and 162.1cm reached the published document from a submitter
-   * who is 175.3cm.
-   *
-   * Three properties this function must keep, each of which is a way for
-   * a guard like this to become worthless:
-   *
-   *   - It is silent when it does not know. `previousCm` comes from this
-   *     browser's own storage, so a device that has never submitted has
-   *     nothing to compare and gets no guard at all. That is a real hole
-   *     and the copy on the page says so rather than implying a standing
-   *     protection; inventing a comparison here would be worse than the
-   *     hole.
-   *   - It is silent under HEIGHT_CHANGE_CM. Shoes, a different tape, a
-   *     different time of day. A guard that fires on those is a guard
-   *     people learn to press through, and then it is not there for the
-   *     91.4cm case either.
-   *   - It is a prompt, never a verdict. The remembered number may
-   *     itself be the typo, so a hard refusal traps a member whose real
-   *     height the form will not take - and being told they are wrong
-   *     about their own height is how somebody stops trusting the form.
-   *
-   * Both heights are spoken in the units on screen. Someone looking at a
-   * feet box, told their last entry was 175.3cm, has to do arithmetic
-   * before they can judge the one thing being asked of them.
-   */
-  const HEIGHT_CHANGE_CM = 5;
-
-  function heightChangeNotice(input, previousCm) {
-    // Not a number is not a memory. This value crosses a document event
-    // from a JSON store, so "175.3" and NaN both turn up here, and both
-    // would compare in a way that silently never fires: "175.3" - 178
-    // is arithmetic that works, and every comparison against NaN is
-    // false.
-    if (typeof previousCm !== "number" || !Number.isFinite(previousCm)) {
-      return null;
-    }
-    const entered = enteredHeightCm(input);
-    // An unreadable height is validate()'s complaint to make. A sentence
-    // here about a number nobody typed would arrive alongside it.
-    if (entered === null) return null;
-    if (Math.abs(entered - previousCm) <= HEIGHT_CHANGE_CM) return null;
-
-    const imperial = input.units === "imperial";
-    return {
-      field: "height",
-      // One clause and a pointer after the dash (#275). The clause is
-      // the COMPARISON, which is one idea with two numbers in it -
-      // dropping either half would leave a member checking a figure
-      // against nothing. What went is the conditional wrapped around
-      // the pointer.
-      message: "This browser remembers your last height as " +
-        spellHeight(heightFromCm(previousCm), imperial) +
-        ", and this entry says " +
-        spellHeight(heightFromCm(entered), imperial) +
-        " — add it again to confirm.",
-    };
-  }
-
-  /*
-   * A valid input to the record that gets encrypted. Assumes validate()
-   * came back empty; callers that skip it get whatever they deserve.
-   * The session username is mandatory even then: without it the record
-   * builder refuses rather than falling back to member-editable input.
-   *
-   * `now` is a parameter rather than a call to Date.now() so the test
+   * `now` is a parameter rather than a call to Date.now() so a caller
    * can assert on a fixed record. It is also the only clock in the
-   * record the submitter's machine controls - the server adds its own
-   * receipt timestamp, and the two disagreeing is information rather
-   * than a bug.
+   * record the submitter's machine controls - the Worker adds its own
+   * receipt timestamp (`received_at`), and the two disagreeing is
+   * information rather than a bug.
    */
-  function buildRecord(input, now, sessionUsername) {
+  function buildRecord(input, now, sessionUsername, given) {
     const telegram = normalizeTelegram(sessionUsername);
     if (!telegram) {
       throw new Error("A verified session username is required.");
     }
 
-    const imperial = input.units === "imperial";
-
-    let weight;
-    let height;
-    let enteredWeight;
-    let enteredHeight;
-
-    if (imperial) {
-      const lb = parseNumber(input.weightLb);
-      const feet = parseNumber(input.heightFeet);
-      const inches = isBlank(input.heightInches)
-        ? 0 : parseNumber(input.heightInches);
-      weight = weightFromLb(lb);
-      height = heightFromFeetInches(feet, inches);
-      enteredWeight = String(input.weightLb).trim() + " lb";
-      enteredHeight = String(input.heightFeet).trim() + " ft " +
-        (isBlank(input.heightInches) ? "0" : String(input.heightInches).trim()) +
-        " in";
-    } else {
-      const kg = parseNumber(input.weightKg);
-      const cm = parseNumber(input.heightCm);
-      weight = weightFromKg(kg);
-      height = heightFromCm(cm);
-      enteredWeight = String(input.weightKg).trim() + " kg";
-      enteredHeight = String(input.heightCm).trim() + " cm";
-    }
-
-    const roles = Array.isArray(input.roles)
-      ? input.roles.filter(function (r) { return ROLES.indexOf(r) !== -1; })
-      : [];
-
-    const gender = GENDERS.indexOf(input.gender) !== -1 ? input.gender : null;
-    const country = /^[A-Z]{2}$/.test(String(input.country || ""))
-      ? input.country : null;
-
-    return {
-      // The record's own shape, separate from the envelope version byte
-      // crypto.js writes. That one says how the bytes are sealed; this
-      // one says what the fields inside mean. They change for different
-      // reasons, so they are different numbers.
-      record: 1,
+    const record = {
+      record: RECORD_VERSION,
       submittedAt: new Date(now).toISOString(),
       telegram: telegram,
-      weight: weight,
-      height: height,
-      entered: {
-        units: imperial ? "imperial" : "metric",
-        weight: enteredWeight,
-        height: enteredHeight,
-      },
-      gender: gender,
-      roles: roles,
-      country: country,
-      over18: true,
     };
+
+    F.names(given).forEach(function (name) {
+      const field = F.field(name, given);
+      if (field.kind === "computed") return; // never stored
+
+      if (field.kind === "consent") {
+        record[name] = input.values[name] === true;
+        return;
+      }
+      if (field.kind === "count") {
+        record[name] = parseNumber(input.values[name]);
+        return;
+      }
+      if (field.kind === "choice") {
+        if (field.multiple) {
+          const chosen = Array.isArray(input.values[name])
+            ? input.values[name] : [];
+          const allowed = field.choicesFrom ? null : F.choiceValues(name, given);
+          record[name] = allowed
+            ? chosen.filter(function (v) { return allowed.indexOf(v) !== -1; })
+            : chosen.slice();
+          return;
+        }
+        const raw = input.values[name];
+        const allowed = field.choicesFrom ? null : F.choiceValues(name, given);
+        record[name] = (raw && (allowed === null || allowed.indexOf(raw) !== -1))
+          ? raw : null;
+        return;
+      }
+      // weight / length.
+      const parsed = parseMeasuredAmount(field, input.units, input, given);
+      record[name] = parsed.ok
+        ? measuredValueFrom(field.kind, parsed.unit, parsed.amount, given)
+        : {};
+    });
+
+    // "height" only, and fixed rather than derived - see
+    // addHeightFeetInches()'s own header for why.
+    addHeightFeetInches(record);
+
+    // The envelope the spec does not name (server/charts-agg.js's
+    // header) - see enteredText() above for why this half is fixed
+    // rather than derived.
+    record.entered = {
+      units: input.units,
+      weight: enteredText("weight", input, given),
+      height: enteredText("height", input, given),
+    };
+
+    return record;
   }
 
-  // Frozen because your-page.html holds the submission before it is sealed:
-  // an export a later script can rewrite is a `validate` that waves
-  // anything through, or a `buildRecord` that quietly adds a field to
-  // what gets encrypted.
+  // Frozen because your-page.html holds the submission before it is
+  // posted: an export a later script can rewrite is a `validate` that
+  // waves anything through, or a `buildRecord` that quietly adds a field
+  // to what gets stored.
   root.BinderForm = Object.freeze({
-    KG_PER_LB: KG_PER_LB,
-    CM_PER_IN: CM_PER_IN,
-    LIMITS: LIMITS,
-    GENDERS: GENDERS,
-    ROLES: ROLES,
+    RECORD_VERSION: RECORD_VERSION,
+    HANDLE: HANDLE,
     normalizeTelegram: normalizeTelegram,
     parseNumber: parseNumber,
-    weightFromKg: weightFromKg,
-    weightFromLb: weightFromLb,
-    heightFromCm: heightFromCm,
-    heightFromFeetInches: heightFromFeetInches,
+    plan: plan,
+    measuredValueFrom: measuredValueFrom,
+    parseMeasuredAmount: parseMeasuredAmount,
     validate: validate,
-    heightChangeNotice: heightChangeNotice,
     buildRecord: buildRecord,
   });
 
@@ -450,372 +473,288 @@
   const $ = UI.byId;
   const show = UI.show;
 
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    (children || []).forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+    if (!attrs) return node;
+    Object.keys(attrs).forEach(function (key) {
+      if (key === "text") node.textContent = attrs[key];
+      else if (key === "class") node.className = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    return node;
+  }
+
   /*
-   * Setup runs inside a guard.
-   *
-   * A throw anywhere in here leaves every listener registered after it
-   * unattached, on a page that otherwise looks completely normal - no
-   * broken layout, no missing text, just a Submit button that silently
-   * does nothing. This happened during development, from a `const` used
-   * by a function called above its own declaration, and nothing about
-   * the page revealed it.
-   *
-   * That failure is worse than a dead page, because a submitter cannot
-   * tell it from a working one. So a page that cannot wire itself up
-   * says so, and shows no form at all.
+   * One measured field's markup: a labeled row per unit system, the
+   * units toggle hides one of the two. `data-units="<system>"` is what
+   * applyUnits() below reads to decide which row to show - written as
+   * data on the row itself rather than inferred from a fixed id pair,
+   * so a third unit system in `apps/web/site.config.js` would render a
+   * third row with nothing here to edit.
    */
+  function buildMeasuredField(entry) {
+    const wrap = el("div", { class: "field" });
+    F.systems().forEach(function (system) {
+      const spec = entry.units[system];
+      const row = el("div", { class: "row", "data-units": system });
+      const mainId = "entry-" + entry.name + "-" + system;
+      row.appendChild(el("input", {
+        type: "text", id: mainId, "data-field": entry.name,
+        "data-system": system, inputmode: "decimal", autocomplete: "off",
+        "aria-describedby": "error-" + entry.name,
+      }));
+      row.appendChild(el("span", { class: "suffix", text: spec.unit }));
+      if (spec.compoundUnit) {
+        row.appendChild(el("input", {
+          type: "text", id: mainId + "-compound", "data-field": entry.name,
+          "data-system": system, "data-compound": "true",
+          inputmode: "decimal", autocomplete: "off",
+          "aria-describedby": "error-" + entry.name,
+        }));
+        row.appendChild(el("span", { class: "suffix", text: spec.compoundUnit }));
+      }
+      const labeled = el("div", {}, [
+        el("label", { for: mainId, text: entry.label }),
+        row,
+      ]);
+      labeled.setAttribute("data-units-group", system);
+      wrap.appendChild(labeled);
+    });
+    wrap.appendChild(el("p", {
+      class: "field-error", id: "error-" + entry.name, hidden: "",
+    }));
+    return wrap;
+  }
+
+  function buildChoiceField(entry) {
+    if (entry.multiple) {
+      const fieldset = el("fieldset", { class: "field" }, [
+        el("legend", { text: entry.label }),
+      ]);
+      const choices = el("div", { class: "choices" });
+      (entry.choices || []).forEach(function (choice) {
+        choices.appendChild(el("label", { class: "choice" }, [
+          el("input", { type: "checkbox", name: entry.name,
+            value: choice.value }),
+          el("span", { text: choice.label }),
+        ]));
+      });
+      fieldset.appendChild(choices);
+      return fieldset;
+    }
+
+    const select = el("select", { id: "entry-" + entry.name });
+    select.appendChild(el("option", { value: "", text: entry.blank || "" }));
+    if (entry.choicesFrom) {
+      const countries = root.BINDER_COUNTRIES || {};
+      Object.keys(countries).sort(function (a, b) {
+        return countries[a].localeCompare(countries[b]);
+      }).forEach(function (code) {
+        select.appendChild(el("option", { value: code, text: countries[code] }));
+      });
+    } else {
+      (entry.choices || []).forEach(function (choice) {
+        select.appendChild(el("option", { value: choice.value,
+          text: choice.label }));
+      });
+    }
+    return el("div", { class: "field" }, [
+      el("label", { for: "entry-" + entry.name, text: entry.label }),
+      select,
+    ]);
+  }
+
+  function buildConsentField(entry) {
+    return el("div", { class: "field" }, [
+      el("label", { class: "choice" }, [
+        el("input", { type: "checkbox", id: "entry-" + entry.name,
+          "data-field": entry.name,
+          "aria-describedby": "error-" + entry.name }),
+        el("span", { text: entry.label }),
+      ]),
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
+    ]);
+  }
+
+  function buildCountField(entry) {
+    return el("div", { class: "field" }, [
+      el("label", { for: "entry-" + entry.name, text: entry.label }),
+      el("input", { type: "text", id: "entry-" + entry.name,
+        "data-field": entry.name, inputmode: "numeric", autocomplete: "off",
+        "aria-describedby": "error-" + entry.name }),
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
+    ]);
+  }
+
+  /*
+   * The whole form, one control per plan entry, in the spec's order.
+   * Nothing here is a field name: a fork that adds a row to
+   * apps/web/site.config.js gets a control for it with this function
+   * unedited.
+   */
+  function renderFields(container) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    plan().forEach(function (entry) {
+      let node;
+      if (entry.kind === "consent") node = buildConsentField(entry);
+      else if (entry.kind === "choice") node = buildChoiceField(entry);
+      else if (entry.kind === "count") node = buildCountField(entry);
+      else node = buildMeasuredField(entry);
+      container.appendChild(node);
+    });
+  }
+
+  function currentUnits() {
+    return UI.checkedValue("units", F.defaultSystem());
+  }
+
+  /* Shows the row for the chosen unit system and hides every other one,
+     for every measured field at once - one loop rather than one call
+     per field, so a field the spec adds is covered with nothing here to
+     edit. */
+  function applyUnits(container) {
+    const units = currentUnits();
+    Array.prototype.forEach.call(
+      container.querySelectorAll("[data-units-group]"),
+      function (group) {
+        show(group, group.getAttribute("data-units-group") === units);
+      });
+  }
+
+  function readValues(container) {
+    const values = {};
+    plan().forEach(function (entry) {
+      if (entry.kind === "consent") {
+        const box = $("entry-" + entry.name);
+        values[entry.name] = Boolean(box && box.checked);
+        return;
+      }
+      if (entry.kind === "choice" && entry.multiple) {
+        values[entry.name] = Array.prototype.map.call(
+          container.querySelectorAll(
+            'input[name="' + entry.name + '"]:checked'),
+          function (input) { return input.value; });
+        return;
+      }
+      if (entry.kind === "choice" || entry.kind === "count") {
+        const field = $("entry-" + entry.name);
+        values[entry.name] = field ? field.value : "";
+        return;
+      }
+      const units = currentUnits();
+      const main = $("entry-" + entry.name + "-" + units);
+      values[entry.name] = main ? main.value : "";
+      const compoundField = $("entry-" + entry.name + "-" + units + "-compound");
+      if (compoundField) values[entry.name + "Compound"] = compoundField.value;
+    });
+    return values;
+  }
+
+  function inputsFor(name) {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('[data-field="' + name + '"]'));
+  }
+
+  function clearProblems() {
+    plan().forEach(function (entry) {
+      const slot = $("error-" + entry.name);
+      if (slot) {
+        slot.textContent = "";
+        slot.hidden = true;
+      }
+      inputsFor(entry.name).forEach(function (input) {
+        input.removeAttribute("aria-invalid");
+      });
+    });
+  }
+
+  function showProblems(problems) {
+    clearProblems();
+    problems.forEach(function (problem) {
+      const slot = $("error-" + problem.field);
+      if (slot) {
+        slot.textContent = problem.message;
+        slot.hidden = false;
+      }
+      inputsFor(problem.field).forEach(function (input) {
+        input.setAttribute("aria-invalid", "true");
+      });
+    });
+    const first = problems[0] && $("error-" + problems[0].field);
+    if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  /*
+   * The technical half of a failure, written where a developer looks -
+   * #265 rows 13 and 50. A refused POST names a status number; none of
+   * it is anything a member can act on.
+   */
+  function logDetail(detail) {
+    if (detail && root.console && typeof root.console.warn === "function") {
+      root.console.warn("binder: " + detail);
+    }
+  }
+
   UI.boot(setUp, function (error) {
     show($("submission"), false);
     const closed = $("closed");
     show(closed, true);
     if (closed) {
-      closed.querySelector("[data-reason]").textContent =
-        "This page did not start up correctly, so the form is hidden — " +
-        "nothing you type would be sent." +
-        (error && error.message ? " (" + error.message + ")" : "");
+      const reason = closed.querySelector("[data-reason]");
+      if (reason) {
+        reason.textContent = "This page did not start up correctly, so " +
+          "the form is hidden — nothing you type would be sent." +
+          (error && error.message ? " (" + error.message + ")" : "");
+      }
     }
   });
 
   function setUp() {
     const form = $("submission");
+    const container = $("entry-fields");
     const submit = $("submit");
     const status = $("status");
-    const closed = $("closed");
-    const done = $("done");
     const config = root.BINDER_CONFIG || {};
     if (!root.BinderSession) {
       throw new Error("This page did not load its session handling.");
     }
     const member = root.BinderSession.require();
 
-    // session.js starts the redirect before this setup runs. Keep the form
-    // hidden as well: if navigation is delayed, a signed-out visitor must not
-    // get a usable-looking form whose request the Worker will refuse.
+    // session.js starts the redirect before this setup runs. Keep the
+    // form hidden as well: if navigation is delayed, a signed-out
+    // visitor must not get a usable-looking form whose request the
+    // Worker will refuse.
     if (!member) {
       show(form, false);
       return;
     }
 
-    /*
-     * Two reasons this form cannot run, both checked before it is shown
-     * rather than when the button is pressed. A submitter who fills in
-     * six fields and then learns the page never worked is a submitter
-     * who does not come back.
-     */
-    const unavailable = root.BinderCrypto
-      ? root.BinderCrypto.unavailableReason()
-      : "This page did not load its encryption, so nothing can be sent " +
-        "— reload.";
-
-    // publicKey: null is the honest state of a fork that has not
-    // generated a key yet. Submitting anyway would mean either plaintext
-    // on the wire or ciphertext nobody can open - both worse than a
-    // closed form.
-    const noKey = !config.publicKey
-      ? "Weigh-ins are closed until this binder publishes a key."
-      : null;
-
-    /*
-     * A signed-out visitor has no submission to verify, so their return
-     * stays above this. The blocked-form return stays below it because a
-     * member can still compare a configured key when local encryption is
-     * unavailable; with no key, the helper keeps the slot hidden.
-     */
-    UI.showFingerprint($("key-fingerprint"), config.publicKey);
-
-    const blocked = unavailable || noKey;
-    if (blocked) {
+    if (!config.endpoint) {
       show(form, false);
-      show(closed, true);
-      if (closed) closed.querySelector("[data-reason]").textContent = blocked;
+      show($("closed"), true);
+      const reason = $("closed") && $("closed").querySelector("[data-reason]");
+      if (reason) {
+        reason.textContent = "This site is not set up to reach the " +
+          "service that keeps your entries.";
+      }
       return;
     }
 
-    /*
-     * The country list, built here rather than in the HTML: 250
-     * <option> tags would bury the six fields that matter in the page a
-     * reviewer most needs to read.
-     *
-     * Two groups. A short promoted block first, then everyone
-     * alphabetically - and the promoted countries appear in both, which
-     * is deliberate: a country missing from the A-Z run reads as a bug
-     * to whoever is scrolling for it, and both options carry the same
-     * value so the record cannot tell which was used.
-     *
-     * <optgroup> rather than a drawn separator. Its label is not
-     * selectable, a screen reader announces which group an option is
-     * in, and it needs no styling to be understood - a "--------" row
-     * is an option that can be chosen and stored.
-     */
-    const country = $("country");
-    const countries = root.BINDER_COUNTRIES || {};
-
-    function addOptions(parent, codes) {
-      codes.forEach(function (code) {
-        // A promoted code with no country behind it is skipped rather
-        // than rendered as an empty row. tools/check_web.py fails the
-        // build on one, so this is the safe half of that pair.
-        if (!countries[code]) return;
-        const option = document.createElement("option");
-        option.value = code;
-        option.textContent = countries[code];
-        parent.appendChild(option);
-      });
-    }
-
-    function addGroup(label, codes) {
-      const group = document.createElement("optgroup");
-      group.label = label;
-      addOptions(group, codes);
-      country.appendChild(group);
-    }
-
-    const promoted = root.BINDER_COUNTRIES_PROMOTED || [];
-    if (promoted.length) addGroup("Most common", promoted);
-
-    const alphabetical = Object.keys(countries).sort(function (a, b) {
-      return countries[a].localeCompare(countries[b]);
-    });
-    if (promoted.length) {
-      addGroup("All countries", alphabetical);
-    } else {
-      addOptions(country, alphabetical);
-    }
-
-    /*
-     * Reporting problems. Declared before the unit toggle because
-     * applyUnits() runs during setup and clears them, and a `const` used
-     * from a function called above its own declaration is a reference
-     * error at load - which would take every listener registered after
-     * it down with it, silently.
-     */
-    const FIELDS = ["weight", "height", "over18"];
-
-    // A field can be more than one input - height in imperial is two -
-    // and both halves should be marked, so this returns all of them
-    // rather than the first.
-    function inputsFor(field) {
-      return Array.prototype.slice.call(
-        document.querySelectorAll('[data-field="' + field + '"]'));
-    }
-
-    function clearProblems() {
-      FIELDS.forEach(function (field) {
-        const slot = $("error-" + field);
-        if (slot) {
-          slot.textContent = "";
-          slot.hidden = true;
-        }
-        inputsFor(field).forEach(function (input) {
-          input.removeAttribute("aria-invalid");
-        });
-      });
-    }
-
-    function showProblems(problems) {
-      clearProblems();
-      problems.forEach(function (problem) {
-        const slot = $("error-" + problem.field);
-        if (slot) {
-          slot.textContent = problem.message;
-          slot.hidden = false;
-        }
-        inputsFor(problem.field).forEach(function (input) {
-          input.setAttribute("aria-invalid", "true");
-        });
-      });
-      const first = problems[0] && $("error-" + problems[0].field);
-      if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-
-    /*
-     * The unit toggle swaps which inputs exist rather than reinterpreting
-     * one pair of numbers. Someone who types 200 into a pounds box and
-     * then switches to metric has not just become 200 kg, and a form
-     * that quietly says they have is a form that stores a lie.
-     */
-    const groups = { metric: $("metric-fields"), imperial: $("imperial-fields") };
-    const unitInputs = Array.prototype.slice.call(
-      document.querySelectorAll('input[name="units"]'));
-
-    // The fallback matches the radio your-page.html checks. It should be
-    // unreachable - a radio group with a `checked` member always has
-    // one - but if the markup ever loses that attribute, the page and
-    // this function should at least be wrong about the same thing.
-    function currentUnits() {
-      return UI.checkedValue("units", "imperial");
-    }
-
-    function applyUnits() {
-      const units = currentUnits();
-      show(groups.metric, units === "metric");
-      show(groups.imperial, units === "imperial");
-      clearProblems();
-    }
-
-    unitInputs.forEach(function (input) {
-      input.addEventListener("change", applyUnits);
-    });
-    applyUnits();
-
-    function readForm() {
-      const session = root.BinderSession.read();
-      return {
-        sessionUsername: session ? session.username : null,
-        units: currentUnits(),
-        weightKg: $("weight-kg").value,
-        weightLb: $("weight-lb").value,
-        heightCm: $("height-cm").value,
-        heightFeet: $("height-ft").value,
-        heightInches: $("height-in").value,
-        gender: $("gender").value,
-        roles: Array.prototype.slice
-          .call(document.querySelectorAll('input[name="roles"]:checked'))
-          .map(function (input) { return input.value; }),
-        country: $("country").value,
-        over18: $("over18").checked,
-      };
-    }
+    renderFields(container);
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) { input.addEventListener("change", function () {
+        applyUnits(container);
+        clearProblems();
+      }); });
+    applyUnits(container);
 
     function say(message, tone) {
       UI.setStatus(status, message, tone);
     }
-
-    /*
-     * Where the technical half of a failure goes now - #265 rows 13 and
-     * 50.
-     *
-     * crypto.js's throws name a file, a byte count and a curve; a
-     * refused POST names a status number. All of it is exactly what
-     * somebody debugging this needs and none of it is anything a member
-     * can act on, and appending it to the sentence on screen was how
-     * "the public key in config.js is not a 65-byte uncompressed P-256
-     * point" ended up under a weigh-in form. It is not discarded -
-     * discarding it would leave the next person with a page that failed
-     * and said nothing about why - it is written where a developer
-     * looks and a member does not.
-     */
-    function logDetail(detail) {
-      if (detail && root.console && typeof root.console.warn === "function") {
-        root.console.warn("binder: " + detail);
-      }
-    }
-
-    /*
-     * The height guard's memory, and it is not this file's - #172.
-     *
-     * submit.js owns the device-local store and announces what is in it;
-     * this file owns the form's boxes and announces what was accepted.
-     * Neither reaches into the other, which is the same arrangement the
-     * two events above already use, and it is what keeps the store's
-     * account scoping in one file instead of two.
-     *
-     * Whatever arrives is held as it arrives. heightChangeNotice() is
-     * where a baseline is judged usable, so a "175.3" that crossed a
-     * JSON store is rejected in one place rather than in every reader.
-     */
-    let baselineCm = null;
-    document.addEventListener("binder:height-baseline", function (event) {
-      baselineCm = event && event.detail ? event.detail.lastHeightCm : null;
-    });
-
-    /*
-     * Whose account this is - #85, arriving the same way the baseline
-     * above does and for the same reason.
-     *
-     * The id is what memberkey.js files a key under, and it exists in
-     * exactly one place: the GET /me response, which submit.js owns.
-     * This file must not fetch it - a second caller would be a second
-     * answer to "whose page is this", and the account scoping that
-     * decides what may be shown at all lives over there. So it crosses
-     * on an event, like the height and the two before it.
-     *
-     * Null until it arrives, and null is never an error. It is the state
-     * every first paint passes through, and what it costs is the entry's
-     * second recipient rather than the member's entry.
-     */
-    let accountId = null;
-    document.addEventListener("binder:account", function (event) {
-      accountId = event && event.detail ? event.detail.accountId : null;
-    });
-
-    /*
-     * This member's own device key, or null - and null is an ordinary
-     * Tuesday rather than a fault.
-     *
-     * Five different browsers answer null here and none of them is
-     * broken: one that has not heard from /me yet, one whose page did
-     * not load memberkey.js, one that keeps no database at all (private
-     * browsing, storage blocked, no IndexedDB), an id the store refuses
-     * to file under, and one holding a crypto.js that has no `encryptTo`
-     * to spend the key on. memberkey.js's own header says the missing
-     * key is never an error; this is the caller that has to mean it.
-     *
-     * THE FIFTH IS A CACHE, not a page. No `_headers` file exists in
-     * this tree, so both scripts are cached on the platform default and
-     * a browser can hold yesterday's crypto.js beside today's form.js.
-     * Asked here rather than at the call site because an absent function
-     * is the same fact as an absent key - this browser cannot widen the
-     * seal - and the answer to that fact is one branch, not two.
-     */
-    async function memberKey() {
-      const keys = root.BinderMemberKey;
-      const sealer = root.BinderCrypto;
-      if (!keys || typeof keys.ensure !== "function" || !accountId) return null;
-      if (!sealer || typeof sealer.encryptTo !== "function") return null;
-      let key = null;
-      try {
-        key = await keys.ensure(accountId);
-      } catch (error) {
-        // `ensure` answers null rather than throwing, so reaching here
-        // means the module is not the one this file expects. That is
-        // still a browser with no usable key, which is still not a
-        // reason to stop somebody submitting.
-        return null;
-      }
-      return key && typeof key.publicKeyBase64 === "string" &&
-        key.publicKeyBase64 ? key : null;
-    }
-
-    /*
-     * One entry, sealed to everybody who may open it.
-     *
-     * The keyholder is always a recipient. The member's own device key
-     * is an ADDITIONAL one when this browser has it, which is the whole
-     * of what lets somebody read their own history back - #85, and
-     * memberkey.js's header documents this exact call site. Without it
-     * the row is what it has always been: version 1, one recipient, and
-     * openable on export day.
-     *
-     * BREADTH FAILS OPEN; THE SUBMISSION NEVER DOES. Every way the
-     * second recipient can go missing is handled above, before a single
-     * byte is encrypted, so a browser that cannot hold a key submits
-     * exactly as it did before this existed.
-     *
-     * A SEAL THAT THROWS IS A DIFFERENT EVENT, and it is deliberately
-     * not caught here. crypto.js refuses loudly when two recipients turn
-     * out to be the same key, because a row that looks dual-sealed and
-     * opens for nobody new cannot be told from a correct one by anything
-     * downstream - that refusal is the only place the mistake can be
-     * loud, and quietly retrying with one recipient would spend it. So
-     * this throws to the caller's existing handler: nothing is sent, and
-     * the member is told why.
-     */
-    async function seal(record) {
-      const key = await memberKey();
-      return key
-        ? root.BinderCrypto.encryptTo(
-          record, [config.publicKey, key.publicKeyBase64])
-        : root.BinderCrypto.encrypt(record, config.publicKey);
-    }
-
-    /*
-     * The height this member has already been asked about and stood by.
-     * Held as the number rather than as a flag: a flag would let one
-     * confirmation license every later typo in the same sitting, so
-     * editing the height to a different implausible value asks again.
-     */
-    let confirmedHeightCm = null;
 
     form.addEventListener("submit", async function (event) {
       // The page never does a native submit - the CSP's form-action
@@ -824,8 +763,12 @@
       // what was typed.
       event.preventDefault();
 
-      const input = readForm();
-      const problems = validate(input, input.sessionUsername);
+      const session = root.BinderSession.read();
+      const input = {
+        units: currentUnits(),
+        values: readValues(container),
+      };
+      const problems = validate(input, session ? session.username : null);
       if (problems.length) {
         const sessionProblem = problems.find(function (problem) {
           return problem.field === "telegram";
@@ -837,81 +780,34 @@
       }
       clearProblems();
 
-      /*
-       * The one question this form asks twice, and the reason it is here
-       * rather than inside validate(): it is not a rule about the entry.
-       * validate() judges the entry alone and its answer cannot change
-       * between two identical presses, while this compares against a
-       * number only this browser knows - and the answer to "are you
-       * sure" is a second press.
-       */
-      const notice = heightChangeNotice(input, baselineCm);
-      const enteredCm = enteredHeightCm(input);
-      if (notice && enteredCm !== confirmedHeightCm) {
-        confirmedHeightCm = enteredCm;
-        showProblems([notice]);
-        return;
-      }
-
       submit.disabled = true;
-      say("Encrypting…", null);
+      say("Sending…", null);
 
       let record = null;
-      let blob;
       try {
-        record = buildRecord(input, Date.now(), input.sessionUsername);
-        blob = await seal(record);
+        record = buildRecord(input, Date.now(),
+          session ? session.username : null);
       } catch (error) {
         submit.disabled = false;
-        // Nothing has left the browser at this point, which is worth
-        // saying: a failure here is not a half-submission.
-        //
-        // `record` is what tells the two failures apart, and they are
-        // not one sentence: a record this page could not assemble is a
-        // broken page, and a record it could not seal is a key. Saying
-        // "the site's key is not usable" over the first would send a
-        // member to an admin about something an admin cannot fix.
-        logDetail(error && error.message ? error.message : "send preparation " +
-          "failed with no message");
-        say(record === null
-          ? "Nothing was sent — reload and try again."
-          : "Nothing was sent — the site's key is not usable, so tell an " +
-            "admin.", "bad");
+        logDetail(error && error.message ? error.message
+          : "record building failed with no message");
+        say("Nothing was sent — reload and try again.", "bad");
         return;
       }
 
-      say("Sending…", null);
       try {
         const response = await fetch(config.endpoint + "/submit", {
           method: "POST",
           headers: Object.assign(
             { "Content-Type": "application/json" },
             root.BinderSession.authorization()),
-          body: JSON.stringify({ ciphertext: blob }),
+          body: JSON.stringify({ record: JSON.stringify(record) }),
         });
         /*
-         * A dead session, which is not a refused entry - #166.
-         *
-         * Ahead of the branch below, because that one is written for a
-         * Worker objecting to the submission: it quotes a status number
-         * and tells the member to try again, which for a dead credential
-         * fails identically for as long as the tab is open. Nothing about
-         * the entry is wrong here, so nothing about the entry is said.
-         *
-         * The credential goes, because the Worker has just refused it and
-         * session.js does not keep values that cannot work - and dropping
-         * it here is also what takes the development banner down, so the
-         * page stops claiming a session while telling the member it has
-         * ended.
-         *
-         * THE PAGE STAYS, and that is the opposite of admin.js's rule on
-         * the same status. Leaving is a security act there: that page
-         * holds every submission in the clear and keeps the private key on
-         * the device, so a session the Worker no longer accepts is not one
-         * to leave the corpus sitting behind. Here there is nothing to
-         * protect and something to lose - a member who has just typed an
-         * entry and pressed Send, whose measurements are on screen. They
-         * are told what happened and left holding it.
+         * A dead session, which is not a refused entry - #166. The page
+         * stays: a member who has just typed an entry and pressed Send
+         * is told what happened and left holding it, rather than
+         * navigated away.
          */
         if (response.status === 401) {
           root.BinderSession.clear();
@@ -926,76 +822,24 @@
             const body = await response.json();
             detail = body && body.error ? " " + body.error : "";
           } catch (e) { /* a non-JSON error page says enough by its status */ }
-          /*
-           * The number goes to the console and not to the member -
-           * #265 row 13. A status code is something an operator acts on
-           * and admin.html still quotes it; here it is a number beside
-           * a sentence about somebody's weigh-in, and there is nothing
-           * a member can do with it. The Worker's own `{error}` is
-           * written for whoever provoked it and stays.
-           */
           logDetail("submission refused with " + response.status + "." +
             detail);
           throw new Error("The service could not answer just now." + detail);
         }
       } catch (error) {
         submit.disabled = false;
-        // The thrown message goes to the console rather than into the
-        // middle of the sentence (#275, rule 1). It is a fetch
-        // failure's own wording, or the Worker's `{error}`, and neither
-        // was written for somebody who has just pressed Send.
         logDetail(error && error.message ? error.message
           : "the submission could not be sent");
         say("Nothing was stored — try again.", "bad");
         return;
       }
 
-      /*
-       * The panel owns the account summary and responds by re-reading /me.
-       * Dispatching only after the Worker accepts the row means a refused or
-       * failed request can never make the panel claim something was stored.
-       *
-       * The height rides along because the next entry is measured against
-       * it - #172. It is the record's own number rather than a second
-       * reading of the boxes, so what the guard remembers is exactly what
-       * was sealed; and it moves here, on the one path where a row exists,
-       * rather than while the member types, because a baseline written on
-       * every keystroke is one the entry is compared against itself.
-       */
-      document.dispatchEvent(new CustomEvent("binder:submitted", {
-        detail: { heightCm: record.height.cm },
-      }));
+      document.dispatchEvent(new CustomEvent("binder:submitted"));
 
-      show(form, false);
-      say("", null);
-      show(done, true);
-      done.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
-
-    /*
-     * Putting the form back - #64.
-     *
-     * The swap above is one way, which was right for the pre-accounts page:
-     * a one-shot public form where reloading was how you submitted again.
-     * With tabs, "Weigh in" leads back to a confirmation card and no
-     * form unless something puts the form back, and only a reload
-     * recovers it - while that card's own text promises "just fill the
-     * form again". The copy is right, so the code has to be.
-     *
-     * This listener is the counterpart to the `binder:submitted` dispatch
-     * above, and the direction matters: submit.js owns the tabs and never
-     * learns that #done and #submission are a pair, because that knowledge
-     * belongs wherever the swap lives, which is here.
-     *
-     * Doing nothing when #done is already hidden is what keeps this from
-     * clearing a note the member is still reading, or fighting the boot
-     * path that hides the form for a signed-out visitor.
-     */
-    document.addEventListener("binder:add-entry-shown", function () {
-      if (done.hidden) return;
-      show(done, false);
-      show(form, true);
-      show($("repeat-note"), true);
+      submit.disabled = false;
+      form.reset();
+      applyUnits(container);
+      say("Added — it now shows in your entries below.", null);
     });
   }
 })(globalThis);

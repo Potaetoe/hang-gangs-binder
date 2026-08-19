@@ -1837,23 +1837,26 @@
       // carried rather than recomputed from the date because two people
       // with different histories do not share a calendar.
       const round = index + 1;
-      const input = {
-        units: person.units,
+      // apps/web/form.js's buildRecord() reads {units, values: {...}}
+      // (0.9-M2-S2, #353) - one `weight`/`height` box per system rather
+      // than a name split by unit (weightLb/weightKg), and `heightCompound`
+      // for imperial's inches box beside feet.
+      const values = {
         roles: person.roles,
         gender: person.gender,
         country: person.country,
         over18: true,
       };
       if (person.units === "imperial") {
-        input.weightLb = String(weight);
-        input.heightFeet = String(person.heightFeet);
-        input.heightInches = String(person.heightInches);
+        values.weight = String(weight);
+        values.height = String(person.heightFeet);
+        values.heightCompound = String(person.heightInches);
       } else {
-        input.weightKg = String(weight);
-        input.heightCm = String(person.heightCm);
+        values.weight = String(weight);
+        values.height = String(person.heightCm);
       }
       return {
-        input: input,
+        input: { units: person.units, values: values },
         handle: person.handle,
         round: round,
         at: Date.now() - back,

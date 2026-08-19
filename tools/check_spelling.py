@@ -217,7 +217,6 @@ PINNED = {
     ("dev/demo-corpus.js", "-ll- doubling"): 1,
     ("dev/demo-stub.js", "-ll- doubling"): 1,
     ("dev/demo.test.mjs", "-ll- doubling"): 1,
-    ("dev/form-wiring.test.mjs", "-ll- doubling"): 1,
     ("dev/memberkey.test.mjs", "-ll- doubling"): 2,
     ("dev/worker.test.mjs", "-ise family"): 3,
     ("dev/worker.test.mjs", "-ll- doubling"): 16,

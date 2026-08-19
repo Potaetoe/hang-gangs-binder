@@ -51,8 +51,15 @@
  * answering would mean a histogram with no band width drawn from a
  * field the form never asked for.
  *
- * Pure. No document, no fetch, no storage: the wiring that will draw
- * these fields belongs to the pages, and 0.9-M2 is where they get it.
+ * Pure. No document, no fetch, no storage: the wiring that draws these
+ * fields belongs to the pages. your-page.html is the first one
+ * (0.9-M2-S2, #353) - its own form.js is the wiring, and it reads the
+ * two extra exports below (enterUnit, compoundUnit) for the one
+ * question the chartable-measure list never had to answer: which unit
+ * a MEMBER TYPES INTO, as opposed to which unit a chart draws in. They
+ * differ for length - a member types feet, a chart draws inches - which
+ * is exactly why `enter` and `chart` are two separate tables on the
+ * spec's kind rather than one.
  */
 (function (root) {
   "use strict";
@@ -206,6 +213,12 @@
     return spec(given).units.default;
   }
 
+  /* Every unit system this spec offers, in the order it lists them - the
+     order a units toggle presents them in. */
+  function systems(given) {
+    return spec(given).units.systems.slice();
+  }
+
   /* The unit table one unit name belongs to, with the kind it is part
      of - so a conversion can refuse two units that are not the same
      kind of thing rather than multiplying them together. */
@@ -240,6 +253,37 @@
   function convert(value, from, to, given) {
     const rate = factor(from, to, given);
     return rate === null ? null : value * rate;
+  }
+
+  /*
+   * The unit a member TYPES a measured field's value in, for one unit
+   * system - as opposed to `measureFor`'s `units[system].unit`, which is
+   * the unit a CHART draws it in. The two agree for weight (kg/lb both
+   * ways) and differ for length: a member types feet, and no histogram
+   * is drawn in feet-and-inches, so the chart reads inches instead
+   * (site.config.js's own comment on `enter`/`chart` says why). null for
+   * a kind the spec's units table does not carry an `enter` row for -
+   * choice, count and consent all have no unit to type into.
+   */
+  function enterUnit(kind, system, given) {
+    const found = kindSpec(kind, given);
+    return found && found.enter ? found.enter[system] || null : null;
+  }
+
+  /*
+   * The SECOND unit typed beside one unit's box, or null when there
+   * isn't one - inches beside feet, and nothing beside every other unit
+   * this spec carries. `compound` on a kind is the table this reads;
+   * see site.config.js's own comment on it. Keyed by unit name rather
+   * than by kind: a form field asks "what goes beside THIS box", not
+   * "does this kind of thing ever have a compound".
+   */
+  function compoundUnit(unit, given) {
+    const home = unitHome(unit, given);
+    if (!home) return null;
+    const compound = spec(given).units.kinds[home.kind].compound;
+    return compound && Object.prototype.hasOwnProperty.call(compound, unit)
+      ? compound[unit] : null;
   }
 
   /*
@@ -415,8 +459,11 @@
     isMeasured: isMeasured,
     unitsOf: unitsOf,
     defaultSystem: defaultSystem,
+    systems: systems,
     factor: factor,
     convert: convert,
+    enterUnit: enterUnit,
+    compoundUnit: compoundUnit,
     limits: limits,
     choiceValues: choiceValues,
     siteTitle: siteTitle,
