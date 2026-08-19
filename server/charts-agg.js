@@ -104,8 +104,8 @@
  * GET /charts preserves. The premise is the thing to re-take if that
  * readership ever widens.
  */
-import "../apps/site.config.js";
-import "../apps/fields.js";
+import "../apps/web/site.config.js";
+import "../apps/web/fields.js";
 
 /*
  * The smallest number of PEOPLE a drawn cell, bin or trend point may
