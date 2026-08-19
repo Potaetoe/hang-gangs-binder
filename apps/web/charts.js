@@ -108,10 +108,9 @@
   /*
    * Which range-caption indices to paint under a row of bars, so that NO
    * TWO PAINTED CAPTIONS OVERLAP (owner's F1/F2 ruling: "legibility is a
-   * geometry property, not a count target" - this replaces the old
-   * fixed-stride edgeLabelStride(), which kept a caption COUNT near ten
-   * while ignoring caption WIDTH, and still overlapped on both the
-   * 120-band BMI grid and the 53-band imperial-weight grid).
+   * geometry property, not a count target" - a caption COUNT near ten
+   * says nothing about caption WIDTH, and both the 120-band BMI grid and
+   * the 53-band imperial-weight grid overlapped at that count).
    *
    * THE FIRST AND LAST ALWAYS PAINT - they are the spec's own two
    * bounding numbers, the axis's own start and end, so a collision is
