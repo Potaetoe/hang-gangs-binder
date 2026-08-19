@@ -1141,11 +1141,18 @@ function trendOf(rows, accounts, measure, site, part, floor) {
  * belongs rather than by the shape of this line: askFor()'s parameter
  * set is closed, so nothing anybody sends reaches this argument.
  *
- * ZERO PEOPLE IS ALWAYS NOTHING TO DRAW, whatever the floor, and it is
- * the one refusal left at the shipped default (ruling 7). It is written
- * as its own comparison rather than folded into the floor test, because
- * at a floor of 0 the floor test alone would let an empty view through
- * and answer a chart of nobody.
+ * ZERO PEOPLE IS ALWAYS NOTHING TO DRAW, whatever the floor, and at the
+ * shipped default it is the one refusal left (ruling 7). It is NOT a
+ * second guard here, and the missing `if` is the point: at a floor of 0
+ * the comparison below cannot catch it, and what does is binsOf()
+ * refusing a view where nobody has a value for the measure. Nobody at
+ * all is a special case of that, so one path answers both and there is
+ * no branch that only an empty group reaches. A guard added here would
+ * be a line no test could redden, which is a worse thing to carry than
+ * the sentence explaining its absence - and
+ * tests/charts-aggregate.test.mjs arms the pair: an empty view answers
+ * the honest sentence, and a view where nobody answered this measure
+ * draws nothing rather than a grid of zeros.
  *
  * `rows` are ALREADY-OPENED, already-current rows - the tombstones are
  * excluded by the statement that read them, because whether a row is
@@ -1164,7 +1171,7 @@ function aggregate(rows, ask, spec, settings) {
     people.push(row);
     accounts.add(row.accountId);
   }
-  if (!accounts.size || accounts.size < floor) return notEnough(ask, floor);
+  if (accounts.size < floor) return notEnough(ask, floor);
 
   const distribution = binsOf(people, ask.measure, site, part, floor);
   if (distribution === null) return notEnough(ask, floor);

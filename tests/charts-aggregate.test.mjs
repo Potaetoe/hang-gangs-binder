@@ -204,6 +204,35 @@ function groupBlock(answer, field) {
 }
 
 /*
+ * One line's count, or null when there is no such line - and null
+ * rather than a throw for the same reason drawnOf() exists. Reading
+ * `.filter(...)[0].count` off a block a mutation emptied throws a
+ * TypeError that takes the whole run down and hides every arm after it,
+ * so a suite that reports a crash instead of a red is a suite whose
+ * remaining arms nobody saw. The mutation battery on this slice found
+ * exactly that, three times.
+ */
+function countIn(cells, value) {
+  const found = (cells || []).filter((one) => one.value === value)[0];
+  return found ? found.count : null;
+}
+
+/* The same, straight off a route body, which carries the block beside a
+   `self` field the pure aggregator knows nothing about. */
+function bodyBlock(body, field) {
+  if (!body || !Array.isArray(body.groups)) return [];
+  const found = body.groups.filter((one) => one.field === field)[0];
+  return found ? found.values : [];
+}
+
+/* An answer's trend points, or none - `trend` is null on every answer
+   that draws nothing, for the same reason `distribution` is. */
+function pointsOf(answer) {
+  return answer && answer.trend && Array.isArray(answer.trend.points)
+    ? answer.trend.points : [];
+}
+
+/*
  * How many PEOPLE each count line really stands for, counted from the
  * corpus rather than read off the answer - which is the only way to ask
  * whether the answer's own counts are people at all.
@@ -374,12 +403,12 @@ check("floor 0: every other band is present and reads zero - an empty " +
   "band is an empty slot, never a hole in the axis",
   soloBins.filter((b) => b.count === 0).length === W_BANDS - 1);
 check("floor 0: their month draws with its true average over one person",
-  solo.trend.points.length === 1 &&
-  solo.trend.points[0].people === 1 &&
-  Math.abs(solo.trend.points[0].average.metric - 100) < 0.6);
+  pointsOf(solo).length === 1 &&
+  pointsOf(solo)[0].people === 1 &&
+  Math.abs(pointsOf(solo)[0].average.metric - 100) < 0.6);
 check("floor 0: the group makeup counts that one member exactly, and " +
   "lists every other value of the spec at zero",
-  groupBlock(solo, "gender").filter((c) => c.value === "male")[0].count === 1 &&
+  countIn(groupBlock(solo, "gender"), "male") === 1 &&
   groupBlock(solo, "gender").filter((c) => c.value !== "male")
     .every((c) => c.count === 0));
 
@@ -638,19 +667,18 @@ check("group makeup: a block names its field, its label and whether a " +
   makeup.groups.filter((one) => one.field === "roles")[0].multiple === true);
 check("group makeup: exact counts, small ones included - three people " +
   "is a line reading three, not a suppression note",
-  groupBlock(makeup, "gender")
-    .filter((c) => c.value === "nonbinary")[0].count === 3);
+  countIn(groupBlock(makeup, "gender"), "nonbinary") === 3);
 check("group makeup: every value the spec lists is a line, including " +
   "the ones nobody holds",
   JSON.stringify(groupBlock(makeup, "gender").map((c) => c.value).sort()) ===
     JSON.stringify(["female", "male", "nonbinary", "other", null].sort()) &&
-  groupBlock(makeup, "gender").filter((c) => c.value === "other")[0]
-    .count === 0);
+  countIn(groupBlock(makeup, "gender"), "other") === 0);
 check("group makeup: the named lines are ordered by how many people " +
   "hold them, the way the ruling's own example reads them out, and the " +
   "blank comes last",
   groupBlock(makeup, "gender").filter((c) => c.bucket !== "blank")
     .map((c) => c.count).every((n, i, all) => i === 0 || all[i - 1] >= n) &&
+  groupBlock(makeup, "gender").length === 5 &&
   groupBlock(makeup, "gender").slice(-1)[0].bucket === "blank");
 check("group makeup: the blank is its own line and is always present - " +
   "a chart without it claims a completeness the data does not have",
@@ -663,10 +691,8 @@ check("group makeup: a category counts each member ONCE, so a " +
 check("group makeup: a member holding two affiliations is one member in " +
   "each of them - the lines sum to holdings and every one of them is a " +
   "count of people",
-  groupBlock(makeup, "roles").filter((c) => c.value === "feedee")[0]
-    .count === 3 &&
-  groupBlock(makeup, "roles").filter((c) => c.value === "gainer")[0]
-    .count === 3 &&
+  countIn(groupBlock(makeup, "roles"), "feedee") === 3 &&
+  countIn(groupBlock(makeup, "roles"), "gainer") === 3 &&
   groupBlock(makeup, "roles").reduce((n, c) => n + c.count, 0) >
     mixedGroup.length);
 
@@ -677,8 +703,7 @@ check("group makeup: a member holding two affiliations is one member in " +
 check("group makeup: a field whose choices live elsewhere lists what " +
   "the group holds rather than two hundred and fifty zeros",
   groupBlock(makeup, "country").length <= 5 &&
-  groupBlock(makeup, "country").filter((c) => c.value === "US")[0]
-    .count === 9);
+  countIn(groupBlock(makeup, "country"), "US") === 9);
 
 check("group makeup: the block describes the FILTERED view, not the " +
   "whole binder",
@@ -693,8 +718,8 @@ const dupeRows = [row(acct(9), "2026-08-01T00:00:00.000Z",
   record(100, 170, "male", ["feedee", "feedee", "feedee"], "US"))];
 check("group makeup: a record naming one affiliation three times is one " +
   "member in that line",
-  groupBlock(atShippedFloor(dupeRows, "measure=weight"), "roles")
-    .filter((c) => c.value === "feedee")[0].count === 1);
+  countIn(groupBlock(atShippedFloor(dupeRows, "measure=weight"), "roles"),
+    "feedee") === 1);
 
 /* A value the spec does not allow reads as unstated rather than drawn,
    which is what keeps a label in a response from ever being something a
@@ -705,8 +730,7 @@ const typed = atShippedFloor(typedRows, "measure=weight");
 check("group makeup: a value the spec does not list is unstated, never " +
   "a label - nothing a member typed reaches a response",
   !everyString(typed).some((s) => /script|not-a-/.test(s)) &&
-  groupBlock(typed, "gender").filter((c) => c.bucket === "blank")[0]
-    .count === 1);
+  countIn(groupBlock(typed, "gender"), null) === 1);
 
 /* ================================================================== */
 /* 5. A category is not a measure any more (ruling 1).                  */
@@ -740,24 +764,26 @@ overMonths.push(row(acct(1), "2026-10-06T00:00:00.000Z",
   record(80, 170, "male", ["feeder"], "US")));
 
 const months = atShippedFloor(overMonths, "measure=weight");
-const points = months.trend.points;
+const points = pointsOf(months);
 
 check("trend: every month with an entry draws - the two-person month " +
   "and the one-person month both",
   points.map((p) => p.period).join() === "2026-08,2026-09,2026-10");
 check("trend: a one-person month carries that person's true value",
-  points[2].people === 1 &&
+  points.length === 3 && points[2].people === 1 &&
   Math.abs(points[2].average.metric - 80) < 0.6);
 check("trend: the line is the average and is called that - no " +
   "statistics vocabulary",
   points.every((p) => p.average && typeof p.average.metric === "number") &&
   !everyString(months).some((s) => /^(mean|median|stddev|sigma)$/i.test(s)));
+const twiceInAMonth = pointsOf(atShippedFloor(overMonths.concat([
+  row(acct(0), "2026-09-20T00:00:00.000Z",
+    record(70, 170, "male", ["feeder"], "US")),
+]), "measure=weight"));
 check("trend: a month is one row per person, newest wins - somebody who " +
   "corrects twice in a month is one person in that month's average",
-  atShippedFloor(overMonths.concat([
-    row(acct(0), "2026-09-20T00:00:00.000Z",
-      record(70, 170, "male", ["feeder"], "US")),
-  ]), "measure=weight").trend.points[1].people === 1);
+  twiceInAMonth.length === 3 && twiceInAMonth[1].people === 1 &&
+  Math.abs(twiceInAMonth[1].average.metric - 70) < 0.6);
 check("trend: a month nobody submitted in is absent rather than zeroed " +
   "- the page bridges it and the route says nothing it does not know",
   !points.some((p) => p.period === "2026-07"));
@@ -855,14 +881,15 @@ const sparse = atRaisedFloor(sparseMonths, "measure=weight");
 check("floor 5: a period only two people submitted in is dropped, not " +
   "zeroed - one line is one person",
   sparse.enough === true &&
-  !sparse.trend.points.some((p) => p.period === "2026-09") &&
-  sparse.trend.points.some((p) => p.period === "2026-08"));
+  !pointsOf(sparse).some((p) => p.period === "2026-09") &&
+  pointsOf(sparse).some((p) => p.period === "2026-08"));
 check("floor 5: the dropped period leaves no residue - its key appears " +
   "nowhere in the answer",
   !everyString(sparse).includes("2026-09"));
 check("floor 5: every drawn point describes at least the floor's number " +
   "of people",
-  sparse.trend.points.every((p) => p.people >= RAISED));
+  pointsOf(sparse).length > 0 &&
+  pointsOf(sparse).every((p) => p.people >= RAISED));
 
 /* -------------------------------------------------------------- */
 /* 7b. The Other bucket, over the group-makeup block that carries  */
@@ -1030,6 +1057,7 @@ check("floor 5, the label: the bucket is still named, and named what " +
 check("floor 5, the label: it discloses neither which named cell was " +
   "absorbed nor how many were - no folded value is named anywhere in " +
   "the block and the bucket carries no count of its own contents (F8)",
+  absorbedOther.length === 1 &&
   !everyString(absorbed.groups).some((s) => /feedee|gainer/i.test(s)) &&
   everyNumber(absorbedOther[0]).length === 1 &&
   everyNumber(absorbedOther[0])[0] === absorbedOther[0].count);
@@ -1041,6 +1069,7 @@ check("floor 5, the label: naming the bucket honestly moved no cell - " +
   "every drawn line still describes at least the floor's number of " +
   "people, and the bucket still counts the members no named line " +
   "describes (F8)",
+  absorbedOther.length === 1 &&
   everyCellClearsTheFloor(absorbedRows, "roles", absorbed) &&
   absorbedOther[0].count ===
     peopleBehind(absorbedRows, "roles", absorbedCells).hidden.size);
@@ -1249,8 +1278,7 @@ check("route: the drawn body carries a distribution built from the " +
 check("route: the answer reports the shipped floor, which is 0",
   drawn.body.floor === SHIPPED_FLOOR);
 check("route: the group makeup rides along with the drawn answer",
-  drawn.body.groups.filter((g) => g.field === "gender")[0].values
-    .filter((c) => c.value === "male")[0].count === 4);
+  countIn(bodyBlock(drawn.body, "gender"), "male") === 4);
 
 /* Mandate 2 at the route: a floor named on the wire is refused. */
 const lowered = await call("GET", "/charts-data?measure=weight&floor=1",
@@ -1377,10 +1405,10 @@ check("route: a member alone in the binder draws the group of one - " +
   "the ruled consequence, accepted in the owner's own words (ruling 3)",
   lonely.status === 200 && lonely.body.enough === true &&
   lonely.body.distribution.bins.reduce((n, b) => n + b.count, 0) === 1 &&
-  lonely.body.groups.filter((g) => g.field === "gender")[0].values
-    .filter((c) => c.value === "female")[0].count === 1);
+  countIn(bodyBlock(lonely.body, "gender"), "female") === 1);
 check("route: their own line is still their own field, unfloored and " +
-  "unmerged (mandate 3)", lonely.body.self.points.length === 1);
+  "unmerged (mandate 3)", Boolean(lonely.body.self) &&
+  lonely.body.self.points.length === 1);
 
 /* A correction is a second row for one person, and the corrected row is
    a tombstone the read excludes - so the superseded entry defers to its
@@ -1394,8 +1422,7 @@ await call("POST", "/submit", {
 });
 const afterCorrection = await call("GET", "/charts-data?measure=weight",
   { token: TOKENS[0] });
-const afterGender = afterCorrection.body.groups
-  .filter((g) => g.field === "gender")[0].values;
+const afterGender = bodyBlock(afterCorrection.body, "gender");
 check("correction: a member who corrects a row is still one person in " +
   "the group - the tombstone is excluded by the read, not counted",
   afterCorrection.status === 200 && afterCorrection.body.enough === true &&
@@ -1403,8 +1430,8 @@ check("correction: a member who corrects a row is still one person in " +
     .reduce((n, b) => n + b.count, 0) === SEEDED);
 check("correction: their superseded entry defers to its superseder in " +
   "the group makeup - the most recent current entry decides",
-  afterGender.filter((c) => c.value === "male")[0].count === 3 &&
-  afterGender.filter((c) => c.value === "nonbinary")[0].count === 1);
+  countIn(afterGender, "male") === 3 &&
+  countIn(afterGender, "nonbinary") === 1);
 
 /* A tombstone in a PAST period is where excluding it can be seen at all.
    Inside one period, latest-per-account already picks the correction, so
@@ -1450,9 +1477,9 @@ check("tombstones: a month every member has since corrected draws no " +
   "point - the read excludes superseded rows rather than averaging " +
   "values people retracted",
   history.status === 200 && history.body.enough === true &&
-  !history.body.trend.points.some((p) => p.period === "2026-05"));
+  !pointsOf(history.body).some((p) => p.period === "2026-05"));
 check("tombstones: the correction's own month is the one that draws",
-  history.body.enough === true && history.body.trend.points.length === 1);
+  history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
 const EXPECTED = 141;
