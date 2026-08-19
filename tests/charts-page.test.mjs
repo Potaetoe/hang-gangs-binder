@@ -420,6 +420,21 @@ const NOT_ENOUGH_FIXTURE = {
     byId.get("picture-distribution").hidden === true);
 }
 
+/*
+ * The middle bin's count (3) sits BELOW server/charts-agg.js's own
+ * FLOOR (5) - not a real route answer at all (that route absorbs a
+ * sub-floor bin before it ever reaches the wire, per its own suppression
+ * cascade). It is planted here on purpose, per re-fire diagnosis F1
+ * (0.9-M2-S3 fix wave 2, #354): the F1 arm below compares rendered bins
+ * against the fixture's own bins index for index, so a fixture built
+ * entirely of already-legal counts (the original 6/7 pair, both clearing
+ * the floor on their own) can never tell a real second binning pass
+ * apart from a no-op - the reviewer's own mergeThinBands() mutation
+ * proved exactly that, shipping fully green because it had nothing left
+ * to merge. A sub-floor bin gives a client-side pooler something to act
+ * on; charts.js itself is render-only and prints whatever three bins
+ * arrive here without complaint, which is the point being proved.
+ */
 const ENOUGH_FIXTURE = {
   ok: true,
   measure: { name: "weight", label: "Weight", term: "weight", kind: "bins" },
@@ -439,6 +454,8 @@ const ENOUGH_FIXTURE = {
     partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
     bins: [
       { count: 6, from: { metric: null, imperial: null },
+        to: { metric: 70, imperial: 154 } },
+      { count: 3, from: { metric: 70, imperial: 154 },
         to: { metric: 90, imperial: 198 } },
       { count: 7, from: { metric: 90, imperial: 198 },
         to: { metric: null, imperial: null } },
