@@ -6274,14 +6274,26 @@ RULED_LINES = {
     "index.html": {
         "signed-out": "Signed out.",
     },
-    # your-page.html's two ruled lines here - the sealed-rows count and
-    # "Compare with the group's pinned code before submitting" - retired
-    # with the client seal they were both about (0.9-M2-S2, #353):
-    # DESIGN.md, "Trust model: the Worker reads" ends the browser-side
-    # decrypt those sentences described and the public-key comparison
-    # they asked a member to perform. The page's new trust-model copy is
-    # prose the owner has not yet ruled word-for-word, so it is not one
-    # of this table's entries.
+    # your-page.html's OLD two ruled lines here - the sealed-rows count
+    # and "Compare with the group's pinned code before submitting" -
+    # retired with the client seal they were both about (0.9-M2-S2,
+    # #353): DESIGN.md, "Trust model: the Worker reads" ends the
+    # browser-side decrypt those sentences described and the public-key
+    # comparison they asked a member to perform.
+    #
+    # "pre-leave-notice" is not ruled copy either - it is the 0.9-M4
+    # placeholder for the pre-leave notice (#294 F3), pinned by the same
+    # owner ruling that pins index.html's "privacy-line" (#355 comment
+    # 5337476261, carried into this page by the #353 fix-wave review,
+    # finding F7). The pin does not claim the bracketed filler is
+    # governed prose; it claims the SLOT's contents are governed, so a
+    # swap-in - the real sentence at M4, or anything else, at any time -
+    # has to touch this line in the same change rather than drift past
+    # the gate unnoticed. At M4 the pin and the sentence move together.
+    "your-page.html": {
+        "pre-leave-notice": "[Pre-leave notice — the owner writes this "
+                             "sentence at the 0.9-M4 register sitting.]",
+    },
     "charts.html": {
         "charts-intro":
             "Counts and averages — no names, no individual entries.",

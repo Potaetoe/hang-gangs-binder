@@ -81,6 +81,38 @@
   /* ------------------------------------------------------------------ */
   /* Reading a record back, in the member's chosen units.                */
 
+  /*
+   * GET /my-entries hands back each row's `record` as the JSON STRING
+   * store-crypto's openRow() decoded it to (server/worker.js's own
+   * handleMyEntries never parses it - handleCharts does, for its own
+   * reasons, and that is what made this file's omission invisible: the
+   * suite's own fixture handed objects, never the string shape the
+   * Worker actually sends). Parsed HERE, once, right after the fetch, so
+   * every reader below (weightDisplay, heightDisplay, bmiOf, the trend,
+   * the delete confirmation, the xlsx export) sees an object exactly as
+   * it always assumed.
+   *
+   * A row that will not parse is not a reason to fail the whole listing
+   * - the Worker already fails closed on a row that will not DECRYPT
+   * (openRow throws and the request answers 500), so a plaintext string
+   * this file cannot read as JSON is a narrower, later failure with a
+   * narrower, honest answer: that one row's record becomes null, which
+   * every existing reader below already treats as "nothing to show"
+   * (the em-dash cells, the trend's own filter(Boolean)) rather than a
+   * crash. The row itself still renders - its date, its delete control -
+   * because a member's ability to see and remove a row must not depend
+   * on this file being able to read its contents back.
+   */
+  function parseRecord(raw) {
+    if (typeof raw !== "string") return null;
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      detail("a stored record did not parse as JSON");
+      return null;
+    }
+  }
+
   function currentUnits() {
     return UI.checkedValue("units", root.BinderFields.defaultSystem());
   }
@@ -462,7 +494,9 @@
         detail("GET /my-entries answered with no usable listing");
         throw new Error("");
       }
-      entries = payload.entries;
+      entries = payload.entries.map(function (entry) {
+        return Object.assign({}, entry, { record: parseRecord(entry.record) });
+      });
     } catch (error) {
       if (error && error.name === "AbortError") return;
       detail(error && error.message ? error.message : "the entries listing " +
@@ -471,6 +505,18 @@
         emptyOut(entriesSlot);
         entriesSlot.appendChild(el("p", { class: "muted",
           text: "Your entries could not be loaded — reload the page." }));
+      }
+      // The trend section stays in flow even on a failed load - its own
+      // comment on your-page.html says so ("the empty-state sentence
+      // lives in the slot rather than an axis with no line on it"), and
+      // a bare runner with nothing under it is exactly the state that
+      // comment rules out. Writing here rather than leaving whatever the
+      // slot held before this call - a stale trend from a prior success
+      // would read as current data about a request that just failed.
+      if (trendSlot) {
+        emptyOut(trendSlot);
+        trendSlot.appendChild(el("p", { class: "muted",
+          text: "Your trend could not be loaded — reload the page." }));
       }
       return;
     } finally {

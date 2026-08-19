@@ -529,6 +529,16 @@
     return wrap;
   }
 
+  /*
+   * Both branches gain the same <p class="field-error"> slot
+   * buildMeasuredField, buildConsentField and buildCountField already
+   * carry (0.9-M2-S2 fix wave 1, finding F6). Before this, a required
+   * choice with nothing selected had NOWHERE for showProblems() to
+   * write its message: $("error-" + name) found no element, so the
+   * refusal was total silence - latent today because no shipped choice
+   * is required, and exactly the property a fork setting one would hit
+   * first.
+   */
   function buildChoiceField(entry) {
     if (entry.multiple) {
       const fieldset = el("fieldset", { class: "field" }, [
@@ -543,6 +553,9 @@
         ]));
       });
       fieldset.appendChild(choices);
+      fieldset.appendChild(el("p", {
+        class: "field-error", id: "error-" + entry.name, hidden: "",
+      }));
       return fieldset;
     }
 
@@ -564,6 +577,7 @@
     return el("div", { class: "field" }, [
       el("label", { for: "entry-" + entry.name, text: entry.label }),
       select,
+      el("p", { class: "field-error", id: "error-" + entry.name, hidden: "" }),
     ]);
   }
 
@@ -770,11 +784,24 @@
       };
       const problems = validate(input, session ? session.username : null);
       if (problems.length) {
+        /*
+         * The session problem, when there is one, over every other
+         * problem - it has no field-level slot of its own (there is no
+         * visible "telegram" control on this page for showProblems() to
+         * write into), so the general status line is the only place a
+         * member ever sees it. Every other problem DOES get its own
+         * inline slot from showProblems() below, but the status line
+         * still says something rather than nothing (0.9-M2-S2 fix wave
+         * 1, finding F6): a required choice with no error slot used to
+         * refuse in total silence, and closing that gap at the field
+         * means nothing if the general status stays blank too - a
+         * member scanning the top of the form for what went wrong
+         * would see no acknowledgment that anything did.
+         */
         const sessionProblem = problems.find(function (problem) {
           return problem.field === "telegram";
         });
-        say(sessionProblem ? sessionProblem.message : "",
-          sessionProblem ? "bad" : null);
+        say((sessionProblem || problems[0]).message, "bad");
         showProblems(problems);
         return;
       }
