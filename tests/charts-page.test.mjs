@@ -1,6 +1,7 @@
 /*
  * apps/web/charts.html and apps/web/charts.js against the route's real
- * contract (0.9-M2-S3, #354).
+ * contract (0.9-M2-S3, #354; reshaped by the 2026-08-19 charts ruling,
+ * #243 comment 5346978974, and 0.9-M2-S10/S11, #371/#372).
  *
  *     node tests/charts-page.test.mjs
  *
@@ -10,8 +11,13 @@
  * figure draws has to appear verbatim in the fixture response, and the
  * rendered bin count has to equal the response's - so a pooler, a
  * merger or a second binning pass reddens this suite regardless of
- * what it calls its variables. The FORBIDDEN name grep below (section
- * 1) stays as a fast tripwire that catches an obvious reintroduction by
+ * what it calls its variables. That property survives 0.9-M2-S11's
+ * reshape: the distribution figure now draws every band the response
+ * sends (empty ones included) with only some of them captioned, and the
+ * arm below checks the count row whole and the caption row against
+ * exactly the positions apps/web/charts.js's own edgeLabelStride()
+ * says should carry one. The FORBIDDEN name grep below (section 1)
+ * stays as a fast tripwire that catches an obvious reintroduction by
  * name before the slower behavioral arm has to - it is no longer the
  * proof by itself, since a real second partition wired under fresh
  * names passes it while still computing its own bins (the reviewer's
@@ -20,13 +26,19 @@
  * themselves are attacked; this file's job is that the PAGE prints
  * what the route hands back and computes nothing of its own.
  *
+ * THE NULL-EDGE FIXTURES ARE RETIRED WITH THIS SLICE. server/
+ * charts-agg.js's openEdge() is gone (0.9-M2-S10, #371): every edge in
+ * a real answer is now one of the field spec's own two range numbers or
+ * a bin boundary between them, never null. The "under X"/"X and up"
+ * arms this file used to carry are gone with it - binLabel() no longer
+ * accepts a null edge at all, so there is nothing left to fixture.
+ *
  * A FIXTURE ANSWER, NEVER A FETCH. This suite drives charts.js against
  * hand-built GET /charts response bodies shaped exactly like
- * server/charts-agg.js's real output (checked in the pure arm below
- * against that file's own exported shapes), never against a running
- * Worker and never against apps/web/dashboard.js's retired snapshot
- * document, which this page cannot reach at all - there is no
- * GET /snapshot left to ask.
+ * server/charts-agg.js's real output, never against a running Worker
+ * and never against apps/web/dashboard.js's retired snapshot document,
+ * which this page cannot reach at all - there is no GET /snapshot left
+ * to ask.
  *
  * THE DOM HALF IS A HAND-BUILT STUB, not jsdom (#75's rejection
  * applies here too): a small node factory with just the surface
@@ -119,18 +131,28 @@ const Charts = globalThis.BinderCharts;
 check("charts.js publishes BinderCharts, frozen",
   Charts !== undefined && Object.isFrozen(Charts));
 
-/* Design mandate 3: open-ended labels. */
-check("both ends open (the real single-bin case) names no number",
-  Charts.binLabel(null, null, "lb") === "Everyone in this view");
-check("an open first edge reads \"under X\", never a number for the " +
-  "missing edge",
-  Charts.binLabel(null, 150, "lb") === "under 150 lb");
-check("an open last edge reads \"X and up\"",
-  Charts.binLabel(130, null, "lb") === "130 lb and up");
-check("two closed edges read as a normal range",
+/* Owner ruling 5, #243: every edge is a plain number now. */
+check("two closed edges read as a plain range",
   Charts.binLabel(130, 150, "lb") === "130 lb–150 lb");
 check("a unitless measure's label carries no unit token",
   Charts.binLabel(20, 25, null) === "20–25");
+check("binLabel never invents an open-edge shape for a real answer's " +
+  "numbers - both edges print exactly as given",
+  Charts.binLabel(0, 5, "kg") === "0 kg–5 kg");
+
+/* edgeLabelStride: a short grid labels every edge; a fine one (weight's
+   53 imperial bands) spaces captions to roughly EDGE_LABEL_TARGET. */
+check("a grid of 3 bands gets a stride of 1 - every edge still labeled",
+  Charts.edgeLabelStride(3) === 1);
+check("a grid of exactly the target (10) still gets a stride of 1",
+  Charts.edgeLabelStride(10) === 1);
+check("a grid one band past the target (11) steps up to a stride of 2",
+  Charts.edgeLabelStride(11) === 2);
+check("the widest chartable grid (53 imperial weight bands) spaces " +
+  "captions to a stride of 6 (ceil(53/10))",
+  Charts.edgeLabelStride(53) === 6);
+check("a stride is never less than 1, whatever the count",
+  Charts.edgeLabelStride(0) === 1 && Charts.edgeLabelStride(-1) === 1);
 
 /* chartsURL: self=1 always, filter+value only together. */
 const bare = new URL(Charts.chartsURL("https://w.example", { measure: "weight" }));
@@ -156,9 +178,10 @@ check("no request ever names a floor or a units parameter - the wire " +
   !bare.searchParams.has("floor") && !bare.searchParams.has("units") &&
   !filtered.searchParams.has("floor") && !filtered.searchParams.has("units"));
 
-/* categoricalMeasures / valueChoices, against a small fixture spec
-   shaped like apps/fields.js's measureFor() output - never against a
-   response, matching design mandate 2's "never from a response". */
+/* categoricalMeasures / drawableMeasures / valueChoices, against a small
+   fixture spec shaped like apps/fields.js's measureFor() output - never
+   against a response, matching design mandate 2's "never from a
+   response". */
 const FieldsFixture = {
   measures: () => [
     { name: "weight", kind: "bins" },
@@ -173,6 +196,12 @@ const cats = Charts.categoricalMeasures(FieldsFixture, {});
 check("only categorical measures are offered as a filter - a bins " +
   "measure like weight is never one",
   cats.length === 2 && cats.every((m) => m.kind === "categorical"));
+
+/* Owner ruling 1, #243: categorical measures leave the `measure` list. */
+const drawable = Charts.drawableMeasures(FieldsFixture, {});
+check("only numeric measures are offered as a measure - gender and " +
+  "country are never chartable any more",
+  drawable.length === 1 && drawable[0].name === "weight");
 
 const genderChoices = Charts.valueChoices(cats[0], null);
 check("a plain choice field's values come from its own spec entry",
@@ -266,7 +295,8 @@ const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
 const NEEDED = ["filter-field", "filter-value-field", "filter-value",
   "measure", "picture-tab-trend", "picture-tab-distribution",
   "picture-trend", "picture-distribution", "figure-trend",
-  "figure-distribution", "results", "status", "show-me", "download"];
+  "figure-distribution", "groups", "groups-body", "results", "status",
+  "show-me", "download"];
 check("every element this suite drives is really in apps/web/charts.html",
   NEEDED.every((id) => IDS.includes(id)));
 
@@ -380,11 +410,15 @@ async function driven(fetchImpl, opts) {
     "#charts-page-" + Math.random());
 
   await new Promise((resolve) => setTimeout(resolve, 0));
+  await pressShowMe(byId);
+
+  return { byId, calls, unitsInputs };
+}
+
+async function pressShowMe(byId) {
   await byId.get("show-me").dispatch("click");
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
-
-  return { byId, calls, unitsInputs };
 }
 
 function response(status, body) {
@@ -397,23 +431,16 @@ function response(status, body) {
 }
 
 /*
- * A fixture shaped like server/charts-agg.js's answer - every field this
- * suite reads is one that file's aggregate() actually emits, not an
- * invented shape (checked against its own source in section 4 below).
- *
- * ONE PART OF THESE FIXTURES IS DELIBERATELY BEHIND THE ROUTE, and this
- * is the note that says so rather than letting a reader assume
- * otherwise. 0.9-M2-S10 (#371) retired the open outer edge: band edges
- * now come from the field spec, so no `from`/`to` a real answer carries
- * is ever null, and the route also carries a group-makeup block this
- * page does not render. apps/web/charts.js still renders the older
- * shape, and these fixtures are what IT is driven with - the page is
- * 0.9-M2-S11's to rebuild against the landed contract, which is the
- * condition that retires this note along with the null edges below.
+ * A fixture shaped exactly like server/charts-agg.js's real answer -
+ * every field this suite reads is one that file's aggregate() actually
+ * emits, not an invented shape. 0.9-M2-S10's own note that these
+ * fixtures were "deliberately behind the route" (null edges, no groups
+ * block) retires here: this suite now drives the rebuilt page, so the
+ * fixtures are the landed shape rather than a placeholder for it.
  */
 const NOT_ENOUGH_FIXTURE = {
   ok: true, measure: { name: "weight", label: "Weight", term: "weight",
-    kind: "bins" }, filter: { field: null, value: null }, floor: 5,
+    kind: "bins" }, filter: { field: null, value: null }, floor: 0,
   enough: false, note: "Not enough people for this view.", units: null,
   trend: null, distribution: null, groups: null, self: null,
 };
@@ -425,59 +452,75 @@ const NOT_ENOUGH_FIXTURE = {
     calls.length === 1 &&
     new URL(calls[0]).pathname === "/charts-data" &&
     !calls.some((u) => u.includes("/snapshot")));
-  check("a floored cut renders the route's own sentence as content, " +
-    "verbatim - never a string this page composed",
-    byId.get("status")._text === NOT_ENOUGH_FIXTURE.note);
+  /*
+   * Owner ruling 7, #243: the honest sentence plus a broader-filter
+   * hint, the only refusal state left at the shipped floor of 0. The
+   * route's own note still renders verbatim, as a leading substring -
+   * the page adds the hint, it never replaces or rewords the route's
+   * own sentence.
+   */
+  check("the empty view renders the route's own sentence verbatim, as " +
+    "the start of the status line - never a string this page composed " +
+    "in its place",
+    byId.get("status")._text.indexOf(NOT_ENOUGH_FIXTURE.note) === 0);
+  check("the empty view appends a broader-filter hint after the " +
+    "route's sentence",
+    byId.get("status")._text.includes("broader filter"));
   check("the not-enough state carries no error class - content on a " +
     "200, indistinguishable from any other state (security mandate 4)",
     byId.get("status").className === "status");
   check("nothing is drawn when there is nothing to draw",
     byId.get("picture-trend").hidden === true &&
     byId.get("picture-distribution").hidden === true);
+  check("the group makeup block stays hidden on an empty view",
+    byId.get("groups").hidden === true);
 }
 
 /*
- * The middle bin's count (3) sits BELOW server/charts-agg.js's own
- * FLOOR (5) - not a real route answer at all (that route absorbs a
- * sub-floor bin before it ever reaches the wire, per its own suppression
- * cascade). It is planted here on purpose, per re-fire diagnosis F1
- * (0.9-M2-S3 fix wave 2, #354): the F1 arm below compares rendered bins
- * against the fixture's own bins index for index, so a fixture built
- * entirely of already-legal counts (the original 6/7 pair, both clearing
- * the floor on their own) can never tell a real second binning pass
- * apart from a no-op - the reviewer's own mergeThinBands() mutation
- * proved exactly that, shipping fully green because it had nothing left
- * to merge. A sub-floor bin gives a client-side pooler something to act
- * on; charts.js itself is render-only and prints whatever three bins
- * arrive here without complaint, which is the point being proved.
+ * A small, hand-picked distribution: three plain (never null) closed
+ * bands. Used for the status line, download, units-toggle and F2
+ * fallback arms below, where the point is the SYSTEM the numbers come
+ * from rather than the shape of a large grid - BANDS_FIXTURE further
+ * down is the dedicated fixture for the "every band draws, captions
+ * sparse" property.
  */
 const ENOUGH_FIXTURE = {
   ok: true,
   measure: { name: "weight", label: "Weight", term: "weight", kind: "bins" },
   filter: { field: null, value: null },
-  floor: 5,
+  floor: 0,
   enough: true,
   note: null,
   units: { metric: { unit: "kg" }, imperial: { unit: "lb" } },
   trend: { points: [
-    { period: "2026-06", people: 6,
-      average: { metric: { kg: 80 }, imperial: { lb: 176.4 } } },
-    { period: "2026-07", people: 7,
-      average: { metric: { kg: 81 }, imperial: { lb: 178.6 } } },
+    { period: "2026-06", people: 6, average: { metric: 80, imperial: 176.4 } },
+    { period: "2026-08", people: 7, average: { metric: 81, imperial: 178.6 } },
   ] },
   distribution: {
     kind: "bins",
     partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
     bins: [
-      { count: 6, from: { metric: null, imperial: null },
+      { count: 6, from: { metric: 20, imperial: 44 },
         to: { metric: 70, imperial: 154 } },
       { count: 3, from: { metric: 70, imperial: 154 },
         to: { metric: 90, imperial: 198 } },
       { count: 7, from: { metric: 90, imperial: 198 },
-        to: { metric: null, imperial: null } },
+        to: { metric: 227, imperial: 500 } },
     ],
   },
-  self: { points: [] },
+  groups: [
+    { field: "gender", label: "Gender", term: "gender", multiple: false,
+      values: [
+        { value: "male", label: "Male", count: 10, bucket: null },
+        { value: "female", label: "Female", count: 8, bucket: null },
+        { value: "nonbinary", label: "Non-binary", count: 0, bucket: null },
+        { value: null, label: "Not stated", count: 2, bucket: "blank" },
+      ] },
+  ],
+  self: { points: [
+    { at: "2026-06-05T00:00:00.000Z", value: { metric: 79, imperial: 174.2 } },
+    { at: "2026-08-11T00:00:00.000Z", value: { metric: 82, imperial: 180.8 } },
+  ] },
 };
 
 {
@@ -493,23 +536,23 @@ const ENOUGH_FIXTURE = {
   const svg = byId.get("figure-distribution").querySelector("svg");
   const labels = svg.children.filter((c) => c.tag === "text")
     .map((c) => c._text);
-  check("the open first bin reads \"under\", the open last bin reads " +
-    "\"and up\" - no invented number at either open edge",
-    labels.some((t) => /^under /.test(t)) &&
-    labels.some((t) => / and up$/.test(t)));
+  check("no rendered label uses the retired open-edge shape (\"under " +
+    "X\"/\"X and up\") - server/charts-agg.js's openEdge() is gone " +
+    "(0.9-M2-S10) and every edge here is a plain number",
+    !labels.some((t) => /^under /.test(t) || / and up$/.test(t)));
+  check("a distribution label reads as a plain closed range",
+    labels.includes("154 lb–198 lb"));
 
   /*
    * F1's behavioral arm (0.9-M2-S3 fix wave 1, #354 comment
-   * 5342979192): the rendered bin count and every bar's count/range
-   * label are compared against the fixture's OWN bins, index for
-   * index, in the response's own order. The reviewer's mutation - a
-   * mergeThinBands()-shaped adjacent-bin pooler wired into
-   * drawDistribution - pools bins under fresh names, so a check that
-   * only greps source for known names passes it while the pooler still
-   * runs; this check instead asks what actually painted, which a
-   * pooler changes no matter what it is called: fewer bars than the
-   * response sent, a re-summed count, or a spanning label no single
-   * fixture bin has.
+   * 5342979192), carried through the 0.9-M2-S11 reshape: the rendered
+   * bin count and every bar's count/range label are compared against
+   * the fixture's OWN bins, index for index, in the response's own
+   * order. A client-side pooler or merger reddens here regardless of
+   * what it calls itself, because it is asked what actually painted.
+   * With only 3 bands here every one is captioned (edgeLabelStride(3)
+   * === 1), so this arm reads the same as it always did; the sparse
+   * case is BANDS_FIXTURE's own arm below.
    */
   const barCounts = svg.children.filter((c) => c.tag === "text" &&
     c.attrs.class === "chart-value").map((c) => c._text);
@@ -531,6 +574,159 @@ const ENOUGH_FIXTURE = {
         rangeLabels[i] === Charts.binLabel(bin.from.imperial,
           bin.to.imperial, fixtureUnit);
     }));
+
+  /* Owner ruling 6, #243: lines never break. Two trend points with a
+     gap month (2026-07 carries no point at all) still draw as ONE
+     polyline with exactly two vertices - the same segment shape a
+     real, gapless pair would draw, no dashing for the missing month. */
+  const trendSvg = byId.get("figure-trend").querySelector("svg");
+  const groupLine = trendSvg.children.find((c) => c.tag === "polyline" &&
+    c.attrs.class === "chart-series series-0");
+  check("the group trend draws ONE unbroken polyline across the gap " +
+    "month, with exactly the two real points as its vertices",
+    groupLine !== undefined &&
+    groupLine.attrs.points.trim().split(" ").length === 2);
+  const selfLine = trendSvg.children.find((c) => c.tag === "polyline" &&
+    c.attrs.class === "chart-series series-1");
+  check("the You line bridges the same gap the same way - one " +
+    "unbroken polyline, no separate style for the missing month",
+    selfLine !== undefined &&
+    selfLine.attrs.points.trim().split(" ").length === 2);
+
+  /* Owner ruling 1, #243: the group-makeup block. Plain count lines,
+     zeros included, from the response's own `groups` field. */
+  const groupsBody = byId.get("groups-body");
+  const groupsLines = groupsBody.children.filter((c) => c.tag === "p")
+    .map((c) => c._text);
+  check("the group makeup card is shown once a drawn answer arrives",
+    byId.get("groups").hidden === false);
+  check("the group makeup heading names the field, from the response",
+    groupsBody.children.some((c) => c.tag === "h3" && c._text === "Gender"));
+  check("every value line reads \"<label>: <count>\" verbatim from the " +
+    "response, zeros and the blank cell included, in the response's " +
+    "own order - no chart machinery, no bars",
+    groupsLines.length === 4 &&
+    groupsLines[0] === "Male: 10" &&
+    groupsLines[1] === "Female: 8" &&
+    groupsLines[2] === "Non-binary: 0" &&
+    groupsLines[3] === "Not stated: 2");
+}
+
+/*
+ * Re-render with the filter (S10's contract: the group makeup describes
+ * the FILTERED view). Two Show-me presses in the same session, each
+ * answering with its own groups, prove both that a later answer's
+ * counts really are the ones drawn and that they REPLACE the earlier
+ * ones rather than sitting stale beside them - renderGroups() clears
+ * #groups-body before it draws, and this is the arm that would catch a
+ * regression to appending instead.
+ */
+{
+  const filteredAnswer = Object.assign({}, ENOUGH_FIXTURE, {
+    filter: { field: "gender", value: "male" },
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [{ value: "male", label: "Male", count: 10,
+          bucket: null }] },
+    ],
+  });
+  const everyoneAnswer = Object.assign({}, ENOUGH_FIXTURE, {
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+          { value: "female", label: "Female", count: 8, bucket: null },
+        ] },
+    ],
+  });
+  const answers = [filteredAnswer, everyoneAnswer];
+  let served = 0;
+  const { byId } = await driven(() => response(200, answers[served++]));
+
+  const firstLines = byId.get("groups-body").children
+    .filter((c) => c.tag === "p").map((c) => c._text);
+  check("re-render with filter, part 1: a filtered answer's own " +
+    "(smaller) group makeup renders",
+    firstLines.length === 1 && firstLines[0] === "Male: 10");
+
+  await pressShowMe(byId);
+  const secondLines = byId.get("groups-body").children
+    .filter((c) => c.tag === "p").map((c) => c._text);
+  check("re-render with filter, part 2: pressing Show me again with a " +
+    "broader answer REPLACES the group makeup with its own counts, " +
+    "not appended beside the filtered view's",
+    secondLines.length === 2 &&
+    secondLines[0] === "Male: 10" && secondLines[1] === "Female: 8");
+}
+
+/*
+ * BANDS_FIXTURE: fourteen bands, one of them empty. Owner ruling 5,
+ * #243: "an empty band is an empty slot" - every one of the fourteen
+ * draws, the empty one at zero height, and captions are sparse
+ * (edgeLabelStride(14) === 2), which also forces the LAST band's edge
+ * to be labeled by the "or index === bins.length - 1" branch rather
+ * than by falling on the stride (13 is odd, 13 % 2 !== 0).
+ */
+function makeBands(zeroIndex) {
+  const bins = [];
+  for (let i = 0; i < 14; i += 1) {
+    const from = 44 + i * 20;
+    const to = from + 20;
+    bins.push({
+      count: i === zeroIndex ? 0 : i + 1,
+      from: { metric: from, imperial: from },
+      to: { metric: to, imperial: to },
+    });
+  }
+  return bins;
+}
+
+const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
+  distribution: {
+    kind: "bins",
+    partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+    bins: makeBands(5),
+  },
+});
+
+{
+  const { byId } = await driven(() => response(200, BANDS_FIXTURE));
+  const svg = byId.get("figure-distribution").querySelector("svg");
+  const bars = svg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-bar");
+  const barCounts = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-value").map((c) => c._text);
+  const rangeLabels = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-label").map((c) => c._text);
+  const bins = BANDS_FIXTURE.distribution.bins;
+
+  check("every one of the 14 bands draws a bar - the empty one is not " +
+    "skipped",
+    bars.length === 14);
+  check("the empty band's bar is a zero-height slot, present on the " +
+    "axis rather than omitted",
+    Number(bars[5].attrs.height) === 0);
+  check("F1 carried through the reshape: every bar's count is the " +
+    "response's own, index for index, empty band included - no " +
+    "suppression note anywhere",
+    barCounts.length === 14 &&
+    bins.every((bin, i) => barCounts[i] === String(bin.count)));
+
+  const stride = Charts.edgeLabelStride(14);
+  const labeledIndexes = bins.map((bin, i) => i)
+    .filter((i) => i % stride === 0 || i === bins.length - 1);
+  check("captions are sparse on a fine grid, not one per band - " +
+    "edgeLabelStride(14) spaces them rather than labeling all 14",
+    stride > 1 && labeledIndexes.length < 14);
+  check("the rendered caption row is exactly the labeled positions, " +
+    "each the fixture's own edge numbers, in order - including the " +
+    "final band's edge, forced in even though 13 does not fall on the " +
+    "stride",
+    rangeLabels.length === labeledIndexes.length &&
+    labeledIndexes.every((idx, j) => rangeLabels[j] ===
+      Charts.binLabel(bins[idx].from.imperial, bins[idx].to.imperial,
+        "lb")) &&
+    labeledIndexes[labeledIndexes.length - 1] === 13);
 }
 
 /*
@@ -607,34 +803,21 @@ const ENOUGH_FIXTURE = {
     byId.get("status")._text.includes("no longer valid"));
 }
 
-/* ------------------------------------------------------------------ */
-/* 4. The response shape this suite fixtures against is the real one:  */
-/* every field NOT_ENOUGH_FIXTURE/ENOUGH_FIXTURE read is a field       */
-/* server/charts-agg.js's aggregate()/notEnough() actually emit.       */
+/*
+ * 0.9-M2-S10's fix wave (#371) carried a cross-check here that read
+ * server/charts-agg.js's own source for shape markers (`openEdge()`
+ * gone, `rangeOf()`/`gridOf()` present). It is dropped rather than
+ * updated: tests/charts-aggregate.test.mjs is the real, exhaustive
+ * proof of that file's contract, and a second, weaker proxy of it here
+ * - string-matching function names rather than exercising behavior -
+ * is exactly the kind of check this suite's own header warns against
+ * (the F1 note above: a real second implementation can pass a name
+ * check while still doing the wrong thing). This file's job stays what
+ * apps/web/charts.js prints from a fixture, not what the server's
+ * source text contains.
+ */
 
-const aggSrc = await read("../server/charts-agg.js");
-check("server/charts-agg.js's notEnough() emits exactly the fields " +
-  "the not-enough fixture above assumes",
-  /ok: true,/.test(aggSrc) && /enough: false,/.test(aggSrc) &&
-  /note: NOT_ENOUGH,/.test(aggSrc) && /units: null,/.test(aggSrc) &&
-  /trend: null,/.test(aggSrc) && /distribution: null,/.test(aggSrc));
-check("aggregate()'s success shape carries the fields the enough " +
-  "fixture assumes",
-  /enough: true,/.test(aggSrc) && /note: null,/.test(aggSrc));
-/* The one place these fixtures are AHEAD of nothing and BEHIND the
-   route: the null edges above are the retired shape, and this asserts
-   the retirement rather than the shape - so the note on the fixture
-   cannot quietly stop being true while apps/web/charts.js still renders
-   nulls (0.9-M2-S10, #371; 0.9-M2-S11 rebuilds the page against the
-   fixed bands and deletes both). */
-check("the open edge is gone from the route: no openEdge(), and the " +
-  "bands come from the spec's own range instead",
-  !/function openEdge\(/.test(aggSrc) && /function rangeOf\(/.test(aggSrc) &&
-  /function gridOf\(/.test(aggSrc));
-
-/* ------------------------------------------------------------------ */
-
-const EXPECTED = 34;
+const EXPECTED = 61;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
