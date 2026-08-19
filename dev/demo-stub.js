@@ -966,9 +966,16 @@
       id: "reset",
       group: "state",
       label: "Reset everything",
+      /*
+       * "every staged snapshot" came off this line (0.9-M2-S3, #354):
+       * there is nothing left to stage, since Publish retired with the
+       * snapshot route it staged for - a reset that still claimed to
+       * clear one would be describing an act neither it nor anything
+       * else on the strip can perform any longer.
+       */
       what: "Empties this tab and this origin - sessions, keys, the " +
-        "palette, every staged snapshot - and opens the sign-in page " +
-        "as a stranger would find it.",
+        "palette, everything - and opens the sign-in page as a " +
+        "stranger would find it.",
     },
     {
       id: "sign-in",
@@ -986,19 +993,23 @@
       what: "Puts the committed throwaway private key into this page's " +
         "own key box. Everything after that is the page's own code.",
     },
+    /*
+     * "Publish" retired with the snapshot route it staged for
+     * (0.9-M2-S3, #354): its `.what` described a button dev/
+     * demo-toolbar.js no longer paints. The entry survives because its
+     * `.label` still heads the "data" group (a neutral word, not a verb
+     * this demo can no longer perform); `.what` is rewritten to
+     * describe what heading it now honestly does, rather than left
+     * describing an act that would fail on every press if anything
+     * still called it.
+     */
     {
       id: "snapshot",
       group: "data",
-      label: "Publish",
-      what: "Stages a published snapshot for the charts to draw, built " +
-        "by the shipped aggregation from fabricated submissions.",
-    },
-    {
-      id: "grow",
-      group: "data",
-      label: "Add entries",
-      what: "Publishes the same people one round later, so the " +
-        "change-since figure has something to measure.",
+      label: "Charts",
+      what: "Heads the data group below, which states plainly that " +
+        "this demo does not simulate live chart aggregation - see the " +
+        "group's own note for why - rather than building a fake one.",
     },
     {
       id: "corrections",

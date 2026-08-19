@@ -86,7 +86,7 @@ const Admin = globalThis.BinderAdmin;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 162);
+const { check, mustReject, report } = suite("demo", 164);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -1371,6 +1371,19 @@ function toolbarInRecordedBrowser(options) {
   };
 }
 
+/*
+ * Every leaf's textContent, painted or not - recordedNode's own
+ * textContent setter empties a node's children the moment it is set
+ * (see recordedNode above), so a node carrying text has none, and this
+ * walk needs no separate leaf test.
+ */
+function allText(node, out) {
+  const found = out || [];
+  if (node.textContent) found.push(node.textContent);
+  node.children.forEach((child) => allText(child, found));
+  return found;
+}
+
 await check("the strip paints itself, and says what it is", () => {
   const browser = toolbarInRecordedBrowser();
   return browser.bar !== undefined &&
@@ -1396,6 +1409,32 @@ await check("the strip is appended, so it is no grid item of the product's", () 
 await check("every identity the demo offers has a control on the strip", () => {
   const labels = toolbarInRecordedBrowser().labels();
   return Demo.SIGN_INS.every((one) => labels.includes(one.label));
+});
+
+/*
+ * F4's pin (0.9-M2-S3 fix wave 1, #354 comment 5342979192): the "data"
+ * group's tombstone line, driven for real through node:vm rather than
+ * grepped from source, so it cannot vanish silently the way an
+ * unpinned line could - a later edit that drops, rewords or fails to
+ * paint this sentence reddens here.
+ */
+await check("the data group states plainly that charts do not " +
+  "simulate live aggregation, in these exact words, until 0.9-M4 " +
+  "rules on what replaces the note", () => {
+  const browser = toolbarInRecordedBrowser();
+  return allText(browser.bar).includes(
+    "Charts go live in the demo rebuild (0.9-M4).");
+});
+
+/*
+ * "Publish" named an act nothing on the strip can perform any longer
+ * (F4): the data group's own heading is a neutral word instead, so no
+ * painted text should carry the retired verb.
+ */
+await check("nothing on the strip still says \"Publish\" - the act " +
+  "retired with the snapshot route", () => {
+  const browser = toolbarInRecordedBrowser();
+  return !allText(browser.bar).includes("Publish");
 });
 
 /*
@@ -1542,7 +1581,7 @@ await check("a page whose box has been renamed is reported, not written to",
   });
 
 /*
- * RETIRED (0.9-M2-S3, #354): "-- The snapshot --" stood here, six
+ * RETIRED (0.9-M2-S3, #354): "-- The snapshot --" stood here, seven
  * checks driving the preset/Add-entries buttons this section's own
  * name described - "a snapshot row builds its corpus and stages what
  * comes back", "the thin row asks for the corpus under the floor",
@@ -2013,7 +2052,7 @@ await check("the two corpora are different people", () => {
 });
 
 /*
- * RETIRED (0.9-M2-S3, #354): five more checks stood here, all reading
+ * RETIRED (0.9-M2-S3, #354): six more checks stood here, all reading
  * CORPUS.rich/CORPUS.sparse or calling Demo.publishedFrom() directly -
  * "nothing published carries a handle", "the full corpus is published
  * as a second document", "the first round is a first publish...", "a

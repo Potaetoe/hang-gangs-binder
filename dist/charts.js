@@ -200,8 +200,10 @@
    
    
 
+  
+
   function currentSystem() {
-    return UI.checkedValue("units", "imperial");
+    return UI.checkedValue("units", Fields.defaultSystem());
   }
 
   function unitFor(answer, system) {

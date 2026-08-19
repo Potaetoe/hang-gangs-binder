@@ -254,8 +254,16 @@
   /* handed back or a pixel position derived from one - never a re-      */
   /* rounding, a re-bin, or a value this page computed from raw data.    */
 
+  /* The fallback for no radio checked at all derives from the spec,
+     exactly as apps/web/form.js's currentUnits() and apps/web/submit.js's
+     currentUnits() both do (tests/charts-page.test.mjs's F2 arm: flip
+     the spec's units.default, the page's initial reading follows) - a
+     hardcoded literal here would be a second, driftable copy of a fact
+     apps/fields.js already owns. The static HTML's own checked attribute
+     on the imperial radio is a separate, pre-existing gap (noted for the
+     fleet review, not this file's to close). */
   function currentSystem() {
-    return UI.checkedValue("units", "imperial");
+    return UI.checkedValue("units", Fields.defaultSystem());
   }
 
   function unitFor(answer, system) {

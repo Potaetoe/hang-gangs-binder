@@ -5,14 +5,20 @@
  *     node tests/charts-page.test.mjs
  *
  * THE PAGE IS RENDER-ONLY (security mandate 1), and that is what most
- * of this file checks: apps/web/charts.js and apps/web/charts.html
- * carry no line of apps/web/dashboard.js's suppression logic in any
- * form - no FLOOR/MIN_CELL constant, no pooling, no repartitioning -
- * and nothing in apps/web mentions the snapshot mechanism it replaces.
- * server/charts-agg.js's tests/charts-aggregate.test.mjs is where the
- * disclosure rules themselves are attacked; this file's job is that
- * the PAGE prints what the route hands back and computes nothing of
- * its own.
+ * of this file checks. THE CLAIM IS BEHAVIORAL, NOT A NAME LIST
+ * (0.9-M2-S3 fix wave 1, F1): every numeric label the distribution
+ * figure draws has to appear verbatim in the fixture response, and the
+ * rendered bin count has to equal the response's - so a pooler, a
+ * merger or a second binning pass reddens this suite regardless of
+ * what it calls its variables. The FORBIDDEN name grep below (section
+ * 1) stays as a fast tripwire that catches an obvious reintroduction by
+ * name before the slower behavioral arm has to - it is no longer the
+ * proof by itself, since a real second partition wired under fresh
+ * names passes it while still computing its own bins (the reviewer's
+ * own finding, #354 comment 5342979192). server/charts-agg.js's
+ * tests/charts-aggregate.test.mjs is where the disclosure rules
+ * themselves are attacked; this file's job is that the PAGE prints
+ * what the route hands back and computes nothing of its own.
  *
  * A FIXTURE ANSWER, NEVER A FETCH. This suite drives charts.js against
  * hand-built GET /charts response bodies shaped exactly like
@@ -64,18 +70,19 @@ check("dashboard.js, query.js and public.js are gone, not merely unlinked",
   !webNames.includes("public.js"));
 
 /*
- * Two named, temporary exceptions, neither this slice's to close.
- * admin.js is ruled dead-in-water rather than patched (issue #354's
- * own scope: "admin.html stated dead, not patched") - its one
- * MIN_CELL reference is checked as dead code two arms below rather
- * than excused silently. apps/web/submit.js and apps/web/your-page.html
- * carry the pre-0.9 personal-query engine's own MIN_CELL reference,
- * which is 0.9-M2-S2's file to retire (#353, in flight, landing before
- * this slice) - not a charts.html concern, and expected to clear at
- * this slice's mandatory pre-ship rebase over S2's landed head.
+ * One named exception, not this slice's to close. admin.js is ruled
+ * dead-in-water rather than patched (issue #354's own scope: "admin.html
+ * stated dead, not patched") - its one MIN_CELL reference is checked as
+ * dead code two arms below rather than excused silently.
+ *
+ * apps/web/submit.js and apps/web/your-page.html carried the pre-0.9
+ * personal-query engine's own MIN_CELL reference before 0.9-M2-S2
+ * retired it (#353); this slice's pre-ship rebase over S2's landed head
+ * proved both clean (0.9-M2-S3 fix wave 1, F3 - the reviewer's own
+ * probe: injecting a forbidden name into either file reddened this
+ * check, 30/30), so neither is exempted here any longer.
  */
-const NOT_MINE = new Set(["admin.js", "admin.html", "submit.js",
-  "your-page.html"]);
+const NOT_MINE = new Set(["admin.js", "admin.html"]);
 const dirty = Object.entries(webTexts)
   .filter(([name]) => !NOT_MINE.has(name))
   .filter(([, text]) => FORBIDDEN.test(text))
@@ -259,7 +266,16 @@ const NEEDED = ["filter-field", "filter-value-field", "filter-value",
 check("every element this suite drives is really in apps/web/charts.html",
   NEEDED.every((id) => IDS.includes(id)));
 
-function buildDom() {
+/*
+ * `noUnitsChecked` stands in for the static HTML's own `checked`
+ * attribute being absent - the shape currentSystem()'s fallback
+ * actually reads (F2's arm below). apps/web/charts.html always ships
+ * the imperial radio checked today (a separate, pre-existing gap, not
+ * this wave's), so this is the only way to drive the fallback path at
+ * all under this stub.
+ */
+function buildDom(opts) {
+  const options = opts || {};
   const byId = new Map();
   for (const id of NEEDED) byId.set(id, node("div"));
 
@@ -285,7 +301,7 @@ function buildDom() {
 
   const unitsImperial = node("input");
   unitsImperial.value = "imperial";
-  unitsImperial.checked = true;
+  unitsImperial.checked = !options.noUnitsChecked;
   const unitsMetric = node("input");
   unitsMetric.value = "metric";
   const unitsInputs = [unitsImperial, unitsMetric];
@@ -319,8 +335,17 @@ function measureFixture() {
   ];
 }
 
-async function driven(fetchImpl) {
-  const { doc, byId, unitsInputs } = buildDom();
+/*
+ * `opts.defaultSystem` stands in for apps/web/site.config.js's
+ * units.default, read through apps/fields.js's defaultSystem() (F2's
+ * arm below flips it both directions). It is a fixture value here for
+ * the same reason BinderFields itself is fixtured throughout this
+ * file - never the real site.config.js/fields.js pair - but it is
+ * standing in for the exact same fact currentSystem() now derives from.
+ */
+async function driven(fetchImpl, opts) {
+  const options = opts || {};
+  const { doc, byId, unitsInputs } = buildDom(options);
   const calls = [];
   const g = globalThis;
   g.document = doc;
@@ -335,6 +360,7 @@ async function driven(fetchImpl) {
   g.BinderFields = {
     measures: () => measureFixture(),
     measure: (name) => measureFixture().find((m) => m.name === name),
+    defaultSystem: () => options.defaultSystem || "imperial",
   };
   g.BINDER_SITE = { fields: [] };
   g.BINDER_COUNTRIES = {};
@@ -438,6 +464,40 @@ const ENOUGH_FIXTURE = {
     "\"and up\" - no invented number at either open edge",
     labels.some((t) => /^under /.test(t)) &&
     labels.some((t) => / and up$/.test(t)));
+
+  /*
+   * F1's behavioral arm (0.9-M2-S3 fix wave 1, #354 comment
+   * 5342979192): the rendered bin count and every bar's count/range
+   * label are compared against the fixture's OWN bins, index for
+   * index, in the response's own order. The reviewer's mutation - a
+   * mergeThinBands()-shaped adjacent-bin pooler wired into
+   * drawDistribution - pools bins under fresh names, so a check that
+   * only greps source for known names passes it while the pooler still
+   * runs; this check instead asks what actually painted, which a
+   * pooler changes no matter what it is called: fewer bars than the
+   * response sent, a re-summed count, or a spanning label no single
+   * fixture bin has.
+   */
+  const barCounts = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-value").map((c) => c._text);
+  const rangeLabels = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-label").map((c) => c._text);
+  const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
+  const fixtureUnit = ENOUGH_FIXTURE.units.imperial.unit;
+  check("F1: the rendered bin count equals the response's bin count " +
+    "exactly - a client-side pooler that merges adjacent bins reddens " +
+    "here regardless of what it calls itself",
+    barCounts.length === fixtureBins.length &&
+    rangeLabels.length === fixtureBins.length);
+  check("F1: every rendered bar's count and range label is the " +
+    "fixture's own value for that bin, in the response's own order - " +
+    "a pooled or re-binned draw shows a re-summed count or a spanning " +
+    "label no fixture bin has",
+    fixtureBins.every(function (bin, i) {
+      return barCounts[i] === String(bin.count) &&
+        rangeLabels[i] === Charts.binLabel(bin.from.imperial,
+          bin.to.imperial, fixtureUnit);
+    }));
 }
 
 /*
@@ -471,6 +531,42 @@ const ENOUGH_FIXTURE = {
     !labels.some((t) => t.includes("198")));
 }
 
+/*
+ * F2's arm (0.9-M2-S3 fix wave 1, #354 comment 5342979192): with no
+ * units radio checked - standing in for the static HTML's own `checked`
+ * attribute being absent - currentSystem()'s fallback has to be
+ * apps/fields.js's defaultSystem() (form.js and submit.js's own
+ * pattern), never a literal this file invents. Flipped both directions
+ * against the SAME fixture answer, so only the fallback's source can
+ * explain the difference: nothing else about the draw changes between
+ * the two calls.
+ */
+{
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { noUnitsChecked: true, defaultSystem: "imperial" });
+  const svg = byId.get("figure-distribution").querySelector("svg");
+  const labels = svg.children.filter((c) => c.tag === "text")
+    .map((c) => c._text);
+  check("F2: with no units radio checked, the initial draw follows " +
+    "the spec's defaultSystem() (imperial here) - the imperial edge " +
+    "(198) is drawn, not the metric one (90)",
+    labels.some((t) => t.includes("198")) &&
+    !labels.some((t) => t.includes("90")));
+}
+
+{
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { noUnitsChecked: true, defaultSystem: "metric" });
+  const svg = byId.get("figure-distribution").querySelector("svg");
+  const labels = svg.children.filter((c) => c.tag === "text")
+    .map((c) => c._text);
+  check("F2: flipping the spec's defaultSystem() to metric flips the " +
+    "initial draw too - the page derives the fallback from the spec, " +
+    "it does not hardcode one",
+    labels.some((t) => t.includes("90")) &&
+    !labels.some((t) => t.includes("198")));
+}
+
 {
   const { byId } = await driven(() => response(401, { error: "Not authorized." }));
   check("a 401 says the session is invalid and stays put, matching " +
@@ -498,7 +594,7 @@ check("openEdge() is what produces the null from/to this suite reads " +
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 30;
+const EXPECTED = 34;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

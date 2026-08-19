@@ -811,7 +811,12 @@ LEDGER = [
                 "being refused. http://127.0.0.1:8130 - a delegated "
                 "slice's own assigned port - also answered 403, which "
                 "is the mechanical reason live verification has been "
-                "unreachable from every slice but the one holding 8124"),
+                "unreachable from every slice but the one holding 8124. "
+                "GET /snapshot is retired (0.9-M2-S3, #354, deletion "
+                "not gating), so this exact probe can no longer be "
+                "reissued - a re-verifier today runs the same "
+                "three-way origin probe against GET /charts instead, "
+                "the API-shaped route now standing in the gate's path"),
     },
     {
         "id": "the origin gate on production, all three answers",
@@ -837,7 +842,11 @@ LEDGER = [
                 "forgets the header reads exactly like a foreign origin "
                 "being refused. Read-only GETs, which is the whole of "
                 "what a slice holding no credential may drive against "
-                "this deployment"),
+                "this deployment. GET /snapshot is retired (0.9-M2-S3, "
+                "#354, deletion not gating), so this exact probe can no "
+                "longer be reissued - a re-verifier today runs the same "
+                "three-way origin probe against GET /charts instead, "
+                "still read-only and still credential-free at the gate"),
     },
     {
         "id": "the signed-out bounce, with nothing announced",
