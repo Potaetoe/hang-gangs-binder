@@ -12,11 +12,13 @@
  * rendered bin count has to equal the response's - so a pooler, a
  * merger or a second binning pass reddens this suite regardless of
  * what it calls its variables. That property survives 0.9-M2-S11's
- * reshape: the distribution figure now draws every band the response
- * sends (empty ones included) with only some of them captioned, and the
- * arm below checks the count row whole and the caption row against
- * exactly the positions apps/web/charts.js's own edgeLabelStride()
- * says should carry one. The FORBIDDEN name grep below (section 1)
+ * reshape and its own review's F1/F2 fix wave: the distribution figure
+ * now draws every band the response sends (empty ones included) with
+ * only some of them captioned - by GEOMETRY, not a fixed count - and
+ * the arm below checks the count row and the caption row against
+ * exactly the positions apps/web/charts.js's own
+ * rangeCaptionPlan()/countCaptionPlan() say should carry one. The
+ * FORBIDDEN name grep below (section 1)
  * stays as a fast tripwire that catches an obvious reintroduction by
  * name before the slower behavioral arm has to - it is no longer the
  * proof by itself, since a real second partition wired under fresh
@@ -140,19 +142,147 @@ check("binLabel never invents an open-edge shape for a real answer's " +
   "numbers - both edges print exactly as given",
   Charts.binLabel(0, 5, "kg") === "0 kg–5 kg");
 
-/* edgeLabelStride: a short grid labels every edge; a fine one (weight's
-   53 imperial bands) spaces captions to roughly EDGE_LABEL_TARGET. */
-check("a grid of 3 bands gets a stride of 1 - every edge still labeled",
-  Charts.edgeLabelStride(3) === 1);
-check("a grid of exactly the target (10) still gets a stride of 1",
-  Charts.edgeLabelStride(10) === 1);
-check("a grid one band past the target (11) steps up to a stride of 2",
-  Charts.edgeLabelStride(11) === 2);
-check("the widest chartable grid (53 imperial weight bands) spaces " +
-  "captions to a stride of 6 (ceil(53/10))",
-  Charts.edgeLabelStride(53) === 6);
-check("a stride is never less than 1, whatever the count",
-  Charts.edgeLabelStride(0) === 1 && Charts.edgeLabelStride(-1) === 1);
+/*
+ * LEGIBILITY IS A GEOMETRY PROPERTY, NOT A COUNT TARGET (owner's F1/F2
+ * ruling on 0.9-M2-S11's review, #372). The count-near-ten
+ * edgeLabelStride() this replaces still overlapped on both the 120-band
+ * BMI grid (F1) and the 53-band imperial-weight grid (F2) - the count
+ * was near ten either way, the captions still collided. captionWidth(),
+ * rangeCaptionPlan() and countCaptionPlan() below are checked three
+ * ways: a controlled overlap case with hand-verifiable geometry, the
+ * exact scenario the review reported (F2's own numbers), and the two
+ * REAL shipped grids the review named (F1's, F2's) fed through the real
+ * function, since this suite's own DOM stub cannot measure a painted
+ * pixel.
+ */
+check("captionWidth is proportional to the text length - the estimate " +
+  "basis is character count, stated in the function's own header",
+  Charts.captionWidth("0") === 7 && Charts.captionWidth("12") === 14 &&
+  Charts.captionWidth("") === 0);
+
+/* A controlled, hand-verifiable case: three captions far enough apart
+   that none can possibly overlap (a slot ten times any caption's own
+   width) - every one paints, proving the plan is not "always thin". */
+check("rangeCaptionPlan paints every caption when nothing overlaps",
+  JSON.stringify(Charts.rangeCaptionPlan(["a", "bb", "ccc"], 1000)) ===
+  JSON.stringify([0, 1, 2]));
+check("countCaptionPlan paints every count when nothing overlaps",
+  JSON.stringify(Charts.countCaptionPlan([0, 5, 12], 1000)) ===
+  JSON.stringify([0, 1, 2]));
+
+/*
+ * F2's own reported scenario, reproduced: a caption shaped exactly like
+ * the review's "1004 lb–1024 lb" at the review's own 72.45-unit pitch.
+ * Three adjacent bands this wide overlap their immediate neighbor (the
+ * review's finding), so the middle one - the interior candidate - is
+ * the one dropped; the two ends still paint, per the ruling's own
+ * words: "resolve their collisions by dropping interior neighbors,
+ * never the ends".
+ */
+const f2Labels = [Charts.binLabel(1004, 1024, "lb"),
+  Charts.binLabel(1024, 1044, "lb"), Charts.binLabel(1044, 1064, "lb")];
+const f2Plan = Charts.rangeCaptionPlan(f2Labels, 72.45);
+check("F2's own reported case: the interior caption collides with both " +
+  "neighbors and is dropped",
+  !f2Plan.includes(1));
+check("F2's own reported case: the first and last captions still " +
+  "paint, even though they are exactly the pair that collided before " +
+  "thinning",
+  f2Plan.includes(0) && f2Plan.includes(2));
+
+/*
+ * The two REAL shipped grids the review named, built the same way
+ * server/charts-agg.js's gridOf() builds them (anchored at the spec's
+ * own minimum, stepped by the spec's own bin width, the last band
+ * clipped to the maximum) - so this is not a stand-in grid, it is the
+ * one 0.9-M2-S10 actually ships. slot is drawBins()'s own 640-wide
+ * figure divided evenly across the bands, matching what the page
+ * itself would compute.
+ */
+function realGrid(min, max, width) {
+  const edges = [];
+  for (let from = min; from < max - 1e-9; from += width) {
+    edges.push({ from, to: Math.min(from + width, max) });
+  }
+  return edges;
+}
+
+function noPaintedPairOverlaps(plan, texts, slot) {
+  const box = (i) => {
+    const center = i * slot + slot / 2;
+    const half = Charts.captionWidth(texts[i]) / 2;
+    return { left: center - half, right: center + half };
+  };
+  for (let k = 1; k < plan.length; k += 1) {
+    const a = box(plan[k - 1]);
+    const b = box(plan[k]);
+    if (!(a.right <= b.left || a.left >= b.right)) return false;
+  }
+  return true;
+}
+
+const bmiGrid = realGrid(0, 600, 5);
+check("the real shipped BMI grid is 120 bands, 0 to 600 at bin 5 - the " +
+  "exact spec F1 was filed against",
+  bmiGrid.length === 120);
+const bmiLabels = bmiGrid.map((b) => Charts.binLabel(b.from, b.to, null));
+const bmiSlot = 640 / bmiGrid.length;
+const bmiRangePlan = Charts.rangeCaptionPlan(bmiLabels, bmiSlot);
+check("F1: on the real 120-band BMI grid, no two painted range " +
+  "captions overlap",
+  noPaintedPairOverlaps(bmiRangePlan, bmiLabels, bmiSlot));
+check("F1: the BMI grid is thinned, not painted whole - the fix is " +
+  "fewer captions, not merely differently counted ones",
+  bmiRangePlan.length < bmiGrid.length);
+check("F1: the first and last BMI bands still caption their own edge",
+  bmiRangePlan[0] === 0 && bmiRangePlan[bmiRangePlan.length - 1] ===
+  bmiGrid.length - 1);
+
+/* A count row over the same 120 bands - a handful of small nonzero
+   counts scattered among mostly-zero bands, the shape a real BMI
+   distribution actually has. */
+const bmiCounts = bmiGrid.map((_, i) => (i % 11 === 0 ? i % 4 + 1 : 0));
+const bmiCountPlan = Charts.countCaptionPlan(bmiCounts, bmiSlot);
+check("F1: on the real 120-band BMI grid, no two painted count " +
+  "captions overlap either",
+  noPaintedPairOverlaps(bmiCountPlan.slice().sort((a, b) => a - b),
+    bmiCounts.map(String), bmiSlot));
+
+const weightGrid = realGrid(44, 1100, 20);
+check("the real shipped imperial-weight grid is 53 bands - the exact " +
+  "spec F2 was filed against",
+  weightGrid.length === 53);
+const weightLabels = weightGrid.map((b) => Charts.binLabel(b.from, b.to, "lb"));
+const weightSlot = 640 / weightGrid.length;
+const weightRangePlan = Charts.rangeCaptionPlan(weightLabels, weightSlot);
+check("F2: on the real 53-band imperial-weight grid, no two painted " +
+  "range captions overlap",
+  noPaintedPairOverlaps(weightRangePlan, weightLabels, weightSlot));
+check("F2: the weight grid is thinned too - a caption count near ten " +
+  "is not the same property as captions that fit",
+  weightRangePlan.length < weightGrid.length);
+check("F2: the first and last weight bands still caption their own " +
+  "edge, including the forced last one the review named specifically",
+  weightRangePlan[0] === 0 && weightRangePlan[weightRangePlan.length - 1] ===
+  weightGrid.length - 1);
+
+/*
+ * NON-ZERO COUNTS WIN SLOTS OVER ZEROS (the ruling's own words). Two
+ * adjacent bands, one zero and one not, close enough that only one of
+ * their count captions can fit - the non-zero one is kept regardless of
+ * which side of it the zero sits on.
+ */
+check("a non-zero count beats an adjacent zero for a contested slot " +
+  "(zero first, non-zero second)",
+  JSON.stringify(Charts.countCaptionPlan([0, 12], 10)) ===
+  JSON.stringify([1]));
+check("a non-zero count beats an adjacent zero for a contested slot " +
+  "(non-zero first, zero second)",
+  JSON.stringify(Charts.countCaptionPlan([12, 0], 10)) ===
+  JSON.stringify([0]));
+check("two non-zero counts that collide still keep exactly one - the " +
+  "priority rule breaks the tie by position, deterministically",
+  Charts.countCaptionPlan([12, 34], 10).length === 1);
 
 /* chartsURL: self=1 always, filter+value only together. */
 const bare = new URL(Charts.chartsURL("https://w.example", { measure: "weight" }));
@@ -623,14 +753,17 @@ const ENOUGH_FIXTURE = {
 
   /*
    * F1's behavioral arm (0.9-M2-S3 fix wave 1, #354 comment
-   * 5342979192), carried through the 0.9-M2-S11 reshape: the rendered
-   * bin count and every bar's count/range label are compared against
-   * the fixture's OWN bins, index for index, in the response's own
-   * order. A client-side pooler or merger reddens here regardless of
-   * what it calls itself, because it is asked what actually painted.
-   * With only 3 bands here every one is captioned (edgeLabelStride(3)
-   * === 1), so this arm reads the same as it always did; the sparse
-   * case is BANDS_FIXTURE's own arm below.
+   * 5342979192), carried through the 0.9-M2-S11 reshape and its own
+   * review's F1/F2 geometry fix: the rendered bin count and every bar's
+   * count/range label are compared against the fixture's OWN bins,
+   * index for index, in the response's own order. A client-side pooler
+   * or merger reddens here regardless of what it calls itself, because
+   * it is asked what actually painted. With only 3 bands spaced 213
+   * user units apart and captions well under 100 units wide, nothing
+   * here collides, so every caption still paints and this arm reads the
+   * same as it always did; the sparse case - where rangeCaptionPlan()/
+   * countCaptionPlan() actually drop some - is BANDS_FIXTURE's own arm
+   * below.
    */
   const barCounts = svg.children.filter((c) => c.tag === "text" &&
     c.attrs.class === "chart-value").map((c) => c._text);
@@ -837,12 +970,87 @@ const ENOUGH_FIXTURE = {
 }
 
 /*
+ * F4 (0.9-M2-S11's review, #372): a category with nothing to say - a
+ * raised floor's own absorb cascade emptied it entirely. Unreachable at
+ * the shipped floor of 0, but server/charts-agg.js's makeupOf() carries
+ * the shape deliberately, and a fixture is how a floor nobody has
+ * raised yet still gets proven.
+ */
+{
+  const bareHeading = Object.assign({}, ENOUGH_FIXTURE, {
+    groups: [
+      { field: "roles", label: "Feedism affiliations", term: "affiliation",
+        multiple: true, values: [] },
+    ],
+  });
+  const { byId } = await driven(() => response(200, bareHeading));
+  const body = byId.get("groups-body");
+  const heading = body.children.find((c) => c.tag === "h3");
+  const lines = body.children.filter((c) => c.tag === "p");
+  check("F4: a category with an empty values list still paints its " +
+    "own heading, from the response",
+    heading !== undefined && heading._text === "Feedism affiliations");
+  check("F4: ...and exactly one status-tone line under it - the ruled " +
+    "sentence, page-composed, nothing else appended (not even the " +
+    "multiple hint, since there is nothing to sum)",
+    lines.length === 1 &&
+    lines[0]._text === "Not enough people to show this." &&
+    lines[0].attrs.class === "status");
+}
+
+/*
+ * F5 (0.9-M2-S11's review, #372): the response's own `multiple` flag,
+ * read. Two categories in one answer, one multiple:true and one
+ * multiple:false/absent, so the hint's presence tracks the flag alone -
+ * never the field name, never whether the count happens to exceed the
+ * member count.
+ */
+{
+  const multipleFlag = Object.assign({}, ENOUGH_FIXTURE, {
+    groups: [
+      { field: "roles", label: "Feedism affiliations", term: "affiliation",
+        multiple: true, values: [
+          { value: "feeder", label: "Feeder", count: 6, bucket: null },
+          { value: "feedee", label: "Feedee", count: 4, bucket: null },
+        ] },
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+        ] },
+    ],
+  });
+  const { byId } = await driven(() => response(200, multipleFlag));
+  const body = byId.get("groups-body");
+  const paragraphs = body.children.filter((c) => c.tag === "p");
+  const texts = paragraphs.map((c) => c._text);
+  const hintText = "Members can choose more than one here, so these " +
+    "numbers can add up to more than the group.";
+  check("F5: a multiple:true category's own value lines are followed " +
+    "by the honest-reading hint",
+    texts[0] === "Feeder: 6" && texts[1] === "Feedee: 4" &&
+    texts[2] === hintText);
+  check("F5: the hint line is render-only prose, not a count - it " +
+    "carries a muted tone, distinct from an ordinary value line",
+    paragraphs[2].attrs.class === "muted small");
+  check("F5: a multiple:false category shows no such hint - its own " +
+    "last value line is the row's last line too, nothing appended " +
+    "after it, even though the earlier multiple:true category's own " +
+    "hint IS on the page (proving the flag decides per category, not " +
+    "once for the whole answer)",
+    texts.length === 4 && texts[3] === "Male: 10" &&
+    texts[2].includes("more than one"));
+}
+
+/*
  * BANDS_FIXTURE: fourteen bands, one of them empty. Owner ruling 5,
  * #243: "an empty band is an empty slot" - every one of the fourteen
- * draws, the empty one at zero height, and captions are sparse
- * (edgeLabelStride(14) === 2), which also forces the LAST band's edge
- * to be labeled by the "or index === bins.length - 1" branch rather
- * than by falling on the stride (13 is odd, 13 % 2 !== 0).
+ * draws, the empty one at zero height. Captions are thinned by
+ * GEOMETRY now (owner's F1/F2 ruling, #372's review), not by a fixed
+ * stride, so this arm computes the expected caption row by calling the
+ * same rangeCaptionPlan()/countCaptionPlan() the page itself calls -
+ * proving the DOM matches the pure functions exactly, index for index,
+ * rather than hardcoding an index list that would silently stop meaning
+ * anything the moment either function's algorithm changed.
  */
 function makeBands(zeroIndex) {
   const bins = [];
@@ -883,27 +1091,37 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   check("the empty band's bar is a zero-height slot, present on the " +
     "axis rather than omitted",
     Number(bars[5].attrs.height) === 0);
-  check("F1 carried through the reshape: every bar's count is the " +
-    "response's own, index for index, empty band included - no " +
-    "suppression note anywhere",
-    barCounts.length === 14 &&
-    bins.every((bin, i) => barCounts[i] === String(bin.count)));
 
-  const stride = Charts.edgeLabelStride(14);
-  const labeledIndexes = bins.map((bin, i) => i)
-    .filter((i) => i % stride === 0 || i === bins.length - 1);
-  check("captions are sparse on a fine grid, not one per band - " +
-    "edgeLabelStride(14) spaces them rather than labeling all 14",
-    stride > 1 && labeledIndexes.length < 14);
-  check("the rendered caption row is exactly the labeled positions, " +
-    "each the fixture's own edge numbers, in order - including the " +
-    "final band's edge, forced in even though 13 does not fall on the " +
-    "stride",
-    rangeLabels.length === labeledIndexes.length &&
-    labeledIndexes.every((idx, j) => rangeLabels[j] ===
-      Charts.binLabel(bins[idx].from.imperial, bins[idx].to.imperial,
-        "lb")) &&
-    labeledIndexes[labeledIndexes.length - 1] === 13);
+  const slot14 = 640 / bins.length;
+  const rangeTexts = bins.map((bin) =>
+    Charts.binLabel(bin.from.imperial, bin.to.imperial, "lb"));
+  const expectedRangeIndexes = Charts.rangeCaptionPlan(rangeTexts, slot14);
+  const countTexts = bins.map((bin) => String(bin.count));
+  const expectedCountIndexes = Charts.countCaptionPlan(
+    bins.map((bin) => bin.count), slot14);
+
+  check("F1 carried through the reshape: every PAINTED bar's count is " +
+    "the response's own, at exactly the positions countCaptionPlan() " +
+    "says should carry one - the page calls the same function this " +
+    "arm does, so a drift between them reddens here",
+    barCounts.length === expectedCountIndexes.length &&
+    expectedCountIndexes.every((idx, j) =>
+      barCounts[j] === countTexts[idx]));
+  check("F1/F2: the rendered range-caption row is exactly the " +
+    "positions rangeCaptionPlan() says should carry one, each the " +
+    "fixture's own edge numbers, in order",
+    rangeLabels.length === expectedRangeIndexes.length &&
+    expectedRangeIndexes.every((idx, j) =>
+      rangeLabels[j] === rangeTexts[idx]));
+  check("F1/F2: on this fixture's own geometry, the range-caption row " +
+    "is thinner than the full 14 bands, and the count row still holds " +
+    "at least one caption - the fix removes overlapping captions, not " +
+    "every caption",
+    expectedRangeIndexes.length < 14 && expectedCountIndexes.length > 0);
+  check("the first and last range captions are the ones this fixture's " +
+    "own plan keeps, never dropped as interior collisions are",
+    expectedRangeIndexes[0] === 0 &&
+    expectedRangeIndexes[expectedRangeIndexes.length - 1] === 13);
 }
 
 /*
@@ -994,7 +1212,7 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 61;
+const EXPECTED = 79;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
