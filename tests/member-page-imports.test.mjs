@@ -98,6 +98,23 @@ const ALLOWED = {
 };
 
 /*
+ * Every comparison below is against an exact string, so a source has to
+ * be reduced to the file it names before anything asks which file that
+ * is. `./crypto.js` and `crypto.js?v=2` are the same load to a browser
+ * and a different string to `includes`, so without this reduction each
+ * of them re-introduces the seal with every arm here and both gates
+ * green - the hole this file was written to close, reachable by
+ * respelling alone. A repeated `./` and a `#` fragment reduce here for
+ * the same reason: the browser ignores them too.
+ */
+function sourcePath(source) {
+  let path = source.trim();
+  while (path.startsWith("./")) path = path.slice(2);
+  const suffix = path.search(/[?#]/);
+  return suffix === -1 ? path : path.slice(0, suffix);
+}
+
+/*
  * Comments stripped before any script tag is read. A commented-out tag
  * is not a loaded script, and every page here carries a long comment
  * beside its run explaining the order - dev/check_web.test.py found the
@@ -110,7 +127,7 @@ function scriptSources(html) {
   const tag = /<script\b[^>]*\bsrc\s*=\s*("([^"]*)"|'([^']*)')/gi;
   let match = tag.exec(live);
   while (match) {
-    sources.push((match[2] === undefined ? match[3] : match[2]).trim());
+    sources.push(sourcePath(match[2] === undefined ? match[3] : match[2]));
     match = tag.exec(live);
   }
   return sources;
