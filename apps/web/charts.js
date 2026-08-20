@@ -111,6 +111,22 @@
    * result into drawBins(), and workbookRows() further down calls this
    * same function on the same field, so the chart and the download can
    * never disagree about where the drawn range ends.
+   *
+   * A RAISED FLOOR MAKES THIS A NO-OP (fix wave 1, F3, #390 - this
+   * function has no idea what the floor is, and that is the point).
+   * server/charts-agg.js's own merge machinery (this file's header
+   * names no server function by name - security mandate 1, this is a
+   * render-only file) folds a trailing remainder BACKWARDS into the
+   * last band it emits rather than dropping it, so at any floor above
+   * the shipped 0, the last band in a real answer ALWAYS carries a
+   * nonzero count - `lastNonEmpty` above always lands on the final
+   * index, and `bins.slice(0, lastNonEmpty + 1)` returns the whole
+   * array back. The trimmed range only ever shrinks at the shipped
+   * floor of 0; a raised floor is what hides whether the group's
+   * single heaviest member sits near the spec ceiling or far below it,
+   * never this function choosing not to draw them.
+   * tests/charts-aggregate.test.mjs pins the real mechanism end to
+   * end, against the server's own real merged output.
    */
   function trimTrailingEmptyBins(bins) {
     let lastNonEmpty = -1;

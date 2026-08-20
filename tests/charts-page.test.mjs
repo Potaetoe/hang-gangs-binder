@@ -8,15 +8,22 @@
  * THE PAGE IS RENDER-ONLY (security mandate 1), and that is what most
  * of this file checks. THE CLAIM IS BEHAVIORAL, NOT A NAME LIST
  * (0.9-M2-S3 fix wave 1, F1): every numeric label the distribution
- * figure draws has to appear verbatim in the fixture response, and the
- * rendered bin count has to equal the response's - so a pooler, a
- * merger or a second binning pass reddens this suite regardless of
- * what it calls its variables. That property survives 0.9-M2-S11's
- * reshape and its own review's F1/F2 fix wave: the distribution figure
- * now draws every band the response sends (empty ones included) with
- * only some of them captioned - by GEOMETRY, not a fixed count - and
- * the arm below checks the caption row against exactly the positions
- * apps/web/charts.js's own rangeCaptionPlan() says should carry one.
+ * figure draws has to appear verbatim in the fixture response - so a
+ * pooler, a merger or a second binning pass still reddens this suite
+ * regardless of what it calls its variables.
+ *
+ * THE RENDERED BIN COUNT IS NO LONGER THE RESPONSE'S OWN COUNT, FLAT
+ * (owner ruling, the 2026-08-20 sitting, #390): at the shipped floor
+ * of 0 it is the response's count MINUS its trailing empty bands - the
+ * page trims the empty tail past the band holding the data's own
+ * maximum, keeps every leading and interior band (empty ones
+ * included), and draws the whole grid when every band is empty. That
+ * property survives 0.9-M2-S11's reshape and its own review's F1/F2
+ * fix wave: the distribution figure draws every band it is HANDED
+ * (empty ones included) with only some of them captioned - by
+ * GEOMETRY, not a fixed count - and the arm below checks the caption
+ * row against exactly the positions apps/web/charts.js's own
+ * rangeCaptionPlan() says should carry one.
  * The FORBIDDEN name grep below (section 1) stays as a fast tripwire
  * that catches an obvious reintroduction by name before the slower
  * behavioral arm has to - it is no longer the proof by itself, since a
@@ -1051,11 +1058,15 @@ check("#390 ruling 6: the workbook's distribution rows stop at the same " +
   "band the chart stops at - three rows, not five, for a grid whose " +
   "last two bands are an empty tail past the maximum",
   workbookTrimDistRows.length === 3);
-check("#390: the workbook's last distribution row is the band holding " +
+check("#390: the workbook's LAST distribution row is the band holding " +
   "the maximum (198 lb-242 lb, count 5), never the spec's own trailing " +
-  "empty bands",
-  workbookTrimDistRows[2][1] === "198 lb–242 lb" &&
-  workbookTrimDistRows[2][2] === 5);
+  "empty bands - read by `.length - 1`, not a fixed index, so a trim " +
+  "that runs but stops one band early or late still reddens this " +
+  "(fix wave 1, F4: a hardcoded index [2] passed even with the trim " +
+  "unwired, since the fixture's own untrimmed row 2 is also this band)",
+  workbookTrimDistRows[workbookTrimDistRows.length - 1][1] ===
+  "198 lb–242 lb" &&
+  workbookTrimDistRows[workbookTrimDistRows.length - 1][2] === 5);
 
 /*
  * THE PROOF: a hostile "=SUM(...)"-style country name arrives INERT
@@ -2428,9 +2439,14 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
     "slots they always were - top-only never turns a leading empty " +
     "band into a bar that is simply missing",
     Number(bars[0].attrs.height) === 0 && Number(bars[1].attrs.height) === 0);
-  check("#390: the last drawn bar is the band holding the maximum " +
-    "(index 4, count 5) - the axis really does end there",
-    Number(bars[4].attrs.height) > 0);
+  check("#390: the LAST drawn bar is the band holding the maximum - " +
+    "read by `.length - 1`, not a fixed index, so a trim that draws " +
+    "the right COUNT of bars for the wrong reason still reddens this " +
+    "(fix wave 1, F4: a hardcoded bars[4] passed even with the trim " +
+    "disabled, since the fixture's own untrimmed index 4 is also this " +
+    "band - bars[bars.length - 1] is 0-height whenever the trailing " +
+    "empty tail is still attached)",
+    Number(bars[bars.length - 1].attrs.height) > 0);
 }
 
 /*
@@ -2517,13 +2533,23 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
       return !localBoxesOverlap(prevBox, box);
     }));
 
-  const endAnchored = svg.children.filter((c) => c.tag === "text" &&
-    c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "end");
-  const axisTicks = endAnchored.filter((c) => Number(c.attrs.x) !== 640);
-  check("#390: the count axis still ticks from the trimmed grid's own " +
-    "tallest band (18, band 17's own count) - the axis re-derives, it " +
-    "is not left describing the untrimmed 53-band grid",
-    axisTicks.some((t) => Number(t._text) >= TRIMMED_COUNT));
+  /*
+   * NO COUNT-AXIS ARM HERE (fix wave 1, F4, #390 review): drawBins()
+   * computes the count axis from `bins.reduce(max, ...)` over WHATEVER
+   * bins it is handed, and trimTrailingEmptyBins() only ever removes
+   * TRAILING ZERO-COUNT bins - by construction, that can never change
+   * the maximum count, so the trimmed and untrimmed axis are provably
+   * the identical ticks on this fixture (and on every fixture the trim
+   * can apply to). An assertion here would pass with the trim fully
+   * disabled - the reviewer's own live check on the fix wave 1 review
+   * confirmed exactly that on this file's first draft - so it is
+   * deleted rather than kept as a check that cannot fail. The trimmed
+   * caption/containment/bar-count checks above are what the trimmed
+   * grid actually changes; count-axis coverage for the axis itself
+   * lives in the fix-wave-2 (#378) arms further up this file, against
+   * the untrimmed geometry, which is the only geometry that ever moves
+   * the axis's own scale.
+   */
 }
 
 /*
@@ -2722,7 +2748,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 203;
+const EXPECTED = 202;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

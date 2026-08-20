@@ -63,12 +63,27 @@
  *                  bin width. Categories are never bands.
  *
  *                  EVERY BAND THE SPEC ASKS FOR IS PRESENT, THE EMPTY
- *                  ONES INCLUDED, each reading `count: 0`. The page
- *                  draws an empty slot and never rebuilds the grid to
- *                  find the gaps - the gaps are the shape, and dropping
- *                  a zero band would redraw the axis shorter for a
- *                  small group, which is exactly the comparability the
- *                  fixed grid was chosen for.
+ *                  ONES INCLUDED, each reading `count: 0` - THIS FILE'S
+ *                  OWN CONTRACT NEVER DROPS OR REBUILDS A BAND, at any
+ *                  floor: the answer is the whole spec grid, always.
+ *
+ *                  WHAT THE PAGE DRAWS FROM IT IS A LATER, PAGE-SIDE
+ *                  DECISION (owner ruling, the 2026-08-20 sitting,
+ *                  #390): at the shipped floor of 0, apps/web/charts.js
+ *                  stops PAINTING past the band holding the data's own
+ *                  maximum - it drops the trailing empty bands off the
+ *                  back, keeps every leading empty band (the chart
+ *                  still starts at the spec minimum), and draws the
+ *                  whole grid when no band has a count (nothing to
+ *                  anchor a trim on). A RAISED FLOOR MAKES THAT TRIM A
+ *                  NO-OP: suppressBins() below merges a trailing
+ *                  remainder BACKWARDS into the last emitted band
+ *                  rather than dropping it, so once the floor is above
+ *                  0 the last band in the answer always carries a
+ *                  nonzero count and the page's own trim finds nothing
+ *                  to drop - which is exactly how a raised floor hides
+ *                  whether the group's single heaviest member sits near
+ *                  the spec ceiling or far below it.
  *
  *                  THE TWO OUTER EDGES ARE THE SPEC'S OWN MINIMUM AND
  *                  MAXIMUM - `bins[0].from` and the last band's `to` -

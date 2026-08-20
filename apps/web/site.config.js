@@ -256,8 +256,13 @@ globalThis.BINDER_SITE = {
       // as a spec error. It also means the stretch of the axis members
       // actually stand on is drawn at exactly the resolution it was
       // before the range was derived. Most of the 120 bands read zero
-      // for a small group, which is the shape the owner chose: an empty
-      // band is an empty slot.
+      // for a small group - the whole grid this range derives still
+      // reaches the route's answer, unchanged. WHAT THE PAGE DRAWS FROM
+      // IT narrowed since (owner ruling, the 2026-08-20 sitting, #390):
+      // at the shipped floor of 0, a leading or interior empty band is
+      // still an empty slot, but the page stops painting once it passes
+      // the band holding the group's own heaviest BMI - the trailing
+      // empty bands never draw.
       bin: 5,
       min: 0,
       max: 600,
