@@ -21,6 +21,16 @@
 
   
 
+  function trimTrailingEmptyBins(bins) {
+    let lastNonEmpty = -1;
+    for (let i = 0; i < bins.length; i += 1) {
+      if (bins[i].count > 0) lastNonEmpty = i;
+    }
+    return lastNonEmpty === -1 ? bins : bins.slice(0, lastNonEmpty + 1);
+  }
+
+  
+
   function midpointLabel(from, to) {
     return String(Math.round((from + to) / 2));
   }
@@ -263,7 +273,8 @@
     const unit = unitFor(answer, system);
     const rows = [];
 
-    (answer.distribution ? answer.distribution.bins : []).forEach(
+    trimTrailingEmptyBins(
+      answer.distribution ? answer.distribution.bins : []).forEach(
       function (bin) {
         rows.push(["Distribution",
           binLabel(bin.from[system], bin.to[system], unit), bin.count,
@@ -295,6 +306,7 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
+    trimTrailingEmptyBins: trimTrailingEmptyBins,
     midpointLabel: midpointLabel,
     captionWidth: captionWidth,
     captionBox: captionBox,
@@ -675,7 +687,12 @@
     const target = $("figure-distribution");
     const tip = $("tooltip-distribution");
     const unit = unitFor(answer, system);
-    drawBins(target, tip, answer.distribution.bins, system, unit);
+     
+     
+     
+     
+    const bins = trimTrailingEmptyBins(answer.distribution.bins);
+    drawBins(target, tip, bins, system, unit);
   }
 
   

@@ -395,9 +395,18 @@ drawing its true value is this design working, not a hole in it.
   question.
 - **Distributions draw on fixed bands from the spec.** The edges are
   the field's own minimum, maximum and band width; they never move to
-  fit the data and never merge. Every band with at least one person
-  draws its true count, an empty band is an empty slot, and there are
-  no suppression notes. Fixed edges are what makes two views
+  fit the data and never merge. A leading or interior empty band still
+  draws an empty slot, and there are no suppression notes. **At the
+  shipped floor of 0, the drawn range stops at the band holding the
+  data's own maximum** (owner ruling, the 2026-08-20 sitting, #390):
+  the chart still starts at the spec minimum, and an empty TAIL past
+  the heaviest member simply does not paint. The axis still ends on
+  one of the spec's own fixed edges, never a number fitted to the
+  data, so this is not the open edge #351 refused - a raised floor's
+  merged tail band always carries a count, which is why the trim finds
+  nothing there and the drawn axis still reaches the spec ceiling: a
+  raised floor is what hides whether the heaviest member sits near
+  that ceiling or far below it. Fixed edges are what makes two views
   comparable, and they are also why no edge can report the heaviest
   member's band the way an edge fitted to the group did (#351, F2).
   **A range is set so that no form-valid member draws clipped** — for a

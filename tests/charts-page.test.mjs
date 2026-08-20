@@ -8,15 +8,22 @@
  * THE PAGE IS RENDER-ONLY (security mandate 1), and that is what most
  * of this file checks. THE CLAIM IS BEHAVIORAL, NOT A NAME LIST
  * (0.9-M2-S3 fix wave 1, F1): every numeric label the distribution
- * figure draws has to appear verbatim in the fixture response, and the
- * rendered bin count has to equal the response's - so a pooler, a
- * merger or a second binning pass reddens this suite regardless of
- * what it calls its variables. That property survives 0.9-M2-S11's
- * reshape and its own review's F1/F2 fix wave: the distribution figure
- * now draws every band the response sends (empty ones included) with
- * only some of them captioned - by GEOMETRY, not a fixed count - and
- * the arm below checks the caption row against exactly the positions
- * apps/web/charts.js's own rangeCaptionPlan() says should carry one.
+ * figure draws has to appear verbatim in the fixture response - so a
+ * pooler, a merger or a second binning pass still reddens this suite
+ * regardless of what it calls its variables.
+ *
+ * THE RENDERED BIN COUNT IS NO LONGER THE RESPONSE'S OWN COUNT, FLAT
+ * (owner ruling, the 2026-08-20 sitting, #390): at the shipped floor
+ * of 0 it is the response's count MINUS its trailing empty bands - the
+ * page trims the empty tail past the band holding the data's own
+ * maximum, keeps every leading and interior band (empty ones
+ * included), and draws the whole grid when every band is empty. That
+ * property survives 0.9-M2-S11's reshape and its own review's F1/F2
+ * fix wave: the distribution figure draws every band it is HANDED
+ * (empty ones included) with only some of them captioned - by
+ * GEOMETRY, not a fixed count - and the arm below checks the caption
+ * row against exactly the positions apps/web/charts.js's own
+ * rangeCaptionPlan() says should carry one.
  * The FORBIDDEN name grep below (section 1) stays as a fast tripwire
  * that catches an obvious reintroduction by name before the slower
  * behavioral arm has to - it is no longer the proof by itself, since a
@@ -710,6 +717,57 @@ check("fix wave 2/#378: the property holds on the real 120-band BMI " +
   tickYInsidePlot(bmiGrid.length) && tickYInsidePlot(weightGrid.length));
 
 /*
+ * THE DISTRIBUTION'S TOP TRIM (owner ruling, the 2026-08-20 sitting,
+ * #390): "the last painted band is the band CONTAINING the data's
+ * maximum; its upper spec edge is the axis end." trimTrailingEmptyBins()
+ * is the whole of the ruling as a pure function - drawDistribution() and
+ * workbookRows() both call it on the response's own bins before either
+ * one draws or writes a row, so THIS is where "which bins survive" is
+ * decided once, for both.
+ */
+function bandsOf(counts) {
+  return counts.map(function (count, i) {
+    return { count: count, from: { imperial: i * 20 + 44 },
+      to: { imperial: i * 20 + 64 } };
+  });
+}
+function countsOf(bins) {
+  return bins.map(function (b) { return b.count; });
+}
+
+check("#390: everything after the band holding the data's maximum is " +
+  "dropped - a nonzero band, then two empty tail bands, keeps only " +
+  "through the nonzero one",
+  JSON.stringify(countsOf(Charts.trimTrailingEmptyBins(
+    bandsOf([2, 0, 5, 0, 0])))) === JSON.stringify([2, 0, 5]));
+check("#390 ruling 2, TOP ONLY: a leading empty stretch below the " +
+  "lightest member is never trimmed - only the TAIL past the maximum " +
+  "is",
+  JSON.stringify(countsOf(Charts.trimTrailingEmptyBins(
+    bandsOf([0, 0, 3, 0, 0])))) === JSON.stringify([0, 0, 3]));
+check("#390 ruling 3: a zero grid (no band has a count) keeps drawing " +
+  "whole - there is no nonzero band to anchor the trim on",
+  JSON.stringify(countsOf(Charts.trimTrailingEmptyBins(
+    bandsOf([0, 0, 0])))) === JSON.stringify([0, 0, 0]));
+check("#390: when the last band already holds data, nothing is " +
+  "trimmed - the identity case every already-full grid hits",
+  Charts.trimTrailingEmptyBins(bandsOf([1, 0, 4])).length === 3);
+check("#390: a single band, whatever its count, is returned whole - " +
+  "trivially the band holding the maximum whenever there is only one",
+  Charts.trimTrailingEmptyBins(bandsOf([0])).length === 1 &&
+  Charts.trimTrailingEmptyBins(bandsOf([5])).length === 1);
+check("#390: band edges never move - the surviving bins are the SAME " +
+  "objects the response sent, not re-binned or rebuilt",
+  (function () {
+    const bins = bandsOf([2, 0, 5, 0]);
+    const trimmed = Charts.trimTrailingEmptyBins(bins);
+    return trimmed.every(function (b, i) { return b === bins[i]; });
+  })());
+check("#390: an empty bins array trims to an empty array, not an " +
+  "error - drawBins()'s own no-bins early return still applies",
+  Charts.trimTrailingEmptyBins([]).length === 0);
+
+/*
  * THE TREND'S VALUE AXIS (same ruling: "if its reserved gutter carries
  * no value labels today, add them"). Exact domain values only - never a
  * "nice" number this file invented for the axis.
@@ -969,6 +1027,46 @@ check("the group-makeup row carries the field's own label in its " +
   "placeholder",
   workbookRows.some((r) => r[0] === "Group makeup — Country" &&
     r[1] === "=SUM(A1:A10)" && r[2] === 5));
+
+/*
+ * #390 ruling 6: the workbook's distribution rows end at the same band
+ * the chart ends at - workbookRows() calls the identical
+ * trimTrailingEmptyBins() on the identical `answer.distribution.bins`,
+ * so a download can never carry a tail the screen does not show.
+ */
+const WORKBOOK_TRIM_ANSWER = {
+  enough: true,
+  units: { metric: { unit: "kg" }, imperial: { unit: "lb" } },
+  distribution: { bins: [
+    { count: 2, from: { metric: 20, imperial: 44 },
+      to: { metric: 70, imperial: 154 } },
+    { count: 0, from: { metric: 70, imperial: 154 },
+      to: { metric: 90, imperial: 198 } },
+    { count: 5, from: { metric: 90, imperial: 198 },
+      to: { metric: 110, imperial: 242 } },
+    { count: 0, from: { metric: 110, imperial: 242 },
+      to: { metric: 130, imperial: 286 } },
+    { count: 0, from: { metric: 130, imperial: 286 },
+      to: { metric: 150, imperial: 330 } },
+  ] },
+  trend: null, self: null, groups: [],
+};
+const workbookTrimRows = Charts.workbookRows(WORKBOOK_TRIM_ANSWER, "imperial",
+  {}, () => null);
+const workbookTrimDistRows = workbookTrimRows.filter((r) => r[0] === "Distribution");
+check("#390 ruling 6: the workbook's distribution rows stop at the same " +
+  "band the chart stops at - three rows, not five, for a grid whose " +
+  "last two bands are an empty tail past the maximum",
+  workbookTrimDistRows.length === 3);
+check("#390: the workbook's LAST distribution row is the band holding " +
+  "the maximum (198 lb-242 lb, count 5), never the spec's own trailing " +
+  "empty bands - read by `.length - 1`, not a fixed index, so a trim " +
+  "that runs but stops one band early or late still reddens this " +
+  "(fix wave 1, F4: a hardcoded index [2] passed even with the trim " +
+  "unwired, since the fixture's own untrimmed row 2 is also this band)",
+  workbookTrimDistRows[workbookTrimDistRows.length - 1][1] ===
+  "198 lb–242 lb" &&
+  workbookTrimDistRows[workbookTrimDistRows.length - 1][2] === 5);
 
 /*
  * THE PROOF: a hostile "=SUM(...)"-style country name arrives INERT
@@ -2006,6 +2104,12 @@ const ENOUGH_FIXTURE = {
  * arm is what would catch a regression to "an all-zero distribution
  * looks like enough:false" reasoning, which the response contract
  * explicitly forbids.
+ *
+ * THIS IS ALSO #390 RULING 3'S OWN ARM (the 2026-08-20 sitting): a zero
+ * grid has no nonzero band to anchor a top trim on, so
+ * trimTrailingEmptyBins() returns it unchanged and both bands below
+ * still draw - `bars.length === 2` is the same assertion either ruling
+ * would make, which is exactly why one fixture proves both.
  */
 {
   const allZero = Object.assign({}, ENOUGH_FIXTURE, {
@@ -2303,6 +2407,152 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
 }
 
 /*
+ * #390 ruling 2, TOP ONLY, DRIVEN THROUGH A REAL RENDER: a leading empty
+ * stretch below the lightest member still draws in full - the chart
+ * still starts at the spec minimum - while a TRAILING empty stretch past
+ * the heaviest member is dropped. Both directions in one fixture, so a
+ * trim that (wrongly) also ate the front is caught by the same arm that
+ * proves the back trims.
+ */
+{
+  const topOnlyBins = [0, 0, 2, 0, 5, 0, 0].map(function (count, i) {
+    return { count: count,
+      from: { metric: i * 20 + 44, imperial: i * 20 + 44 },
+      to: { metric: i * 20 + 64, imperial: i * 20 + 64 } };
+  });
+  const TOP_ONLY_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
+    distribution: {
+      kind: "bins",
+      partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+      bins: topOnlyBins,
+    },
+  });
+  const { byId } = await driven(() => response(200, TOP_ONLY_ANSWER));
+  const svg = byId.get("figure-distribution").querySelector("svg");
+  const bars = svg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-bar");
+  check("#390 ruling 2: the leading empty pair still draws (the chart " +
+    "still starts at the spec minimum) while the trailing empty pair " +
+    "is dropped - 5 bars, not 7 and not 3",
+    bars.length === 5);
+  check("#390 ruling 2: the leading two bars are still the ZERO-height " +
+    "slots they always were - top-only never turns a leading empty " +
+    "band into a bar that is simply missing",
+    Number(bars[0].attrs.height) === 0 && Number(bars[1].attrs.height) === 0);
+  check("#390: the LAST drawn bar is the band holding the maximum - " +
+    "read by `.length - 1`, not a fixed index, so a trim that draws " +
+    "the right COUNT of bars for the wrong reason still reddens this " +
+    "(fix wave 1, F4: a hardcoded bars[4] passed even with the trim " +
+    "disabled, since the fixture's own untrimmed index 4 is also this " +
+    "band - bars[bars.length - 1] is 0-height whenever the trailing " +
+    "empty tail is still attached)",
+    Number(bars[bars.length - 1].attrs.height) > 0);
+}
+
+/*
+ * #390's MOTIVATING SHAPE, DRIVEN FOR REAL: the 53-band imperial-weight
+ * grid (weightGrid, above - the exact spec named in the ticket), with a
+ * real member's own heaviest weight far below the spec's own 1100 lb
+ * ceiling - only the first 18 bands (through band 17, 384-404 lb) hold
+ * anyone; bands 18 through 52 are the empty tail the ruling trims.
+ * EVERYTHING drawBins() computes from `bins.length` - slot width, the
+ * caption plan, the count axis, the hit rects - has to re-derive from
+ * 18, never 53, with no special case: it is drawDistribution() alone,
+ * upstream, that decides the count at all (trimTrailingEmptyBins()).
+ */
+const WEIGHT_TRIM_LAST_NONZERO = 17;
+const weightTrimBins = weightGrid.map(function (b, i) {
+  return { count: i <= WEIGHT_TRIM_LAST_NONZERO ? i + 1 : 0,
+    from: { metric: b.from, imperial: b.from },
+    to: { metric: b.to, imperial: b.to } };
+});
+const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
+  distribution: {
+    kind: "bins",
+    partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+    bins: weightTrimBins,
+  },
+});
+
+{
+  const { byId } = await driven(() => response(200, WEIGHT_TRIM_ANSWER));
+  const svg = byId.get("figure-distribution").querySelector("svg");
+  const bars = svg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-bar");
+  const hits = svg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+  const TRIMMED_COUNT = WEIGHT_TRIM_LAST_NONZERO + 1;
+
+  check("#390: the real 53-band imperial-weight grid draws only " +
+    "through the band holding the data's maximum (18 of 53) - a " +
+    "client-side trim that stops early regardless of what it calls " +
+    "itself reddens here on the exact spec grid the ticket names",
+    bars.length === TRIMMED_COUNT && hits.length === TRIMMED_COUNT);
+
+  const captionEls = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "middle");
+  const captionLabels = captionEls.map((c) => c._text);
+  const lastBand = weightTrimBins[WEIGHT_TRIM_LAST_NONZERO];
+  check("#390: the last painted caption is the trimmed grid's own last " +
+    "band's midpoint - its upper spec edge (404 lb) is the axis end, " +
+    "not 1100 lb",
+    captionLabels[captionLabels.length - 1] ===
+    Charts.midpointLabel(lastBand.from.imperial, lastBand.to.imperial));
+
+  const trimSlot = (640 - PLOT_LEFT) / TRIMMED_COUNT;
+  const trimMids = weightTrimBins.slice(0, TRIMMED_COUNT).map((bin) =>
+    Charts.midpointLabel(bin.from.imperial, bin.to.imperial));
+  const trimBoxOf = finalBoxOf(trimMids, trimSlot, rightBoundFor("lb"));
+  const expectedTrimCaptions =
+    Charts.rangeCaptionPlan(trimMids, trimSlot, trimBoxOf);
+  check("#390: the caption plan re-derives at the TRIMMED slot width " +
+    "(640-50 divided by 18, not 53) - the rendered caption row matches " +
+    "rangeCaptionPlan() computed on the trimmed count exactly",
+    captionLabels.length === expectedTrimCaptions.length &&
+    expectedTrimCaptions.every((idx, j) =>
+      captionLabels[j] === trimMids[idx]));
+  check("#390: no painted caption on the trimmed grid sits outside " +
+    "[left, rightBound], and no two adjacent ones overlap - the same " +
+    "containment/no-overlap property the untrimmed grids already hold, " +
+    "now proven at the trimmed count",
+    captionEls.every((el) => {
+      const x = Number(el.attrs.x);
+      const half = Charts.captionWidth(el._text) / 2;
+      return x - half >= PLOT_LEFT - 1e-6 &&
+        x + half <= rightBoundFor("lb") + 1e-6;
+    }) &&
+    captionEls.every((el, j) => {
+      if (j === 0) return true;
+      const prev = captionEls[j - 1];
+      const half = Charts.captionWidth(el._text) / 2;
+      const prevHalf = Charts.captionWidth(prev._text) / 2;
+      const box = { left: Number(el.attrs.x) - half,
+        right: Number(el.attrs.x) + half };
+      const prevBox = { left: Number(prev.attrs.x) - prevHalf,
+        right: Number(prev.attrs.x) + prevHalf };
+      return !localBoxesOverlap(prevBox, box);
+    }));
+
+  /*
+   * NO COUNT-AXIS ARM HERE (fix wave 1, F4, #390 review): drawBins()
+   * computes the count axis from `bins.reduce(max, ...)` over WHATEVER
+   * bins it is handed, and trimTrailingEmptyBins() only ever removes
+   * TRAILING ZERO-COUNT bins - by construction, that can never change
+   * the maximum count, so the trimmed and untrimmed axis are provably
+   * the identical ticks on this fixture (and on every fixture the trim
+   * can apply to). An assertion here would pass with the trim fully
+   * disabled - the reviewer's own live check on the fix wave 1 review
+   * confirmed exactly that on this file's first draft - so it is
+   * deleted rather than kept as a check that cannot fail. The trimmed
+   * caption/containment/bar-count checks above are what the trimmed
+   * grid actually changes; count-axis coverage for the axis itself
+   * lives in the fix-wave-2 (#378) arms further up this file, against
+   * the untrimmed geometry, which is the only geometry that ever moves
+   * the axis's own scale.
+   */
+}
+
+/*
  * THE TOOLTIP, DRIVEN END TO END (0.9-M2-S13, #378, owner ruling 2):
  * hover shows it, a click/tap pins it, a click/tap elsewhere dismisses
  * it - one behavior for both a distribution band (filled or empty) and
@@ -2498,7 +2748,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 186;
+const EXPECTED = 202;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

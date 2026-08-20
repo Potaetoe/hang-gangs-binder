@@ -81,6 +81,19 @@ const agg = await import(pathToFileURL(ROOT + "server/charts-agg.js").href);
 const worker = await import(pathToFileURL(ROOT + "server/worker.js").href);
 const fetchWorker = worker.default.fetch;
 
+/*
+ * apps/web/charts.js's own Pure half, loaded here too (0.9-M2-S16 fix
+ * wave 1, F3) - not to re-test the page (tests/charts-page.test.mjs
+ * does that), but because the raised-floor/trim interaction is a claim
+ * about TWO files agreeing, and a claim about two files is not proven
+ * by exercising either one alone. charts.js publishes BinderCharts
+ * before its own `typeof document === "undefined"` guard (its own
+ * header explains the split), so loading it under Node with no
+ * document is exactly what tests/charts-page.test.mjs already does.
+ */
+await import(pathToFileURL(ROOT + "apps/web/charts.js").href);
+const Charts = globalThis.BinderCharts;
+
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -948,6 +961,35 @@ check("floor 5: the outlier's own band is gone - a band of one is " +
   "exactly what a raised floor exists to refuse",
   !drawnOf(tail).bins.some((b) => b.count > 0 && b.count < RAISED));
 
+/*
+ * A RAISED FLOOR MAKES THE PAGE'S OWN TRIM A NO-OP (0.9-M2-S16 fix wave
+ * 1, F3, #390): suppressBins() above merges the trailing remainder
+ * BACKWARDS into the last emitted band rather than dropping it, so the
+ * last band in ANY answer drawn at a floor above 0 already carries the
+ * floor's own count or more - never zero. Fed into apps/web/charts.js's
+ * own trimTrailingEmptyBins() (imported above, not reimplemented), that
+ * means there is no trailing empty band left to find: the trim returns
+ * the SAME bins, unchanged, and the drawn axis still reaches the spec's
+ * own ceiling (W_MAX) exactly as it did before #390 - which is exactly
+ * how a raised floor hides whether the group's heaviest member (the
+ * `tail` fixture's own 300 kg outlier, absorbed into the merged band
+ * above) sits near that ceiling or far below it. This is the real
+ * server output and the real page function, not a hand-shaped stand-in
+ * for either.
+ */
+const tailBins = drawnOf(tail).bins;
+const tailTrimmed = Charts.trimTrailingEmptyBins(tailBins);
+check("floor 5: the trim is a no-op on a real raised-floor answer - " +
+  "same length, same last band, because the last band already carries " +
+  "the floor's own count",
+  tailTrimmed.length === tailBins.length &&
+  tailTrimmed[tailTrimmed.length - 1] === tailBins[tailBins.length - 1]);
+check("floor 5: the drawn axis still reaches the spec's own ceiling " +
+  "after the trim runs - a raised floor, not the trim, is what would " +
+  "hide the heaviest member",
+  tailTrimmed[tailTrimmed.length - 1].to[partitionSystem] === W_MAX &&
+  tailTrimmed[tailTrimmed.length - 1].count > 0);
+
 /* The wide corpus: five clusters far enough apart to draw several bands
    even once merging has run. */
 const wideRows = [];
@@ -1583,7 +1625,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 147;
+const EXPECTED = 149;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
