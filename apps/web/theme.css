@@ -1619,9 +1619,13 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
 
 /*
  * The charts control row (0.9-M2-S3, #354, design mandate 2): one card,
- * one row, six .field-shaped controls in a fixed order. Wraps on a
- * narrow viewport rather than scrolling, because six controls in a
+ * one row, five .field-shaped controls in a fixed order. Wraps on a
+ * narrow viewport rather than scrolling, because five controls in a
  * horizontal scroller is a control a thumb cannot find.
+ *
+ * FIVE, NOT SIX (0.9-M2-S15, #383): the Picture toggle left this row for
+ * the results card, where there is something to choose a picture of -
+ * see apps/web/charts.html's own comment on the fieldset it moved to.
  */
 .control-row {
   display: flex;

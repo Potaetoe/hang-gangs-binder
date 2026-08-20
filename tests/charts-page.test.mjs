@@ -1127,12 +1127,64 @@ function node(tag) {
 const PAGE_HTML = webTexts["charts.html"];
 const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
 const NEEDED = ["filter-field", "filter-value-field", "filter-value",
-  "measure", "picture-tab-trend", "picture-tab-distribution",
-  "picture-trend", "picture-distribution", "figure-trend",
-  "figure-distribution", "groups", "groups-body", "results", "status",
-  "show-me", "download", "tooltip-trend", "tooltip-distribution"];
+  "measure", "picture-field", "picture-tab-trend",
+  "picture-tab-distribution", "picture-trend", "picture-distribution",
+  "figure-trend", "figure-distribution", "groups", "groups-body",
+  "results", "status", "show-me", "download", "tooltip-trend",
+  "tooltip-distribution"];
 check("every element this suite drives is really in apps/web/charts.html",
   NEEDED.every((id) => IDS.includes(id)));
+
+/*
+ * 0.9-M2-S15 fix wave 1 (#383), F1 and F4: the stub DOM above is built by
+ * hand (buildDom(), below) - it invents its own element tree from the
+ * NEEDED id list, so it has no opinion on WHERE an id sits in the real
+ * page or WHETHER the real markup ships it hidden. The review's own
+ * proof: moving the picture-field fieldset back into the controls card
+ * left every stub-driven check green, because the stub never asked
+ * where it was. These two checks read the real markup TEXT instead -
+ * both apps/web/charts.html and its dist/ mirror, since 0.9-M2-S15's
+ * own ruling (point 6) is "both trees".
+ *
+ * F1: the fieldset sits inside #results (after it opens) and above
+ * #status (before that paragraph) - the two id strings are unique in
+ * this page (grepped), so their raw string positions are the ordering.
+ *
+ * F4: the fieldset's own opening tag carries the `hidden` attribute in
+ * the shipped markup - not merely in buildDom()'s own default, which
+ * F4 found was the only thing the old "absent before any press" check
+ * actually read.
+ */
+const distCharts = await read("../dist/charts.html");
+
+function pictureFieldOrder(text) {
+  return {
+    results: text.indexOf('id="results"'),
+    picture: text.indexOf('id="picture-field"'),
+    status: text.indexOf('id="status"'),
+  };
+}
+
+function fieldsetOpeningTag(text, id) {
+  const found = text.match(new RegExp('<fieldset\\b[^>]*\\bid="' + id + '"[^>]*>'));
+  return found ? found[0] : null;
+}
+
+for (const [label, text] of
+    [["apps/web/charts.html", PAGE_HTML], ["dist/charts.html", distCharts]]) {
+  const order = pictureFieldOrder(text);
+  check("0.9-M2-S15 F1 (#383 fix wave 1): " + label + "'s own real markup " +
+    "places the picture-field fieldset inside #results and above #status " +
+    "- read from the shipped text, not the stub DOM",
+    order.results !== -1 && order.picture !== -1 && order.status !== -1 &&
+    order.results < order.picture && order.picture < order.status);
+
+  const tag = fieldsetOpeningTag(text, "picture-field");
+  check("0.9-M2-S15 F4 (#383 fix wave 1): " + label + "'s own shipped " +
+    "fieldset carries the hidden attribute - read from the real opening " +
+    "tag, not buildDom()'s default",
+    tag !== null && /\bhidden\b/.test(tag));
+}
 
 /*
  * `noUnitsChecked` stands in for the static HTML's own `checked`
@@ -1162,6 +1214,22 @@ function buildDom(opts) {
   // apps/web/charts.html ships the download anchor `hidden` by default;
   // offerDownload() is what reveals it once a response exists.
   byId.get("download").hidden = true;
+  // 0.9-M2-S15 (#383): apps/web/charts.html ships the picture toggle's
+  // own fieldset `hidden` by default too, same as the download anchor
+  // above - there is nothing to choose a picture of before a drawn
+  // answer exists. renderAnswer() is the only thing that ever flips it.
+  byId.get("picture-field").hidden = true;
+  // The shipped markup's own default selection: Trend's tab carries
+  // aria-selected="true" and Distribution's carries "false" as static
+  // HTML, which is what renderAnswer()'s `selected` read (charts.js)
+  // actually reads on a page nobody has clicked a tab on yet.
+  // picture-distribution ships `hidden` in the markup for the same
+  // reason - a stub `node("div")` defaults hidden=false, which would
+  // read as "both panels visible" and hide a regression to this file's
+  // own read of the DOM's aria-selected default.
+  byId.get("picture-tab-trend").setAttribute("aria-selected", "true");
+  byId.get("picture-tab-distribution").setAttribute("aria-selected", "false");
+  byId.get("picture-distribution").hidden = true;
   const svgTrend = node("svg");
   const svgDist = node("svg");
   byId.get("figure-trend").appendChild(svgTrend);
@@ -1318,7 +1386,11 @@ async function driven(fetchImpl, opts) {
     "#charts-page-" + Math.random());
 
   await new Promise((resolve) => setTimeout(resolve, 0));
-  await pressShowMe(byId);
+  // 0.9-M2-S15 (#383): `skipPress` leaves setUp() run but Show me
+  // unpressed - the one way this harness can inspect the page's own
+  // BEFORE-any-answer state (the picture toggle's own default-hidden
+  // arm below), since every other caller wants the post-press page.
+  if (!options.skipPress) await pressShowMe(byId);
 
   return { byId, doc, calls, unitsInputs, created, revoked, blobs,
     createdAnchors };
@@ -1337,6 +1409,24 @@ function response(status, body) {
     ok: status >= 200 && status < 300,
     text: async () => text,
   };
+}
+
+/*
+ * 0.9-M2-S15 (#383), apparatus point 1: "before the first successful
+ * Show me: the control is absent from view (hidden, not merely
+ * disabled)". `skipPress` leaves setUp() wired but never presses Show
+ * me, so this is the page exactly as a member who has not pressed
+ * anything yet sees it - fetch is never called, and the only fixture
+ * that matters is that no fixture is ever served.
+ */
+{
+  const { byId, calls } = await driven(() => {
+    throw new Error("Show me was never pressed - fetch should not fire");
+  }, { skipPress: true });
+  check("0.9-M2-S15: the picture toggle is absent before any Show me " +
+    "press - hidden, not merely disabled, and nothing fetched to get " +
+    "there",
+    byId.get("picture-field").hidden === true && calls.length === 0);
 }
 
 /*
@@ -1397,8 +1487,50 @@ const NOT_ENOUGH_FIXTURE = {
   check("nothing is drawn when there is nothing to draw",
     byId.get("picture-trend").hidden === true &&
     byId.get("picture-distribution").hidden === true);
+
+  /*
+   * 0.9-M2-S15 fix wave 1 (#383), F2: the check above is true trivially
+   * for picture-distribution if renderAnswer()'s not-enough branch never
+   * hides it at all - buildDom() (this slice's own GREEN wave) now
+   * starts picture-distribution hidden by default too, for a DIFFERENT
+   * reason (matching the shipped markup's own aria-selected pair, F4's
+   * neighbor), and that default alone was enough to keep this check
+   * green with the real hide call deleted (the review's own finding,
+   * undisclosed in the original wave). Forcing both panels visible
+   * first, then pressing again against the SAME not-enough fixture,
+   * proves the hide calls actually fire rather than proving the stub's
+   * own starting state.
+   */
+  byId.get("picture-trend").hidden = false;
+  byId.get("picture-distribution").hidden = false;
+  await pressShowMe(byId);
+  check("0.9-M2-S15 F2 (#383 fix wave 1): the not-enough branch actively " +
+    "hides both figures - forced visible first, so this fails if either " +
+    "hide call is ever deleted",
+    byId.get("picture-trend").hidden === true &&
+    byId.get("picture-distribution").hidden === true);
+  check("0.9-M2-S15, apparatus point 3: the picture toggle hides again " +
+    "on the not-enough view - there is no picture left to choose " +
+    "between",
+    byId.get("picture-field").hidden === true);
   check("the group makeup block stays hidden on an empty view",
     byId.get("groups").hidden === true);
+
+  /*
+   * The check above is true trivially if renderAnswer()'s not-enough
+   * branch never touches picture-field at all - it ships hidden by
+   * default (buildDom()'s own mirror of the real markup), so a missing
+   * hide call would still read hidden here. Forcing it visible first,
+   * THEN pressing Show me again against the same not-enough fixture,
+   * proves the hide call itself fires rather than merely proving the
+   * field started hidden and nothing ever touched it.
+   */
+  byId.get("picture-field").hidden = false;
+  await pressShowMe(byId);
+  check("0.9-M2-S15: the not-enough branch actively hides the picture " +
+    "toggle - forced visible first, so this fails if renderAnswer() " +
+    "never calls show($(\"picture-field\"), false) at all",
+    byId.get("picture-field").hidden === true);
 }
 
 /*
@@ -1471,6 +1603,36 @@ const ENOUGH_FIXTURE = {
   check("download is offered once a response exists - the button is " +
     "unhidden",
     byId.get("download").hidden === false);
+  check("0.9-M2-S15, apparatus point 2: the picture toggle appears once " +
+    "a drawn answer exists",
+    byId.get("picture-field").hidden === false);
+  check("0.9-M2-S15: the flip shows exactly one figure at a time - the " +
+    "default selection (Trend, aria-selected=true in the shipped " +
+    "markup) draws the trend figure and hides the distribution one",
+    byId.get("picture-trend").hidden === false &&
+    byId.get("picture-distribution").hidden === true);
+
+  /*
+   * 0.9-M2-S15 fix wave 1 (#383), sibling sweep (found while fixing F2
+   * and F4 - the same disease, a third sibling): the check above is
+   * true trivially too. buildDom() starts picture-trend hidden=false
+   * and picture-distribution hidden=true by default, to match the
+   * shipped markup's own default selection (Trend) - which is exactly
+   * the state a CORRECT draw also produces on that same default. Delete
+   * both show() calls in renderAnswer()'s enough branch and this check
+   * would stay green, reading the stub's starting state rather than
+   * anything renderAnswer() did. Forcing the opposite state first, then
+   * pressing again against the SAME fixture, proves the calls fire.
+   */
+  byId.get("picture-trend").hidden = true;
+  byId.get("picture-distribution").hidden = false;
+  await pressShowMe(byId);
+  check("0.9-M2-S15 (#383 fix wave 1, sibling sweep): renderAnswer() " +
+    "actively draws the default selection - forced to the opposite " +
+    "state first, so this fails if the two show() calls are ever " +
+    "deleted",
+    byId.get("picture-trend").hidden === false &&
+    byId.get("picture-distribution").hidden === true);
 
   /*
    * Owner ruling 1, #243: the measure select itself offers only
@@ -1629,6 +1791,23 @@ const ENOUGH_FIXTURE = {
     c.className.split(" ").includes("chip-row"));
   check("the group makeup card is shown once a drawn answer arrives",
     byId.get("groups").hidden === false);
+
+  /*
+   * 0.9-M2-S15 fix wave 1 (#383), sibling sweep: the check above is
+   * true trivially too - buildDom() (unrelated to this slice) never
+   * sets a default for "groups", so the stub's own node() default
+   * (hidden=false) already matches what a correct draw produces here.
+   * Deleting renderGroups()'s own `show(card, true)` call was proven,
+   * by mutation, to leave the check above green (0 failures with the
+   * call removed, restored after). Forcing it hidden first, then
+   * pressing again against the same fixture, proves the call fires.
+   */
+  byId.get("groups").hidden = true;
+  await pressShowMe(byId);
+  check("0.9-M2-S15 (#383 fix wave 1, sibling sweep): renderGroups() " +
+    "actively unhides the card - forced hidden first, so this fails if " +
+    "show(card, true) is ever deleted",
+    byId.get("groups").hidden === false);
   check("the group makeup heading names each field, from the response, " +
     "one per categorical field",
     groupsBody.children.some((c) => c.tag === "h3" && c._text === "Gender") &&
@@ -1667,6 +1846,55 @@ const ENOUGH_FIXTURE = {
     countryChips[0].name === "United States" && countryChips[0].count === "5" &&
     countryChips[1].name === "Albania" && countryChips[1].count === "1" &&
     countryChips[2].name === "Not stated" && countryChips[2].count === "3");
+}
+
+/*
+ * 0.9-M2-S15 (#383), apparatus points 4 and 5 together: the choice
+ * persists across a second (and third) Show me press, and the toggle
+ * hides again on a not-enough answer WITHOUT resetting what the member
+ * had chosen - so a later drawn answer picks the flip back up rather
+ * than defaulting back to Trend. Three presses against the same `byId`,
+ * a served answer per press exactly like the "re-render with filter"
+ * arm above.
+ */
+{
+  const served = [ENOUGH_FIXTURE, ENOUGH_FIXTURE, NOT_ENOUGH_FIXTURE];
+  let at = 0;
+  const { byId } = await driven(() => response(200, served[at++]));
+
+  check("first press: the shipped default is Trend selected",
+    byId.get("picture-tab-trend").getAttribute("aria-selected") === "true" &&
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "false");
+
+  await byId.get("picture-tab-distribution").dispatch("click");
+  check("clicking Distribution flips aria-selected on both tabs and " +
+    "shows exactly one figure - Distribution in, Trend out",
+    byId.get("picture-tab-trend").getAttribute("aria-selected") === "false" &&
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "true" &&
+    byId.get("picture-trend").hidden === true &&
+    byId.get("picture-distribution").hidden === false);
+
+  await pressShowMe(byId);
+  check("second press (apparatus point 4): the Distribution choice " +
+    "survives a fresh drawn answer - renderAnswer() reads the tabs' own " +
+    "aria-selected rather than resetting to Trend, and the toggle is " +
+    "still shown",
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "true" &&
+    byId.get("picture-distribution").hidden === false &&
+    byId.get("picture-trend").hidden === true &&
+    byId.get("picture-field").hidden === false);
+
+  await pressShowMe(byId);
+  check("third press, a not-enough answer (apparatus points 3 and 4 " +
+    "together): the toggle hides again, but the Distribution choice " +
+    "itself is untouched - nothing here resets aria-selected, only " +
+    "visibility",
+    byId.get("picture-field").hidden === true &&
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "true");
 }
 
 /*
@@ -2270,7 +2498,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 170;
+const EXPECTED = 186;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

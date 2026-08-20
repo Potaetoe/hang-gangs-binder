@@ -869,6 +869,11 @@
     if (!answer.enough) {
       status.className = "status";
       status.textContent = answer.note + " " + BROADER_FILTER_HINT;
+       
+       
+       
+       
+      show($("picture-field"), false);
       show($("picture-trend"), false);
       show($("picture-distribution"), false);
       renderGroups(null);
@@ -882,6 +887,12 @@
     drawTrend(answer, system);
     drawDistribution(answer, system);
 
+     
+     
+     
+     
+     
+    show($("picture-field"), true);
     const selected = $("picture-tab-trend").getAttribute("aria-selected") ===
       "true";
     show($("picture-trend"), selected);
