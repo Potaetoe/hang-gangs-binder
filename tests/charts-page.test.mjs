@@ -20,10 +20,22 @@
  * included), and draws the whole grid when every band is empty. That
  * property survives 0.9-M2-S11's reshape and its own review's F1/F2
  * fix wave: the distribution figure draws every band it is HANDED
- * (empty ones included) with only some of them captioned - by
- * GEOMETRY, not a fixed count - and the arm below checks the caption
- * row against exactly the positions apps/web/charts.js's own
- * rangeCaptionPlan() says should carry one.
+ * (empty ones included).
+ *
+ * THE X-AXIS IS A ROUND-NUMBER TICK ROW (owner ruling 1, the 2026-08-21
+ * axis sitting, #396). Midpoint captions are gone: the numbers under
+ * the figure are the BAND EDGES, one per boundary rather than one per
+ * bar, thinned by measured width with the first and last always
+ * painted. The thinning law itself is unchanged - no two painted
+ * labels may overlap at their FINAL, contained positions - and the arms
+ * below check the rendered row against exactly the positions
+ * apps/web/charts.js's own labelRowPlan() says should carry one.
+ *
+ * NO UNIT ANYWHERE IN THE FIGURE (owner ruling 2, #396): the unit is
+ * stated once, in the status line ("Showing Weight (lb)."), and the
+ * axis-edge unit marker the 2026-08-19 sitting put at the row's right
+ * end is retired with the midpoint captions. The arms that used to
+ * find exactly one marker now assert there is none.
  * The FORBIDDEN name grep below (section 1) stays as a fast tripwire
  * that catches an obvious reintroduction by name before the slower
  * behavioral arm has to - it is no longer the proof by itself, since a
@@ -234,12 +246,12 @@ check("binLabel never invents an open-edge shape for a real answer's " +
  * edgeLabelStride() this replaces still overlapped on both the 120-band
  * BMI grid (F1) and the 53-band imperial-weight grid (F2) - the count
  * was near ten either way, the captions still collided. captionWidth()
- * and rangeCaptionPlan() below are checked three ways: a controlled
+ * and labelRowPlan() below are checked three ways: a controlled
  * overlap case with hand-verifiable geometry, the exact scenario the
  * review reported (F2's own numbers), and the real shipped grids the
  * review named fed through the real function, since this suite's own
  * DOM stub cannot measure a painted pixel. These arms all use
- * rangeCaptionPlan()'s plain, UNCLAMPED 2-argument mode - the geometry
+ * labelRowPlan()'s plain, UNCLAMPED 2-argument mode - the geometry
  * primitive's own correctness, independent of where the row happens to
  * sit; fix wave 1 (#378)'s own arm, further down, is what proves the
  * FINAL, contained positions the real page actually paints.
@@ -266,9 +278,9 @@ check("captionWidth is proportional to the text length - the estimate " +
  *
  * PROVENANCE: getComputedTextLength() read off the shipped chart face
  * at the .chart-label/.chart-value 11px size, reported in the review of
- * record on #372 (the F7 finding). "0" is the narrowest digit a count
- * caption ever prints alone; "–" is the dash binLabel() joins every
- * range caption with, so both sit on the actual hot path.
+ * record on #372 (the F7 finding). "0" is the narrowest digit an axis
+ * label ever prints alone; "–" is the dash binLabel() joins a tooltip's
+ * own range with, so both sit on the actual hot path.
  */
 const MEASURED_GLYPH_WIDTHS = { "0": 7.53, "–": 7.36 };
 check("CAPTION_CHAR_WIDTH sits at or above every real glyph width the " +
@@ -288,7 +300,7 @@ check("CAPTION_CHAR_WIDTH sits at or above every real glyph width the " +
  * where a longer caption would have tripped some other check first.
  * Originally reproduced against countCaptionPlan() (the count row this
  * fixture's own all-zero shape was built for); the count row is gone
- * (owner ruling, the 2026-08-19 late sitting) and rangeCaptionPlan() is
+ * (owner ruling, the 2026-08-19 late sitting) and labelRowPlan() is
  * the only plan left to carry the same glyph-width property forward on.
  */
 const repro88Slot = 640 / 88;
@@ -309,13 +321,13 @@ check("F7: the pre-fix constant (7) sat BELOW that same slot, which is " +
 check("F7's own 88-band repro, driven through the real plan: the " +
   "fixed constant refuses to approve 88 all-\"0\" captions in a row - " +
   "the false-clean result the review reported is closed",
-  Charts.rangeCaptionPlan(repro88Labels, repro88Slot).length < 88);
+  Charts.labelRowPlan(repro88Labels, repro88Slot).length < 88);
 
 /* A controlled, hand-verifiable case: three captions far enough apart
    that none can possibly overlap (a slot ten times any caption's own
    width) - every one paints, proving the plan is not "always thin". */
-check("rangeCaptionPlan paints every caption when nothing overlaps",
-  JSON.stringify(Charts.rangeCaptionPlan(["a", "bb", "ccc"], 1000)) ===
+check("labelRowPlan paints every caption when nothing overlaps",
+  JSON.stringify(Charts.labelRowPlan(["a", "bb", "ccc"], 1000)) ===
   JSON.stringify([0, 1, 2]));
 
 /*
@@ -329,7 +341,7 @@ check("rangeCaptionPlan paints every caption when nothing overlaps",
  */
 const f2Labels = [Charts.binLabel(1004, 1024, "lb"),
   Charts.binLabel(1024, 1044, "lb"), Charts.binLabel(1044, 1064, "lb")];
-const f2Plan = Charts.rangeCaptionPlan(f2Labels, 72.45);
+const f2Plan = Charts.labelRowPlan(f2Labels, 72.45);
 check("F2's own reported case: the interior caption collides with both " +
   "neighbors and is dropped",
   !f2Plan.includes(1));
@@ -339,28 +351,120 @@ check("F2's own reported case: the first and last captions still " +
   f2Plan.includes(0) && f2Plan.includes(2));
 
 /*
- * The two REAL shipped grids the review named, built the same way
- * server/charts-agg.js's gridOf() builds them (anchored at the spec's
- * own minimum, stepped by the spec's own bin width, the last band
- * clipped to the maximum) - so this is not a stand-in grid, it is the
- * one 0.9-M2-S10 actually ships. slot is drawBins()'s own 640-wide
- * figure divided evenly across the bands, matching what the page
- * itself would compute.
+ * THE REAL SHIPPED GRIDS, built the same way server/charts-agg.js's
+ * gridOf() builds them since #396: the spec's bounds snapped OUTWARD
+ * onto a grid of the unit's own nice width, then stepped by that width -
+ * every band exactly one width wide and every edge a multiple of it.
+ * These are not stand-in grids; they are what apps/web/site.config.js
+ * ships. `slot` is drawBins()'s own geometry - a 640-wide viewBox less
+ * the 50-unit count-axis gutter, divided evenly across the bands.
  */
+const PLOT_LEFT = 50;
+const VIEW_WIDTH = 640;
+const PLOT_WIDTH = VIEW_WIDTH - PLOT_LEFT;
+const slotFor = (bandCount) => PLOT_WIDTH / bandCount;
+
 function realGrid(min, max, width) {
-  const edges = [];
-  for (let from = min; from < max - 1e-9; from += width) {
-    edges.push({ from, to: Math.min(from + width, max) });
+  const bands = [];
+  const count = Math.round((max - min) / width);
+  for (let i = 0; i < count; i += 1) {
+    bands.push({ from: min + i * width, to: min + (i + 1) * width });
   }
-  return edges;
+  return bands;
+}
+
+/*
+ * The axis's own numbers: a band edge each, one more of them than there
+ * are bands. drawBins() reads exactly this off the bins it is handed -
+ * `bins[0].from` and then every band's `to` - so a grid of n bands
+ * carries n+1 ticks, at x = index * slot.
+ */
+function edgesOf(grid) {
+  return [grid[0].from].concat(grid.map((b) => b.to));
+}
+
+/*
+ * TICK LABELS (owner ruling 1, #396). The edge's own number, printed as
+ * it stands - no unit, no rounding, nothing composed. The whole point of
+ * the nice grid is that this needs no cleverness: the number is already
+ * round because the edge is.
+ */
+check("tickLabel prints the edge's own number and nothing else",
+  Charts.tickLabel(500) === "500" && Charts.tickLabel(25) === "25" &&
+  Charts.tickLabel(0) === "0");
+check("tickLabel carries no unit token, ever - the unit is stated once " +
+  "in the status line (owner ruling 2, #396)",
+  !/[a-zA-Z]/.test(Charts.tickLabel(525)));
+check("tickLabel does not round - a fork whose nice width is a fraction " +
+  "gets its own edge printed, not a whole number this file invented",
+  Charts.tickLabel(2.5) === "2.5");
+
+/*
+ * TICK BOXES sit ON an edge, not in the middle of a slot - which is the
+ * one geometric difference between this row and the midpoint caption row
+ * it replaces. Index i is centered at i * slot exactly, so index 0 is
+ * centered on the axis's own left end and index n on its right end, and
+ * BOTH always need the containment clamp.
+ */
+check("tickBox centers a label on its own edge, at index * slot",
+  JSON.stringify(Charts.tickBox(2, 100, "50")) ===
+  JSON.stringify({ left: 200 - Charts.captionWidth("50") / 2,
+    right: 200 + Charts.captionWidth("50") / 2 }));
+check("tickBox at index 0 straddles zero - half its width hangs off the " +
+  "left end of the plot, which is what makes the clamp load-bearing at " +
+  "both ends of a tick row",
+  Charts.tickBox(0, 100, "25").left < 0);
+
+const bmiGrid = realGrid(0, 600, 5);
+check("the real shipped BMI grid is 120 bands, 0 to 600 at bin 5 - the " +
+  "exact spec F1 was filed against",
+  bmiGrid.length === 120);
+const bmiEdges = edgesOf(bmiGrid);
+const bmiTicks = bmiEdges.map(Charts.tickLabel);
+const bmiSlot = slotFor(bmiGrid.length);
+
+const weightGrid = realGrid(25, 1100, 25);
+check("the real shipped imperial-weight grid is 43 bands of 25 lb - the " +
+  "nice grid #396 ruled, replacing the 53 bands of 20 anchored at 44",
+  weightGrid.length === 43);
+const weightEdges = edgesOf(weightGrid);
+const weightTicks = weightEdges.map(Charts.tickLabel);
+const weightSlot = slotFor(weightGrid.length);
+
+/* The metric weight grid (apps/web/site.config.js's kg unit: min 20,
+   max 500, bin 10, anchor 0) - 48 bands, unchanged by #396 because 10
+   was already a nice width and 20 and 500 were already on its grid. */
+const metricWeightGrid = realGrid(20, 500, 10);
+check("the real shipped metric-weight grid is 48 bands - " +
+  "apps/web/site.config.js's kg unit (min 20, max 500, bin 10)",
+  metricWeightGrid.length === 48);
+const metricWeightEdges = edgesOf(metricWeightGrid);
+const metricWeightTicks = metricWeightEdges.map(Charts.tickLabel);
+const metricWeightSlot = slotFor(metricWeightGrid.length);
+
+/*
+ * ROUND NUMBERS ON BAND EDGES, WHICH IS WHAT MAKES OPTION C HONEST
+ * (owner ruling 3, #396): every number this axis prints is an edge the
+ * response actually sent, and every edge is a multiple of the band
+ * width. A tick that were anything else would be the page inventing a
+ * number - the thing render-only forbids.
+ */
+for (const g of [{ name: "BMI", edges: bmiEdges, width: 5 },
+  { name: "imperial weight", edges: weightEdges, width: 25 },
+  { name: "metric weight", edges: metricWeightEdges, width: 10 }]) {
+  check("#396 ruling 3: every " + g.name + " tick is a whole number of " +
+    "band widths from zero - the axis reads in round numbers because " +
+    "the bands do, not because anything rounded them",
+    g.edges.every((e) => Math.abs(e / g.width -
+      Math.round(e / g.width)) < 1e-9));
+  check("#396: there is exactly one more " + g.name + " tick than there " +
+    "are bands - a boundary each, never a label per bar",
+    g.edges.length === realGrid(g.edges[0],
+      g.edges[g.edges.length - 1], g.width).length + 1);
 }
 
 function noPaintedPairOverlaps(plan, texts, slot) {
-  const box = (i) => {
-    const center = i * slot + slot / 2;
-    const half = Charts.captionWidth(texts[i]) / 2;
-    return { left: center - half, right: center + half };
-  };
+  const box = (i) => Charts.tickBox(i, slot, texts[i]);
   for (let k = 1; k < plan.length; k += 1) {
     const a = box(plan[k - 1]);
     const b = box(plan[k]);
@@ -369,82 +473,40 @@ function noPaintedPairOverlaps(plan, texts, slot) {
   return true;
 }
 
-const bmiGrid = realGrid(0, 600, 5);
-check("the real shipped BMI grid is 120 bands, 0 to 600 at bin 5 - the " +
-  "exact spec F1 was filed against",
-  bmiGrid.length === 120);
-const bmiLabels = bmiGrid.map((b) => Charts.binLabel(b.from, b.to, null));
-const bmiSlot = 640 / bmiGrid.length;
-const bmiRangePlan = Charts.rangeCaptionPlan(bmiLabels, bmiSlot);
-check("F1: on the real 120-band BMI grid, no two painted range " +
-  "captions overlap",
-  noPaintedPairOverlaps(bmiRangePlan, bmiLabels, bmiSlot));
-check("F1: the BMI grid is thinned, not painted whole - the fix is " +
-  "fewer captions, not merely differently counted ones",
-  bmiRangePlan.length < bmiGrid.length);
-check("F1: the first and last BMI bands still caption their own edge",
-  bmiRangePlan[0] === 0 && bmiRangePlan[bmiRangePlan.length - 1] ===
-  bmiGrid.length - 1);
+const bmiRangePlan = Charts.labelRowPlan(bmiTicks, bmiSlot);
+check("F1: on the real 120-band BMI grid's own tick row, no two painted " +
+  "labels overlap",
+  noPaintedPairOverlaps(bmiRangePlan, bmiTicks, bmiSlot));
+check("F1: the BMI tick row is thinned, not painted whole - the fix is " +
+  "fewer labels, not merely differently counted ones",
+  bmiRangePlan.length < bmiTicks.length);
+check("F1: the first and last BMI ticks always paint - they are the " +
+  "axis's own two ends",
+  bmiRangePlan[0] === 0 &&
+  bmiRangePlan[bmiRangePlan.length - 1] === bmiTicks.length - 1);
 
-const weightGrid = realGrid(44, 1100, 20);
-check("the real shipped imperial-weight grid is 53 bands - the exact " +
-  "spec F2 was filed against",
-  weightGrid.length === 53);
-const weightLabels = weightGrid.map((b) => Charts.binLabel(b.from, b.to, "lb"));
-const weightSlot = 640 / weightGrid.length;
-const weightRangePlan = Charts.rangeCaptionPlan(weightLabels, weightSlot);
-check("F2: on the real 53-band imperial-weight grid, no two painted " +
-  "range captions overlap",
-  noPaintedPairOverlaps(weightRangePlan, weightLabels, weightSlot));
-check("F2: the weight grid is thinned too - a caption count near ten " +
-  "is not the same property as captions that fit",
-  weightRangePlan.length < weightGrid.length);
-check("F2: the first and last weight bands still caption their own " +
-  "edge, including the forced last one the review named specifically",
-  weightRangePlan[0] === 0 && weightRangePlan[weightRangePlan.length - 1] ===
-  weightGrid.length - 1);
+const weightRangePlan = Charts.labelRowPlan(weightTicks, weightSlot);
+check("F2: on the real imperial-weight grid's own tick row, no two " +
+  "painted labels overlap",
+  noPaintedPairOverlaps(weightRangePlan, weightTicks, weightSlot));
+check("F2: the weight tick row is thinned too - a label count near ten " +
+  "is not the same property as labels that fit",
+  weightRangePlan.length < weightTicks.length);
+check("F2: the first and last weight ticks still paint, including the " +
+  "forced last one the review named specifically",
+  weightRangePlan[0] === 0 &&
+  weightRangePlan[weightRangePlan.length - 1] === weightTicks.length - 1);
 
-/* The metric weight grid (apps/web/site.config.js's kg unit: min 20,
-   max 500, bin 10) - the second of fix wave 1's three regression
-   fixtures (finding F1, #378), 48 bands. */
-const metricWeightGrid = realGrid(20, 500, 10);
-check("the real shipped metric-weight grid is 48 bands - " +
-  "apps/web/site.config.js's kg unit (min 20, max 500, bin 10)",
-  metricWeightGrid.length === 48);
-
-/*
- * MIDPOINT CAPTIONS (0.9-M2-S13, #378, owner ruling 1). Plain rounding,
- * a whole number, no unit - the ruling's own examples are the spec-fed
- * arm below.
- */
-check("midpointLabel rounds a band's own midpoint to a whole number - " +
-  "the ruling's own examples",
-  Charts.midpointLabel(152.5, 157.5) === "155" &&
-  Charts.midpointLabel(182.5, 187.5) === "185");
-check("midpointLabel rounds .5 up, plainly - Math.round's own rule, " +
-  "nothing fancier asked for",
-  Charts.midpointLabel(0, 5) === "3" && Charts.midpointLabel(0, 1) === "1");
-check("midpointLabel carries no unit token, ever - the unit is stated " +
-  "once at the axis edge, never per caption (owner ruling 1)",
-  !/[a-zA-Z]/.test(Charts.midpointLabel(20, 25)));
-
-/* UNIQUENESS on the shipped grids: a fixed-width grid's midpoints are
-   strictly increasing by the band width, so no two bands ever share a
-   caption - checked on the real spec rather than assumed from the
-   arithmetic. */
-const bmiMidpoints = bmiGrid.map((b) => Charts.midpointLabel(b.from, b.to));
-check("every midpoint caption on the real 120-band BMI grid is unique",
-  new Set(bmiMidpoints).size === bmiMidpoints.length);
-const weightMidpoints = weightGrid.map((b) =>
-  Charts.midpointLabel(b.from, b.to));
-check("every midpoint caption on the real 53-band imperial-weight " +
-  "grid is unique",
-  new Set(weightMidpoints).size === weightMidpoints.length);
-const metricWeightMidpoints = metricWeightGrid.map((b) =>
-  Charts.midpointLabel(b.from, b.to));
-check("every midpoint caption on the real 48-band metric-weight grid " +
-  "is unique",
-  new Set(metricWeightMidpoints).size === metricWeightMidpoints.length);
+/* UNIQUENESS on the shipped grids: a fixed-width grid's edges are
+   strictly increasing by the band width, so no two ticks ever share a
+   number - checked on the real spec rather than assumed from the
+   arithmetic. A repeated tick would read as an axis that stalls. */
+check("every tick on the real 120-band BMI grid is unique",
+  new Set(bmiTicks).size === bmiTicks.length);
+check("every tick on the real imperial-weight grid is unique",
+  new Set(weightTicks).size === weightTicks.length);
+check("every tick on the real 48-band metric-weight grid is unique",
+  new Set(metricWeightTicks).size === metricWeightTicks.length);
 
 /*
  * CONTAINMENT, THE PRIMITIVE (0.9-M2-S13, #378, owner ruling 1;
@@ -455,7 +517,7 @@ check("every midpoint caption on the real 48-band metric-weight grid " +
  */
 check("containBox leaves a box that already fits inside " +
   "[lowerBound, upperBound] unchanged - the no-op case every interior " +
-  "caption hits",
+  "label hits",
   JSON.stringify(Charts.containBox({ left: 60, right: 70 }, 50, 150)) ===
   JSON.stringify({ left: 60, right: 70 }));
 check("containBox shifts a box whose left edge crosses lowerBound " +
@@ -467,11 +529,11 @@ check("containBox shifts a box whose right edge crosses upperBound " +
   JSON.stringify(Charts.containBox({ left: 140, right: 160 }, 50, 150)) ===
   JSON.stringify({ left: 130, right: 150 }));
 
-/* An adversarial hand-built case: a caption wide enough that its own
-   box, centered in its slot, overshoots BOTH bounds by construction -
-   the property has to hold even here, not merely on the real grids
-   where it happens to. */
-check("containBox clamps a caption wider than the whole row to the " +
+/* An adversarial hand-built case: a label wide enough that its own box,
+   centered on its edge, overshoots BOTH bounds by construction - the
+   property has to hold even here, not merely on the real grids where it
+   happens to. */
+check("containBox clamps a label wider than the whole row to the " +
   "left edge (left takes priority, matching the left-then-right order " +
   "the function itself reads in)",
   JSON.stringify(Charts.containBox({ left: 0, right: 750 }, 50, 640)) ===
@@ -480,38 +542,29 @@ check("containBox clamps a caption wider than the whole row to the " +
 /*
  * F1, FIX WAVE 1'S OWN FINDING (#378, the review of record on the head
  * this suite's own previous build shipped): containBox() shifting the
- * forced last caption AFTER rangeCaptionPlan() had already ruled the
- * row collision-free recreated exactly the overlap the plan exists to
- * prevent - owner-found live (a real overlapping caption pair, on the
- * real page), reviewer-confirmed by geometry. "resolved by dropping
- * interior neighbours, never an end" is the ruling; rangeCaptionPlan()'s
- * optional third argument (`boxOf`) is the fix - the SAME final,
- * contained, offset boxes are what the plan now compares for overlap
- * AND what the render loop paints from, so there is exactly one
- * definition of where a caption ends up.
+ * forced last label AFTER labelRowPlan() had already ruled the row
+ * collision-free recreated exactly the overlap the plan exists to
+ * prevent - owner-found live (a real overlapping pair, on the real
+ * page), reviewer-confirmed by geometry. "resolved by dropping interior
+ * neighbours, never an end" is the ruling; labelRowPlan()'s optional
+ * third argument (`boxOf`) is the fix - the SAME final, contained,
+ * offset boxes are what the plan compares for overlap AND what the
+ * render loop paints from, so there is exactly one definition of where
+ * a label ends up. #396 moved the row from slot midpoints to band
+ * edges and the law is unchanged, which is why these fixtures carry
+ * straight over onto the tick row.
  *
- * The three regression fixtures below are the real shipped grids under
- * drawBins()'s own real geometry (a 640-wide row, the new 50-unit left
- * gutter, and - where the measure has a unit - the axis-edge marker's
- * own reserve): imperial weight (53 bands), metric weight (48 bands),
- * BMI (120 bands, unitless). `finalBoxOf` mirrors drawBins()'s own
- * `boxOf` closure exactly, built from the same exported primitives
- * (captionBox(), containBox()) rather than a second reimplementation of
- * either.
+ * THE RIGHT BOUND IS THE VIEWBOX ITSELF NOW. The unit marker that used
+ * to reserve a strip at the row's right end is retired (owner ruling 2,
+ * #396: the unit lives in the status line), so nothing carves the row
+ * short any more and a tick label may run all the way to x = 640.
  */
-const PLOT_LEFT = 50;
-const VIEW_WIDTH = 640;
-
-function rightBoundFor(unit) {
-  return unit ? VIEW_WIDTH - Charts.captionWidth(unit) - 8 : VIEW_WIDTH;
-}
-
-function finalBoxOf(midpoints, slot, rightBound) {
+function finalBoxOf(texts, slot) {
   return function (i) {
-    const raw = Charts.captionBox(i, slot, midpoints[i]);
+    const raw = Charts.tickBox(i, slot, texts[i]);
     return Charts.containBox(
       { left: PLOT_LEFT + raw.left, right: PLOT_LEFT + raw.right },
-      PLOT_LEFT, rightBound);
+      PLOT_LEFT, VIEW_WIDTH);
   };
 }
 
@@ -522,13 +575,10 @@ function localBoxesOverlap(a, b) {
 /* THE BUG, REPRODUCED: the plan computed on UNCLAMPED boxes (the old,
    2-argument shape), each painted index then clamped SEPARATELY at
    render time - exactly the two-stage shape the review found broken.
-   All three real grids reproduce it under the real geometry above,
-   which is the fixture proving fix wave 1's own regression is real and
-   not moot against the (unrelated) left-gutter change in the same
-   wave. */
-function oldBuggyOverlapCount(midpoints, slot, rightBound) {
-  const unclampedPlan = Charts.rangeCaptionPlan(midpoints, slot);
-  const box = finalBoxOf(midpoints, slot, rightBound);
+   All three real grids reproduce it under the real geometry above. */
+function oldBuggyOverlapCount(texts, slot) {
+  const unclampedPlan = Charts.labelRowPlan(texts, slot);
+  const box = finalBoxOf(texts, slot);
   const finalBoxes = unclampedPlan.map(box);
   let overlaps = 0;
   for (let k = 1; k < finalBoxes.length; k += 1) {
@@ -537,11 +587,11 @@ function oldBuggyOverlapCount(midpoints, slot, rightBound) {
   return overlaps;
 }
 
-/* THE FIX: the SAME boxOf fed into rangeCaptionPlan() itself, so the
-   plan and the paint agree on where things actually end up. */
-function newFixedOverlapCount(midpoints, slot, rightBound) {
-  const box = finalBoxOf(midpoints, slot, rightBound);
-  const plan = Charts.rangeCaptionPlan(midpoints, slot, box);
+/* THE FIX: the SAME boxOf fed into labelRowPlan() itself, so the plan
+   and the paint agree on where things actually end up. */
+function newFixedOverlapCount(texts, slot) {
+  const box = finalBoxOf(texts, slot);
+  const plan = Charts.labelRowPlan(texts, slot, box);
   const finalBoxes = plan.map(box);
   let overlaps = 0;
   for (let k = 1; k < finalBoxes.length; k += 1) {
@@ -551,46 +601,46 @@ function newFixedOverlapCount(midpoints, slot, rightBound) {
 }
 
 const FIXTURES = [
-  { name: "BMI (120 bands, unitless)", grid: bmiGrid, mids: bmiMidpoints,
-    slot: bmiSlot, unit: null },
-  { name: "imperial weight (53 bands)", grid: weightGrid,
-    mids: weightMidpoints, slot: weightSlot, unit: "lb" },
-  { name: "metric weight (48 bands)", grid: metricWeightGrid,
-    mids: metricWeightMidpoints, slot: VIEW_WIDTH / metricWeightGrid.length,
-    unit: "kg" },
+  { name: "BMI (120 bands, unitless)", ticks: bmiTicks, slot: bmiSlot },
+  { name: "imperial weight (43 bands)", ticks: weightTicks,
+    slot: weightSlot },
+  { name: "metric weight (48 bands)", ticks: metricWeightTicks,
+    slot: metricWeightSlot },
 ];
 
 for (const f of FIXTURES) {
-  const rightBound = rightBoundFor(f.unit);
-  const oldOverlaps = oldBuggyOverlapCount(f.mids, f.slot, rightBound);
+  const oldOverlaps = oldBuggyOverlapCount(f.ticks, f.slot);
   check("F1/#378: " + f.name + " - the OLD two-stage shape (plan " +
     "unclamped, clamp separately at render) really does overlap under " +
-    "the real geometry, proving this regression is live here and not " +
-    "moot against the same wave's left-gutter change",
+    "the real tick-row geometry, proving this regression is live on the " +
+    "reshaped row and not moot",
     oldOverlaps > 0);
 
-  const newOverlaps = newFixedOverlapCount(f.mids, f.slot, rightBound);
-  check("F1/#378: " + f.name + " - the FIX (rangeCaptionPlan() fed the " +
+  const newOverlaps = newFixedOverlapCount(f.ticks, f.slot);
+  check("F1/#378: " + f.name + " - the FIX (labelRowPlan() fed the " +
     "final, contained boxes directly) leaves zero overlaps among the " +
     "FINAL painted positions",
     newOverlaps === 0);
 }
 
-/* THE LEFT EDGE SPECIFICALLY (the ruling's own words: "the left edge
-   has the same latent hole ... the final-position property must cover
-   both ends"). Index 0's own final box is always the one containBox()
-   clamps against the LOWER bound when it needs clamping at all - this
-   asserts the fixed plan's first painted caption sits with its left
-   edge exactly AT the gutter, never spilling past it into the axis
-   labels, on the densest of the three real grids. */
+/* BOTH ENDS SPECIFICALLY (the ruling's own words: "the left edge has the
+   same latent hole ... the final-position property must cover both
+   ends"). On a tick row every end label straddles its own end by half
+   its width, so index 0 and index n are ALWAYS the clamped pair - this
+   asserts each sits exactly flush with its bound on the densest of the
+   three real grids. */
 {
-  const box = finalBoxOf(bmiMidpoints, bmiSlot, rightBoundFor(null));
+  const box = finalBoxOf(bmiTicks, bmiSlot);
   const first = box(0);
-  check("F1/#378: the BMI grid's own first (index 0) painted caption " +
-    "sits with its left edge exactly at the plot's own left bound - " +
-    "the left-edge half of the final-position property, not merely " +
-    "the right",
+  const last = box(bmiTicks.length - 1);
+  check("#396: the BMI tick row's own first label sits with its left " +
+    "edge exactly at the plot's left bound - the left-edge half of the " +
+    "final-position property",
     Math.abs(first.left - PLOT_LEFT) < 1e-9);
+  check("#396: and its last label sits with its right edge exactly at " +
+    "the viewBox's own right edge - nothing reserves a strip there any " +
+    "more, because the unit marker is retired (ruling 2)",
+    Math.abs(last.right - VIEW_WIDTH) < 1e-9);
 }
 
 /*
@@ -863,8 +913,9 @@ check("positionTooltipBox clamps the right edge rather than letting " +
     distributionFigureBox(320), { width: 60, height: 20 }
   ).left === 320 - 60);
 
-/* chartsURL: self=1 always, filter+value only together. */
-const bare = new URL(Charts.chartsURL("https://w.example", { measure: "weight" }));
+/* chartsURL: self=1 always, units always, filter+value only together. */
+const bare = new URL(Charts.chartsURL("https://w.example",
+  { measure: "weight", units: "imperial" }));
 /* /charts-data, not /charts (0.9-M2-S8, #365): the route was renamed
    out of the way of this page's own basename, because the assets
    layer's html_handling redirects /charts.html to /charts and the
@@ -876,16 +927,25 @@ check("the bare request names the renamed route, plus measure and self",
   bare.searchParams.get("filter") === null);
 
 const filtered = new URL(Charts.chartsURL("https://w.example",
-  { measure: "weight", filter: "gender", value: "female" }));
+  { measure: "weight", units: "metric", filter: "gender",
+    value: "female" }));
 check("a filtered request carries filter and value alongside self",
   filtered.searchParams.get("filter") === "gender" &&
   filtered.searchParams.get("value") === "female" &&
   filtered.searchParams.get("self") === "1");
 
-check("no request ever names a floor or a units parameter - the wire " +
-  "has neither (security mandate 2)",
-  !bare.searchParams.has("floor") && !bare.searchParams.has("units") &&
-  !filtered.searchParams.has("floor") && !filtered.searchParams.has("units"));
+/*
+ * THE ASK CARRIES THE UNIT SYSTEM NOW (owner ruling 4, #396): the Worker
+ * bins on that unit's own grid, so the page has to say which one it is
+ * looking at - and the page NEVER re-bins, which is why this had to
+ * become a question rather than a client-side conversion.
+ */
+check("every request names the unit system the member is looking at",
+  bare.searchParams.get("units") === "imperial" &&
+  filtered.searchParams.get("units") === "metric");
+check("no request ever names a floor - the floor is a server-side " +
+  "setting and the wire cannot reach it (security mandate 2)",
+  !bare.searchParams.has("floor") && !filtered.searchParams.has("floor"));
 
 /* categoricalMeasures / drawableMeasures / valueChoices, against a small
    fixture spec shaped like apps/fields.js's measureFor() output - never
@@ -970,7 +1030,7 @@ check("a not-enough answer's whole workbook is one Status row - the " +
   "hint",
   JSON.stringify(Charts.workbookRows(
     { enough: false, note: "Not enough people for this view." },
-    "imperial", {}, () => null)) ===
+    {}, () => null)) ===
   JSON.stringify([["Status",
     "Not enough people for this view. " + Charts.BROADER_FILTER_HINT,
     "", "", ""]]));
@@ -989,16 +1049,15 @@ check("a not-enough answer's whole workbook is one Status row - the " +
 const WORKBOOK_COUNTRIES = { US: "=SUM(A1:A10)" };
 const WORKBOOK_ANSWER = {
   enough: true,
-  units: { metric: { unit: "kg" }, imperial: { unit: "lb" } },
+  units: { system: "imperial", unit: "lb", locked: false },
   distribution: { bins: [
-    { count: 3, from: { metric: 20, imperial: 44 },
-      to: { metric: 70, imperial: 154 } },
+    { count: 3, from: 25, to: 150 },
   ] },
   trend: { points: [
-    { period: "2026-08", average: { metric: 81, imperial: 178.6 } },
+    { period: "2026-08", average: 178.6 },
   ] },
   self: { points: [
-    { at: "2026-08-11T00:00:00.000Z", value: { metric: 82, imperial: 180.8 } },
+    { at: "2026-08-11T00:00:00.000Z", value: 180.8 },
   ] },
   groups: [
     { field: "country", label: "Country", multiple: false, values: [
@@ -1009,13 +1068,13 @@ const WORKBOOK_ANSWER = {
 const workbookMeasureFor = (name) => (name === "country"
   ? { name: "country", choicesFrom: "countries" } : null);
 
-const workbookRows = Charts.workbookRows(WORKBOOK_ANSWER, "imperial",
+const workbookRows = Charts.workbookRows(WORKBOOK_ANSWER,
   WORKBOOK_COUNTRIES, workbookMeasureFor);
 
-check("the distribution row carries the exact band range, not the " +
-  "rounded on-screen caption, and the raw count as a NUMBER",
+check("the distribution row carries the exact band range in the unit " +
+  "the answer is expressed in, and the raw count as a NUMBER",
   workbookRows[0][0] === "Distribution" &&
-  workbookRows[0][1] === "44 lb–154 lb" && workbookRows[0][2] === 3 &&
+  workbookRows[0][1] === "25 lb–150 lb" && workbookRows[0][2] === 3 &&
   typeof workbookRows[0][2] === "number");
 check("the group's own average trend point lands in the Average column, "
   + "the You column blank",
@@ -1036,22 +1095,17 @@ check("the group-makeup row carries the field's own label in its " +
  */
 const WORKBOOK_TRIM_ANSWER = {
   enough: true,
-  units: { metric: { unit: "kg" }, imperial: { unit: "lb" } },
+  units: { system: "imperial", unit: "lb", locked: false },
   distribution: { bins: [
-    { count: 2, from: { metric: 20, imperial: 44 },
-      to: { metric: 70, imperial: 154 } },
-    { count: 0, from: { metric: 70, imperial: 154 },
-      to: { metric: 90, imperial: 198 } },
-    { count: 5, from: { metric: 90, imperial: 198 },
-      to: { metric: 110, imperial: 242 } },
-    { count: 0, from: { metric: 110, imperial: 242 },
-      to: { metric: 130, imperial: 286 } },
-    { count: 0, from: { metric: 130, imperial: 286 },
-      to: { metric: 150, imperial: 330 } },
+    { count: 2, from: 25, to: 50 },
+    { count: 0, from: 50, to: 75 },
+    { count: 5, from: 75, to: 100 },
+    { count: 0, from: 100, to: 125 },
+    { count: 0, from: 125, to: 150 },
   ] },
   trend: null, self: null, groups: [],
 };
-const workbookTrimRows = Charts.workbookRows(WORKBOOK_TRIM_ANSWER, "imperial",
+const workbookTrimRows = Charts.workbookRows(WORKBOOK_TRIM_ANSWER,
   {}, () => null);
 const workbookTrimDistRows = workbookTrimRows.filter((r) => r[0] === "Distribution");
 check("#390 ruling 6: the workbook's distribution rows stop at the same " +
@@ -1059,13 +1113,13 @@ check("#390 ruling 6: the workbook's distribution rows stop at the same " +
   "last two bands are an empty tail past the maximum",
   workbookTrimDistRows.length === 3);
 check("#390: the workbook's LAST distribution row is the band holding " +
-  "the maximum (198 lb-242 lb, count 5), never the spec's own trailing " +
+  "the maximum (75 lb-100 lb, count 5), never the spec's own trailing " +
   "empty bands - read by `.length - 1`, not a fixed index, so a trim " +
   "that runs but stops one band early or late still reddens this " +
   "(fix wave 1, F4: a hardcoded index [2] passed even with the trim " +
   "unwired, since the fixture's own untrimmed row 2 is also this band)",
   workbookTrimDistRows[workbookTrimDistRows.length - 1][1] ===
-  "198 lb–242 lb" &&
+  "75 lb–100 lb" &&
   workbookTrimDistRows[workbookTrimDistRows.length - 1][2] === 5);
 
 /*
@@ -1139,6 +1193,12 @@ function node(tag) {
     hidden: false,
     value: "",
     checked: false,
+    // A real radio with no `disabled` attribute reads false, not
+    // undefined - apps/web/charts.html ships both units radios that way,
+    // and #396 unit lock is the first thing that ever writes this
+    // property, so an `undefined` default would let a page that never
+    // re-enables them still read as correct.
+    disabled: false,
     _text: "",
   };
   el.setAttribute = (name, value) => { el.attrs[name] = String(value); };
@@ -1646,21 +1706,18 @@ const ENOUGH_FIXTURE = {
   floor: 0,
   enough: true,
   note: null,
-  units: { metric: { unit: "kg" }, imperial: { unit: "lb" } },
+  units: { system: "imperial", unit: "lb", locked: false },
   trend: { points: [
-    { period: "2026-06", people: 6, average: { metric: 80, imperial: 176.4 } },
-    { period: "2026-08", people: 7, average: { metric: 81, imperial: 178.6 } },
+    { period: "2026-06", people: 6, average: 176.4 },
+    { period: "2026-08", people: 7, average: 178.6 },
   ] },
   distribution: {
     kind: "bins",
-    partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+    partition: { system: "imperial", unit: "lb", band: "25 lb bands" },
     bins: [
-      { count: 6, from: { metric: 20, imperial: 44 },
-        to: { metric: 70, imperial: 154 } },
-      { count: 3, from: { metric: 70, imperial: 154 },
-        to: { metric: 90, imperial: 198 } },
-      { count: 7, from: { metric: 90, imperial: 198 },
-        to: { metric: 227, imperial: 500 } },
+      { count: 6, from: 150, to: 175 },
+      { count: 3, from: 175, to: 200 },
+      { count: 7, from: 200, to: 225 },
     ],
   },
   groups: [
@@ -1688,16 +1745,65 @@ const ENOUGH_FIXTURE = {
       ] },
   ],
   self: { points: [
-    { at: "2026-06-05T00:00:00.000Z", value: { metric: 79, imperial: 174.2 } },
-    { at: "2026-08-11T00:00:00.000Z", value: { metric: 82, imperial: 180.8 } },
+    { at: "2026-06-05T00:00:00.000Z", value: 174.2 },
+    { at: "2026-08-11T00:00:00.000Z", value: 180.8 },
   ] },
 };
 
+/*
+ * THE SAME ANSWER, ASKED IN THE OTHER SYSTEM (owner ruling 4, #396).
+ * Switching units is a fresh question now, so the metric view is a
+ * SEPARATE response with its own grid - not a second key of this one.
+ * Every number in it is deliberately unlike its imperial counterpart,
+ * which is what lets the toggle arm tell a real re-ask from a no-op.
+ */
+const ENOUGH_FIXTURE_METRIC = Object.assign({}, ENOUGH_FIXTURE, {
+  units: { system: "metric", unit: "kg", locked: false },
+  trend: { points: [
+    { period: "2026-06", people: 6, average: 80 },
+    { period: "2026-08", people: 7, average: 81 },
+  ] },
+  distribution: {
+    kind: "bins",
+    partition: { system: "metric", unit: "kg", band: "10 kg bands" },
+    bins: [
+      { count: 6, from: 70, to: 80 },
+      { count: 3, from: 80, to: 90 },
+      { count: 7, from: 90, to: 100 },
+    ],
+  },
+  self: { points: [
+    { at: "2026-06-05T00:00:00.000Z", value: 79 },
+    { at: "2026-08-11T00:00:00.000Z", value: 82 },
+  ] },
+});
+
+/*
+ * AND THE SAME ANSWER UNDER A RAISED FLOOR'S UNIT LOCK (the 2026-08-21
+ * axis sitting's escalation, #396): one system is served, the answer
+ * says so, and the page has to make the toggle inert rather than let a
+ * member press something that cannot move.
+ */
+const LOCKED_FIXTURE = Object.assign({}, ENOUGH_FIXTURE_METRIC, {
+  floor: 5,
+  units: { system: "metric", unit: "kg", locked: true },
+});
+
 {
   const { byId } = await driven(() => response(200, ENOUGH_FIXTURE));
-  check("a real answer draws - the status line names the measure, " +
-    "not an error",
-    byId.get("status")._text.includes("Weight"));
+  /*
+   * OWNER RULING 2 (#396): the unit lives in the status line and
+   * nowhere else on the page. The sentence is showingLine()'s own
+   * answer, composed from the response's measure label and its one
+   * unit - so a page that stopped naming the unit, or named a unit the
+   * answer did not send, reddens here rather than in a figure whose
+   * numbers no longer say what they are counting.
+   */
+  check("a real answer draws - the status line names the measure and " +
+    "its unit, not an error",
+    byId.get("status")._text === Charts.showingLine("Weight", "lb"));
+  check("the status line is the ruling's own sentence, verbatim",
+    byId.get("status")._text === "Showing Weight (lb).");
   check("download is offered once a response exists - the button is " +
     "unhidden",
     byId.get("download").hidden === false);
@@ -1755,50 +1861,49 @@ const ENOUGH_FIXTURE = {
   /*
    * F1's behavioral arm (0.9-M2-S3 fix wave 1, #354 comment 5342979192),
    * carried through the 0.9-M2-S11 reshape, its own review's F1/F2
-   * geometry fix, the 0.9-M2-S13 midpoint-caption reshape, and fix wave
-   * 1's own count-row removal and count axis (#378): the rendered BAR
-   * count and every caption are compared against the fixture's OWN
-   * bins, index for index, in the response's own order. A client-side
-   * pooler or merger reddens here regardless of what it calls itself,
-   * because it is asked what actually painted. With only 3 bands spaced
-   * 213 user units apart and captions well under 100 units wide,
-   * nothing here collides, so every caption still paints and this arm
-   * reads the same as it always did; the sparse case - where
-   * rangeCaptionPlan() actually drops some - is BANDS_FIXTURE's own arm
-   * below. The exact COUNT VALUE per bin is no longer painted at all
-   * (owner ruling, the 2026-08-19 late sitting) - that half of the
-   * proof is the tooltip block's, further down.
+   * geometry fix, and the #396 axis reshape: the rendered BAR count is
+   * compared against the fixture's OWN bins, index for index, in the
+   * response's own order, and every number under the axis is one of
+   * that same response's own EDGES. A client-side pooler, merger or
+   * re-binner reddens here regardless of what it calls itself, because
+   * it is asked what actually painted. With only 3 bands there are 4
+   * ticks spaced 196 user units apart, so nothing collides and every
+   * tick paints; the sparse case - where labelRowPlan() actually drops
+   * some - is BANDS_FIXTURE's own arm below.
    *
-   * The unit marker and the new count-axis ticks share .chart-label's
-   * class AND text-anchor="end" (design mandate 1: same tone; both sit
-   * right-aligned) - told apart by their own x position instead: the
-   * unit marker sits at the row's true right edge (x === width), the
-   * axis ticks sit in the left gutter (x === left - 8).
+   * The count-axis ticks are the only end-anchored labels in this
+   * figure now (#396 retired the axis-edge unit marker that used to
+   * share their class and anchor), which is why `endAnchored` needs no
+   * x-position split any more - and the arm below asserts exactly that
+   * absence rather than assuming it.
    */
-  const captionEls = allText.filter((c) => c.attrs.class === "chart-label" &&
+  const tickEls = allText.filter((c) => c.attrs.class === "chart-label" &&
     c.attrs["text-anchor"] === "middle");
-  const captionLabels = captionEls.map((c) => c._text);
-  const endAnchored = allText.filter((c) => c.attrs.class === "chart-label" &&
+  const tickLabels = tickEls.map((c) => c._text);
+  const axisTicks = allText.filter((c) => c.attrs.class === "chart-label" &&
     c.attrs["text-anchor"] === "end");
-  const unitMarkers = endAnchored.filter((c) => Number(c.attrs.x) === 640)
-    .map((c) => c._text);
-  const axisTicks = endAnchored.filter((c) => Number(c.attrs.x) !== 640);
   const bars = svg.children.filter((c) => c.tag === "rect" &&
     c.attrs.class === "chart-bar");
+  const tickMarks = svg.children.filter((c) => c.tag === "line" &&
+    c.attrs.class === "chart-axis" && Number(c.attrs.y1) !== Number(c.attrs.y2));
   const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
-  const fixtureUnit = ENOUGH_FIXTURE.units.imperial.unit;
+  const fixtureUnit = ENOUGH_FIXTURE.units.unit;
+  const fixtureEdges = [fixtureBins[0].from]
+    .concat(fixtureBins.map((b) => b.to));
   check("F1: the rendered bar count equals the response's bin count " +
     "exactly - a client-side pooler that merges adjacent bins reddens " +
     "here regardless of what it calls itself",
-    bars.length === fixtureBins.length &&
-    captionLabels.length === fixtureBins.length);
-  check("F1/#378: every caption is that bin's own MIDPOINT (never the " +
-    "full range any more), in the response's own order - a pooled or " +
-    "re-binned draw shows a spanning caption no fixture bin has",
-    fixtureBins.every(function (bin, i) {
-      return captionLabels[i] === Charts.midpointLabel(bin.from.imperial,
-        bin.to.imperial);
-    }));
+    bars.length === fixtureBins.length);
+  check("#396 ruling 1: the number row is the response's own BAND " +
+    "EDGES, in order - one more label than there are bars, each one a " +
+    "boundary the answer really sent, never a midpoint or anything " +
+    "else this page computed",
+    tickLabels.length === fixtureEdges.length &&
+    fixtureEdges.every((edge, i) => tickLabels[i] === Charts.tickLabel(edge)));
+  check("#396 ruling 1: every painted number carries a tick MARK on the " +
+    "axis at its own position - a number floating with no mark under it " +
+    "is what made the old caption row ambiguous",
+    tickMarks.length === tickLabels.length);
   check("#378 owner ruling: each bar's height reflects its own count, " +
     "in the response's own order (the largest fixture count, 7, draws " +
     "the tallest bar; every non-zero count draws a positive height) - " +
@@ -1808,11 +1913,13 @@ const ENOUGH_FIXTURE = {
       : Number(bars[i].attrs.height) === 0) &&
     Number(bars[2].attrs.height) > Number(bars[1].attrs.height) &&
     Number(bars[0].attrs.height) > Number(bars[1].attrs.height));
-  check("#378 owner ruling 1: the unit is stated exactly once, at the " +
-    "axis edge - never per caption. No caption carries a unit letter " +
-    "any more, and the row's own axis mark is the response's real unit",
-    unitMarkers.length === 1 && unitMarkers[0] === fixtureUnit &&
-    captionLabels.every((t) => !/[a-zA-Z]/.test(t)));
+  check("#396 ruling 2: the unit appears NOWHERE in the figure - not " +
+    "per label, not at the axis edge, nowhere. The status line is the " +
+    "one place it is stated, and this fixture's own unit really is a " +
+    "string that would be findable if it were painted",
+    fixtureUnit === "lb" &&
+    allText.every((c) => !/[a-zA-Z]/.test(c._text)) &&
+    byId.get("status")._text.includes(fixtureUnit));
   check("owner ruling 2 (the 2026-08-19 late sitting): the distribution " +
     "grew a count axis - at least one whole-number tick paints in the " +
     "left gutter, and every one of them is a plain integer, never a " +
@@ -1880,6 +1987,12 @@ const ENOUGH_FIXTURE = {
     "gutter now carries value-axis labels, exactly valueAxisTicks()'s " +
     "own answer over the real domain both series share",
     JSON.stringify(trendTicks) === JSON.stringify(expectedTrendTicks));
+  check("#396 ruling 2: the trend figure names no unit either - the " +
+    "marker that used to sit over its own gutter is retired with the " +
+    "distribution's, because the status line is the one place a unit " +
+    "is written",
+    trendSvg.children.filter((c) => c.tag === "text")
+      .every((c) => c._text !== "lb" && c._text !== "kg"));
 
   /* Owner ruling 1, #243, reshaped as chips by 0.9-M2-S13 (#378): the
      group-makeup block. One chip per value, zeros included, from the
@@ -2087,7 +2200,7 @@ const ENOUGH_FIXTURE = {
   check("the clicked workbook's sheet carries the fixture's own " +
     "distribution band, in the CURRENT unit system - the same figures "
     + "on screen, nothing refetched",
-    clickedSheet.includes("44 lb") && clickedSheet.includes("154 lb"));
+    clickedSheet.includes("150 lb") && clickedSheet.includes("175 lb"));
 }
 
 /*
@@ -2115,12 +2228,10 @@ const ENOUGH_FIXTURE = {
   const allZero = Object.assign({}, ENOUGH_FIXTURE, {
     distribution: {
       kind: "bins",
-      partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+      partition: { system: "imperial", unit: "lb", band: "25 lb bands" },
       bins: [
-        { count: 0, from: { metric: 20, imperial: 44 },
-          to: { metric: 70, imperial: 154 } },
-        { count: 0, from: { metric: 70, imperial: 154 },
-          to: { metric: 90, imperial: 198 } },
+        { count: 0, from: 25, to: 50 },
+        { count: 0, from: 50, to: 75 },
       ],
     },
   });
@@ -2273,35 +2384,29 @@ const ENOUGH_FIXTURE = {
 /*
  * BANDS_FIXTURE: forty bands, one of them empty. Owner ruling 5, #243:
  * "an empty band is an empty slot" - every one of the forty draws, the
- * empty one at zero height. Captions are thinned by GEOMETRY now
- * (owner's F1/F2 ruling, #372's review), not by a fixed stride, so this
- * arm computes the expected caption row by calling the same
- * rangeCaptionPlan()/countCaptionPlan() the page itself calls - proving
- * the DOM matches the pure functions exactly, index for index, rather
+ * empty one at zero height. The number row is thinned by GEOMETRY
+ * (owner's F1/F2 ruling, #372's review, carried onto the tick row by
+ * #396), not by a fixed stride, so this arm computes the expected row
+ * by calling the same labelRowPlan() the page itself calls - proving
+ * the DOM matches the pure function exactly, index for index, rather
  * than hardcoding an index list that would silently stop meaning
- * anything the moment either function's algorithm changed.
+ * anything the moment the algorithm changed.
  *
- * FORTY, NOT FOURTEEN (0.9-M2-S13, #378): midpointLabel()'s captions
- * are shorter than the retired full-range ones - at 14 bands, every
- * midpoint caption now clears its own slot with room to spare and
- * nothing thins at all, which would leave this arm's own "the row
- * really does thin sometimes" property unproven at the DOM level (the
- * pure-function containment checks above already prove thinning still
- * happens on the real BMI/imperial grids; this arm's OWN job is
- * proving the rendered DOM tracks the plan, and that needs a fixture
- * dense enough for the plan to actually drop something). Forty bands
- * over the same 20-unit-wide spacing pushes 3-digit midpoints (up to
- * 24 user units) into a 16-unit slot, where they collide again.
+ * FORTY BANDS IS FORTY-ONE TICKS at a 14.75-unit slot, and three- and
+ * four-digit edge numbers (24 to 32 user units wide) do not fit beside
+ * each other there - so the plan really does drop some. That is this
+ * arm own job: the pure-function arms above already prove thinning on
+ * the real BMI and weight grids; what needs a dense fixture here is
+ * proof that the RENDERED row tracks the plan.
  */
 function makeBands(zeroIndex, count) {
   const bins = [];
   for (let i = 0; i < count; i += 1) {
-    const from = 44 + i * 20;
-    const to = from + 20;
+    const from = 25 + i * 25;
     bins.push({
       count: i === zeroIndex ? 0 : i + 1,
-      from: { metric: from, imperial: from },
-      to: { metric: to, imperial: to },
+      from: from,
+      to: from + 25,
     });
   }
   return bins;
@@ -2312,7 +2417,7 @@ const BAND_COUNT = 40;
 const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   distribution: {
     kind: "bins",
-    partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+    partition: { system: "imperial", unit: "lb", band: "25 lb bands" },
     bins: makeBands(5, BAND_COUNT),
   },
 });
@@ -2326,13 +2431,9 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   // AND text-anchor="end" - told apart by x position exactly as the
   // ENOUGH_FIXTURE arm above does (the marker sits at x === width; the
   // axis ticks sit in the left gutter, x === left - 8).
-  const captionEls = svg.children.filter((c) => c.tag === "text" &&
+  const tickEls = svg.children.filter((c) => c.tag === "text" &&
     c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "middle");
-  const captionLabels = captionEls.map((c) => c._text);
-  const endAnchored = svg.children.filter((c) => c.tag === "text" &&
-    c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "end");
-  const unitMarkers = endAnchored.filter((c) => Number(c.attrs.x) === 640)
-    .map((c) => c._text);
+  const tickTexts = tickEls.map((c) => c._text);
   const bins = BANDS_FIXTURE.distribution.bins;
 
   check("every one of the " + BAND_COUNT + " bands draws a bar - the " +
@@ -2343,60 +2444,56 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
     Number(bars[5].attrs.height) === 0);
 
   // The SAME boxOf drawBins() itself builds - left-offset, contained -
-  // fed into rangeCaptionPlan()'s own 3-argument mode (fix wave 1, F1,
+  // fed into labelRowPlan()'s own 3-argument mode (fix wave 1, F1,
   // #378), so this expectation is computed the identical way the page
   // computes its own, not the retired 2-argument (unclamped) shape.
-  const slot40 = (640 - PLOT_LEFT) / bins.length;
-  const midpointTexts = bins.map((bin) =>
-    Charts.midpointLabel(bin.from.imperial, bin.to.imperial));
-  const bandsBoxOf = finalBoxOf(midpointTexts, slot40, rightBoundFor("lb"));
-  const expectedCaptionIndexes =
-    Charts.rangeCaptionPlan(midpointTexts, slot40, bandsBoxOf);
+  const slot40 = slotFor(bins.length);
+  const bandEdges = [bins[0].from].concat(bins.map((b) => b.to));
+  const edgeTexts = bandEdges.map(Charts.tickLabel);
+  const bandsBoxOf = finalBoxOf(edgeTexts, slot40);
+  const expectedTickIndexes =
+    Charts.labelRowPlan(edgeTexts, slot40, bandsBoxOf);
 
-  check("F1/F2/#378: the rendered caption row is exactly the positions " +
-    "rangeCaptionPlan() says should carry one, each that bin's own " +
-    "MIDPOINT, in order - the page's own boxOf (offset + contained) is " +
-    "what both this arm and drawBins() itself plan against",
-    captionLabels.length === expectedCaptionIndexes.length &&
-    expectedCaptionIndexes.every((idx, j) =>
-      captionLabels[j] === midpointTexts[idx]));
-  check("F1/F2: on this fixture's own geometry, the caption row is " +
-    "thinner than the full " + BAND_COUNT + " bands - the fix removes " +
-    "overlapping captions, not every caption",
-    expectedCaptionIndexes.length < BAND_COUNT &&
-    expectedCaptionIndexes.length > 0);
-  check("the first and last captions are the ones this fixture's own " +
-    "plan keeps, never dropped as interior collisions are",
-    expectedCaptionIndexes[0] === 0 &&
-    expectedCaptionIndexes[expectedCaptionIndexes.length - 1] ===
-    BAND_COUNT - 1);
-  check("#378 owner ruling 1: the unit still paints exactly once on " +
-    "this dense a row too, and no painted caption carries a unit letter",
-    unitMarkers.length === 1 && unitMarkers[0] === "lb" &&
-    captionLabels.every((t) => !/[a-zA-Z]/.test(t)));
+  check("#396: the rendered number row is exactly the positions " +
+    "labelRowPlan() says should carry one, each an EDGE of the " +
+    "response own grid, in order - the page own boxOf (offset + " +
+    "contained) is what both this arm and drawBins() itself plan against",
+    tickTexts.length === expectedTickIndexes.length &&
+    expectedTickIndexes.every((idx, j) => tickTexts[j] === edgeTexts[idx]));
+  check("#396: on this fixture own geometry the number row is thinner " +
+    "than the full " + (BAND_COUNT + 1) + " ticks - the thinning drops " +
+    "overlapping labels, not every label",
+    expectedTickIndexes.length < BAND_COUNT + 1 &&
+    expectedTickIndexes.length > 0);
+  check("#396: the first and last ticks are the ones this fixture own " +
+    "plan keeps, never dropped as interior collisions are - the axis " +
+    "two ends are always readable",
+    expectedTickIndexes[0] === 0 &&
+    expectedTickIndexes[expectedTickIndexes.length - 1] === BAND_COUNT);
+  check("#396 ruling 2: no unit paints on this dense a row either - " +
+    "every number under the axis is digits alone",
+    tickTexts.length > 0 && tickTexts.every((t) => !/[a-zA-Z]/.test(t)));
 
   /*
-   * CONTAINMENT AND NO-OVERLAP TOGETHER (fix wave 1, F1, #378): with
-   * forty bands the end slots do need the clamp - this checks both
-   * properties directly off the actual rendered x-positions rather than
-   * trusting the pure-function arms alone: every painted caption sits
-   * inside [left, rightBound], AND no two adjacent painted captions'
-   * own rendered boxes overlap.
+   * CONTAINMENT AND NO-OVERLAP TOGETHER (fix wave 1, F1, #378, carried
+   * to the tick row by #396): on a tick row BOTH ends always need the
+   * clamp, because an end label is centered on the axis own end. This
+   * checks both properties directly off the actual rendered
+   * x-positions rather than trusting the pure-function arms alone.
    */
-  const rightBound40 = rightBoundFor("lb");
-  check("no painted caption's own x-position, read back from the SVG, " +
-    "sits outside [left, rightBound]",
-    captionEls.every((el) => {
+  check("no painted number x-position, read back from the SVG, sits " +
+    "outside [left, the viewBox right edge]",
+    tickEls.every((el) => {
       const x = Number(el.attrs.x);
       const half = Charts.captionWidth(el._text) / 2;
-      return x - half >= PLOT_LEFT - 1e-6 && x + half <= rightBound40 + 1e-6;
+      return x - half >= PLOT_LEFT - 1e-6 && x + half <= VIEW_WIDTH + 1e-6;
     }));
-  check("F1/#378: no two adjacent painted captions' own rendered " +
+  check("F1/#378: no two adjacent painted numbers own rendered " +
     "positions overlap - the final-position property, read back from " +
     "the SVG rather than recomputed",
-    captionEls.every((el, j) => {
+    tickEls.every((el, j) => {
       if (j === 0) return true;
-      const prev = captionEls[j - 1];
+      const prev = tickEls[j - 1];
       const half = Charts.captionWidth(el._text) / 2;
       const prevHalf = Charts.captionWidth(prev._text) / 2;
       const box = { left: Number(el.attrs.x) - half, right: Number(el.attrs.x) + half };
@@ -2416,14 +2513,12 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
  */
 {
   const topOnlyBins = [0, 0, 2, 0, 5, 0, 0].map(function (count, i) {
-    return { count: count,
-      from: { metric: i * 20 + 44, imperial: i * 20 + 44 },
-      to: { metric: i * 20 + 64, imperial: i * 20 + 64 } };
+    return { count: count, from: i * 25 + 25, to: i * 25 + 50 };
   });
   const TOP_ONLY_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     distribution: {
       kind: "bins",
-      partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+      partition: { system: "imperial", unit: "lb", band: "25 lb bands" },
       bins: topOnlyBins,
     },
   });
@@ -2450,26 +2545,30 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
 }
 
 /*
- * #390's MOTIVATING SHAPE, DRIVEN FOR REAL: the 53-band imperial-weight
- * grid (weightGrid, above - the exact spec named in the ticket), with a
- * real member's own heaviest weight far below the spec's own 1100 lb
- * ceiling - only the first 18 bands (through band 17, 384-404 lb) hold
- * anyone; bands 18 through 52 are the empty tail the ruling trims.
- * EVERYTHING drawBins() computes from `bins.length` - slot width, the
- * caption plan, the count axis, the hit rects - has to re-derive from
- * 18, never 53, with no special case: it is drawDistribution() alone,
- * upstream, that decides the count at all (trimTrailingEmptyBins()).
+ * #390 MOTIVATING SHAPE, DRIVEN FOR REAL: the 43-band imperial-weight
+ * grid (weightGrid, above - the shipped spec as #396 reshaped it), with
+ * a real member heaviest weight far below the spec own 1100 lb ceiling
+ * - only the first 18 bands (through band 17, 450-475 lb) hold anyone;
+ * bands 18 through 42 are the empty tail the ruling trims. EVERYTHING
+ * drawBins() computes from `bins.length` - slot width, the tick plan,
+ * the count axis, the hit rects - has to re-derive from 18, never 43,
+ * with no special case: it is drawDistribution() alone, upstream, that
+ * decides the count at all (trimTrailingEmptyBins()).
+ *
+ * AND THE TRIM COMPOSES WITH THE TICK ROW (#396 apparatus): the trimmed
+ * grid own last EDGE is the axis end, and an end always paints - so the
+ * number a reader sees at the right of a trimmed chart is 475, the
+ * upper edge of the band holding the maximum, never the spec 1100.
  */
 const WEIGHT_TRIM_LAST_NONZERO = 17;
 const weightTrimBins = weightGrid.map(function (b, i) {
   return { count: i <= WEIGHT_TRIM_LAST_NONZERO ? i + 1 : 0,
-    from: { metric: b.from, imperial: b.from },
-    to: { metric: b.to, imperial: b.to } };
+    from: b.from, to: b.to };
 });
 const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   distribution: {
     kind: "bins",
-    partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
+    partition: { system: "imperial", unit: "lb", band: "25 lb bands" },
     bins: weightTrimBins,
   },
 });
@@ -2483,47 +2582,47 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     c.attrs.class === "chart-hit");
   const TRIMMED_COUNT = WEIGHT_TRIM_LAST_NONZERO + 1;
 
-  check("#390: the real 53-band imperial-weight grid draws only " +
-    "through the band holding the data's maximum (18 of 53) - a " +
+  check("#390: the real 43-band imperial-weight grid draws only " +
+    "through the band holding the data maximum (18 of 43) - a " +
     "client-side trim that stops early regardless of what it calls " +
     "itself reddens here on the exact spec grid the ticket names",
     bars.length === TRIMMED_COUNT && hits.length === TRIMMED_COUNT);
 
-  const captionEls = svg.children.filter((c) => c.tag === "text" &&
+  const tickEls = svg.children.filter((c) => c.tag === "text" &&
     c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "middle");
-  const captionLabels = captionEls.map((c) => c._text);
+  const tickTexts = tickEls.map((c) => c._text);
   const lastBand = weightTrimBins[WEIGHT_TRIM_LAST_NONZERO];
-  check("#390: the last painted caption is the trimmed grid's own last " +
-    "band's midpoint - its upper spec edge (404 lb) is the axis end, " +
-    "not 1100 lb",
-    captionLabels[captionLabels.length - 1] ===
-    Charts.midpointLabel(lastBand.from.imperial, lastBand.to.imperial));
+  check("#390 and #396 together: the last painted number is the trimmed " +
+    "grid own last EDGE - the upper edge of the band holding the " +
+    "maximum (475 lb) is the axis end, never 1100 lb, and an end always " +
+    "paints so a trimmed chart can never end in an unlabeled tick",
+    tickTexts[tickTexts.length - 1] === Charts.tickLabel(lastBand.to) &&
+    lastBand.to === 475);
 
-  const trimSlot = (640 - PLOT_LEFT) / TRIMMED_COUNT;
-  const trimMids = weightTrimBins.slice(0, TRIMMED_COUNT).map((bin) =>
-    Charts.midpointLabel(bin.from.imperial, bin.to.imperial));
-  const trimBoxOf = finalBoxOf(trimMids, trimSlot, rightBoundFor("lb"));
-  const expectedTrimCaptions =
-    Charts.rangeCaptionPlan(trimMids, trimSlot, trimBoxOf);
-  check("#390: the caption plan re-derives at the TRIMMED slot width " +
-    "(640-50 divided by 18, not 53) - the rendered caption row matches " +
-    "rangeCaptionPlan() computed on the trimmed count exactly",
-    captionLabels.length === expectedTrimCaptions.length &&
-    expectedTrimCaptions.every((idx, j) =>
-      captionLabels[j] === trimMids[idx]));
-  check("#390: no painted caption on the trimmed grid sits outside " +
-    "[left, rightBound], and no two adjacent ones overlap - the same " +
-    "containment/no-overlap property the untrimmed grids already hold, " +
-    "now proven at the trimmed count",
-    captionEls.every((el) => {
+  const trimSlot = slotFor(TRIMMED_COUNT);
+  const trimBins = weightTrimBins.slice(0, TRIMMED_COUNT);
+  const trimTexts = [trimBins[0].from].concat(trimBins.map((b) => b.to))
+    .map(Charts.tickLabel);
+  const trimBoxOf = finalBoxOf(trimTexts, trimSlot);
+  const expectedTrimTicks =
+    Charts.labelRowPlan(trimTexts, trimSlot, trimBoxOf);
+  check("#390: the tick plan re-derives at the TRIMMED slot width " +
+    "(640-50 divided by 18, not 43) - the rendered number row matches " +
+    "labelRowPlan() computed on the trimmed count exactly",
+    tickTexts.length === expectedTrimTicks.length &&
+    expectedTrimTicks.every((idx, j) => tickTexts[j] === trimTexts[idx]));
+  check("#390: no painted number on the trimmed grid sits outside " +
+    "[left, the viewBox right edge], and no two adjacent ones overlap - " +
+    "the same containment/no-overlap property the untrimmed grids " +
+    "already hold, now proven at the trimmed count",
+    tickEls.every((el) => {
       const x = Number(el.attrs.x);
       const half = Charts.captionWidth(el._text) / 2;
-      return x - half >= PLOT_LEFT - 1e-6 &&
-        x + half <= rightBoundFor("lb") + 1e-6;
+      return x - half >= PLOT_LEFT - 1e-6 && x + half <= VIEW_WIDTH + 1e-6;
     }) &&
-    captionEls.every((el, j) => {
+    tickEls.every((el, j) => {
       if (j === 0) return true;
-      const prev = captionEls[j - 1];
+      const prev = tickEls[j - 1];
       const half = Charts.captionWidth(el._text) / 2;
       const prevHalf = Charts.captionWidth(prev._text) / 2;
       const box = { left: Number(el.attrs.x) - half,
@@ -2568,14 +2667,14 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   const hits = distSvg.children.filter((c) => c.tag === "rect" &&
     c.attrs.class === "chart-hit");
   const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
-  const fixtureUnit = ENOUGH_FIXTURE.units.imperial.unit;
+  const fixtureUnit = ENOUGH_FIXTURE.units.unit;
 
   check("the distribution tooltip starts hidden",
     hits.length === fixtureBins.length && distTip.hidden === true);
 
   await hits[0].dispatch("mouseenter");
-  const parts0 = Charts.binTooltipParts(fixtureBins[0].from.imperial,
-    fixtureBins[0].to.imperial, fixtureUnit, fixtureBins[0].count);
+  const parts0 = Charts.binTooltipParts(fixtureBins[0].from,
+    fixtureBins[0].to, fixtureUnit, fixtureBins[0].count);
   check("hovering a filled distribution band shows the tooltip with " +
     "the exact range and count, verbatim - binTooltipParts()'s own " +
     "answer, not a re-derived string",
@@ -2610,7 +2709,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   const groupPoint = ENOUGH_FIXTURE.trend.points[0];
   const groupAt = new Date(groupPoint.period + "-01T00:00:00Z").getTime();
   const groupParts = Charts.trendTooltipParts(groupAt, "Average",
-    groupPoint.average.imperial, fixtureUnit);
+    groupPoint.average, fixtureUnit);
 
   await groupDots[0].dispatch("mouseenter");
   check("hovering the group's own trend point shows the month and " +
@@ -2621,7 +2720,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   const selfPoint = ENOUGH_FIXTURE.self.points[0];
   const selfAt = new Date(selfPoint.at).getTime();
   const selfParts = Charts.trendTooltipParts(selfAt, "You",
-    selfPoint.value.imperial, fixtureUnit);
+    selfPoint.value, fixtureUnit);
 
   await selfDots[0].dispatch("mouseenter");
   check("hovering the You point shows the same month with the You " +
@@ -2645,8 +2744,8 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   const zeroBin = BANDS_FIXTURE.distribution.bins[5];
 
   await hits[5].dispatch("mouseenter");
-  const zeroParts = Charts.binTooltipParts(zeroBin.from.imperial,
-    zeroBin.to.imperial, BANDS_FIXTURE.units.imperial.unit, zeroBin.count);
+  const zeroParts = Charts.binTooltipParts(zeroBin.from, zeroBin.to,
+    BANDS_FIXTURE.units.unit, zeroBin.count);
   check("hovering an EMPTY band's own hit target (the zero-height bar " +
     "has no area of its own to hover, so this is the full-column hit " +
     "rect doing its job) shows the exact range and \"0 members\", " +
@@ -2657,74 +2756,119 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
 }
 
 /*
- * The units toggle: re-render from the SAME cached answer, with no
- * second fetch (security mandate 2 - "reads the per-system key the
- * route already returned"). Distinguishing this from a re-bin requires
- * a number that differs between the two systems' MIDPOINTS (0.9-M2-S13
- * retired the full range as the caption, so the raw edges 90/198 no
- * longer appear anywhere in the SVG - the second bin's own midpoints,
- * 80 metric and 176 imperial, are the ruled equivalent for this arm).
+ * THE UNITS TOGGLE RE-ASKS NOW (owner ruling 4, #396). Binning happens
+ * in the displayed unit, so the other system is a different grid the
+ * page has no way to compute and must not try: switching units fires a
+ * fresh GET /charts-data carrying the new system, and every number
+ * drawn afterwards comes out of THAT response, index for index. The
+ * shape this replaces - "read a different key of the same answer" -
+ * only worked while both systems were one partition converted, which
+ * is exactly what ruling 4 retired.
  */
-const SECOND_BIN_MIDPOINT_METRIC = Charts.midpointLabel(70, 90);
-const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
-
 {
+  const served = [ENOUGH_FIXTURE, ENOUGH_FIXTURE_METRIC];
+  let at = 0;
   const { byId, calls, unitsInputs } = await driven(() =>
-    response(200, ENOUGH_FIXTURE));
+    response(200, served[Math.min(at++, served.length - 1)]));
   const callsBeforeToggle = calls.length;
   unitsInputs[0].checked = false;
   unitsInputs[1].checked = true;
   await unitsInputs[1].dispatch("change");
   await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
-  check("switching units re-renders with no new fetch - the units " +
-    "toggle re-asks nothing, it reads a different key of the same " +
-    "answer (security mandate 2)",
-    calls.length === callsBeforeToggle);
+  check("#396 ruling 4: switching units asks the Worker again - the " +
+    "page cannot re-bin, so the other system has to be a fresh question",
+    calls.length === callsBeforeToggle + 1);
+  check("#396 ruling 4: the second request names the system the member " +
+    "just chose",
+    new URL(calls[calls.length - 1]).searchParams.get("units") === "metric");
 
   const svg = byId.get("figure-distribution").querySelector("svg");
   const labels = svg.children.filter((c) => c.tag === "text")
     .map((c) => c._text);
-  check("the redrawn captions carry the metric midpoint, not the " +
-    "imperial one - a real re-render, not a no-op",
-    labels.includes(SECOND_BIN_MIDPOINT_METRIC) &&
-    !labels.includes(SECOND_BIN_MIDPOINT_IMPERIAL));
+  check("#396: the redrawn axis carries the METRIC answer own edges " +
+    "(70, 80, 90, 100) and none of the imperial ones - a real re-ask, " +
+    "not a no-op and not a conversion",
+    ["70", "80", "90", "100"].every((t) => labels.includes(t)) &&
+    !["150", "175", "200", "225"].some((t) => labels.includes(t)));
+  check("#396 ruling 2: the status line follows the new answer own " +
+    "unit, which is the one place the page names it",
+    byId.get("status")._text === "Showing Weight (kg).");
 }
 
 /*
- * F2's arm (0.9-M2-S3 fix wave 1, #354 comment 5342979192): with no
- * units radio checked - standing in for the static HTML's own `checked`
- * attribute being absent - currentSystem()'s fallback has to be
- * apps/fields.js's defaultSystem() (form.js and submit.js's own
- * pattern), never a literal this file invents. Flipped both directions
- * against the SAME fixture answer, so only the fallback's source can
- * explain the difference: nothing else about the draw changes between
- * the two calls.
+ * F2 arm (0.9-M2-S3 fix wave 1, #354 comment 5342979192): with no units
+ * radio checked - standing in for the static HTML own `checked`
+ * attribute being absent - currentSystem() fallback has to be
+ * apps/fields.js defaultSystem() (form.js and submit.js own pattern),
+ * never a literal this file invents. Since #396 that fallback decides
+ * what the page ASKS FOR, so the proof reads the request rather than
+ * the drawing: flipped both directions, only the fallback source can
+ * explain the difference.
  */
 {
-  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+  const { calls } = await driven(() => response(200, ENOUGH_FIXTURE),
     { noUnitsChecked: true, defaultSystem: "imperial" });
-  const svg = byId.get("figure-distribution").querySelector("svg");
-  const labels = svg.children.filter((c) => c.tag === "text")
-    .map((c) => c._text);
-  check("F2: with no units radio checked, the initial draw follows " +
-    "the spec's defaultSystem() (imperial here) - the imperial " +
-    "midpoint is drawn, not the metric one",
-    labels.includes(SECOND_BIN_MIDPOINT_IMPERIAL) &&
-    !labels.includes(SECOND_BIN_MIDPOINT_METRIC));
+  check("F2: with no units radio checked, the request follows the spec " +
+    "defaultSystem() - imperial here",
+    new URL(calls[0]).searchParams.get("units") === "imperial");
 }
 
 {
-  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+  const { calls } = await driven(() => response(200, ENOUGH_FIXTURE_METRIC),
     { noUnitsChecked: true, defaultSystem: "metric" });
-  const svg = byId.get("figure-distribution").querySelector("svg");
-  const labels = svg.children.filter((c) => c.tag === "text")
-    .map((c) => c._text);
-  check("F2: flipping the spec's defaultSystem() to metric flips the " +
-    "initial draw too - the page derives the fallback from the spec, " +
-    "it does not hardcode one",
-    labels.includes(SECOND_BIN_MIDPOINT_METRIC) &&
-    !labels.includes(SECOND_BIN_MIDPOINT_IMPERIAL));
+  check("F2: flipping the spec defaultSystem() to metric flips the ask " +
+    "too - the page derives the fallback from the spec, it does not " +
+    "hardcode one",
+    new URL(calls[0]).searchParams.get("units") === "metric");
+}
+
+/*
+ * THE UNIT LOCK, DRIVEN (the 2026-08-21 axis sitting escalation, #396).
+ * A raised floor serves one system, and the answer says so - so the page
+ * has to make the toggle inert and say why, rather than leave a member
+ * pressing a control that cannot move. Both halves are read off the
+ * response own `locked` flag; nothing here knows what a floor is.
+ */
+{
+  const { byId, unitsInputs, calls } = await driven(() =>
+    response(200, LOCKED_FIXTURE));
+  check("#396 lock: a locked answer disables both units radios - the " +
+    "control is visibly inert rather than silently ineffective",
+    unitsInputs.every((input) => input.disabled === true));
+  check("#396 lock: the radio matching the answer own system is the " +
+    "one checked, so the control never claims a unit the figures are " +
+    "not in",
+    unitsInputs.filter((input) => input.checked)
+      .map((input) => input.value).join() === "metric");
+  check("#396 lock: the status line says so in plain words, after the " +
+    "measure sentence and composed from the answer own unit",
+    byId.get("status")._text ===
+      "Showing Weight (kg). " + Charts.UNIT_LOCK_NOTE("kg"));
+  const before = calls.length;
+  await unitsInputs[0].dispatch("change");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check("#396 lock: pressing the disabled radio asks nothing - a locked " +
+    "view cannot be talked into a second partition from the page",
+    calls.length === before);
+}
+
+{
+  const { byId, unitsInputs } = await driven(() =>
+    response(200, ENOUGH_FIXTURE));
+  // Forced to the LOCKED state first, then drawn again against an
+  // unlocked answer - so this fails if the page only ever disables and
+  // never re-enables, which a stub default of false would have hidden.
+  unitsInputs.forEach((input) => { input.disabled = true; });
+  await pressShowMe(byId);
+  check("#396 lock: an UNLOCKED answer actively re-enables both radios " +
+    "- forced disabled first, so a page that never turns the lock off " +
+    "again reddens here",
+    unitsInputs.every((input) => input.disabled === false));
+  check("#396 lock: and its status line carries no lock sentence - the " +
+    "note is the response own flag, never a fixed suffix",
+    byId.get("status")._text === "Showing Weight (lb).");
 }
 
 {
