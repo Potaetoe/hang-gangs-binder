@@ -81,11 +81,17 @@
   </div>
 
   <!--
-    The control row: filter, measure, picture toggle, units, show-me,
-    download - one card, one row, this order (0.9-M2-S3 design mandate
-    2). Filter and Measure are "what to ask"; Picture and Units are "how
-    to see it"; Show-me and Download sit at the row's end. Nothing here
-    fetches on its own - GET /charts-data fires only when Show-me is pressed.
+    The control row: filter, measure, units, show-me, download - one
+    card, one row, this order (0.9-M2-S3 design mandate 2). Filter and
+    Measure are "what to ask"; Units is "how to see it"; Show-me and
+    Download sit at the row's end. Nothing here fetches on its own - GET
+    /charts-data fires only when Show-me is pressed.
+
+    Picture LEFT THIS ROW at 0.9-M2-S15 (#383, owner ruling at the
+    2026-08-20 sitting): there is nothing to choose a picture of until
+    Show me has drawn one, so the toggle now lives in the results card
+    beside the two figures it switches between - see that card's own
+    comment, below.
   -->
   <div class="card">
     <div class="control-row">
@@ -116,24 +122,6 @@
         <label for="measure">Measure</label>
         <select id="measure"></select>
       </div>
-
-      <!-- Picture toggle. Two views of one figure - the surviving
-           legitimate use of the tab grammar (0.9-M2-S2 removes tabs as
-           PAGE structure; this is not that). Both tabs are always
-           available: categorical measures left the `measure` list
-           entirely (owner ruling 1, #243), so every measure this page
-           can chart has both a trend and a distribution - there is no
-           categorical case left for the Trend tab to hide from. -->
-      <fieldset class="field">
-        <legend>Picture</legend>
-        <div role="tablist" aria-label="Picture">
-          <button type="button" role="tab" id="picture-tab-trend"
-            aria-controls="figure-trend" aria-selected="true">Trend</button>
-          <button type="button" role="tab" id="picture-tab-distribution"
-            aria-controls="figure-distribution"
-            aria-selected="false">Distribution</button>
-        </div>
-      </fieldset>
 
       <!-- Units. The route answers every system in one document; this
            picks which system's numbers to read off it rather than
@@ -172,6 +160,42 @@
     from any other state (security mandate 4).
   -->
   <div class="card" id="results" hidden>
+    <!-- Picture toggle. Two views of one figure - the surviving
+         legitimate use of the tab grammar (0.9-M2-S2 removes tabs as
+         PAGE structure; this is not that). Both tabs are always
+         available: categorical measures left the `measure` list
+         entirely (owner ruling 1, #243), so every measure this page can
+         chart has both a trend and a distribution - there is no
+         categorical case left for the Trend tab to hide from.
+
+         MOVED HERE FROM THE CONTROLS CARD, 0.9-M2-S15 (#383, owner
+         ruling at the 2026-08-20 sitting): there is nothing to choose a
+         picture of until Show me has actually drawn one, so the control
+         now lives beside the pictures themselves rather than above them.
+         `hidden` by default, matching every other row of this card - the
+         same "hidden until there is something real" rule the figures and
+         the status line already carry. apps/web/charts.js's
+         renderAnswer() is the only thing that ever unhides it, and only
+         on a drawn ("enough") answer; the not-enough branch hides it
+         again, same as the figures. Placed ABOVE the status line: a
+         member reads "here is how to look at what follows" before the
+         sentence describing what follows, and the status line is the one
+         paragraph aria-live="polite" announces on every draw, so nothing
+         above it competes for that announcement.
+
+         Same component, same ids, same click wiring in charts.js's
+         setUp() - only the position and the show/hide moved. -->
+    <fieldset class="field" id="picture-field" hidden>
+      <legend>Picture</legend>
+      <div role="tablist" aria-label="Picture">
+        <button type="button" role="tab" id="picture-tab-trend"
+          aria-controls="figure-trend" aria-selected="true">Trend</button>
+        <button type="button" role="tab" id="picture-tab-distribution"
+          aria-controls="figure-distribution"
+          aria-selected="false">Distribution</button>
+      </div>
+    </fieldset>
+
     <p class="status" id="status" role="status" aria-live="polite"></p>
 
     <div id="picture-trend" role="tabpanel" aria-labelledby="picture-tab-trend">

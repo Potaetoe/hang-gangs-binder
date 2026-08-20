@@ -1271,6 +1271,11 @@
     if (!answer.enough) {
       status.className = "status";
       status.textContent = answer.note + " " + BROADER_FILTER_HINT;
+      // The picture toggle goes with its pictures (0.9-M2-S15, #383):
+      // there is nothing left to choose a view OF on the honest
+      // not-enough sentence, so it hides along with both figures rather
+      // than sitting above an empty card.
+      show($("picture-field"), false);
       show($("picture-trend"), false);
       show($("picture-distribution"), false);
       renderGroups(null);
@@ -1284,6 +1289,12 @@
     drawTrend(answer, system);
     drawDistribution(answer, system);
 
+    // Unhidden here, and only here (0.9-M2-S15, #383): a picture exists
+    // to choose between only once a picture has actually drawn. The tab
+    // buttons themselves are never rebuilt or moved by this call, so
+    // aria-selected - read below - carries whatever the member last
+    // chose across every earlier press this visit.
+    show($("picture-field"), true);
     const selected = $("picture-tab-trend").getAttribute("aria-selected") ===
       "true";
     show($("picture-trend"), selected);

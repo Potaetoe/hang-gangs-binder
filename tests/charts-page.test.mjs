@@ -1442,6 +1442,22 @@ const NOT_ENOUGH_FIXTURE = {
     byId.get("picture-field").hidden === true);
   check("the group makeup block stays hidden on an empty view",
     byId.get("groups").hidden === true);
+
+  /*
+   * The check above is true trivially if renderAnswer()'s not-enough
+   * branch never touches picture-field at all - it ships hidden by
+   * default (buildDom()'s own mirror of the real markup), so a missing
+   * hide call would still read hidden here. Forcing it visible first,
+   * THEN pressing Show me again against the same not-enough fixture,
+   * proves the hide call itself fires rather than merely proving the
+   * field started hidden and nothing ever touched it.
+   */
+  byId.get("picture-field").hidden = false;
+  await pressShowMe(byId);
+  check("0.9-M2-S15: the not-enough branch actively hides the picture " +
+    "toggle - forced visible first, so this fails if renderAnswer() " +
+    "never calls show($(\"picture-field\"), false) at all",
+    byId.get("picture-field").hidden === true);
 }
 
 /*
@@ -2370,7 +2386,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 178;
+const EXPECTED = 179;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
