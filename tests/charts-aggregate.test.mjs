@@ -345,44 +345,94 @@ const atRaisedFloor = (rows, query, spec) =>
  * it does not come from the data, and an arm that read the edges off the
  * answer could not tell.
  *
- * THE SNAP IS PART OF THE SPEC NOW (owner ruling 3, the 2026-08-21 axis
+ * THE SNAP IS PART OF THE SPEC (owner ruling 3, the 2026-08-21 axis
  * sitting, #396): a band edge is a multiple of the band's own width
- * measured from the unit's own anchor, and the spec's outer bounds are
- * rounded OUTWARD onto that same grid - outward, so no value the form
- * accepts is left off the axis. These two helpers are the arm's own copy
- * of that arithmetic, written out here rather than imported, so this
- * file does not check the grid with the code that builds it.
+ * measured from the unit's own anchor, and the outer bounds are rounded
+ * OUTWARD onto that same grid.
+ *
+ * AND THE BOUNDS ARE THE UNION OF EVERY SYSTEM'S, CONVERTED (fix wave 1,
+ * O2). "Outward so no value the form accepts is left off the axis" is a
+ * claim about the FORM, and the form accepts a value typed in any unit
+ * it offers: somebody typing 3 ft is 91.44 cm, below the 100 cm the
+ * metric row declares, and an axis built from the metric row alone
+ * clamps him into a band that is not his. So each system's declared
+ * bounds are converted into the axis unit and the widest pair wins,
+ * before the snap runs. These helpers are the arm's own copy of that
+ * arithmetic, written out here rather than imported, so this file does
+ * not check the grid with the code that builds it.
  */
 const SITE = globalThis.BINDER_SITE;
-const chartUnit = (system) => SITE.units.kinds.weight.units[
-  SITE.units.kinds.weight.chart[system]];
+const chartUnitName = (kindName, system) =>
+  SITE.units.kinds[kindName].chart[system];
+const chartUnit = (kindName, system) =>
+  SITE.units.kinds[kindName].units[chartUnitName(kindName, system)];
 const snapDown = (value, width, anchor) =>
   anchor + Math.floor((value - anchor) / width) * width;
 const snapUp = (value, width, anchor) =>
   anchor + Math.ceil((value - anchor) / width) * width;
 
-const WEIGHT_UNIT = chartUnit(SITE.units.default);
+/* Every bound the form declares for one kind, in one of its units. The
+   ratio is the spec's own two `per` numbers divided, which is the one
+   conversion this project has - written out here rather than called, so
+   the arm does not convert with the code it is checking. */
+function formBoundsIn(kindName, unitName) {
+  const table = SITE.units.kinds[kindName].units;
+  const target = table[unitName];
+  let low = null;
+  let high = null;
+  for (const name of Object.keys(table)) {
+    const entry = table[name];
+    if (typeof entry.min !== "number" || typeof entry.max !== "number") {
+      continue;
+    }
+    const rate = entry.per / target.per;
+    const a = entry.min * rate;
+    const b = entry.max * rate;
+    if (low === null || a < low) low = a;
+    if (high === null || b > high) high = b;
+  }
+  return { min: low, max: high };
+}
+
+function gridIn(kindName, system) {
+  const unit = chartUnit(kindName, system);
+  const form = formBoundsIn(kindName, chartUnitName(kindName, system));
+  const min = snapDown(form.min, unit.bin, unit.anchor);
+  const max = snapUp(form.max, unit.bin, unit.anchor);
+  return { unit: unit, form: form, min: min, max: max,
+    bands: Math.round((max - min) / unit.bin) };
+}
+
+/* The grid every SHIPPED-floor answer about weight is drawn on, in the
+   system the spec starts in. */
+const W = gridIn("weight", SITE.units.default);
+const WEIGHT_UNIT = W.unit;
 const W_BIN = WEIGHT_UNIT.bin;
 const W_ANCHOR = WEIGHT_UNIT.anchor;
-const W_MIN = snapDown(WEIGHT_UNIT.min, W_BIN, W_ANCHOR);
-const W_MAX = snapUp(WEIGHT_UNIT.max, W_BIN, W_ANCHOR);
-const W_BANDS = Math.round((W_MAX - W_MIN) / W_BIN);
+const W_MIN = W.min;
+const W_MAX = W.max;
+const W_BANDS = W.bands;
 
 /*
- * The grid a RAISED-floor answer is drawn on, which is a different one.
- * The floor LOCKS the whole answer to a single unit system (owner
- * ruling, the 2026-08-21 axis sitting's escalation, #396), and that
- * system is the settings seam's - defaulting to the first the spec
- * lists, which is metric here. So the section 7 arms read the kg unit's
- * own snapped bounds rather than the imperial ones every shipped-floor
- * answer above is drawn on, and the difference between these two sets of
- * constants IS the lock made visible.
+ * The grid a RAISED-floor answer is drawn on. The floor LOCKS the whole
+ * answer to a single unit system (owner ruling, the 2026-08-21 axis
+ * sitting's escalation, #396), and an unset lock is the spec's OWN
+ * DECLARED DEFAULT - `units.default`, the field that already governs
+ * what the form and the charts start in (fix wave 1, F1). Reading a
+ * different field here would mean raising the floor silently moved every
+ * member to a system nobody chose.
+ *
+ * These constants are computed from `units.default` and the ones above
+ * from the same field, so today they agree - which is the point of
+ * writing them separately rather than aliasing: they are two reads of
+ * the spec that a fork can make differ, and an implementation reading
+ * the wrong field reddens against whichever one it got wrong.
  */
-const LOCKED_UNIT = chartUnit(SITE.units.systems[0]);
-const L_BIN = LOCKED_UNIT.bin;
-const L_ANCHOR = LOCKED_UNIT.anchor;
-const L_MIN = snapDown(LOCKED_UNIT.min, L_BIN, L_ANCHOR);
-const L_MAX = snapUp(LOCKED_UNIT.max, L_BIN, L_ANCHOR);
+const L = gridIn("weight", SITE.units.default);
+const L_BIN = L.unit.bin;
+const L_ANCHOR = L.unit.anchor;
+const L_MIN = L.min;
+const L_MAX = L.max;
 
 const lbOf = (kg) => kg / 0.45359237;
 const bandIndex = (kg) =>
@@ -617,10 +667,20 @@ check("fixed bands: the first edge is the spec's own minimum snapped " +
   lightBins[0].from === W_MIN &&
   lightBins[lightBins.length - 1].to === W_MAX);
 check("fixed bands: the snap runs OUTWARD, so the drawn axis covers " +
-  "every value the spec's own bounds admit and clips nobody (#396 " +
-  "ruling 3)",
-  W_MIN <= WEIGHT_UNIT.min && W_MAX >= WEIGHT_UNIT.max &&
-  W_MIN > WEIGHT_UNIT.min - W_BIN && W_MAX < WEIGHT_UNIT.max + W_BIN);
+  "every value the FORM admits in any unit it offers and clips nobody " +
+  "(#396 ruling 3, widened to the union at fix wave 1, O2)",
+  W_MIN <= W.form.min && W_MAX >= W.form.max &&
+  W_MIN > W.form.min - W_BIN && W_MAX < W.form.max + W_BIN);
+check("fixed bands: the axis covers the bounds of EVERY system, not " +
+  "just the one it is drawn in - a member typing the other system's " +
+  "extreme is inside the axis rather than clamped into an end band",
+  SITE.units.systems.every((system) => {
+    const other = chartUnit("weight", system);
+    if (typeof other.min !== "number") return true;
+    const rate = other.per / WEIGHT_UNIT.per;
+    return W_MIN <= other.min * rate + 1e-9 &&
+      W_MAX >= other.max * rate - 1e-9;
+  }));
 check("fixed bands: EVERY edge is a whole number of band widths from " +
   "the unit's own anchor - the property that makes a round-number axis " +
   "possible at all (#396 ruling 3)",
@@ -679,21 +739,49 @@ check("fixed bands: a value beyond the spec's own range lands in the " +
   drawnOf(outside).bins[W_BANDS - 1].count === 1);
 
 /* A measure whose chart unit carries no bound of its own: imperial
-   height is charted in inches and the spec bounds FEET, which is the
-   unit a member of that system types into. The grid still comes from the
-   spec - converted through the spec's own ratio, then snapped onto the
-   inch grid, never guessed. */
-const heights = atShippedFloor(evenGroup(6), "measure=height");
+   height is charted in inches and the spec bounds FEET and CENTIMETERS,
+   neither of which is that unit. The grid still comes from the spec -
+   every bounded unit of the kind converted through the spec's own
+   ratios, the widest pair taken, then snapped onto the inch grid, never
+   guessed. */
+const HEIGHT_IMPERIAL = gridIn("length", "imperial");
+const heights = atShippedFloor(evenGroup(6), "measure=height&units=imperial");
 const heightBins = drawnOf(heights).bins;
-const FT = SITE.units.kinds.length.units.ft;
-const IN = SITE.units.kinds.length.units.in;
-check("fixed bands: a chart unit the spec gives no bound falls back to " +
-  "the same system's own entry unit, converted - imperial height is " +
-  "binned in inches between the spec's feet",
+check("fixed bands: a chart unit the spec gives no bound of its own is " +
+  "drawn between every OTHER unit's bounds, converted - imperial height " +
+  "is binned in inches over the union of the spec's feet and its " +
+  "centimeters",
   heights.enough === true &&
-  heightBins[0].from === snapDown(FT.min * 12, IN.bin, IN.anchor) &&
-  heightBins[heightBins.length - 1].to ===
-    snapUp(FT.max * 12, IN.bin, IN.anchor));
+  heightBins[0].from === HEIGHT_IMPERIAL.min &&
+  heightBins[heightBins.length - 1].to === HEIGHT_IMPERIAL.max &&
+  heightBins.length === HEIGHT_IMPERIAL.bands);
+
+/*
+ * O2's OWN MEMBER, and the reason the union is not a tidiness rule. The
+ * form accepts 3 ft, which is 91.44 cm - below the 100 cm the metric row
+ * declares. On an axis built from the metric row alone he is clamped
+ * into the 100-105 band, which is not his: a shortest-possible member
+ * reported as somebody else's height. The arm asks for the band that
+ * CONTAINS his number rather than for an index, so a clamped answer has
+ * no band to find.
+ */
+const THREE_FEET_CM = 3 * SITE.units.kinds.length.units.ft.per;
+const shortRows = evenGroup(4).concat([
+  row(acct(60), "2026-08-01T00:00:00.000Z",
+    record(70, THREE_FEET_CM, "male", ["feeder"], "US")),
+]);
+const shortMetric = atShippedFloor(shortRows, "measure=height&units=metric");
+const hisBand = drawnOf(shortMetric).bins.filter((b) =>
+  b.from <= THREE_FEET_CM && b.to > THREE_FEET_CM)[0];
+check("O2: the shortest member the form accepts draws in the band his " +
+  "own number falls in on the METRIC axis - not clamped into a band " +
+  "that reports a height he does not have",
+  shortMetric.enough === true && hisBand !== undefined &&
+  hisBand.count === 1 && hisBand.from === 90 && hisBand.to === 95);
+check("O2: and the metric height axis therefore starts below three " +
+  "feet, snapped outward onto its own 5 cm grid",
+  drawnOf(shortMetric).bins[0].from <= THREE_FEET_CM &&
+  drawnOf(shortMetric).bins[0].from === gridIn("length", "metric").min);
 
 /*
  * EVERY CHARTED MEASURE, IN EVERY SYSTEM THE SPEC OFFERS, ON ITS OWN
@@ -867,8 +955,10 @@ check("the lock: at a raised floor both asks answer with the identical " +
     JSON.stringify(lockedAsks[1].distribution) &&
   lockedAsks[0].units.system === lockedAsks[1].units.system);
 check("the lock: the locked system is the settings seam's, defaulting " +
-  "to the first system the spec lists when the setting names none",
-  lockedAsks[0].units.system === SITE.units.systems[0]);
+  "to the spec's OWN DECLARED DEFAULT when the setting names none - the " +
+  "field that already governs what the form and the charts start in, so " +
+  "raising the floor moves nobody to a system they did not choose",
+  lockedAsks[0].units.system === SITE.units.default);
 check("the lock: overlaying the two answers a caller CAN get at a " +
   "raised floor recovers nothing below the floor - there is only one " +
   "grid, so there is nothing to difference",
@@ -911,9 +1001,9 @@ for (const junk of ["Metric", "furlongs", "", 1, null]) {
   const answer = agg.aggregate(spreadOut, ask("measure=weight"),
     undefined, { floor: RAISED, units: junk });
   check("the lock: a settings value of " + JSON.stringify(junk) + " is " +
-    "the spec's own first system rather than an unbinnable one",
+    "the spec's own declared default rather than an unbinnable system",
     answer.enough === true &&
-    answer.units.system === SITE.units.systems[0]);
+    answer.units.system === SITE.units.default);
 }
 
 /*

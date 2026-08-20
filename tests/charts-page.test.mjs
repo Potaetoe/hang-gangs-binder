@@ -360,8 +360,9 @@ check("F2's own reported case: the first and last captions still " +
  * the 50-unit count-axis gutter, divided evenly across the bands.
  */
 const PLOT_LEFT = 50;
+const PLOT_RIGHT = 20;
 const VIEW_WIDTH = 640;
-const PLOT_WIDTH = VIEW_WIDTH - PLOT_LEFT;
+const PLOT_WIDTH = VIEW_WIDTH - PLOT_LEFT - PLOT_RIGHT;
 const slotFor = (bandCount) => PLOT_WIDTH / bandCount;
 
 function realGrid(min, max, width) {
@@ -423,21 +424,25 @@ const bmiEdges = edgesOf(bmiGrid);
 const bmiTicks = bmiEdges.map(Charts.tickLabel);
 const bmiSlot = slotFor(bmiGrid.length);
 
-const weightGrid = realGrid(25, 1100, 25);
-check("the real shipped imperial-weight grid is 43 bands of 25 lb - the " +
-  "nice grid #396 ruled, replacing the 53 bands of 20 anchored at 44",
-  weightGrid.length === 43);
+const weightGrid = realGrid(25, 1125, 25);
+check("the real shipped imperial-weight grid is 44 bands of 25 lb - the " +
+  "nice grid #396 ruled, over the union of the form's own pound and " +
+  "kilogram bounds (fix wave 1, O2: 500 kg is 1102.3 lb, so the axis " +
+  "reaches 1125 rather than stopping at the pound row's 1100)",
+  weightGrid.length === 44);
 const weightEdges = edgesOf(weightGrid);
 const weightTicks = weightEdges.map(Charts.tickLabel);
 const weightSlot = slotFor(weightGrid.length);
 
-/* The metric weight grid (apps/web/site.config.js's kg unit: min 20,
-   max 500, bin 10, anchor 0) - 48 bands, unchanged by #396 because 10
-   was already a nice width and 20 and 500 were already on its grid. */
-const metricWeightGrid = realGrid(20, 500, 10);
-check("the real shipped metric-weight grid is 48 bands - " +
-  "apps/web/site.config.js's kg unit (min 20, max 500, bin 10)",
-  metricWeightGrid.length === 48);
+/* The metric weight grid: the kg row's own 10 kg bands, over the union
+   of every weight bound the form declares converted into kilograms (the
+   pound row's 44 lb is 19.96 kg, which is what pulls the low end below
+   the kg row's own 20). */
+const metricWeightGrid = realGrid(10, 500, 10);
+check("the real shipped metric-weight grid is 49 bands - the union of " +
+  "the kg row's own 20 and the 44 lb the pound row admits (19.96 kg), " +
+  "snapped outward onto the 10 kg grid (fix wave 1, O2)",
+  metricWeightGrid.length === 49);
 const metricWeightEdges = edgesOf(metricWeightGrid);
 const metricWeightTicks = metricWeightEdges.map(Charts.tickLabel);
 const metricWeightSlot = slotFor(metricWeightGrid.length);
@@ -551,113 +556,140 @@ check("containBox clamps a label wider than the whole row to the " +
  * offset boxes are what the plan compares for overlap AND what the
  * render loop paints from, so there is exactly one definition of where
  * a label ends up. #396 moved the row from slot midpoints to band
- * edges and the law is unchanged, which is why these fixtures carry
- * straight over onto the tick row.
+ * edges, and fix wave 1 (F2/F3) gave the plot a right margin so that
+ * clamping stops being what happens to an END label at all.
  *
- * THE RIGHT BOUND IS THE VIEWBOX ITSELF NOW. The unit marker that used
- * to reserve a strip at the row's right end is retired (owner ruling 2,
- * #396: the unit lives in the status line), so nothing carves the row
- * short any more and a tick label may run all the way to x = 640.
+ * NO LABEL EVER PAINTS SHIFTED FROM ITS TICK. An end label is centered
+ * on the axis's own end, so half of it hangs past that end by
+ * construction; clamping it inward moves the number away from the mark
+ * it names, which reads as the midpoint convention ruling 1 killed. The
+ * plot therefore ends one margin short of the viewBox (PLOT_RIGHT, the
+ * mirror of the count-axis gutter on the left), the end label overhangs
+ * into that margin, and containment is measured against the VIEWBOX -
+ * a backstop for a pathological label, never the ordinary case.
  */
 function finalBoxOf(texts, slot) {
   return function (i) {
     const raw = Charts.tickBox(i, slot, texts[i]);
     return Charts.containBox(
       { left: PLOT_LEFT + raw.left, right: PLOT_LEFT + raw.right },
-      PLOT_LEFT, VIEW_WIDTH);
+      0, VIEW_WIDTH);
   };
+}
+
+/* Where a tick's mark actually stands, which is what its number has to
+   be centered on. */
+function tickXOf(slot) {
+  return function (i) { return PLOT_LEFT + i * slot; };
 }
 
 function localBoxesOverlap(a, b) {
   return !(a.right <= b.left || a.left >= b.right);
 }
 
-/* THE BUG, REPRODUCED: the plan computed on UNCLAMPED boxes (the old,
-   2-argument shape), each painted index then clamped SEPARATELY at
-   render time - exactly the two-stage shape the review found broken.
-   All three real grids reproduce it under the real geometry above. */
-function oldBuggyOverlapCount(texts, slot) {
-  const unclampedPlan = Charts.labelRowPlan(texts, slot);
-  const box = finalBoxOf(texts, slot);
-  const finalBoxes = unclampedPlan.map(box);
-  let overlaps = 0;
-  for (let k = 1; k < finalBoxes.length; k += 1) {
-    if (localBoxesOverlap(finalBoxes[k - 1], finalBoxes[k])) overlaps += 1;
-  }
-  return overlaps;
-}
-
-/* THE FIX: the SAME boxOf fed into labelRowPlan() itself, so the plan
-   and the paint agree on where things actually end up. */
-function newFixedOverlapCount(texts, slot) {
-  const box = finalBoxOf(texts, slot);
-  const plan = Charts.labelRowPlan(texts, slot, box);
-  const finalBoxes = plan.map(box);
-  let overlaps = 0;
-  for (let k = 1; k < finalBoxes.length; k += 1) {
-    if (localBoxesOverlap(finalBoxes[k - 1], finalBoxes[k])) overlaps += 1;
-  }
-  return overlaps;
-}
-
 /*
- * `reproducesOldBug` is measured, not assumed. On the 43-band imperial
- * grid the old two-stage shape happens NOT to collide - its ticks are
- * three and four digits at a 13.7-unit slot, so the unclamped greedy
- * pass already leaves a wide gap before the forced last one, and the
- * clamp has nothing left to push into. Marking that grid honestly is
- * the point: an arm asserting a bug reproduces where it does not is a
- * false claim that would have to be quietly weakened later. The FIX is
- * asserted on all three either way, which is the property that matters.
+ * NO PAINTED LABEL IS EVER SHIFTED OFF ITS TICK (fix wave 1, F2/F3).
+ *
+ * This is the property the right margin buys, and it is what the two
+ * findings were really about. Clamping an end label inward moves the
+ * number away from the mark it names; on the owner's own scenario the
+ * clamped "525" sat almost entirely over the last BAR, and the cleanup
+ * dropped that bar's lower edge ("500") as its collision - so the last
+ * band was captioned by one number sitting over the middle of it, which
+ * is the midpoint convention ruling 1 killed, rebuilt out of geometry.
+ *
+ * The arm is exact rather than tolerant: a label's own center must EQUAL
+ * its tick's x. A shift of any size is a number pointing somewhere it
+ * does not belong.
  */
+function paintedCenters(texts, slot) {
+  const box = finalBoxOf(texts, slot);
+  const tickX = tickXOf(slot);
+  return Charts.labelRowPlan(texts, slot, box).map(function (i) {
+    const b = box(i);
+    return { index: i, center: (b.left + b.right) / 2, tick: tickX(i) };
+  });
+}
+
+function overlapsAmong(texts, slot) {
+  const box = finalBoxOf(texts, slot);
+  const boxes = Charts.labelRowPlan(texts, slot, box).map(box);
+  let overlaps = 0;
+  for (let k = 1; k < boxes.length; k += 1) {
+    const a = boxes[k - 1];
+    const b = boxes[k];
+    if (!(a.right <= b.left || a.left >= b.right)) overlaps += 1;
+  }
+  return overlaps;
+}
+
+/* What the PRE-MARGIN bound would have done to the same rows: contained
+   against the plot's own edges rather than the viewBox's. Kept as the
+   proof that the margin is load-bearing - without this fixture the arm
+   above could be satisfied by a row that simply never needed clamping
+   for some other reason. */
+function shiftedUnderPlotBound(texts, slot) {
+  const tickX = tickXOf(slot);
+  let shifted = 0;
+  for (let i = 0; i < texts.length; i += 1) {
+    const raw = Charts.tickBox(i, slot, texts[i]);
+    const b = Charts.containBox(
+      { left: PLOT_LEFT + raw.left, right: PLOT_LEFT + raw.right },
+      PLOT_LEFT, VIEW_WIDTH);
+    if (Math.abs((b.left + b.right) / 2 - tickX(i)) > 1e-9) shifted += 1;
+  }
+  return shifted;
+}
+
 const FIXTURES = [
-  { name: "BMI (120 bands, unitless)", ticks: bmiTicks, slot: bmiSlot,
-    reproducesOldBug: true },
-  { name: "imperial weight (43 bands)", ticks: weightTicks,
-    slot: weightSlot, reproducesOldBug: false },
-  { name: "metric weight (48 bands)", ticks: metricWeightTicks,
-    slot: metricWeightSlot, reproducesOldBug: true },
+  { name: "BMI (120 bands, unitless)", ticks: bmiTicks, slot: bmiSlot },
+  { name: "imperial weight (44 bands)", ticks: weightTicks,
+    slot: weightSlot },
+  { name: "metric weight (49 bands)", ticks: metricWeightTicks,
+    slot: metricWeightSlot },
 ];
 
 for (const f of FIXTURES) {
-  const oldOverlaps = oldBuggyOverlapCount(f.ticks, f.slot);
-  check("F1/#378: " + f.name + " - the OLD two-stage shape (plan " +
-    "unclamped, clamp separately at render) " +
-    (f.reproducesOldBug ? "really does overlap" : "happens not to " +
-      "overlap") + " under the real tick-row geometry, measured rather " +
-    "than assumed",
-    (oldOverlaps > 0) === f.reproducesOldBug);
+  const painted = paintedCenters(f.ticks, f.slot);
+  check("F2/F3/#396: " + f.name + " - every painted number is centered " +
+    "EXACTLY on its own tick, to the last decimal. A shifted label is a " +
+    "number pointing at a boundary that is not the one it names",
+    painted.length > 0 &&
+    painted.every((one) => Math.abs(one.center - one.tick) < 1e-9));
 
-  const newOverlaps = newFixedOverlapCount(f.ticks, f.slot);
-  check("F1/#378: " + f.name + " - the FIX (labelRowPlan() fed the " +
-    "final, contained boxes directly) leaves zero overlaps among the " +
-    "FINAL painted positions",
-    newOverlaps === 0);
+  check("F2/F3/#396: " + f.name + " - and no two painted numbers " +
+    "overlap at those unshifted positions, so the no-overlap law is " +
+    "met without moving anything",
+    overlapsAmong(f.ticks, f.slot) === 0);
+
+  check("F2/F3/#396: " + f.name + " - the right margin is what buys " +
+    "that: contained against the PLOT's edges instead of the viewBox's, " +
+    "this same row really does shift labels off their ticks",
+    shiftedUnderPlotBound(f.ticks, f.slot) > 0);
 }
-check("F1/#378: the regression is live on the reshaped row - at least " +
-  "one real shipped grid still reproduces the old two-stage overlap, " +
-  "so the fix below is not moot against #396 own geometry change",
-  FIXTURES.some((f) => f.reproducesOldBug &&
-    oldBuggyOverlapCount(f.ticks, f.slot) > 0));
 
-/* BOTH ENDS SPECIFICALLY (the ruling's own words: "the left edge has the
-   same latent hole ... the final-position property must cover both
-   ends"). On a tick row every end label straddles its own end by half
-   its width, so index 0 and index n are ALWAYS the clamped pair - this
-   asserts each sits exactly flush with its bound on the densest of the
-   three real grids. */
+/*
+ * BOTH ENDS SPECIFICALLY. An end label straddles the axis's own end by
+ * half its width, so index 0 and index n are exactly the two the old
+ * bound clamped. Under the margin both sit centered on their ticks and
+ * inside the viewBox, which is the pair of facts the fix has to hold at
+ * once - centered is useless if the ink leaves the picture.
+ */
 {
   const box = finalBoxOf(bmiTicks, bmiSlot);
+  const tickX = tickXOf(bmiSlot);
   const first = box(0);
   const last = box(bmiTicks.length - 1);
-  check("#396: the BMI tick row's own first label sits with its left " +
-    "edge exactly at the plot's left bound - the left-edge half of the " +
-    "final-position property",
-    Math.abs(first.left - PLOT_LEFT) < 1e-9);
-  check("#396: and its last label sits with its right edge exactly at " +
-    "the viewBox's own right edge - nothing reserves a strip there any " +
-    "more, because the unit marker is retired (ruling 2)",
-    Math.abs(last.right - VIEW_WIDTH) < 1e-9);
+  check("F2/F3: the BMI row's first number is centered on the plot's " +
+    "own left edge and its ink stays inside the viewBox",
+    Math.abs((first.left + first.right) / 2 - tickX(0)) < 1e-9 &&
+    first.left >= -1e-9);
+  check("F2/F3: and its last number is centered on the plot's own right " +
+    "edge, overhanging into the margin rather than being pushed off it",
+    Math.abs((last.left + last.right) / 2 -
+      tickX(bmiTicks.length - 1)) < 1e-9 &&
+    last.right <= VIEW_WIDTH + 1e-9 &&
+    last.right > VIEW_WIDTH - PLOT_RIGHT);
 }
 
 /*
@@ -1921,6 +1953,19 @@ const LOCKED_FIXTURE = Object.assign({}, ENOUGH_FIXTURE_METRIC, {
     "axis at its own position - a number floating with no mark under it " +
     "is what made the old caption row ambiguous",
     tickMarks.length === tickLabels.length);
+  /*
+   * F2/F3, READ BACK OFF THE RENDERED SVG: each number's own x attribute
+   * equals its mark's x, exactly. The pure arms above prove the plan
+   * produces unshifted boxes; this proves the page PAINTS from them, on
+   * the same nodes a member would be looking at.
+   */
+  check("F2/F3/#396: every rendered number's x is its own tick mark's " +
+    "x, exactly - the page paints each number on the boundary it names " +
+    "and never beside it",
+    tickMarks.length > 0 &&
+    tickLabels.length === tickMarks.length &&
+    tickEls.every((el, i) =>
+      Math.abs(Number(el.attrs.x) - Number(tickMarks[i].attrs.x1)) < 1e-9));
   check("#378 owner ruling: each bar's height reflects its own count, " +
     "in the response's own order (the largest fixture count, 7, draws " +
     "the tallest bar; every non-zero count draws a positive height) - " +
@@ -2562,15 +2607,16 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
 }
 
 /*
- * #390 MOTIVATING SHAPE, DRIVEN FOR REAL: the 43-band imperial-weight
- * grid (weightGrid, above - the shipped spec as #396 reshaped it), with
- * a real member heaviest weight far below the spec own 1100 lb ceiling
- * - only the first 18 bands (through band 17, 450-475 lb) hold anyone;
- * bands 18 through 42 are the empty tail the ruling trims. EVERYTHING
- * drawBins() computes from `bins.length` - slot width, the tick plan,
- * the count axis, the hit rects - has to re-derive from 18, never 43,
- * with no special case: it is drawDistribution() alone, upstream, that
- * decides the count at all (trimTrailingEmptyBins()).
+ * #390 MOTIVATING SHAPE, DRIVEN FOR REAL: the 44-band imperial-weight
+ * grid (weightGrid, above - the shipped spec as #396 and its fix wave
+ * reshaped it), with a real member heaviest weight far below the axis
+ * own 1125 lb ceiling - only the first 18 bands (through band 17,
+ * 450-475 lb) hold anyone; bands 18 through 43 are the empty tail the
+ * ruling trims. EVERYTHING drawBins() computes from `bins.length` -
+ * slot width, the tick plan, the count axis, the hit rects - has to
+ * re-derive from 18, never 44, with no special case: it is
+ * drawDistribution() alone, upstream, that decides the count at all
+ * (trimTrailingEmptyBins()).
  *
  * AND THE TRIM COMPOSES WITH THE TICK ROW (#396 apparatus): the trimmed
  * grid own last EDGE is the axis end, and an end always paints - so the
@@ -2599,8 +2645,8 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     c.attrs.class === "chart-hit");
   const TRIMMED_COUNT = WEIGHT_TRIM_LAST_NONZERO + 1;
 
-  check("#390: the real 43-band imperial-weight grid draws only " +
-    "through the band holding the data maximum (18 of 43) - a " +
+  check("#390: the real 44-band imperial-weight grid draws only " +
+    "through the band holding the data maximum (18 of 44) - a " +
     "client-side trim that stops early regardless of what it calls " +
     "itself reddens here on the exact spec grid the ticket names",
     bars.length === TRIMMED_COUNT && hits.length === TRIMMED_COUNT);
@@ -2624,7 +2670,8 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   const expectedTrimTicks =
     Charts.labelRowPlan(trimTexts, trimSlot, trimBoxOf);
   check("#390: the tick plan re-derives at the TRIMMED slot width " +
-    "(640-50 divided by 18, not 43) - the rendered number row matches " +
+    "(the plot's own width divided by 18, not 44) - the rendered " +
+    "number row matches " +
     "labelRowPlan() computed on the trimmed count exactly",
     tickTexts.length === expectedTrimTicks.length &&
     expectedTrimTicks.every((idx, j) => tickTexts[j] === trimTexts[idx]));
@@ -2770,6 +2817,44 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     zeroParts.number === "0 members" &&
     distTip.hidden === false &&
     distTip.textContent === zeroParts.lead + zeroParts.number);
+}
+
+/*
+ * O1 (fix wave 1): THE UNITS TOGGLE SURVIVES A NOT-ENOUGH ANSWER.
+ *
+ * The toggle's own handler is wired per drawn answer, so anything that
+ * wires it BELOW renderAnswer()'s early return leaves it dead for the
+ * whole session whenever the first answer a member gets is the honest
+ * not-enough sentence - and switching units is exactly what somebody
+ * looking at "not enough people for this view" would try next. The
+ * sequence below is the one that catches it: fresh page, one press, a
+ * not-enough answer, then a toggle that has to reach the route.
+ */
+{
+  const served = [NOT_ENOUGH_FIXTURE, ENOUGH_FIXTURE_METRIC];
+  let at = 0;
+  const { byId, calls, unitsInputs } = await driven(() =>
+    response(200, served[Math.min(at++, served.length - 1)]));
+
+  check("O1: the session's first answer really is the not-enough one - " +
+    "the state this arm is about",
+    byId.get("status")._text.indexOf(NOT_ENOUGH_FIXTURE.note) === 0);
+
+  const before = calls.length;
+  unitsInputs[0].checked = false;
+  unitsInputs[1].checked = true;
+  await unitsInputs[1].dispatch("change");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  check("O1: switching units after a not-enough answer still asks the " +
+    "route - the toggle is wired ahead of renderAnswer()'s early " +
+    "return, so an empty first view does not kill it for the session",
+    calls.length === before + 1 &&
+    new URL(calls[calls.length - 1]).searchParams.get("units") === "metric");
+  check("O1: and the answer that comes back draws, in its own unit - " +
+    "the member is out of the empty view without touching Show me again",
+    byId.get("status")._text === "Showing Weight (kg).");
 }
 
 /*
