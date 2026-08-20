@@ -93,29 +93,35 @@
    * there is no real text layout available to a pure function (owner's
    * F1/F2 ruling on #372's review: "measured, or estimated conservatively
    * from the caption text"). The chart figures paint captions at 11px
-   * (theme.css's .chart-label/.chart-value) in a condensed system stack.
+   * (theme.css's .chart-label) in a condensed system stack.
    *
    * CAPTION_CHAR_WIDTH IS ABOVE THE WIDEST DIGIT AND THE DASH THIS FACE
-   * ACTUALLY PAINTS; EVERY REAL CAPTION CLEARS WITH MARGIN (owner's F7
-   * ruling on #372's review, corrected 0.9-M2-S13: the original wording
-   * claimed the widest glyph outright, and it is not - "m" measures
-   * 9.81 user units in this same face, above the constant below). The
-   * reviewer read getComputedTextLength() off the shipped face and
+   * ACTUALLY PAINTS, MEASURED (owner's F7 ruling on #372's review,
+   * corrected twice now - 0.9-M2-S13's own build claimed the widest
+   * glyph outright, and "m" at 9.81 user units disproves that; fix wave
+   * 1's F4 finding is that "digits only" overstates it the OTHER way).
+   * The reviewer read getComputedTextLength() off the shipped face and
    * found "0" at 7.53 user units and "–" (the dash binLabel() joins
    * every range with) at 7.36 - a constant of 7 was BELOW both, so a
    * caption made mostly of zeros and dashes under-stated its own width
    * and the plan could approve a row that truly overlapped (reproduced
    * at 88 bands, where the 7-unit estimate said a one-character count
-   * fits a 7.273-unit slot and the real 7.53-unit zero did not - 87 of
-   * 88 adjacent count captions actually overlapped while the plan
-   * reported clean). 8 is above both measured glyphs, which is the
-   * whole property this constant has to hold for the captions that
-   * actually reach it: every caption this row or the count row above it
-   * ever paints is digits only (0.9-M2-S13 retired the range caption's
-   * letters and its own dash from the bottom row - see midpointLabel()
-   * below), so a ceiling proven against the widest digit and the dash
-   * is a ceiling against everything captionWidth() is ever asked to
-   * measure, not merely against the cases a reviewer happened to try.
+   * fits a 7.273-unit slot and the real 7.53-unit zero did not). 8 is
+   * above both measured glyphs, which is the property the bottom
+   * caption row actually needs: every caption it paints is midpointLabel()'s
+   * digits only, since 0.9-M2-S13 retired the range and its dash from
+   * that row. captionWidth() ALSO measures the axis-edge unit marker
+   * (drawBins() below, the rightBound reserve) and a y-axis tick label
+   * that happens to carry a unit-free number - the unit marker's own
+   * text is letters, not digits, and 8 is NOT proven above every
+   * letter this face paints ("cm" measured 16.10 against this
+   * constant's own 16-unit estimate for two characters, fix wave 1's
+   * F4 finding - narrowly under, not over). That case is covered by
+   * a DIFFERENT margin: the reserve drawBins() carves out is one whole
+   * extra CAPTION_CHAR_WIDTH-unit wider than the unit text's own
+   * estimate, which swallows a few tenths of a unit of estimation
+   * error with room left over - not this constant being a ceiling on
+   * letters, which it is not proven to be.
    */
   const CAPTION_CHAR_WIDTH = 8;
 
@@ -137,53 +143,62 @@
   }
 
   /*
-   * Shifts one caption's box inward just far enough that it sits inside
-   * [0, width] - the containment rule from the same 2026-08-19 sitting
-   * that added midpointLabel() above: no caption may paint outside the
-   * plot bounds. An interior caption never needs this - captionBox()
-   * centers it in its own slot, so it has room on both sides by
-   * construction, and a caption too wide for its slot lost the overlap
-   * contest before rangeCaptionPlan() ever kept it. Only the two
-   * protected ends can reach here: rangeCaptionPlan() always paints
-   * index 0 and the last index (owner ruling 5's own words), and an end
-   * sits at the row's own edge, where there is no slot on one side to
-   * borrow room from. Never widens a box that already fits - a caption
-   * that clears both edges on its own comes back unchanged, which is
-   * what lets drawBins() below run every painted caption through this
-   * unconditionally rather than branching on which end it is.
+   * Shifts one box inward just far enough that it sits inside
+   * [lowerBound, upperBound] - the containment rule from the 2026-08-19
+   * sitting: no caption may paint outside the plot bounds. `lowerBound`
+   * was always literally 0 before fix wave 1 (#378); it is now the
+   * plot's own left edge (drawBins() below reserves a left gutter for
+   * the new count axis, ruling 2 of the same sitting's late round), so
+   * this takes it as a parameter rather than assuming zero.
    */
-  function containBox(box, width) {
-    if (box.left < 0) {
-      const shift = -box.left;
-      return { left: 0, right: box.right + shift };
+  function containBox(box, lowerBound, upperBound) {
+    if (box.left < lowerBound) {
+      const shift = lowerBound - box.left;
+      return { left: lowerBound, right: box.right + shift };
     }
-    if (box.right > width) {
-      const shift = box.right - width;
-      return { left: box.left - shift, right: width };
+    if (box.right > upperBound) {
+      const shift = box.right - upperBound;
+      return { left: box.left - shift, right: upperBound };
     }
     return box;
   }
 
   /*
-   * Which range-caption indices to paint under a row of bars, so that NO
-   * TWO PAINTED CAPTIONS OVERLAP (owner's F1/F2 ruling: "legibility is a
-   * geometry property, not a count target" - a caption COUNT near ten
-   * says nothing about caption WIDTH, and both the 120-band BMI grid and
-   * the 53-band imperial-weight grid overlapped at that count).
+   * Which caption indices to paint under a row of bars, so that NO TWO
+   * PAINTED CAPTIONS OVERLAP (owner's F1/F2 ruling on #372's review:
+   * "legibility is a geometry property, not a count target").
+   *
+   * `boxOf`, OPTIONAL, IS WHAT FIX WAVE 1 (#378, finding F1) ADDS. Left
+   * undefined, `box(i)` falls back to the plain, unclamped
+   * captionBox(i, slot, labels[i]) - every caller before this fix wave
+   * relied on exactly that shape, and the arm below keeps it working
+   * for a caller that only cares about the raw geometry. But
+   * drawBins() below MUST pass a `boxOf` that returns each caption's
+   * own FINAL, CONTAINED position (offset by the plot's left edge, run
+   * through containBox()) - the reviewer's own finding, confirmed live,
+   * was that the old two-stage shape (plan on raw boxes, THEN clamp the
+   * ends at render time) let a clamped end caption collide with its
+   * nearest kept neighbor, because nothing ever re-checked the position
+   * the clamp actually produced. Feeding the SAME final-position boxes
+   * into THIS function's own overlap test is the fix: the algorithm
+   * below already resolves a collision by dropping an interior
+   * neighbor and never an end (owner ruling 5's words, restated by the
+   * fix-wave ruling: "resolved by dropping interior neighbours, never
+   * an end") - it was only ever being asked the wrong question before.
    *
    * THE FIRST AND LAST ALWAYS PAINT - they are the spec's own two
-   * bounding numbers, the axis's own start and end, so a collision is
-   * resolved by dropping an INTERIOR neighbor, never an end. The walk is
-   * a single greedy pass left to right (each interior candidate paints
+   * bounding numbers, the axis's own start and end. The walk is a
+   * single greedy pass left to right (each interior candidate paints
    * only if it clears the last-painted box), then a short cleanup that
    * forces the last index in and drops back any interior captions it
-   * would otherwise collide with - so the property holds at both ends of
-   * the row, not just walking forward.
+   * would otherwise collide with - so the property holds at both ends
+   * of the row, not just walking forward, and now holds on whichever
+   * geometry `boxOf` actually describes.
    */
-  function rangeCaptionPlan(labels, slot) {
+  function rangeCaptionPlan(labels, slot, boxOf) {
     const n = labels.length;
     if (n === 0) return [];
-    const box = function (i) { return captionBox(i, slot, labels[i]); };
+    const box = boxOf || function (i) { return captionBox(i, slot, labels[i]); };
     if (n === 1) return [0];
 
     const painted = [0];
@@ -202,36 +217,6 @@
     }
     painted.push(n - 1);
     return painted;
-  }
-
-  /*
-   * Which count-caption indices to paint above the bars - the same
-   * no-overlap rule, but with no protected ends: a count caption that
-   * cannot fit simply does not paint (owner's F1/F2 ruling). NON-ZERO
-   * COUNTS WIN SLOTS OVER ZEROS: candidates are claimed in priority
-   * order (every non-zero count first, left to right, then every zero
-   * count left to right) rather than in position order, so a zero
-   * sitting between two non-zero neighbors loses its slot to whichever
-   * of them is processed first, and a non-zero band is never crowded out
-   * by a zero one reading earlier in the row.
-   */
-  function countCaptionPlan(counts, slot) {
-    const box = function (i) { return captionBox(i, slot, String(counts[i])); };
-    const order = counts.map(function (_, i) { return i; }).sort(
-      function (a, b) {
-        const priority = function (i) { return counts[i] > 0 ? 1 : 0; };
-        return priority(b) - priority(a) || a - b;
-      });
-
-    const kept = [];
-    order.forEach(function (i) {
-      const candidate = box(i);
-      const collides = kept.some(function (j) {
-        return boxesOverlap(candidate, box(j));
-      });
-      if (!collides) kept.push(i);
-    });
-    return kept.sort(function (a, b) { return a - b; });
   }
 
   /*
@@ -295,6 +280,94 @@
     const suffix = unit ? " " + unit : "";
     return { lead: monthLabel(atMillis) + " — " + seriesLabel + ": ",
       number: String(value) + suffix };
+  }
+
+  /*
+   * The distribution's new count axis (owner ruling 2, the 2026-08-19
+   * late sitting, folded into fix wave 1, #378): "a count scale in
+   * whole people (integer ticks only)". A fraction of a person is never
+   * a value this axis may print, so the step between ticks is always a
+   * whole number too - a "nice" one (1, 2, 5 or 10 times a power of
+   * ten), the same family every ordinary chart axis uses, chosen so
+   * roughly five ticks span the row. maxCount <= 0 (every band empty)
+   * degenerates to the single tick "0", which is the whole truth of an
+   * empty axis and needs no step at all.
+   */
+  function countAxisTicks(maxCount) {
+    if (!(maxCount > 0)) return [0];
+    const target = 5;
+    const raw = maxCount / target;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+    const bases = [1, 2, 5, 10];
+    let step = 10 * magnitude;
+    for (let i = 0; i < bases.length; i += 1) {
+      const candidate = bases[i] * magnitude;
+      if (candidate >= raw) { step = candidate; break; }
+    }
+    step = Math.max(1, Math.round(step));
+    const ticks = [];
+    for (let v = 0; v <= maxCount + 1e-9; v += step) ticks.push(v);
+    if (ticks[ticks.length - 1] < maxCount) {
+      ticks.push(ticks[ticks.length - 1] + step);
+    }
+    return ticks;
+  }
+
+  /*
+   * The trend's value axis (same ruling: "if its reserved gutter
+   * carries no value labels today, add them - measure values"). Three
+   * exact points from the domain already on screen - the lowest value,
+   * the highest, and their midpoint - never a "nice" rounded number
+   * invented for the axis: every number here is either one the response
+   * sent or the plain average of two that were, which is the same
+   * render-only standard the tooltip holds to. A flat domain (every
+   * point equal, or one point) has nothing to interpolate and prints
+   * its one value once rather than the same number three times over.
+   */
+  function valueAxisTicks(minValue, maxValue) {
+    if (!(maxValue > minValue)) return [minValue];
+    return [minValue, (minValue + maxValue) / 2, maxValue];
+  }
+
+  /*
+   * The tooltip's own position (design mandate 2: "clamp inside the
+   * chart figure's bounding box - flip above/below, shift horizontally
+   * - never overflow the card"), extracted as a pure function of three
+   * boxes so it can be armed without a browser (fix wave 1, #378,
+   * finding F2: the flip-below branch was unbounded below, so any
+   * figure under roughly 505px wide spilled the tooltip past the
+   * figure's own bottom edge - 17.7px of it, at a 320px-wide figure,
+   * onto the group-makeup block beneath). Each box is
+   * {left, top, right, bottom, width, height} in one shared coordinate
+   * space (a real caller passes getBoundingClientRect() results, which
+   * already share the viewport's); this function does no measuring of
+   * its own; it only turns three boxes into the fourth, {left, top}, in
+   * `figure`-relative pixels.
+   *
+   * The horizontal clamps were already exact (forced at both edges,
+   * the reviewer's own finding) and are unchanged. What is new is the
+   * bottom clamp: after deciding above-or-below, `top` is pulled up
+   * just far enough that `top + tip.height` never exceeds the figure's
+   * own height, and a defensive top clamp catches the one case even
+   * that cannot fix - a tooltip taller than the whole figure.
+   */
+  function positionTooltipBox(anchorBox, figureBox, tipBox) {
+    let left = anchorBox.left - figureBox.left +
+      anchorBox.width / 2 - tipBox.width / 2;
+    let top = anchorBox.top - figureBox.top - tipBox.height - 8;
+    if (top < 0) top = anchorBox.bottom - figureBox.top + 8; // flip below
+
+    if (left < 0) left = 0;
+    if (left + tipBox.width > figureBox.width) {
+      left = figureBox.width - tipBox.width;
+    }
+
+    if (top + tipBox.height > figureBox.height) {
+      top = figureBox.height - tipBox.height;
+    }
+    if (top < 0) top = 0;
+
+    return { left: left, top: top };
   }
 
   /*
@@ -402,13 +475,16 @@
     binLabel: binLabel,
     midpointLabel: midpointLabel,
     captionWidth: captionWidth,
+    captionBox: captionBox,
     containBox: containBox,
     rangeCaptionPlan: rangeCaptionPlan,
-    countCaptionPlan: countCaptionPlan,
     memberCount: memberCount,
     binTooltipParts: binTooltipParts,
     monthLabel: monthLabel,
     trendTooltipParts: trendTooltipParts,
+    countAxisTicks: countAxisTicks,
+    valueAxisTicks: valueAxisTicks,
+    positionTooltipBox: positionTooltipBox,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
@@ -477,14 +553,18 @@
   let pinnedTooltipElement = null;
 
   /*
-   * Clamped inside the figure's own box (design mandate 2: "clamp
-   * inside the chart figure's bounding box - flip above/below, shift
-   * horizontally - never overflow the card"). getBoundingClientRect()
-   * is a real layout measurement no hand-built DOM stub can produce
-   * (tests/charts-page.test.mjs's own header: a small node factory,
-   * not jsdom), so this is skipped rather than guessed at when it is
-   * absent - the tooltip still shows, unpositioned, and the completion
-   * record labels the clamp itself as verified in a real browser only.
+   * The thin DOM caller (fix wave 1, #378, finding F2): the whole of
+   * the clamp/flip arithmetic now lives in positionTooltipBox() above,
+   * a pure function of three boxes, armed by its own fixtures - this
+   * function's only job is measuring the three real boxes and writing
+   * the two numbers positionTooltipBox() returns back onto the style.
+   * getBoundingClientRect() is a real layout measurement no hand-built
+   * DOM stub can produce (tests/charts-page.test.mjs's own header: a
+   * small node factory, not jsdom), so this is skipped rather than
+   * guessed at when it is absent - the tooltip still shows,
+   * unpositioned, and the completion record labels the measuring half
+   * (never the arithmetic, which is unit-tested directly) as verified
+   * in a real browser only.
    */
   function positionTooltip(tip, anchor, figure) {
     if (typeof anchor.getBoundingClientRect !== "function" ||
@@ -492,21 +572,11 @@
         typeof tip.getBoundingClientRect !== "function") {
       return;
     }
-    const figureBox = figure.getBoundingClientRect();
-    const anchorBox = anchor.getBoundingClientRect();
-    const tipBox = tip.getBoundingClientRect();
-
-    let left = anchorBox.left - figureBox.left +
-      anchorBox.width / 2 - tipBox.width / 2;
-    let top = anchorBox.top - figureBox.top - tipBox.height - 8;
-    if (top < 0) top = anchorBox.bottom - figureBox.top + 8; // flip below
-    if (left < 0) left = 0;
-    if (left + tipBox.width > figureBox.width) {
-      left = figureBox.width - tipBox.width;
-    }
-
-    tip.style.left = left + "px";
-    tip.style.top = top + "px";
+    const position = positionTooltipBox(
+      anchor.getBoundingClientRect(), figure.getBoundingClientRect(),
+      tip.getBoundingClientRect());
+    tip.style.left = position.left + "px";
+    tip.style.top = position.top + "px";
   }
 
   /*
@@ -679,25 +749,34 @@
    * still holding its place on the axis, rather than a bar skipped or a
    * suppression note in its place - there is no such note to print, the
    * same render-only rule that keeps this file from inventing any other
-   * text the response did not send. THE BAR ALWAYS DRAWS; ITS TWO
-   * CAPTIONS DO NOT (owner's F1/F2 ruling on #372's review). The count
-   * text above a bar and the range caption below it are each thinned by
-   * countCaptionPlan()/rangeCaptionPlan() so no two painted captions in
+   * text the response did not send. THE BAR ALWAYS DRAWS; ITS CAPTION
+   * DOES NOT (owner's F1/F2 ruling on #372's review). The caption under
+   * a bar is thinned by rangeCaptionPlan() so no two painted captions in
    * a row overlap - at the 120-band BMI grid or the 53-band imperial-
    * weight grid, most bars carry no caption at all, and that is the
    * fix: a caption nobody can read is worse than no caption. Nothing
-   * about which BAND is drawn changes; only some of the text under or
-   * over it does.
+   * about which BAND is drawn changes; only some of the text under it
+   * does.
+   *
+   * NO COUNT ROW ANY MORE (owner ruling, the 2026-08-19 late sitting,
+   * folded into fix wave 1, #378: "no numbers over bars, ever"). The
+   * exact count is the count axis's own scale plus the tooltip, never a
+   * number painted per bar - countCaptionPlan() and everything it
+   * touched is gone with it.
    *
    * THE BOTTOM CAPTION IS A MIDPOINT, NOT A RANGE (0.9-M2-S13, #378).
    * rangeCaptionPlan() still decides which indices paint - the "new
    * shorter texts" are midpointLabel()'s, fed through the same
    * geometry - and the true edges move to the tooltip (wireTooltip()
-   * below), never lost, one hover or tap away. Every painted caption is
-   * run through containBox() before it renders, so an end caption whose
-   * own box would cross the viewBox edge shifts inward rather than
-   * spilling or dropping (the containment rule, same ruling) - a no-op
-   * for every interior caption, which already has room on both sides.
+   * below), never lost, one hover or tap away.
+   *
+   * THE PLAN IS FED FINAL POSITIONS NOW, NOT RAW ONES (fix wave 1,
+   * finding F1). `boxOf` below computes each caption's own contained,
+   * offset box and is the SAME function rangeCaptionPlan() plans
+   * against and the render loop paints from - there is exactly one
+   * definition of where a caption ends up, so a clamped end caption
+   * that would collide with its nearest kept neighbor is caught by the
+   * plan itself rather than discovered on screen.
    */
   function drawBins(target, tip, bins, system, unit) {
     resetTooltip(tip);
@@ -705,6 +784,11 @@
     const height = 320;
     const baseline = height - 60;
     const top = 20;
+    // The left gutter for the new count axis (owner ruling, the
+    // 2026-08-19 late sitting): the same 50-unit reserve drawTrend()
+    // already uses for its own value axis, so the two figures share one
+    // gutter width rather than each picking its own.
+    const left = 50;
     const node = target.querySelector("svg");
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
@@ -713,51 +797,62 @@
     const most = bins.reduce(function (max, bin) {
       return Math.max(max, bin.count);
     }, 1);
-    const slot = width / bins.length;
+    const plotWidth = width - left;
+    const slot = plotWidth / bins.length;
 
-    const counts = bins.map(function (bin) { return bin.count; });
     const midpointLabels = bins.map(function (bin) {
       return midpointLabel(bin.from[system], bin.to[system]);
     });
-    const countedIndexes = new Set(countCaptionPlan(counts, slot));
-    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot));
 
     // The unit marker's own reserved strip at the row's right end - one
-    // caption-width of the unit text plus one character of gap. The
-    // containment bound a painted caption clamps against (below) stops
-    // short of it, so the marker and the last band's own clamped
-    // caption are never asked to occupy the same pixels at once; the
-    // marker is not itself a caption rangeCaptionPlan() ever placed or
-    // dropped, so it is not what the containment rule's own "plot
-    // bounds" describes - this is the row leaving it room rather than
-    // the rule reaching around it.
+    // caption-width of the unit text plus one character of gap, so the
+    // marker and a clamped last caption never occupy the same pixels
+    // (the marker is not itself a caption anything plans or drops - see
+    // the marker's own comment below).
     const rightBound = unit
       ? width - captionWidth(unit) - CAPTION_CHAR_WIDTH
       : width;
 
+    // Every painted caption's FINAL box - offset into the plot (the
+    // left gutter) and run through containBox() - is what
+    // rangeCaptionPlan() below plans against AND what the render loop
+    // paints from, the same function both times (fix wave 1, F1).
+    const boxOf = function (i) {
+      const raw = captionBox(i, slot, midpointLabels[i]);
+      return containBox(
+        { left: left + raw.left, right: left + raw.right },
+        left, rightBound);
+    };
+    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot, boxOf));
+
     node.appendChild(svg("line", {
-      x1: 0, y1: baseline, x2: width, y2: baseline,
+      x1: left, y1: baseline, x2: width, y2: baseline,
     }, "chart-axis"));
+
+    // The count axis (owner ruling, the 2026-08-19 late sitting): whole
+    // people only, in the .chart-label tone, right-aligned into the
+    // left gutter. `most` already has the same "at least 1" floor the
+    // bar-height division below needs, and reusing it here means the
+    // axis top always lines up with the tallest bar's own top exactly.
+    countAxisTicks(most).forEach(function (tick) {
+      const y = baseline - (tick / most) * (baseline - top);
+      node.appendChild(svg("text", {
+        x: left - 8, y: y + 4, "text-anchor": "end",
+      }, "chart-label")).textContent = String(tick);
+    });
 
     bins.forEach(function (bin, index) {
       const barHeight = bin.count > 0
         ? Math.max(1, (bin.count / most) * (baseline - top))
         : 0;
-      const x = index * slot;
+      const x = left + index * slot;
       node.appendChild(svg("rect", {
         x: x + 2, y: baseline - barHeight,
         width: Math.max(1, slot - 4), height: barHeight, rx: 2,
       }, "chart-bar"));
 
-      if (countedIndexes.has(index)) {
-        node.appendChild(svg("text", {
-          x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
-        }, "chart-value")).textContent = String(bin.count);
-      }
-
       if (labeledIndexes.has(index)) {
-        const box = containBox(
-          captionBox(index, slot, midpointLabels[index]), rightBound);
+        const box = boxOf(index);
         const text = svg("text", {
           x: (box.left + box.right) / 2, y: baseline + 16,
           "text-anchor": "middle",
@@ -774,7 +869,7 @@
       // under SVG's default pointer-events (visiblePainted looks at
       // whether fill is `none`, never at fill-opacity or the color
       // itself) without a stylesheet rule to carry that fact instead.
-      // Appended LAST, after the bar and both captions, so it paints on
+      // Appended LAST, after the bar and its caption, so it paints on
       // top and is what actually receives the pointer over the whole
       // column - the visible bar underneath never has to compete with
       // it for events.
@@ -788,7 +883,10 @@
 
     // The unit, stated once at the axis edge rather than once per
     // caption (owner ruling 1, #378) - same row, same class/tone as the
-    // captions themselves (design mandate 1).
+    // captions themselves (design mandate 1). It names the MEASURE's
+    // own unit on the x-axis; the count axis this same figure grew
+    // (owner ruling, the 2026-08-19 late sitting) is never in that
+    // unit, so it stays on its own row rather than moving to the gutter.
     if (unit) {
       node.appendChild(svg("text", {
         x: width, y: baseline + 16, "text-anchor": "end",
@@ -975,6 +1073,18 @@
     node.appendChild(svg("line", {
       x1: left, y1: height - bottom, x2: width - right, y2: height - bottom,
     }, "chart-axis"));
+
+    // The value axis (owner ruling, the 2026-08-19 late sitting: "if
+    // its reserved gutter carries no value labels today, add them") -
+    // the left gutter above already existed for this; it just never
+    // carried anything. valueAxisTicks() returns exact domain values
+    // (the lowest, highest and their midpoint), never a rounded number
+    // this file invented for the axis.
+    valueAxisTicks(minValue, maxValue).forEach(function (tick) {
+      node.appendChild(svg("text", {
+        x: left - 8, y: y(tick) + 4, "text-anchor": "end",
+      }, "chart-label")).textContent = String(tick);
+    });
 
     /*
      * Two lines, two literal slots, and no cycle - design mandate 6

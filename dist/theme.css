@@ -1066,11 +1066,6 @@ code {
   font-size: 11px;
 }
 
-.chart-value {
-  fill: var(--color-text);
-  font-size: 11px;
-}
-
 .chart-track { fill: var(--color-accent-quiet); }
 
 .chart-bar { fill: var(--color-accent); }

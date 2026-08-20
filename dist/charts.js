@@ -47,24 +47,24 @@
 
   
 
-  function containBox(box, width) {
-    if (box.left < 0) {
-      const shift = -box.left;
-      return { left: 0, right: box.right + shift };
+  function containBox(box, lowerBound, upperBound) {
+    if (box.left < lowerBound) {
+      const shift = lowerBound - box.left;
+      return { left: lowerBound, right: box.right + shift };
     }
-    if (box.right > width) {
-      const shift = box.right - width;
-      return { left: box.left - shift, right: width };
+    if (box.right > upperBound) {
+      const shift = box.right - upperBound;
+      return { left: box.left - shift, right: upperBound };
     }
     return box;
   }
 
   
 
-  function rangeCaptionPlan(labels, slot) {
+  function rangeCaptionPlan(labels, slot, boxOf) {
     const n = labels.length;
     if (n === 0) return [];
-    const box = function (i) { return captionBox(i, slot, labels[i]); };
+    const box = boxOf || function (i) { return captionBox(i, slot, labels[i]); };
     if (n === 1) return [0];
 
     const painted = [0];
@@ -83,27 +83,6 @@
     }
     painted.push(n - 1);
     return painted;
-  }
-
-  
-
-  function countCaptionPlan(counts, slot) {
-    const box = function (i) { return captionBox(i, slot, String(counts[i])); };
-    const order = counts.map(function (_, i) { return i; }).sort(
-      function (a, b) {
-        const priority = function (i) { return counts[i] > 0 ? 1 : 0; };
-        return priority(b) - priority(a) || a - b;
-      });
-
-    const kept = [];
-    order.forEach(function (i) {
-      const candidate = box(i);
-      const collides = kept.some(function (j) {
-        return boxesOverlap(candidate, box(j));
-      });
-      if (!collides) kept.push(i);
-    });
-    return kept.sort(function (a, b) { return a - b; });
   }
 
   
@@ -139,6 +118,56 @@
     const suffix = unit ? " " + unit : "";
     return { lead: monthLabel(atMillis) + " — " + seriesLabel + ": ",
       number: String(value) + suffix };
+  }
+
+  
+
+  function countAxisTicks(maxCount) {
+    if (!(maxCount > 0)) return [0];
+    const target = 5;
+    const raw = maxCount / target;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+    const bases = [1, 2, 5, 10];
+    let step = 10 * magnitude;
+    for (let i = 0; i < bases.length; i += 1) {
+      const candidate = bases[i] * magnitude;
+      if (candidate >= raw) { step = candidate; break; }
+    }
+    step = Math.max(1, Math.round(step));
+    const ticks = [];
+    for (let v = 0; v <= maxCount + 1e-9; v += step) ticks.push(v);
+    if (ticks[ticks.length - 1] < maxCount) {
+      ticks.push(ticks[ticks.length - 1] + step);
+    }
+    return ticks;
+  }
+
+  
+
+  function valueAxisTicks(minValue, maxValue) {
+    if (!(maxValue > minValue)) return [minValue];
+    return [minValue, (minValue + maxValue) / 2, maxValue];
+  }
+
+  
+
+  function positionTooltipBox(anchorBox, figureBox, tipBox) {
+    let left = anchorBox.left - figureBox.left +
+      anchorBox.width / 2 - tipBox.width / 2;
+    let top = anchorBox.top - figureBox.top - tipBox.height - 8;
+    if (top < 0) top = anchorBox.bottom - figureBox.top + 8;  
+
+    if (left < 0) left = 0;
+    if (left + tipBox.width > figureBox.width) {
+      left = figureBox.width - tipBox.width;
+    }
+
+    if (top + tipBox.height > figureBox.height) {
+      top = figureBox.height - tipBox.height;
+    }
+    if (top < 0) top = 0;
+
+    return { left: left, top: top };
   }
 
   
@@ -211,13 +240,16 @@
     binLabel: binLabel,
     midpointLabel: midpointLabel,
     captionWidth: captionWidth,
+    captionBox: captionBox,
     containBox: containBox,
     rangeCaptionPlan: rangeCaptionPlan,
-    countCaptionPlan: countCaptionPlan,
     memberCount: memberCount,
     binTooltipParts: binTooltipParts,
     monthLabel: monthLabel,
     trendTooltipParts: trendTooltipParts,
+    countAxisTicks: countAxisTicks,
+    valueAxisTicks: valueAxisTicks,
+    positionTooltipBox: positionTooltipBox,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
@@ -293,21 +325,11 @@
         typeof tip.getBoundingClientRect !== "function") {
       return;
     }
-    const figureBox = figure.getBoundingClientRect();
-    const anchorBox = anchor.getBoundingClientRect();
-    const tipBox = tip.getBoundingClientRect();
-
-    let left = anchorBox.left - figureBox.left +
-      anchorBox.width / 2 - tipBox.width / 2;
-    let top = anchorBox.top - figureBox.top - tipBox.height - 8;
-    if (top < 0) top = anchorBox.bottom - figureBox.top + 8;  
-    if (left < 0) left = 0;
-    if (left + tipBox.width > figureBox.width) {
-      left = figureBox.width - tipBox.width;
-    }
-
-    tip.style.left = left + "px";
-    tip.style.top = top + "px";
+    const position = positionTooltipBox(
+      anchor.getBoundingClientRect(), figure.getBoundingClientRect(),
+      tip.getBoundingClientRect());
+    tip.style.left = position.left + "px";
+    tip.style.top = position.top + "px";
   }
 
   
@@ -456,6 +478,11 @@
     const height = 320;
     const baseline = height - 60;
     const top = 20;
+     
+     
+     
+     
+    const left = 50;
     const node = target.querySelector("svg");
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
@@ -464,19 +491,13 @@
     const most = bins.reduce(function (max, bin) {
       return Math.max(max, bin.count);
     }, 1);
-    const slot = width / bins.length;
+    const plotWidth = width - left;
+    const slot = plotWidth / bins.length;
 
-    const counts = bins.map(function (bin) { return bin.count; });
     const midpointLabels = bins.map(function (bin) {
       return midpointLabel(bin.from[system], bin.to[system]);
     });
-    const countedIndexes = new Set(countCaptionPlan(counts, slot));
-    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot));
 
-     
-     
-     
-     
      
      
      
@@ -486,29 +507,46 @@
       ? width - captionWidth(unit) - CAPTION_CHAR_WIDTH
       : width;
 
+     
+     
+     
+     
+    const boxOf = function (i) {
+      const raw = captionBox(i, slot, midpointLabels[i]);
+      return containBox(
+        { left: left + raw.left, right: left + raw.right },
+        left, rightBound);
+    };
+    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot, boxOf));
+
     node.appendChild(svg("line", {
-      x1: 0, y1: baseline, x2: width, y2: baseline,
+      x1: left, y1: baseline, x2: width, y2: baseline,
     }, "chart-axis"));
+
+     
+     
+     
+     
+     
+    countAxisTicks(most).forEach(function (tick) {
+      const y = baseline - (tick / most) * (baseline - top);
+      node.appendChild(svg("text", {
+        x: left - 8, y: y + 4, "text-anchor": "end",
+      }, "chart-label")).textContent = String(tick);
+    });
 
     bins.forEach(function (bin, index) {
       const barHeight = bin.count > 0
         ? Math.max(1, (bin.count / most) * (baseline - top))
         : 0;
-      const x = index * slot;
+      const x = left + index * slot;
       node.appendChild(svg("rect", {
         x: x + 2, y: baseline - barHeight,
         width: Math.max(1, slot - 4), height: barHeight, rx: 2,
       }, "chart-bar"));
 
-      if (countedIndexes.has(index)) {
-        node.appendChild(svg("text", {
-          x: x + slot / 2, y: baseline - barHeight - 6, "text-anchor": "middle",
-        }, "chart-value")).textContent = String(bin.count);
-      }
-
       if (labeledIndexes.has(index)) {
-        const box = containBox(
-          captionBox(index, slot, midpointLabels[index]), rightBound);
+        const box = boxOf(index);
         const text = svg("text", {
           x: (box.left + box.right) / 2, y: baseline + 16,
           "text-anchor": "middle",
@@ -537,6 +575,9 @@
         bin.from[system], bin.to[system], unit, bin.count));
     });
 
+     
+     
+     
      
      
      
@@ -673,6 +714,18 @@
     node.appendChild(svg("line", {
       x1: left, y1: height - bottom, x2: width - right, y2: height - bottom,
     }, "chart-axis"));
+
+     
+     
+     
+     
+     
+     
+    valueAxisTicks(minValue, maxValue).forEach(function (tick) {
+      node.appendChild(svg("text", {
+        x: left - 8, y: y(tick) + 4, "text-anchor": "end",
+      }, "chart-label")).textContent = String(tick);
+    });
 
     
 

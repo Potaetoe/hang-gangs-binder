@@ -2555,6 +2555,49 @@ def element_span(text, found):
     return (found.start(), index), None
 
 
+def footer_editor_span(text):
+    """(start, end) into `text` of the footer's own custom-palette
+    editor <details>...</details>, or None if it cannot be pinned down.
+
+    The same search footer_problems() runs below, factored out so
+    more_disclosure_problems() (check 27) can tell the editor's own
+    <summary> apart from a decoy elsewhere on the page (0.9-M2-S13 fix
+    wave 1, finding F3, #378). Before this, "Custom theme" was refused
+    nowhere but a plain word-equality test against MORE_SUMMARY/
+    THEME_PICKER_SUMMARY - and the reviewer's own attack proved it: an
+    unrelated card's disclosure, renamed to "Custom theme", passed
+    check 27 clean. Silent by design rather than reporting anything of
+    its own: a page whose editor cannot be pinned down here is exactly
+    the shape footer_problems() already reports in its own words, and
+    None simply means no positional exception applies anywhere on this
+    page - which is correct, since nothing on it has earned the word.
+    """
+    footer_match = FOOTER.search(text)
+    if footer_match is None or len(FOOTER.findall(text)) != 1:
+        return None
+    inside = footer_match.group(1)
+    inner_start = footer_match.start(1)
+
+    swatch = SWATCH_GROUP.search(inside)
+    if not swatch:
+        return None
+    span, unreadable = element_span(inside, swatch)
+    if unreadable:
+        return None
+
+    after_row = inside[span[1]:]
+    editor = THEME_EDITOR_DETAILS.search(after_row)
+    if not editor:
+        return None
+    editor_span, editor_unreadable = element_span(after_row, editor)
+    if editor_unreadable:
+        return None
+
+    start = inner_start + span[1] + editor_span[0]
+    end = inner_start + span[1] + editor_span[1]
+    return (start, end)
+
+
 def footer_problems(text, themed):
     """[problem] for one page's footer against the owner's ruling on #274.
 
@@ -6576,34 +6619,40 @@ def more_disclosure_problems(text, page):
                 "already open is the prose back on the page with a control "
                 "drawn around it, which is what #275 moved behind it")
 
-    for words in summaries:
-        if words != MORE_SUMMARY and words != THEME_PICKER_SUMMARY:
+    # POSITIONAL, not page-wide (0.9-M2-S13 fix wave 1, F3, #378). The
+    # word alone is not a reservation: ANY summary reading "Custom
+    # theme" passes a page-wide test, on any themed page - and the
+    # reviewer's own attack renamed an unrelated card's disclosure to
+    # prove it: a decoy is not the editor, and a check that cannot tell
+    # them apart is not reserving the word at all. footer_editor_span()
+    # is the same search footer_problems() runs to find the ONE
+    # <details> that is allowed
+    # to carry it; every <summary> outside that exact span still owes
+    # MORE_SUMMARY, on every page, themed or not - and a page whose
+    # editor cannot be pinned down at all (no footer, no swatch row, more
+    # than one footer) simply has no exception anywhere on it, which is
+    # correct: nothing there has earned the reserved word.
+    editor_span = footer_editor_span(text)
+    for match in SUMMARY.finditer(text):
+        words = label_text(match.group(1))
+        inside_editor = (editor_span is not None and
+                          editor_span[0] <= match.start() < editor_span[1])
+        if inside_editor:
+            # footer_problems() already holds THIS summary to
+            # THEME_PICKER_SUMMARY exactly, off its own isolated span -
+            # checking it again here would be the same test twice.
+            continue
+        if words != MORE_SUMMARY:
             problems.append(
                 "labels a disclosure \"%s\". The word is \"%s\" on every "
-                "page - MORE_SUMMARY in tools/check_web.py - because a "
-                "reveal named differently on each card is four controls "
-                "rather than one, with the one reserved exception "
-                "THEME_PICKER_SUMMARY (\"%s\") names for the footer's own "
-                "custom-palette editor" %
-                (words, MORE_SUMMARY, THEME_PICKER_SUMMARY))
-
-    # THEME_PICKER_SUMMARY reads as a page-wide word here - a themed
-    # page's footer editor is welcome to carry it and no other page is,
-    # but which specific <details> owes it is footer_problems()'s own
-    # question, not this one's: that arm already isolates the editor's
-    # exact span (element_span() on THEME_EDITOR_DETAILS), so IT checks
-    # the editor's own <summary> word directly rather than this function
-    # inferring identity from a page-wide count - a page-wide count
-    # cannot tell "the editor itself was renamed" from "some unrelated
-    # card borrowed the word" apart, and a check that cannot tell two
-    # failures apart is answering a different question than the one
-    # asked of it.
-    if page not in THEMED_PAGES and THEME_PICKER_SUMMARY in summaries:
-        problems.append(
-            "carries a disclosure labeled \"%s\" and is not pinned in "
-            "THEMED_PAGES in tools/check_web.py. That word is reserved "
-            "for the footer's custom-palette editor, which only a themed "
-            "page carries" % THEME_PICKER_SUMMARY)
+                "page - MORE_SUMMARY in tools/check_web.py - with the one "
+                "reserved exception THEME_PICKER_SUMMARY (\"%s\"), which "
+                "only the footer's own custom-palette editor may carry. "
+                "A summary reading it anywhere else - even on a themed "
+                "page, even worded identically - is a decoy, not the "
+                "editor, and check 27 refuses it now instead of passing "
+                "it clean"
+                % (words, MORE_SUMMARY, THEME_PICKER_SUMMARY))
 
     if page in MORE_PAGES and not opens:
         problems.append(
