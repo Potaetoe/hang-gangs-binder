@@ -114,6 +114,16 @@ const F = globalThis.BinderFields;
 const FORM = globalThis.BinderForm;
 const SITE = globalThis.BINDER_SITE;
 
+// A real countries table, standing for the rest of the loaded file's
+// life (every loadFormWired() call after this line, section 10's
+// prefill harness included) - the country field's own value
+// assignments elsewhere in this file go through .value= directly, so
+// they never depended on real options existing, but the pin-order arm
+// below (0.9-M2-S14, #380 ruling 4) needs a real table with all three
+// pinned codes actually in it.
+globalThis.BINDER_COUNTRIES = { US: "United States of America",
+  GB: "United Kingdom", CA: "Canada", FR: "France", AL: "Albania" };
+
 /* ------------------------------------------------------------------ */
 /* 1. Spec-derived rendering: a field added to a copy of the spec       */
 /*    arrives in the render plan, with no edit here or in form.js.      */
@@ -1147,6 +1157,25 @@ async function loadFormWired(fetchImpl) {
   return { page: formPage, sent, sayCalls };
 }
 
+/*
+ * Pinned countries, on the FORM's own field (0.9-M2-S14, #380 ruling
+ * 4) - the same Fields.orderedChoices()/pinnedCountries() pair the
+ * charts filter uses (tests/charts-page.test.mjs), driven here through
+ * buildChoiceField() on a real, rendered <select>.
+ */
+{
+  const wired = await loadFormWired();
+  const options = wired.page.byId("entry-country").children.map((o) => o.value);
+  // The blank "Prefer not to say" option is buildChoiceField's own
+  // first append, ahead of anything from countries.js - options[0].
+  check("the country field pins the US, the UK and Canada right after " +
+    "the blank option, in that order",
+    options[1] === "US" && options[2] === "GB" && options[3] === "CA");
+  check("the full alphabetical run still follows, pinned codes present " +
+    "a second time",
+    options.slice(4).join(",") === "AL,CA,FR,GB,US");
+}
+
 function fillValidEntry(byId) {
   byId("entry-over18").checked = true;
   byId("entry-weight-imperial").value = "150";
@@ -1681,7 +1710,7 @@ check("F5: weight stays blank for the next measurement, even right after " +
   resubmitPage.byId("entry-weight-metric").value === "");
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 108;
+const EXPECTED = 110;
 console.log(failures
   ? `\nyour-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

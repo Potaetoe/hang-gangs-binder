@@ -158,6 +158,21 @@ globalThis.BINDER_SITE = {
   },
 
   /* ---------------------------------------------------------------- */
+  /* Countries, ordered.                                               */
+  /*                                                                   */
+  /* `pinned` is which codes sit at the top of every country dropdown, */
+  /* and in what order (owner ruling, 0.9-M2-S14, #380 ruling 4). They */
+  /* stay in their alphabetical place too - a reader scanning either   */
+  /* way finds them, and picking one of the two same-valued options    */
+  /* makes no difference. apps/web/countries.js holds the code-to-name */
+  /* table this reads against; a code with no name there is skipped    */
+  /* rather than shown blank.                                          */
+
+  countries: {
+    pinned: ["US", "GB", "CA"],
+  },
+
+  /* ---------------------------------------------------------------- */
   /* The form's fields, in the order the form asks them.               */
 
   fields: [

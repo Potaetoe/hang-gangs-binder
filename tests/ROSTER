@@ -30,7 +30,6 @@ tests/charts-aggregate.test.mjs
 tests/charts-page.test.mjs
 tests/ci-wiring.test.mjs
 tests/claim-vs-diff.test.mjs
-tests/custom-palette.test.mjs
 tests/door.test.mjs
 tests/entry-rows.test.mjs
 tests/fleet-status.test.mjs
@@ -50,6 +49,7 @@ tests/site-propagation.test.mjs
 tests/site-spec.test.mjs
 tests/store-crypto.test.mjs
 tests/telegram-auth.test.mjs
+tests/theme-fallback.test.mjs
 tests/worktree-contract.test.mjs
 tests/wrangler-sit.test.mjs
 tests/your-page.test.mjs

@@ -2471,17 +2471,6 @@ SUMMARY = re.compile(r"<summary\b[^>]*>(.*?)</summary>", re.S | re.I)
 SWATCH_GROUP = re.compile(
     r"<(\w+)\b[^>]*\bclass\s*=\s*[\"'][^\"']*\btheme-swatches\b[^>]*>", re.I)
 
-# The custom-palette editor (0.9-M2-S6, #82) - the one exception the
-# footer-is-the-row-and-nothing-else ruling now carries, per the design
-# mandate settled 2026-08-19: the two color pickers live in a native
-# <details class="more"> directly below the swatch row, the site's own
-# disclosure grammar rather than a new floating panel. Found by the same
-# class check 27's more_disclosure_problems() already enforces on every
-# <details> on these pages, so this arm and that one read one shape
-# rather than two.
-THEME_EDITOR_DETAILS = re.compile(
-    r"<(\w+)\b[^>]*\bclass\s*=\s*[\"'][^\"']*\bmore\b[^>]*>", re.I)
-
 # One page's footer, read whole. Non-greedy to the first closing tag
 # rather than depth-aware, because a footer cannot nest a footer - and
 # a page carrying two of them is refused by the arm rather than read.
@@ -2555,59 +2544,21 @@ def element_span(text, found):
     return (found.start(), index), None
 
 
-def footer_editor_span(text):
-    """(start, end) into `text` of the footer's own custom-palette
-    editor <details>...</details>, or None if it cannot be pinned down.
-
-    The same search footer_problems() runs below, factored out so
-    more_disclosure_problems() (check 27) can tell the editor's own
-    <summary> apart from a decoy elsewhere on the page (0.9-M2-S13 fix
-    wave 1, finding F3, #378). Before this, "Custom theme" was refused
-    nowhere but a plain word-equality test against MORE_SUMMARY/
-    THEME_PICKER_SUMMARY - and the reviewer's own attack proved it: an
-    unrelated card's disclosure, renamed to "Custom theme", passed
-    check 27 clean. Silent by design rather than reporting anything of
-    its own: a page whose editor cannot be pinned down here is exactly
-    the shape footer_problems() already reports in its own words, and
-    None simply means no positional exception applies anywhere on this
-    page - which is correct, since nothing on it has earned the word.
-    """
-    footer_match = FOOTER.search(text)
-    if footer_match is None or len(FOOTER.findall(text)) != 1:
-        return None
-    inside = footer_match.group(1)
-    inner_start = footer_match.start(1)
-
-    swatch = SWATCH_GROUP.search(inside)
-    if not swatch:
-        return None
-    span, unreadable = element_span(inside, swatch)
-    if unreadable:
-        return None
-
-    after_row = inside[span[1]:]
-    editor = THEME_EDITOR_DETAILS.search(after_row)
-    if not editor:
-        return None
-    editor_span, editor_unreadable = element_span(after_row, editor)
-    if editor_unreadable:
-        return None
-
-    start = inner_start + span[1] + editor_span[0]
-    end = inner_start + span[1] + editor_span[1]
-    return (start, end)
-
-
 def footer_problems(text, themed):
     """[problem] for one page's footer against the owner's ruling on #274.
 
-    The footer is the swatch row, its custom-palette editor since
-    0.9-M2-S6 (#82), and nothing else - so this reads what is left after
-    both are cut out. That is the arm with reach: an off-site href is
-    invisible to DESTINATIONS and to the anti-stranding arm alike, and an
-    on-site link spelling its destination's own name satisfies the name
-    table exactly - so before this, two of the four footers could take
-    their nav back with the whole gate green.
+    The footer is the swatch row and nothing else - so this reads what
+    is left after the row is cut out. That is the arm with reach: an
+    off-site href is invisible to DESTINATIONS and to the anti-stranding
+    arm alike, and an on-site link spelling its destination's own name
+    satisfies the name table exactly - so before this, two of the four
+    footers could take their nav back with the whole gate green.
+
+    THE CUSTOM-PALETTE EDITOR THIS ARM ONCE REQUIRED IS GONE (0.9-M2-S14,
+    #380 ruling 2, superseding 0.9-M2-S6/#82 and 0.9-M2-S13/#378
+    entirely): the custom theme itself is retired, so there is no picker
+    left for a footer to carry, and this reverts to the ruling's
+    original, simpler shape - the row, on its own.
     """
     problems = []
     footers = FOOTER.findall(text)
@@ -2660,101 +2611,8 @@ def footer_problems(text, themed):
         problems.append(unreadable)
         return problems
 
-    # F2 (0.9-M2-S6 fix wave 1, #82): "directly below the row" is a
-    # claim about what comes AFTER the row, so the EDITOR SEARCH reads
-    # only that text. Concatenating inside[:span[0]] (before the row)
-    # onto inside[span[1]:] (after it) before this search would prove
-    # the editor is PRESENT somewhere in the footer while throwing away
-    # where - an editor placed above the row would land at the front of
-    # that concatenation, reading `between` a few lines down as empty
-    # and passing the position check on a footer where the editor
-    # actually sits above the row.
-    after_row = inside[span[1]:]
     within = inside[span[0]:span[1]]
-
-    # The custom-palette editor, cut out of `after_row` the same way the
-    # row was cut out of `inside` - the one element besides the row a
-    # themed footer may now hold (0.9-M2-S6, design mandate 1). Required
-    # rather than merely allowed: every themed page carries the same
-    # fifth chip, so every themed page owes the editor it opens, the
-    # same parity the four named palettes already hold.
-    editor = THEME_EDITOR_DETAILS.search(after_row)
-    if not editor:
-        problems.append(
-            "offers a palette and carries no <details class=\"more\"> "
-            "custom-palette editor directly below its swatch row. "
-            "0.9-M2-S6 ships the editor on every themed page - the "
-            "Custom chip in the row above needs it to mean anything - so "
-            "a page missing it is one member cannot reach their own "
-            "colors from")
-        return problems
-
-    editor_span, editor_unreadable = element_span(after_row, editor)
-    if editor_unreadable:
-        problems.append(editor_unreadable)
-        return problems
-
-    # The editor's OWN summary word, checked against its own isolated
-    # span rather than against the page as a whole - more_disclosure_
-    # problems() (check 27) still holds every <summary> on the page to
-    # MORE_SUMMARY or THEME_PICKER_SUMMARY as a pair of allowed words,
-    # but only this arm knows WHICH <details> is the editor, so only
-    # this arm can say the editor itself carries the ruled one rather
-    # than merely that the word appears somewhere on the page (0.9-M2-
-    # S13, #378: "the 'More' button is rethemed and relabeled as the
-    # single obvious 'Custom theme' control").
-    editor_markup = after_row[editor_span[0]:editor_span[1]]
-    editor_summary = SUMMARY.search(editor_markup)
-    if editor_summary is None:
-        problems.append(
-            "carries a custom-palette editor with no <summary> at all. "
-            "0.9-M2-S13 (#378) made the editor's own summary the whole "
-            "of how a member reaches Custom - a summary-less <details> "
-            "opens through the browser's own default word instead, "
-            "never the ruled one")
-    else:
-        editor_word = label_text(editor_summary.group(1))
-        if editor_word != THEME_PICKER_SUMMARY:
-            problems.append(
-                "labels its custom-palette editor \"%s\", and 0.9-M2-S13 "
-                "(#378) ruled the word \"%s\" for exactly this control - "
-                "THEME_PICKER_SUMMARY in tools/check_web.py. The custom "
-                "swatch circle this editor's own summary replaced is "
-                "gone; a summary still reading \"More\" (or anything "
-                "else) is that control arriving without the name a "
-                "member would recognize it by"
-                % (editor_word, THEME_PICKER_SUMMARY))
-
-    between = after_row[:editor_span[0]]
-    if between.strip():
-        problems.append(
-            "carries markup or words between the swatch row and its "
-            "<details class=\"more\"> custom-palette editor. The editor "
-            "sits directly below the row with nothing between them "
-            "(design mandate 1), so anything there is the footer "
-            "drifting again")
-
-    # F2 (0.9-M2-S6 fix wave 2, #82): only the EDITOR SEARCH above needs
-    # position preserved - "directly below" is a claim about order, and
-    # order only means something relative to the row. The link/markup/
-    # words arms below make no positional claim at all ("the footer is
-    # the row and its editor, and nothing else" - order-blind by the
-    # ruling's own words), so they read for everything that ISN'T the
-    # row or the editor: what came before the row, plus what's left of
-    # `after_row` once the editor's own span is cut out of it. Wave 1
-    # fixed the editor search by narrowing `rest` to after_row and then
-    # reused that SAME narrowed `rest` for these arms too - so content
-    # before the row (an off-site link, markup, bare words) stopped
-    # being read by anything, the exact hole #274 closed reopened one
-    # page earlier. Confirmed by the new before-the-row fixture in
-    # dev/check_web.test.py: it passes wave 1's function silently and
-    # is refused here.
-    rest = inside[:span[0]] + after_row[editor_span[1]:]
-    if THEME_EDITOR_DETAILS.search(rest):
-        problems.append(
-            "carries more than one <details class=\"more\"> custom-"
-            "palette editor in its footer. One picker, reused on every "
-            "page, is the whole point of the mechanism")
+    rest = inside[:span[0]] + inside[span[1]:]
 
     for _ in FOOTER_ANCHOR.findall(rest):
         problems.append(
@@ -3027,7 +2885,6 @@ LABELS = {
     "Session": "runner",
     "Telegram": "runner",
     "Unavailable": "flag",
-    "What this is": "runner",
     "Your entries": "runner",
     "Your trend": "runner",
 }
@@ -3402,7 +3259,10 @@ PROSE_LINKS = {
     # invitation to the same page while the footers had one (#265
     # row 22); #274 left it the only link on this page that does.
     ("admin.html", "charts.html"): frozenset({"Open it"}),
-    ("charts.html", "index.html"): frozenset({"Add yours"}),
+    # ("charts.html", "index.html"): {"Add yours"} retired 0.9-M2-S14
+    # (#380 ruling 1): the "What this is" card that carried it is
+    # removed outright, and with it the only "Add yours" prose link
+    # charts.html had.
 }
 
 # What a stale prose declaration is attributed to, for the reason
@@ -3747,35 +3607,48 @@ def css_surface_problems(css):
 
 
 COUNTRIES_FILE = "countries.js"
+SITE_CONFIG_FILE = "site.config.js"
 
 
-def promoted_country_problems():
-    """(code, problem) for promoted codes with no country behind them."""
-    path = os.path.join(WEB, COUNTRIES_FILE)
-    if not os.path.exists(path):
+def pinned_country_problems():
+    """(code, problem) for pinned codes with no country behind them.
+
+    Check 9's subject is `countries.pinned` in site.config.js
+    (0.9-M2-S14, #380 ruling 4): DATA a fork edits without opening
+    countries.js at all. The reconciliation itself: every pinned code
+    has to be a real country, and none may repeat.
+    """
+    countries_path = os.path.join(WEB, COUNTRIES_FILE)
+    config_path = os.path.join(WEB, SITE_CONFIG_FILE)
+    if not os.path.exists(countries_path) or not os.path.exists(config_path):
         return []  # check 1's to report
-    text = strip_js_comments(open(path, encoding="utf-8").read())
 
-    promoted = re.search(
-        r"BINDER_COUNTRIES_PROMOTED\s*=\s*\[(.*?)\]", text, re.S)
-    if not promoted:
-        return []  # no promoted block is a legitimate state
-    codes = re.findall(r"[\"']([^\"']+)[\"']", promoted.group(1))
+    countries_text = strip_js_comments(
+        open(countries_path, encoding="utf-8").read())
+    config_text = strip_js_comments(
+        open(config_path, encoding="utf-8").read())
 
-    known = set(re.findall(r"^\s*([A-Z]{2})\s*:", text, re.M))
+    pinned = re.search(
+        r"countries\s*:\s*\{[^{}]*?\bpinned\s*:\s*\[(.*?)\]", config_text, re.S)
+    if not pinned:
+        return []  # no pinned block is a legitimate state - a fork pins none
+    codes = re.findall(r"[\"']([^\"']+)[\"']", pinned.group(1))
+
+    known = set(re.findall(r"^\s*([A-Z]{2})\s*:", countries_text, re.M))
     problems = []
     seen = set()
     for code in codes:
         if code in seen:
             problems.append((
                 code,
-                "is promoted twice, so it appears twice in the block at the "
+                "is pinned twice, so it appears twice in the block at the "
                 "top of the dropdown"))
         seen.add(code)
         if code not in known:
             problems.append((
                 code,
-                "is not a country in %s. form.js skips it, so the dropdown "
+                "is not a country in %s. Every consumer of "
+                "BinderFields.orderedChoices() skips it, so the dropdown "
                 "would simply be missing it at the top with nothing "
                 "reporting why" % COUNTRIES_FILE))
     return problems
@@ -3923,14 +3796,6 @@ MODULE_EXPORTS = {
     "form.js": "BinderForm",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
-    # The one export theme-init.js carries (0.9-M2-S6, #82): the custom-
-    # palette math, published from the pre-paint script rather than from
-    # a second <head> script because check 22 below pins the head to
-    # exactly one. theme.js captures it at the end of the body; see
-    # loading_problems()'s own PREPAINT_SCRIPT seed for why that capture
-    # is in-order despite theme-init.js never appearing in a page's body
-    # run.
-    "theme-init.js": "BinderCustomPalette",
     "ui.js": "BinderUI",
     "xlsx.js": "BinderXlsx",
 }
@@ -3955,6 +3820,12 @@ NO_MODULE_EXPORT = {
     "submit.js": "wires your-page.html's trend, its entries list, its "
                  "download and idle expiry",
     "theme.js": "wires the palette controls in place",
+    # Carried the custom-palette math (BinderCustomPalette) from
+    # 0.9-M2-S6 (#82) until 0.9-M2-S14 (#380 ruling 2) retired the custom
+    # theme entirely - what remains is the pre-paint side effect alone,
+    # which assigns nothing.
+    "theme-init.js": "paints the saved named palette before first paint "
+                      "and assigns no global",
 }
 
 # Globals that are deliberately not frozen namespaces. Narrow, named, and
@@ -3973,8 +3844,6 @@ NO_MODULE_EXPORT = {
 NON_NAMESPACE_GLOBALS = {
     ("countries.js", "BINDER_COUNTRIES"):
         "the country name table the form reads",
-    ("countries.js", "BINDER_COUNTRIES_PROMOTED"):
-        "the promoted country codes, which check 9 reconciles",
     ("auth.js", "onTelegramAuth"):
         "the callback Telegram's widget invokes by name from its own script",
     ("site.config.js", "BINDER_SITE"):
@@ -4678,10 +4547,12 @@ def loading_problems():
         # exactly check 22's own guarantee a few hundred lines up - so
         # for the ordering question alone, it is seeded in at the front
         # rather than left for the loop below to read as a publisher
-        # that never ran. Since 0.9-M2-S6 (#82) it is a publisher
-        # (BinderCustomPalette, in MODULE_EXPORTS), and without this seed
-        # every page capturing it would fail order for a script that in
-        # fact always runs first.
+        # that never ran. Between 0.9-M2-S6 (#82) and 0.9-M2-S14 (#380
+        # ruling 2, which retired the custom theme) it also PUBLISHED
+        # (BinderCustomPalette, in MODULE_EXPORTS) - that seeding still
+        # holds now that it publishes nothing, for the same reason it
+        # held before: this script always runs first regardless of
+        # whether anything captures it.
         run = [PREPAINT_SCRIPT, *page_script_run(text)]
         for problem in run_order_problems(run, captures):
             problems.append((name, problem))
@@ -6522,23 +6393,23 @@ RULED_LINES = {
 MORE_CLASS = "more"
 MORE_SUMMARY = "More"
 
-# The one summary this ruling now names a second word for (0.9-M2-S13,
-# #378, the 2026-08-19 charts sitting round two): the footer's own
-# custom-palette editor, whose "More" is rethemed and relabeled as the
-# single obvious "Custom theme" control (design mandate 4) - the same
-# element THEME_EDITOR_DETAILS finds and footer_problems() requires one
-# of per themed page, so this is not a second disclosure earning a
-# second word, it is the one every themed page already carries reading
-# differently now. Every OTHER <summary> on the site still owes
-# MORE_SUMMARY exactly - this name is reserved for that one control and
-# refused anywhere else, the same way RETIRED_LABEL is refused outside
-# its own retirement.
-THEME_PICKER_SUMMARY = "Custom theme"
+# THEME_PICKER_SUMMARY ("Custom theme") is RETIRED (0.9-M2-S14, #380
+# ruling 2, superseding 0.9-M2-S6/#82 and 0.9-M2-S13/#378 entirely): the
+# custom theme itself is gone, so there is no picker left to reserve the
+# word for. Every <summary> on the site owes MORE_SUMMARY again, with no
+# positional exception - the same shape check 27 held before 0.9-M2-S6
+# ever carved one out.
 
 # The product pages the ruling names. admin.html is one of them - the
 # instrument's allowance under rule 7 is ONE short explanatory sentence
 # per card, not a page-wide exemption from the mechanism.
-MORE_PAGES = frozenset({"admin.html", "charts.html", "your-page.html"})
+#
+# charts.html LEFT THIS SET at 0.9-M2-S14 (#380 rulings 1 and 2): its
+# only two disclosures were the "What this is" card (removed by ruling
+# 1) and the footer's custom-palette editor (removed by ruling 2), so
+# once both are gone the page carries no explanatory prose behind a
+# fold at all - there is nothing left for this arm to require one of.
+MORE_PAGES = frozenset({"admin.html", "your-page.html"})
 
 DETAILS_OPEN = re.compile(r"<details\b([^>]*)>", re.I)
 
@@ -6619,40 +6490,19 @@ def more_disclosure_problems(text, page):
                 "already open is the prose back on the page with a control "
                 "drawn around it, which is what #275 moved behind it")
 
-    # POSITIONAL, not page-wide (0.9-M2-S13 fix wave 1, F3, #378). The
-    # word alone is not a reservation: ANY summary reading "Custom
-    # theme" passes a page-wide test, on any themed page - and the
-    # reviewer's own attack renamed an unrelated card's disclosure to
-    # prove it: a decoy is not the editor, and a check that cannot tell
-    # them apart is not reserving the word at all. footer_editor_span()
-    # is the same search footer_problems() runs to find the ONE
-    # <details> that is allowed
-    # to carry it; every <summary> outside that exact span still owes
-    # MORE_SUMMARY, on every page, themed or not - and a page whose
-    # editor cannot be pinned down at all (no footer, no swatch row, more
-    # than one footer) simply has no exception anywhere on it, which is
-    # correct: nothing there has earned the reserved word.
-    editor_span = footer_editor_span(text)
+    # Page-wide again, with no positional exception (0.9-M2-S14, #380
+    # ruling 2): the custom-palette editor THEME_PICKER_SUMMARY once
+    # carved a reserved word out for is gone, so every <summary> on the
+    # site owes MORE_SUMMARY exactly, everywhere it appears.
     for match in SUMMARY.finditer(text):
         words = label_text(match.group(1))
-        inside_editor = (editor_span is not None and
-                          editor_span[0] <= match.start() < editor_span[1])
-        if inside_editor:
-            # footer_problems() already holds THIS summary to
-            # THEME_PICKER_SUMMARY exactly, off its own isolated span -
-            # checking it again here would be the same test twice.
-            continue
         if words != MORE_SUMMARY:
             problems.append(
                 "labels a disclosure \"%s\". The word is \"%s\" on every "
-                "page - MORE_SUMMARY in tools/check_web.py - with the one "
-                "reserved exception THEME_PICKER_SUMMARY (\"%s\"), which "
-                "only the footer's own custom-palette editor may carry. "
-                "A summary reading it anywhere else - even on a themed "
-                "page, even worded identically - is a decoy, not the "
-                "editor, and check 27 refuses it now instead of passing "
-                "it clean"
-                % (words, MORE_SUMMARY, THEME_PICKER_SUMMARY))
+                "page - MORE_SUMMARY in tools/check_web.py, with no "
+                "reserved exception any more (0.9-M2-S14, #380 ruling 2 "
+                "retired the custom-palette editor that once earned one)"
+                % (words, MORE_SUMMARY))
 
     if page in MORE_PAGES and not opens:
         problems.append(
@@ -6968,9 +6818,9 @@ def main():
     for page, problem in theme_control_page_problems():
         problems.append("%s %s." % (page, problem))
 
-    for code, problem in promoted_country_problems():
-        problems.append("%s: the promoted country %s %s."
-                        % (COUNTRIES_FILE, code, problem))
+    for code, problem in pinned_country_problems():
+        problems.append("%s: the pinned country %s %s."
+                        % (SITE_CONFIG_FILE, code, problem))
 
     problem = units_default_problem()
     if problem:

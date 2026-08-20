@@ -699,18 +699,6 @@ input[type="file"] {
 
 
 
-input[type="color"] {
-  inline-size: 3rem;
-  block-size: 2.25rem;
-  padding: 0.1875rem;
-  background: var(--color-field);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-
-
 input[aria-invalid="true"] { border-color: var(--color-warn-text); }
 
 
@@ -786,27 +774,6 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   margin-block-start: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-}
-
-
-
-footer .more > summary {
-  font-size: var(--text-sm);
-  color: var(--color-text);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-pill);
-}
-
-footer .more > summary:hover {
-  background: var(--color-accent-quiet);
-}
-
-
-
-:root[data-theme="custom"] footer .more > summary {
-  background: var(--color-accent-quiet);
-  border-color: var(--color-accent);
 }
 
  

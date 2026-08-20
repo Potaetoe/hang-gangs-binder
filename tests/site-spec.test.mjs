@@ -49,7 +49,7 @@ const F = globalThis.BinderFields;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
-const EXPECTED = 44;
+const EXPECTED = 50;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -213,6 +213,40 @@ check("a multiple-choice measure says it takes more than one",
   F.measure("roles").multiple === true);
 check("the country measure points at the list it reads",
   F.measure("country").choicesFrom === "countries");
+
+/* 3b. Pinned countries (0.9-M2-S14, #380 ruling 4): the shipped spec's
+   own default pin, and the ordering primitive every consumer shares. */
+check("the shipped spec pins the US, the UK and Canada, in that order",
+  same(F.pinnedCountries(), ["US", "GB", "CA"]));
+// A fresh copy, not the live array (F.pinnedCountries() already returns
+// one - #94: same(a, b) it is worth being sure about, since it also
+// proves the spec's own list was not handed back by reference).
+check("pinnedCountries() hands back a copy, not the spec's own array",
+  (() => {
+    const before = F.pinnedCountries();
+    before.push("ZZ");
+    return same(F.pinnedCountries(), ["US", "GB", "CA"]);
+  })());
+check("a spec with no countries block pins nothing, ordinary rather " +
+  "than a throw",
+  same(F.pinnedCountries({ ...SITE, countries: undefined }), []));
+
+const ORDER_CHOICES = [
+  { value: "AL", label: "Albania" }, { value: "CA", label: "Canada" },
+  { value: "GB", label: "United Kingdom" },
+  { value: "US", label: "United States of America" },
+];
+check("orderedChoices() puts the pinned codes first, in the pin's own " +
+  "order, ahead of the same alphabetical list untouched",
+  same(F.orderedChoices(ORDER_CHOICES, ["US", "GB", "CA"]).map((c) => c.value),
+    ["US", "GB", "CA", "AL", "CA", "GB", "US"]));
+check("a pinned code the choice list does not carry is skipped, not " +
+  "inserted with no label",
+  same(F.orderedChoices(ORDER_CHOICES, ["US", "MX"]).map((c) => c.value),
+    ["US", "AL", "CA", "GB", "US"]));
+check("no pin at all leaves the list exactly as it arrived",
+  same(F.orderedChoices(ORDER_CHOICES, []), ORDER_CHOICES) &&
+  same(F.orderedChoices(ORDER_CHOICES, undefined), ORDER_CHOICES));
 
 // A derivation nothing implements is a measure that would quietly
 // compute nothing, which is worse than a spec that will not load.

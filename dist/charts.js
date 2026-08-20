@@ -235,6 +235,63 @@
     return url.toString();
   }
 
+  
+
+  const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
+
+  
+
+  function unitFor(answer, system) {
+    return answer.units && answer.units[system] && answer.units[system].unit
+      ? answer.units[system].unit
+      : null;
+  }
+
+  
+
+  function workbookColumns(unit) {
+    const suffix = unit ? " (" + unit + ")" : "";
+    return ["Section", "Label", "Count", "Average" + suffix, "You" + suffix];
+  }
+
+  function workbookRows(answer, system, countries, measureFor) {
+    if (!answer.enough) {
+      return [["Status", answer.note + " " + BROADER_FILTER_HINT,
+        "", "", ""]];
+    }
+
+    const unit = unitFor(answer, system);
+    const rows = [];
+
+    (answer.distribution ? answer.distribution.bins : []).forEach(
+      function (bin) {
+        rows.push(["Distribution",
+          binLabel(bin.from[system], bin.to[system], unit), bin.count,
+          "", ""]);
+      });
+
+    (answer.trend && answer.trend.points ? answer.trend.points : [])
+      .forEach(function (point) {
+        const at = new Date(point.period + "-01T00:00:00Z").getTime();
+        rows.push(["Trend", monthLabel(at), "", point.average[system], ""]);
+      });
+    (answer.self && answer.self.points ? answer.self.points : [])
+      .forEach(function (point) {
+        rows.push(["Trend", monthLabel(new Date(point.at).getTime()), "",
+          "", point.value[system]]);
+      });
+
+    (answer.groups || []).forEach(function (group) {
+      const measure = measureFor(group.field);
+      (group.values || []).forEach(function (cell) {
+        rows.push(["Group makeup — " + group.label,
+          groupCellLabel(measure, cell, countries), cell.count, "", ""]);
+      });
+    });
+
+    return rows;
+  }
+
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
@@ -256,6 +313,10 @@
     valueChoices: valueChoices,
     groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
+    unitFor: unitFor,
+    workbookColumns: workbookColumns,
+    workbookRows: workbookRows,
+    BROADER_FILTER_HINT: BROADER_FILTER_HINT,
   };
 
   root.BinderCharts = Object.freeze(Pure);
@@ -431,7 +492,15 @@
       return;
     }
     const measure = Fields.measure(fieldName, site);
-    valueChoices(measure, root.BINDER_COUNTRIES).forEach(function (choice) {
+    let choices = valueChoices(measure, root.BINDER_COUNTRIES);
+     
+     
+     
+     
+    if (measure.choicesFrom === "countries") {
+      choices = Fields.orderedChoices(choices, Fields.pinnedCountries(site));
+    }
+    choices.forEach(function (choice) {
       const option = document.createElement("option");
       option.value = choice.value;
       option.textContent = choice.label;
@@ -462,12 +531,6 @@
 
   function currentSystem() {
     return UI.checkedValue("units", Fields.defaultSystem());
-  }
-
-  function unitFor(answer, system) {
-    return answer.units && answer.units[system] && answer.units[system].unit
-      ? answer.units[system].unit
-      : null;
   }
 
   
@@ -792,10 +855,6 @@
     }
   }
 
-  
-
-  const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
-
    
    
    
@@ -833,21 +892,28 @@
 
   
 
-  let lastAnswerText = null;
+  let lastAnswer = null;
 
-  function offerDownload(text) {
-    lastAnswerText = text;
+  function offerDownload(answer) {
+    lastAnswer = answer;
     $("download").hidden = false;
   }
 
   function wireDownload() {
     $("download").addEventListener("click", function () {
-      if (!lastAnswerText) return;
-      const url = URL.createObjectURL(
-        new Blob([lastAnswerText], { type: "application/json" }));
+      if (!lastAnswer) return;
+      const site = root.BINDER_SITE;
+      const system = currentSystem();
+      const columns = workbookColumns(unitFor(lastAnswer, system));
+      const rows = workbookRows(lastAnswer, system, root.BINDER_COUNTRIES,
+        function (fieldName) { return Fields.measure(fieldName, site); });
+      const bytes = root.BinderXlsx.build(columns, rows, "Charts",
+        Date.now());
+      const url = URL.createObjectURL(new Blob([bytes], { type:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = "charts.json";
+      link.download = "charts.xlsx";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -906,7 +972,6 @@
     }
 
     const text = await response.text();
-    offerDownload(text);
 
     let answer;
     try {
@@ -919,6 +984,10 @@
     }
 
     renderAnswer(answer);
+     
+     
+     
+    offerDownload(answer);
 
     
 

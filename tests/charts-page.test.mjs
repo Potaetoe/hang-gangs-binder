@@ -138,6 +138,23 @@ const Charts = globalThis.BinderCharts;
 check("charts.js publishes BinderCharts, frozen",
   Charts !== undefined && Object.isFrozen(Charts));
 
+/*
+ * BinderXlsx, loaded once rather than per driven() call - unlike ui.js
+ * (loaded further down) it has no per-page state and no DOM dependency
+ * at all (xlsx.js's own IIFE takes no `typeof document` guard), so one
+ * load leaves globalThis.BinderXlsx standing for both the pure
+ * workbookRows() checks right below and every later driven() call.
+ * wireDownload() (0.9-M2-S14, #380 ruling 3) reads root.BinderXlsx.
+ * build() directly - the repository's one xlsx writer, reused rather
+ * than reimplemented.
+ */
+await import("data:text/javascript," +
+  encodeURIComponent(await read("../apps/web/xlsx.js")));
+const Xlsx = globalThis.BinderXlsx;
+check("apps/web/xlsx.js is loadable standalone and publishes BinderXlsx, "
+  + "frozen - the writer this page's download reuses, not a second one",
+  Xlsx !== undefined && Object.isFrozen(Xlsx));
+
 /* Owner ruling 5, #243: every edge is a plain number now. */
 check("two closed edges read as a plain range",
   Charts.binLabel(130, 150, "lb") === "130 lb–150 lb");
@@ -822,6 +839,139 @@ check("a field with real spec labels (gender) passes its label " +
     COUNTRY_TABLE) === "Male");
 
 /* ------------------------------------------------------------------ */
+/* 2b. The xlsx workbook (0.9-M2-S14, #380 ruling 3): workbookColumns() */
+/* and workbookRows() are the row-marshaling this file adds; the bytes  */
+/* themselves are BinderXlsx.build()'s, reused rather than reimplemented. */
+
+check("workbookColumns names the unit inline, once, when there is one",
+  JSON.stringify(Charts.workbookColumns("lb")) ===
+  JSON.stringify(["Section", "Label", "Count", "Average (lb)", "You (lb)"]));
+check("and carries no unit token when the measure is unitless",
+  JSON.stringify(Charts.workbookColumns(null)) ===
+  JSON.stringify(["Section", "Label", "Count", "Average", "You"]));
+
+check("a not-enough answer's whole workbook is one Status row - the " +
+  "same honest sentence the page prints, plus the same broader-filter " +
+  "hint",
+  JSON.stringify(Charts.workbookRows(
+    { enough: false, note: "Not enough people for this view." },
+    "imperial", {}, () => null)) ===
+  JSON.stringify([["Status",
+    "Not enough people for this view. " + Charts.BROADER_FILTER_HINT,
+    "", "", ""]]));
+
+/*
+ * A fixture shaped exactly like server/charts-agg.js's real answer -
+ * ENOUGH_FIXTURE further down (section 3) is the same shape but this
+ * one stands alone here since it is needed before that one is declared.
+ * The country group's own label doubles as the hostile-string proof:
+ * server/charts-agg.js sends the CODE as a placeholder label
+ * (groupCellLabel()'s own header) and this page substitutes the real
+ * name - here, deliberately, a formula-shaped one - through its own
+ * countries table, exactly the injection surface ruling 3's apparatus
+ * names ("country names and labels are member-influenced text").
+ */
+const WORKBOOK_COUNTRIES = { US: "=SUM(A1:A10)" };
+const WORKBOOK_ANSWER = {
+  enough: true,
+  units: { metric: { unit: "kg" }, imperial: { unit: "lb" } },
+  distribution: { bins: [
+    { count: 3, from: { metric: 20, imperial: 44 },
+      to: { metric: 70, imperial: 154 } },
+  ] },
+  trend: { points: [
+    { period: "2026-08", average: { metric: 81, imperial: 178.6 } },
+  ] },
+  self: { points: [
+    { at: "2026-08-11T00:00:00.000Z", value: { metric: 82, imperial: 180.8 } },
+  ] },
+  groups: [
+    { field: "country", label: "Country", multiple: false, values: [
+      { value: "US", label: "US", count: 5, bucket: null },
+    ] },
+  ],
+};
+const workbookMeasureFor = (name) => (name === "country"
+  ? { name: "country", choicesFrom: "countries" } : null);
+
+const workbookRows = Charts.workbookRows(WORKBOOK_ANSWER, "imperial",
+  WORKBOOK_COUNTRIES, workbookMeasureFor);
+
+check("the distribution row carries the exact band range, not the " +
+  "rounded on-screen caption, and the raw count as a NUMBER",
+  workbookRows[0][0] === "Distribution" &&
+  workbookRows[0][1] === "44 lb–154 lb" && workbookRows[0][2] === 3 &&
+  typeof workbookRows[0][2] === "number");
+check("the group's own average trend point lands in the Average column, "
+  + "the You column blank",
+  workbookRows.some((r) => r[0] === "Trend" && r[3] === 178.6 && r[4] === ""));
+check("the self point lands in the You column, the Average column blank",
+  workbookRows.some((r) => r[0] === "Trend" && r[4] === 180.8 && r[3] === ""));
+check("the group-makeup row carries the field's own label in its " +
+  "section and the looked-up country name, not the response's code " +
+  "placeholder",
+  workbookRows.some((r) => r[0] === "Group makeup — Country" &&
+    r[1] === "=SUM(A1:A10)" && r[2] === 5));
+
+/*
+ * THE PROOF: a hostile "=SUM(...)"-style country name arrives INERT
+ * through the whole pipeline - workbookRows() above composed it as a
+ * plain string, and BinderXlsx.build()'s own cellXml() (dev/xlsx.test.
+ * mjs: "a formula-looking value is a string, not defused") types every
+ * non-numeric cell as an inline string with no <f> formula element,
+ * ever. Read back with the same minimal ZIP reader dev/xlsx.test.mjs
+ * uses to prove its own writer (a reader written to check a writer,
+ * copied here rather than imported across the dev/tests boundary - see
+ * AGENTS.md on re-using an old testing artifact needing a stated
+ * reason: this is test-only plumbing, not a check being reused).
+ */
+function unzip(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= 0; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("no end-of-central-directory record");
+  const count = view.getUint16(eocd + 10, true);
+  let at = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  const entries = [];
+  for (let i = 0; i < count; i++) {
+    const nameLen = view.getUint16(at + 28, true);
+    const extraLen = view.getUint16(at + 30, true);
+    const commentLen = view.getUint16(at + 32, true);
+    const compressed = view.getUint32(at + 20, true);
+    const offset = view.getUint32(at + 42, true);
+    const name = decoder.decode(bytes.subarray(at + 46, at + 46 + nameLen));
+    const localNameLen = view.getUint16(offset + 26, true);
+    const localExtraLen = view.getUint16(offset + 28, true);
+    const start = offset + 30 + localNameLen + localExtraLen;
+    entries.push({ name, data: bytes.subarray(start, start + compressed) });
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+const WORKBOOK_BYTES = Xlsx.build(
+  Charts.workbookColumns("lb"), workbookRows, "Charts",
+  Date.UTC(2026, 7, 20, 12, 0, 0));
+const sheet = unzip(WORKBOOK_BYTES)
+  .find((e) => e.name === "xl/worksheets/sheet1.xml");
+const sheetXml = new TextDecoder().decode(sheet.data);
+
+check("the hostile country name reaches the sheet as an inline STRING, "
+  + "no <f> formula element anywhere in the workbook - inert by the "
+  + "writer's own cell typing, exactly the way dev/xlsx.test.mjs proves "
+  + "it for admin.js's export",
+  sheetXml.includes('t="inlineStr"') &&
+  sheetXml.includes("=SUM(A1:A10)") && !sheetXml.includes("<f>"));
+check("and it opens under the same ZIP reader dev/xlsx.test.mjs holds "
+  + "the admin export to - every part present, nothing truncated",
+  unzip(WORKBOOK_BYTES).map((e) => e.name).sort().join(",") ===
+  ["[Content_Types].xml", "_rels/.rels", "xl/_rels/workbook.xml.rels",
+    "xl/workbook.xml", "xl/worksheets/sheet1.xml"].join(","));
+
+/* ------------------------------------------------------------------ */
 /* 3. Driven end to end: a minimal DOM, a fixture fetch, real events.   */
 
 function node(tag) {
@@ -1000,7 +1150,19 @@ function buildDom(opts) {
       (docListeners[type] || []).slice().forEach((fn) => fn({}));
     },
   };
-  return { doc, byId, unitsInputs };
+  // Every "a" this page creates, in creation order - wireDownload()'s
+  // own throwaway trigger is the only one, and it is removed from
+  // document.body immediately after its click (this array is what lets
+  // a test still read its .download/.href after that removal).
+  const createdAnchors = [];
+  const rawCreateElement = doc.createElement;
+  doc.createElement = (tag) => {
+    const el = rawCreateElement(tag);
+    if (tag === "a") createdAnchors.push(el);
+    return el;
+  };
+
+  return { doc, byId, unitsInputs, createdAnchors };
 }
 
 /*
@@ -1032,7 +1194,7 @@ function measureFixture() {
  */
 async function driven(fetchImpl, opts) {
   const options = opts || {};
-  const { doc, byId, unitsInputs } = buildDom(options);
+  const { doc, byId, unitsInputs, createdAnchors } = buildDom(options);
   const calls = [];
   // The create-revoke pairing (0.9-M2-S12, #373's pattern, carried to
   // this file's own rebuild): two arrays rather than a count, because a
@@ -1040,11 +1202,18 @@ async function driven(fetchImpl, opts) {
   // got revoked twice and another leaked".
   const created = [];
   const revoked = [];
+  // The real Blob wireDownload() built, one per created URL - a plain
+  // array rather than a Map keyed by url, matching `created`/`revoked`
+  // above (0.9-M2-S12, #373's own pairing shape). Node's global Blob is
+  // real (no stub needed), so `blobs[i].arrayBuffer()` below reads back
+  // the exact bytes BinderXlsx.build() wrote.
+  const blobs = [];
   const g = globalThis;
   g.document = doc;
-  g.URL.createObjectURL = () => {
+  g.URL.createObjectURL = (blob) => {
     const url = "blob:test-" + created.length;
     created.push(url);
+    blobs.push(blob);
     return url;
   };
   g.URL.revokeObjectURL = (url) => { revoked.push(url); };
@@ -1054,13 +1223,32 @@ async function driven(fetchImpl, opts) {
     authorization: () => ({ Authorization: "Bearer tok" }),
     clear: () => { calls.push("session-cleared"); },
   };
+  // orderedChoices() replicates apps/web/fields.js's own algorithm
+  // (0.9-M2-S14, #380 ruling 4) rather than importing that file, the
+  // same fixture-not-import shape every other BinderFields member here
+  // already takes - pinnedCountries() ignores the `site` it is handed
+  // for the same reason.
   g.BinderFields = {
     measures: () => measureFixture(),
     measure: (name) => measureFixture().find((m) => m.name === name),
     defaultSystem: () => options.defaultSystem || "imperial",
+    pinnedCountries: () => ["US", "GB", "CA"],
+    orderedChoices: (choices, pinned) => {
+      const byValue = {};
+      choices.forEach((c) => { byValue[c.value] = c; });
+      const front = (pinned || [])
+        .filter((code) => Object.prototype.hasOwnProperty.call(byValue, code))
+        .map((code) => byValue[code]);
+      return front.concat(choices);
+    },
   };
   g.BINDER_SITE = { fields: [] };
-  g.BINDER_COUNTRIES = { US: "United States", AL: "Albania" };
+  // GB and CA join the two countries already here (0.9-M2-S14, #380
+  // ruling 4's own fixture): all three pinned codes now have a real
+  // name behind them, so the filter-field arm below can prove the
+  // pinned block lands at indexes 0-2 exactly, not merely "some of it".
+  g.BINDER_COUNTRIES = { US: "United States", AL: "Albania",
+    GB: "United Kingdom", CA: "Canada" };
   g.BINDER_CONFIG = { endpoint: "https://w.example" };
   g.fetch = async (url, init) => {
     calls.push(String(url));
@@ -1075,7 +1263,8 @@ async function driven(fetchImpl, opts) {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await pressShowMe(byId);
 
-  return { byId, doc, calls, unitsInputs, created, revoked };
+  return { byId, doc, calls, unitsInputs, created, revoked, blobs,
+    createdAnchors };
 }
 
 async function pressShowMe(byId) {
@@ -1424,6 +1613,35 @@ const ENOUGH_FIXTURE = {
 }
 
 /*
+ * Pinned countries, driven end to end (0.9-M2-S14, #380 ruling 4):
+ * selecting the country filter field fires populateFilterValue(),
+ * which now runs the alphabetical option list through
+ * Fields.orderedChoices() before appending it. The fixture BinderFields
+ * above replicates the real algorithm; this proves charts.js actually
+ * calls it, at the right moment, on the right field.
+ */
+{
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE));
+  byId.get("filter-field").value = "country";
+  await byId.get("filter-field").dispatch("change");
+
+  const options = byId.get("filter-value").children.map((o) => o.value);
+  check("the country filter's pinned block is exactly US, GB, CA, in " +
+    "that order, at indexes 0-2",
+    options[0] === "US" && options[1] === "GB" && options[2] === "CA");
+  check("the full alphabetical run still follows, pinned codes present " +
+    "a second time - a reader scanning either way finds them",
+    options.slice(3).join(",") === "AL,CA,GB,US");
+  byId.get("filter-field").value = "gender";
+  await byId.get("filter-field").dispatch("change");
+  check("a non-country categorical field is never reordered - the " +
+    "pinning is positional (measure.choicesFrom === \"countries\"), " +
+    "not applied to every filter value list",
+    byId.get("filter-value").children.map((o) => o.value).join(",") ===
+    "male,female");
+}
+
+/*
  * The download's create-use-revoke pairing (0.9-M2-S12, #373, and the
  * carry to this file's rebuild). apps/web/charts.js used to keep a
  * module-level `downloadUrl` assigned once a response arrived and
@@ -1436,8 +1654,8 @@ const ENOUGH_FIXTURE = {
  * clearing call this page would have to remember to make.
  */
 {
-  const { byId, doc, created, revoked } = await driven(() =>
-    response(200, ENOUGH_FIXTURE));
+  const { byId, doc, created, revoked, blobs, createdAnchors } =
+    await driven(() => response(200, ENOUGH_FIXTURE));
 
   await byId.get("download").dispatch("click");
 
@@ -1462,6 +1680,31 @@ const ENOUGH_FIXTURE = {
     "is nothing left for anything outside wireDownload() to hold or " +
     "null out",
     !/\bdownloadUrl\b/.test(chartsSourceForDownloadState));
+
+  // 0.9-M2-S14, #380 ruling 3: the format itself, driven end to end -
+  // filename, MIME type, and the actual bytes read back through the
+  // same reader section 2b proves the writer's own inertness with.
+  check("the throwaway anchor's filename is charts.xlsx, not the " +
+    "retired charts.json",
+    createdAnchors.length === 1 &&
+    createdAnchors[0].download === "charts.xlsx");
+  check("the Blob carries the xlsx MIME type",
+    blobs.length === 1 && blobs[0].type ===
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  const clickedBytes = new Uint8Array(await blobs[0].arrayBuffer());
+  const clickedNames = unzip(clickedBytes).map((e) => e.name).sort();
+  check("the downloaded bytes are themselves a real, complete workbook " +
+    "- not an empty or truncated one",
+    clickedNames.join(",") === ["[Content_Types].xml", "_rels/.rels",
+      "xl/_rels/workbook.xml.rels", "xl/workbook.xml",
+      "xl/worksheets/sheet1.xml"].join(","));
+  const clickedSheet = new TextDecoder().decode(
+    unzip(clickedBytes).find((e) => e.name === "xl/worksheets/sheet1.xml")
+      .data);
+  check("the clicked workbook's sheet carries the fixture's own " +
+    "distribution band, in the CURRENT unit system - the same figures "
+    + "on screen, nothing refetched",
+    clickedSheet.includes("44 lb") && clickedSheet.includes("154 lb"));
 }
 
 /*
@@ -1970,7 +2213,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 150;
+const EXPECTED = 167;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -98,6 +98,21 @@ globalThis.BINDER_SITE = {
 
    
    
+   
+   
+   
+   
+   
+   
+   
+   
+
+  countries: {
+    pinned: ["US", "GB", "CA"],
+  },
+
+   
+   
 
   fields: [
     {

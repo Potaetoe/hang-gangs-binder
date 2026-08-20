@@ -263,54 +263,9 @@ window.BINDER_COUNTRIES = {
 };
 
 /*
- * The countries that go at the top of the dropdown.
- *
- * A list of ISO codes, deliberately - the same reason the record stores
- * the code and not the name. A display name can be corrected without
- * touching this list, and this list can be reordered without touching a
- * single stored row.
- *
- * The first four are in the order they were asked for. The rest are the
- * ten most populous EU member states, which is a criterion someone else
- * can check and extend rather than a guess about who counts as popular.
- * Within that block they are alphabetical: it is ten items long, and
- * finding a name in it beats having the largest country first.
- *
- * Two things this list is not:
- *
- *   - It is not "Europe". Norway, Switzerland and the rest of
- *     non-EU Europe are in the alphabetical run below with everyone
- *     else, because the brief was EU member states. Moving one up here
- *     is a one-line edit and breaks nothing.
- *   - It is not exhaustive or permanent. Nothing depends on its
- *     contents; a code that is not in BINDER_COUNTRIES is skipped when
- *     the options are built, and tools/check_web.py fails the build if
- *     one is, so a typo here cannot quietly drop a country.
- *
- * Every country promoted here also appears in the alphabetical group,
- * so the two are duplicated on purpose. A country missing from the A-Z
- * run reads as a bug to anyone scrolling for it, and both options carry
- * the same value, so it makes no difference which one is picked.
+ * THE TOP-OF-DROPDOWN LIST IS DATA IN site.config.js, NOT HERE
+ * (0.9-M2-S14, #380 ruling 4): apps/web/site.config.js's
+ * `countries.pinned` names the pinned codes, so a fork pins its own
+ * without opening this file, and apps/web/fields.js's orderedChoices()
+ * is what a page reorders its options with.
  */
-window.BINDER_COUNTRIES_PROMOTED = [
-  // Asked for, in this order.
-  "US", // United States of America
-  "CA", // Canada
-  "MX", // Mexico
-  "GB", // United Kingdom
-
-  // The ten most populous EU member states, alphabetically. The tenth
-  // place is a near-tie - Portugal, Sweden and Greece are within a few
-  // hundred thousand of each other - so treat the cut as arbitrary at
-  // the bottom and swap freely if the submissions say otherwise.
-  "BE", // Belgium
-  "CZ", // Czechia
-  "FR", // France
-  "DE", // Germany
-  "IT", // Italy
-  "NL", // Netherlands
-  "PL", // Poland
-  "PT", // Portugal
-  "RO", // Romania
-  "ES", // Spain
-];

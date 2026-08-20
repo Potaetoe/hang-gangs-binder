@@ -194,6 +194,27 @@
     });
   }
 
+  
+
+  function pinnedCountries(given) {
+    const countries = spec(given).countries;
+    return countries && Array.isArray(countries.pinned)
+      ? countries.pinned.slice() : [];
+  }
+
+  
+
+  function orderedChoices(choices, pinned) {
+    const byValue = {};
+    choices.forEach(function (choice) { byValue[choice.value] = choice; });
+    const front = (pinned || [])
+      .filter(function (code) {
+        return Object.prototype.hasOwnProperty.call(byValue, code);
+      })
+      .map(function (code) { return byValue[code]; });
+    return front.concat(choices);
+  }
+
    
    
 
@@ -329,6 +350,8 @@
     compoundUnit: compoundUnit,
     limits: limits,
     choiceValues: choiceValues,
+    pinnedCountries: pinnedCountries,
+    orderedChoices: orderedChoices,
     siteTitle: siteTitle,
     pageTitle: pageTitle,
     wordmarkLines: wordmarkLines,
