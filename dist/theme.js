@@ -62,29 +62,6 @@
    
    
    
-   
-   
-   
-   
-   
-  function paintCustomDot() {
-    const dot = document.querySelector('.swatch-dot[data-palette="custom"]');
-    if (!dot) return;
-    const tokens = storedCustomTokens();
-    if (tokens) {
-      dot.style.background = tokens["--color-bg"];
-      dot.style.borderColor = tokens["--color-accent"];
-      return;
-    }
-    const resolved = getComputedStyle(document.documentElement);
-    dot.style.background = resolved.getPropertyValue("--color-bg").trim();
-    dot.style.borderColor = resolved.getPropertyValue("--color-accent").trim();
-  }
-
-   
-   
-   
-   
   function paintChrome(name) {
     let background = BG[name];
     if (name === "custom") {
@@ -108,7 +85,6 @@
       clearCustomProperties();
     }
     paintChrome(name);
-    paintCustomDot();
     Array.prototype.forEach.call(buttons, function (b) {
       b.setAttribute("aria-pressed",
         String(b.getAttribute("data-set-theme") === name));
@@ -213,37 +189,32 @@
    
    
    
+   
+   
+   
+   
+   
+   
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
       const name = b.getAttribute("data-set-theme");
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-       
-      if (name === "custom" && !storedCustomTokens()) return;
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
        
        
-       
-       
-       
-       
-       
-       
-       
-      if (name === "custom") showWarning(storedCustomTokens());
-      else if (warning) warning.hidden = true;
+      if (warning) warning.hidden = true;
     });
   });
+
+  
+
+  const customButton = document.getElementById("custom-theme-button");
+  if (customButton) {
+    customButton.addEventListener("click", function () {
+      if (!storedCustomTokens()) return;
+      apply("custom");
+      try { localStorage.setItem(KEY, "custom"); } catch (e) {}
+      showWarning(storedCustomTokens());
+    });
+  }
 })();

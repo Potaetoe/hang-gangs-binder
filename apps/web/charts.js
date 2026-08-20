@@ -74,6 +74,20 @@
   }
 
   /*
+   * A band's caption, since the 2026-08-19 charts sitting round two
+   * (#378): its midpoint, rounded to a whole number - "155", never a
+   * range and never a unit. binLabel() above is not retired by this;
+   * it is what the tooltip below composes the EXACT range from
+   * (attachTooltip()'s own bin text), so the caption can orient at a
+   * glance while the true edges stay one hover away. Plain rounding
+   * (Math.round: .5 rounds up), because the ruling's own examples
+   * (155, 185, 244) are exactly that and nothing fancier was asked for.
+   */
+  function midpointLabel(from, to) {
+    return String(Math.round((from + to) / 2));
+  }
+
+  /*
    * A caption's estimated width, in the SAME SVG user-unit space
    * drawBins() paints in (a 640-wide viewBox) - conservatively, because
    * there is no real text layout available to a pure function (owner's
@@ -81,19 +95,27 @@
    * from the caption text"). The chart figures paint captions at 11px
    * (theme.css's .chart-label/.chart-value) in a condensed system stack.
    *
-   * CAPTION_CHAR_WIDTH IS ABOVE THE WIDEST GLYPH THIS FACE ACTUALLY
-   * PAINTS, MEASURED (owner's F7 ruling on #372's review): the reviewer
-   * read getComputedTextLength() off the shipped face and found "0" at
-   * 7.53 user units and "–" (the dash binLabel() joins every range
-   * with) at 7.36 - a constant of 7 was BELOW both, so a caption made
-   * mostly of zeros and dashes under-stated its own width and the plan
-   * could approve a row that truly overlapped (reproduced at 88 bands,
-   * where the 7-unit estimate said a one-character count fits a 7.273-
-   * unit slot and the real 7.53-unit zero did not - 87 of 88 adjacent
-   * count captions actually overlapped while the plan reported clean).
-   * 8 is above both measured glyphs, which is the whole property this
-   * constant has to hold - not a target character width, a ceiling on
-   * the widest one.
+   * CAPTION_CHAR_WIDTH IS ABOVE THE WIDEST DIGIT AND THE DASH THIS FACE
+   * ACTUALLY PAINTS; EVERY REAL CAPTION CLEARS WITH MARGIN (owner's F7
+   * ruling on #372's review, corrected 0.9-M2-S13: the original wording
+   * claimed the widest glyph outright, and it is not - "m" measures
+   * 9.81 user units in this same face, above the constant below). The
+   * reviewer read getComputedTextLength() off the shipped face and
+   * found "0" at 7.53 user units and "–" (the dash binLabel() joins
+   * every range with) at 7.36 - a constant of 7 was BELOW both, so a
+   * caption made mostly of zeros and dashes under-stated its own width
+   * and the plan could approve a row that truly overlapped (reproduced
+   * at 88 bands, where the 7-unit estimate said a one-character count
+   * fits a 7.273-unit slot and the real 7.53-unit zero did not - 87 of
+   * 88 adjacent count captions actually overlapped while the plan
+   * reported clean). 8 is above both measured glyphs, which is the
+   * whole property this constant has to hold for the captions that
+   * actually reach it: every caption this row or the count row above it
+   * ever paints is digits only (0.9-M2-S13 retired the range caption's
+   * letters and its own dash from the bottom row - see midpointLabel()
+   * below), so a ceiling proven against the widest digit and the dash
+   * is a ceiling against everything captionWidth() is ever asked to
+   * measure, not merely against the cases a reviewer happened to try.
    */
   const CAPTION_CHAR_WIDTH = 8;
 
@@ -112,6 +134,34 @@
 
   function boxesOverlap(a, b) {
     return !(a.right <= b.left || a.left >= b.right);
+  }
+
+  /*
+   * Shifts one caption's box inward just far enough that it sits inside
+   * [0, width] - the containment rule from the same 2026-08-19 sitting
+   * that added midpointLabel() above: no caption may paint outside the
+   * plot bounds. An interior caption never needs this - captionBox()
+   * centers it in its own slot, so it has room on both sides by
+   * construction, and a caption too wide for its slot lost the overlap
+   * contest before rangeCaptionPlan() ever kept it. Only the two
+   * protected ends can reach here: rangeCaptionPlan() always paints
+   * index 0 and the last index (owner ruling 5's own words), and an end
+   * sits at the row's own edge, where there is no slot on one side to
+   * borrow room from. Never widens a box that already fits - a caption
+   * that clears both edges on its own comes back unchanged, which is
+   * what lets drawBins() below run every painted caption through this
+   * unconditionally rather than branching on which end it is.
+   */
+  function containBox(box, width) {
+    if (box.left < 0) {
+      const shift = -box.left;
+      return { left: 0, right: box.right + shift };
+    }
+    if (box.right > width) {
+      const shift = box.right - width;
+      return { left: box.left - shift, right: width };
+    }
+    return box;
   }
 
   /*
@@ -182,6 +232,69 @@
       if (!collides) kept.push(i);
     });
     return kept.sort(function (a, b) { return a - b; });
+  }
+
+  /*
+   * The tooltip's own text (0.9-M2-S13, #378, "a tooltip verifies any
+   * value"). Every string below is composed from the response's own
+   * numbers plus fixed English the spec never reaches - security
+   * mandate: render-only, nothing invented, no markup. Each of the two
+   * functions below returns `{lead, number}` rather than one flat
+   * string, because design mandate 2 puts them in two different faces
+   * ("--font-mono for the number, --font-body for range text") - the
+   * DOM half sets each half with its own textContent assignment onto
+   * its own child span, never innerHTML, and `lead + number` is the
+   * tooltip's whole rendered sentence, verbatim.
+   *
+   * "N member(s)" rather than a bare count, because a bare number under
+   * a bar with no other word on it reads as a second count row rather
+   * than an answer to "how many people are in this band" - the
+   * question a hover asks.
+   */
+  function memberCount(count) {
+    return String(count) + " member" + (count === 1 ? "" : "s");
+  }
+
+  /*
+   * One distribution bar's tooltip parts, exact - binLabel()'s own
+   * range text as the lead, memberCount() as the number, for BOTH a
+   * filled band and an empty one (owner ruling 2, #378: "including an
+   * empty slot"). The caption under the bar is midpointLabel()'s
+   * rounded whole number; this is where the true edges the caption
+   * traded away for legibility still live, one hover or tap away.
+   */
+  function binTooltipParts(from, to, unit, count) {
+    return { lead: binLabel(from, to, unit) + ": ", number: memberCount(count) };
+  }
+
+  // "August 2026", never a locale-dependent format: toLocaleString()
+  // reads the visitor's own locale and timezone, which is one browser
+  // rendering the same instant as two different months near a
+  // boundary. UTC and a fixed table are the same determinism drawTrend()
+  // already relies on to place a point on the x-axis at all (its own
+  // "2026-08-01T00:00:00Z" parse).
+  const MONTH_NAMES = ["January", "February", "March", "April", "May",
+    "June", "July", "August", "September", "October", "November",
+    "December"];
+
+  function monthLabel(atMillis) {
+    const d = new Date(atMillis);
+    return MONTH_NAMES[d.getUTCMonth()] + " " + d.getUTCFullYear();
+  }
+
+  /*
+   * One trend point's tooltip parts: the month and series name as the
+   * lead, that point's own value as the number (owner ruling 2, #378:
+   * "the month and the values that point carries - group mean; the You
+   * point its own value"). `seriesLabel` is drawSeries()'s own
+   * "Average"/"You" - the same word already painted as that line's
+   * on-chart label, reused rather than a second name for the same
+   * series.
+   */
+  function trendTooltipParts(atMillis, seriesLabel, value, unit) {
+    const suffix = unit ? " " + unit : "";
+    return { lead: monthLabel(atMillis) + " — " + seriesLabel + ": ",
+      number: String(value) + suffix };
   }
 
   /*
@@ -287,9 +400,15 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
+    midpointLabel: midpointLabel,
     captionWidth: captionWidth,
+    containBox: containBox,
     rangeCaptionPlan: rangeCaptionPlan,
     countCaptionPlan: countCaptionPlan,
+    memberCount: memberCount,
+    binTooltipParts: binTooltipParts,
+    monthLabel: monthLabel,
+    trendTooltipParts: trendTooltipParts,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
@@ -341,6 +460,134 @@
 
   function clearSvg(root_) {
     while (root_.firstChild) root_.removeChild(root_.firstChild);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The tooltip: one floating element per figure (#tooltip-distribution */
+  /* and #tooltip-trend in the markup) - hover previews it, a tap/click  */
+  /* pins it, a tap/click elsewhere dismisses it (owner ruling 2, #378). */
+  /* Every string it shows comes from binTooltipParts()/trendTooltipParts()*/
+  /* above, textContent only - see this file's own header. Two elements  */
+  /* rather than one shared node reparented between figures: each is a   */
+  /* direct child of the <figure> it belongs to, so positionTooltip()    */
+  /* below can clamp against that figure's own box with no reparenting   */
+  /* step to get wrong, even though only one figure is ever visible.     */
+
+  let pinnedTooltipTarget = null;
+  let pinnedTooltipElement = null;
+
+  /*
+   * Clamped inside the figure's own box (design mandate 2: "clamp
+   * inside the chart figure's bounding box - flip above/below, shift
+   * horizontally - never overflow the card"). getBoundingClientRect()
+   * is a real layout measurement no hand-built DOM stub can produce
+   * (tests/charts-page.test.mjs's own header: a small node factory,
+   * not jsdom), so this is skipped rather than guessed at when it is
+   * absent - the tooltip still shows, unpositioned, and the completion
+   * record labels the clamp itself as verified in a real browser only.
+   */
+  function positionTooltip(tip, anchor, figure) {
+    if (typeof anchor.getBoundingClientRect !== "function" ||
+        typeof figure.getBoundingClientRect !== "function" ||
+        typeof tip.getBoundingClientRect !== "function") {
+      return;
+    }
+    const figureBox = figure.getBoundingClientRect();
+    const anchorBox = anchor.getBoundingClientRect();
+    const tipBox = tip.getBoundingClientRect();
+
+    let left = anchorBox.left - figureBox.left +
+      anchorBox.width / 2 - tipBox.width / 2;
+    let top = anchorBox.top - figureBox.top - tipBox.height - 8;
+    if (top < 0) top = anchorBox.bottom - figureBox.top + 8; // flip below
+    if (left < 0) left = 0;
+    if (left + tipBox.width > figureBox.width) {
+      left = figureBox.width - tipBox.width;
+    }
+
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+
+  /*
+   * Two children, two faces (design mandate 2: "--font-mono for the
+   * number, --font-body for range text"). Both text nodes are set by
+   * textContent alone - `parts` is always one of binTooltipParts()'s or
+   * trendTooltipParts()'s own return values, composed only from the
+   * response's own numbers and this file's fixed English, so there is
+   * no path from here to markup the response could ever choose.
+   */
+  function showTooltip(tip, anchor, figure, parts) {
+    if (!tip) return;
+    tip.textContent = "";
+    const lead = document.createElement("span");
+    lead.textContent = parts.lead;
+    const number = document.createElement("span");
+    number.className = "chart-tooltip-number";
+    number.textContent = parts.number;
+    tip.appendChild(lead);
+    tip.appendChild(number);
+    show(tip, true);
+    positionTooltip(tip, anchor, figure);
+  }
+
+  function hideTooltip(tip) {
+    if (!tip) return;
+    show(tip, false);
+    tip.textContent = "";
+  }
+
+  /* Every redraw clears the SVG that holds this tooltip's own targets
+     (clearSvg() above) - carrying a pin past that point would leave it
+     pointing at a removed element. Called once per figure, with that
+     figure's own tooltip element, at the top of its own draw. */
+  function resetTooltip(tip) {
+    pinnedTooltipTarget = null;
+    pinnedTooltipElement = null;
+    hideTooltip(tip);
+  }
+
+  /*
+   * One hover/tap target wired to one tooltip string (owner ruling 2,
+   * #378: a distribution bar - including an empty slot - or a trend
+   * point). Hover previews; a click PINS it to the element and a tap on
+   * a touchscreen fires nothing else, so the same handler is "the
+   * whole of tap" too. Pinning is what survives the pointer leaving -
+   * dismissTooltipElsewhere() below, wired once in setUp(), is the
+   * other half: "tapping elsewhere dismisses".
+   */
+  function wireTooltip(el, figure, tip, parts) {
+    el.addEventListener("mouseenter", function () {
+      if (pinnedTooltipTarget) return;
+      showTooltip(tip, el, figure, parts);
+    });
+    el.addEventListener("mouseleave", function () {
+      if (pinnedTooltipTarget) return;
+      hideTooltip(tip);
+    });
+    el.addEventListener("click", function (event) {
+      // Stops this same click from reaching the document-level listener
+      // below, which is what makes "click a target" and "click
+      // elsewhere" two different things rather than a pin immediately
+      // undone by its own click.
+      if (event && typeof event.stopPropagation === "function") {
+        event.stopPropagation();
+      }
+      pinnedTooltipTarget = el;
+      pinnedTooltipElement = tip;
+      showTooltip(tip, el, figure, parts);
+    });
+  }
+
+  /* Wired once, on the document, in setUp() - every wireTooltip() click
+     above stops its own click from reaching here, so this only ever
+     fires for a tap/click that landed somewhere else. */
+  function dismissTooltipElsewhere() {
+    if (!pinnedTooltipTarget) return;
+    const tip = pinnedTooltipElement;
+    pinnedTooltipTarget = null;
+    pinnedTooltipElement = null;
+    hideTooltip(tip);
   }
 
   /* ------------------------------------------------------------------ */
@@ -434,15 +681,26 @@
    * same render-only rule that keeps this file from inventing any other
    * text the response did not send. THE BAR ALWAYS DRAWS; ITS TWO
    * CAPTIONS DO NOT (owner's F1/F2 ruling on #372's review). The count
-   * text above a bar and the range text below it are each thinned by
+   * text above a bar and the range caption below it are each thinned by
    * countCaptionPlan()/rangeCaptionPlan() so no two painted captions in
    * a row overlap - at the 120-band BMI grid or the 53-band imperial-
    * weight grid, most bars carry no caption at all, and that is the
    * fix: a caption nobody can read is worse than no caption. Nothing
    * about which BAND is drawn changes; only some of the text under or
    * over it does.
+   *
+   * THE BOTTOM CAPTION IS A MIDPOINT, NOT A RANGE (0.9-M2-S13, #378).
+   * rangeCaptionPlan() still decides which indices paint - the "new
+   * shorter texts" are midpointLabel()'s, fed through the same
+   * geometry - and the true edges move to the tooltip (wireTooltip()
+   * below), never lost, one hover or tap away. Every painted caption is
+   * run through containBox() before it renders, so an end caption whose
+   * own box would cross the viewBox edge shifts inward rather than
+   * spilling or dropping (the containment rule, same ruling) - a no-op
+   * for every interior caption, which already has room on both sides.
    */
-  function drawBins(target, bins, system, unit) {
+  function drawBins(target, tip, bins, system, unit) {
+    resetTooltip(tip);
     const width = 640;
     const height = 320;
     const baseline = height - 60;
@@ -458,11 +716,24 @@
     const slot = width / bins.length;
 
     const counts = bins.map(function (bin) { return bin.count; });
-    const rangeLabels = bins.map(function (bin) {
-      return binLabel(bin.from[system], bin.to[system], unit);
+    const midpointLabels = bins.map(function (bin) {
+      return midpointLabel(bin.from[system], bin.to[system]);
     });
     const countedIndexes = new Set(countCaptionPlan(counts, slot));
-    const labeledIndexes = new Set(rangeCaptionPlan(rangeLabels, slot));
+    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot));
+
+    // The unit marker's own reserved strip at the row's right end - one
+    // caption-width of the unit text plus one character of gap. The
+    // containment bound a painted caption clamps against (below) stops
+    // short of it, so the marker and the last band's own clamped
+    // caption are never asked to occupy the same pixels at once; the
+    // marker is not itself a caption rangeCaptionPlan() ever placed or
+    // dropped, so it is not what the containment rule's own "plot
+    // bounds" describes - this is the row leaving it room rather than
+    // the rule reaching around it.
+    const rightBound = unit
+      ? width - captionWidth(unit) - CAPTION_CHAR_WIDTH
+      : width;
 
     node.appendChild(svg("line", {
       x1: 0, y1: baseline, x2: width, y2: baseline,
@@ -485,34 +756,68 @@
       }
 
       if (labeledIndexes.has(index)) {
+        const box = containBox(
+          captionBox(index, slot, midpointLabels[index]), rightBound);
         const text = svg("text", {
-          x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
+          x: (box.left + box.right) / 2, y: baseline + 16,
+          "text-anchor": "middle",
         }, "chart-label");
-        text.textContent = rangeLabels[index];
+        text.textContent = midpointLabels[index];
         node.appendChild(text);
       }
+
+      // The hit target: the WHOLE column, top to baseline, regardless
+      // of the bar's own height - a zero-height bar (bin.count === 0)
+      // has no area of its own to hover, and owner ruling 2 names an
+      // empty slot as one of the two things a tooltip has to verify.
+      // fill="transparent" (a color, not `none`) keeps it hit-testable
+      // under SVG's default pointer-events (visiblePainted looks at
+      // whether fill is `none`, never at fill-opacity or the color
+      // itself) without a stylesheet rule to carry that fact instead.
+      // Appended LAST, after the bar and both captions, so it paints on
+      // top and is what actually receives the pointer over the whole
+      // column - the visible bar underneath never has to compete with
+      // it for events.
+      const hit = svg("rect", {
+        x: x, y: top, width: slot, height: baseline - top, fill: "transparent",
+      }, "chart-hit");
+      node.appendChild(hit);
+      wireTooltip(hit, target, tip, binTooltipParts(
+        bin.from[system], bin.to[system], unit, bin.count));
     });
+
+    // The unit, stated once at the axis edge rather than once per
+    // caption (owner ruling 1, #378) - same row, same class/tone as the
+    // captions themselves (design mandate 1).
+    if (unit) {
+      node.appendChild(svg("text", {
+        x: width, y: baseline + 16, "text-anchor": "end",
+      }, "chart-label")).textContent = unit;
+    }
   }
 
   function drawDistribution(answer, system) {
     const target = $("figure-distribution");
+    const tip = $("tooltip-distribution");
     const unit = unitFor(answer, system);
-    drawBins(target, answer.distribution.bins, system, unit);
+    drawBins(target, tip, answer.distribution.bins, system, unit);
   }
 
   /*
-   * The group-makeup block: plain count lines, no chart machinery (owner
-   * ruling 1, #243) - no bars, no track, no .chart-* classes, just the
-   * response's own `groups` printed as text. One heading per categorical
-   * field, one line per value, "<label>: <count>" - zeros included,
-   * because a zero here is the response's own line and not this page's
-   * to drop. The count is always the response's own number, untouched;
-   * the LABEL is groupCellLabel()'s call, verbatim for every field
-   * except country's real names, which this page derives (see its own
-   * header). Re-runs on every render, so a filtered answer's counts
-   * replace an unfiltered one's rather than sitting stale beside it
-   * (server/charts-agg.js's makeupOf(): the block describes the
-   * FILTERED view, not the whole binder).
+   * The group-makeup block: no chart machinery (owner ruling 1, #243) -
+   * no bars, no track, no .chart-* classes, just the response's own
+   * `groups` printed as text. One heading per categorical field, one
+   * CHIP per value since the 2026-08-19 charts sitting round two
+   * (#378) - the name and the bold exact count, wrapped into a row
+   * rather than stacked as lines - zeros included and dimmed rather
+   * than dropped, because a zero here is the response's own line and
+   * not this page's to drop or to hide. The count is always the
+   * response's own number, untouched; the LABEL is groupCellLabel()'s
+   * call, verbatim for every field except country's real names, which
+   * this page derives (see its own header). Re-runs on every render, so
+   * a filtered answer's counts replace an unfiltered one's rather than
+   * sitting stale beside it (server/charts-agg.js's makeupOf(): the
+   * block describes the FILTERED view, not the whole binder).
    */
   /*
    * F4 (0.9-M2-S11's review, #372): what a category with nothing to say
@@ -543,6 +848,27 @@
   const MULTIPLE_CHOICE_HINT = "Members can choose more than one here, " +
     "so these numbers can add up to more than the group.";
 
+  /*
+   * One value's own chip: the name and its exact count, both set by
+   * textContent alone (render-only holds here exactly as everywhere
+   * else in this file - the name and the count are both the response's
+   * own, through groupCellLabel()). `.chip-zero` is the whole of what
+   * dims a zero - CSS reads it, this file does not compute a color.
+   */
+  function renderChip(name, count) {
+    const chip = document.createElement("span");
+    chip.className = count === 0 ? "chip chip-zero" : "chip";
+    const nameEl = document.createElement("span");
+    nameEl.className = "chip-name";
+    nameEl.textContent = name;
+    const countEl = document.createElement("span");
+    countEl.className = "chip-count";
+    countEl.textContent = String(count);
+    chip.appendChild(nameEl);
+    chip.appendChild(countEl);
+    return chip;
+  }
+
   function renderGroups(groups) {
     const card = $("groups");
     const body = $("groups-body");
@@ -566,13 +892,13 @@
       }
 
       const measure = Fields.measure(group.field, site);
+      const row = document.createElement("div");
+      row.className = "chip-row";
       group.values.forEach(function (cell) {
-        const line = document.createElement("p");
-        line.textContent =
-          groupCellLabel(measure, cell, root.BINDER_COUNTRIES) + ": " +
-          cell.count;
-        body.appendChild(line);
+        row.appendChild(renderChip(
+          groupCellLabel(measure, cell, root.BINDER_COUNTRIES), cell.count));
       });
+      body.appendChild(row);
 
       if (group.multiple) {
         const hint = document.createElement("p");
@@ -602,6 +928,8 @@
      the response sent, nothing dashed or faded for the months between. */
   function drawTrend(answer, system) {
     const target = $("figure-trend");
+    const tip = $("tooltip-trend");
+    resetTooltip(tip);
     const node = target.querySelector("svg");
     const width = 640;
     const height = 280;
@@ -670,9 +998,17 @@
         node.appendChild(line);
       }
       points.forEach(function (p) {
-        node.appendChild(svg("circle", {
+        const dot = svg("circle", {
           cx: x(p.at), cy: y(p.value), r: 3,
-        }, dotClass));
+        }, dotClass);
+        node.appendChild(dot);
+        // `label` is drawSeries()'s own "Average"/"You" - the same word
+        // already painted on the line's end (below) - so the tooltip
+        // names the series the same way the chart already does, never
+        // a second name for it (owner ruling 2, #378: "the values that
+        // point carries - group mean; the You point its own value").
+        wireTooltip(dot, target, tip,
+          trendTooltipParts(p.at, label, p.value, unit));
       });
       const last = points[points.length - 1];
       const text = svg("text", {
@@ -880,5 +1216,10 @@
       showMe();
     });
     wireDownload();
+    // The other half of "tap pins, tap elsewhere dismisses" (owner
+    // ruling 2, #378) - wired once, on the document, rather than once
+    // per draw: it outlives every redraw and every wireTooltip() click
+    // above already stops its own click from reaching here.
+    document.addEventListener("click", dismissTooltipElsewhere);
   }
 })(globalThis);

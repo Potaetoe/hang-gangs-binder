@@ -21,6 +21,12 @@
 
   
 
+  function midpointLabel(from, to) {
+    return String(Math.round((from + to) / 2));
+  }
+
+  
+
   const CAPTION_CHAR_WIDTH = 8;
 
   function captionWidth(text) {
@@ -37,6 +43,20 @@
 
   function boxesOverlap(a, b) {
     return !(a.right <= b.left || a.left >= b.right);
+  }
+
+  
+
+  function containBox(box, width) {
+    if (box.left < 0) {
+      const shift = -box.left;
+      return { left: 0, right: box.right + shift };
+    }
+    if (box.right > width) {
+      const shift = box.right - width;
+      return { left: box.left - shift, right: width };
+    }
+    return box;
   }
 
   
@@ -84,6 +104,41 @@
       if (!collides) kept.push(i);
     });
     return kept.sort(function (a, b) { return a - b; });
+  }
+
+  
+
+  function memberCount(count) {
+    return String(count) + " member" + (count === 1 ? "" : "s");
+  }
+
+  
+
+  function binTooltipParts(from, to, unit, count) {
+    return { lead: binLabel(from, to, unit) + ": ", number: memberCount(count) };
+  }
+
+   
+   
+   
+   
+   
+   
+  const MONTH_NAMES = ["January", "February", "March", "April", "May",
+    "June", "July", "August", "September", "October", "November",
+    "December"];
+
+  function monthLabel(atMillis) {
+    const d = new Date(atMillis);
+    return MONTH_NAMES[d.getUTCMonth()] + " " + d.getUTCFullYear();
+  }
+
+  
+
+  function trendTooltipParts(atMillis, seriesLabel, value, unit) {
+    const suffix = unit ? " " + unit : "";
+    return { lead: monthLabel(atMillis) + " — " + seriesLabel + ": ",
+      number: String(value) + suffix };
   }
 
   
@@ -154,9 +209,15 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
+    midpointLabel: midpointLabel,
     captionWidth: captionWidth,
+    containBox: containBox,
     rangeCaptionPlan: rangeCaptionPlan,
     countCaptionPlan: countCaptionPlan,
+    memberCount: memberCount,
+    binTooltipParts: binTooltipParts,
+    monthLabel: monthLabel,
+    trendTooltipParts: trendTooltipParts,
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
@@ -208,6 +269,110 @@
 
   function clearSvg(root_) {
     while (root_.firstChild) root_.removeChild(root_.firstChild);
+  }
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+
+  let pinnedTooltipTarget = null;
+  let pinnedTooltipElement = null;
+
+  
+
+  function positionTooltip(tip, anchor, figure) {
+    if (typeof anchor.getBoundingClientRect !== "function" ||
+        typeof figure.getBoundingClientRect !== "function" ||
+        typeof tip.getBoundingClientRect !== "function") {
+      return;
+    }
+    const figureBox = figure.getBoundingClientRect();
+    const anchorBox = anchor.getBoundingClientRect();
+    const tipBox = tip.getBoundingClientRect();
+
+    let left = anchorBox.left - figureBox.left +
+      anchorBox.width / 2 - tipBox.width / 2;
+    let top = anchorBox.top - figureBox.top - tipBox.height - 8;
+    if (top < 0) top = anchorBox.bottom - figureBox.top + 8;  
+    if (left < 0) left = 0;
+    if (left + tipBox.width > figureBox.width) {
+      left = figureBox.width - tipBox.width;
+    }
+
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+
+  
+
+  function showTooltip(tip, anchor, figure, parts) {
+    if (!tip) return;
+    tip.textContent = "";
+    const lead = document.createElement("span");
+    lead.textContent = parts.lead;
+    const number = document.createElement("span");
+    number.className = "chart-tooltip-number";
+    number.textContent = parts.number;
+    tip.appendChild(lead);
+    tip.appendChild(number);
+    show(tip, true);
+    positionTooltip(tip, anchor, figure);
+  }
+
+  function hideTooltip(tip) {
+    if (!tip) return;
+    show(tip, false);
+    tip.textContent = "";
+  }
+
+  
+
+  function resetTooltip(tip) {
+    pinnedTooltipTarget = null;
+    pinnedTooltipElement = null;
+    hideTooltip(tip);
+  }
+
+  
+
+  function wireTooltip(el, figure, tip, parts) {
+    el.addEventListener("mouseenter", function () {
+      if (pinnedTooltipTarget) return;
+      showTooltip(tip, el, figure, parts);
+    });
+    el.addEventListener("mouseleave", function () {
+      if (pinnedTooltipTarget) return;
+      hideTooltip(tip);
+    });
+    el.addEventListener("click", function (event) {
+       
+       
+       
+       
+      if (event && typeof event.stopPropagation === "function") {
+        event.stopPropagation();
+      }
+      pinnedTooltipTarget = el;
+      pinnedTooltipElement = tip;
+      showTooltip(tip, el, figure, parts);
+    });
+  }
+
+  
+
+  function dismissTooltipElsewhere() {
+    if (!pinnedTooltipTarget) return;
+    const tip = pinnedTooltipElement;
+    pinnedTooltipTarget = null;
+    pinnedTooltipElement = null;
+    hideTooltip(tip);
   }
 
    
@@ -285,7 +450,8 @@
 
   
 
-  function drawBins(target, bins, system, unit) {
+  function drawBins(target, tip, bins, system, unit) {
+    resetTooltip(tip);
     const width = 640;
     const height = 320;
     const baseline = height - 60;
@@ -301,11 +467,24 @@
     const slot = width / bins.length;
 
     const counts = bins.map(function (bin) { return bin.count; });
-    const rangeLabels = bins.map(function (bin) {
-      return binLabel(bin.from[system], bin.to[system], unit);
+    const midpointLabels = bins.map(function (bin) {
+      return midpointLabel(bin.from[system], bin.to[system]);
     });
     const countedIndexes = new Set(countCaptionPlan(counts, slot));
-    const labeledIndexes = new Set(rangeCaptionPlan(rangeLabels, slot));
+    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot));
+
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    const rightBound = unit
+      ? width - captionWidth(unit) - CAPTION_CHAR_WIDTH
+      : width;
 
     node.appendChild(svg("line", {
       x1: 0, y1: baseline, x2: width, y2: baseline,
@@ -328,19 +507,51 @@
       }
 
       if (labeledIndexes.has(index)) {
+        const box = containBox(
+          captionBox(index, slot, midpointLabels[index]), rightBound);
         const text = svg("text", {
-          x: x + slot / 2, y: baseline + 16, "text-anchor": "middle",
+          x: (box.left + box.right) / 2, y: baseline + 16,
+          "text-anchor": "middle",
         }, "chart-label");
-        text.textContent = rangeLabels[index];
+        text.textContent = midpointLabels[index];
         node.appendChild(text);
       }
+
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+       
+      const hit = svg("rect", {
+        x: x, y: top, width: slot, height: baseline - top, fill: "transparent",
+      }, "chart-hit");
+      node.appendChild(hit);
+      wireTooltip(hit, target, tip, binTooltipParts(
+        bin.from[system], bin.to[system], unit, bin.count));
     });
+
+     
+     
+     
+    if (unit) {
+      node.appendChild(svg("text", {
+        x: width, y: baseline + 16, "text-anchor": "end",
+      }, "chart-label")).textContent = unit;
+    }
   }
 
   function drawDistribution(answer, system) {
     const target = $("figure-distribution");
+    const tip = $("tooltip-distribution");
     const unit = unitFor(answer, system);
-    drawBins(target, answer.distribution.bins, system, unit);
+    drawBins(target, tip, answer.distribution.bins, system, unit);
   }
 
   
@@ -353,6 +564,22 @@
 
   const MULTIPLE_CHOICE_HINT = "Members can choose more than one here, " +
     "so these numbers can add up to more than the group.";
+
+  
+
+  function renderChip(name, count) {
+    const chip = document.createElement("span");
+    chip.className = count === 0 ? "chip chip-zero" : "chip";
+    const nameEl = document.createElement("span");
+    nameEl.className = "chip-name";
+    nameEl.textContent = name;
+    const countEl = document.createElement("span");
+    countEl.className = "chip-count";
+    countEl.textContent = String(count);
+    chip.appendChild(nameEl);
+    chip.appendChild(countEl);
+    return chip;
+  }
 
   function renderGroups(groups) {
     const card = $("groups");
@@ -377,13 +604,13 @@
       }
 
       const measure = Fields.measure(group.field, site);
+      const row = document.createElement("div");
+      row.className = "chip-row";
       group.values.forEach(function (cell) {
-        const line = document.createElement("p");
-        line.textContent =
-          groupCellLabel(measure, cell, root.BINDER_COUNTRIES) + ": " +
-          cell.count;
-        body.appendChild(line);
+        row.appendChild(renderChip(
+          groupCellLabel(measure, cell, root.BINDER_COUNTRIES), cell.count));
       });
+      body.appendChild(row);
 
       if (group.multiple) {
         const hint = document.createElement("p");
@@ -399,6 +626,8 @@
 
   function drawTrend(answer, system) {
     const target = $("figure-trend");
+    const tip = $("tooltip-trend");
+    resetTooltip(tip);
     const node = target.querySelector("svg");
     const width = 640;
     const height = 280;
@@ -457,9 +686,17 @@
         node.appendChild(line);
       }
       points.forEach(function (p) {
-        node.appendChild(svg("circle", {
+        const dot = svg("circle", {
           cx: x(p.at), cy: y(p.value), r: 3,
-        }, dotClass));
+        }, dotClass);
+        node.appendChild(dot);
+         
+         
+         
+         
+         
+        wireTooltip(dot, target, tip,
+          trendTooltipParts(p.at, label, p.value, unit));
       });
       const last = points[points.length - 1];
       const text = svg("text", {
@@ -646,5 +883,10 @@
       showMe();
     });
     wireDownload();
+     
+     
+     
+     
+    document.addEventListener("click", dismissTooltipElsewhere);
   }
 })(globalThis);

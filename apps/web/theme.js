@@ -13,28 +13,43 @@
  * reveal. A control with no reveal owes none, so the whole of what a
  * palette costs here is: read a choice, paint it, store it.
  *
- * CUSTOM IS A FIFTH SWATCH, not a new control (0.9-M2-S6, #82). It is
- * wired by the same [data-set-theme] loop as the other four - clicking
- * a NAMED palette always calls the same apply(), which is the whole of
- * how the named palettes double as Custom's reset (design mandate 4: no
- * new control, picking a name un-presses Custom through the mechanism
- * that was already here). Clicking Custom itself calls apply() only
- * when a valid pair is already on record (0.9-M2-S6 fix wave 1, F1,
- * #82) - with nothing valid stored, the chip has nothing to activate,
- * and the click handler below leaves the currently active named
- * palette untouched rather than press a chip that would paint nothing.
- * What is new when apply() DOES run with the name "custom": it reads
- * the two colors the member picked out of
- * localStorage, runs them through BinderCustomPalette.derive() -
- * theme-init.js's own pure half, published there rather than in a
- * second <head> script because check 22 in tools/check_web.py pins the
- * head to exactly one - and writes the result on as inline custom
- * properties, which is the one thing in this file that outranks
- * theme.css's stylesheet rules. Switching to any NAMED palette has to
- * clear those same properties for that reason: an inline style beats a
- * class selector regardless of specificity, so a leftover
- * --color-bg set by Custom would keep painting through Midnight's own
- * block forever.
+ * CUSTOM WAS A FIFTH SWATCH (0.9-M2-S6, #82); it is now the "Custom
+ * theme" button the footer's own disclosure summary carries instead
+ * (0.9-M2-S13, #378, the 2026-08-19 charts sitting round two: "the
+ * custom swatch circle is REMOVED; the 'More' button is rethemed and
+ * relabeled as the single obvious 'Custom theme' control"). The four
+ * NAMED palettes are unaffected - `buttons` below still wires them by
+ * the same [data-set-theme] loop, and clicking one still clears
+ * whatever Custom left on the inline style (see clearCustomProperties()
+ * below), which is the whole of how a named palette doubles as Custom's
+ * reset. What moved is only Custom's OWN activation: `customButton`
+ * further down is the summary, found by id rather than by
+ * [data-set-theme] (it is not a swatch and does not want a place in
+ * that NodeList - tools/check_web.py's theme_control_problems() counts
+ * every data-set-theme chip as belonging inside the .theme-swatches
+ * row, and this control does not belong there). Its click handler is
+ * the SAME guard the old fifth swatch carried (0.9-M2-S6 fix wave 1,
+ * F1, #82): apply() only runs when a valid pair is already on record -
+ * with nothing valid stored, the click has nothing to activate, and the
+ * native <details> toggle is the only thing that happens, leaving
+ * whatever named palette was active untouched. What apply() does when
+ * it DOES run with the name "custom" is unchanged: it reads the two
+ * colors the member picked out of localStorage, runs them through
+ * BinderCustomPalette.derive() - theme-init.js's own pure half,
+ * published there rather than in a second <head> script because check
+ * 22 in tools/check_web.py pins the head to exactly one - and writes
+ * the result on as inline custom properties, which is the one thing in
+ * this file that outranks theme.css's stylesheet rules.
+ *
+ * THE "SELECTED" MARK is CSS alone now, not a JS-painted dot: a
+ * <summary> is not a toggle button the way the swatches are, so instead
+ * of a second aria-pressed loop this control reads straight off
+ * data-theme, which apply() below always keeps in sync with whichever
+ * palette is actually painted (theme.css's own
+ * `:root[data-theme="custom"] footer .more > summary` rule). That is
+ * also why there is no paintCustomDot() function any more: there is no
+ * `.swatch-dot[data-palette="custom"]` left on any page for one to
+ * find, so nothing here needs to paint it.
  */
 (function () {
   "use strict";
@@ -94,29 +109,6 @@
     });
   }
 
-  // The dot cannot be a static CSS rule the way the other four are
-  // (design mandate 5): from inside :root[data-theme="custom"] there is
-  // no expression naming a color that is not the palette already on
-  // screen, and a member's own colors are not known until they are
-  // stored. Painted here instead, every time apply() runs, from
-  // whichever colors are actually on record - or, with none on record
-  // yet, from the palette currently on screen, so a first look at the
-  // dot reads as "not customized yet" rather than as a blank control
-  // nothing has drawn.
-  function paintCustomDot() {
-    const dot = document.querySelector('.swatch-dot[data-palette="custom"]');
-    if (!dot) return;
-    const tokens = storedCustomTokens();
-    if (tokens) {
-      dot.style.background = tokens["--color-bg"];
-      dot.style.borderColor = tokens["--color-accent"];
-      return;
-    }
-    const resolved = getComputedStyle(document.documentElement);
-    dot.style.background = resolved.getPropertyValue("--color-bg").trim();
-    dot.style.borderColor = resolved.getPropertyValue("--color-accent").trim();
-  }
-
   // A palette this file does not know is not written into the browser
   // chrome. The stored value comes from localStorage, which anything on
   // this origin can write, and setAttribute would happily paint the
@@ -144,7 +136,6 @@
       clearCustomProperties();
     }
     paintChrome(name);
-    paintCustomDot();
     Array.prototype.forEach.call(buttons, function (b) {
       b.setAttribute("aria-pressed",
         String(b.getAttribute("data-set-theme") === name));
@@ -276,37 +267,46 @@
   // for a reason nobody can observe is worse than leaving it - so the
   // press is all there is to wire, and the button the member pressed
   // is still under their finger when it is over.
+  //
+  // `buttons` carries the four NAMED palettes only, since 0.9-M2-S13
+  // (#378) took Custom out of [data-set-theme] entirely - see this
+  // file's header. Picking any of them IS Custom's reset (design
+  // mandate 4 from 0.9-M2-S6): apply() always clears whatever inline
+  // custom properties were on the page, named palette or not.
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
       const name = b.getAttribute("data-set-theme");
-      // VALIDATE ON READ at the click site too (0.9-M2-S6 fix wave 1,
-      // F1, #82). This file's INITIAL apply() call above already
-      // declines a stored "custom" with nothing valid behind it - the
-      // click handler trusted data-set-theme's raw string instead, so
-      // pressing Custom with no saved pair pressed the chip, wrote
-      // data-theme="custom" over a page painting nothing differently
-      // (theme.css has no rule for it, so the cascade falls through to
-      // :root's own defaults), and persisted "custom" into hgb-palette
-      // - destroying the named palette that WAS on record. The opposite
-      // of "Custom reads as inactive" (design mandate 3). Declining
-      // here leaves apply(), data-theme, the meta color and the stored
-      // key all on whatever named palette was already active; the
-      // first VALID pick in pickCustom() below is what actually
-      // activates Custom.
-      if (name === "custom" && !storedCustomTokens()) return;
       apply(name);
       try { localStorage.setItem(KEY, name); } catch (e) {}
-      // Picking a named palette IS the reset (design mandate 4). The
-      // warning is Custom's own honesty about Custom's own colors, and
-      // it has nothing to say about a palette that carries none.
-      // Pressing Custom itself has to SYNC the warning rather than
-      // leave it at whatever the last-visited palette left it as: a
-      // member who saved a failing pair, switched away, and switched
-      // back is looking at Custom's own colors again, and the warning
-      // is what stays honest about THOSE, not about the click that
-      // most recently touched it.
-      if (name === "custom") showWarning(storedCustomTokens());
-      else if (warning) warning.hidden = true;
+      // The warning is Custom's own honesty about Custom's own colors;
+      // a named palette carries none, so picking one always clears it.
+      if (warning) warning.hidden = true;
     });
   });
+
+  /*
+   * The "Custom theme" control (0.9-M2-S13, #378): the footer's own
+   * disclosure summary, found by id rather than by [data-set-theme] -
+   * it is not a swatch (see this file's header). Its native toggle
+   * behavior is untouched by this listener (nothing here calls
+   * preventDefault()), so a press always opens or closes the color
+   * pickers exactly as a plain <details class="more"> always has; what
+   * this ADDS is the same guard the retired fifth swatch carried
+   * (0.9-M2-S6 fix wave 1, F1, #82): a press activates Custom only when
+   * a valid pair is already on record. With nothing valid stored, the
+   * click has nothing to activate and this handler does nothing else -
+   * data-theme, the meta color and the stored key all stay on whatever
+   * named palette was already active, so opening the editor for the
+   * first time never destroys a saved choice. The first VALID pick in
+   * pickCustom() above is what actually activates Custom from there.
+   */
+  const customButton = document.getElementById("custom-theme-button");
+  if (customButton) {
+    customButton.addEventListener("click", function () {
+      if (!storedCustomTokens()) return;
+      apply("custom");
+      try { localStorage.setItem(KEY, "custom"); } catch (e) {}
+      showWarning(storedCustomTokens());
+    });
+  }
 })();

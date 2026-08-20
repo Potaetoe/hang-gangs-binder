@@ -2651,6 +2651,37 @@ def footer_problems(text, themed):
         problems.append(editor_unreadable)
         return problems
 
+    # The editor's OWN summary word, checked against its own isolated
+    # span rather than against the page as a whole - more_disclosure_
+    # problems() (check 27) still holds every <summary> on the page to
+    # MORE_SUMMARY or THEME_PICKER_SUMMARY as a pair of allowed words,
+    # but only this arm knows WHICH <details> is the editor, so only
+    # this arm can say the editor itself carries the ruled one rather
+    # than merely that the word appears somewhere on the page (0.9-M2-
+    # S13, #378: "the 'More' button is rethemed and relabeled as the
+    # single obvious 'Custom theme' control").
+    editor_markup = after_row[editor_span[0]:editor_span[1]]
+    editor_summary = SUMMARY.search(editor_markup)
+    if editor_summary is None:
+        problems.append(
+            "carries a custom-palette editor with no <summary> at all. "
+            "0.9-M2-S13 (#378) made the editor's own summary the whole "
+            "of how a member reaches Custom - a summary-less <details> "
+            "opens through the browser's own default word instead, "
+            "never the ruled one")
+    else:
+        editor_word = label_text(editor_summary.group(1))
+        if editor_word != THEME_PICKER_SUMMARY:
+            problems.append(
+                "labels its custom-palette editor \"%s\", and 0.9-M2-S13 "
+                "(#378) ruled the word \"%s\" for exactly this control - "
+                "THEME_PICKER_SUMMARY in tools/check_web.py. The custom "
+                "swatch circle this editor's own summary replaced is "
+                "gone; a summary still reading \"More\" (or anything "
+                "else) is that control arriving without the name a "
+                "member would recognize it by"
+                % (editor_word, THEME_PICKER_SUMMARY))
+
     between = after_row[:editor_span[0]]
     if between.strip():
         problems.append(
@@ -5039,18 +5070,19 @@ MOCKUP_PALETTES = {
 # other: 23 says the four copies agree, this says the word they agree on
 # is the ruled one.
 #
-# "custom" joined the four at 0.9-M2-S6 (#82), settled by the design
-# consult 2026-08-19 rather than by a mockup revision: the consult is
-# BINDING in the mockup's place for this one ticket (the injected
-# mandate says so), because the chip's own dot is painted at runtime
-# from a member's own colors and has no fixed value the mockup could
-# ever rule the way it rules the other four's.
+# "custom" joined the four at 0.9-M2-S6 (#82) as a design-consult
+# exception - the chip's own dot was painted at runtime from a member's
+# own colors and had no fixed value the mockup could ever rule the way
+# it rules the other four's - and left again at 0.9-M2-S13 (#378, the
+# 2026-08-19 charts sitting round two): the custom swatch circle this
+# entry named is REMOVED, so there is no data-set-theme="custom" chip
+# left on any page for this table to rule a word for. The mockup's own
+# four remain what this table is, unexceptioned once more.
 MOCKUP_CHIPS = {
     "midnight": "Midnight",
     "pink": "Pink",
     "daylight": "Daylight",
     "contrast": "Contrast",
-    "custom": "Custom",
 }
 
 # What a stale chip pin is attributed to, when there is no page to
@@ -6447,6 +6479,19 @@ RULED_LINES = {
 MORE_CLASS = "more"
 MORE_SUMMARY = "More"
 
+# The one summary this ruling now names a second word for (0.9-M2-S13,
+# #378, the 2026-08-19 charts sitting round two): the footer's own
+# custom-palette editor, whose "More" is rethemed and relabeled as the
+# single obvious "Custom theme" control (design mandate 4) - the same
+# element THEME_EDITOR_DETAILS finds and footer_problems() requires one
+# of per themed page, so this is not a second disclosure earning a
+# second word, it is the one every themed page already carries reading
+# differently now. Every OTHER <summary> on the site still owes
+# MORE_SUMMARY exactly - this name is reserved for that one control and
+# refused anywhere else, the same way RETIRED_LABEL is refused outside
+# its own retirement.
+THEME_PICKER_SUMMARY = "Custom theme"
+
 # The product pages the ruling names. admin.html is one of them - the
 # instrument's allowance under rule 7 is ONE short explanatory sentence
 # per card, not a page-wide exemption from the mechanism.
@@ -6532,12 +6577,33 @@ def more_disclosure_problems(text, page):
                 "drawn around it, which is what #275 moved behind it")
 
     for words in summaries:
-        if words != MORE_SUMMARY:
+        if words != MORE_SUMMARY and words != THEME_PICKER_SUMMARY:
             problems.append(
                 "labels a disclosure \"%s\". The word is \"%s\" on every "
                 "page - MORE_SUMMARY in tools/check_web.py - because a "
                 "reveal named differently on each card is four controls "
-                "rather than one" % (words, MORE_SUMMARY))
+                "rather than one, with the one reserved exception "
+                "THEME_PICKER_SUMMARY (\"%s\") names for the footer's own "
+                "custom-palette editor" %
+                (words, MORE_SUMMARY, THEME_PICKER_SUMMARY))
+
+    # THEME_PICKER_SUMMARY reads as a page-wide word here - a themed
+    # page's footer editor is welcome to carry it and no other page is,
+    # but which specific <details> owes it is footer_problems()'s own
+    # question, not this one's: that arm already isolates the editor's
+    # exact span (element_span() on THEME_EDITOR_DETAILS), so IT checks
+    # the editor's own <summary> word directly rather than this function
+    # inferring identity from a page-wide count - a page-wide count
+    # cannot tell "the editor itself was renamed" from "some unrelated
+    # card borrowed the word" apart, and a check that cannot tell two
+    # failures apart is answering a different question than the one
+    # asked of it.
+    if page not in THEMED_PAGES and THEME_PICKER_SUMMARY in summaries:
+        problems.append(
+            "carries a disclosure labeled \"%s\" and is not pinned in "
+            "THEMED_PAGES in tools/check_web.py. That word is reserved "
+            "for the footer's custom-palette editor, which only a themed "
+            "page carries" % THEME_PICKER_SUMMARY)
 
     if page in MORE_PAGES and not opens:
         problems.append(
@@ -6573,10 +6639,19 @@ def more_disclosure_problems(text, page):
 # An ALLOWLIST rather than a list of dangerous properties, for the
 # reason AGENTS.md's corollary gives: a blocklist is a guess about which
 # lever the next person reaches for, and this one has to hold against
-# levers nobody has thought of. What the shipped rules need is
-# typography and one margin.
+# levers nobody has thought of. What the shipped rules needed was
+# typography and one margin until 0.9-M2-S13 (#378): the footer's own
+# summary is rethemed as a button now (design mandate 4), which is
+# chrome, not typography - background, border, border-color,
+# border-radius and padding joined the same day, all read straight off
+# the swatch buttons' own declarations a few hundred lines up rather
+# than invented fresh. Still refuses what it always refused:
+# REVEAL_PROPERTIES below is the one thing no addition here ever
+# widens, because nothing on this site has another use for either of
+# them.
 MORE_STYLE_PROPERTIES = frozenset({
     "color", "cursor", "font-size", "margin-block-start",
+    "background", "border", "border-color", "border-radius", "padding",
 })
 
 # The selector shapes that reach a More disclosure or its contents. The
