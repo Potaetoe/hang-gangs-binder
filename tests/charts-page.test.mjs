@@ -342,6 +342,136 @@ check("two non-zero counts that collide still keep exactly one - the " +
   "priority rule breaks the tie by position, deterministically",
   Charts.countCaptionPlan([12, 34], 10).length === 1);
 
+/*
+ * MIDPOINT CAPTIONS (0.9-M2-S13, #378, owner ruling 1). Plain rounding,
+ * a whole number, no unit - the ruling's own examples are the spec-fed
+ * arm below.
+ */
+check("midpointLabel rounds a band's own midpoint to a whole number - " +
+  "the ruling's own examples",
+  Charts.midpointLabel(152.5, 157.5) === "155" &&
+  Charts.midpointLabel(182.5, 187.5) === "185");
+check("midpointLabel rounds .5 up, plainly - Math.round's own rule, " +
+  "nothing fancier asked for",
+  Charts.midpointLabel(0, 5) === "3" && Charts.midpointLabel(0, 1) === "1");
+check("midpointLabel carries no unit token, ever - the unit is stated " +
+  "once at the axis edge, never per caption (owner ruling 1)",
+  !/[a-zA-Z]/.test(Charts.midpointLabel(20, 25)));
+
+/* UNIQUENESS on the shipped grids: a fixed-width grid's midpoints are
+   strictly increasing by the band width, so no two bands ever share a
+   caption - checked on the real spec rather than assumed from the
+   arithmetic. */
+const bmiMidpoints = bmiGrid.map((b) => Charts.midpointLabel(b.from, b.to));
+check("every midpoint caption on the real 120-band BMI grid is unique",
+  new Set(bmiMidpoints).size === bmiMidpoints.length);
+const weightMidpoints = weightGrid.map((b) =>
+  Charts.midpointLabel(b.from, b.to));
+check("every midpoint caption on the real 53-band imperial-weight " +
+  "grid is unique",
+  new Set(weightMidpoints).size === weightMidpoints.length);
+
+/*
+ * CONTAINMENT (0.9-M2-S13, #378, same ruling): no painted caption may
+ * cross the viewBox edge. containBox() itself, then the property on
+ * the real grids, matching noPaintedPairOverlaps()'s own shape above -
+ * the SAME box math (captionBox()), the same real spec-fed geometry,
+ * a different property.
+ */
+check("containBox leaves a box that already fits inside [0, width] " +
+  "unchanged - the no-op case every interior caption hits",
+  JSON.stringify(Charts.containBox({ left: 10, right: 20 }, 100)) ===
+  JSON.stringify({ left: 10, right: 20 }));
+check("containBox shifts a box whose left edge crosses 0 inward until " +
+  "it touches 0, preserving the box's own width",
+  JSON.stringify(Charts.containBox({ left: -5, right: 15 }, 100)) ===
+  JSON.stringify({ left: 0, right: 20 }));
+check("containBox shifts a box whose right edge crosses width inward " +
+  "until it touches width, preserving the box's own width",
+  JSON.stringify(Charts.containBox({ left: 90, right: 110 }, 100)) ===
+  JSON.stringify({ left: 80, right: 100 }));
+
+function everyContainedBoxFits(labels, slot, width) {
+  return labels.every((text, i) => {
+    const center = i * slot + slot / 2;
+    const half = Charts.captionWidth(text) / 2;
+    const box = Charts.containBox(
+      { left: center - half, right: center + half }, width);
+    return box.left >= -1e-9 && box.right <= width + 1e-9;
+  });
+}
+
+check("F1/#378: every painted caption on the real 120-band BMI grid " +
+  "(midpoint labels, no unit) sits inside the viewBox once contained - " +
+  "the width machinery is dense enough here that the end captions " +
+  "really do need the clamp",
+  everyContainedBoxFits(
+    bmiRangePlan.map((i) => bmiMidpoints[i]),
+    bmiSlot, 640));
+check("F2/#378: every painted caption on the real 53-band imperial-" +
+  "weight grid sits inside the viewBox once contained too",
+  everyContainedBoxFits(
+    weightRangePlan.map((i) => weightMidpoints[i]),
+    weightSlot, 640));
+
+/* An adversarial hand-built case: a caption wide enough that its own
+   box, centered in its slot, overshoots BOTH edges by construction -
+   the property has to hold even here, not merely on the real grids
+   where it happens to. */
+check("containBox clamps a caption wider than the whole row to the " +
+  "left edge (left takes priority, matching the left-then-right order " +
+  "the function itself reads in)",
+  JSON.stringify(Charts.containBox({ left: -50, right: 700 }, 640)) ===
+  JSON.stringify({ left: 0, right: 750 }));
+
+/*
+ * THE TOOLTIP'S OWN TEXT (0.9-M2-S13, #378, owner ruling 2): pure,
+ * checked here independent of any DOM - section 3's driven arms check
+ * that the page actually wires these onto a hover/tap target.
+ */
+check("memberCount reads singular for exactly one",
+  Charts.memberCount(1) === "1 member");
+check("memberCount reads plural for zero and for more than one - " +
+  "the ruling's own examples",
+  Charts.memberCount(0) === "0 members" &&
+  Charts.memberCount(2) === "2 members");
+
+check("binTooltipParts, a filled band: the exact range as the lead, " +
+  "the exact count as the number - the ruling's own example",
+  JSON.stringify(Charts.binTooltipParts(152.4, 157.5, "cm", 2)) ===
+  JSON.stringify({ lead: "152.4 cm–157.5 cm: ", number: "2 members" }));
+check("binTooltipParts, an empty slot (owner ruling 2's own words: " +
+  "\"including an empty slot\"): the same shape, zero as the number, " +
+  "never a suppressed or different sentence for the zero case",
+  JSON.stringify(Charts.binTooltipParts(157.5, 162.5, "cm", 0)) ===
+  JSON.stringify({ lead: "157.5 cm–162.5 cm: ", number: "0 members" }));
+check("binTooltipParts carries no unit token when the measure has none",
+  Charts.binTooltipParts(20, 25, null, 3).lead === "20–25: ");
+
+check("monthLabel reads a UTC month/year, never a locale-dependent " +
+  "format",
+  Charts.monthLabel(new Date("2026-08-15T00:00:00Z").getTime()) ===
+  "August 2026");
+check("monthLabel reads the year that instant's OWN UTC month falls " +
+  "in, across a year boundary",
+  Charts.monthLabel(new Date("2026-01-01T00:00:00Z").getTime()) ===
+  "January 2026");
+
+check("trendTooltipParts for the group's own point: the month and " +
+  "\"Average\" as the lead, the exact value and unit as the number",
+  JSON.stringify(Charts.trendTooltipParts(
+    new Date("2026-08-01T00:00:00Z").getTime(), "Average", 178.6, "lb")) ===
+  JSON.stringify({ lead: "August 2026 — Average: ", number: "178.6 lb" }));
+check("trendTooltipParts for the You point: the same month, \"You\" as " +
+  "the lead, that point's own value - owner ruling 2's own words " +
+  "(\"the You point its own value\")",
+  JSON.stringify(Charts.trendTooltipParts(
+    new Date("2026-08-11T00:00:00Z").getTime(), "You", 180.8, "lb")) ===
+  JSON.stringify({ lead: "August 2026 — You: ", number: "180.8 lb" }));
+check("trendTooltipParts carries no unit token when the measure has " +
+  "none",
+  Charts.trendTooltipParts(0, "Average", 5, null).number === "5");
+
 /* chartsURL: self=1 always, filter+value only together. */
 const bare = new URL(Charts.chartsURL("https://w.example", { measure: "weight" }));
 /* /charts-data, not /charts (0.9-M2-S8, #365): the route was renamed
@@ -494,8 +624,25 @@ function node(tag) {
   // no-op here for the same reason every other real-DOM method on this
   // stub is one: nothing in this file inspects a real navigation.
   el.click = () => {};
+  // A real element's textContent reads every descendant text node
+  // concatenated, not merely its own leaf text - 0.9-M2-S13's tooltip
+  // (#378, showTooltip()) sets textContent on two CHILD spans rather
+  // than on the tooltip div itself, and a getter that only ever
+  // returned this element's own `_text` would read that div as
+  // permanently empty (the setter below clears `_text` to "" and wipes
+  // any prior children the moment the div's own textContent was last
+  // assigned, and nothing after that touches `_text` again once real
+  // children exist). `_text` is only ever meaningful with no children -
+  // the setter's own invariant - so recursing over children when there
+  // are any, falling back to `_text` otherwise, matches a real DOM
+  // element exactly for every shape this suite builds.
+  function textOf(node) {
+    return node.children.length
+      ? node.children.map(textOf).join("")
+      : node._text;
+  }
   Object.defineProperty(el, "textContent", {
-    get: () => el._text,
+    get: () => textOf(el),
     set: (v) => { el._text = String(v); el.children.length = 0; },
   });
   Object.defineProperty(el, "className", {
@@ -517,7 +664,7 @@ const NEEDED = ["filter-field", "filter-value-field", "filter-value",
   "measure", "picture-tab-trend", "picture-tab-distribution",
   "picture-trend", "picture-distribution", "figure-trend",
   "figure-distribution", "groups", "groups-body", "results", "status",
-  "show-me", "download"];
+  "show-me", "download", "tooltip-trend", "tooltip-distribution"];
 check("every element this suite drives is really in apps/web/charts.html",
   NEEDED.every((id) => IDS.includes(id)));
 
@@ -553,6 +700,10 @@ function buildDom(opts) {
   const svgDist = node("svg");
   byId.get("figure-trend").appendChild(svgTrend);
   byId.get("figure-distribution").appendChild(svgDist);
+  // apps/web/charts.html ships both tooltips `hidden` by default too -
+  // showTooltip()/hideTooltip() are what flip that (0.9-M2-S13, #378).
+  byId.get("tooltip-trend").hidden = true;
+  byId.get("tooltip-distribution").hidden = true;
 
   const unitsImperial = node("input");
   unitsImperial.value = "imperial";
@@ -567,6 +718,13 @@ function buildDom(opts) {
   // reading undefined, the same gap noted against your-page.test.mjs's
   // own makeFormPage() before it grew one.
   const body = node("body");
+  // The document itself needs to be a listenable target too, since
+  // 0.9-M2-S13 (#378) wires dismissTooltipElsewhere() onto it once in
+  // setUp() (owner ruling 2: "tapping elsewhere dismisses") - the same
+  // addEventListener/dispatch shape node() gives every element, so
+  // `doc.dispatch("click")` below can stand in for a tap that landed
+  // somewhere this suite never built an element for.
+  const docListeners = {};
   const doc = {
     body,
     getElementById: (id) => byId.get(id) || null,
@@ -575,6 +733,12 @@ function buildDom(opts) {
     querySelectorAll: (selector) => {
       if (selector === 'input[name="units"]') return unitsInputs;
       return [];
+    },
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+    dispatch: (type) => {
+      (docListeners[type] || []).slice().forEach((fn) => fn({}));
     },
   };
   return { doc, byId, unitsInputs };
@@ -668,6 +832,22 @@ function response(status, body) {
     ok: status >= 200 && status < 300,
     text: async () => text,
   };
+}
+
+/*
+ * One `.chip-row`'s own chips, read the same way page_chips() reads a
+ * theme swatch elsewhere on this site: the two child spans' own text,
+ * never trusted as one flat string this suite would have to re-split.
+ * apps/web/charts.js's renderChip() is the only thing that ever builds
+ * one (0.9-M2-S13, #378) - `.chip-name`'s textContent, `.chip-count`'s,
+ * and whether the chip's own class carries "chip-zero".
+ */
+function chipsOf(row) {
+  return row.children.filter((c) => c.tag === "span").map((chip) => ({
+    name: chip.children.find((c) => c.attrs.class === "chip-name")._text,
+    count: chip.children.find((c) => c.attrs.class === "chip-count")._text,
+    zero: chip.className.split(" ").includes("chip-zero"),
+  }));
 }
 
 /*
@@ -800,49 +980,61 @@ const ENOUGH_FIXTURE = {
     measureOptions.length === 1 && measureOptions[0] === "weight");
 
   const svg = byId.get("figure-distribution").querySelector("svg");
-  const labels = svg.children.filter((c) => c.tag === "text")
-    .map((c) => c._text);
+  const allText = svg.children.filter((c) => c.tag === "text");
+  const labels = allText.map((c) => c._text);
   check("no rendered label uses the retired open-edge shape (\"under " +
     "X\"/\"X and up\") - server/charts-agg.js's openEdge() is gone " +
     "(0.9-M2-S10) and every edge here is a plain number",
     !labels.some((t) => /^under /.test(t) || / and up$/.test(t)));
-  check("a distribution label reads as a plain closed range",
-    labels.includes("154 lb–198 lb"));
 
   /*
-   * F1's behavioral arm (0.9-M2-S3 fix wave 1, #354 comment
-   * 5342979192), carried through the 0.9-M2-S11 reshape and its own
-   * review's F1/F2 geometry fix: the rendered bin count and every bar's
-   * count/range label are compared against the fixture's OWN bins,
-   * index for index, in the response's own order. A client-side pooler
-   * or merger reddens here regardless of what it calls itself, because
-   * it is asked what actually painted. With only 3 bands spaced 213
-   * user units apart and captions well under 100 units wide, nothing
-   * here collides, so every caption still paints and this arm reads the
-   * same as it always did; the sparse case - where rangeCaptionPlan()/
-   * countCaptionPlan() actually drop some - is BANDS_FIXTURE's own arm
-   * below.
+   * F1's behavioral arm (0.9-M2-S3 fix wave 1, #354 comment 5342979192),
+   * carried through the 0.9-M2-S11 reshape, its own review's F1/F2
+   * geometry fix, and the 0.9-M2-S13 midpoint-caption reshape (#378):
+   * the rendered bin count and every bar's count/caption are compared
+   * against the fixture's OWN bins, index for index, in the response's
+   * own order. A client-side pooler or merger reddens here regardless
+   * of what it calls itself, because it is asked what actually painted.
+   * With only 3 bands spaced 213 user units apart and captions well
+   * under 100 units wide, nothing here collides, so every caption still
+   * paints and this arm reads the same as it always did; the sparse
+   * case - where rangeCaptionPlan()/countCaptionPlan() actually drop
+   * some - is BANDS_FIXTURE's own arm below.
+   *
+   * The unit marker shares .chart-label's class with the midpoint
+   * captions (design mandate 1: "same .chart-label class/tone"), so it
+   * is told apart by its own text-anchor ("end", never "middle" - the
+   * captions') rather than by class, the same distinguishing property
+   * drawBins() itself paints it with.
    */
-  const barCounts = svg.children.filter((c) => c.tag === "text" &&
-    c.attrs.class === "chart-value").map((c) => c._text);
-  const rangeLabels = svg.children.filter((c) => c.tag === "text" &&
-    c.attrs.class === "chart-label").map((c) => c._text);
+  const barCounts = allText.filter((c) => c.attrs.class === "chart-value")
+    .map((c) => c._text);
+  const captionEls = allText.filter((c) => c.attrs.class === "chart-label" &&
+    c.attrs["text-anchor"] === "middle");
+  const captionLabels = captionEls.map((c) => c._text);
+  const unitMarkers = allText.filter((c) => c.attrs.class === "chart-label" &&
+    c.attrs["text-anchor"] === "end").map((c) => c._text);
   const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
   const fixtureUnit = ENOUGH_FIXTURE.units.imperial.unit;
   check("F1: the rendered bin count equals the response's bin count " +
     "exactly - a client-side pooler that merges adjacent bins reddens " +
     "here regardless of what it calls itself",
     barCounts.length === fixtureBins.length &&
-    rangeLabels.length === fixtureBins.length);
-  check("F1: every rendered bar's count and range label is the " +
-    "fixture's own value for that bin, in the response's own order - " +
-    "a pooled or re-binned draw shows a re-summed count or a spanning " +
-    "label no fixture bin has",
+    captionLabels.length === fixtureBins.length);
+  check("F1/#378: every rendered bar's count is the fixture's own, and " +
+    "every caption is that bin's own MIDPOINT (never the full range any " +
+    "more), in the response's own order - a pooled or re-binned draw " +
+    "shows a re-summed count or a spanning caption no fixture bin has",
     fixtureBins.every(function (bin, i) {
       return barCounts[i] === String(bin.count) &&
-        rangeLabels[i] === Charts.binLabel(bin.from.imperial,
-          bin.to.imperial, fixtureUnit);
+        captionLabels[i] === Charts.midpointLabel(bin.from.imperial,
+          bin.to.imperial);
     }));
+  check("#378 owner ruling 1: the unit is stated exactly once, at the " +
+    "axis edge - never per caption. No caption carries a unit letter " +
+    "any more, and the row's own axis mark is the response's real unit",
+    unitMarkers.length === 1 && unitMarkers[0] === fixtureUnit &&
+    captionLabels.every((t) => !/[a-zA-Z]/.test(t)));
 
   /* Owner ruling 6, #243: lines never break. Two trend points with a
      gap month (2026-07 carries no point at all) still draw as ONE
@@ -862,39 +1054,52 @@ const ENOUGH_FIXTURE = {
     selfLine !== undefined &&
     selfLine.attrs.points.trim().split(" ").length === 2);
 
-  /* Owner ruling 1, #243: the group-makeup block. Plain count lines,
-     zeros included, from the response's own `groups` field. */
+  /* Owner ruling 1, #243, reshaped as chips by 0.9-M2-S13 (#378): the
+     group-makeup block. One chip per value, zeros included, from the
+     response's own `groups` field - no chart machinery, no bars. */
   const groupsBody = byId.get("groups-body");
-  const groupsLines = groupsBody.children.filter((c) => c.tag === "p")
-    .map((c) => c._text);
+  const chipRows = groupsBody.children.filter((c) =>
+    c.className.split(" ").includes("chip-row"));
   check("the group makeup card is shown once a drawn answer arrives",
     byId.get("groups").hidden === false);
   check("the group makeup heading names each field, from the response, " +
     "one per categorical field",
     groupsBody.children.some((c) => c.tag === "h3" && c._text === "Gender") &&
     groupsBody.children.some((c) => c.tag === "h3" && c._text === "Country"));
-  check("every gender value line reads \"<label>: <count>\" verbatim " +
-    "from the response, zeros and the blank cell included, in the " +
-    "response's own order - no chart machinery, no bars",
-    groupsLines.length === 7 &&
-    groupsLines[0] === "Male: 10" &&
-    groupsLines[1] === "Female: 8" &&
-    groupsLines[2] === "Non-binary: 0" &&
-    groupsLines[3] === "Not stated: 2");
+  check("one .chip-row per categorical field in the response",
+    chipRows.length === 2);
+
+  const genderChips = chipsOf(chipRows[0]);
+  check("every gender chip carries the response's own label and exact " +
+    "count verbatim, zeros and the blank cell included, in the " +
+    "response's own order - one chip per value, index for index",
+    genderChips.length === 4 &&
+    genderChips[0].name === "Male" && genderChips[0].count === "10" &&
+    genderChips[1].name === "Female" && genderChips[1].count === "8" &&
+    genderChips[2].name === "Non-binary" && genderChips[2].count === "0" &&
+    genderChips[3].name === "Not stated" && genderChips[3].count === "2");
+  check("owner ruling 3, #378: the zero chip (and only the zero chip) " +
+    "carries the dimmed class - order stays the ruled order, it is not " +
+    "moved or dropped",
+    !genderChips[0].zero && !genderChips[1].zero && genderChips[2].zero &&
+    !genderChips[3].zero);
+
   /*
    * The country carry (Prime's wake, S12's review #373): the response
    * sends `label: "US"` (the code, a placeholder) for a choicesFrom
    * field, and this page is the one holding apps/web/countries.js's own
    * table - groupCellLabel() looks the real name up from `value`, never
-   * trusting `label` for this field. The blank line keeps its own real
+   * trusting `label` for this field. The blank cell keeps its own real
    * label untouched, because it is not a country code to look up.
    */
-  check("country lines render the real name looked up from the code " +
+  const countryChips = chipsOf(chipRows[1]);
+  check("country chips render the real name looked up from the code " +
     "(value), not the code the response's own label placeholder holds - " +
-    "the blank line is untouched",
-    groupsLines[4] === "United States: 5" &&
-    groupsLines[5] === "Albania: 1" &&
-    groupsLines[6] === "Not stated: 3");
+    "the blank cell is untouched, and its count is verbatim too",
+    countryChips.length === 3 &&
+    countryChips[0].name === "United States" && countryChips[0].count === "5" &&
+    countryChips[1].name === "Albania" && countryChips[1].count === "1" &&
+    countryChips[2].name === "Not stated" && countryChips[2].count === "3");
 }
 
 /*
@@ -1011,20 +1216,26 @@ const ENOUGH_FIXTURE = {
   let served = 0;
   const { byId } = await driven(() => response(200, answers[served++]));
 
-  const firstLines = byId.get("groups-body").children
-    .filter((c) => c.tag === "p").map((c) => c._text);
+  function firstRowChips(byIdMap) {
+    const row = byIdMap.get("groups-body").children.find((c) =>
+      c.className.split(" ").includes("chip-row"));
+    return row ? chipsOf(row) : [];
+  }
+
+  const firstChips = firstRowChips(byId);
   check("re-render with filter, part 1: a filtered answer's own " +
     "(smaller) group makeup renders",
-    firstLines.length === 1 && firstLines[0] === "Male: 10");
+    firstChips.length === 1 && firstChips[0].name === "Male" &&
+    firstChips[0].count === "10");
 
   await pressShowMe(byId);
-  const secondLines = byId.get("groups-body").children
-    .filter((c) => c.tag === "p").map((c) => c._text);
+  const secondChips = firstRowChips(byId);
   check("re-render with filter, part 2: pressing Show me again with a " +
     "broader answer REPLACES the group makeup with its own counts, " +
     "not appended beside the filtered view's",
-    secondLines.length === 2 &&
-    secondLines[0] === "Male: 10" && secondLines[1] === "Female: 8");
+    secondChips.length === 2 &&
+    secondChips[0].name === "Male" && secondChips[0].count === "10" &&
+    secondChips[1].name === "Female" && secondChips[1].count === "8");
 }
 
 /*
@@ -1079,41 +1290,58 @@ const ENOUGH_FIXTURE = {
   });
   const { byId } = await driven(() => response(200, multipleFlag));
   const body = byId.get("groups-body");
-  const paragraphs = body.children.filter((c) => c.tag === "p");
-  const texts = paragraphs.map((c) => c._text);
+  const chipRows = body.children.filter((c) =>
+    c.className.split(" ").includes("chip-row"));
+  const hints = body.children.filter((c) => c.tag === "p");
   const hintText = "Members can choose more than one here, so these " +
     "numbers can add up to more than the group.";
-  check("F5: a multiple:true category's own value lines are followed " +
-    "by the honest-reading hint",
-    texts[0] === "Feeder: 6" && texts[1] === "Feedee: 4" &&
-    texts[2] === hintText);
-  check("F5: the hint line is render-only prose, not a count - it " +
-    "carries a muted tone, distinct from an ordinary value line",
-    paragraphs[2] !== undefined && paragraphs[2].attrs.class ===
-    "muted small");
+  check("F5: a multiple:true category's own chips render verbatim",
+    chipsOf(chipRows[0]).length === 2 &&
+    chipsOf(chipRows[0])[0].name === "Feeder" &&
+    chipsOf(chipRows[0])[0].count === "6" &&
+    chipsOf(chipRows[0])[1].name === "Feedee" &&
+    chipsOf(chipRows[0])[1].count === "4");
+  check("F5: ...followed by the honest-reading hint, exactly one line, " +
+    "render-only prose distinct in tone from an ordinary chip",
+    hints.length === 1 && hints[0]._text === hintText &&
+    hints[0].attrs.class === "muted small");
   check("F5: a multiple:false category shows no such hint - its own " +
-    "last value line is the row's last line too, nothing appended " +
+    "chip row is the last thing this answer renders, nothing appended " +
     "after it, even though the earlier multiple:true category's own " +
     "hint IS on the page (proving the flag decides per category, not " +
     "once for the whole answer)",
-    texts.length === 4 && texts[3] === "Male: 10" &&
-    texts[2].includes("more than one"));
+    chipsOf(chipRows[1]).length === 1 &&
+    chipsOf(chipRows[1])[0].name === "Male" &&
+    chipsOf(chipRows[1])[0].count === "10" &&
+    body.children[body.children.length - 1] === chipRows[1]);
 }
 
 /*
- * BANDS_FIXTURE: fourteen bands, one of them empty. Owner ruling 5,
- * #243: "an empty band is an empty slot" - every one of the fourteen
- * draws, the empty one at zero height. Captions are thinned by
- * GEOMETRY now (owner's F1/F2 ruling, #372's review), not by a fixed
- * stride, so this arm computes the expected caption row by calling the
- * same rangeCaptionPlan()/countCaptionPlan() the page itself calls -
- * proving the DOM matches the pure functions exactly, index for index,
- * rather than hardcoding an index list that would silently stop meaning
+ * BANDS_FIXTURE: forty bands, one of them empty. Owner ruling 5, #243:
+ * "an empty band is an empty slot" - every one of the forty draws, the
+ * empty one at zero height. Captions are thinned by GEOMETRY now
+ * (owner's F1/F2 ruling, #372's review), not by a fixed stride, so this
+ * arm computes the expected caption row by calling the same
+ * rangeCaptionPlan()/countCaptionPlan() the page itself calls - proving
+ * the DOM matches the pure functions exactly, index for index, rather
+ * than hardcoding an index list that would silently stop meaning
  * anything the moment either function's algorithm changed.
+ *
+ * FORTY, NOT FOURTEEN (0.9-M2-S13, #378): midpointLabel()'s captions
+ * are shorter than the retired full-range ones - at 14 bands, every
+ * midpoint caption now clears its own slot with room to spare and
+ * nothing thins at all, which would leave this arm's own "the row
+ * really does thin sometimes" property unproven at the DOM level (the
+ * pure-function containment checks above already prove thinning still
+ * happens on the real BMI/imperial grids; this arm's OWN job is
+ * proving the rendered DOM tracks the plan, and that needs a fixture
+ * dense enough for the plan to actually drop something). Forty bands
+ * over the same 20-unit-wide spacing pushes 3-digit midpoints (up to
+ * 24 user units) into a 16-unit slot, where they collide again.
  */
-function makeBands(zeroIndex) {
+function makeBands(zeroIndex, count) {
   const bins = [];
-  for (let i = 0; i < 14; i += 1) {
+  for (let i = 0; i < count; i += 1) {
     const from = 44 + i * 20;
     const to = from + 20;
     bins.push({
@@ -1125,11 +1353,13 @@ function makeBands(zeroIndex) {
   return bins;
 }
 
+const BAND_COUNT = 40;
+
 const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   distribution: {
     kind: "bins",
     partition: { system: "imperial", unit: "lb", band: "20 lb bands" },
-    bins: makeBands(5),
+    bins: makeBands(5, BAND_COUNT),
   },
 });
 
@@ -1140,21 +1370,27 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
     c.attrs.class === "chart-bar");
   const barCounts = svg.children.filter((c) => c.tag === "text" &&
     c.attrs.class === "chart-value").map((c) => c._text);
-  const rangeLabels = svg.children.filter((c) => c.tag === "text" &&
-    c.attrs.class === "chart-label").map((c) => c._text);
+  // The unit marker shares .chart-label's class - told apart by its own
+  // text-anchor exactly as the ENOUGH_FIXTURE arm above does.
+  const captionEls = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "middle");
+  const captionLabels = captionEls.map((c) => c._text);
+  const unitMarkers = svg.children.filter((c) => c.tag === "text" &&
+    c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "end")
+    .map((c) => c._text);
   const bins = BANDS_FIXTURE.distribution.bins;
 
-  check("every one of the 14 bands draws a bar - the empty one is not " +
-    "skipped",
-    bars.length === 14);
+  check("every one of the " + BAND_COUNT + " bands draws a bar - the " +
+    "empty one is not skipped",
+    bars.length === BAND_COUNT);
   check("the empty band's bar is a zero-height slot, present on the " +
     "axis rather than omitted",
     Number(bars[5].attrs.height) === 0);
 
   const slot14 = 640 / bins.length;
-  const rangeTexts = bins.map((bin) =>
-    Charts.binLabel(bin.from.imperial, bin.to.imperial, "lb"));
-  const expectedRangeIndexes = Charts.rangeCaptionPlan(rangeTexts, slot14);
+  const midpointTexts = bins.map((bin) =>
+    Charts.midpointLabel(bin.from.imperial, bin.to.imperial));
+  const expectedCaptionIndexes = Charts.rangeCaptionPlan(midpointTexts, slot14);
   const countTexts = bins.map((bin) => String(bin.count));
   const expectedCountIndexes = Charts.countCaptionPlan(
     bins.map((bin) => bin.count), slot14);
@@ -1166,30 +1402,161 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
     barCounts.length === expectedCountIndexes.length &&
     expectedCountIndexes.every((idx, j) =>
       barCounts[j] === countTexts[idx]));
-  check("F1/F2: the rendered range-caption row is exactly the " +
-    "positions rangeCaptionPlan() says should carry one, each the " +
-    "fixture's own edge numbers, in order",
-    rangeLabels.length === expectedRangeIndexes.length &&
-    expectedRangeIndexes.every((idx, j) =>
-      rangeLabels[j] === rangeTexts[idx]));
-  check("F1/F2: on this fixture's own geometry, the range-caption row " +
-    "is thinner than the full 14 bands, and the count row still holds " +
-    "at least one caption - the fix removes overlapping captions, not " +
-    "every caption",
-    expectedRangeIndexes.length < 14 && expectedCountIndexes.length > 0);
-  check("the first and last range captions are the ones this fixture's " +
-    "own plan keeps, never dropped as interior collisions are",
-    expectedRangeIndexes[0] === 0 &&
-    expectedRangeIndexes[expectedRangeIndexes.length - 1] === 13);
+  check("F1/F2/#378: the rendered caption row is exactly the positions " +
+    "rangeCaptionPlan() says should carry one, each that bin's own " +
+    "MIDPOINT (rangeCaptionPlan() is fed midpointLabel()'s texts now, " +
+    "the same shorter texts the page itself computes), in order",
+    captionLabels.length === expectedCaptionIndexes.length &&
+    expectedCaptionIndexes.every((idx, j) =>
+      captionLabels[j] === midpointTexts[idx]));
+  check("F1/F2: on this fixture's own geometry, the caption row is " +
+    "thinner than the full " + BAND_COUNT + " bands, and the count row " +
+    "still holds at least one caption - the fix removes overlapping " +
+    "captions, not every caption",
+    expectedCaptionIndexes.length < BAND_COUNT &&
+    expectedCountIndexes.length > 0);
+  check("the first and last captions are the ones this fixture's own " +
+    "plan keeps, never dropped as interior collisions are",
+    expectedCaptionIndexes[0] === 0 &&
+    expectedCaptionIndexes[expectedCaptionIndexes.length - 1] ===
+    BAND_COUNT - 1);
+  check("#378 owner ruling 1: the unit still paints exactly once on " +
+    "this dense a row too, and no painted caption carries a unit letter",
+    unitMarkers.length === 1 && unitMarkers[0] === "lb" &&
+    captionLabels.every((t) => !/[a-zA-Z]/.test(t)));
+
+  /*
+   * CONTAINMENT (0.9-M2-S13, #378): with forty bands at 16 units per
+   * slot and captions up to 3 digits wide (up to 24 units), the end
+   * slots do need the clamp - this checks the property directly rather
+   * than trusting the earlier pure-function arms alone: every painted
+   * caption's own box, read back off the actual rendered x-position,
+   * sits inside the plot bounds.
+   */
+  check("no painted caption's own x-position, read back from the SVG, " +
+    "sits outside the 640-wide viewBox",
+    captionEls.every((el) => {
+      const x = Number(el.attrs.x);
+      const half = Charts.captionWidth(el._text) / 2;
+      return x - half >= -1e-6 && x + half <= 640 + 1e-6;
+    }));
+}
+
+/*
+ * THE TOOLTIP, DRIVEN END TO END (0.9-M2-S13, #378, owner ruling 2):
+ * hover shows it, a click/tap pins it, a click/tap elsewhere dismisses
+ * it - one behavior for both a distribution band (filled or empty) and
+ * a trend point. Content is checked against binTooltipParts()/
+ * trendTooltipParts() (already proven correct as pure functions above),
+ * never against a hand-typed string this arm would have to keep in
+ * sync by hand.
+ */
+{
+  const { byId, doc } = await driven(() => response(200, ENOUGH_FIXTURE));
+  const distTip = byId.get("tooltip-distribution");
+  const distSvg = byId.get("figure-distribution").querySelector("svg");
+  const hits = distSvg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+  const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
+  const fixtureUnit = ENOUGH_FIXTURE.units.imperial.unit;
+
+  check("the distribution tooltip starts hidden",
+    hits.length === fixtureBins.length && distTip.hidden === true);
+
+  await hits[0].dispatch("mouseenter");
+  const parts0 = Charts.binTooltipParts(fixtureBins[0].from.imperial,
+    fixtureBins[0].to.imperial, fixtureUnit, fixtureBins[0].count);
+  check("hovering a filled distribution band shows the tooltip with " +
+    "the exact range and count, verbatim - binTooltipParts()'s own " +
+    "answer, not a re-derived string",
+    distTip.hidden === false &&
+    distTip.textContent === parts0.lead + parts0.number);
+
+  await hits[0].dispatch("mouseleave");
+  check("moving off an unpinned tooltip hides it again",
+    distTip.hidden === true);
+
+  await hits[1].dispatch("click");
+  check("clicking/tapping a band PINS the tooltip to it - the same " +
+    "content a hover would have shown",
+    distTip.hidden === false);
+  await hits[1].dispatch("mouseleave");
+  check("a pinned tooltip survives the pointer leaving - pinning is " +
+    "what makes tap-to-pin mean something on a touchscreen with no " +
+    "hover at all",
+    distTip.hidden === false);
+
+  await doc.dispatch("click");
+  check("owner ruling 2: tapping/clicking elsewhere dismisses a " +
+    "pinned tooltip",
+    distTip.hidden === true);
+
+  const trendTip = byId.get("tooltip-trend");
+  const trendSvg = byId.get("figure-trend").querySelector("svg");
+  const groupDots = trendSvg.children.filter((c) => c.tag === "circle" &&
+    c.attrs.class === "chart-dot series-0");
+  const selfDots = trendSvg.children.filter((c) => c.tag === "circle" &&
+    c.attrs.class === "chart-dot series-1");
+  const groupPoint = ENOUGH_FIXTURE.trend.points[0];
+  const groupAt = new Date(groupPoint.period + "-01T00:00:00Z").getTime();
+  const groupParts = Charts.trendTooltipParts(groupAt, "Average",
+    groupPoint.average.imperial, fixtureUnit);
+
+  await groupDots[0].dispatch("mouseenter");
+  check("hovering the group's own trend point shows the month and " +
+    "\"Average\" - the group mean, verbatim",
+    trendTip.hidden === false &&
+    trendTip.textContent === groupParts.lead + groupParts.number);
+
+  const selfPoint = ENOUGH_FIXTURE.self.points[0];
+  const selfAt = new Date(selfPoint.at).getTime();
+  const selfParts = Charts.trendTooltipParts(selfAt, "You",
+    selfPoint.value.imperial, fixtureUnit);
+
+  await selfDots[0].dispatch("mouseenter");
+  check("hovering the You point shows the same month with the You " +
+    "series' own value, not the group's - owner ruling 2's own words " +
+    "(\"the You point its own value\")",
+    trendTip.hidden === false &&
+    trendTip.textContent === selfParts.lead + selfParts.number);
+}
+
+/*
+ * The tooltip's other required shape: an empty slot still verifies
+ * (owner ruling 2's own words, "including an empty slot"). BANDS_FIXTURE
+ * carries the zero band this arm needs (index 5).
+ */
+{
+  const { byId } = await driven(() => response(200, BANDS_FIXTURE));
+  const distTip = byId.get("tooltip-distribution");
+  const distSvg = byId.get("figure-distribution").querySelector("svg");
+  const hits = distSvg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+  const zeroBin = BANDS_FIXTURE.distribution.bins[5];
+
+  await hits[5].dispatch("mouseenter");
+  const zeroParts = Charts.binTooltipParts(zeroBin.from.imperial,
+    zeroBin.to.imperial, BANDS_FIXTURE.units.imperial.unit, zeroBin.count);
+  check("hovering an EMPTY band's own hit target (the zero-height bar " +
+    "has no area of its own to hover, so this is the full-column hit " +
+    "rect doing its job) shows the exact range and \"0 members\", " +
+    "never a suppressed or different sentence for the zero case",
+    zeroParts.number === "0 members" &&
+    distTip.hidden === false &&
+    distTip.textContent === zeroParts.lead + zeroParts.number);
 }
 
 /*
  * The units toggle: re-render from the SAME cached answer, with no
  * second fetch (security mandate 2 - "reads the per-system key the
  * route already returned"). Distinguishing this from a re-bin requires
- * the metric numbers to differ from the imperial ones in the redrawn
- * labels, which they do in the fixture (90 kg vs 198 lb).
+ * a number that differs between the two systems' MIDPOINTS (0.9-M2-S13
+ * retired the full range as the caption, so the raw edges 90/198 no
+ * longer appear anywhere in the SVG - the second bin's own midpoints,
+ * 80 metric and 176 imperial, are the ruled equivalent for this arm).
  */
+const SECOND_BIN_MIDPOINT_METRIC = Charts.midpointLabel(70, 90);
+const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
 
 {
   const { byId, calls, unitsInputs } = await driven(() =>
@@ -1208,10 +1575,10 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   const svg = byId.get("figure-distribution").querySelector("svg");
   const labels = svg.children.filter((c) => c.tag === "text")
     .map((c) => c._text);
-  check("the redrawn labels carry the metric edge (90), not the " +
-    "imperial one (198) - a real re-render, not a no-op",
-    labels.some((t) => t.includes("90")) &&
-    !labels.some((t) => t.includes("198")));
+  check("the redrawn captions carry the metric midpoint, not the " +
+    "imperial one - a real re-render, not a no-op",
+    labels.includes(SECOND_BIN_MIDPOINT_METRIC) &&
+    !labels.includes(SECOND_BIN_MIDPOINT_IMPERIAL));
 }
 
 /*
@@ -1231,10 +1598,10 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   const labels = svg.children.filter((c) => c.tag === "text")
     .map((c) => c._text);
   check("F2: with no units radio checked, the initial draw follows " +
-    "the spec's defaultSystem() (imperial here) - the imperial edge " +
-    "(198) is drawn, not the metric one (90)",
-    labels.some((t) => t.includes("198")) &&
-    !labels.some((t) => t.includes("90")));
+    "the spec's defaultSystem() (imperial here) - the imperial " +
+    "midpoint is drawn, not the metric one",
+    labels.includes(SECOND_BIN_MIDPOINT_IMPERIAL) &&
+    !labels.includes(SECOND_BIN_MIDPOINT_METRIC));
 }
 
 {
@@ -1246,8 +1613,8 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   check("F2: flipping the spec's defaultSystem() to metric flips the " +
     "initial draw too - the page derives the fallback from the spec, " +
     "it does not hardcode one",
-    labels.some((t) => t.includes("90")) &&
-    !labels.some((t) => t.includes("198")));
+    labels.includes(SECOND_BIN_MIDPOINT_METRIC) &&
+    !labels.includes(SECOND_BIN_MIDPOINT_IMPERIAL));
 }
 
 {
@@ -1271,7 +1638,7 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 83;
+const EXPECTED = 117;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
