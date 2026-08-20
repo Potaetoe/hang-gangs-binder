@@ -582,9 +582,14 @@ check("countAxisTicks steps evenly - the gap between every pair of " +
   "adjacent ticks is the same",
   new Set(Charts.countAxisTicks(37).slice(1)
     .map((t, i) => t - Charts.countAxisTicks(37)[i])).size === 1);
-check("countAxisTicks picks a small handful of ticks, not one per unit " +
-  "- a 1000-person axis does not print 1001 labels",
-  Charts.countAxisTicks(1000).length < 15);
+check("countAxisTicks picks roughly five ticks, not one per unit and " +
+  "not a whole different density - a 1000-person axis prints a " +
+  "handful of round numbers, never 1001 labels nor twice as many " +
+  "steps as the target",
+  Charts.countAxisTicks(1000).length >= 4 &&
+  Charts.countAxisTicks(1000).length <= 7 &&
+  Charts.countAxisTicks(37).length >= 4 &&
+  Charts.countAxisTicks(37).length <= 7);
 
 /*
  * THE TREND'S VALUE AXIS (same ruling: "if its reserved gutter carries
@@ -1264,6 +1269,11 @@ const ENOUGH_FIXTURE = {
     "fraction of a person",
     axisTicks.length > 0 &&
     axisTicks.every((t) => /^\d+$/.test(t._text)));
+  check("owner ruling (the 2026-08-19 late sitting): no per-bar count " +
+    "ever paints again - .chart-value is retired with the row it " +
+    "belonged to, a regression guard independent of what any caption " +
+    "or axis check happens to look for",
+    svg.children.every((c) => c.attrs.class !== "chart-value"));
 
   /* Owner ruling 6, #243: lines never break. Two trend points with a
      gap month (2026-07 carries no point at all) still draw as ONE
@@ -1896,7 +1906,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 143;
+const EXPECTED = 144;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
