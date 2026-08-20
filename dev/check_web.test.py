@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 581
+EXPECTED = 585
 
 
 def check(label, condition):
@@ -812,6 +812,39 @@ FOOTER_NO_SUMMARY = "<footer>%s%s</footer>" % (
 check("an editor with no <summary> at all is refused",
       any("no <summary> at all" in p
           for p in check_web.footer_problems(FOOTER_NO_SUMMARY, True)))
+
+# Fix wave 1 (F3, #378): "Custom theme" reserved for the EDITOR, not for
+# the word appearing anywhere on a themed page. footer_editor_span() is
+# what more_disclosure_problems() (check 27) now uses to tell the real
+# editor apart from a decoy - the reviewer's own attack, reproduced: an
+# unrelated card's <details class="more"><summary>Custom theme</summary>
+# sitting OUTSIDE the footer, on a page that also carries the real,
+# correctly-labeled editor.
+DECOY_PAGE = ("<main><details class=\"more\"><summary>Custom theme"
+              "</summary><p>why</p></details></main>"
+              "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP))
+check("F3/#378: a decoy summary reading \"Custom theme\" OUTSIDE the "
+      "footer is refused, even though the real editor on the same page "
+      "carries the word legitimately",
+      any("labels a disclosure \"Custom theme\"" in p
+          for p in check_web.more_disclosure_problems(
+              DECOY_PAGE, "charts.html")))
+check("F3/#378 the other direction: the real editor's own \"Custom "
+      "theme\" summary, inside the footer, is not refused by this same "
+      "check - the exception is positional, not a page-wide allowance",
+      not any("Custom theme" in p and "no <summary>" not in p
+              for p in check_web.more_disclosure_problems(
+                  "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP),
+                  "charts.html")))
+check("footer_editor_span() finds nothing on a page with no footer at "
+      "all - the positional exception applies nowhere, which is "
+      "correct: nothing there has earned the word",
+      check_web.footer_editor_span("<main>Sorry.</main>") is None)
+check("footer_editor_span() finds the real editor's own span on a "
+      "clean footer, and that span is where its <summary> actually sits",
+      check_web.footer_editor_span(
+          "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP))
+      is not None)
 
 # Wrong-order fixture (F2, 0.9-M2-S6 fix wave 1, #82): footer_problems()
 # has to prove POSITION here, not merely presence. Concatenating the
