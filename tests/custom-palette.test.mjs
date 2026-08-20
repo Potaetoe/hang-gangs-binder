@@ -388,11 +388,14 @@ async function runPrePaint(store) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Section 4: theme.js's click handler - the second VALIDATE ON READ    */
-/* call site (0.9-M2-S6 fix wave 1, F1, #82). A minimal stub document -  */
-/* five buttons, one dot, one meta tag, no color inputs - is enough:    */
-/* theme.js skips its <input type="color"> wiring entirely when         */
-/* getElementById finds nothing, which is the truth for every id here.  */
+/* Section 4: theme.js's click handlers - the swatches' shared         */
+/* VALIDATE ON READ site (0.9-M2-S6 fix wave 1, F1, #82) and, since    */
+/* 0.9-M2-S13 (#378), the SAME guard re-armed on the "Custom theme"    */
+/* control that replaced the fifth swatch circle. A minimal stub       */
+/* document - four named buttons, the theme summary, one meta tag, no  */
+/* color inputs - is enough: theme.js skips its <input type="color">   */
+/* wiring entirely when getElementById finds nothing, which is the     */
+/* truth for those two ids here.                                       */
 
 function themeDomStub(store) {
   const localStorageStore = Object.assign({}, store);
@@ -405,8 +408,12 @@ function themeDomStub(store) {
       removeProperty(name) { delete styleProps[name]; },
     },
   };
+  // Only the four NAMED palettes carry [data-set-theme] now - the
+  // custom swatch circle this table used to include is gone
+  // (0.9-M2-S13, #378), and the control that replaced it is not a
+  // swatch, so it is not in this map either (see customButton below).
   const buttons = {};
-  ["midnight", "pink", "daylight", "contrast", "custom"].forEach((name) => {
+  ["midnight", "pink", "daylight", "contrast"].forEach((name) => {
     const listeners = [];
     buttons[name] = {
       _pressed: null,
@@ -416,7 +423,17 @@ function themeDomStub(store) {
       click() { listeners.forEach((fn) => fn()); },
     };
   });
-  const dot = { style: {} };
+  // The "Custom theme" control (0.9-M2-S13, #378): the footer's own
+  // disclosure summary, found by id rather than by [data-set-theme] -
+  // apps/web/theme.js's own header explains why it is not in `buttons`.
+  // Its "selected" mark is CSS alone, keyed off data-theme - nothing
+  // here needs a _pressed flag the way the swatch buttons do.
+  const customButtonListeners = [];
+  const customButton = {
+    id: "custom-theme-button",
+    addEventListener(type, fn) { if (type === "click") customButtonListeners.push(fn); },
+    click() { customButtonListeners.forEach((fn) => fn()); },
+  };
   const meta = { _content: null, setAttribute(n, v) { if (n === "content") this._content = v; } };
   return {
     localStorage: {
@@ -430,15 +447,15 @@ function themeDomStub(store) {
         if (selector === 'meta[name="theme-color"]') return [meta];
         return [];
       },
-      querySelector(selector) {
-        return selector === '.swatch-dot[data-palette="custom"]' ? dot : null;
+      // custom-bg, custom-accent and custom-contrast-warning are absent
+      // - the color-input wiring this stub does not carry, per this
+      // file's header - custom-theme-button is the one id that IS here.
+      getElementById(id) {
+        return id === "custom-theme-button" ? customButton : null;
       },
-      // Every id this file asks for (custom-bg, custom-accent,
-      // custom-contrast-warning) is absent - the color-input wiring
-      // this stub does not carry, per this file's header.
-      getElementById() { return null; },
     },
     buttons: buttons,
+    customButton: customButton,
     documentElement: documentElement,
     meta: meta,
     store: localStorageStore,
@@ -447,61 +464,68 @@ function themeDomStub(store) {
 
 const themeJsSource = await read("../apps/web/theme.js");
 
-async function runThemeClick(store, clickedName) {
+/*
+ * `click` names which control to press: a palette id from `buttons`, or
+ * "custom-theme-button" for the new control. One entry point for both,
+ * matching how a member only ever presses ONE thing per interaction.
+ */
+async function runThemeClick(store, click) {
   const box = themeDomStub(store);
   globalThis.window = globalThis;
   globalThis.document = box.document;
   globalThis.localStorage = box.localStorage;
-  // Never exercised: paintCustomDot() falls to getComputedStyle() only
-  // when no custom pair is on record, which every fixture below is
-  // free to hit. A real value is not needed - nothing here reads the
-  // dot's own painted color - so the stub returns empty strings.
-  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
   tag += 1;
   await import("data:text/javascript," +
     encodeURIComponent(themeJsSource + "\n//theme-click-" + tag));
-  box.buttons[clickedName].click();
+  (click === "custom-theme-button" ? box.customButton : box.buttons[click])
+    .click();
   delete globalThis.window;
   delete globalThis.document;
   delete globalThis.localStorage;
-  delete globalThis.getComputedStyle;
   return box;
 }
 
-// The reviewer's exact repro (F1, #82 review): Daylight saved, no
-// hgb-custom-colors record at all, one click on the Custom chip.
+// The reviewer's exact repro (F1, #82 review), re-armed on the new
+// control (0.9-M2-S13, #378): Daylight saved, no hgb-custom-colors
+// record at all, one click on "Custom theme". Opening/using the
+// control must not destroy the saved theme choice (the owner ruling
+// this arm proves).
 {
-  const box = await runThemeClick({ "hgb-palette": "daylight" }, "custom");
-  check("F1: clicking Custom with no valid stored pair leaves data-theme "
-    + "on the named palette that was already active",
+  const box = await runThemeClick({ "hgb-palette": "daylight" },
+    "custom-theme-button");
+  check("F1/#378: clicking \"Custom theme\" with no valid stored pair "
+    + "leaves data-theme on the named palette that was already active",
     box.documentElement._attrs["data-theme"] === "daylight");
-  check("F1: the Custom chip does not read pressed",
-    box.buttons.custom._pressed === "false");
-  check("F1: the Daylight chip is still the one reading pressed",
+  check("F1/#378: the Daylight chip is still the one reading pressed",
     box.buttons.daylight._pressed === "true");
-  check("F1: the meta theme-color still agrees with Daylight's own "
+  check("F1/#378: the meta theme-color still agrees with Daylight's own "
     + "background, not a stale or missing value",
     box.meta._content === "#f3eadb");
-  check("F1: hgb-palette in storage still reads \"daylight\" - the "
+  check("F1/#378: hgb-palette in storage still reads \"daylight\" - the "
     + "click did not overwrite it with \"custom\"",
     box.store["hgb-palette"] === "daylight");
-  check("F1: no hgb-custom-colors record was written",
+  check("F1/#378: no hgb-custom-colors record was written",
     !("hgb-custom-colors" in box.store));
 }
 
 // Same shape, no named palette on record at all (a first-time visitor
-// who clicks Custom first) - the chip still declines to press and
-// nothing is persisted.
+// who presses "Custom theme" first) - the control still declines to
+// activate Custom and nothing is persisted.
 {
-  const box = await runThemeClick({}, "custom");
-  check("F1, no prior choice: clicking Custom with no valid stored pair "
-    + "and no named palette on record writes nothing to hgb-palette",
+  const box = await runThemeClick({}, "custom-theme-button");
+  check("F1/#378, no prior choice: clicking \"Custom theme\" with no "
+    + "valid stored pair and no named palette on record writes nothing "
+    + "to hgb-palette",
     !("hgb-palette" in box.store));
-  check("F1, no prior choice: the Custom chip does not read pressed",
-    box.buttons.custom._pressed === "false");
+  check("F1/#378, no prior choice: data-theme stays on the resting " +
+    "default this stub's own preferred() falls to (no matchMedia here, " +
+    "so \"midnight\") - never \"custom\" from this click, which is the " +
+    "control reading as inactive rather than merely unpersisted",
+    box.documentElement._attrs["data-theme"] === "midnight");
 }
 
-// Regression: a NAMED palette click is untouched by this fix.
+// Regression: a NAMED palette click is untouched by this control's
+// existence.
 {
   const box = await runThemeClick({ "hgb-palette": "daylight" }, "midnight");
   check("F1 regression: clicking a named palette still applies and "
@@ -512,17 +536,25 @@ async function runThemeClick(store, clickedName) {
 }
 
 // The other direction: a VALID stored custom pair still activates
-// Custom on click - the fix narrows to "no valid pair", not "never".
+// Custom on click - the guard narrows to "no valid pair", not "never".
+// This is also the ACTIVE STATE arm the apparatus asks for: data-theme
+// reads "custom" afterward, which is the one fact theme.css's
+// `:root[data-theme="custom"] footer .more > summary` rule keys its
+// own "selected" styling off.
 {
   const box = await runThemeClick({
     "hgb-palette": "daylight",
     "hgb-custom-colors": JSON.stringify({ bg: "#120d10", accent: "#c73743" }),
-  }, "custom");
-  check("F1 other direction: clicking Custom WITH a valid stored pair "
-    + "still applies and persists it",
+  }, "custom-theme-button");
+  check("F1/#378 other direction: clicking \"Custom theme\" WITH a "
+    + "valid stored pair still applies and persists it - the active "
+    + "state theme.css's own selector keys off",
     box.documentElement._attrs["data-theme"] === "custom" &&
-    box.store["hgb-palette"] === "custom" &&
-    box.buttons.custom._pressed === "true");
+    box.store["hgb-palette"] === "custom");
+  check("#378: switching back to Custom clears every NAMED chip's "
+    + "pressed mark - the four remaining swatches share the loop that "
+    + "used to include the fifth",
+    Object.values(box.buttons).every((b) => b._pressed === "false"));
 }
 
 /* ------------------------------------------------------------------ */

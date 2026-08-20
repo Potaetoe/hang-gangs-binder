@@ -1188,6 +1188,45 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   color: var(--color-text-muted);
 }
 
+/*
+ * The "Custom theme" control (0.9-M2-S13, #378, design mandate 4): the
+ * footer's OWN disclosure summary, rethemed - scoped to `footer .more`
+ * rather than to `.more` itself, so every other card's plain why-prose
+ * reveal on the site keeps the hint-sized look above untouched (the
+ * footer holds exactly one <details class="more"> per page - the
+ * custom-palette editor - so this selector reaches nothing else,
+ * footer_problems()'s own rule in tools/check_web.py). No new component
+ * class: this still IS `.more > summary`, one compound more specific,
+ * which is what the design mandate calls "extend the existing
+ * More/summary selector" rather than invent one.
+ */
+footer .more > summary {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+}
+
+footer .more > summary:hover {
+  background: var(--color-accent-quiet);
+}
+
+/*
+ * The "selected" mark - identical to the swatch buttons' own
+ * aria-pressed rule above (accent-quiet background, accent border), by
+ * design mandate 4's own words. A <summary> is not a toggle button the
+ * way the swatches are, so there is no aria-pressed to key off; this
+ * reads data-theme instead, which apps/web/theme.js's apply() always
+ * keeps in step with whichever palette is actually painted, custom
+ * included - a fact this rule states rather than computes, and a fact
+ * that cannot drift the way a JS-painted class could.
+ */
+:root[data-theme="custom"] footer .more > summary {
+  background: var(--color-accent-quiet);
+  border-color: var(--color-accent);
+}
+
 /* ------------------------------------------------------------------ */
 /* Controls.                                                           */
 
@@ -1502,6 +1541,49 @@ code {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* The tooltip's own containing block (0.9-M2-S13, #378, design
+     mandate 2: "clamp inside the chart figure's bounding box"). Its
+     own coordinates are pixels relative to THIS box, computed in
+     apps/web/charts.js's positionTooltip() from getBoundingClientRect()
+     - without this, .chart-tooltip's position:absolute would resolve
+     against the next positioned ancestor up the tree instead, which is
+     not the box the clamp math was measured against. */
+  position: relative;
+}
+
+/*
+ * The tooltip (0.9-M2-S13, #378, design mandate 2). One shown at a
+ * time - hover previews it, a tap/click pins it, a tap/click elsewhere
+ * dismisses it (owner ruling 2) - and it never grows a box-shadow: no
+ * shadow token exists on this site, and a border alone is what every
+ * other floating surface here uses to say "this is not the page".
+ * z-index above the SVG it floats over and nothing else: it is not
+ * given a value large enough to climb over the control row's own card,
+ * which sits in normal flow above this one and never overlaps it.
+ */
+.chart-tooltip {
+  position: absolute;
+  z-index: 1;
+  max-width: calc(100% - var(--space-4));
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  pointer-events: none;
+}
+
+/* The number half of the tooltip's own sentence (apps/web/charts.js's
+   showTooltip(): the second of its two child spans) reads in the same
+   monospace the chart's own count/range captions use elsewhere on this
+   page (design mandate 2) - the lead span beside it stays the ordinary
+   body face, so only the answer to "how many/how much" gets the
+   emphasis. */
+.chart-tooltip-number {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .chart figcaption {
@@ -1517,11 +1599,6 @@ code {
 
 .chart-label {
   fill: var(--color-text-muted);
-  font-size: 11px;
-}
-
-.chart-value {
-  fill: var(--color-text);
   font-size: 11px;
 }
 
@@ -1636,6 +1713,53 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
    only chart with a real horizontal axis, and the data-quality panel,
    because it is a list. */
 .chart-wide { grid-column: 1 / -1; }
+
+/*
+ * The group-makeup chips (0.9-M2-S13, #378, design mandate 3): one
+ * value's name and its exact count, wrapped into a row rather than
+ * stacked as lines - apps/web/charts.js's renderChip() is the only
+ * thing that ever writes into one, textContent alone.
+ */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+}
+
+.chip-name {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.chip-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/*
+ * A zero stays in its ruled position and order (owner ruling 3, #378)
+ * but reads as "on record, nothing to report" rather than as an
+ * ordinary result - the count keeps its own weight and face, only the
+ * ink dims to match the name beside it. --color-text-muted on
+ * --color-surface (the card this block always sits in) already clears
+ * 4.5:1 in every palette - it is one of tools/check_contrast.py's own
+ * PAIRINGS - so dimming the count costs this chip no contrast it did
+ * not already owe a body a real color.
+ */
+.chip-zero .chip-count {
+  color: var(--color-text-muted);
+}
 
 .secondary-link {
   font-size: var(--text-sm);

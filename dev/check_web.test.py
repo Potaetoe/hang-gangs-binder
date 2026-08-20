@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 580
+EXPECTED = 585
 
 
 def check(label, condition):
@@ -651,14 +651,17 @@ SWATCH_MARKUP = (
     '</div>'
 )
 
-# The custom-palette editor (0.9-M2-S6, #82): footer_problems() now
-# requires exactly this shape directly below the row, so every footer
-# fixture below that means to read as "clean" carries one. Minimal on
-# purpose - footer_problems() only reads the class and the span, and the
-# fields inside are check 27's and the picker's own arm to hold, not
-# this one's.
+# The custom-palette editor (0.9-M2-S6, #82; relabeled 0.9-M2-S13,
+# #378): footer_problems() now requires exactly this shape directly
+# below the row, so every footer fixture below that means to read as
+# "clean" carries one - summary word included since 0.9-M2-S13, because
+# footer_problems() now reads that word off the editor's own isolated
+# span rather than leaving it to check 27's page-wide pass. Minimal on
+# purpose otherwise - the fields inside are check 27's and the picker's
+# own arm to hold, not this one's.
 EDITOR_MARKUP = (
-    '<details class="more"><summary>More</summary>'
+    '<details class="more"><summary id="custom-theme-button">Custom theme'
+    '</summary>'
     '<input type="color" id="custom-bg">'
     '<input type="color" id="custom-accent">'
     '</details>'
@@ -790,6 +793,58 @@ check("a footer holding the swatch row and its editor, nothing else, "
       check_web.footer_problems(FOOTER_OK, True) == [])
 check("a page that offers no palette and has no footer raises nothing",
       check_web.footer_problems("<main>Sorry.</main>", False) == [])
+
+# 0.9-M2-S13 (#378): the editor's OWN summary word, checked against its
+# own isolated span rather than left to check 27's page-wide pass -
+# both directions. A regression back to the old word is the exact shape
+# a careless revert produces (copy an older footer, forget the rename).
+FOOTER_STALE_SUMMARY = "<footer>%s%s</footer>" % (
+    SWATCH_MARKUP,
+    EDITOR_MARKUP.replace(
+        '<summary id="custom-theme-button">Custom theme</summary>',
+        "<summary>More</summary>"))
+check("an editor whose own summary still reads \"More\" is refused",
+      any("ruled the word" in p
+          for p in check_web.footer_problems(FOOTER_STALE_SUMMARY, True)))
+FOOTER_NO_SUMMARY = "<footer>%s%s</footer>" % (
+    SWATCH_MARKUP,
+    '<details class="more"><input type="color" id="custom-bg"></details>')
+check("an editor with no <summary> at all is refused",
+      any("no <summary> at all" in p
+          for p in check_web.footer_problems(FOOTER_NO_SUMMARY, True)))
+
+# Fix wave 1 (F3, #378): "Custom theme" reserved for the EDITOR, not for
+# the word appearing anywhere on a themed page. footer_editor_span() is
+# what more_disclosure_problems() (check 27) now uses to tell the real
+# editor apart from a decoy - the reviewer's own attack, reproduced: an
+# unrelated card's <details class="more"><summary>Custom theme</summary>
+# sitting OUTSIDE the footer, on a page that also carries the real,
+# correctly-labeled editor.
+DECOY_PAGE = ("<main><details class=\"more\"><summary>Custom theme"
+              "</summary><p>why</p></details></main>"
+              "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP))
+check("F3/#378: a decoy summary reading \"Custom theme\" OUTSIDE the "
+      "footer is refused, even though the real editor on the same page "
+      "carries the word legitimately",
+      any("labels a disclosure \"Custom theme\"" in p
+          for p in check_web.more_disclosure_problems(
+              DECOY_PAGE, "charts.html")))
+check("F3/#378 the other direction: the real editor's own \"Custom "
+      "theme\" summary, inside the footer, is not refused by this same "
+      "check - the exception is positional, not a page-wide allowance",
+      not any("Custom theme" in p and "no <summary>" not in p
+              for p in check_web.more_disclosure_problems(
+                  "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP),
+                  "charts.html")))
+check("footer_editor_span() finds nothing on a page with no footer at "
+      "all - the positional exception applies nowhere, which is "
+      "correct: nothing there has earned the word",
+      check_web.footer_editor_span("<main>Sorry.</main>") is None)
+check("footer_editor_span() finds the real editor's own span on a "
+      "clean footer, and that span is where its <summary> actually sits",
+      check_web.footer_editor_span(
+          "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP))
+      is not None)
 
 # Wrong-order fixture (F2, 0.9-M2-S6 fix wave 1, #82): footer_problems()
 # has to prove POSITION here, not merely presence. Concatenating the
@@ -2513,21 +2568,18 @@ check("every block names a palette the table rules",
 check("every palette rules the same set of tokens",
       len({tuple(sorted(t)) for t in
            check_web.MOCKUP_PALETTES.values()}) == 1)
-# The ids theme.css defines and the ids the pages offer were one set
-# until 0.9-M2-S6 (#82): "custom" is a chip with no static palette block
-# behind it BY DESIGN (design mandate 5 - its dot is painted at runtime
-# from a member's own colors, and a static swatch_problems() entry for
-# it would be exactly the fixed value the mandate refuses to let it
-# have). So the two sets differ by exactly that one id now, and the
-# stronger claim below is what still holds: every OTHER chip still names
-# a real palette, and "custom" is refused from ever meaning anything
-# other than that one, deliberate exception.
-check("every ruled chip other than custom names a ruled palette",
-      set(check_web.MOCKUP_CHIPS) - {"custom"}
-      == set(check_web.MOCKUP_PALETTES))
-check("custom is the one chip with no palette block behind it",
-      set(check_web.MOCKUP_CHIPS) - set(check_web.MOCKUP_PALETTES)
-      == {"custom"})
+# The ids theme.css defines and the ids the pages offer were two
+# different sets between 0.9-M2-S6 (#82) and 0.9-M2-S13 (#378): "custom"
+# was a chip with no static palette block behind it BY DESIGN (design
+# mandate 5 - its dot was painted at runtime from a member's own colors,
+# and a static swatch_problems() entry for it would have been exactly
+# the fixed value that mandate refused to let it have). 0.9-M2-S13 (#378)
+# removed the custom swatch circle entirely - the "Custom theme" control
+# it left behind is the footer's own disclosure summary, not a
+# data-set-theme chip - so the two sets are one set again, with no
+# exception either arm has to carve out.
+check("every ruled chip names a ruled palette",
+      set(check_web.MOCKUP_CHIPS) == set(check_web.MOCKUP_PALETTES))
 
 
 check("the stylesheet the table describes has no problems",
