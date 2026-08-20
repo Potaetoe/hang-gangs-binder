@@ -488,9 +488,25 @@
     clearSvg(node);
 
     if (!bins.length) return;
-    const most = bins.reduce(function (max, bin) {
+    const tallest = bins.reduce(function (max, bin) {
       return Math.max(max, bin.count);
     }, 1);
+    const countTicks = countAxisTicks(tallest);
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+    const most = countTicks[countTicks.length - 1];
     const plotWidth = width - left;
     const slot = plotWidth / bins.length;
 
@@ -528,7 +544,11 @@
      
      
      
-    countAxisTicks(most).forEach(function (tick) {
+     
+     
+     
+     
+    countTicks.forEach(function (tick) {
       const y = baseline - (tick / most) * (baseline - top);
       node.appendChild(svg("text", {
         x: left - 8, y: y + 4, "text-anchor": "end",

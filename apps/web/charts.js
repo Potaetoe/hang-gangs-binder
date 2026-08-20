@@ -794,9 +794,25 @@
     clearSvg(node);
 
     if (!bins.length) return;
-    const most = bins.reduce(function (max, bin) {
+    const tallest = bins.reduce(function (max, bin) {
       return Math.max(max, bin.count);
     }, 1);
+    const countTicks = countAxisTicks(tallest);
+    // SCALE TO THE TOP TICK, NOT THE TALLEST BAND (fix wave 2, #378).
+    // countAxisTicks() can push a tick past `tallest` itself - a "nice"
+    // step rarely lands exactly on the real maximum (tallest=7 gives
+    // ticks 0,2,4,6,8) - and scaling to `tallest` left that pushed
+    // tick's own y position ABOVE `top`, painting outside the plot box:
+    // measured live, the "8" landed 23.3px above the figure and its ink
+    // collided with the status line above the card, because this
+    // figure's <svg> is overflow:visible. The top tick is always the
+    // axis's own ceiling by construction (countAxisTicks() never
+    // returns a value below `tallest`), so scaling both the ticks AND
+    // the bars to IT - the same `most` denominator for both - keeps
+    // everything inside [top, baseline] together. The tallest bar no
+    // longer quite touching the plot's own top edge is the ruling's own
+    // named bonus, not a defect.
+    const most = countTicks[countTicks.length - 1];
     const plotWidth = width - left;
     const slot = plotWidth / bins.length;
 
@@ -831,10 +847,14 @@
 
     // The count axis (owner ruling, the 2026-08-19 late sitting): whole
     // people only, in the .chart-label tone, right-aligned into the
-    // left gutter. `most` already has the same "at least 1" floor the
-    // bar-height division below needs, and reusing it here means the
-    // axis top always lines up with the tallest bar's own top exactly.
-    countAxisTicks(most).forEach(function (tick) {
+    // left gutter. `countTicks` (computed above, off `tallest` - the
+    // real max) is reused here rather than re-derived from `most` (the
+    // top tick): re-deriving from the top tick can pick a DIFFERENT
+    // step (countAxisTicks(8) need not equal countAxisTicks(7)'s own
+    // answer), which is exactly the kind of drift fix wave 2 exists to
+    // close - one set of ticks, computed once, is what both this loop
+    // and `most` above answer to.
+    countTicks.forEach(function (tick) {
       const y = baseline - (tick / most) * (baseline - top);
       node.appendChild(svg("text", {
         x: left - 8, y: y + 4, "text-anchor": "end",
