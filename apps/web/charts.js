@@ -236,14 +236,17 @@
    * fits a 7.273-unit slot and the real 7.53-unit zero did not). 8 is
    * above both measured glyphs, which is the property the x-axis number
    * row actually needs: every label it paints is tickLabel()'s digits
-   * only, and no text in either figure is made of letters. That is what
-   * makes 8 a ceiling here rather than a hope: 8 is NOT proven above
-   * every letter this face paints ("cm" measures 16.10 against this
-   * constant's own 16-unit estimate for two characters - narrowly
-   * under, fix wave 1's F4 finding), so a figure that painted letters
-   * would need a margin this constant cannot give it. Adding one is
-   * therefore not a free choice; it would put this estimate back
-   * outside what it is proven for.
+   * only, and the count axis's own ticks beside them are digits too. No
+   * text this function is ever asked to measure is made of letters, and
+   * that is what makes 8 a ceiling here rather than a hope: 8 is NOT
+   * proven above every letter this face paints ("cm" measures 16.10
+   * against this constant's own 16-unit estimate for two characters -
+   * narrowly under, 0.9-M2-S13 fix wave 1's F4 finding). The figures do
+   * paint letters elsewhere - drawTrend() writes "Average" and "You" at
+   * the end of each line - and nothing measures those: they are placed
+   * against a point, not planned into a row, so no width estimate
+   * decides whether they fit. Putting letters into a MEASURED row is
+   * what this constant cannot cover, and it is not a free choice.
    */
   const CAPTION_CHAR_WIDTH = 8;
 
@@ -1044,14 +1047,25 @@
    * readable - the axis ends where the data does and that end is
    * always labeled.
    *
-   * THE PLAN IS FED FINAL POSITIONS, NOT RAW ONES (fix wave 1, finding
-   * F1). `boxOf` below computes each label's own contained, offset box
-   * and is the SAME function labelRowPlan() plans against and the
-   * render loop paints from - there is exactly one definition of where
-   * a label ends up, so a clamped end label that would collide with its
-   * nearest kept neighbor is caught by the plan itself rather than
-   * discovered on screen. Both ends are always clamped here, because an
-   * end label is centered on the axis's own end.
+   * THE PLAN IS FED FINAL POSITIONS, NOT RAW ONES (0.9-M2-S13's own fix
+   * wave 1, finding F1). `boxOf` below computes each label's own
+   * contained, offset box and is the SAME function labelRowPlan() plans
+   * against and the render loop paints from - there is exactly one
+   * definition of where a label ends up.
+   *
+   * AND NO LABEL IS EVER SHIFTED OFF ITS TICK (#396 fix wave 1, F2/F3).
+   * An end label is centered on the axis's own end, so half of it hangs
+   * past that end by construction. Clamping it inward moves the number
+   * away from the mark it names: it comes to sit over the middle of the
+   * last BAR, and the plan then drops that bar's own lower edge as the
+   * collision - which rebuilds the midpoint convention ruling 1 killed,
+   * out of geometry instead of arithmetic. So the plot stops one margin
+   * short of the viewBox (`right` below, the mirror of the count axis's
+   * gutter on the left), the end label overhangs into that margin, and
+   * containment is measured against the VIEWBOX. The clamp survives as
+   * a backstop against a label wider than the margin can hold, never as
+   * the ordinary case: on every shipped grid it is the identity, which
+   * is what lets the axis's numbers each stand on their own boundary.
    *
    * `unit` REACHES ONLY THE TOOLTIP. Nothing in the figure names it any
    * more (owner ruling 2, #396) - the status line does - so this
@@ -1070,6 +1084,13 @@
     // already uses for its own value axis, so the two figures share one
     // gutter width rather than each picking its own.
     const left = 50;
+    // And the mirror of it on the right (#396 fix wave 1, F2/F3), the
+    // same 20 units drawTrend() reserves: the axis's last tick sits at
+    // the plot's right edge and its number is centered on that tick, so
+    // half the number needs room outside the plot. Without the margin
+    // the only way to keep that number inside the picture is to move it
+    // off its own tick - see the tick-row comment above.
+    const right = 20;
     const node = target.querySelector("svg");
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
@@ -1094,7 +1115,7 @@
     // longer quite touching the plot's own top edge is the ruling's own
     // named bonus, not a defect.
     const most = countTicks[countTicks.length - 1];
-    const plotWidth = width - left;
+    const plotWidth = width - left - right;
     const slot = plotWidth / bins.length;
 
     // The axis's own numbers, read off the response's own bands: the
@@ -1113,12 +1134,12 @@
     const boxOf = function (i) {
       const raw = tickBox(i, slot, tickLabels[i]);
       return containBox(
-        { left: left + raw.left, right: left + raw.right }, left, width);
+        { left: left + raw.left, right: left + raw.right }, 0, width);
     };
     const labeledIndexes = new Set(labelRowPlan(tickLabels, slot, boxOf));
 
     node.appendChild(svg("line", {
-      x1: left, y1: baseline, x2: width, y2: baseline,
+      x1: left, y1: baseline, x2: left + plotWidth, y2: baseline,
     }, "chart-axis"));
 
     // The tick row: a short mark below the baseline at each painted
@@ -1462,6 +1483,17 @@
    * the same honesty applied to the control's reading: a radio saying
    * "imperial" over a chart in kilograms is a lie the page told.
    *
+   * A UNITLESS MEASURE DISABLES THEM WITH NO SENTENCE, and that is the
+   * honest shape rather than an oversight. renderAnswer() only prints
+   * the lock note when there is a unit to name, and on a computed BMI
+   * there is none: the number is the same in every system, so a locked
+   * view of it withholds nothing and there is no restriction to state.
+   * Inventing unit-free wording would announce a limit that costs the
+   * member nothing, which reads as a problem where there is not one.
+   * The radios still go inert, because the answer really is bound to
+   * one system and a live control that changes no number on screen is
+   * the worse half of the same lie.
+   *
    * AND IT UNWIRES THE HANDLER RATHER THAN RELYING ON `disabled`.
    * `disabled` is what a person sees; a null `onchange` is what makes a
    * programmatic change event fire nothing. Both, because the two guard
@@ -1470,6 +1502,14 @@
    * An UNLOCKED answer re-enables them and rewires the re-ask, which is
    * what makes this safe to call on every render: whichever answer
    * arrives last decides, and neither state is sticky.
+   *
+   * CALLED BEFORE renderAnswer() DECIDES ANYTHING ELSE, including before
+   * its not-enough early return (#396 fix wave 1, O1). Switching units
+   * is exactly what somebody reading "not enough people for this view"
+   * reaches for next, and an answer that draws nothing still says which
+   * system it was asked in - so wiring this behind the return would
+   * leave the toggle dead for the rest of a session whose first answer
+   * happened to be empty.
    */
   function applyUnitLock(answer) {
     const locked = unitLocked(answer);
@@ -1495,6 +1535,10 @@
   function renderAnswer(answer) {
     const status = $("status");
     show($("results"), true);
+    // Ahead of every branch below, including the empty one: see
+    // applyUnitLock()'s own header on why an empty first answer must
+    // not leave the units toggle dead.
+    applyUnitLock(answer);
 
     if (!answer.enough) {
       status.className = "status";
@@ -1521,7 +1565,6 @@
     const unit = unitFor(answer);
     status.textContent = showingLine(answer.measure.label, unit) +
       (unitLocked(answer) && unit ? " " + unitLockNote(unit) : "");
-    applyUnitLock(answer);
 
     drawTrend(answer);
     drawDistribution(answer);

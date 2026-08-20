@@ -431,7 +431,12 @@ drawing its true value is this design working, not a hole in it.
   reasonable (owner ruling, 2026-08-19, #371 comment 5347769320: *"in a
   gaining community the high end IS the story"*). The arithmetic sits
   beside the numbers in `apps/web/site.config.js`, which is their one
-  home.
+  home. **And "form-valid" means valid in ANY unit the form offers**:
+  the axis covers the union of every unit's declared limits, converted,
+  before it snaps outward onto the grid. A member typing 3 ft is 91.44
+  cm — under the 100 cm the metric row declares — so an axis built from
+  one row alone clamps the shortest member the form accepts into a band
+  that reports a height he does not have.
 - **Every month with data draws its true mean, and lines never break.**
   Truly empty months are bridged on the page, and a bridged segment
   looks exactly like a real one. The member's own "You" line follows
@@ -482,12 +487,16 @@ grids. **At the shipped floor of 0 both are served**, and there is
 nothing to difference back to: every band already draws its true count,
 so a reader keeping two documents learns what a reader keeping one
 already knew. **At a raised floor the charts lock to one unit system** —
-named beside the floor in the same setting, defaulting to the first
-system the spec lists — and every answer says so, so the page disables
-its units toggle and tells the member why rather than leaving a control
-that cannot move. With one slicing in existence there is no second grid
-to overlay, so the protection is structural rather than a rule about
-what a caller may request.
+named beside the floor in the same setting, and **defaulting to the
+spec's own declared default**, the field that already decides what the
+form and the charts start in. Falling back to anything else would mean
+an admin typing a number into the floor silently re-expressed every
+chart in a system nobody chose. Every answer says which system it got
+and whether the caller chose it, so the page disables its units toggle
+and tells the member why rather than leaving a control that cannot move.
+With one slicing in existence there is no second grid to overlay, so the
+protection is structural rather than a rule about what a caller may
+request.
 
 This makes the rule part of the suppression machinery after all, which
 is the opposite of what the shape it replaced was: that one served a
@@ -572,8 +581,9 @@ comes from #243 comment 5346978974.
   floor-protected group must not be binned two ways at once (see **One
   partition, not two** under **Charts**). The two are one control on
   this page, not two; at a floor of 0 the unit choice does nothing and
-  the page says so, since both systems are served then. An unset one
-  is the first system `apps/web/site.config.js` lists.
+  the page says so, since both systems are served then. An unset one is
+  the default `apps/web/site.config.js` already declares, so raising the
+  floor by itself never moves a member into another system.
 - **The purge window is 30 days by default.** It is the length of the
   countdown a confirmed departure starts, and the two guards stated
   with it above — a "cannot check" never starts a clock, a

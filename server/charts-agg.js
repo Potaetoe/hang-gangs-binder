@@ -334,12 +334,15 @@ function floorOf(settings) {
 /*
  * The ONE unit system a floor-protected view is served in.
  *
- * A name the spec offers, or the spec's own first system. The default is
- * derived rather than written down because a fork's systems are the
- * fork's: hard-coding "metric" here would be a second, driftable copy of
- * a fact apps/web/site.config.js already owns, and a fork that offers no
- * metric system would get a partition nothing can bin on. The shipped
- * spec lists metric first, which is the default the owner named.
+ * A name the spec offers, or - when the setting names none - THE SPEC'S
+ * OWN DECLARED DEFAULT. `units.default` is the field that already
+ * decides what the form and the charts start in, so a view that falls
+ * back to it moves nobody: raising the floor changes how much is drawn,
+ * not which unit a member reads. Falling back to some other field, such
+ * as whichever system the spec happens to list first, would mean an
+ * admin typing a number into the floor silently re-expressed every
+ * chart in a system nobody chose - a change to what members see, made
+ * by a setting that is not about units at all.
  *
  * READ THE SAME WAY THE FLOOR IS, and for the same reason: a value the
  * spec does not offer is a setting that failed to apply, not a reason to
@@ -350,7 +353,7 @@ function lockedSystem(site, settings) {
   const offered = site.units.systems;
   const held = settings && typeof settings === "object"
     ? settings.units : null;
-  return offered.indexOf(held) !== -1 ? held : offered[0];
+  return offered.indexOf(held) !== -1 ? held : site.units.default;
 }
 
 /*
@@ -760,18 +763,27 @@ const MAX_BANDS = 200;
  * left to open - and two groups drawn on one grid are comparable, which
  * is what the owner chose it for.
  *
- * WHERE THE BOUNDS COME FROM, in order, all of them the spec's own:
+ * THE BOUNDS ARE THE UNION OF EVERY BOUND THE KIND DECLARES, each one
+ * converted into the unit this answer is drawn in, and the widest pair
+ * wins. THE FORM IS WHAT THEY ARE A CLAIM ABOUT: a member may type in
+ * any unit the spec offers, so the values the form accepts are the union
+ * of every row's own limits, not the limits of the row that happens to
+ * match the axis. Reading one row alone is how a metric height axis came
+ * to start at 100 cm while the form accepted 3 ft - 91.44 cm - and the
+ * shortest member the form admits was clamped into a band reporting a
+ * height he does not have (fix wave 1, O2).
  *
- *   1. The chart unit's own `min`/`max`, when it carries them. Pounds
- *      are bounded in pounds, so an imperial member's axis runs between
- *      numbers written for their own unit rather than converted from
- *      somebody else's.
- *   2. The same system's ENTRY unit, converted. Imperial height charts
- *      in inches, which carry no bound, because a member of that system
- *      types feet and the spec bounds the box they look at - so the
- *      inches axis runs between the same three and eight feet.
- *   3. The kind's base unit, converted, for a system the spec bounds
- *      nowhere else.
+ * A ROW WITH NO BOUNDS CONTRIBUTES NOTHING rather than blocking the
+ * union: inches carry none, because imperial height is typed as feet
+ * with inches beside them and the bound belongs to the feet box a person
+ * is looking at. So the inch axis is drawn between the feet row and the
+ * centimeter row, both converted, and it covers a member of either
+ * system.
+ *
+ * WIDER THAN NECESSARY IS THE SAFE DIRECTION and the only one available.
+ * The union can only add empty bands at the ends; reading one row alone
+ * can only lose members into a band that is not theirs, and it does so
+ * silently, because a clamped value still counts and still sums.
  *
  * A unitless measure - a computed BMI, a plain count - has no unit table
  * to read, so its bounds are fields of the spec row itself.
@@ -799,23 +811,28 @@ function rangeOf(measure, part, site) {
     return { min: one.min, max: one.max };
   }
 
-  const kind = site.units.kinds[one.kind];
-  const table = kind.units;
-  const tried = [part.unit, kind.enter ? kind.enter[part.system] : null,
-    kind.base];
-  for (const name of tried) {
-    const entry = name ? table[name] : null;
-    if (!entry || typeof entry.min !== "number" ||
-        typeof entry.max !== "number") continue;
+  const table = site.units.kinds[one.kind].units;
+  let min = null;
+  let max = null;
+  for (const name of Object.keys(table)) {
+    const entry = table[name];
+    if (typeof entry.min !== "number" || typeof entry.max !== "number") {
+      continue;
+    }
     const rate = name === part.unit
       ? 1 : api().factor(name, part.unit, site);
     if (rate === null) continue;
-    const min = round(entry.min * rate, 4);
-    const max = round(entry.max * rate, 4);
-    if (max > min) return { min: min, max: max };
+    const low = round(entry.min * rate, 4);
+    const high = round(entry.max * rate, 4);
+    if (!(high > low)) continue;
+    if (min === null || low < min) min = low;
+    if (max === null || high > max) max = high;
   }
-  return complain("bounds no unit of its kind that converts to " +
-    part.unit);
+  if (min === null || !(max > min)) {
+    return complain("bounds no unit of its kind that converts to " +
+      part.unit);
+  }
+  return { min: min, max: max };
 }
 
 /*
@@ -828,12 +845,16 @@ function rangeOf(measure, part, site) {
  * numbers the grid is NOT made of - which is exactly where 44, 64, 84
  * came from.
  *
- * OUTWARD IN BOTH DIRECTIONS, never inward. The bounds are what the form
- * accepts, so rounding either one in would leave a form-valid member
- * outside the axis and piled into an end band - the same defect the
- * derived BMI range exists to prevent, arriving through the snap
- * instead of through a hand-picked cap. Outward costs at most one empty
- * band at each end and costs nobody their own band.
+ * OUTWARD IN BOTH DIRECTIONS, never inward. The range this is handed is
+ * rangeOf()'s union - every value the form accepts in any unit it
+ * offers, converted - so rounding either bound in would leave a
+ * form-valid member outside the axis and piled into an end band, the
+ * same defect the derived BMI range exists to prevent, arriving through
+ * the snap instead of through a hand-picked cap. That the range is the
+ * UNION is what makes this sentence true rather than nearly true: over
+ * one row's own limits it would only cover the members who typed in
+ * that row's unit. Outward costs at most one empty band at each end and
+ * costs nobody their own band.
  *
  * The division is rounded to nine places before the floor and the
  * ceiling read it: a bound that sits exactly on the grid can compute to

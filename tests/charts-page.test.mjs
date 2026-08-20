@@ -402,18 +402,20 @@ check("tickLabel does not round - a fork whose nice width is a fraction " +
 
 /*
  * TICK BOXES sit ON an edge, not in the middle of a slot - which is the
- * one geometric difference between this row and the midpoint caption row
- * it replaces. Index i is centered at i * slot exactly, so index 0 is
- * centered on the axis's own left end and index n on its right end, and
- * BOTH always need the containment clamp.
+ * one geometric difference between this row and a caption row under
+ * bars. Index i is centered at i * slot exactly, so index 0 is centered
+ * on the axis's own left end and index n on its right end, and half of
+ * each end label therefore hangs past the plot by construction. That
+ * overhang is why the plot ends one margin short of the viewBox: it has
+ * somewhere to go, so the number never has to move off its own tick.
  */
 check("tickBox centers a label on its own edge, at index * slot",
   JSON.stringify(Charts.tickBox(2, 100, "50")) ===
   JSON.stringify({ left: 200 - Charts.captionWidth("50") / 2,
     right: 200 + Charts.captionWidth("50") / 2 }));
 check("tickBox at index 0 straddles zero - half its width hangs off the " +
-  "left end of the plot, which is what makes the clamp load-bearing at " +
-  "both ends of a tick row",
+  "left end of the plot, which is the overhang the margins exist to " +
+  "hold at both ends of a tick row",
   Charts.tickBox(0, 100, "25").left < 0);
 
 const bmiGrid = realGrid(0, 600, 5);
@@ -2537,18 +2539,21 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
     tickTexts.length > 0 && tickTexts.every((t) => !/[a-zA-Z]/.test(t)));
 
   /*
-   * CONTAINMENT AND NO-OVERLAP TOGETHER (fix wave 1, F1, #378, carried
-   * to the tick row by #396): on a tick row BOTH ends always need the
-   * clamp, because an end label is centered on the axis own end. This
-   * checks both properties directly off the actual rendered
+   * CONTAINMENT AND NO-OVERLAP TOGETHER (0.9-M2-S13 fix wave 1, F1,
+   * #378, carried to the tick row by #396): on a tick row an end label
+   * is centered on the axis own end and overhangs it, so the pair of
+   * facts to hold at once is that nothing leaves the viewBox and
+   * nothing overlaps. Checked directly off the actual rendered
    * x-positions rather than trusting the pure-function arms alone.
    */
-  check("no painted number x-position, read back from the SVG, sits " +
-    "outside [left, the viewBox right edge]",
+  check("no painted number x-position, read back from the SVG, leaves " +
+    "the viewBox - an end label overhangs its own end of the PLOT into " +
+    "the margin beside it, which is what keeps it on its tick, but the " +
+    "ink never leaves the picture",
     tickEls.every((el) => {
       const x = Number(el.attrs.x);
       const half = Charts.captionWidth(el._text) / 2;
-      return x - half >= PLOT_LEFT - 1e-6 && x + half <= VIEW_WIDTH + 1e-6;
+      return x - half >= -1e-6 && x + half <= VIEW_WIDTH + 1e-6;
     }));
   check("F1/#378: no two adjacent painted numbers own rendered " +
     "positions overlap - the final-position property, read back from " +
@@ -2675,14 +2680,14 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     "labelRowPlan() computed on the trimmed count exactly",
     tickTexts.length === expectedTrimTicks.length &&
     expectedTrimTicks.every((idx, j) => tickTexts[j] === trimTexts[idx]));
-  check("#390: no painted number on the trimmed grid sits outside " +
-    "[left, the viewBox right edge], and no two adjacent ones overlap - " +
-    "the same containment/no-overlap property the untrimmed grids " +
-    "already hold, now proven at the trimmed count",
+  check("#390: no painted number on the trimmed grid leaves the viewBox, " +
+    "and no two adjacent ones overlap - the same containment/no-overlap " +
+    "property the untrimmed grids already hold, now proven at the " +
+    "trimmed count",
     tickEls.every((el) => {
       const x = Number(el.attrs.x);
       const half = Charts.captionWidth(el._text) / 2;
-      return x - half >= PLOT_LEFT - 1e-6 && x + half <= VIEW_WIDTH + 1e-6;
+      return x - half >= -1e-6 && x + half <= VIEW_WIDTH + 1e-6;
     }) &&
     tickEls.every((el, j) => {
       if (j === 0) return true;
@@ -2994,7 +2999,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 224;
+const EXPECTED = 230;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -579,6 +579,13 @@
      
      
     const left = 50;
+     
+     
+     
+     
+     
+     
+    const right = 20;
     const node = target.querySelector("svg");
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
@@ -603,7 +610,7 @@
      
      
     const most = countTicks[countTicks.length - 1];
-    const plotWidth = width - left;
+    const plotWidth = width - left - right;
     const slot = plotWidth / bins.length;
 
      
@@ -622,12 +629,12 @@
     const boxOf = function (i) {
       const raw = tickBox(i, slot, tickLabels[i]);
       return containBox(
-        { left: left + raw.left, right: left + raw.right }, left, width);
+        { left: left + raw.left, right: left + raw.right }, 0, width);
     };
     const labeledIndexes = new Set(labelRowPlan(tickLabels, slot, boxOf));
 
     node.appendChild(svg("line", {
-      x1: left, y1: baseline, x2: width, y2: baseline,
+      x1: left, y1: baseline, x2: left + plotWidth, y2: baseline,
     }, "chart-axis"));
 
      
@@ -919,6 +926,10 @@
   function renderAnswer(answer) {
     const status = $("status");
     show($("results"), true);
+     
+     
+     
+    applyUnitLock(answer);
 
     if (!answer.enough) {
       status.className = "status";
@@ -940,7 +951,6 @@
     const unit = unitFor(answer);
     status.textContent = showingLine(answer.measure.label, unit) +
       (unitLocked(answer) && unit ? " " + unitLockNote(unit) : "");
-    applyUnitLock(answer);
 
     drawTrend(answer);
     drawDistribution(answer);

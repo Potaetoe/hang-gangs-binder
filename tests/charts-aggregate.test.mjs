@@ -429,8 +429,6 @@ const W_BANDS = W.bands;
  * the wrong field reddens against whichever one it got wrong.
  */
 const L = gridIn("weight", SITE.units.default);
-const L_BIN = L.unit.bin;
-const L_ANCHOR = L.unit.anchor;
 const L_MIN = L.min;
 const L_MAX = L.max;
 
@@ -982,8 +980,12 @@ check("the lock: the whole answer moves with it, not just the bands - " +
  */
 const myAsk = ask("measure=weight&units=imperial&self=1");
 const mineFree = agg.selfSeries(spreadOut, acct(0), myAsk);
+/* Locked to the system the ask did NOT name, so the two readings of one
+   member's own weight cannot coincide by luck - which they would if this
+   arm leaned on the default lock, since that default IS the system the
+   ask names. */
 const mineLocked = agg.selfSeries(spreadOut, acct(0), myAsk, undefined,
-  { floor: RAISED });
+  { floor: RAISED, units: "metric" });
 check("the lock: the member's own line is in the answer's own unit - " +
   "asked in imperial, drawn in imperial at the shipped floor and in the " +
   "locked system once the floor is raised",
@@ -2028,7 +2030,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 183;
+const EXPECTED = 186;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
