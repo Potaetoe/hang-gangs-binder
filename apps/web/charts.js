@@ -21,10 +21,20 @@
  * server/charts-agg.js's askFor() so the two lists cannot drift apart.
  * Their counts did not disappear: they render as the group-makeup
  * block, plain count lines with no chart machinery, from the response's
- * own `groups` field. Distributions draw the spec's fixed bands
- * whole - every band the response sends gets a bar, empty ones
- * included - and no edge is ever open any more, so binLabel() below
- * takes two plain numbers and nothing else.
+ * own `groups` field. Distributions draw the spec's fixed bands - every
+ * edge is one of the spec's own two range numbers or a bin boundary
+ * between them, never open, so binLabel() below takes two plain numbers
+ * and nothing else.
+ *
+ * THE PAGE STOPS DRAWING PAST THE BAND HOLDING THE DATA'S OWN MAXIMUM
+ * (owner ruling, the 2026-08-20 sitting, #390) - trimTrailingEmptyBins()
+ * below is the whole of it: top only (the chart still starts at the
+ * spec minimum; the empty TAIL past the heaviest member is what drops),
+ * and a wholly-empty grid, with no nonzero band to anchor a trim on,
+ * still draws whole. This is a page-side draw decision, never a second
+ * partition - the response still carries every band the spec has, and
+ * workbookRows() below applies the identical trim so the download never
+ * shows a tail the screen does not.
  *
  * THE UNITS TOGGLE NEVER RE-BINS. GET /charts-data answers every unit
  * system in one document - a bin's `from`/`to` and a trend point's
@@ -71,6 +81,43 @@
   function binLabel(from, to, unit) {
     const suffix = unit ? " " + unit : "";
     return String(from) + suffix + "–" + String(to) + suffix;
+  }
+
+  /*
+   * THE DISTRIBUTION'S TOP TRIM (owner ruling, the 2026-08-20 sitting,
+   * #390): "the last painted band is the band CONTAINING the data's
+   * maximum; its upper spec edge is the axis end." Everything after the
+   * last band that holds anyone is dropped - the empty TAIL, never the
+   * front. Band edges never move (#371's own ruling, restated by this
+   * one): this drops whole bins, it never touches a `from`/`to` pair,
+   * and the surviving bins are the SAME objects the response sent.
+   *
+   * TOP ONLY (owner ruling 2, put to the owner as a both-ends option and
+   * ruled explicitly against it): the chart still starts at the spec
+   * minimum, so a leading empty stretch below the lightest member is
+   * never touched - only `Array.prototype.slice` off the BACK, never a
+   * filter that could drop an interior or leading zero.
+   *
+   * A ZERO GRID KEEPS DRAWING WHOLE (owner ruling 3): when no band has a
+   * count, there is no nonzero band to anchor the trim on, so `bins` is
+   * returned exactly as it arrived - the enough-but-all-zero shape draws
+   * its full spec grid, exactly as it always has.
+   *
+   * RENDER-ONLY (security mandate 1, restated for this ruling): the
+   * caller hands in the SAME `bins` array GET /charts-data sent - every
+   * band, in the response's own order - and gets back a shorter slice of
+   * the same objects. No band is re-binned, re-counted or invented; the
+   * route's contract is untouched. drawDistribution() below feeds the
+   * result into drawBins(), and workbookRows() further down calls this
+   * same function on the same field, so the chart and the download can
+   * never disagree about where the drawn range ends.
+   */
+  function trimTrailingEmptyBins(bins) {
+    let lastNonEmpty = -1;
+    for (let i = 0; i < bins.length; i += 1) {
+      if (bins[i].count > 0) lastNonEmpty = i;
+    }
+    return lastNonEmpty === -1 ? bins : bins.slice(0, lastNonEmpty + 1);
   }
 
   /*
@@ -516,6 +563,13 @@
    * than the Fields module itself, is what keeps this pure: the DOM
    * caller hands in `function (name) { return Fields.measure(name,
    * site); }`, the same lookup renderGroups() already does per group.
+   *
+   * THE DISTRIBUTION ROWS END AT THE SAME BAND THE CHART ENDS AT (owner
+   * ruling, #390, ruling 6: "the workbook carries exactly the answer on
+   * screen") - workbookRows() calls trimTrailingEmptyBins() on the same
+   * `answer.distribution.bins` drawDistribution() does, so a download
+   * can never show a tail past the data's maximum that the figure does
+   * not.
    */
   function workbookColumns(unit) {
     const suffix = unit ? " (" + unit + ")" : "";
@@ -531,7 +585,8 @@
     const unit = unitFor(answer, system);
     const rows = [];
 
-    (answer.distribution ? answer.distribution.bins : []).forEach(
+    trimTrailingEmptyBins(
+      answer.distribution ? answer.distribution.bins : []).forEach(
       function (bin) {
         rows.push(["Distribution",
           binLabel(bin.from[system], bin.to[system], unit), bin.count,
@@ -563,6 +618,7 @@
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
+    trimTrailingEmptyBins: trimTrailingEmptyBins,
     midpointLabel: midpointLabel,
     captionWidth: captionWidth,
     captionBox: captionBox,
@@ -836,9 +892,17 @@
   }
 
   /*
-   * A histogram: vertical bars along a baseline, one per band the
-   * response sends, in the response's own order - never pooled, merged
-   * or dropped (render-only, security mandate 1).
+   * A histogram: vertical bars along a baseline, one per band this
+   * function is HANDED, in that order - never pooled, merged or dropped
+   * (render-only, security mandate 1). `bins` is drawDistribution()'s
+   * own ALREADY-TRIMMED array (trimTrailingEmptyBins() above, owner
+   * ruling, #390: the drawn range stops at the band holding the data's
+   * maximum) - this function draws every band it is handed, whole, and
+   * has no opinion of its own about where the range ends. Every number
+   * it computes from `bins.length` - slot width, the caption plan, the
+   * count axis, the hit rects - re-derives from whatever count it was
+   * handed, with no special case for a trimmed count versus a full spec
+   * grid; that band-count-generic property is what #390 relies on.
    *
    * EVERY BAND DRAWS (owner ruling 5, #243). A band with at least one
    * person gets its true bar; a band with nobody is a ZERO-HEIGHT SLOT
@@ -1014,7 +1078,12 @@
     const target = $("figure-distribution");
     const tip = $("tooltip-distribution");
     const unit = unitFor(answer, system);
-    drawBins(target, tip, answer.distribution.bins, system, unit);
+    // trimTrailingEmptyBins() (owner ruling, #390) is the whole of the
+    // draw-range decision - drawBins() below draws every band it is
+    // handed, whole, with no idea where the spec's own grid actually
+    // ends.
+    const bins = trimTrailingEmptyBins(answer.distribution.bins);
+    drawBins(target, tip, bins, system, unit);
   }
 
   /*
