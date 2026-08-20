@@ -155,6 +155,63 @@ check("apps/web/xlsx.js is loadable standalone and publishes BinderXlsx, "
   + "frozen - the writer this page's download reuses, not a second one",
   Xlsx !== undefined && Object.isFrozen(Xlsx));
 
+/*
+ * F3 (fix wave 1 review of 0.9-M2-S14, #380): driven() below stubs
+ * BinderFields.orderedChoices()/pinnedCountries() - a reimplementation
+ * of apps/web/fields.js's own algorithm, the same fixture-not-import
+ * shape every BinderFields member in this file already takes - and
+ * nothing tied that stub to the real function. The reviewer's own
+ * attack proved the gap: break the real orderedChoices() in apps/web/
+ * fields.js, and tests/site-spec.test.mjs and tests/your-page.test.mjs
+ * both red (they load the real module) while this file's own pinned-
+ * country checks in section 3 stay green, because they exercise the
+ * stub, never the real code. This loads the real module fresh, under
+ * its own tag so it never collides with anything driven() later sets
+ * on globalThis, and asserts the stub's answer is byte-identical to
+ * the real one on the same input.
+ */
+const realFieldsSrc = await read("../apps/web/fields.js");
+await import("data:text/javascript," + encodeURIComponent(realFieldsSrc) +
+  "#real-fields-for-parity");
+const RealFields = globalThis.BinderFields;
+
+// The stub's own algorithm, copied here rather than imported from
+// inside driven() below - the parity check has to hold its OWN copy
+// of what the stub does, independent of driven()'s closure, or a
+// change to both at once would still agree with itself while drifting
+// from the real file.
+function stubOrderedChoices(choices, pinned) {
+  const byValue = {};
+  choices.forEach((c) => { byValue[c.value] = c; });
+  const front = (pinned || [])
+    .filter((code) => Object.prototype.hasOwnProperty.call(byValue, code))
+    .map((code) => byValue[code]);
+  return front.concat(choices);
+}
+
+const PARITY_CHOICES = [
+  { value: "AL", label: "Albania" }, { value: "CA", label: "Canada" },
+  { value: "GB", label: "United Kingdom" },
+  { value: "US", label: "United States of America" },
+];
+const PARITY_PINNED = ["US", "GB", "CA"];
+
+check("F3: driven()'s BinderFields.orderedChoices stub agrees with the "
+  + "real apps/web/fields.js implementation, byte for byte, on the same "
+  + "input - a broken real function now reds here too",
+  JSON.stringify(RealFields.orderedChoices(PARITY_CHOICES, PARITY_PINNED)) ===
+  JSON.stringify(stubOrderedChoices(PARITY_CHOICES, PARITY_PINNED)));
+check("F3: and with an empty pin, so the parity does not rest on the "
+  + "one input both algorithms happen to have been written against",
+  JSON.stringify(RealFields.orderedChoices(PARITY_CHOICES, [])) ===
+  JSON.stringify(stubOrderedChoices(PARITY_CHOICES, [])));
+check("F3: pinnedCountries() parity too - the real function, reading a "
+  + "spec shaped like driven()'s own BINDER_SITE fixture with a real "
+  + "countries.pinned block, agrees with the stub's hardcoded answer",
+  JSON.stringify(RealFields.pinnedCountries(
+    { countries: { pinned: ["US", "GB", "CA"] } })) ===
+  JSON.stringify(["US", "GB", "CA"]));
+
 /* Owner ruling 5, #243: every edge is a plain number now. */
 check("two closed edges read as a plain range",
   Charts.binLabel(130, 150, "lb") === "130 lb–150 lb");
@@ -2213,7 +2270,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 167;
+const EXPECTED = 170;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

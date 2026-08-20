@@ -1421,8 +1421,11 @@
 
     renderAnswer(answer);
     // After render, not before: the workbook is built from the PARSED
-    // answer now (0.9-M2-S14, #380 ruling 3), so there is nothing to
-    // offer a download of when parsing itself failed above.
+    // answer now (0.9-M2-S14, #380 ruling 3). A parse failure above
+    // returns before this line runs, so the download is simply not
+    // refreshed on that press - whatever workbook a PRIOR successful
+    // press offered stays offered, matching the prior picture that is
+    // also still on screen (the early return above leaves both alone).
     offerDownload(answer);
 
     /* Re-render is free (design mandate 3: the units toggle reads a
