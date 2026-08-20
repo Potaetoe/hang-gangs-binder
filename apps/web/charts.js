@@ -26,6 +26,26 @@
  * between them, never open, so binLabel() below takes two plain numbers
  * and nothing else.
  *
+ * THE X-AXIS IS A ROUND-NUMBER TICK ROW (owner ruling 1, the 2026-08-21
+ * axis sitting, #396). The numbers under the figure are the response's
+ * own BAND EDGES, one per boundary with a tick mark under each, and
+ * they read as boundaries because that is what they are: a lone member
+ * near 500 lb sits in a bar between a painted 500 and a painted 525.
+ * A number centered under a bar reads as a boundary to everyone
+ * regardless of what it is meant to be, which is the whole ruling - the
+ * owner's own words on a chart captioned with band centres: "no person
+ * in their right mind would understand the bar to the right was 504-524
+ * lbs". The tooltip still carries each band's exact range beside its
+ * count, so nothing a hover answered is lost by the axis answering it
+ * first.
+ *
+ * THE UNIT IS NAMED ONCE, IN THE STATUS LINE (owner ruling 2, #396):
+ * "Showing Weight (lb)." Neither figure names it anywhere. A unit
+ * marked at one end of the number row needs a strip of the row
+ * reserved for it, and a reserve is a bound the end label gets pushed
+ * inside - which is how a bar came to paint past its own axis number
+ * on the live chart. There is no reserve because there is no marker.
+ *
  * THE PAGE STOPS DRAWING PAST THE BAND HOLDING THE DATA'S OWN MAXIMUM
  * (owner ruling, the 2026-08-20 sitting, #390) - trimTrailingEmptyBins()
  * below is the whole of it: top only (the chart still starts at the
@@ -36,13 +56,26 @@
  * workbookRows() below applies the identical trim so the download never
  * shows a tail the screen does not.
  *
- * THE UNITS TOGGLE NEVER RE-BINS. GET /charts-data answers every unit
- * system in one document - a bin's `from`/`to` and a trend point's
- * `average` are both {metric: ..., imperial: ...} - so switching units
- * re-reads a different key of the SAME cached answer rather than
- * asking again or converting anything client-side (security mandate
- * 2). A second, independently-binned partition is the differencing
- * oracle DESIGN.md's "One partition, not two" refuses.
+ * THE UNITS TOGGLE RE-ASKS, AND THE PAGE STILL NEVER RE-BINS (owner
+ * ruling 4, the 2026-08-21 axis sitting, #396). GET /charts-data bins
+ * in the unit the ask names, so one answer carries ONE system's numbers
+ * - a band edge and a trend average are plain numbers, not tables keyed
+ * by system - and the other system is a different grid this page has no
+ * way to compute. Switching units therefore asks the route again rather
+ * than reading a second key or converting anything client-side
+ * (security mandate 2, unchanged in what it forbids): every number
+ * drawn is one the response sent, verbatim, index for index. One
+ * document per system is what unit-native binning costs, and it is the
+ * honest price: a document carrying both systems could only do so by
+ * converting one partition into the other, which is the axis of
+ * converted numbers ruling 4 exists to end.
+ *
+ * THE UNIT TOGGLE CAN BE LOCKED, AND THE RESPONSE SAYS SO. A raised
+ * floor serves one system (DESIGN.md, "One partition, not two"), which
+ * arrives as `units.locked`. The page disables the radios and prints a
+ * plain sentence beside the measure rather than leaving a control that
+ * silently does nothing - and it reads the flag, never a floor, because
+ * this file has no opinion about suppression at all.
  *
  * THE FILTER AND MEASURE VALUE LISTS COME FROM apps/site.config.js,
  * never from a response (security mandate 2; design mandate 2). GET
@@ -137,17 +170,48 @@
   }
 
   /*
-   * A band's caption, since the 2026-08-19 charts sitting round two
-   * (#378): its midpoint, rounded to a whole number - "155", never a
-   * range and never a unit. binLabel() above is not retired by this;
-   * it is what the tooltip below composes the EXACT range from
-   * (attachTooltip()'s own bin text), so the caption can orient at a
-   * glance while the true edges stay one hover away. Plain rounding
-   * (Math.round: .5 rounds up), because the ruling's own examples
-   * (155, 185, 244) are exactly that and nothing fancier was asked for.
+   * One x-axis tick's label: the band edge's own number, printed as it
+   * stands (owner ruling 1, #396).
+   *
+   * NOTHING IS ROUNDED HERE AND NOTHING NEEDS TO BE. The edge is
+   * already a round number because server/charts-agg.js builds the grid
+   * out of multiples of the band width - so rounding would either
+   * change nothing or print a number that is not an edge, and the
+   * second of those is this file inventing a value the response never
+   * sent. A fork whose nice width is a fraction gets its own edge, not
+   * a whole number picked for it.
+   *
+   * NO UNIT, EVER (owner ruling 2): the unit is stated once in the
+   * status line. A unit repeated under every tick is what the row has
+   * no width for, and a unit marked at one end of the row is what
+   * pushed the last label off its true position on the live chart.
    */
-  function midpointLabel(from, to) {
-    return String(Math.round((from + to) / 2));
+  function tickLabel(edge) {
+    return String(edge);
+  }
+
+  /*
+   * The status line's whole sentence: "Showing Weight (lb)." - and
+   * "Showing BMI." for a measure with no unit, since there is nothing
+   * to put in the parentheses.
+   *
+   * This is the ONE place on the page a unit is written (owner ruling
+   * 2, #396), which is why it is a function rather than a string built
+   * at the call site: one definition, and a test can ask it what the
+   * page will say.
+   */
+  function showingLine(measureLabel, unit) {
+    return "Showing " + measureLabel + (unit ? " (" + unit + ")" : "") + ".";
+  }
+
+  /*
+   * What a member is told when the group's figures are served in one
+   * unit only (the unit lock, #396). Fixed English plus the response's
+   * own unit - nothing about a floor, which this page does not know
+   * about and must not start inferring from the presence of this flag.
+   */
+  function unitLockNote(unit) {
+    return "These figures are only shown in " + unit + ".";
   }
 
   /*
@@ -170,21 +234,19 @@
    * and the plan could approve a row that truly overlapped (reproduced
    * at 88 bands, where the 7-unit estimate said a one-character count
    * fits a 7.273-unit slot and the real 7.53-unit zero did not). 8 is
-   * above both measured glyphs, which is the property the bottom
-   * caption row actually needs: every caption it paints is midpointLabel()'s
-   * digits only, since 0.9-M2-S13 retired the range and its dash from
-   * that row. captionWidth() ALSO measures the axis-edge unit marker
-   * (drawBins() below, the rightBound reserve) and a y-axis tick label
-   * that happens to carry a unit-free number - the unit marker's own
-   * text is letters, not digits, and 8 is NOT proven above every
-   * letter this face paints ("cm" measured 16.10 against this
-   * constant's own 16-unit estimate for two characters, fix wave 1's
-   * F4 finding - narrowly under, not over). That case is covered by
-   * a DIFFERENT margin: the reserve drawBins() carves out is one whole
-   * extra CAPTION_CHAR_WIDTH-unit wider than the unit text's own
-   * estimate, which swallows a few tenths of a unit of estimation
-   * error with room left over - not this constant being a ceiling on
-   * letters, which it is not proven to be.
+   * above both measured glyphs, which is the property the x-axis number
+   * row actually needs: every label it paints is tickLabel()'s digits
+   * only, and the count axis's own ticks beside them are digits too. No
+   * text this function is ever asked to measure is made of letters, and
+   * that is what makes 8 a ceiling here rather than a hope: 8 is NOT
+   * proven above every letter this face paints ("cm" measures 16.10
+   * against this constant's own 16-unit estimate for two characters -
+   * narrowly under, 0.9-M2-S13 fix wave 1's F4 finding). The figures do
+   * paint letters elsewhere - drawTrend() writes "Average" and "You" at
+   * the end of each line - and nothing measures those: they are placed
+   * against a point, not planned into a row, so no width estimate
+   * decides whether they fit. Putting letters into a MEASURED row is
+   * what this constant cannot cover, and it is not a free choice.
    */
   const CAPTION_CHAR_WIDTH = 8;
 
@@ -192,11 +254,20 @@
     return String(text).length * CAPTION_CHAR_WIDTH;
   }
 
-  /* One caption's box, centered in its own slot of an evenly-spaced row
-     - shared by both plans below, so a slot's index is always read the
-     same way regardless of which row it is thinning. */
-  function captionBox(index, slot, text) {
-    const center = index * slot + slot / 2;
+  /*
+   * One tick label's box, centered ON its own edge rather than in the
+   * middle of a slot (#396). Index i is the i-th boundary of an
+   * evenly-spaced row of bands, so it sits at exactly i * slot - which
+   * means index 0 straddles the axis's left end and the last index
+   * straddles its right end, and BOTH always need containBox() before
+   * anything is painted. A box centered in the slot instead
+   * (`index * slot + slot / 2`) is the same arithmetic shifted half a
+   * band, and it describes a caption under a bar rather than a label on
+   * a boundary - which is a different claim about what the number
+   * means, not a nudge in position.
+   */
+  function tickBox(index, slot, text) {
+    const center = index * slot;
     const half = captionWidth(text) / 2;
     return { left: center - half, right: center + half };
   }
@@ -227,16 +298,18 @@
   }
 
   /*
-   * Which caption indices to paint under a row of bars, so that NO TWO
-   * PAINTED CAPTIONS OVERLAP (owner's F1/F2 ruling on #372's review:
-   * "legibility is a geometry property, not a count target").
+   * Which labels of an evenly-spaced row to paint, so that NO TWO
+   * PAINTED LABELS OVERLAP (owner's F1/F2 ruling on #372's review:
+   * "legibility is a geometry property, not a count target"). Since
+   * #396 the row it thins is the x-axis's tick numbers rather than a
+   * caption under each bar; the law and this algorithm are unchanged,
+   * which is why only the name moved.
    *
    * `boxOf`, OPTIONAL, IS WHAT FIX WAVE 1 (#378, finding F1) ADDS. Left
    * undefined, `box(i)` falls back to the plain, unclamped
-   * captionBox(i, slot, labels[i]) - every caller before this fix wave
-   * relied on exactly that shape, and the arm below keeps it working
-   * for a caller that only cares about the raw geometry. But
-   * drawBins() below MUST pass a `boxOf` that returns each caption's
+   * tickBox(i, slot, labels[i]) - the raw geometry, which is what the
+   * suite's own primitive arms ask about. But drawBins() below MUST
+   * pass a `boxOf` that returns each label's
    * own FINAL, CONTAINED position (offset by the plot's left edge, run
    * through containBox()) - the reviewer's own finding, confirmed live,
    * was that the old two-stage shape (plan on raw boxes, THEN clamp the
@@ -249,19 +322,23 @@
    * fix-wave ruling: "resolved by dropping interior neighbours, never
    * an end") - it was only ever being asked the wrong question before.
    *
-   * THE FIRST AND LAST ALWAYS PAINT - they are the spec's own two
-   * bounding numbers, the axis's own start and end. The walk is a
-   * single greedy pass left to right (each interior candidate paints
-   * only if it clears the last-painted box), then a short cleanup that
-   * forces the last index in and drops back any interior captions it
-   * would otherwise collide with - so the property holds at both ends
-   * of the row, not just walking forward, and now holds on whichever
-   * geometry `boxOf` actually describes.
+   * THE FIRST AND LAST ALWAYS PAINT - they are the axis's own start and
+   * end, and since #396 they are also the two numbers a reader needs
+   * most: where the drawn range begins and where it stops. That matters
+   * for the S16 top trim in particular (trimTrailingEmptyBins() above),
+   * whose whole point is that the axis ends at the band holding the
+   * data's maximum - an unlabeled end would leave that band's upper
+   * edge unreadable. The walk is a single greedy pass left to right
+   * (each interior candidate paints only if it clears the last-painted
+   * box), then a short cleanup that forces the last index in and drops
+   * back any interior labels it would otherwise collide with - so the
+   * property holds at both ends of the row, not just walking forward,
+   * and holds on whichever geometry `boxOf` actually describes.
    */
-  function rangeCaptionPlan(labels, slot, boxOf) {
+  function labelRowPlan(labels, slot, boxOf) {
     const n = labels.length;
     if (n === 0) return [];
-    const box = boxOf || function (i) { return captionBox(i, slot, labels[i]); };
+    const box = boxOf || function (i) { return tickBox(i, slot, labels[i]); };
     if (n === 1) return [0];
 
     const painted = [0];
@@ -307,9 +384,10 @@
    * One distribution bar's tooltip parts, exact - binLabel()'s own
    * range text as the lead, memberCount() as the number, for BOTH a
    * filled band and an empty one (owner ruling 2, #378: "including an
-   * empty slot"). The caption under the bar is midpointLabel()'s
-   * rounded whole number; this is where the true edges the caption
-   * traded away for legibility still live, one hover or tap away.
+   * empty slot"). It carries the unit ("500 lb-525 lb: 1 member")
+   * because a tooltip is one self-contained sentence a member reads on
+   * its own, which is a different thing from the axis row ruling 2
+   * cleared of units.
    */
   function binTooltipParts(from, to, unit, count) {
     return { lead: binLabel(from, to, unit) + ": ", number: memberCount(count) };
@@ -529,6 +607,12 @@
       url.searchParams.set("filter", ask.filter);
       url.searchParams.set("value", ask.value);
     }
+    /* The unit system the member is looking at (owner ruling 4, #396).
+       The Worker bins on that unit's own grid, so this is a question
+       rather than a preference - and it is always sent, because an
+       absent one would leave the route falling back to the spec's
+       default while the page drew whatever the radio said. */
+    url.searchParams.set("units", ask.units);
     url.searchParams.set("self", "1");
     return url.toString();
   }
@@ -551,27 +635,39 @@
    */
   const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
 
-  /* The one unit system's own reserved property, off the response's own
-     {metric, imperial} pair - moved here from the DOM section (it
-     touches no document) so workbookColumns()/workbookRows() below can
-     read it too. */
-  function unitFor(answer, system) {
-    return answer.units && answer.units[system] && answer.units[system].unit
-      ? answer.units[system].unit
-      : null;
+  /* The unit THIS answer's axis is labeled in, or null for a measure
+     with no unit at all. One answer is in one unit system since #396,
+     so there is no system to pass in: the response already chose. Null
+     on a not-enough answer too, where `units` is null and nothing is
+     drawn to label. */
+  function unitFor(answer) {
+    return answer.units && answer.units.unit ? answer.units.unit : null;
+  }
+
+  /* Whether the response chose the unit system rather than the caller
+     (a raised floor's lock, #396). Read as a flag and nothing else - a
+     page that inferred it from `floor` would be reasoning about
+     suppression, which is the one thing this file never does. */
+  function unitLocked(answer) {
+    return Boolean(answer.units && answer.units.locked);
   }
 
   /*
    * The workbook's own columns and rows (0.9-M2-S14, #380 ruling 3):
    * exactly the answer already on screen, in the same label vocabulary
    * this file already paints it with - binLabel() for a band's own
-   * exact range (not midpointLabel()'s rounded caption; a download
-   * benefits from the same precise edges a hover already reveals),
-   * monthLabel() for a trend point, groupCellLabel() for a group-makeup
-   * value. RENDER-ONLY, exactly like the rest of this file (security
-   * mandate 1): every cell is composed from `answer`'s own numbers,
-   * nothing refetched and nothing computed that the response did not
-   * already send.
+   * exact range, monthLabel() for a trend point, groupCellLabel() for a
+   * group-makeup value. RENDER-ONLY, exactly like the rest of this file
+   * (security mandate 1): every cell is composed from `answer`'s own
+   * numbers, nothing refetched and nothing computed that the response
+   * did not already send.
+   *
+   * NO UNIT SYSTEM ARGUMENT SINCE #396: the answer is in one system, so
+   * the workbook takes its unit off the answer rather than off the
+   * radio the member happens to be on. That is what keeps the download
+   * matching the SCREEN across a units toggle, which now re-asks - for
+   * the moment between the press and the new response, the figures and
+   * the workbook are both still the answer that is actually drawn.
    *
    * Counts are written as NUMBERS, not memberCount()'s "N members" text
    * - a spreadsheet cell is for arithmetic, and "5 members" is a string
@@ -592,32 +688,31 @@
     return ["Section", "Label", "Count", "Average" + suffix, "You" + suffix];
   }
 
-  function workbookRows(answer, system, countries, measureFor) {
+  function workbookRows(answer, countries, measureFor) {
     if (!answer.enough) {
       return [["Status", answer.note + " " + BROADER_FILTER_HINT,
         "", "", ""]];
     }
 
-    const unit = unitFor(answer, system);
+    const unit = unitFor(answer);
     const rows = [];
 
     trimTrailingEmptyBins(
       answer.distribution ? answer.distribution.bins : []).forEach(
       function (bin) {
-        rows.push(["Distribution",
-          binLabel(bin.from[system], bin.to[system], unit), bin.count,
-          "", ""]);
+        rows.push(["Distribution", binLabel(bin.from, bin.to, unit),
+          bin.count, "", ""]);
       });
 
     (answer.trend && answer.trend.points ? answer.trend.points : [])
       .forEach(function (point) {
         const at = new Date(point.period + "-01T00:00:00Z").getTime();
-        rows.push(["Trend", monthLabel(at), "", point.average[system], ""]);
+        rows.push(["Trend", monthLabel(at), "", point.average, ""]);
       });
     (answer.self && answer.self.points ? answer.self.points : [])
       .forEach(function (point) {
         rows.push(["Trend", monthLabel(new Date(point.at).getTime()), "",
-          "", point.value[system]]);
+          "", point.value]);
       });
 
     (answer.groups || []).forEach(function (group) {
@@ -635,11 +730,13 @@
     capitalize: capitalize,
     binLabel: binLabel,
     trimTrailingEmptyBins: trimTrailingEmptyBins,
-    midpointLabel: midpointLabel,
+    tickLabel: tickLabel,
+    showingLine: showingLine,
+    UNIT_LOCK_NOTE: unitLockNote,
     captionWidth: captionWidth,
-    captionBox: captionBox,
+    tickBox: tickBox,
     containBox: containBox,
-    rangeCaptionPlan: rangeCaptionPlan,
+    labelRowPlan: labelRowPlan,
     memberCount: memberCount,
     binTooltipParts: binTooltipParts,
     monthLabel: monthLabel,
@@ -654,6 +751,7 @@
     groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
     unitFor: unitFor,
+    unitLocked: unitLocked,
     workbookColumns: workbookColumns,
     workbookRows: workbookRows,
     BROADER_FILTER_HINT: BROADER_FILTER_HINT,
@@ -925,36 +1023,57 @@
    * still holding its place on the axis, rather than a bar skipped or a
    * suppression note in its place - there is no such note to print, the
    * same render-only rule that keeps this file from inventing any other
-   * text the response did not send. THE BAR ALWAYS DRAWS; ITS CAPTION
-   * DOES NOT (owner's F1/F2 ruling on #372's review). The caption under
-   * a bar is thinned by rangeCaptionPlan() so no two painted captions in
-   * a row overlap - at the 120-band BMI grid or the 53-band imperial-
-   * weight grid, most bars carry no caption at all, and that is the
-   * fix: a caption nobody can read is worse than no caption. Nothing
-   * about which BAND is drawn changes; only some of the text under it
-   * does.
+   * text the response did not send.
    *
    * NO COUNT ROW ANY MORE (owner ruling, the 2026-08-19 late sitting,
    * folded into fix wave 1, #378: "no numbers over bars, ever"). The
    * exact count is the count axis's own scale plus the tooltip, never a
-   * number painted per bar - countCaptionPlan() and everything it
-   * touched is gone with it.
+   * number painted per bar.
    *
-   * THE BOTTOM CAPTION IS A MIDPOINT, NOT A RANGE (0.9-M2-S13, #378).
-   * rangeCaptionPlan() still decides which indices paint - the "new
-   * shorter texts" are midpointLabel()'s, fed through the same
-   * geometry - and the true edges move to the tooltip (wireTooltip()
-   * below), never lost, one hover or tap away.
+   * THE NUMBER ROW IS THE BAND EDGES, WITH TICK MARKS (owner ruling 1,
+   * #396). `edges` below is read straight off the bins this function
+   * was handed - the first band's `from`, then every band's `to` - so
+   * there is one more number than there are bars and each sits ON a
+   * boundary at x = left + index * slot. A boundary is what people
+   * already read an axis number as, which is the whole ruling: a number
+   * meaning the CENTRE of the band above it is a convention nobody has,
+   * and one nothing on the page could teach.
    *
-   * THE PLAN IS FED FINAL POSITIONS NOW, NOT RAW ONES (fix wave 1,
-   * finding F1). `boxOf` below computes each caption's own contained,
-   * offset box and is the SAME function rangeCaptionPlan() plans
+   * THE MARK AND ITS NUMBER PAINT TOGETHER, or neither does. A tick
+   * mark with no number under it is a boundary a reader cannot name,
+   * and on the 120-band BMI grid a mark per edge would be a smear; so
+   * the thinning decides both at once. THE FIRST AND LAST ALWAYS PAINT
+   * (labelRowPlan()'s own law), which is what makes the S16 trim
+   * readable - the axis ends where the data does and that end is
+   * always labeled.
+   *
+   * THE PLAN IS FED FINAL POSITIONS, NOT RAW ONES (0.9-M2-S13's own fix
+   * wave 1, finding F1). `boxOf` below computes each label's own
+   * contained, offset box and is the SAME function labelRowPlan() plans
    * against and the render loop paints from - there is exactly one
-   * definition of where a caption ends up, so a clamped end caption
-   * that would collide with its nearest kept neighbor is caught by the
-   * plan itself rather than discovered on screen.
+   * definition of where a label ends up.
+   *
+   * AND NO LABEL IS EVER SHIFTED OFF ITS TICK (#396 fix wave 1, F2/F3).
+   * An end label is centered on the axis's own end, so half of it hangs
+   * past that end by construction. Clamping it inward moves the number
+   * away from the mark it names: it comes to sit over the middle of the
+   * last BAR, and the plan then drops that bar's own lower edge as the
+   * collision - which rebuilds the midpoint convention ruling 1 killed,
+   * out of geometry instead of arithmetic. So the plot stops one margin
+   * short of the viewBox (`right` below, the mirror of the count axis's
+   * gutter on the left), the end label overhangs into that margin, and
+   * containment is measured against the VIEWBOX. The clamp survives as
+   * a backstop against a label wider than the margin can hold, never as
+   * the ordinary case: on every shipped grid it is the identity, which
+   * is what lets the axis's numbers each stand on their own boundary.
+   *
+   * `unit` REACHES ONLY THE TOOLTIP. Nothing in the figure names it any
+   * more (owner ruling 2, #396) - the status line does - so this
+   * argument survives for binTooltipParts() alone, and the right-hand
+   * reserve the retired marker needed is gone with it: the row runs the
+   * full width.
    */
-  function drawBins(target, tip, bins, system, unit) {
+  function drawBins(target, tip, bins, unit) {
     resetTooltip(tip);
     const width = 640;
     const height = 320;
@@ -965,6 +1084,13 @@
     // already uses for its own value axis, so the two figures share one
     // gutter width rather than each picking its own.
     const left = 50;
+    // And the mirror of it on the right (#396 fix wave 1, F2/F3), the
+    // same 20 units drawTrend() reserves: the axis's last tick sits at
+    // the plot's right edge and its number is centered on that tick, so
+    // half the number needs room outside the plot. Without the margin
+    // the only way to keep that number inside the picture is to move it
+    // off its own tick - see the tick-row comment above.
+    const right = 20;
     const node = target.querySelector("svg");
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
@@ -989,37 +1115,54 @@
     // longer quite touching the plot's own top edge is the ruling's own
     // named bonus, not a defect.
     const most = countTicks[countTicks.length - 1];
-    const plotWidth = width - left;
+    const plotWidth = width - left - right;
     const slot = plotWidth / bins.length;
 
-    const midpointLabels = bins.map(function (bin) {
-      return midpointLabel(bin.from[system], bin.to[system]);
-    });
+    // The axis's own numbers, read off the response's own bands: the
+    // first band's lower edge, then every band's upper edge. Contiguous
+    // by the route's contract (each `to` IS the next `from`), so this
+    // is the whole boundary list with nothing computed.
+    const edges = [bins[0].from].concat(bins.map(function (bin) {
+      return bin.to;
+    }));
+    const tickLabels = edges.map(tickLabel);
 
-    // The unit marker's own reserved strip at the row's right end - one
-    // caption-width of the unit text plus one character of gap, so the
-    // marker and a clamped last caption never occupy the same pixels
-    // (the marker is not itself a caption anything plans or drops - see
-    // the marker's own comment below).
-    const rightBound = unit
-      ? width - captionWidth(unit) - CAPTION_CHAR_WIDTH
-      : width;
-
-    // Every painted caption's FINAL box - offset into the plot (the
-    // left gutter) and run through containBox() - is what
-    // rangeCaptionPlan() below plans against AND what the render loop
-    // paints from, the same function both times (fix wave 1, F1).
+    // Every painted label's FINAL box - offset into the plot (the left
+    // gutter) and run through containBox() - is what labelRowPlan()
+    // below plans against AND what the render loop paints from, the
+    // same function both times (fix wave 1, F1).
     const boxOf = function (i) {
-      const raw = captionBox(i, slot, midpointLabels[i]);
+      const raw = tickBox(i, slot, tickLabels[i]);
       return containBox(
-        { left: left + raw.left, right: left + raw.right },
-        left, rightBound);
+        { left: left + raw.left, right: left + raw.right }, 0, width);
     };
-    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot, boxOf));
+    const labeledIndexes = new Set(labelRowPlan(tickLabels, slot, boxOf));
 
     node.appendChild(svg("line", {
-      x1: left, y1: baseline, x2: width, y2: baseline,
+      x1: left, y1: baseline, x2: left + plotWidth, y2: baseline,
     }, "chart-axis"));
+
+    // The tick row: a short mark below the baseline at each painted
+    // boundary, and its number under that. Painted BEFORE the bars and
+    // the hit rects so nothing here can take a pointer event from the
+    // column targets appended last - it all sits below the baseline
+    // anyway, where no bar reaches. The mark carries .chart-axis
+    // because it IS the axis, at the axis's own weight; only its
+    // orientation tells it from the baseline.
+    tickLabels.forEach(function (label, index) {
+      if (!labeledIndexes.has(index)) return;
+      const x = left + index * slot;
+      node.appendChild(svg("line", {
+        x1: x, y1: baseline, x2: x, y2: baseline + 5,
+      }, "chart-axis"));
+      const box = boxOf(index);
+      const text = svg("text", {
+        x: (box.left + box.right) / 2, y: baseline + 18,
+        "text-anchor": "middle",
+      }, "chart-label");
+      text.textContent = label;
+      node.appendChild(text);
+    });
 
     // The count axis (owner ruling, the 2026-08-19 late sitting): whole
     // people only, in the .chart-label tone, right-aligned into the
@@ -1047,16 +1190,6 @@
         width: Math.max(1, slot - 4), height: barHeight, rx: 2,
       }, "chart-bar"));
 
-      if (labeledIndexes.has(index)) {
-        const box = boxOf(index);
-        const text = svg("text", {
-          x: (box.left + box.right) / 2, y: baseline + 16,
-          "text-anchor": "middle",
-        }, "chart-label");
-        text.textContent = midpointLabels[index];
-        node.appendChild(text);
-      }
-
       // The hit target: the WHOLE column, top to baseline, regardless
       // of the bar's own height - a zero-height bar (bin.count === 0)
       // has no area of its own to hover, and owner ruling 2 names an
@@ -1074,32 +1207,20 @@
       }, "chart-hit");
       node.appendChild(hit);
       wireTooltip(hit, target, tip, binTooltipParts(
-        bin.from[system], bin.to[system], unit, bin.count));
+        bin.from, bin.to, unit, bin.count));
     });
-
-    // The unit, stated once at the axis edge rather than once per
-    // caption (owner ruling 1, #378) - same row, same class/tone as the
-    // captions themselves (design mandate 1). It names the MEASURE's
-    // own unit on the x-axis; the count axis this same figure grew
-    // (owner ruling, the 2026-08-19 late sitting) is never in that
-    // unit, so it stays on its own row rather than moving to the gutter.
-    if (unit) {
-      node.appendChild(svg("text", {
-        x: width, y: baseline + 16, "text-anchor": "end",
-      }, "chart-label")).textContent = unit;
-    }
   }
 
-  function drawDistribution(answer, system) {
+  function drawDistribution(answer) {
     const target = $("figure-distribution");
     const tip = $("tooltip-distribution");
-    const unit = unitFor(answer, system);
+    const unit = unitFor(answer);
     // trimTrailingEmptyBins() (owner ruling, #390) is the whole of the
     // draw-range decision - drawBins() below draws every band it is
     // handed, whole, with no idea where the spec's own grid actually
     // ends.
     const bins = trimTrailingEmptyBins(answer.distribution.bins);
-    drawBins(target, tip, bins, system, unit);
+    drawBins(target, tip, bins, unit);
   }
 
   /*
@@ -1225,7 +1346,7 @@
      with no per-segment styling, so a gap of one month and a gap of six
      produce the identical unbroken segment: the bridging IS drawing what
      the response sent, nothing dashed or faded for the months between. */
-  function drawTrend(answer, system) {
+  function drawTrend(answer) {
     const target = $("figure-trend");
     const tip = $("tooltip-trend");
     resetTooltip(tip);
@@ -1239,17 +1360,17 @@
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
 
-    const unit = unitFor(answer, system);
+    const unit = unitFor(answer);
     const groupPoints = (answer.trend ? answer.trend.points : [])
       .map(function (point) {
         return { at: new Date(point.period + "-01T00:00:00Z").getTime(),
-          value: point.average[system] };
+          value: point.average };
       })
       .filter(function (point) { return typeof point.value === "number"; });
     const selfPoints = (answer.self && answer.self.points ? answer.self.points
       : [])
       .map(function (point) {
-        return { at: new Date(point.at).getTime(), value: point.value[system] };
+        return { at: new Date(point.at).getTime(), value: point.value };
       })
       .filter(function (point) {
         return Number.isFinite(point.at) && typeof point.value === "number";
@@ -1336,10 +1457,11 @@
         "chart-series-label series-1", "You");
     }
 
-    if (unit) {
-      node.appendChild(svg("text", { x: left, y: top - 6 }, "chart-label"))
-        .textContent = unit;
-    }
+    // No unit marker over the gutter any more (owner ruling 2, #396):
+    // the status line above both figures names the unit, and a second
+    // copy here was one of the two places on the page that disagreed
+    // with it whenever a redraw and a toggle raced. `unit` still
+    // reaches this function, for the tooltip alone.
   }
 
   /* ------------------------------------------------------------------ */
@@ -1349,9 +1471,74 @@
   /* dismiss - and security mandate 4: content on a 200, indistinguish-  */
   /* able from the drawn state in markup or timing.                     */
 
+  /*
+   * The units toggle, made to tell the truth about the answer on screen
+   * (the unit lock, #396).
+   *
+   * A LOCKED ANSWER DISABLES BOTH RADIOS AND CHECKS THE ONE THE ANSWER
+   * IS ACTUALLY IN. Leaving them live would offer a member a choice
+   * that cannot be honored - they would press the other one, the route
+   * would answer in the locked system anyway, and the page would look
+   * broken rather than restricted. Checking the answer's own system is
+   * the same honesty applied to the control's reading: a radio saying
+   * "imperial" over a chart in kilograms is a lie the page told.
+   *
+   * A UNITLESS MEASURE DISABLES THEM WITH NO SENTENCE, and that is the
+   * honest shape rather than an oversight. renderAnswer() only prints
+   * the lock note when there is a unit to name, and on a computed BMI
+   * there is none: the number is the same in every system, so a locked
+   * view of it withholds nothing and there is no restriction to state.
+   * Inventing unit-free wording would announce a limit that costs the
+   * member nothing, which reads as a problem where there is not one.
+   * The radios still go inert, because the answer really is bound to
+   * one system and a live control that changes no number on screen is
+   * the worse half of the same lie.
+   *
+   * AND IT UNWIRES THE HANDLER RATHER THAN RELYING ON `disabled`.
+   * `disabled` is what a person sees; a null `onchange` is what makes a
+   * programmatic change event fire nothing. Both, because the two guard
+   * different callers.
+   *
+   * An UNLOCKED answer re-enables them and rewires the re-ask, which is
+   * what makes this safe to call on every render: whichever answer
+   * arrives last decides, and neither state is sticky.
+   *
+   * CALLED BEFORE renderAnswer() DECIDES ANYTHING ELSE, including before
+   * its not-enough early return (#396 fix wave 1, O1). Switching units
+   * is exactly what somebody reading "not enough people for this view"
+   * reaches for next, and an answer that draws nothing still says which
+   * system it was asked in - so wiring this behind the return would
+   * leave the toggle dead for the rest of a session whose first answer
+   * happened to be empty.
+   */
+  function applyUnitLock(answer) {
+    const locked = unitLocked(answer);
+    const system = answer.units ? answer.units.system : null;
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) {
+        input.disabled = locked;
+        if (locked) {
+          input.onchange = null;
+          if (system) input.checked = input.value === system;
+        } else {
+          /* Re-render is NOT free any more (owner ruling 4, #396): the
+             other system is a different grid, so the toggle asks the
+             route again. Wired here, per drawn answer, rather than once
+             at load, so a listener never fires against an answer that
+             has not arrived yet. */
+          input.onchange = function () { showMe(); };
+        }
+      });
+  }
+
   function renderAnswer(answer) {
     const status = $("status");
     show($("results"), true);
+    // Ahead of every branch below, including the empty one: see
+    // applyUnitLock()'s own header on why an empty first answer must
+    // not leave the units toggle dead.
+    applyUnitLock(answer);
 
     if (!answer.enough) {
       status.className = "status";
@@ -1367,12 +1554,20 @@
       return;
     }
 
+    /*
+     * The one place on the page a unit is written (owner ruling 2,
+     * #396) - and, when a raised floor picked the system rather than
+     * the member, the plain sentence saying so beside it. Both halves
+     * come from the response's own `units` block: the page never
+     * decides a unit and never infers a floor.
+     */
     status.className = "status";
-    status.textContent = "Showing " + answer.measure.label + ".";
+    const unit = unitFor(answer);
+    status.textContent = showingLine(answer.measure.label, unit) +
+      (unitLocked(answer) && unit ? " " + unitLockNote(unit) : "");
 
-    const system = currentSystem();
-    drawTrend(answer, system);
-    drawDistribution(answer, system);
+    drawTrend(answer);
+    drawDistribution(answer);
 
     // Unhidden here, and only here (0.9-M2-S15, #383): a picture exists
     // to choose between only once a picture has actually drawn. The tab
@@ -1393,11 +1588,12 @@
    * the answer already drawn on screen - not the route's own bytes any
    * more (0.9-M2-S14, #380 ruling 3, superseding the JSON download
    * 0.9-M2-S12/#373 shipped). workbookColumns()/workbookRows() above
-   * compose the same numbers renderAnswer() painted, at the CURRENT
-   * unit system read fresh on each click - so toggling units after a
-   * fetch and then pressing Download gets the workbook in the units
-   * actually on screen, the same live behavior the figures themselves
-   * already have. The same workbook is offered whether the cut was
+   * compose the same numbers renderAnswer() painted, in the ANSWER's
+   * own unit system - which is how the download keeps matching the
+   * screen now that toggling units re-asks the route (#396): the
+   * figures and the workbook both belong to whichever answer is
+   * actually drawn, including in the moment between a toggle press and
+   * the new response arriving. The same workbook is offered whether the cut was
    * enough or not - a not-enough answer is a small, honest document and
    * there is no reason to withhold it.
    *
@@ -1435,9 +1631,8 @@
     $("download").addEventListener("click", function () {
       if (!lastAnswer) return;
       const site = root.BINDER_SITE;
-      const system = currentSystem();
-      const columns = workbookColumns(unitFor(lastAnswer, system));
-      const rows = workbookRows(lastAnswer, system, root.BINDER_COUNTRIES,
+      const columns = workbookColumns(unitFor(lastAnswer));
+      const rows = workbookRows(lastAnswer, root.BINDER_COUNTRIES,
         function (fieldName) { return Fields.measure(fieldName, site); });
       const bytes = root.BinderXlsx.build(columns, rows, "Charts",
         Date.now());
@@ -1473,7 +1668,10 @@
 
     const measureName = $("measure").value;
     const filterField = $("filter-field").value;
-    const ask = { measure: measureName };
+    // The unit system is part of the QUESTION now (owner ruling 4,
+    // #396) - the Worker bins on that unit's own grid, and this page
+    // has no way to reach the other one.
+    const ask = { measure: measureName, units: currentSystem() };
     if (filterField) {
       ask.filter = filterField;
       ask.value = $("filter-value").value;
@@ -1523,16 +1721,10 @@
     // press offered stays offered, matching the prior picture that is
     // also still on screen (the early return above leaves both alone).
     offerDownload(answer);
-
-    /* Re-render is free (design mandate 3: the units toggle reads a
-       different key of the SAME answer). Wired here, per successful
-       draw, rather than once at load, so a listener never fires
-       against an answer that has not arrived yet. */
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="units"]'),
-      function (input) {
-        input.onchange = function () { renderAnswer(answer); };
-      });
+    /* The units toggle's own wiring lives in applyUnitLock(), which
+       renderAnswer() already called: whether the radios re-ask, and
+       whether they are live at all, is decided by the answer rather
+       than by having reached this line. */
   }
 
   async function setUp() {

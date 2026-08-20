@@ -31,8 +31,20 @@
 
   
 
-  function midpointLabel(from, to) {
-    return String(Math.round((from + to) / 2));
+  function tickLabel(edge) {
+    return String(edge);
+  }
+
+  
+
+  function showingLine(measureLabel, unit) {
+    return "Showing " + measureLabel + (unit ? " (" + unit + ")" : "") + ".";
+  }
+
+  
+
+  function unitLockNote(unit) {
+    return "These figures are only shown in " + unit + ".";
   }
 
   
@@ -45,8 +57,8 @@
 
   
 
-  function captionBox(index, slot, text) {
-    const center = index * slot + slot / 2;
+  function tickBox(index, slot, text) {
+    const center = index * slot;
     const half = captionWidth(text) / 2;
     return { left: center - half, right: center + half };
   }
@@ -71,10 +83,10 @@
 
   
 
-  function rangeCaptionPlan(labels, slot, boxOf) {
+  function labelRowPlan(labels, slot, boxOf) {
     const n = labels.length;
     if (n === 0) return [];
-    const box = boxOf || function (i) { return captionBox(i, slot, labels[i]); };
+    const box = boxOf || function (i) { return tickBox(i, slot, labels[i]); };
     if (n === 1) return [0];
 
     const painted = [0];
@@ -241,6 +253,9 @@
       url.searchParams.set("filter", ask.filter);
       url.searchParams.set("value", ask.value);
     }
+    
+
+    url.searchParams.set("units", ask.units);
     url.searchParams.set("self", "1");
     return url.toString();
   }
@@ -251,10 +266,14 @@
 
   
 
-  function unitFor(answer, system) {
-    return answer.units && answer.units[system] && answer.units[system].unit
-      ? answer.units[system].unit
-      : null;
+  function unitFor(answer) {
+    return answer.units && answer.units.unit ? answer.units.unit : null;
+  }
+
+  
+
+  function unitLocked(answer) {
+    return Boolean(answer.units && answer.units.locked);
   }
 
   
@@ -264,32 +283,31 @@
     return ["Section", "Label", "Count", "Average" + suffix, "You" + suffix];
   }
 
-  function workbookRows(answer, system, countries, measureFor) {
+  function workbookRows(answer, countries, measureFor) {
     if (!answer.enough) {
       return [["Status", answer.note + " " + BROADER_FILTER_HINT,
         "", "", ""]];
     }
 
-    const unit = unitFor(answer, system);
+    const unit = unitFor(answer);
     const rows = [];
 
     trimTrailingEmptyBins(
       answer.distribution ? answer.distribution.bins : []).forEach(
       function (bin) {
-        rows.push(["Distribution",
-          binLabel(bin.from[system], bin.to[system], unit), bin.count,
-          "", ""]);
+        rows.push(["Distribution", binLabel(bin.from, bin.to, unit),
+          bin.count, "", ""]);
       });
 
     (answer.trend && answer.trend.points ? answer.trend.points : [])
       .forEach(function (point) {
         const at = new Date(point.period + "-01T00:00:00Z").getTime();
-        rows.push(["Trend", monthLabel(at), "", point.average[system], ""]);
+        rows.push(["Trend", monthLabel(at), "", point.average, ""]);
       });
     (answer.self && answer.self.points ? answer.self.points : [])
       .forEach(function (point) {
         rows.push(["Trend", monthLabel(new Date(point.at).getTime()), "",
-          "", point.value[system]]);
+          "", point.value]);
       });
 
     (answer.groups || []).forEach(function (group) {
@@ -307,11 +325,13 @@
     capitalize: capitalize,
     binLabel: binLabel,
     trimTrailingEmptyBins: trimTrailingEmptyBins,
-    midpointLabel: midpointLabel,
+    tickLabel: tickLabel,
+    showingLine: showingLine,
+    UNIT_LOCK_NOTE: unitLockNote,
     captionWidth: captionWidth,
-    captionBox: captionBox,
+    tickBox: tickBox,
     containBox: containBox,
-    rangeCaptionPlan: rangeCaptionPlan,
+    labelRowPlan: labelRowPlan,
     memberCount: memberCount,
     binTooltipParts: binTooltipParts,
     monthLabel: monthLabel,
@@ -326,6 +346,7 @@
     groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
     unitFor: unitFor,
+    unitLocked: unitLocked,
     workbookColumns: workbookColumns,
     workbookRows: workbookRows,
     BROADER_FILTER_HINT: BROADER_FILTER_HINT,
@@ -547,7 +568,7 @@
 
   
 
-  function drawBins(target, tip, bins, system, unit) {
+  function drawBins(target, tip, bins, unit) {
     resetTooltip(tip);
     const width = 640;
     const height = 320;
@@ -558,6 +579,13 @@
      
      
     const left = 50;
+     
+     
+     
+     
+     
+     
+    const right = 20;
     const node = target.querySelector("svg");
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
@@ -582,37 +610,54 @@
      
      
     const most = countTicks[countTicks.length - 1];
-    const plotWidth = width - left;
+    const plotWidth = width - left - right;
     const slot = plotWidth / bins.length;
 
-    const midpointLabels = bins.map(function (bin) {
-      return midpointLabel(bin.from[system], bin.to[system]);
-    });
-
      
      
      
      
-     
-    const rightBound = unit
-      ? width - captionWidth(unit) - CAPTION_CHAR_WIDTH
-      : width;
+    const edges = [bins[0].from].concat(bins.map(function (bin) {
+      return bin.to;
+    }));
+    const tickLabels = edges.map(tickLabel);
 
      
      
      
      
     const boxOf = function (i) {
-      const raw = captionBox(i, slot, midpointLabels[i]);
+      const raw = tickBox(i, slot, tickLabels[i]);
       return containBox(
-        { left: left + raw.left, right: left + raw.right },
-        left, rightBound);
+        { left: left + raw.left, right: left + raw.right }, 0, width);
     };
-    const labeledIndexes = new Set(rangeCaptionPlan(midpointLabels, slot, boxOf));
+    const labeledIndexes = new Set(labelRowPlan(tickLabels, slot, boxOf));
 
     node.appendChild(svg("line", {
-      x1: left, y1: baseline, x2: width, y2: baseline,
+      x1: left, y1: baseline, x2: left + plotWidth, y2: baseline,
     }, "chart-axis"));
+
+     
+     
+     
+     
+     
+     
+     
+    tickLabels.forEach(function (label, index) {
+      if (!labeledIndexes.has(index)) return;
+      const x = left + index * slot;
+      node.appendChild(svg("line", {
+        x1: x, y1: baseline, x2: x, y2: baseline + 5,
+      }, "chart-axis"));
+      const box = boxOf(index);
+      const text = svg("text", {
+        x: (box.left + box.right) / 2, y: baseline + 18,
+        "text-anchor": "middle",
+      }, "chart-label");
+      text.textContent = label;
+      node.appendChild(text);
+    });
 
      
      
@@ -640,16 +685,6 @@
         width: Math.max(1, slot - 4), height: barHeight, rx: 2,
       }, "chart-bar"));
 
-      if (labeledIndexes.has(index)) {
-        const box = boxOf(index);
-        const text = svg("text", {
-          x: (box.left + box.right) / 2, y: baseline + 16,
-          "text-anchor": "middle",
-        }, "chart-label");
-        text.textContent = midpointLabels[index];
-        node.appendChild(text);
-      }
-
        
        
        
@@ -667,32 +702,20 @@
       }, "chart-hit");
       node.appendChild(hit);
       wireTooltip(hit, target, tip, binTooltipParts(
-        bin.from[system], bin.to[system], unit, bin.count));
+        bin.from, bin.to, unit, bin.count));
     });
-
-     
-     
-     
-     
-     
-     
-    if (unit) {
-      node.appendChild(svg("text", {
-        x: width, y: baseline + 16, "text-anchor": "end",
-      }, "chart-label")).textContent = unit;
-    }
   }
 
-  function drawDistribution(answer, system) {
+  function drawDistribution(answer) {
     const target = $("figure-distribution");
     const tip = $("tooltip-distribution");
-    const unit = unitFor(answer, system);
+    const unit = unitFor(answer);
      
      
      
      
     const bins = trimTrailingEmptyBins(answer.distribution.bins);
-    drawBins(target, tip, bins, system, unit);
+    drawBins(target, tip, bins, unit);
   }
 
   
@@ -765,7 +788,7 @@
 
   
 
-  function drawTrend(answer, system) {
+  function drawTrend(answer) {
     const target = $("figure-trend");
     const tip = $("tooltip-trend");
     resetTooltip(tip);
@@ -779,17 +802,17 @@
     node.setAttribute("viewBox", "0 0 " + width + " " + height);
     clearSvg(node);
 
-    const unit = unitFor(answer, system);
+    const unit = unitFor(answer);
     const groupPoints = (answer.trend ? answer.trend.points : [])
       .map(function (point) {
         return { at: new Date(point.period + "-01T00:00:00Z").getTime(),
-          value: point.average[system] };
+          value: point.average };
       })
       .filter(function (point) { return typeof point.value === "number"; });
     const selfPoints = (answer.self && answer.self.points ? answer.self.points
       : [])
       .map(function (point) {
-        return { at: new Date(point.at).getTime(), value: point.value[system] };
+        return { at: new Date(point.at).getTime(), value: point.value };
       })
       .filter(function (point) {
         return Number.isFinite(point.at) && typeof point.value === "number";
@@ -866,10 +889,11 @@
         "chart-series-label series-1", "You");
     }
 
-    if (unit) {
-      node.appendChild(svg("text", { x: left, y: top - 6 }, "chart-label"))
-        .textContent = unit;
-    }
+     
+     
+     
+     
+     
   }
 
    
@@ -879,9 +903,33 @@
    
    
 
+  
+
+  function applyUnitLock(answer) {
+    const locked = unitLocked(answer);
+    const system = answer.units ? answer.units.system : null;
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[name="units"]'),
+      function (input) {
+        input.disabled = locked;
+        if (locked) {
+          input.onchange = null;
+          if (system) input.checked = input.value === system;
+        } else {
+          
+
+          input.onchange = function () { showMe(); };
+        }
+      });
+  }
+
   function renderAnswer(answer) {
     const status = $("status");
     show($("results"), true);
+     
+     
+     
+    applyUnitLock(answer);
 
     if (!answer.enough) {
       status.className = "status";
@@ -897,12 +945,15 @@
       return;
     }
 
-    status.className = "status";
-    status.textContent = "Showing " + answer.measure.label + ".";
+    
 
-    const system = currentSystem();
-    drawTrend(answer, system);
-    drawDistribution(answer, system);
+    status.className = "status";
+    const unit = unitFor(answer);
+    status.textContent = showingLine(answer.measure.label, unit) +
+      (unitLocked(answer) && unit ? " " + unitLockNote(unit) : "");
+
+    drawTrend(answer);
+    drawDistribution(answer);
 
      
      
@@ -931,9 +982,8 @@
     $("download").addEventListener("click", function () {
       if (!lastAnswer) return;
       const site = root.BINDER_SITE;
-      const system = currentSystem();
-      const columns = workbookColumns(unitFor(lastAnswer, system));
-      const rows = workbookRows(lastAnswer, system, root.BINDER_COUNTRIES,
+      const columns = workbookColumns(unitFor(lastAnswer));
+      const rows = workbookRows(lastAnswer, root.BINDER_COUNTRIES,
         function (fieldName) { return Fields.measure(fieldName, site); });
       const bytes = root.BinderXlsx.build(columns, rows, "Charts",
         Date.now());
@@ -969,7 +1019,10 @@
 
     const measureName = $("measure").value;
     const filterField = $("filter-field").value;
-    const ask = { measure: measureName };
+     
+     
+     
+    const ask = { measure: measureName, units: currentSystem() };
     if (filterField) {
       ask.filter = filterField;
       ask.value = $("filter-value").value;
@@ -1019,14 +1072,8 @@
      
      
     offerDownload(answer);
-
     
 
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="units"]'),
-      function (input) {
-        input.onchange = function () { renderAnswer(answer); };
-      });
   }
 
   async function setUp() {

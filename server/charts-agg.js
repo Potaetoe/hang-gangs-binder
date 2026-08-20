@@ -23,26 +23,55 @@
  * number, which is why tests/charts-aggregate.test.mjs still proves the
  * whole machinery at a floor of 5 rather than deleting those arms.
  *
- * THE ONE-PARTITION RULE IS NOT ON THAT LIST, and reading it as one of
- * them is the mistake worth naming here. It takes no floor - partitionOf()
- * and spread() below have no floor to take - and it holds at EVERY floor,
- * 0 included, because it is not a suppression rule: it is what stops two
- * independently-binned unit systems being overlaid into a finer reading
- * than either of them gives. #243 ruling 4 grouped it with the machinery
- * above, which is a grouping by where the code sits and not by what the
- * setting reaches (#371, the S10 review, finding F1).
+ * THE ONE-PARTITION RULE IS STILL HERE AND IT IS NOW ENFORCED BY A
+ * LOCK. Its subject never changes: a group must never be sliced two
+ * ways at once, because two independently-binned unit systems can be
+ * overlaid into a finer reading than either of them gives - two step
+ * functions on one axis, differenced at every interleaved edge.
+ *
+ * What changed is HOW it is held (owner ruling, the 2026-08-21 axis
+ * sitting, #396, and the ruling that followed the escalation on it).
+ * Bands are binned in the unit a member is LOOKING AT, so that the
+ * numbers under the axis are round in the unit they are read in - which
+ * means both systems really are their own grids, and the old shape (one
+ * partition reported under converted edges) is gone. In its place:
+ *
+ *   floor 0    both systems are served. There is nothing to difference
+ *              back to, because every band already draws its true
+ *              count: a reader keeping two documents learns what a
+ *              reader keeping one already knew.
+ *   floor > 0  systemFor() below LOCKS the answer to a single system,
+ *              read from the same settings object the floor arrives
+ *              through, whatever the ask says. One slicing exists, so
+ *              there is no second grid to overlay - the protection is
+ *              structural rather than a rule about what a caller may
+ *              request.
+ *
+ * The lock is therefore a suppression-machinery rule after all, which
+ * is the opposite of what #371's finding F1 concluded about the shape
+ * that stood here - and correctly so of THAT shape, which took no floor
+ * at all. tests/charts-aggregate.test.mjs runs the overlay attack as an
+ * instrument rather than describing it: it recovers sub-floor cells
+ * from two answers computed under two different locks, then turns the
+ * same instrument on the pair a caller can actually obtain inside one
+ * deployment and finds nothing.
  *
  * THE FLOOR ARRIVES THROUGH ONE SEAM AND THE WIRE IS NOT IT.
  * aggregate()'s fourth argument is a SETTINGS OBJECT read on the server
- * side; floorOf() below is the only thing that interprets it, and it
- * takes a whole non-negative number or falls back to the default. 0.9-M3's
- * Settings page fills that object - server/worker.js's CHART_SETTINGS is
- * the single call site it edits. Nothing a caller sends can reach it:
- * askFor() refuses a query parameter it does not know rather than
- * ignoring one, so `?floor=1` is a refusal a caller can see. The shape
- * this deliberately does NOT copy is the pre-0.9 dashboard's
- * `floor = identify ? 0 : MIN_CELL` - a caller-chosen flag on the wire
- * that turned suppression off wholesale.
+ * side; floorOf() below is the only thing that interprets `floor`, and
+ * it takes a whole non-negative number or falls back to the default.
+ * lockedSystem() reads the second setting the same object carries -
+ * which unit system a floor-protected view is served in - by the same
+ * rule: a name the spec offers, or the default. 0.9-M3's Settings page
+ * fills that object and carries the two side by side, because they are
+ * one decision; server/worker.js's CHART_SETTINGS is the single call
+ * site it edits. Nothing a caller sends can reach either: askFor()
+ * refuses a query parameter it does not know rather than ignoring one,
+ * so `?floor=1` is a refusal a caller can see, and the `units`
+ * parameter it DOES accept is overridden by the lock rather than
+ * honored. The shape this deliberately does NOT copy is the pre-0.9
+ * dashboard's `floor = identify ? 0 : MIN_CELL` - a caller-chosen flag
+ * on the wire that turned suppression off wholesale.
  *
  * THE FLOOR IS APPLIED BEFORE ANYTHING LEAVES. Every exported function
  * that touches a group returns output the floor has already reduced, so
@@ -53,14 +82,46 @@
  * is what makes raising the setting a one-line change rather than a
  * rewrite.
  *
- * WHAT THE ANSWER CARRIES, since #371 reshaped it. This is the RESPONSE
- * CONTRACT, stated whole here rather than only inside the functions that
- * build it: the page's builder reads this header, and a shape they have
- * to reconstruct from suppressBins() and a spec comment is a shape they
- * will get wrong (#371, the S10 review, finding F3).
+ * WHAT THE ANSWER CARRIES, reshaped by #371 and again by #396. This is
+ * the RESPONSE CONTRACT, stated whole here rather than only inside the
+ * functions that build it: the page's builder reads this header, and a
+ * shape they have to reconstruct from suppressBins() and a spec comment
+ * is a shape they will get wrong (#371, the S10 review, finding F3).
+ *
+ *   ONE ANSWER IS IN ONE UNIT SYSTEM AND CARRIES NO OTHER READING OF
+ *   ITSELF. Every number below - a band edge, a trend average, a self
+ *   point - is a plain number in the unit `units` names, never a table
+ *   keyed by unit system. The system rides the ASK (`units=metric`,
+ *   `units=imperial`, or absent for the spec's default), so switching
+ *   units is a fresh question rather than a different key of the same
+ *   document, and the page NEVER re-bins: every drawn number is one of
+ *   these, verbatim, index for index. A raised floor overrides the ask
+ *   and serves the locked system instead - see the one-partition
+ *   paragraph above.
+ *
+ *   units          `{ system, unit, locked }` on a drawn answer, null
+ *                  on one that draws nothing. `system` is the system
+ *                  this answer is expressed in - the ask's, or the
+ *                  lock's. `unit` is what its axis is labeled in, and
+ *                  is null for a unitless measure (a computed BMI, a
+ *                  plain count). `locked` is true when a raised floor
+ *                  chose the system rather than the caller, which is
+ *                  what lets a page disable its units toggle and say
+ *                  why instead of leaving a control that cannot move.
  *
  *   distribution   fixed bands over the field spec's own min, max and
- *                  bin width. Categories are never bands.
+ *                  bin width, IN THE UNIT ABOVE. Categories are never
+ *                  bands.
+ *
+ *                  BAND EDGES ARE MULTIPLES OF THE BAND WIDTH, measured
+ *                  from that unit's own `anchor` in
+ *                  apps/web/site.config.js - and the spec's outer
+ *                  bounds are SNAPPED OUTWARD onto the same grid before
+ *                  any band is built. Outward, so the drawn axis still
+ *                  covers every value the spec's bounds admit. This is
+ *                  what lets a page put round numbers under the axis
+ *                  without inventing one: every tick it paints is an
+ *                  edge that arrived here (owner ruling 3, #396).
  *
  *                  EVERY BAND THE SPEC ASKS FOR IS PRESENT, THE EMPTY
  *                  ONES INCLUDED, each reading `count: 0` - THIS FILE'S
@@ -86,12 +147,10 @@
  *                  the spec ceiling or far below it.
  *
  *                  THE TWO OUTER EDGES ARE THE SPEC'S OWN MINIMUM AND
- *                  MAXIMUM - `bins[0].from` and the last band's `to` -
- *                  and no edge is ever null: the open edge #351 needed
- *                  died with the data-derived edge that made it
- *                  necessary. Every edge is an object keyed by unit
- *                  system, one number per system, all of them the
- *                  partition's own edge converted.
+ *                  MAXIMUM SNAPPED ONTO THE GRID - `bins[0].from` and
+ *                  the last band's `to` - and no edge is ever null: the
+ *                  open edge #351 needed died with the data-derived
+ *                  edge that made it necessary.
  *
  *                  A view where nobody has a value for the measure
  *                  draws NOTHING - `distribution: null` and the honest
@@ -273,6 +332,53 @@ function floorOf(settings) {
 }
 
 /*
+ * The ONE unit system a floor-protected view is served in.
+ *
+ * A name the spec offers, or - when the setting names none - THE SPEC'S
+ * OWN DECLARED DEFAULT. `units.default` is the field that already
+ * decides what the form and the charts start in, so a view that falls
+ * back to it moves nobody: raising the floor changes how much is drawn,
+ * not which unit a member reads. Falling back to some other field, such
+ * as whichever system the spec happens to list first, would mean an
+ * admin typing a number into the floor silently re-expressed every
+ * chart in a system nobody chose - a change to what members see, made
+ * by a setting that is not about units at all.
+ *
+ * READ THE SAME WAY THE FLOOR IS, and for the same reason: a value the
+ * spec does not offer is a setting that failed to apply, not a reason to
+ * refuse the whole view. Answering on a grid nobody has would be worse
+ * than answering on the default one.
+ */
+function lockedSystem(site, settings) {
+  const offered = site.units.systems;
+  const held = settings && typeof settings === "object"
+    ? settings.units : null;
+  return offered.indexOf(held) !== -1 ? held : site.units.default;
+}
+
+/*
+ * Which system THIS answer is expressed in, and the whole of the lock.
+ *
+ * At a floor of 0 it is the caller's own question. Above it, the setting
+ * decides and the ask is overridden - SUBSTITUTED rather than refused,
+ * because a page whose member toggles units should redraw in the system
+ * the group is actually served in rather than meet an error for asking a
+ * question the spec allows. The answer says which system it got and that
+ * the choice was not the caller's (`units.locked`), so nothing about the
+ * substitution is silent.
+ *
+ * ONE FUNCTION DECIDES IT FOR THE WHOLE ANSWER. aggregate() and
+ * selfSeries() both call this rather than each reading the settings
+ * themselves, so a member's own line can never end up in a different
+ * unit from the group trend it is drawn over.
+ */
+function systemFor(ask, site, settings) {
+  return floorOf(settings) > 0
+    ? lockedSystem(site, settings)
+    : ask.system;
+}
+
+/*
  * What the fold is called - and the parenthetical is CONDITIONAL,
  * because it is a claim about the contents rather than part of the name.
  *
@@ -354,8 +460,15 @@ const CHOICE_LIST_SHAPES = { countries: /^[A-Z]{2}$/ };
  * half: `?floor=1` has to be a refusal a caller can see, not a silent
  * no-op that leaves them believing the floor moved. It also means a
  * parameter added by a later slice cannot arrive unvalidated.
+ *
+ * `units` joined the set at #396 and is the only one that a SETTING can
+ * override: the floor's lock decides the system when there is a floor,
+ * which is systemFor()'s job above and not this set's. What this set
+ * still guarantees about it is the same thing it guarantees about every
+ * other name here - the value is checked against the spec before
+ * anything reads it.
  */
-const ASK_PARAMS = new Set(["measure", "filter", "value", "self"]);
+const ASK_PARAMS = new Set(["measure", "filter", "value", "self", "units"]);
 
 /* An account id as server/worker.js writes one: SHA-256 HMAC, hex. */
 const ACCOUNT_ID = /^[0-9a-f]{64}$/;
@@ -394,52 +507,52 @@ function siteSpec(given) {
  * Which unit table the group is binned in, and it is ONE table for the
  * whole answer.
  *
- * DESIGN.md, "One partition, not two": both unit systems report the same
- * groups under converted edges, because two independently-binned
- * partitions were differenced back into sub-floor cells in 2899 of 3000
- * random groups. The partition is the spec's own default system, so the
- * axis a group actually reads is the one with round numbers on it, and
- * every other system's edges are that partition converted.
+ * DESIGN.md, "One partition, not two": a group is never sliced two ways
+ * at once, because two independently-binned unit systems can be
+ * overlaid into a finer reading than either gives - differenced back
+ * into sub-floor cells in 2899 of 3000 random groups when the floor was
+ * five. What holds that now is the LOCK (systemFor() above), not a
+ * single partition for everybody: `system` here is whichever system the
+ * answer is being built for, so the axis a member reads is round in the
+ * unit they are reading it in (owner ruling 4, #396).
+ *
+ * `anchor` rides along because a band edge is a multiple of `bin`
+ * measured from it, and gridOf() below needs both to build a single
+ * edge. A spec that names no anchor is anchored at zero - which is
+ * every shipped unit, and the only value that makes "25, 50, 75" fall
+ * out of a 25-wide band.
  *
  * A unitless measure - a computed BMI, a plain count - has one number
  * for every system, so its partition is nominal and its `unit` is null.
  */
-function partitionOf(measure, site) {
-  const system = site.units.default;
+function anchorOf(given) {
+  return typeof given === "number" && Number.isFinite(given) ? given : 0;
+}
+
+function partitionOf(measure, site, system) {
   if (!measure.unitful) {
     return { system: system, unit: null, band: null, bin: measure.bin,
-      store: null };
+      anchor: anchorOf(measure.anchor), store: null };
   }
   const chosen = measure.units[system];
   return { system: system, unit: chosen.unit, band: chosen.band,
-    bin: chosen.bin, store: chosen.store };
+    bin: chosen.bin, anchor: anchorOf(chosen.anchor),
+    store: chosen.store };
 }
 
 /*
- * One number, expressed in every system, from ONE number.
+ * One number as the answer states it: in the partition's own unit,
+ * rounded where a unit makes rounding meaningful.
  *
- * The conversion runs on the value the partition already fixed rather
- * than on the underlying data, so the systems cannot carry independent
- * information: rounding each system's own reading separately would leave
- * a reader two measurements of one quantity and a finer estimate than
- * either, which is the same overlay attack the partition rule closes,
- * arriving through the decimal point.
- *
- * The factor comes from apps/web/fields.js, which computes it from the
- * spec's own `per` numbers - so there is exactly one place a conversion
- * can be wrong and it is the spec's table.
+ * There is no conversion to do: the answer is in one system and carries
+ * no second reading of itself (#396 ruling 4), so a number leaves here
+ * in the unit it was read in. The rounding is one decimal place for a
+ * measured value and none for a unitless one, whose own compute()
+ * already rounded it to the places the spec asked for - rounding a
+ * second time there would be this file overriding the spec.
  */
-function spread(value, measure, site, part) {
-  const out = {};
-  for (const system of site.units.systems) {
-    if (!measure.unitful) {
-      out[system] = value;
-      continue;
-    }
-    const factor = api().factor(part.unit, measure.units[system].unit, site);
-    out[system] = factor === null ? null : round(value * factor, 1);
-  }
-  return out;
+function stated(value, measure) {
+  return measure.unitful ? round(value, 1) : value;
 }
 
 /* A source field's value in its kind's BASE unit, which is what a
@@ -608,8 +721,22 @@ function askFor(params, spec) {
     return fault("self is 1 or is left off - it names nobody.");
   }
 
+  /*
+   * WHICH UNIT SYSTEM THE ANSWER IS BINNED IN (owner ruling 4, #396).
+   * Closed exactly as every other parameter is: one of the spec's own
+   * systems, or left off for the spec's default. A typo is a refusal
+   * rather than a quiet fallback, because falling back would draw a
+   * member a grid they did not ask for and give them no way to tell.
+   * What this refusal discloses is the fork's own config file.
+   */
+  const asked = params.get("units");
+  if (asked !== null && site.units.systems.indexOf(asked) === -1) {
+    return fault("That is not a unit system this form offers.");
+  }
+
   return { ok: true, ask: { measure: measure, filter: filter,
-    self: self === "1" } };
+    self: self === "1",
+    system: asked === null ? site.units.default : asked } };
 }
 
 /* ------------------------------------------------------------------ */
@@ -636,17 +763,27 @@ const MAX_BANDS = 200;
  * left to open - and two groups drawn on one grid are comparable, which
  * is what the owner chose it for.
  *
- * WHERE THE BOUNDS COME FROM, in order, all of them the spec's own:
+ * THE BOUNDS ARE THE UNION OF EVERY BOUND THE KIND DECLARES, each one
+ * converted into the unit this answer is drawn in, and the widest pair
+ * wins. THE FORM IS WHAT THEY ARE A CLAIM ABOUT: a member may type in
+ * any unit the spec offers, so the values the form accepts are the union
+ * of every row's own limits, not the limits of the row that happens to
+ * match the axis. Reading one row alone is how a metric height axis came
+ * to start at 100 cm while the form accepted 3 ft - 91.44 cm - and the
+ * shortest member the form admits was clamped into a band reporting a
+ * height he does not have (fix wave 1, O2).
  *
- *   1. The chart unit's own `min`/`max`, when it carries them. Weight
- *      charts in pounds under the shipped spec and pounds are bounded in
- *      pounds, so the axis reads in the round numbers the spec wrote.
- *   2. The same system's ENTRY unit, converted. Imperial height charts
- *      in inches, which carry no bound, because a member of that system
- *      types feet and the spec bounds the box they look at - so the
- *      inches axis runs between the same three and eight feet.
- *   3. The kind's base unit, converted, for a system the spec bounds
- *      nowhere else.
+ * A ROW WITH NO BOUNDS CONTRIBUTES NOTHING rather than blocking the
+ * union: inches carry none, because imperial height is typed as feet
+ * with inches beside them and the bound belongs to the feet box a person
+ * is looking at. So the inch axis is drawn between the feet row and the
+ * centimeter row, both converted, and it covers a member of either
+ * system.
+ *
+ * WIDER THAN NECESSARY IS THE SAFE DIRECTION and the only one available.
+ * The union can only add empty bands at the ends; reading one row alone
+ * can only lose members into a band that is not theirs, and it does so
+ * silently, because a clamped value still counts and still sums.
  *
  * A unitless measure - a computed BMI, a plain count - has no unit table
  * to read, so its bounds are fields of the spec row itself.
@@ -674,50 +811,95 @@ function rangeOf(measure, part, site) {
     return { min: one.min, max: one.max };
   }
 
-  const kind = site.units.kinds[one.kind];
-  const table = kind.units;
-  const tried = [part.unit, kind.enter ? kind.enter[part.system] : null,
-    kind.base];
-  for (const name of tried) {
-    const entry = name ? table[name] : null;
-    if (!entry || typeof entry.min !== "number" ||
-        typeof entry.max !== "number") continue;
+  const table = site.units.kinds[one.kind].units;
+  let min = null;
+  let max = null;
+  for (const name of Object.keys(table)) {
+    const entry = table[name];
+    if (typeof entry.min !== "number" || typeof entry.max !== "number") {
+      continue;
+    }
     const rate = name === part.unit
       ? 1 : api().factor(name, part.unit, site);
     if (rate === null) continue;
-    const min = round(entry.min * rate, 4);
-    const max = round(entry.max * rate, 4);
-    if (max > min) return { min: min, max: max };
+    const low = round(entry.min * rate, 4);
+    const high = round(entry.max * rate, 4);
+    if (!(high > low)) continue;
+    if (min === null || low < min) min = low;
+    if (max === null || high > max) max = high;
   }
-  return complain("bounds no unit of its kind that converts to " +
-    part.unit);
+  if (min === null || !(max > min)) {
+    return complain("bounds no unit of its kind that converts to " +
+      part.unit);
+  }
+  return { min: min, max: max };
+}
+
+/*
+ * The spec's own bounds, SNAPPED OUTWARD onto the band grid.
+ *
+ * Owner ruling 3 (#396): band edges are multiples of the band width
+ * measured from the unit's own anchor, so that the numbers a page puts
+ * under the axis are round in the unit being read. The bounds have to
+ * land on that grid too, or the first and last edge would be the two
+ * numbers the grid is NOT made of - which is exactly where 44, 64, 84
+ * came from.
+ *
+ * OUTWARD IN BOTH DIRECTIONS, never inward. The range this is handed is
+ * rangeOf()'s union - every value the form accepts in any unit it
+ * offers, converted - so rounding either bound in would leave a
+ * form-valid member outside the axis and piled into an end band, the
+ * same defect the derived BMI range exists to prevent, arriving through
+ * the snap instead of through a hand-picked cap. That the range is the
+ * UNION is what makes this sentence true rather than nearly true: over
+ * one row's own limits it would only cover the members who typed in
+ * that row's unit. Outward costs at most one empty band at each end and
+ * costs nobody their own band.
+ *
+ * The division is rounded to nine places before the floor and the
+ * ceiling read it: a bound that sits exactly on the grid can compute to
+ * 4.999999999 in binary floating point, and a floor() over that would
+ * push the axis a whole band wider than the spec asked for.
+ */
+function snapToGrid(range, width, anchor) {
+  const steps = (value) => round((value - anchor) / width, 9);
+  return {
+    min: round(anchor + Math.floor(steps(range.min)) * width, 4),
+    max: round(anchor + Math.ceil(steps(range.max)) * width, 4),
+  };
 }
 
 /*
  * The spec's own bands, empty, in the partition's unit.
  *
- * Anchored at the range's minimum rather than at a multiple of the width,
- * because the minimum is what the spec actually wrote and a grid that
- * started somewhere else would be this file inventing an edge again. The
- * last band is CLIPPED to the maximum rather than overshooting it, so
- * the two outer edges of the drawn axis are exactly the two numbers in
- * the spec.
+ * Every band is exactly one width wide and every edge is a multiple of
+ * that width from the anchor - which is only true because the range
+ * arrives already snapped (snapToGrid() above). The last band is not
+ * clipped any more: there is nothing to clip it to, since the maximum is
+ * itself on the grid.
+ *
+ * EACH EDGE IS COMPUTED FROM THE MINIMUM RATHER THAN ACCUMULATED. Adding
+ * the width repeatedly drifts in binary floating point, and a drifted
+ * edge is a number the page would print as an axis label - "174.99999"
+ * under a bar. Computing `min + i * width` keeps every edge exact and
+ * makes each band's `to` byte-identical to the next band's `from`, which
+ * is what lets a page read the whole axis as one list of edges.
  */
 function gridOf(range, width) {
   if (!(width > 0)) {
     throw new Error("A charted measure needs a bin width in the spec, " +
       "and this one has none - there is no grid without it.");
   }
-  if ((range.max - range.min) / width > MAX_BANDS) {
+  const count = Math.round((range.max - range.min) / width);
+  if (count > MAX_BANDS) {
     throw new Error("The spec asks for more than " + MAX_BANDS +
       " bands between " + range.min + " and " + range.max +
       ": widen `bin`, or narrow the range.");
   }
   const bins = [];
-  for (let from = range.min; from < range.max - 1e-9;
-    from = round(from + width, 4)) {
-    bins.push({ from: from, to: round(Math.min(from + width, range.max), 4),
-      count: 0 });
+  for (let i = 0; i < count; i += 1) {
+    bins.push({ from: round(range.min + i * width, 4),
+      to: round(range.min + (i + 1) * width, 4), count: 0 });
   }
   return bins;
 }
@@ -1004,13 +1186,18 @@ function matches(record, filter) {
   return heldValues(filter.measure, record).indexOf(filter.value) !== -1;
 }
 
-/* The unit each system labels its axis in. Config, not data. */
-function unitsFor(measure, site) {
-  const out = {};
-  for (const system of site.units.systems) {
-    out[system] = { unit: measure.unitful ? measure.units[system].unit : null };
-  }
-  return out;
+/*
+ * Which system this answer is in, what its axis is labeled in, and
+ * whether the caller got to choose. Config, not data - the only number
+ * near it is the floor, which every answer already reports.
+ *
+ * `locked` is the page's whole instruction: a members' page that hides
+ * the flag would leave a units toggle that silently does nothing, and a
+ * member pressing it twice would conclude the page is broken rather
+ * than that the group's figures are only served one way.
+ */
+function unitsFor(part, locked) {
+  return { system: part.system, unit: part.unit, locked: locked };
 }
 
 /*
@@ -1029,7 +1216,8 @@ function unitsFor(measure, site) {
  * answered" in a shape that looks like an answer.
  */
 function binsOf(people, measure, site, part, floor) {
-  const range = rangeOf(measure, part, site);
+  const range = snapToGrid(rangeOf(measure, part, site), part.bin,
+    part.anchor);
   const bins = gridOf(range, part.bin);
 
   const values = [];
@@ -1047,9 +1235,7 @@ function binsOf(people, measure, site, part, floor) {
     kind: "bins",
     partition: { system: part.system, unit: part.unit, band: part.band },
     bins: merged.map((bin) => ({
-      count: bin.count,
-      from: spread(bin.from, measure, site, part),
-      to: spread(bin.to, measure, site, part),
+      count: bin.count, from: bin.from, to: bin.to,
     })),
   };
 }
@@ -1216,7 +1402,7 @@ function trendOf(rows, accounts, measure, site, part, floor) {
       /* The line is the mean and it is called "average" - DESIGN.md,
          "Charts": no statistics vocabulary anywhere on the page, and the
          name a route gives a field is what a page ends up printing. */
-      average: spread(round(total / values.length, 1), measure, site, part),
+      average: stated(round(total / values.length, 1), measure),
     });
   }
   return { points: points };
@@ -1255,7 +1441,8 @@ function trendOf(rows, accounts, measure, site, part, floor) {
 function aggregate(rows, ask, spec, settings) {
   const site = siteSpec(spec);
   const floor = floorOf(settings);
-  const part = partitionOf(ask.measure, site);
+  const system = systemFor(ask, site, settings);
+  const part = partitionOf(ask.measure, site, system);
 
   const people = [];
   const accounts = new Set();
@@ -1276,7 +1463,7 @@ function aggregate(rows, ask, spec, settings) {
     floor: floor,
     enough: true,
     note: null,
-    units: unitsFor(ask.measure, site),
+    units: unitsFor(part, floor > 0),
     trend: trendOf(rows, accounts, ask.measure, site, part, floor),
     distribution: distribution,
     groups: makeupOf(people, site, floor),
@@ -1309,14 +1496,23 @@ function aggregate(rows, ask, spec, settings) {
  * it by the group filter would buy no privacy and would make their line
  * appear and disappear as they changed the group they were comparing
  * themselves to.
+ *
+ * IT TAKES THE SETTINGS ANYWAY, AND NOT FOR THE FLOOR. This line is
+ * drawn OVER the group trend on one pair of axes, so it has to be in
+ * the same unit the rest of the answer is - which the settings decide
+ * whenever a floor is set (systemFor()). A member's own line in pounds
+ * over a group line in kilograms would be two measurements sharing one
+ * scale, which is a worse chart than no overlay at all. Nothing here
+ * reads `floor` itself: their data, their line.
  */
-function selfSeries(rows, accountId, ask, spec) {
+function selfSeries(rows, accountId, ask, spec, settings) {
   if (!ask.self) return null;
   if (typeof accountId !== "string" || !ACCOUNT_ID.test(accountId)) {
     throw new Error("the overlay's identity is not an account-id HMAC");
   }
   const site = siteSpec(spec);
-  const part = partitionOf(ask.measure, site);
+  const part = partitionOf(ask.measure, site,
+    systemFor(ask, site, settings));
   const mine = rows.filter((row) => row.accountId === accountId)
     .sort((a, b) => a.receivedAt < b.receivedAt ? -1
       : a.receivedAt > b.receivedAt ? 1 : a.id - b.id);
@@ -1325,8 +1521,7 @@ function selfSeries(rows, accountId, ask, spec) {
   for (const row of mine) {
     const value = valueFor(ask.measure, row.record, site, part);
     if (value === null) continue;
-    points.push({ at: row.receivedAt,
-      value: spread(value, ask.measure, site, part) });
+    points.push({ at: row.receivedAt, value: stated(value, ask.measure) });
   }
   return { points: points };
 }

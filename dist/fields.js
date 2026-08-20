@@ -268,6 +268,12 @@
           unit: unit,
           store: entry.store,
           bin: entry.bin,
+           
+           
+           
+           
+           
+          anchor: entry.anchor,
           band: entry.band,
         };
       });
@@ -279,6 +285,7 @@
      
      
     measure.bin = one.bin;
+    measure.anchor = one.anchor;
 
     if (one.kind === "computed") {
       const derivation = DERIVATIONS[one.derivation];

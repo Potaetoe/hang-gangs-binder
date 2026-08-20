@@ -49,7 +49,7 @@ const F = globalThis.BinderFields;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
-const EXPECTED = 50;
+const EXPECTED = 51;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -178,9 +178,17 @@ check("a weight measure carries a unit per system",
   weight.units.metric.unit === "kg" && weight.units.imperial.unit === "lb");
 check("a weight measure carries the stored property each unit reads",
   weight.units.metric.store === "kg" && weight.units.imperial.store === "lb");
-check("a weight measure carries its histogram bands",
-  weight.units.metric.bin === 10 && weight.units.imperial.bin === 20 &&
-  weight.units.imperial.band === "20 lb bands");
+// The band width and its anchor are per unit, and both ride the measure
+// - since 0.9-M2-S17 (#396) the charts bin in the unit VIEWED, on that
+// unit's own nice grid, so a measure that carried only one system's
+// width could not answer for the other.
+check("a weight measure carries its histogram bands, per unit system",
+  weight.units.metric.bin === 10 && weight.units.imperial.bin === 25 &&
+  weight.units.imperial.band === "25 lb bands");
+check("a weight measure carries each unit's own grid anchor, so band " +
+  "edges are multiples of the width rather than of wherever the spec's " +
+  "minimum happens to sit",
+  weight.units.metric.anchor === 0 && weight.units.imperial.anchor === 0);
 
 // Nobody says their height in inches and no histogram can be drawn in
 // feet-and-inches, so the unit typed and the unit charted differ.
@@ -192,8 +200,8 @@ check("a length measure charts total inches where the form takes feet",
 const bmi = F.measure("bmi");
 check("a computed measure names what it is computed from",
   same(bmi.from, ["weight", "height"]) && bmi.unitful === false);
-check("a computed measure carries its rounding and its band",
-  bmi.places === 1 && bmi.bin === 5);
+check("a computed measure carries its rounding, its band and its anchor",
+  bmi.places === 1 && bmi.bin === 5 && bmi.anchor === 0);
 // Described AND executable. A measure list that only describes BMI
 // leaves whoever draws the chart to write the arithmetic a second
 // time, and that copy is the one that drifts.

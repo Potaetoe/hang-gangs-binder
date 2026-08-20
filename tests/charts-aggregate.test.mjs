@@ -24,9 +24,13 @@
  *      survives here, parameterized on the raised floor rather than
  *      deleted, because the way back is a number and a number nobody
  *      proves is not a way back. The one-partition arms in section 3b
- *      are NOT part of that world: that rule obeys no floor and holds at
- *      every one, which is why its arms run at both (#371, the S10
- *      review, finding F1).
+ *      belong to BOTH worlds now and the split runs through them: at the
+ *      shipped floor of 0 both unit systems are served, each on its own
+ *      nice grid, and there is nothing to difference back to because
+ *      every band already draws its true count; at a raised floor the
+ *      route serves ONE locked system whatever the caller asks for, so
+ *      a second slicing of the same people does not exist to be
+ *      overlaid (owner ruling, the 2026-08-21 axis sitting, #396).
  *
  * THE FLOOR REACHES THIS FILE THROUGH THE SETTINGS SEAM AND NOWHERE
  * ELSE. aggregate()'s fourth argument is a settings object; 0.9-M3's
@@ -63,9 +67,11 @@
  *      rule's subject and the distinction is load-bearing: it lists the
  *      SPEC's own values with counts, which is a chart, where the echo
  *      would be handing back what a caller asked about the group.
- *   6. One partition, binned once in the spec's default system and
- *      reported under converted edges; no data-derived edge anywhere;
- *      no-store.
+ *   6. One partition per floor-protected view. Bands are binned in the
+ *      unit the caller is LOOKING AT, on that unit's own nice grid; a
+ *      raised floor LOCKS the answer to one system, so no group is ever
+ *      sliced two ways while suppression is doing work. No data-derived
+ *      edge anywhere; no-store.
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -333,17 +339,99 @@ const atShippedFloor = (rows, query, spec) =>
 const atRaisedFloor = (rows, query, spec) =>
   agg.aggregate(rows, ask(query, spec), spec, raised);
 
-/* The spec's own grid for the default partition, computed here from the
-   config rather than from the answer - the whole claim of a fixed band
-   is that it does not come from the data, and an arm that read the
-   edges off the answer could not tell. */
+/*
+ * The spec's own grid for one unit system, computed here from the config
+ * rather than from the answer - the whole claim of a fixed band is that
+ * it does not come from the data, and an arm that read the edges off the
+ * answer could not tell.
+ *
+ * THE SNAP IS PART OF THE SPEC (owner ruling 3, the 2026-08-21 axis
+ * sitting, #396): a band edge is a multiple of the band's own width
+ * measured from the unit's own anchor, and the outer bounds are rounded
+ * OUTWARD onto that same grid.
+ *
+ * AND THE BOUNDS ARE THE UNION OF EVERY SYSTEM'S, CONVERTED (fix wave 1,
+ * O2). "Outward so no value the form accepts is left off the axis" is a
+ * claim about the FORM, and the form accepts a value typed in any unit
+ * it offers: somebody typing 3 ft is 91.44 cm, below the 100 cm the
+ * metric row declares, and an axis built from the metric row alone
+ * clamps him into a band that is not his. So each system's declared
+ * bounds are converted into the axis unit and the widest pair wins,
+ * before the snap runs. These helpers are the arm's own copy of that
+ * arithmetic, written out here rather than imported, so this file does
+ * not check the grid with the code that builds it.
+ */
 const SITE = globalThis.BINDER_SITE;
-const WEIGHT_UNIT = SITE.units.kinds.weight.units[
-  SITE.units.kinds.weight.chart[SITE.units.default]];
-const W_MIN = WEIGHT_UNIT.min;
-const W_MAX = WEIGHT_UNIT.max;
+const chartUnitName = (kindName, system) =>
+  SITE.units.kinds[kindName].chart[system];
+const chartUnit = (kindName, system) =>
+  SITE.units.kinds[kindName].units[chartUnitName(kindName, system)];
+const snapDown = (value, width, anchor) =>
+  anchor + Math.floor((value - anchor) / width) * width;
+const snapUp = (value, width, anchor) =>
+  anchor + Math.ceil((value - anchor) / width) * width;
+
+/* Every bound the form declares for one kind, in one of its units. The
+   ratio is the spec's own two `per` numbers divided, which is the one
+   conversion this project has - written out here rather than called, so
+   the arm does not convert with the code it is checking. */
+function formBoundsIn(kindName, unitName) {
+  const table = SITE.units.kinds[kindName].units;
+  const target = table[unitName];
+  let low = null;
+  let high = null;
+  for (const name of Object.keys(table)) {
+    const entry = table[name];
+    if (typeof entry.min !== "number" || typeof entry.max !== "number") {
+      continue;
+    }
+    const rate = entry.per / target.per;
+    const a = entry.min * rate;
+    const b = entry.max * rate;
+    if (low === null || a < low) low = a;
+    if (high === null || b > high) high = b;
+  }
+  return { min: low, max: high };
+}
+
+function gridIn(kindName, system) {
+  const unit = chartUnit(kindName, system);
+  const form = formBoundsIn(kindName, chartUnitName(kindName, system));
+  const min = snapDown(form.min, unit.bin, unit.anchor);
+  const max = snapUp(form.max, unit.bin, unit.anchor);
+  return { unit: unit, form: form, min: min, max: max,
+    bands: Math.round((max - min) / unit.bin) };
+}
+
+/* The grid every SHIPPED-floor answer about weight is drawn on, in the
+   system the spec starts in. */
+const W = gridIn("weight", SITE.units.default);
+const WEIGHT_UNIT = W.unit;
 const W_BIN = WEIGHT_UNIT.bin;
-const W_BANDS = Math.ceil((W_MAX - W_MIN) / W_BIN);
+const W_ANCHOR = WEIGHT_UNIT.anchor;
+const W_MIN = W.min;
+const W_MAX = W.max;
+const W_BANDS = W.bands;
+
+/*
+ * The grid a RAISED-floor answer is drawn on. The floor LOCKS the whole
+ * answer to a single unit system (owner ruling, the 2026-08-21 axis
+ * sitting's escalation, #396), and an unset lock is the spec's OWN
+ * DECLARED DEFAULT - `units.default`, the field that already governs
+ * what the form and the charts start in (fix wave 1, F1). Reading a
+ * different field here would mean raising the floor silently moved every
+ * member to a system nobody chose.
+ *
+ * These constants are computed from `units.default` and the ones above
+ * from the same field, so today they agree - which is the point of
+ * writing them separately rather than aliasing: they are two reads of
+ * the spec that a fork can make differ, and an implementation reading
+ * the wrong field reddens against whichever one it got wrong.
+ */
+const L = gridIn("weight", SITE.units.default);
+const L_MIN = L.min;
+const L_MAX = L.max;
+
 const lbOf = (kg) => kg / 0.45359237;
 const bandIndex = (kg) =>
   Math.min(W_BANDS - 1, Math.max(0, Math.floor((lbOf(kg) - W_MIN) / W_BIN)));
@@ -387,13 +475,36 @@ check("the answer reports the floor it applied, both ways",
   atRaisedFloor(evenGroup(RAISED), "measure=weight").floor === RAISED);
 
 /* Mandate 2, unchanged by the ruling: the setting is read server-side
-   and the wire cannot name it. */
-for (const attempt of ["floor", "min_cell", "minCell", "identify", "units",
+   and the wire cannot name it. `units` left this list at #396 - it is a
+   parameter of the view now (section 3b) - so the arms that keep it
+   honest are its own allowlist checks below, not this one. */
+for (const attempt of ["floor", "min_cell", "minCell", "identify",
   "system", "basis", "settings"]) {
   const refused = askFor("measure=weight&" + attempt + "=1");
   check("no floor input: an unknown query parameter (" + attempt + ") is " +
     "refused rather than ignored", refused.ok === false);
 }
+
+/*
+ * THE UNIT PARAMETER IS CLOSED, exactly as every other one is (owner
+ * ruling 4, #396). It names one of the spec's own two systems or it is
+ * left off; anything else is a refusal a caller can see, so a typo can
+ * never quietly fall back to a partition the caller did not ask for.
+ * Refusing here discloses only what the fork's own config file already
+ * says, which is the same standard every refusal in askFor() meets.
+ */
+for (const system of SITE.units.systems) {
+  check("units: `units=" + system + "` is a question this view answers",
+    askFor("measure=weight&units=" + system).ok === true);
+}
+for (const junk of ["Imperial", "metrics", "", "1", "kg"]) {
+  check("units: `units=" + JSON.stringify(junk) + "` is refused rather " +
+    "than falling back to a partition nobody asked for",
+    askFor("measure=weight&units=" + junk).ok === false);
+}
+check("units: left off, the ask reads the spec's own default system - " +
+  "the one the form and the charts start in",
+  ask("measure=weight").system === SITE.units.default);
 
 /* ================================================================== */
 /* 1. Floor 0 draws everything, and that is the ruling.                 */
@@ -418,10 +529,12 @@ check("floor 0: the band that member sits in carries the true count of " +
 check("floor 0: every other band is present and reads zero - an empty " +
   "band is an empty slot, never a hole in the axis",
   soloBins.filter((b) => b.count === 0).length === W_BANDS - 1);
-check("floor 0: their month draws with its true average over one person",
+check("floor 0: their month draws with its true average over one person, " +
+  "in the unit this answer is expressed in and no other (#396)",
   pointsOf(solo).length === 1 &&
   pointsOf(solo)[0].people === 1 &&
-  Math.abs(pointsOf(solo)[0].average.metric - 100) < 0.6);
+  typeof pointsOf(solo)[0].average === "number" &&
+  Math.abs(pointsOf(solo)[0].average - lbOf(100)) < 0.6);
 check("floor 0: the group makeup counts that one member exactly, and " +
   "lists every other value of the spec at zero",
   countIn(groupBlock(solo, "gender"), "male") === 1 &&
@@ -502,7 +615,7 @@ check("unique by latest: two entries at the same instant break the tie " +
     .filter((c) => c.count > 0).map((c) => c.value).join() === "female");
 
 /* ================================================================== */
-/* 3. Fixed bands: the edges come from the spec and never from the data.*/
+/* 3. Fixed bands on a NICE grid, in the unit the answer is read in.    */
 /*                                                                     */
 /* Owner ruling 5 (#243): "Edges come from the field spec and never    */
 /* move or merge." This kills the open outer edge that #351's fix wave */
@@ -511,6 +624,13 @@ check("unique by latest: two entries at the same instant break the tie " +
 /* instead. A spec edge derives from nobody, so there is nothing left  */
 /* to open: comparability is what the owner chose, and it is only      */
 /* comparable if two groups get the same axis.                         */
+/*                                                                     */
+/* Owner ruling 3 (#396, the 2026-08-21 axis sitting) ADDS the shape   */
+/* of that grid: a band is a NICE width in the unit viewed, its edges  */
+/* are multiples of that width from the unit's own anchor, and the     */
+/* spec's outer bounds snap OUTWARD onto the same grid. That is what   */
+/* lets the page put round numbers on the axis without inventing one:  */
+/* every tick it paints is an edge this file emitted.                  */
 
 const lightCrowd = [];
 const heavyCrowd = [];
@@ -533,33 +653,71 @@ check("fixed bands: only the counts differ between them",
   JSON.stringify(drawnOf(light).bins.map((b) => b.count)) !==
     JSON.stringify(drawnOf(heavy).bins.map((b) => b.count)));
 
-const partitionSystem = drawnOf(light).partition.system;
 const lightBins = drawnOf(light).bins;
-check("fixed bands: the first edge is the spec's own minimum and the " +
-  "last is the spec's own maximum - the outer edges are configuration",
-  lightBins[0].from[partitionSystem] === W_MIN &&
-  lightBins[lightBins.length - 1].to[partitionSystem] === W_MAX);
-check("fixed bands: no edge is open - the null edge #351 needed is gone " +
-  "with the data-derived edge that made it necessary (F2)",
-  lightBins.every((b) => Object.keys(b.from).every((s) =>
-    typeof b.from[s] === "number" && typeof b.to[s] === "number")));
-check("fixed bands: every inner edge is the spec's minimum plus a whole " +
-  "number of the spec's own band widths",
-  lightBins.slice(1).every((b) =>
-    Math.abs((b.from[partitionSystem] - W_MIN) / W_BIN -
-      Math.round((b.from[partitionSystem] - W_MIN) / W_BIN)) < 1e-9));
-check("fixed bands: the grid spans the spec's whole range at the spec's " +
-  "own width", lightBins.length === W_BANDS);
+check("fixed bands: an edge is ONE number, in the unit this answer is " +
+  "expressed in - not a table keyed by unit system (#396 ruling 4: one " +
+  "answer, one system)",
+  lightBins.every((b) => typeof b.from === "number" &&
+    typeof b.to === "number"));
+check("fixed bands: the first edge is the spec's own minimum snapped " +
+  "onto the grid and the last is the spec's own maximum snapped onto " +
+  "it - the outer edges are configuration",
+  lightBins[0].from === W_MIN &&
+  lightBins[lightBins.length - 1].to === W_MAX);
+check("fixed bands: the snap runs OUTWARD, so the drawn axis covers " +
+  "every value the FORM admits in any unit it offers and clips nobody " +
+  "(#396 ruling 3, widened to the union at fix wave 1, O2)",
+  W_MIN <= W.form.min && W_MAX >= W.form.max &&
+  W_MIN > W.form.min - W_BIN && W_MAX < W.form.max + W_BIN);
+check("fixed bands: the axis covers the bounds of EVERY system, not " +
+  "just the one it is drawn in - a member typing the other system's " +
+  "extreme is inside the axis rather than clamped into an end band",
+  SITE.units.systems.every((system) => {
+    const other = chartUnit("weight", system);
+    if (typeof other.min !== "number") return true;
+    const rate = other.per / WEIGHT_UNIT.per;
+    return W_MIN <= other.min * rate + 1e-9 &&
+      W_MAX >= other.max * rate - 1e-9;
+  }));
+check("fixed bands: EVERY edge is a whole number of band widths from " +
+  "the unit's own anchor - the property that makes a round-number axis " +
+  "possible at all (#396 ruling 3)",
+  lightBins.every((b) =>
+    Math.abs((b.from - W_ANCHOR) / W_BIN -
+      Math.round((b.from - W_ANCHOR) / W_BIN)) < 1e-9 &&
+    Math.abs((b.to - W_ANCHOR) / W_BIN -
+      Math.round((b.to - W_ANCHOR) / W_BIN)) < 1e-9));
+check("fixed bands: the grid spans the spec's whole snapped range at " +
+  "the spec's own width", lightBins.length === W_BANDS);
 check("fixed bands: no band is wider than the spec's band width - " +
   "nothing merges at floor 0 (ruling 5)",
-  lightBins.every((b) =>
-    b.to[partitionSystem] - b.from[partitionSystem] <= W_BIN + 1e-9));
+  lightBins.every((b) => b.to - b.from <= W_BIN + 1e-9));
 check("fixed bands: the edges are contiguous, so no member falls " +
   "between two bands",
-  lightBins.every((b, i, all) =>
-    i === 0 || b.from[partitionSystem] === all[i - 1].to[partitionSystem]));
+  lightBins.every((b, i, all) => i === 0 || b.from === all[i - 1].to));
 check("fixed bands: the drawn counts sum to the people with a value",
   lightBins.reduce((n, b) => n + b.count, 0) === lightCrowd.length);
+
+/*
+ * THE OWNER'S OWN DEFECT SCENARIO, IN NUMBERS (#396's opening): a lone
+ * member near 500 lb. On the retired 44-anchored, 20-wide imperial grid
+ * she landed in 504-524 and the page captioned that band "514"; on the
+ * nice grid her band is 500-525, and both of its edges are numbers the
+ * axis really prints. The arm asks for the band by its edges rather than
+ * by an index, so a grid that moved for any other reason reddens here.
+ */
+const loneHeavy = evenGroup(3).concat([
+  row(acct(70), "2026-08-01T00:00:00.000Z",
+    record(505 * 0.45359237, 175, "female", ["gainer"], "US")),
+]);
+const lone = atShippedFloor(loneHeavy, "measure=weight");
+const loneBand = drawnOf(lone).bins
+  .filter((b) => b.count === 1 && b.from >= 400)[0];
+check("#396's own defect scenario: a lone member near 500 lb draws in " +
+  "a band whose edges are round numbers a reader can name - 500 to 525, " +
+  "never 504 to 524",
+  lone.enough === true && loneBand !== undefined &&
+  loneBand.from === 500 && loneBand.to === 525);
 
 /* A record carrying a value the FORM would have refused still belongs to
    somebody, so it lands in the outer band rather than falling out of the
@@ -579,83 +737,292 @@ check("fixed bands: a value beyond the spec's own range lands in the " +
   drawnOf(outside).bins[W_BANDS - 1].count === 1);
 
 /* A measure whose chart unit carries no bound of its own: imperial
-   height is charted in inches and the spec bounds FEET, which is the
-   unit a member of that system types into. The grid still comes from the
-   spec - converted through the spec's own ratio, never guessed. */
-const heights = atShippedFloor(evenGroup(6), "measure=height");
+   height is charted in inches and the spec bounds FEET and CENTIMETERS,
+   neither of which is that unit. The grid still comes from the spec -
+   every bounded unit of the kind converted through the spec's own
+   ratios, the widest pair taken, then snapped onto the inch grid, never
+   guessed. */
+const HEIGHT_IMPERIAL = gridIn("length", "imperial");
+const heights = atShippedFloor(evenGroup(6), "measure=height&units=imperial");
 const heightBins = drawnOf(heights).bins;
-const FT = SITE.units.kinds.length.units.ft;
-check("fixed bands: a chart unit the spec gives no bound falls back to " +
-  "the same system's own entry unit, converted - imperial height is " +
-  "binned in inches between the spec's feet",
+check("fixed bands: a chart unit the spec gives no bound of its own is " +
+  "drawn between every OTHER unit's bounds, converted - imperial height " +
+  "is binned in inches over the union of the spec's feet and its " +
+  "centimeters",
   heights.enough === true &&
-  Math.abs(heightBins[0].from.imperial - FT.min * 12) < 1e-6 &&
-  Math.abs(heightBins[heightBins.length - 1].to.imperial -
-    FT.max * 12) < 1e-6);
+  heightBins[0].from === HEIGHT_IMPERIAL.min &&
+  heightBins[heightBins.length - 1].to === HEIGHT_IMPERIAL.max &&
+  heightBins.length === HEIGHT_IMPERIAL.bands);
+
+/*
+ * O2's OWN MEMBER, and the reason the union is not a tidiness rule. The
+ * form accepts 3 ft, which is 91.44 cm - below the 100 cm the metric row
+ * declares. On an axis built from the metric row alone he is clamped
+ * into the 100-105 band, which is not his: a shortest-possible member
+ * reported as somebody else's height. The arm asks for the band that
+ * CONTAINS his number rather than for an index, so a clamped answer has
+ * no band to find.
+ */
+const THREE_FEET_CM = 3 * SITE.units.kinds.length.units.ft.per;
+const shortRows = evenGroup(4).concat([
+  row(acct(60), "2026-08-01T00:00:00.000Z",
+    record(70, THREE_FEET_CM, "male", ["feeder"], "US")),
+]);
+const shortMetric = atShippedFloor(shortRows, "measure=height&units=metric");
+const hisBand = drawnOf(shortMetric).bins.filter((b) =>
+  b.from <= THREE_FEET_CM && b.to > THREE_FEET_CM)[0];
+check("O2: the shortest member the form accepts draws in the band his " +
+  "own number falls in on the METRIC axis - not clamped into a band " +
+  "that reports a height he does not have",
+  shortMetric.enough === true && hisBand !== undefined &&
+  hisBand.count === 1 && hisBand.from === 90 && hisBand.to === 95);
+check("O2: and the metric height axis therefore starts below three " +
+  "feet, snapped outward onto its own 5 cm grid",
+  drawnOf(shortMetric).bins[0].from <= THREE_FEET_CM &&
+  drawnOf(shortMetric).bins[0].from === gridIn("length", "metric").min);
+
+/*
+ * EVERY CHARTED MEASURE, IN EVERY SYSTEM THE SPEC OFFERS, ON ITS OWN
+ * UNIT'S GRID. The three arms above prove the property on weight; this
+ * sweep proves it is the RULE rather than one measure's luck, reading
+ * each unit's own width and anchor out of the spec and holding the real
+ * answer to them. A fork that adds a unit gets swept for free.
+ */
+function gridSpecOf(measureName, system) {
+  const field = SITE.fields.filter((one) => one.name === measureName)[0];
+  const kind = SITE.units.kinds[field.kind];
+  if (!kind) return { bin: field.bin, anchor: field.anchor };
+  const unit = kind.units[kind.chart[system]];
+  return { bin: unit.bin, anchor: unit.anchor };
+}
+
+const sweepRows = evenGroup(9);
+for (const measureName of ["weight", "height", "bmi"]) {
+  for (const system of SITE.units.systems) {
+    const answer = atShippedFloor(sweepRows,
+      "measure=" + measureName + "&units=" + system);
+    const grid = gridSpecOf(measureName, system);
+    const bins = drawnOf(answer).bins;
+    check("nice grid: " + measureName + " in " + system + " - every " +
+      "edge is a multiple of the " + grid.bin + "-wide band from the " +
+      "anchor the spec writes, and the bands are contiguous and whole",
+      answer.enough === true && bins.length > 0 &&
+      bins.every((b) => Math.abs((b.from - grid.anchor) / grid.bin -
+        Math.round((b.from - grid.anchor) / grid.bin)) < 1e-9) &&
+      bins.every((b) => Math.abs(b.to - b.from - grid.bin) < 1e-9) &&
+      bins.every((b, i, all) => i === 0 || b.from === all[i - 1].to));
+  }
+}
 
 /* ================================================================== */
-/* 3b. One partition, not two (mandate 6).                             */
+/* 3b. One partition per floor-protected view (mandate 6).             */
+/*                                                                     */
+/* Owner ruling 4 (#396) and the ruling that followed the escalation   */
+/* on it (2026-08-21, carried by Prime): bands are binned in the unit  */
+/* the member is LOOKING AT, unconditionally - and a RAISED FLOOR      */
+/* LOCKS the whole answer to one unit system, so a group is never      */
+/* sliced two ways while suppression is doing work. The protection the */
+/* retired "one partition, not two" rule bought survives structurally: */
+/* with one slicing in existence there is no second grid to overlay.   */
 
-const systems = Object.keys(light.units);
-check("one partition: every unit system reports the same bands",
-  systems.length > 1 &&
-  systems.every((s) => lightBins.every((b) =>
-    Object.prototype.hasOwnProperty.call(b.from, s) &&
-    Object.prototype.hasOwnProperty.call(b.to, s))));
-check("one partition: a band carries a single count under every " +
-  "system's edges, not one count per system",
-  lightBins.every((b) => typeof b.count === "number"));
-check("one partition: the partition names the system it was binned in " +
-  "and that system is the spec's default",
-  drawnOf(light).partition.system === SITE.units.default);
-
-{
-  const part = drawnOf(light).partition;
-  const off = lightBins.filter((bin) =>
-    !systems.every((system) => {
-      const unit = light.units[system].unit;
-      const factor = globalThis.BinderFields.factor(part.unit, unit);
-      return Math.abs(bin.from[system] -
-        bin.from[part.system] * factor) <= 0.06;
-    }));
-  check("one partition: every system's edges are the partition's edges " +
-    "converted through the spec's own `per` ratio - no second binning " +
-    "and no second constant", off.length === 0);
+const bothSystems = {};
+for (const system of SITE.units.systems) {
+  bothSystems[system] = atShippedFloor(lightCrowd, "measure=weight&units=" +
+    system);
 }
 
-/* The attack the rule exists for: overlay the two systems' edges and
-   look for an intersection nobody drew. Because the edges are one
-   partition converted, every metric edge is an imperial edge times a
-   constant - so no boundary of one system ever falls strictly inside a
-   band of the other. Run at the RAISED floor, where merging is live and
-   the drawn edges are a subset of the grid chosen per group: a fixed
-   grid alone could not fail this, and the merged case is the one that
-   could. */
-let splits = 0;
-let checked = 0;
-for (let trial = 0; trial < 60; trial += 1) {
-  const rows = [];
-  const people = 20 + Math.floor(Math.random() * 40);
-  for (let i = 0; i < people; i += 1) {
-    rows.push(row(acct(i), "2026-08-01T00:00:00.000Z",
-      record(60 + Math.random() * 140, 150 + Math.random() * 50,
-        i % 2 ? "female" : "male", ["feeder"], "US")));
-  }
-  const answer = atRaisedFloor(rows, "measure=weight");
-  if (!answer.enough) continue;
+check("floor 0: both unit systems are served, each one drawing and " +
+  "naming itself as the partition it was binned in",
+  SITE.units.systems.every((system) =>
+    bothSystems[system].enough === true &&
+    drawnOf(bothSystems[system]).partition.system === system &&
+    bothSystems[system].units.system === system));
+check("floor 0: the answer names ONE unit for its axis - the unit that " +
+  "system charts in, and no table of the others",
+  SITE.units.systems.every((system) =>
+    bothSystems[system].units.unit ===
+      SITE.units.kinds.weight.chart[system]));
+check("floor 0: the two systems really are binned INDEPENDENTLY - the " +
+  "grids differ in count and in edges, which is what makes each axis " +
+  "round in its own unit rather than a conversion of the other's",
+  drawnOf(bothSystems.metric).bins.length !==
+    drawnOf(bothSystems.imperial).bins.length);
+check("floor 0: independently binned or not, both answers describe the " +
+  "same people - the counts sum to the same group",
+  SITE.units.systems.every((system) =>
+    drawnOf(bothSystems[system]).bins.reduce((n, b) => n + b.count, 0) ===
+      lightCrowd.length));
+
+/*
+ * THE OVERLAY ATTACK, BUILT AS AN INSTRUMENT rather than described.
+ *
+ * Two grids over one group are two readings of one cumulative count. Put
+ * their edges on a common axis and every gap between consecutive edges
+ * gives up the number of people between them - which can be finer than
+ * either grid's own bands, and that is exactly the differencing the
+ * one-partition rule was written against (2899 of 3000 random groups,
+ * when the floor was five).
+ *
+ * `knownCumulative` reads one answer as the step function it is: at each
+ * band edge, how many people the answer says are below it. Every number
+ * in it is the answer's own; nothing here reads the corpus.
+ */
+const kgPer = (unit) => SITE.units.kinds.weight.units[unit].per;
+
+function knownCumulative(answer) {
+  const per = kgPer(answer.units.unit);
   const bins = drawnOf(answer).bins;
-  checked += 1;
+  const points = [{ x: bins[0].from * per, cum: 0 }];
+  let running = 0;
   for (const bin of bins) {
-    for (const other of bins) {
-      const asImperial = other.from.metric / 0.45359237;
-      if (asImperial > bin.from.imperial + 0.5 &&
-          asImperial < bin.to.imperial - 0.5) splits += 1;
-    }
+    running += bin.count;
+    points.push({ x: bin.to * per, cum: running });
   }
+  return points;
 }
-check("one partition: over " + checked + " random groups at the raised " +
-  "floor, no unit system's band boundary ever falls inside another " +
-  "system's band (mandate 6)", checked > 20 && splits === 0);
+
+/* Every count an overlay of two answers hands back: sort both step
+   functions onto one axis and difference each consecutive pair. A count
+   below the floor here is a cell the floor was supposed to have hidden,
+   recovered from two documents neither of which drew it. */
+function recoveredCounts(a, b) {
+  const points = a.concat(b).sort((p, q) => p.x - q.x);
+  const out = [];
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i].x - points[i - 1].x < 1e-6) continue;
+    out.push(points[i].cum - points[i - 1].cum);
+  }
+  return out;
+}
+
+const subFloor = (counts) =>
+  counts.filter((n) => n > 0 && n < RAISED).length;
+
+/*
+ * THE ATTACK, PROVEN LIVE. Two settings objects, each a legal one, each
+ * locking a DIFFERENT system - which is exactly the pair of documents an
+ * unlocked route would have handed one caller. The ask deliberately
+ * names the opposite system in both, so this is also the proof that the
+ * lock overrides the wire rather than agreeing with it by luck.
+ */
+const spreadOut = [];
+for (let i = 0; i < 34; i += 1) {
+  spreadOut.push(row(acct(i), "2026-08-01T00:00:00.000Z",
+    record(70 + i * 3, 170, i % 2 ? "female" : "male", ["feeder"], "US")));
+}
+const asMetric = agg.aggregate(spreadOut, ask("measure=weight&units=imperial"),
+  undefined, { floor: RAISED, units: "metric" });
+const asImperial = agg.aggregate(spreadOut, ask("measure=weight&units=metric"),
+  undefined, { floor: RAISED, units: "imperial" });
+
+check("the lock overrides the wire: an answer computed under a metric " +
+  "lock is metric however the caller asked, and the same for imperial",
+  asMetric.enough === true && asImperial.enough === true &&
+  asMetric.units.system === "metric" &&
+  asImperial.units.system === "imperial");
+check("the lock says so in the answer, so the page can tell a member " +
+  "why the toggle will not move",
+  asMetric.units.locked === true && asImperial.units.locked === true &&
+  bothSystems.metric.units.locked === false);
+check("every band of both raised-floor answers clears the floor on its " +
+  "own - each document is individually safe, which is why the attack " +
+  "needs two of them",
+  drawnOf(asMetric).bins.every((b) => b.count >= RAISED) &&
+  drawnOf(asImperial).bins.every((b) => b.count >= RAISED));
+check("THE ATTACK IS REAL: overlaying those two independently merged " +
+  "grids recovers cells below the floor that neither document drew - " +
+  "the differencing the one-partition rule names, reproduced rather " +
+  "than asserted",
+  subFloor(recoveredCounts(knownCumulative(asMetric),
+    knownCumulative(asImperial))) > 0);
+
+/*
+ * THE LOCK IS WHAT MAKES THAT PAIR UNREACHABLE. Inside one deployment
+ * there is one settings object, so both asks answer with the SAME
+ * partition - and overlaying an answer with itself recovers exactly the
+ * bands it already drew, every one of which clears the floor.
+ */
+const lockedAsks = SITE.units.systems.map((system) =>
+  agg.aggregate(spreadOut, ask("measure=weight&units=" + system),
+    undefined, raised));
+
+check("the lock: at a raised floor both asks answer with the identical " +
+  "partition - the same system, the same edges, the same counts",
+  lockedAsks.every((answer) => answer.enough === true) &&
+  JSON.stringify(lockedAsks[0].distribution) ===
+    JSON.stringify(lockedAsks[1].distribution) &&
+  lockedAsks[0].units.system === lockedAsks[1].units.system);
+check("the lock: the locked system is the settings seam's, defaulting " +
+  "to the spec's OWN DECLARED DEFAULT when the setting names none - the " +
+  "field that already governs what the form and the charts start in, so " +
+  "raising the floor moves nobody to a system they did not choose",
+  lockedAsks[0].units.system === SITE.units.default);
+check("the lock: overlaying the two answers a caller CAN get at a " +
+  "raised floor recovers nothing below the floor - there is only one " +
+  "grid, so there is nothing to difference",
+  subFloor(recoveredCounts(knownCumulative(lockedAsks[0]),
+    knownCumulative(lockedAsks[1]))) === 0);
+check("the lock: the whole answer moves with it, not just the bands - " +
+  "the trend is in the locked system too, so no figure on the page is " +
+  "in a unit the rest of it is not",
+  pointsOf(lockedAsks[1]).length > 0 &&
+  pointsOf(lockedAsks[1]).every((p) => typeof p.average === "number") &&
+  JSON.stringify(pointsOf(lockedAsks[0])) ===
+    JSON.stringify(pointsOf(lockedAsks[1])));
+
+/*
+ * THE MEMBER'S OWN OVERLAY FOLLOWS THE SAME SYSTEM, and it has to: it is
+ * drawn OVER the group trend on one pair of axes, so a line in a unit
+ * the rest of the figure is not in would be a second measurement wearing
+ * the first one's scale. selfSeries() takes no floor - their data, their
+ * line - but it reads the same seam the lock lives in, which is why it
+ * takes the settings object at all.
+ */
+const myAsk = ask("measure=weight&units=imperial&self=1");
+const mineFree = agg.selfSeries(spreadOut, acct(0), myAsk);
+/* Locked to the system the ask did NOT name, so the two readings of one
+   member's own weight cannot coincide by luck - which they would if this
+   arm leaned on the default lock, since that default IS the system the
+   ask names. */
+const mineLocked = agg.selfSeries(spreadOut, acct(0), myAsk, undefined,
+  { floor: RAISED, units: "metric" });
+check("the lock: the member's own line is in the answer's own unit - " +
+  "asked in imperial, drawn in imperial at the shipped floor and in the " +
+  "locked system once the floor is raised",
+  mineFree.points.length === 1 && mineLocked.points.length === 1 &&
+  Math.abs(mineFree.points[0].value - lbOf(70)) < 0.2 &&
+  Math.abs(mineLocked.points[0].value - 70) < 0.2);
+
+/*
+ * AND THE OTHER HALF: a settings object naming a system the spec does
+ * not offer is a setting that failed to apply, not a partition nobody
+ * has a grid for - so it reads as the default lock exactly as a floor
+ * of "5" reads as the default floor.
+ */
+for (const junk of ["Metric", "furlongs", "", 1, null]) {
+  const answer = agg.aggregate(spreadOut, ask("measure=weight"),
+    undefined, { floor: RAISED, units: junk });
+  check("the lock: a settings value of " + JSON.stringify(junk) + " is " +
+    "the spec's own declared default rather than an unbinnable system",
+    answer.enough === true &&
+    answer.units.system === SITE.units.default);
+}
+
+/*
+ * THE OVERLAY DETECTOR IS NOT VACUOUS, said at the shipped floor where
+ * both systems really are served: overlay them and finer counts do come
+ * back. At a floor of 0 that discloses nothing new - every band already
+ * draws its true count, so a reader keeping two documents learns what a
+ * reader keeping one already knew - and saying that out loud is the
+ * premise the lock protects the moment an admin raises the number.
+ */
+check("the detector bites: at the shipped floor of 0 the two served " +
+  "systems really do overlay into counts finer than either grid's own " +
+  "bands - which is why a raised floor locks to one of them",
+  recoveredCounts(knownCumulative(bothSystems.metric),
+    knownCumulative(bothSystems.imperial)).length >
+    Math.max(drawnOf(bothSystems.metric).bins.length,
+      drawnOf(bothSystems.imperial).bins.length));
 
 /* ================================================================== */
 /* 3c. The BMI axis is DERIVED from the form's own bounds.             */
@@ -719,8 +1086,8 @@ check("derived BMI axis: the spec's range covers every BMI the form " +
 check("derived BMI axis: the two ends are those bounds rounded OUTWARD " +
   "onto the spec's own band grid - a whole number of bands, and no end " +
   "rounded in past a value the form allows",
-  BMI_SPEC.min === Math.floor(BMI_LOW / BMI_SPEC.bin) * BMI_SPEC.bin &&
-  BMI_SPEC.max === Math.ceil(BMI_HIGH / BMI_SPEC.bin) * BMI_SPEC.bin);
+  BMI_SPEC.min === snapDown(BMI_LOW, BMI_SPEC.bin, BMI_SPEC.anchor) &&
+  BMI_SPEC.max === snapUp(BMI_HIGH, BMI_SPEC.bin, BMI_SPEC.anchor));
 check("derived BMI axis: the band width keeps the grid under the " +
   "MAX_BANDS guard in server/charts-agg.js, so the derived range is a " +
   "chart the Worker will actually build rather than a spec error",
@@ -740,7 +1107,7 @@ const extreme = atShippedFloor(extremeRows, "measure=bmi");
 const extremeBins = drawnOf(extreme).bins;
 const EXTREME_BMI = bmiOf(320, 170);
 const hers = extremeBins.filter((bin) =>
-  bin.from.metric <= EXTREME_BMI && bin.to.metric > EXTREME_BMI);
+  bin.from <= EXTREME_BMI && bin.to > EXTREME_BMI);
 
 check("derived BMI axis: a form-valid extreme member draws in the band " +
   "her own number falls in, and that band is not the last one on the axis",
@@ -752,8 +1119,12 @@ check("derived BMI axis: the top band counts nobody - nothing is piled " +
 check("derived BMI axis: the grid spans the spec's whole range at the " +
   "spec's own width, and everybody with a BMI is counted once in it",
   extremeBins.length ===
-    Math.ceil((BMI_SPEC.max - BMI_SPEC.min) / BMI_SPEC.bin) &&
+    Math.round((BMI_SPEC.max - BMI_SPEC.min) / BMI_SPEC.bin) &&
   extremeBins.reduce((n, b) => n + b.count, 0) === extremeRows.length);
+check("derived BMI axis: a unitless measure names no unit for its axis " +
+  "- the page has nothing to print beside the number, and a BMI in " +
+  "pounds is not a thing",
+  extreme.units.unit === null && extreme.units.system !== null);
 
 /* ================================================================== */
 /* 4. The group makeup: exact counts of unique members, zeros listed.   */
@@ -877,7 +1248,10 @@ overMonths.push(row(acct(0), "2026-09-05T00:00:00.000Z",
 overMonths.push(row(acct(1), "2026-10-06T00:00:00.000Z",
   record(80, 170, "male", ["feeder"], "US")));
 
-const months = atShippedFloor(overMonths, "measure=weight");
+/* Asked in metric so the arms below can compare against the kilograms
+   these rows were written in without a conversion of their own - the
+   answer is in the unit it was asked for now (#396 ruling 4). */
+const months = atShippedFloor(overMonths, "measure=weight&units=metric");
 const points = pointsOf(months);
 
 check("trend: every month with an entry draws - the two-person month " +
@@ -885,19 +1259,19 @@ check("trend: every month with an entry draws - the two-person month " +
   points.map((p) => p.period).join() === "2026-08,2026-09,2026-10");
 check("trend: a one-person month carries that person's true value",
   points.length === 3 && points[2].people === 1 &&
-  Math.abs(points[2].average.metric - 80) < 0.6);
+  Math.abs(points[2].average - 80) < 0.6);
 check("trend: the line is the average and is called that - no " +
   "statistics vocabulary",
-  points.every((p) => p.average && typeof p.average.metric === "number") &&
+  points.every((p) => typeof p.average === "number") &&
   !everyString(months).some((s) => /^(mean|median|stddev|sigma)$/i.test(s)));
 const twiceInAMonth = pointsOf(atShippedFloor(overMonths.concat([
   row(acct(0), "2026-09-20T00:00:00.000Z",
     record(70, 170, "male", ["feeder"], "US")),
-]), "measure=weight"));
+]), "measure=weight&units=metric"));
 check("trend: a month is one row per person, newest wins - somebody who " +
   "corrects twice in a month is one person in that month's average",
   twiceInAMonth.length === 3 && twiceInAMonth[1].people === 1 &&
-  Math.abs(twiceInAMonth[1].average.metric - 70) < 0.6);
+  Math.abs(twiceInAMonth[1].average - 70) < 0.6);
 check("trend: a month nobody submitted in is absent rather than zeroed " +
   "- the page bridges it and the route says nothing it does not know",
   !points.some((p) => p.period === "2026-07"));
@@ -952,11 +1326,10 @@ check("floor 5: the drawn counts still sum to the people - a lone " +
 check("floor 5: merging widens a band rather than adding one - the " +
   "drawn edges stay contiguous and still start and end on the spec's " +
   "own outer edges",
-  drawnOf(tail).bins[0].from[partitionSystem] === W_MIN &&
-  drawnOf(tail).bins[drawnOf(tail).bins.length - 1]
-    .to[partitionSystem] === W_MAX &&
+  drawnOf(tail).bins[0].from === L_MIN &&
+  drawnOf(tail).bins[drawnOf(tail).bins.length - 1].to === L_MAX &&
   drawnOf(tail).bins.every((b, i, all) =>
-    i === 0 || b.from[partitionSystem] === all[i - 1].to[partitionSystem]));
+    i === 0 || b.from === all[i - 1].to));
 check("floor 5: the outlier's own band is gone - a band of one is " +
   "exactly what a raised floor exists to refuse",
   !drawnOf(tail).bins.some((b) => b.count > 0 && b.count < RAISED));
@@ -969,8 +1342,8 @@ check("floor 5: the outlier's own band is gone - a band of one is " +
  * floor's own count or more - never zero. Fed into apps/web/charts.js's
  * own trimTrailingEmptyBins() (imported above, not reimplemented), that
  * means there is no trailing empty band left to find: the trim returns
- * the SAME bins, unchanged, and the drawn axis still reaches the spec's
- * own ceiling (W_MAX) exactly as it did before #390 - which is exactly
+ * the SAME bins, unchanged, and the drawn axis still reaches the locked
+ * system's own ceiling (L_MAX) exactly as it did before #390 - which is
  * how a raised floor hides whether the group's heaviest member (the
  * `tail` fixture's own 300 kg outlier, absorbed into the merged band
  * above) sits near that ceiling or far below it. This is the real
@@ -987,7 +1360,7 @@ check("floor 5: the trim is a no-op on a real raised-floor answer - " +
 check("floor 5: the drawn axis still reaches the spec's own ceiling " +
   "after the trim runs - a raised floor, not the trim, is what would " +
   "hide the heaviest member",
-  tailTrimmed[tailTrimmed.length - 1].to[partitionSystem] === W_MAX &&
+  tailTrimmed[tailTrimmed.length - 1].to === L_MAX &&
   tailTrimmed[tailTrimmed.length - 1].count > 0);
 
 /* The wide corpus: five clusters far enough apart to draw several bands
@@ -1434,6 +1807,38 @@ const badMeasure = await call("GET", "/charts-data?measure=telegram",
 check("route: a measure the spec does not chart is refused (400)",
   badMeasure.status === 400);
 
+/* Ruling 4 at the route (#396): the unit system rides the ask, so the
+   figures come back on the grid the member is actually looking at. */
+const inMetric = await call("GET", "/charts-data?measure=weight&units=metric",
+  { token: TOKENS[0] });
+const inImperial = await call("GET",
+  "/charts-data?measure=weight&units=imperial", { token: TOKENS[0] });
+check("route: the ask carries the unit system and the answer comes back " +
+  "binned on that unit's own grid",
+  inMetric.status === 200 && inImperial.status === 200 &&
+  inMetric.body.units.system === "metric" &&
+  inMetric.body.units.unit === "kg" &&
+  inImperial.body.units.system === "imperial" &&
+  inImperial.body.units.unit === "lb");
+check("route: at the shipped floor the two systems are genuinely " +
+  "different grids - switching units is a fresh question, never the " +
+  "same numbers relabeled",
+  JSON.stringify(inMetric.body.distribution.bins) !==
+    JSON.stringify(inImperial.body.distribution.bins) &&
+  inMetric.body.units.locked === false);
+check("route: an answer names exactly one system's numbers - no band, " +
+  "no trend point and no self point carries a second reading of itself",
+  inMetric.body.distribution.bins.every((b) =>
+    typeof b.from === "number" && typeof b.to === "number") &&
+  (inMetric.body.trend.points || []).every((p) =>
+    typeof p.average === "number"));
+
+const badUnits = await call("GET", "/charts-data?measure=weight&units=stones",
+  { token: TOKENS[0] });
+check("route: a unit system the spec does not offer is refused (400) - " +
+  "the allowlist is a repository file, so this discloses nothing about " +
+  "members", badUnits.status === 400);
+
 const categorical = await call("GET", "/charts-data?measure=gender",
   { token: TOKENS[0] });
 check("route: a category asked for as a measure is refused (400) - the " +
@@ -1625,7 +2030,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 149;
+const EXPECTED = 186;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
