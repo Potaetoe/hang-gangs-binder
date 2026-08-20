@@ -1136,6 +1136,57 @@ check("every element this suite drives is really in apps/web/charts.html",
   NEEDED.every((id) => IDS.includes(id)));
 
 /*
+ * 0.9-M2-S15 fix wave 1 (#383), F1 and F4: the stub DOM above is built by
+ * hand (buildDom(), below) - it invents its own element tree from the
+ * NEEDED id list, so it has no opinion on WHERE an id sits in the real
+ * page or WHETHER the real markup ships it hidden. The review's own
+ * proof: moving the picture-field fieldset back into the controls card
+ * left every stub-driven check green, because the stub never asked
+ * where it was. These two checks read the real markup TEXT instead -
+ * both apps/web/charts.html and its dist/ mirror, since 0.9-M2-S15's
+ * own ruling (point 6) is "both trees".
+ *
+ * F1: the fieldset sits inside #results (after it opens) and above
+ * #status (before that paragraph) - the two id strings are unique in
+ * this page (grepped), so their raw string positions are the ordering.
+ *
+ * F4: the fieldset's own opening tag carries the `hidden` attribute in
+ * the shipped markup - not merely in buildDom()'s own default, which
+ * F4 found was the only thing the old "absent before any press" check
+ * actually read.
+ */
+const distCharts = await read("../dist/charts.html");
+
+function pictureFieldOrder(text) {
+  return {
+    results: text.indexOf('id="results"'),
+    picture: text.indexOf('id="picture-field"'),
+    status: text.indexOf('id="status"'),
+  };
+}
+
+function fieldsetOpeningTag(text, id) {
+  const found = text.match(new RegExp('<fieldset\\b[^>]*\\bid="' + id + '"[^>]*>'));
+  return found ? found[0] : null;
+}
+
+for (const [label, text] of
+    [["apps/web/charts.html", PAGE_HTML], ["dist/charts.html", distCharts]]) {
+  const order = pictureFieldOrder(text);
+  check("0.9-M2-S15 F1 (#383 fix wave 1): " + label + "'s own real markup " +
+    "places the picture-field fieldset inside #results and above #status " +
+    "- read from the shipped text, not the stub DOM",
+    order.results !== -1 && order.picture !== -1 && order.status !== -1 &&
+    order.results < order.picture && order.picture < order.status);
+
+  const tag = fieldsetOpeningTag(text, "picture-field");
+  check("0.9-M2-S15 F4 (#383 fix wave 1): " + label + "'s own shipped " +
+    "fieldset carries the hidden attribute - read from the real opening " +
+    "tag, not buildDom()'s default",
+    tag !== null && /\bhidden\b/.test(tag));
+}
+
+/*
  * `noUnitsChecked` stands in for the static HTML's own `checked`
  * attribute being absent - the shape currentSystem()'s fallback
  * actually reads (F2's arm below). apps/web/charts.html always ships
@@ -1436,6 +1487,28 @@ const NOT_ENOUGH_FIXTURE = {
   check("nothing is drawn when there is nothing to draw",
     byId.get("picture-trend").hidden === true &&
     byId.get("picture-distribution").hidden === true);
+
+  /*
+   * 0.9-M2-S15 fix wave 1 (#383), F2: the check above is true trivially
+   * for picture-distribution if renderAnswer()'s not-enough branch never
+   * hides it at all - buildDom() (this slice's own GREEN wave) now
+   * starts picture-distribution hidden by default too, for a DIFFERENT
+   * reason (matching the shipped markup's own aria-selected pair, F4's
+   * neighbor), and that default alone was enough to keep this check
+   * green with the real hide call deleted (the review's own finding,
+   * undisclosed in the original wave). Forcing both panels visible
+   * first, then pressing again against the SAME not-enough fixture,
+   * proves the hide calls actually fire rather than proving the stub's
+   * own starting state.
+   */
+  byId.get("picture-trend").hidden = false;
+  byId.get("picture-distribution").hidden = false;
+  await pressShowMe(byId);
+  check("0.9-M2-S15 F2 (#383 fix wave 1): the not-enough branch actively " +
+    "hides both figures - forced visible first, so this fails if either " +
+    "hide call is ever deleted",
+    byId.get("picture-trend").hidden === true &&
+    byId.get("picture-distribution").hidden === true);
   check("0.9-M2-S15, apparatus point 3: the picture toggle hides again " +
     "on the not-enough view - there is no picture left to choose " +
     "between",
@@ -1536,6 +1609,28 @@ const ENOUGH_FIXTURE = {
   check("0.9-M2-S15: the flip shows exactly one figure at a time - the " +
     "default selection (Trend, aria-selected=true in the shipped " +
     "markup) draws the trend figure and hides the distribution one",
+    byId.get("picture-trend").hidden === false &&
+    byId.get("picture-distribution").hidden === true);
+
+  /*
+   * 0.9-M2-S15 fix wave 1 (#383), sibling sweep (found while fixing F2
+   * and F4 - the same disease, a third sibling): the check above is
+   * true trivially too. buildDom() starts picture-trend hidden=false
+   * and picture-distribution hidden=true by default, to match the
+   * shipped markup's own default selection (Trend) - which is exactly
+   * the state a CORRECT draw also produces on that same default. Delete
+   * both show() calls in renderAnswer()'s enough branch and this check
+   * would stay green, reading the stub's starting state rather than
+   * anything renderAnswer() did. Forcing the opposite state first, then
+   * pressing again against the SAME fixture, proves the calls fire.
+   */
+  byId.get("picture-trend").hidden = true;
+  byId.get("picture-distribution").hidden = false;
+  await pressShowMe(byId);
+  check("0.9-M2-S15 (#383 fix wave 1, sibling sweep): renderAnswer() " +
+    "actively draws the default selection - forced to the opposite " +
+    "state first, so this fails if the two show() calls are ever " +
+    "deleted",
     byId.get("picture-trend").hidden === false &&
     byId.get("picture-distribution").hidden === true);
 
@@ -1695,6 +1790,23 @@ const ENOUGH_FIXTURE = {
   const chipRows = groupsBody.children.filter((c) =>
     c.className.split(" ").includes("chip-row"));
   check("the group makeup card is shown once a drawn answer arrives",
+    byId.get("groups").hidden === false);
+
+  /*
+   * 0.9-M2-S15 fix wave 1 (#383), sibling sweep: the check above is
+   * true trivially too - buildDom() (unrelated to this slice) never
+   * sets a default for "groups", so the stub's own node() default
+   * (hidden=false) already matches what a correct draw produces here.
+   * Deleting renderGroups()'s own `show(card, true)` call was proven,
+   * by mutation, to leave the check above green (0 failures with the
+   * call removed, restored after). Forcing it hidden first, then
+   * pressing again against the same fixture, proves the call fires.
+   */
+  byId.get("groups").hidden = true;
+  await pressShowMe(byId);
+  check("0.9-M2-S15 (#383 fix wave 1, sibling sweep): renderGroups() " +
+    "actively unhides the card - forced hidden first, so this fails if " +
+    "show(card, true) is ever deleted",
     byId.get("groups").hidden === false);
   check("the group makeup heading names each field, from the response, " +
     "one per categorical field",
@@ -2386,7 +2498,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 179;
+const EXPECTED = 186;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
