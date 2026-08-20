@@ -315,6 +315,47 @@
     });
   }
 
+  /*
+   * The codes pinned at the top of every country dropdown, in the order
+   * site.config.js lists them (owner ruling, 0.9-M2-S14, #380 ruling
+   * 4). A spec written with no `countries` block at all - a fork that
+   * has not touched this - pins nothing rather than throwing, the same
+   * "ordinary rather than an error" shape unitsOf() gives a kind with
+   * no units.
+   */
+  function pinnedCountries(given) {
+    const countries = spec(given).countries;
+    return countries && Array.isArray(countries.pinned)
+      ? countries.pinned.slice() : [];
+  }
+
+  /*
+   * `choices` - already in the order a page wants to offer them - with
+   * every code in `pinned` moved to the FRONT as well, in `pinned`'s own
+   * order. Nothing is removed: a pinned entry keeps its original place
+   * too, so a reader scanning the alphabetical run still finds it there
+   * (owner ruling, 0.9-M2-S14, #380 ruling 4 - "remain in their
+   * alphabetical place below"). Setting a <select>'s value to a pinned
+   * code lands on the FIRST matching <option>, which is the pinned one -
+   * both options carry the same value, so it makes no difference which
+   * is picked.
+   *
+   * A pinned code `choices` does not carry is skipped rather than
+   * inserted with no label: this function only reorders what is
+   * already offered, it does not invent an entry the underlying table
+   * has no name for.
+   */
+  function orderedChoices(choices, pinned) {
+    const byValue = {};
+    choices.forEach(function (choice) { byValue[choice.value] = choice; });
+    const front = (pinned || [])
+      .filter(function (code) {
+        return Object.prototype.hasOwnProperty.call(byValue, code);
+      })
+      .map(function (code) { return byValue[code]; });
+    return front.concat(choices);
+  }
+
   /* ---------------------------------------------------------------- */
   /* The group's name, and everything spelled out of it.               */
 
@@ -466,6 +507,8 @@
     compoundUnit: compoundUnit,
     limits: limits,
     choiceValues: choiceValues,
+    pinnedCountries: pinnedCountries,
+    orderedChoices: orderedChoices,
     siteTitle: siteTitle,
     pageTitle: pageTitle,
     wordmarkLines: wordmarkLines,

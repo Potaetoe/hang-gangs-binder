@@ -563,11 +563,19 @@
     select.appendChild(el("option", { value: "", text: entry.blank || "" }));
     if (entry.choicesFrom) {
       const countries = root.BINDER_COUNTRIES || {};
-      Object.keys(countries).sort(function (a, b) {
+      const alphabetical = Object.keys(countries).sort(function (a, b) {
         return countries[a].localeCompare(countries[b]);
-      }).forEach(function (code) {
-        select.appendChild(el("option", { value: code, text: countries[code] }));
+      }).map(function (code) {
+        return { value: code, label: countries[code] };
       });
+      // Pinned codes first, in site.config.js's own order, ahead of the
+      // same alphabetical run - see apps/web/fields.js's orderedChoices()
+      // header (owner ruling, 0.9-M2-S14, #380 ruling 4).
+      F.orderedChoices(alphabetical, F.pinnedCountries(root.BINDER_SITE))
+        .forEach(function (choice) {
+          select.appendChild(
+            el("option", { value: choice.value, text: choice.label }));
+        });
     } else {
       (entry.choices || []).forEach(function (choice) {
         select.appendChild(el("option", { value: choice.value,

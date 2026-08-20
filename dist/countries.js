@@ -254,25 +254,3 @@ window.BINDER_COUNTRIES = {
 
 
 
-window.BINDER_COUNTRIES_PROMOTED = [
-   
-  "US",  
-  "CA",  
-  "MX",  
-  "GB",  
-
-   
-   
-   
-   
-  "BE",  
-  "CZ",  
-  "FR",  
-  "DE",  
-  "IT",  
-  "NL",  
-  "PL",  
-  "PT",  
-  "RO",  
-  "ES",  
-];

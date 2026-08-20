@@ -470,6 +470,96 @@
     return url.toString();
   }
 
+  /*
+   * The only refusal left at the shipped floor of 0 (owner ruling 7,
+   * #243): zero matching entries. server/charts-agg.js's note is the
+   * honest sentence, printed verbatim exactly as before - it never
+   * varies with the cause, so this page still cannot compose it. What
+   * ruling 7 adds is a broader-filter hint alongside it: fixed text,
+   * naming no filter value and no count, so it discloses nothing the
+   * route's own silence did not already withhold.
+   *
+   * Moved here from the DOM section (0.9-M2-S14, #380 ruling 3): the
+   * not-enough workbook row (workbookRows() below) is the same sentence
+   * renderAnswer() prints on screen, and a Pure function loaded under
+   * Node has no DOM section to read this constant out of - see this
+   * file's own header on why nothing below the document guard runs
+   * there.
+   */
+  const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
+
+  /* The one unit system's own reserved property, off the response's own
+     {metric, imperial} pair - moved here from the DOM section (it
+     touches no document) so workbookColumns()/workbookRows() below can
+     read it too. */
+  function unitFor(answer, system) {
+    return answer.units && answer.units[system] && answer.units[system].unit
+      ? answer.units[system].unit
+      : null;
+  }
+
+  /*
+   * The workbook's own columns and rows (0.9-M2-S14, #380 ruling 3):
+   * exactly the answer already on screen, in the same label vocabulary
+   * this file already paints it with - binLabel() for a band's own
+   * exact range (not midpointLabel()'s rounded caption; a download
+   * benefits from the same precise edges a hover already reveals),
+   * monthLabel() for a trend point, groupCellLabel() for a group-makeup
+   * value. RENDER-ONLY, exactly like the rest of this file (security
+   * mandate 1): every cell is composed from `answer`'s own numbers,
+   * nothing refetched and nothing computed that the response did not
+   * already send.
+   *
+   * Counts are written as NUMBERS, not memberCount()'s "N members" text
+   * - a spreadsheet cell is for arithmetic, and "5 members" is a string
+   * no formula can sum. `measureFor`, a plain lookup function rather
+   * than the Fields module itself, is what keeps this pure: the DOM
+   * caller hands in `function (name) { return Fields.measure(name,
+   * site); }`, the same lookup renderGroups() already does per group.
+   */
+  function workbookColumns(unit) {
+    const suffix = unit ? " (" + unit + ")" : "";
+    return ["Section", "Label", "Count", "Average" + suffix, "You" + suffix];
+  }
+
+  function workbookRows(answer, system, countries, measureFor) {
+    if (!answer.enough) {
+      return [["Status", answer.note + " " + BROADER_FILTER_HINT,
+        "", "", ""]];
+    }
+
+    const unit = unitFor(answer, system);
+    const rows = [];
+
+    (answer.distribution ? answer.distribution.bins : []).forEach(
+      function (bin) {
+        rows.push(["Distribution",
+          binLabel(bin.from[system], bin.to[system], unit), bin.count,
+          "", ""]);
+      });
+
+    (answer.trend && answer.trend.points ? answer.trend.points : [])
+      .forEach(function (point) {
+        const at = new Date(point.period + "-01T00:00:00Z").getTime();
+        rows.push(["Trend", monthLabel(at), "", point.average[system], ""]);
+      });
+    (answer.self && answer.self.points ? answer.self.points : [])
+      .forEach(function (point) {
+        rows.push(["Trend", monthLabel(new Date(point.at).getTime()), "",
+          "", point.value[system]]);
+      });
+
+    (answer.groups || []).forEach(function (group) {
+      const measure = measureFor(group.field);
+      (group.values || []).forEach(function (cell) {
+        rows.push(["Group makeup — " + group.label,
+          groupCellLabel(measure, cell, countries), cell.count, "", ""]);
+      });
+    });
+
+    return rows;
+  }
+
   const Pure = {
     capitalize: capitalize,
     binLabel: binLabel,
@@ -491,6 +581,10 @@
     valueChoices: valueChoices,
     groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
+    unitFor: unitFor,
+    workbookColumns: workbookColumns,
+    workbookRows: workbookRows,
+    BROADER_FILTER_HINT: BROADER_FILTER_HINT,
   };
 
   root.BinderCharts = Object.freeze(Pure);
@@ -694,7 +788,15 @@
       return;
     }
     const measure = Fields.measure(fieldName, site);
-    valueChoices(measure, root.BINDER_COUNTRIES).forEach(function (choice) {
+    let choices = valueChoices(measure, root.BINDER_COUNTRIES);
+    // Pinned codes first, in site.config.js's own order (owner ruling,
+    // 0.9-M2-S14, #380 ruling 4) - a client-side reorder of the same
+    // value list valueChoices() already built from the spec, never a
+    // second source for what the filter offers.
+    if (measure.choicesFrom === "countries") {
+      choices = Fields.orderedChoices(choices, Fields.pinnedCountries(site));
+    }
+    choices.forEach(function (choice) {
       const option = document.createElement("option");
       option.value = choice.value;
       option.textContent = choice.label;
@@ -731,12 +833,6 @@
      fleet review, not this file's to close). */
   function currentSystem() {
     return UI.checkedValue("units", Fields.defaultSystem());
-  }
-
-  function unitFor(answer, system) {
-    return answer.units && answer.units[system] && answer.units[system].unit
-      ? answer.units[system].unit
-      : null;
   }
 
   /*
@@ -1161,17 +1257,6 @@
     }
   }
 
-  /*
-   * The only refusal left at the shipped floor of 0 (owner ruling 7,
-   * #243): zero matching entries. server/charts-agg.js's note is the
-   * honest sentence, printed verbatim exactly as before - it never
-   * varies with the cause, so this page still cannot compose it. What
-   * ruling 7 adds is a broader-filter hint alongside it: fixed text,
-   * naming no filter value and no count, so it discloses nothing the
-   * route's own silence did not already withhold.
-   */
-  const BROADER_FILTER_HINT = "Try Everyone or a broader filter.";
-
   /* ------------------------------------------------------------------ */
   /* The not-enough state and the drawn state. Design mandate 4: one     */
   /* document for the one too-few cause left, a plain paragraph inside   */
@@ -1208,34 +1293,63 @@
   }
 
   /*
-   * Download: the route's own bytes, unparsed and unreformatted
-   * (security mandate 6). The same object is offered whether the cut
-   * was enough or not - a not-enough answer is a small, honest document
-   * and there is no reason to withhold it.
+   * Download: a real workbook, built by BinderXlsx.build() from exactly
+   * the answer already drawn on screen - not the route's own bytes any
+   * more (0.9-M2-S14, #380 ruling 3, superseding the JSON download
+   * 0.9-M2-S12/#373 shipped). workbookColumns()/workbookRows() above
+   * compose the same numbers renderAnswer() painted, at the CURRENT
+   * unit system read fresh on each click - so toggling units after a
+   * fetch and then pressing Download gets the workbook in the units
+   * actually on screen, the same live behavior the figures themselves
+   * already have. The same workbook is offered whether the cut was
+   * enough or not - a not-enough answer is a small, honest document and
+   * there is no reason to withhold it.
+   *
+   * REUSES THE REPOSITORY'S ONE XLSX WRITER (apps/web/xlsx.js,
+   * BinderXlsx) rather than a second one - the admin export's own
+   * machinery, xlsx.js's own header explains why the CSV's leading-
+   * apostrophe formula guard is deliberately NOT layered on top here: a
+   * cell BinderXlsx.build() writes for anything but a number is typed
+   * `t="inlineStr"`, an inline STRING, and a formula lives only in an
+   * `<f>` element this writer never emits - so a hostile country name
+   * or group label such as "=SUM(A1:A10)" arrives on the sheet as that
+   * exact literal text, never evaluated. That typing IS the guard;
+   * dev/xlsx.test.mjs already proves it on admin.js's own export
+   * ("a formula-looking value is a string, not defused"), and this
+   * file's own suite proves it again on THIS workbook - see
+   * tests/charts-page.test.mjs.
    *
    * CREATE, USE, REVOKE - ALL INSIDE THE CLICK HANDLER (0.9-M2-S12,
-   * #373, carried to this file's rebuild). The route's own answer text
-   * is remembered so the handler has bytes to build a Blob from, but the
-   * object URL itself never outlives the click that made it: no
-   * persisted object-URL variable at module scope, nothing left for a
-   * future exit handler to clear - the same shape submit.js's own
-   * download uses since #373 deleted its dead scaffolding of that kind.
+   * #373, carried to this file's rebuild and unchanged by the format
+   * swap). The route's own parsed answer is remembered so the handler
+   * has something to build a workbook from, but the object URL itself
+   * never outlives the click that made it: no persisted object-URL
+   * variable at module scope, nothing left for a future exit handler to
+   * clear - the same shape submit.js's own download uses since #373
+   * deleted its dead scaffolding of that kind.
    */
-  let lastAnswerText = null;
+  let lastAnswer = null;
 
-  function offerDownload(text) {
-    lastAnswerText = text;
+  function offerDownload(answer) {
+    lastAnswer = answer;
     $("download").hidden = false;
   }
 
   function wireDownload() {
     $("download").addEventListener("click", function () {
-      if (!lastAnswerText) return;
-      const url = URL.createObjectURL(
-        new Blob([lastAnswerText], { type: "application/json" }));
+      if (!lastAnswer) return;
+      const site = root.BINDER_SITE;
+      const system = currentSystem();
+      const columns = workbookColumns(unitFor(lastAnswer, system));
+      const rows = workbookRows(lastAnswer, system, root.BINDER_COUNTRIES,
+        function (fieldName) { return Fields.measure(fieldName, site); });
+      const bytes = root.BinderXlsx.build(columns, rows, "Charts",
+        Date.now());
+      const url = URL.createObjectURL(new Blob([bytes], { type:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = "charts.json";
+      link.download = "charts.xlsx";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1294,7 +1408,6 @@
     }
 
     const text = await response.text();
-    offerDownload(text);
 
     let answer;
     try {
@@ -1307,6 +1420,13 @@
     }
 
     renderAnswer(answer);
+    // After render, not before: the workbook is built from the PARSED
+    // answer now (0.9-M2-S14, #380 ruling 3). A parse failure above
+    // returns before this line runs, so the download is simply not
+    // refreshed on that press - whatever workbook a PRIOR successful
+    // press offered stays offered, matching the prior picture that is
+    // also still on screen (the early return above leaves both alone).
+    offerDownload(answer);
 
     /* Re-render is free (design mandate 3: the units toggle reads a
        different key of the SAME answer). Wired here, per successful

@@ -1057,27 +1057,6 @@ input[type="file"] {
   max-width: 100%;
 }
 
-/*
- * The custom-palette editor's two pickers (0.9-M2-S6, #82). Not `.field
- * > input` alongside the text/password/select block above: a native
- * color input's own chrome is a swatch, not a text box, and the shared
- * rule's padding and tabular-nums would fight the browser's own
- * rendering instead of matching it. --color-field for the same "a hole
- * in the card" reason every other control uses it, and the border takes
- * the strong token because the edge is the only thing saying where the
- * control is (WCAG 1.4.11), exactly the argument beside that token's
- * declaration above.
- */
-input[type="color"] {
-  inline-size: 3rem;
-  block-size: 2.25rem;
-  padding: 0.1875rem;
-  background: var(--color-field);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
 /* The one place color alone is not the signal - the message under the
    field is. This just points at it. */
 input[aria-invalid="true"] { border-color: var(--color-warn-text); }
@@ -1186,45 +1165,6 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   margin-block-start: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-}
-
-/*
- * The "Custom theme" control (0.9-M2-S13, #378, design mandate 4): the
- * footer's OWN disclosure summary, rethemed - scoped to `footer .more`
- * rather than to `.more` itself, so every other card's plain why-prose
- * reveal on the site keeps the hint-sized look above untouched (the
- * footer holds exactly one <details class="more"> per page - the
- * custom-palette editor - so this selector reaches nothing else,
- * footer_problems()'s own rule in tools/check_web.py). No new component
- * class: this still IS `.more > summary`, one compound more specific,
- * which is what the design mandate calls "extend the existing
- * More/summary selector" rather than invent one.
- */
-footer .more > summary {
-  font-size: var(--text-sm);
-  color: var(--color-text);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-pill);
-}
-
-footer .more > summary:hover {
-  background: var(--color-accent-quiet);
-}
-
-/*
- * The "selected" mark - identical to the swatch buttons' own
- * aria-pressed rule above (accent-quiet background, accent border), by
- * design mandate 4's own words. A <summary> is not a toggle button the
- * way the swatches are, so there is no aria-pressed to key off; this
- * reads data-theme instead, which apps/web/theme.js's apply() always
- * keeps in step with whichever palette is actually painted, custom
- * included - a fact this rule states rather than computes, and a fact
- * that cannot drift the way a JS-painted class could.
- */
-:root[data-theme="custom"] footer .more > summary {
-  background: var(--color-accent-quiet);
-  border-color: var(--color-accent);
 }
 
 /* ------------------------------------------------------------------ */

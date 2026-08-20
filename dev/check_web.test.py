@@ -36,7 +36,7 @@ performed = 0
 # behind an early return or a renamed helper, still prints a confident
 # "OK" for every check that remains. dev/check_budget.test.py argues this
 # at length and is where the pattern comes from.
-EXPECTED = 585
+EXPECTED = 575
 
 
 def check(label, condition):
@@ -651,22 +651,6 @@ SWATCH_MARKUP = (
     '</div>'
 )
 
-# The custom-palette editor (0.9-M2-S6, #82; relabeled 0.9-M2-S13,
-# #378): footer_problems() now requires exactly this shape directly
-# below the row, so every footer fixture below that means to read as
-# "clean" carries one - summary word included since 0.9-M2-S13, because
-# footer_problems() now reads that word off the editor's own isolated
-# span rather than leaving it to check 27's page-wide pass. Minimal on
-# purpose otherwise - the fields inside are check 27's and the picker's
-# own arm to hold, not this one's.
-EDITOR_MARKUP = (
-    '<details class="more"><summary id="custom-theme-button">Custom theme'
-    '</summary>'
-    '<input type="color" id="custom-bg">'
-    '<input type="color" id="custom-accent">'
-    '</details>'
-)
-
 # The control #274 removed, kept here as the thing every arm below
 # refuses rather than as a shape any page may carry.
 FLYOUT_MARKUP = (
@@ -773,6 +757,13 @@ check("the real pin is back after the stale-pin arm",
 # ------------------------------------------------------------------ #
 # Check 19's footer arm - the owner's ruling on #274, which is that    #
 # every footer is the swatch row and nothing else.                    #
+#                                                                       #
+# THE CUSTOM-PALETTE EDITOR THIS ARM ONCE HELD REQUIRED IS GONE          #
+# (0.9-M2-S14, #380 ruling 2, superseding 0.9-M2-S6/#82 and              #
+# 0.9-M2-S13/#378 entirely): the custom theme itself is retired, so      #
+# footer_problems() reverts to the ruling's original, simpler shape -    #
+# the row, and nothing beside it. Every fixture below drops             #
+# EDITOR_MARKUP accordingly.                                            #
 
 # This is the arm with reach, and the reason it had to exist is the
 # two cases nothing else in check_web.py can see: an off-site href is
@@ -781,139 +772,38 @@ check("the real pin is back after the stale-pin arm",
 # its destination's own name satisfies the name table exactly. Before
 # this, two of the four footers could have taken their nav back with
 # the whole gate green.
-FOOTER_OK = "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP)
+FOOTER_OK = "<footer>%s</footer>" % SWATCH_MARKUP
 
-# "Nothing else" names the ROW's own neighborhood, not the whole
-# footer - FOOTER_OK also carries EDITOR_MARKUP, the one other element
-# the footer is required to hold (design mandate 1), so a label
-# claiming the fixture holds the row "and nothing else" describes it
-# wrong even though the assertion below is right.
-check("a footer holding the swatch row and its editor, nothing else, "
-      "raises nothing",
+check("a footer holding only the swatch row raises nothing",
       check_web.footer_problems(FOOTER_OK, True) == [])
 check("a page that offers no palette and has no footer raises nothing",
       check_web.footer_problems("<main>Sorry.</main>", False) == [])
 
-# 0.9-M2-S13 (#378): the editor's OWN summary word, checked against its
-# own isolated span rather than left to check 27's page-wide pass -
-# both directions. A regression back to the old word is the exact shape
-# a careless revert produces (copy an older footer, forget the rename).
-FOOTER_STALE_SUMMARY = "<footer>%s%s</footer>" % (
-    SWATCH_MARKUP,
-    EDITOR_MARKUP.replace(
-        '<summary id="custom-theme-button">Custom theme</summary>',
-        "<summary>More</summary>"))
-check("an editor whose own summary still reads \"More\" is refused",
-      any("ruled the word" in p
-          for p in check_web.footer_problems(FOOTER_STALE_SUMMARY, True)))
-FOOTER_NO_SUMMARY = "<footer>%s%s</footer>" % (
-    SWATCH_MARKUP,
-    '<details class="more"><input type="color" id="custom-bg"></details>')
-check("an editor with no <summary> at all is refused",
-      any("no <summary> at all" in p
-          for p in check_web.footer_problems(FOOTER_NO_SUMMARY, True)))
-
-# Fix wave 1 (F3, #378): "Custom theme" reserved for the EDITOR, not for
-# the word appearing anywhere on a themed page. footer_editor_span() is
-# what more_disclosure_problems() (check 27) now uses to tell the real
-# editor apart from a decoy - the reviewer's own attack, reproduced: an
-# unrelated card's <details class="more"><summary>Custom theme</summary>
-# sitting OUTSIDE the footer, on a page that also carries the real,
-# correctly-labeled editor.
-DECOY_PAGE = ("<main><details class=\"more\"><summary>Custom theme"
-              "</summary><p>why</p></details></main>"
-              "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP))
-check("F3/#378: a decoy summary reading \"Custom theme\" OUTSIDE the "
-      "footer is refused, even though the real editor on the same page "
-      "carries the word legitimately",
-      any("labels a disclosure \"Custom theme\"" in p
-          for p in check_web.more_disclosure_problems(
-              DECOY_PAGE, "charts.html")))
-check("F3/#378 the other direction: the real editor's own \"Custom "
-      "theme\" summary, inside the footer, is not refused by this same "
-      "check - the exception is positional, not a page-wide allowance",
-      not any("Custom theme" in p and "no <summary>" not in p
-              for p in check_web.more_disclosure_problems(
-                  "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP),
-                  "charts.html")))
-check("footer_editor_span() finds nothing on a page with no footer at "
-      "all - the positional exception applies nowhere, which is "
-      "correct: nothing there has earned the word",
-      check_web.footer_editor_span("<main>Sorry.</main>") is None)
-check("footer_editor_span() finds the real editor's own span on a "
-      "clean footer, and that span is where its <summary> actually sits",
-      check_web.footer_editor_span(
-          "<footer>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP))
-      is not None)
-
-# Wrong-order fixture (F2, 0.9-M2-S6 fix wave 1, #82): footer_problems()
-# has to prove POSITION here, not merely presence. Concatenating the
-# text before the row onto the text after it - rather than searching
-# strictly after the row - would let an editor placed ABOVE the row
-# land at the front of that concatenation, reading `between` as empty
-# and satisfying "sits directly below the row" on a footer where it
-# sits above instead. This fixture is what a position-blind reader
-# fails and a position-aware one refuses.
-check("an editor ABOVE the row is refused as missing, not read as "
-      "satisfying the position check",
-      any("no <details class=\"more\"> custom-palette editor" in p
-          for p in check_web.footer_problems(
-              "<footer>%s%s</footer>" % (EDITOR_MARKUP, SWATCH_MARKUP),
-              True)))
-
 # The link, both spellings, because the ruling is about navigation and
-# not about where it points. The extra content sits AFTER the editor,
-# so what is being refused is still "something beside the row and its
-# editor" and not the editor's own presence.
+# not about where it points.
 check("an on-site link in a footer is refused",
       any("link in its footer" in p for p in check_web.footer_problems(
-          "<footer>%s%s<p><a href=\"charts.html\">Muse's charts</a></p>"
-          "</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
+          "<footer>%s<p><a href=\"charts.html\">Muse's charts</a></p>"
+          "</footer>" % SWATCH_MARKUP, True)))
 check("an off-site link in a footer is refused",
       any("link in its footer" in p for p in check_web.footer_problems(
-          '<footer>%s%s<p><a href="https://example.com">Read the code</a>'
-          "</p></footer>" % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
+          '<footer>%s<p><a href="https://example.com">Read the code</a>'
+          "</p></footer>" % SWATCH_MARKUP, True)))
 # A link INSIDE the row would be cut out with it, so the arm reads what
 # is left rather than the whole footer - and that is the direction this
 # says out loud rather than leaving to the reader.
 check("markup beside the row is refused even with no link in it",
       any("markup in its footer" in p for p in check_web.footer_problems(
-          "<footer>%s%s<p><strong>Nearly</strong></p></footer>"
-          % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
+          "<footer>%s<p><strong>Nearly</strong></p></footer>"
+          % SWATCH_MARKUP, True)))
 check("bare words beside the row are refused",
       any("words in its footer" in p for p in check_web.footer_problems(
-          "<footer>%s%s Nearly nothing</footer>"
-          % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
-
-# Before-the-row fixture (F2, 0.9-M2-S6 fix wave 2, #82): footer_problems()
-# has an editor-position check that narrows its remainder to text AFTER
-# the row, and the link/markup/words arms below it read that same
-# narrowed remainder - so content sitting BEFORE the row is invisible to
-# all three, not just to the editor search. An off-site link placed
-# ahead of the row is nav hiding in a footer, exactly what #274's
-# ruling forbids and exactly what this fixture proves gets through.
-# This fixture is what an editor-position fix that narrows too broadly
-# PASSES silently and a correctly-scoped one refuses.
-check("a link ahead of the row is refused",
+          "<footer>%s Nearly nothing</footer>" % SWATCH_MARKUP, True)))
+check("a link ahead of the row is refused too - the arms below are not "
+      "positional any more, they read everything beside the row",
       any("link in its footer" in p for p in check_web.footer_problems(
           "<footer><p><a href=\"https://example.com\">Read the code</a>"
-          "</p>%s%s</footer>" % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
-
-# The editor itself, both directions - the same shape the row's own arm
-# already held, one element wider.
-check("a themed page with a row and no editor is refused",
-      any("no <details class=\"more\"> custom-palette editor" in p
-          for p in check_web.footer_problems(
-              "<footer>%s</footer>" % SWATCH_MARKUP, True)))
-check("markup between the row and the editor is refused",
-      any("between the swatch row and its" in p
-          for p in check_web.footer_problems(
-              "<footer>%s<p>Wait</p>%s</footer>"
-              % (SWATCH_MARKUP, EDITOR_MARKUP), True)))
-check("a second editor is refused",
-      any("more than one" in p for p in check_web.footer_problems(
-          "<footer>%s%s%s</footer>"
-          % (SWATCH_MARKUP, EDITOR_MARKUP, EDITOR_MARKUP), True)))
+          "</p>%s</footer>" % SWATCH_MARKUP, True)))
 
 # The two directions on the element itself.
 check("a themed page with no footer at all is refused",
@@ -954,21 +844,20 @@ check("and it says the arm below owns where the row went",
 check("a link inside the swatch row is refused",
       any("INSIDE its .theme-swatches row" in p
           for p in check_web.footer_problems(
-              "<footer>%s%s</footer>" % (SWATCH_MARKUP.replace(
+              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
                   "</div>",
                   '<p><a href="https://example.com">Read the code</a></p>'
-                  "</div>"), EDITOR_MARKUP), True)))
+                  "</div>"), True)))
 check("markup inside the swatch row is refused with no link in it",
       any("INSIDE its .theme-swatches row" in p
           for p in check_web.footer_problems(
-              "<footer>%s%s</footer>" % (SWATCH_MARKUP.replace(
-                  "</div>", "<p><strong>Nearly</strong></p></div>"),
-                  EDITOR_MARKUP), True)))
+              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
+                  "</div>", "<p><strong>Nearly</strong></p></div>"), True)))
 check("bare words inside the swatch row are refused",
       any("words INSIDE its .theme-swatches row" in p
           for p in check_web.footer_problems(
-              "<footer>%s%s</footer>" % (SWATCH_MARKUP.replace(
-                  "</div>", "Nearly nothing</div>"), EDITOR_MARKUP), True)))
+              "<footer>%s</footer>" % SWATCH_MARKUP.replace(
+                  "</div>", "Nearly nothing</div>"), True)))
 # The swatches themselves are what the row is FOR, so they are cut out
 # at depth and what is left is what is read - the same move one level
 # down from the footer arm's.
@@ -1176,7 +1065,10 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      len(frozen_in_place) == 12 and all(frozen_in_place))
+      # 11, not 12: theme-init.js left MODULE_EXPORTS at 0.9-M2-S14
+      # (#380 ruling 2) when the custom theme it published
+      # (BinderCustomPalette) retired with it.
+      len(frozen_in_place) == 11 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 
@@ -3651,25 +3543,27 @@ finally:
 MORE = ('<details class="more"><summary>More</summary><p>why</p></details>')
 
 check("the ruled disclosure passes on a product page",
-      check_web.more_disclosure_problems(MORE, "charts.html") == [])
+      check_web.more_disclosure_problems(MORE, "your-page.html") == [])
 check("a product page with no disclosure fails",
-      len(check_web.more_disclosure_problems("<p>prose</p>", "charts.html"))
+      len(check_web.more_disclosure_problems("<p>prose</p>", "your-page.html"))
       == 1)
 check("a page outside MORE_PAGES is not asked for one",
       check_web.more_disclosure_problems("<p>prose</p>", "404.html") == [])
 check("a disclosure shipped open is prose with a control around it",
       any("open" in p for p in check_web.more_disclosure_problems(
-          MORE.replace("<details ", "<details open "), "charts.html")))
+          MORE.replace("<details ", "<details open "), "your-page.html")))
 check("a disclosure that is not the one shape fails",
       any(check_web.MORE_CLASS in p
           for p in check_web.more_disclosure_problems(
-              MORE.replace('class="more"', 'class="panel"'), "charts.html")))
+              MORE.replace('class="more"', 'class="panel"'),
+              "your-page.html")))
 check("a disclosure called something else fails",
       any("Details" in p for p in check_web.more_disclosure_problems(
-          MORE.replace("<summary>More", "<summary>Details"), "charts.html")))
+          MORE.replace("<summary>More", "<summary>Details"),
+          "your-page.html")))
 check("a disclosure with no summary at all fails",
       any("<summary>" in p for p in check_web.more_disclosure_problems(
-          '<details class="more"><p>why</p></details>', "charts.html")))
+          '<details class="more"><p>why</p></details>', "your-page.html")))
 
 # THE STYLESHEET, which the three markup arms above cannot see - and
 # this slice put `.more` rules in it. Two declarations undo the ruling's
