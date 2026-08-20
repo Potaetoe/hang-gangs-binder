@@ -592,6 +592,50 @@ check("countAxisTicks picks roughly five ticks, not one per unit and " +
   Charts.countAxisTicks(37).length <= 7);
 
 /*
+ * FIX WAVE 2 (#378, the finding): countAxisTicks() can push a tick past
+ * `tallest` itself (tallest=7 gives ticks 0,2,4,6,8) - measured live,
+ * scaling the plot to `tallest` left that pushed tick's own y ABOVE
+ * `top`, painting outside the plot box (the figure's <svg> is
+ * overflow:visible, so the ink lands on whatever sits above the card -
+ * the owner saw the status line read "Showin8g Weight."). The ruled
+ * fix is to scale to the TOP TICK instead: `most = ticks[ticks.length -
+ * 1]`. This is the property itself, mapped exactly the way drawBins()
+ * maps a tick to a y position, so a drift between this arm and the
+ * page's own math would show up as this arm no longer describing what
+ * renders - not as a hardcoded y value it would silently stop meaning.
+ */
+const PLOT_TOP = 20;
+const PLOT_BASELINE = 260;
+
+function tickYInsidePlot(tallest) {
+  const ticks = Charts.countAxisTicks(tallest);
+  const most = ticks[ticks.length - 1];
+  return ticks.every(function (tick) {
+    const y = PLOT_BASELINE - (tick / most) * (PLOT_BASELINE - PLOT_TOP);
+    return y >= PLOT_TOP - 1e-9 && y <= PLOT_BASELINE + 1e-9;
+  });
+}
+
+check("fix wave 2/#378: the reviewer's own first failing shape " +
+  "(tallest=7, which pushes a tick to 8) - every tick lands inside " +
+  "the plot once the scale uses the TOP tick rather than the tallest " +
+  "band",
+  tickYInsidePlot(7));
+check("fix wave 2/#378: the reviewer's other failing shape (tallest=" +
+  "14, tick 15)",
+  tickYInsidePlot(14));
+check("fix wave 2/#378: the property holds across every tallest-band " +
+  "count from 1 through 300 - the reviewer's own sweep (216 of 300 " +
+  "painted over the card before this fix), not just the two shapes " +
+  "named",
+  Array.from({ length: 300 }, function (_, i) { return i + 1; })
+    .every(tickYInsidePlot));
+check("fix wave 2/#378: the property holds on the real 120-band BMI " +
+  "and 53-band imperial-weight grids' own plausible tallest-band " +
+  "shapes too - not merely the small hand-picked cases",
+  tickYInsidePlot(bmiGrid.length) && tickYInsidePlot(weightGrid.length));
+
+/*
  * THE TREND'S VALUE AXIS (same ruling: "if its reserved gutter carries
  * no value labels today, add them"). Exact domain values only - never a
  * "nice" number this file invented for the axis.
@@ -1269,6 +1313,26 @@ const ENOUGH_FIXTURE = {
     "fraction of a person",
     axisTicks.length > 0 &&
     axisTicks.every((t) => /^\d+$/.test(t._text)));
+  /*
+   * FIX WAVE 2 (#378): ENOUGH_FIXTURE's own tallest band is 7 - the
+   * reviewer's exact first failing shape (countAxisTicks(7) pushes a
+   * tick to 8). Read back from the real rendered SVG rather than
+   * recomputed, so this is proof the PAGE fixed it, not merely that the
+   * pure function did: every axis tick's own y (the "+4" baseline nudge
+   * subtracted back out) sits inside [top, baseline] - 20 to 260 in
+   * this figure's own viewBox - and the top tick ("8") lands exactly at
+   * top, never above it.
+   */
+  const axisTickYs = axisTicks.map((t) => Number(t.attrs.y) - 4);
+  check("fix wave 2/#378: every rendered count-axis tick's own y sits " +
+    "inside the plot box, read straight off the SVG this fixture's " +
+    "own tallest band (7, the reviewer's exact case) actually drew",
+    axisTickYs.every((y) => y >= 20 - 1e-6 && y <= 260 + 1e-6));
+  check("fix wave 2/#378: the top tick (\"8\", pushed past the real " +
+    "max of 7) lands exactly at the plot's own top - not above it, " +
+    "which is where the review found it painting over the status line",
+    axisTicks.some((t, i) => t._text === "8" &&
+      Math.abs(axisTickYs[i] - 20) < 1e-6));
   check("owner ruling (the 2026-08-19 late sitting): no per-bar count " +
     "ever paints again - .chart-value is retired with the row it " +
     "belonged to, a regression guard independent of what any caption " +
@@ -1906,7 +1970,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 144;
+const EXPECTED = 150;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
