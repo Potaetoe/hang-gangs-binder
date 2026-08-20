@@ -1127,10 +1127,11 @@ function node(tag) {
 const PAGE_HTML = webTexts["charts.html"];
 const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
 const NEEDED = ["filter-field", "filter-value-field", "filter-value",
-  "measure", "picture-tab-trend", "picture-tab-distribution",
-  "picture-trend", "picture-distribution", "figure-trend",
-  "figure-distribution", "groups", "groups-body", "results", "status",
-  "show-me", "download", "tooltip-trend", "tooltip-distribution"];
+  "measure", "picture-field", "picture-tab-trend",
+  "picture-tab-distribution", "picture-trend", "picture-distribution",
+  "figure-trend", "figure-distribution", "groups", "groups-body",
+  "results", "status", "show-me", "download", "tooltip-trend",
+  "tooltip-distribution"];
 check("every element this suite drives is really in apps/web/charts.html",
   NEEDED.every((id) => IDS.includes(id)));
 
@@ -1162,6 +1163,22 @@ function buildDom(opts) {
   // apps/web/charts.html ships the download anchor `hidden` by default;
   // offerDownload() is what reveals it once a response exists.
   byId.get("download").hidden = true;
+  // 0.9-M2-S15 (#383): apps/web/charts.html ships the picture toggle's
+  // own fieldset `hidden` by default too, same as the download anchor
+  // above - there is nothing to choose a picture of before a drawn
+  // answer exists. renderAnswer() is the only thing that ever flips it.
+  byId.get("picture-field").hidden = true;
+  // The shipped markup's own default selection: Trend's tab carries
+  // aria-selected="true" and Distribution's carries "false" as static
+  // HTML, which is what renderAnswer()'s `selected` read (charts.js)
+  // actually reads on a page nobody has clicked a tab on yet.
+  // picture-distribution ships `hidden` in the markup for the same
+  // reason - a stub `node("div")` defaults hidden=false, which would
+  // read as "both panels visible" and hide a regression to this file's
+  // own read of the DOM's aria-selected default.
+  byId.get("picture-tab-trend").setAttribute("aria-selected", "true");
+  byId.get("picture-tab-distribution").setAttribute("aria-selected", "false");
+  byId.get("picture-distribution").hidden = true;
   const svgTrend = node("svg");
   const svgDist = node("svg");
   byId.get("figure-trend").appendChild(svgTrend);
@@ -1318,7 +1335,11 @@ async function driven(fetchImpl, opts) {
     "#charts-page-" + Math.random());
 
   await new Promise((resolve) => setTimeout(resolve, 0));
-  await pressShowMe(byId);
+  // 0.9-M2-S15 (#383): `skipPress` leaves setUp() run but Show me
+  // unpressed - the one way this harness can inspect the page's own
+  // BEFORE-any-answer state (the picture toggle's own default-hidden
+  // arm below), since every other caller wants the post-press page.
+  if (!options.skipPress) await pressShowMe(byId);
 
   return { byId, doc, calls, unitsInputs, created, revoked, blobs,
     createdAnchors };
@@ -1337,6 +1358,24 @@ function response(status, body) {
     ok: status >= 200 && status < 300,
     text: async () => text,
   };
+}
+
+/*
+ * 0.9-M2-S15 (#383), apparatus point 1: "before the first successful
+ * Show me: the control is absent from view (hidden, not merely
+ * disabled)". `skipPress` leaves setUp() wired but never presses Show
+ * me, so this is the page exactly as a member who has not pressed
+ * anything yet sees it - fetch is never called, and the only fixture
+ * that matters is that no fixture is ever served.
+ */
+{
+  const { byId, calls } = await driven(() => {
+    throw new Error("Show me was never pressed - fetch should not fire");
+  }, { skipPress: true });
+  check("0.9-M2-S15: the picture toggle is absent before any Show me " +
+    "press - hidden, not merely disabled, and nothing fetched to get " +
+    "there",
+    byId.get("picture-field").hidden === true && calls.length === 0);
 }
 
 /*
@@ -1397,6 +1436,10 @@ const NOT_ENOUGH_FIXTURE = {
   check("nothing is drawn when there is nothing to draw",
     byId.get("picture-trend").hidden === true &&
     byId.get("picture-distribution").hidden === true);
+  check("0.9-M2-S15, apparatus point 3: the picture toggle hides again " +
+    "on the not-enough view - there is no picture left to choose " +
+    "between",
+    byId.get("picture-field").hidden === true);
   check("the group makeup block stays hidden on an empty view",
     byId.get("groups").hidden === true);
 }
@@ -1471,6 +1514,14 @@ const ENOUGH_FIXTURE = {
   check("download is offered once a response exists - the button is " +
     "unhidden",
     byId.get("download").hidden === false);
+  check("0.9-M2-S15, apparatus point 2: the picture toggle appears once " +
+    "a drawn answer exists",
+    byId.get("picture-field").hidden === false);
+  check("0.9-M2-S15: the flip shows exactly one figure at a time - the " +
+    "default selection (Trend, aria-selected=true in the shipped " +
+    "markup) draws the trend figure and hides the distribution one",
+    byId.get("picture-trend").hidden === false &&
+    byId.get("picture-distribution").hidden === true);
 
   /*
    * Owner ruling 1, #243: the measure select itself offers only
@@ -1667,6 +1718,55 @@ const ENOUGH_FIXTURE = {
     countryChips[0].name === "United States" && countryChips[0].count === "5" &&
     countryChips[1].name === "Albania" && countryChips[1].count === "1" &&
     countryChips[2].name === "Not stated" && countryChips[2].count === "3");
+}
+
+/*
+ * 0.9-M2-S15 (#383), apparatus points 4 and 5 together: the choice
+ * persists across a second (and third) Show me press, and the toggle
+ * hides again on a not-enough answer WITHOUT resetting what the member
+ * had chosen - so a later drawn answer picks the flip back up rather
+ * than defaulting back to Trend. Three presses against the same `byId`,
+ * a served answer per press exactly like the "re-render with filter"
+ * arm above.
+ */
+{
+  const served = [ENOUGH_FIXTURE, ENOUGH_FIXTURE, NOT_ENOUGH_FIXTURE];
+  let at = 0;
+  const { byId } = await driven(() => response(200, served[at++]));
+
+  check("first press: the shipped default is Trend selected",
+    byId.get("picture-tab-trend").getAttribute("aria-selected") === "true" &&
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "false");
+
+  await byId.get("picture-tab-distribution").dispatch("click");
+  check("clicking Distribution flips aria-selected on both tabs and " +
+    "shows exactly one figure - Distribution in, Trend out",
+    byId.get("picture-tab-trend").getAttribute("aria-selected") === "false" &&
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "true" &&
+    byId.get("picture-trend").hidden === true &&
+    byId.get("picture-distribution").hidden === false);
+
+  await pressShowMe(byId);
+  check("second press (apparatus point 4): the Distribution choice " +
+    "survives a fresh drawn answer - renderAnswer() reads the tabs' own " +
+    "aria-selected rather than resetting to Trend, and the toggle is " +
+    "still shown",
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "true" &&
+    byId.get("picture-distribution").hidden === false &&
+    byId.get("picture-trend").hidden === true &&
+    byId.get("picture-field").hidden === false);
+
+  await pressShowMe(byId);
+  check("third press, a not-enough answer (apparatus points 3 and 4 " +
+    "together): the toggle hides again, but the Distribution choice " +
+    "itself is untouched - nothing here resets aria-selected, only " +
+    "visibility",
+    byId.get("picture-field").hidden === true &&
+    byId.get("picture-tab-distribution").getAttribute("aria-selected") ===
+      "true");
 }
 
 /*
@@ -2270,7 +2370,7 @@ const SECOND_BIN_MIDPOINT_IMPERIAL = Charts.midpointLabel(154, 198);
  * source text contains.
  */
 
-const EXPECTED = 170;
+const EXPECTED = 178;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
