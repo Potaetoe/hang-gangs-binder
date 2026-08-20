@@ -119,10 +119,11 @@
 
       <!-- Picture toggle. Two views of one figure - the surviving
            legitimate use of the tab grammar (0.9-M2-S2 removes tabs as
-           PAGE structure; this is not that). The Trend tab is hidden
-           for a categorical measure, whose route answer carries
-           trend: null - charts.js disables rather than shows an empty
-           pane. -->
+           PAGE structure; this is not that). Both tabs are always
+           available: categorical measures left the `measure` list
+           entirely (owner ruling 1, #243), so every measure this page
+           can chart has both a trend and a distribution - there is no
+           categorical case left for the Trend tab to hide from. -->
       <fieldset class="field">
         <legend>Picture</legend>
         <div role="tablist" aria-label="Picture">
@@ -184,6 +185,20 @@
       <figure class="chart" id="figure-distribution">
         <svg viewBox="0 0 640 320" role="img" aria-label="Distribution"></svg>
       </figure>
+    </div>
+
+    <!--
+      The group makeup: plain count lines, no chart machinery (owner
+      ruling 1 on #243 comment 5346978974). It carries its own <h2> - the
+      real heading, not a .runner eyebrow (0.9-M2-S3's grammar: a runner
+      names the section it stands on, it does not stand in for a
+      heading) - because it is its own block on the page, not a caption
+      on the two figures above it. apps/web/charts.js's renderGroups()
+      fills it and hides it along with them for the one refusal state.
+    -->
+    <div id="groups" hidden>
+      <h2>Group makeup</h2>
+      <div id="groups-body" class="stack-tight"></div>
     </div>
   </div>
 
