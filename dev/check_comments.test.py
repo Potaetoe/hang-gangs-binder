@@ -681,10 +681,12 @@ check("the same citation resolves when the cited file carries it",
       resolving('/* See DESIGN.md, "Key custody". */\n',
                 "DESIGN.md", PRESENT) == [])
 
-# The measured near misses, all three of which are correct comments.
-# DESIGN.md leads a bullet with "**One partition, not two.**" and three
-# comments cite it mid-sentence in lower case; a case-sensitive rule
-# reports all three and teaches the next reader to distrust it.
+# The measured near misses, all of which are correct comments. A cited
+# heading is written the way a heading is written and quoted the way a
+# sentence quotes it, so the two differ in case, in where a line
+# happened to wrap, and in which dash somebody typed. A rule strict
+# about any of the three reports comments that are right, which is what
+# teaches the next reader to distrust it.
 check("case is not what makes a citation stale",
       resolving('/* See DESIGN.md, "one partition, not two". */\n',
                 "DESIGN.md", "- **One partition, not two.** Both.\n") == [])

@@ -90,15 +90,23 @@ globalThis.BINDER_SITE = {
   /* `min` and `max` are what the form will accept, in that unit and   */
   /* not translated from another one: somebody typing pounds should be */
   /* told the limit in pounds, or the form looks broken to them. They  */
-  /* are also the two ends of the charts' axis, since 0.9-M2-S10 fixed */
-  /* the bands to this spec instead of fitting them to the group - so  */
-  /* a wide range draws a wide, mostly empty axis, and narrowing it is */
-  /* how a fork gets a tighter one.                                    */
+  /* are also where the charts' axis starts and ends, since 0.9-M2-S10 */
+  /* fixed the bands to this spec instead of fitting them to the group */
+  /* - so a wide range draws a wide, mostly empty axis, and narrowing  */
+  /* it is how a fork gets a tighter one. The axis SNAPS them outward  */
+  /* onto the band grid below, so the drawn ends are round numbers     */
+  /* that still cover everything the form accepts.                     */
   /*                                                                   */
-  /* `bin` and `band` are the charts' band width and how it is         */
-  /* written. The pairs are matched rather than chosen independently - */
-  /* 20 lb is about 10 kg and 2 in is about 5 cm - so switching units  */
-  /* does not silently redraw a distribution into a different shape.   */
+  /* `bin`, `anchor` and `band` are the charts' band width, where that */
+  /* width is measured from, and how the width is written out. Every   */
+  /* band edge is `anchor` plus a whole number of `bin`s, which is     */
+  /* what puts round numbers under the axis: the chart is binned in    */
+  /* the unit a member is LOOKING AT, so each unit's width is chosen   */
+  /* to be a nice number in its own terms rather than a conversion of  */
+  /* another unit's - 25 lb and 10 kg are both round, and neither is   */
+  /* the other. Switching units therefore redraws on a different grid, */
+  /* which is the point: an axis of 25, 50, 75 reads, and an axis of   */
+  /* 44, 64, 84 does not.                                             */
   /*                                                                   */
   /* `store` is which property of a stored row holds this unit's       */
   /* number. Every row carries both systems already, so switching      */
@@ -120,10 +128,10 @@ globalThis.BINDER_SITE = {
         chart: { metric: "kg", imperial: "lb" },
         base: "kg",
         units: {
-          kg: { per: 1, min: 20, max: 500, bin: 10, band: "10 kg bands",
-                store: "kg" },
-          lb: { per: 0.45359237, min: 44, max: 1100, bin: 20,
-                band: "20 lb bands", store: "lb" },
+          kg: { per: 1, min: 20, max: 500, bin: 10, anchor: 0,
+                band: "10 kg bands", store: "kg" },
+          lb: { per: 0.45359237, min: 44, max: 1100, bin: 25, anchor: 0,
+                band: "25 lb bands", store: "lb" },
         },
       },
 
@@ -139,10 +147,12 @@ globalThis.BINDER_SITE = {
         // typed with inches next to them, and the pair is one answer.
         compound: { ft: "in" },
         units: {
-          cm: { per: 1, min: 100, max: 250, bin: 5, band: "5 cm bands",
-                store: "cm" },
-          in: { per: 2.54, bin: 2, band: "2 in bands",
+          cm: { per: 1, min: 100, max: 250, bin: 5, anchor: 0,
+                band: "5 cm bands", store: "cm" },
+          in: { per: 2.54, bin: 2, anchor: 0, band: "2 in bands",
                 store: "totalInches" },
+          // No bin of its own: feet are typed, never charted, so this
+          // row carries the form's limits and nothing the axis reads.
           ft: { per: 30.48, min: 3, max: 8 },
         },
       },
@@ -218,13 +228,13 @@ globalThis.BINDER_SITE = {
       // both are worse than an index with no units at all.
       unitless: true,
       places: 1,
-      // The band width, and the two ends of the axis it is drawn on.
-      // A field with no unit table has nowhere else to keep them, and
-      // the charts need all three: since 0.9-M2-S10 the bands are fixed
-      // by this spec rather than fitted to whoever is in the group, so
-      // two views are comparable and no edge reports one member's own
-      // number. Anybody outside the range is counted in the end band
-      // nearest them, so widen it rather than lose them.
+      // The band width, its anchor, and the two ends of the axis it is
+      // drawn on. A field with no unit table has nowhere else to keep
+      // them, and the charts need all four: since 0.9-M2-S10 the bands
+      // are fixed by this spec rather than fitted to whoever is in the
+      // group, so two views are comparable and no edge reports one
+      // member's own number. Anybody outside the range is counted in
+      // the end band nearest them, so widen it rather than lose them.
       //
       // THESE TWO NUMBERS ARE DERIVED FROM THE FORM'S OWN BOUNDS, not
       // picked for looking reasonable (owner ruling, #371 comment
@@ -244,11 +254,11 @@ globalThis.BINDER_SITE = {
       // Every unit of a kind is asked, not just the charted one: a
       // member types kilograms or pounds, feet or centimeters, and each
       // carries its own bounds in its own numbers. Both ends are then
-      // rounded OUTWARD onto this row's own `bin` grid - down to 0, up
-      // to 600 - so the axis is a whole number of bands and neither end
-      // rounds in past a value the form allows. Narrowing either number
-      // starts clipping real members; widening the form's bounds above
-      // means re-deriving these.
+      // rounded OUTWARD onto this row's own `bin`/`anchor` grid - down
+      // to 0, up to 600 - so the axis is a whole number of bands and
+      // neither end rounds in past a value the form allows. Narrowing
+      // either number starts clipping real members; widening the form's
+      // bounds above means re-deriving these.
       //
       // `bin` stays at 5, which is the finest round width the derived
       // range can carry: 600 / 5 = 120 bands, under the 200-band guard
@@ -264,6 +274,7 @@ globalThis.BINDER_SITE = {
       // the band holding the group's own heaviest BMI - the trailing
       // empty bands never draw.
       bin: 5,
+      anchor: 0,
       min: 0,
       max: 600,
       chart: true,

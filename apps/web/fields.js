@@ -423,6 +423,12 @@
           unit: unit,
           store: entry.store,
           bin: entry.bin,
+          // Where the band grid is measured from. Carried per unit
+          // because the charts bin in the unit VIEWED since 0.9-M2-S17
+          // (#396): a measure that offered only one system's grid could
+          // not answer for the other, and a reader would be back to
+          // converted edges like 44 lb.
+          anchor: entry.anchor,
           band: entry.band,
         };
       });
@@ -431,9 +437,10 @@
     }
 
     // Unitless and numeric: a computed field, or a plain count. Both
-    // carry their own band width, because there is no unit table to
-    // read one off.
+    // carry their own band width and grid anchor, because there is no
+    // unit table to read either off.
     measure.bin = one.bin;
+    measure.anchor = one.anchor;
 
     if (one.kind === "computed") {
       const derivation = DERIVATIONS[one.derivation];

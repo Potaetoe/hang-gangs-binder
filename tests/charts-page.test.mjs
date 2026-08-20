@@ -600,21 +600,33 @@ function newFixedOverlapCount(texts, slot) {
   return overlaps;
 }
 
+/*
+ * `reproducesOldBug` is measured, not assumed. On the 43-band imperial
+ * grid the old two-stage shape happens NOT to collide - its ticks are
+ * three and four digits at a 13.7-unit slot, so the unclamped greedy
+ * pass already leaves a wide gap before the forced last one, and the
+ * clamp has nothing left to push into. Marking that grid honestly is
+ * the point: an arm asserting a bug reproduces where it does not is a
+ * false claim that would have to be quietly weakened later. The FIX is
+ * asserted on all three either way, which is the property that matters.
+ */
 const FIXTURES = [
-  { name: "BMI (120 bands, unitless)", ticks: bmiTicks, slot: bmiSlot },
+  { name: "BMI (120 bands, unitless)", ticks: bmiTicks, slot: bmiSlot,
+    reproducesOldBug: true },
   { name: "imperial weight (43 bands)", ticks: weightTicks,
-    slot: weightSlot },
+    slot: weightSlot, reproducesOldBug: false },
   { name: "metric weight (48 bands)", ticks: metricWeightTicks,
-    slot: metricWeightSlot },
+    slot: metricWeightSlot, reproducesOldBug: true },
 ];
 
 for (const f of FIXTURES) {
   const oldOverlaps = oldBuggyOverlapCount(f.ticks, f.slot);
   check("F1/#378: " + f.name + " - the OLD two-stage shape (plan " +
-    "unclamped, clamp separately at render) really does overlap under " +
-    "the real tick-row geometry, proving this regression is live on the " +
-    "reshaped row and not moot",
-    oldOverlaps > 0);
+    "unclamped, clamp separately at render) " +
+    (f.reproducesOldBug ? "really does overlap" : "happens not to " +
+      "overlap") + " under the real tick-row geometry, measured rather " +
+    "than assumed",
+    (oldOverlaps > 0) === f.reproducesOldBug);
 
   const newOverlaps = newFixedOverlapCount(f.ticks, f.slot);
   check("F1/#378: " + f.name + " - the FIX (labelRowPlan() fed the " +
@@ -622,6 +634,11 @@ for (const f of FIXTURES) {
     "FINAL painted positions",
     newOverlaps === 0);
 }
+check("F1/#378: the regression is live on the reshaped row - at least " +
+  "one real shipped grid still reproduces the old two-stage overlap, " +
+  "so the fix below is not moot against #396 own geometry change",
+  FIXTURES.some((f) => f.reproducesOldBug &&
+    oldBuggyOverlapCount(f.ticks, f.slot) > 0));
 
 /* BOTH ENDS SPECIFICALLY (the ruling's own words: "the left edge has the
    same latent hole ... the final-position property must cover both
@@ -2427,10 +2444,10 @@ const BANDS_FIXTURE = Object.assign({}, ENOUGH_FIXTURE, {
   const svg = byId.get("figure-distribution").querySelector("svg");
   const bars = svg.children.filter((c) => c.tag === "rect" &&
     c.attrs.class === "chart-bar");
-  // The unit marker and the count-axis ticks share .chart-label's class
-  // AND text-anchor="end" - told apart by x position exactly as the
-  // ENOUGH_FIXTURE arm above does (the marker sits at x === width; the
-  // axis ticks sit in the left gutter, x === left - 8).
+  // Only the x-axis numbers are anchored "middle" in this figure - the
+  // count-axis ticks are anchored "end" in the left gutter - so the
+  // anchor alone separates the two rows, with no x-position split to
+  // get wrong (#396 left no third text row in the figure).
   const tickEls = svg.children.filter((c) => c.tag === "text" &&
     c.attrs.class === "chart-label" && c.attrs["text-anchor"] === "middle");
   const tickTexts = tickEls.map((c) => c._text);
@@ -2892,7 +2909,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 202;
+const EXPECTED = 224;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

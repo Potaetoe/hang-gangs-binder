@@ -43,6 +43,14 @@ globalThis.BINDER_SITE = {
    
    
    
+   
+   
+   
+   
+   
+   
+   
+   
 
   units: {
      
@@ -59,10 +67,10 @@ globalThis.BINDER_SITE = {
         chart: { metric: "kg", imperial: "lb" },
         base: "kg",
         units: {
-          kg: { per: 1, min: 20, max: 500, bin: 10, band: "10 kg bands",
-                store: "kg" },
-          lb: { per: 0.45359237, min: 44, max: 1100, bin: 20,
-                band: "20 lb bands", store: "lb" },
+          kg: { per: 1, min: 20, max: 500, bin: 10, anchor: 0,
+                band: "10 kg bands", store: "kg" },
+          lb: { per: 0.45359237, min: 44, max: 1100, bin: 25, anchor: 0,
+                band: "25 lb bands", store: "lb" },
         },
       },
 
@@ -78,10 +86,12 @@ globalThis.BINDER_SITE = {
          
         compound: { ft: "in" },
         units: {
-          cm: { per: 1, min: 100, max: 250, bin: 5, band: "5 cm bands",
-                store: "cm" },
-          in: { per: 2.54, bin: 2, band: "2 in bands",
+          cm: { per: 1, min: 100, max: 250, bin: 5, anchor: 0,
+                band: "5 cm bands", store: "cm" },
+          in: { per: 2.54, bin: 2, anchor: 0, band: "2 in bands",
                 store: "totalInches" },
+           
+           
           ft: { per: 30.48, min: 3, max: 8 },
         },
       },
@@ -203,6 +213,7 @@ globalThis.BINDER_SITE = {
        
        
       bin: 5,
+      anchor: 0,
       min: 0,
       max: 600,
       chart: true,

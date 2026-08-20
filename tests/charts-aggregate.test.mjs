@@ -1938,7 +1938,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 149;
+const EXPECTED = 183;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -2124,10 +2124,22 @@ const CHART_ROWS =
  * setting, and that is the entire change - one call site, one object,
  * validated on arrival.
  *
- * NOTHING ON THE WIRE REACHES IT. askFor() refuses a query parameter it
- * does not know, so `?floor=1` is a 400 rather than a lowered floor
- * (0.9-M2-S0 security mandate 2), and this table is built here from
- * server-side state alone.
+ * IT CARRIES A SECOND SETTING, `units`, AND THE TWO ARE ONE DECISION
+ * (0.9-M2-S17, #396). Raising the floor locks the charts to a single
+ * unit system, because two independently-binned systems can be overlaid
+ * into cells the floor was meant to hide; `units` names which system a
+ * locked view is served in, and an absent one is the spec's own first
+ * system. There is nothing to set while the floor is 0 - both systems
+ * are served then and the setting is not read - so the empty table
+ * above is the whole of it until 0.9-M3's Settings page carries the
+ * pair together.
+ *
+ * NOTHING ON THE WIRE REACHES EITHER. askFor() refuses a query
+ * parameter it does not know, so `?floor=1` is a 400 rather than a
+ * lowered floor (0.9-M2-S0 security mandate 2); the `units` parameter it
+ * does accept is OVERRIDDEN by this table whenever a floor is set,
+ * never merged with it. This object is built here from server-side
+ * state alone.
  */
 const CHART_SETTINGS = Object.freeze({});
 
@@ -2160,7 +2172,12 @@ async function handleCharts(request, env, origin, caller) {
   }
 
   const answer = aggregate(opened, asked.ask, undefined, CHART_SETTINGS);
-  answer.self = selfSeries(opened, accountId, asked.ask);
+  /* The same settings object both ways: the overlay is drawn over the
+     group trend on one pair of axes, so it has to be in whatever unit
+     system the group's own answer came back in (0.9-M2-S17, #396 - a
+     raised floor decides that, not the caller). */
+  answer.self = selfSeries(opened, accountId, asked.ask, undefined,
+    CHART_SETTINGS);
 
   return new Response(JSON.stringify(answer), {
     status: 200,
