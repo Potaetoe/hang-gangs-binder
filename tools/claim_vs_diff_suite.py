@@ -55,7 +55,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 29
+EXPECTED = 33
 
 
 def check(label, condition):
@@ -275,6 +275,44 @@ try:
     code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
                            "--declared", declared_path])
     check("--declared FILE is honored", code == 0 and "MATCH" in said)
+
+    print("\n--- a BOM at the start of a --declared file is tolerated "
+          "(#387) ---")
+    # PowerShell 5.1's `Set-Content -Encoding utf8` writes a UTF-8 byte-
+    # order mark at the start of the file. Read with plain "utf-8" that
+    # BOM decodes into a literal U+FEFF character glued onto the first
+    # path, so the first declared path never matches the real diff -
+    # a false MISMATCH that aborts a good landing at the door.
+    check("parse_declared strips a leading BOM rather than treating it "
+          "as part of the first path",
+          claim_vs_diff.parse_declared("\ufeffnew-file.txt\n")
+          == {"new-file.txt"})
+
+    bom_match_path = os.path.join(root, "declared-bom.txt")
+    with open(bom_match_path, "w", encoding="utf-8-sig",
+              newline="\n") as handle:
+        handle.write("new-file.txt\n")
+    code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
+                           "--declared", bom_match_path])
+    check("a BOM-carrying declared file still matches (BOM stripped, "
+          "not read as part of the first path)",
+          code == 0 and "MATCH" in said)
+
+    print("\n--- a BOM-carrying declared file with a REAL mismatch "
+          "still refuses (BOM tolerance never masks a genuine "
+          "mismatch) ---")
+    bom_mismatch_path = os.path.join(root, "declared-bom-mismatch.txt")
+    with open(bom_mismatch_path, "w", encoding="utf-8-sig",
+              newline="\n") as handle:
+        handle.write("ghost.txt\n")
+    code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
+                           "--declared", bom_mismatch_path])
+    check("a BOM-carrying declared file with a real mismatch still "
+          "exits 1",
+          code == 1 and "MISMATCH" in said)
+    check("ghost.txt is still named declared-but-untouched, not "
+          "swallowed by BOM handling",
+          "DECLARED-BUT-UNTOUCHED (1): ghost.txt" in said)
 
     print("\n--- refs that do not resolve are refused, not misread as a "
           "clean diff ---")
