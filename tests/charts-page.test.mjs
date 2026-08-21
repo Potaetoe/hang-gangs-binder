@@ -2738,6 +2738,23 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
   const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
   const fixtureUnit = ENOUGH_FIXTURE.units.unit;
 
+  // MECHANICAL SWEEP (0.9-M3-S3, #388) of every hidden===true assertion
+  // against a tooltip node in this file, done fully before this slice's
+  // own additions below: buildDom() pre-hides both tooltip nodes
+  // (comment above, "apps/web/charts.html ships both tooltips hidden by
+  // default"), so a hidden===true check right here proves nothing about
+  // hideTooltip() actually running - deleting hideTooltip(tip) from
+  // resetTooltip() (apps/web/charts.js) leaves it green regardless
+  // (#388's own finding, proven at 7dcd971, 186/186). The two other
+  // hidden===true checks in this file (below, "moving off an unpinned
+  // tooltip hides it again" and "tapping/clicking elsewhere dismisses a
+  // pinned tooltip") are NOT this disease - each is immediately preceded
+  // by a real transition INTO the shown state within the same block, so
+  // the harness default cannot satisfy them. This one is the only
+  // survivor of the sweep, and it stays as a real (if weak) check of the
+  // shipped markup's own default - the genuine proof that resetTooltip()
+  // hides a SHOWN tooltip now lives in the force-to-opposite arm this
+  // slice adds after the empty-slot arm below.
   check("the distribution tooltip starts hidden",
     hits.length === fixtureBins.length && distTip.hidden === true);
 
@@ -2822,6 +2839,106 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     zeroParts.number === "0 members" &&
     distTip.hidden === false &&
     distTip.textContent === zeroParts.lead + zeroParts.number);
+}
+
+/*
+ * A REDRAW DISMISSES A PINNED TOOLTIP - FORCED TO OPPOSITE FIRST
+ * (0.9-M3-S3, #388, found by 0.9-M2-S15's fix-wave re-fire, #383). The
+ * sweep above found no existing arm actually proved this: the closest
+ * one ("the distribution tooltip starts hidden") runs against a FRESH
+ * page whose tooltip node was never shown, so buildDom()'s own
+ * hidden=true default satisfies it whether or not resetTooltip()'s
+ * hideTooltip(tip) call ever runs. This arm pins the tooltip FIRST (the
+ * opposite of what it is about to assert), presses Show me again for a
+ * real second draw - drawDistribution()/drawTrend()'s own
+ * resetTooltip(tip) call, at the top of each - and only then checks
+ * hidden. Deleting hideTooltip(tip) from resetTooltip() fails this and
+ * only this arm; the "starts hidden" arm above stays green throughout.
+ */
+{
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE));
+  const distTip = byId.get("tooltip-distribution");
+  const distSvg = byId.get("figure-distribution").querySelector("svg");
+  const hits = distSvg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+
+  await hits[1].dispatch("click");
+  check("0.9-M3-S3 (#388) setup: the distribution tooltip is pinned and " +
+    "shown before the redraw below - the opposite of what the next " +
+    "check asserts, which is the whole point of forcing it",
+    distTip.hidden === false);
+
+  await pressShowMe(byId);
+  check("0.9-M3-S3 (#388): a real redraw (a second Show me press) " +
+    "dismisses a PINNED tooltip - forced to shown first, so a stub " +
+    "default of hidden could not have satisfied this the way it " +
+    "satisfied the old arm",
+    distTip.hidden === true);
+}
+
+{
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE));
+  const trendTip = byId.get("tooltip-trend");
+  const trendSvg = byId.get("figure-trend").querySelector("svg");
+  const groupDots = trendSvg.children.filter((c) => c.tag === "circle" &&
+    c.attrs.class === "chart-dot series-0");
+
+  await groupDots[0].dispatch("click");
+  check("0.9-M3-S3 (#388) setup: the trend tooltip is pinned and shown " +
+    "before the redraw below",
+    trendTip.hidden === false);
+
+  await pressShowMe(byId);
+  check("0.9-M3-S3 (#388): a real redraw dismisses a PINNED trend " +
+    "tooltip too - the same force-to-opposite proof as the " +
+    "distribution figure above, run against the other figure so the " +
+    "sweep covers both tooltip nodes this file drives",
+    trendTip.hidden === true);
+}
+
+/*
+ * A KEYBOARD-DRIVEN UNITS CHANGE DISMISSES A PIN TOO (0.9-M3-S3, #388).
+ * dismissTooltipElsewhere() - the "tap elsewhere" half of owner ruling 2
+ * - is wired to the document's own "click" (setUp(), apps/web/charts.js)
+ * and nothing else, so an arrow-key change on the units radios, which
+ * fires a "change" event with no click at all, never reached it before
+ * this slice. applyUnitLock()'s onchange handler now calls
+ * dismissTooltipElsewhere() itself, ahead of showMe() - the same
+ * function the click path already uses, so there is no second dismiss
+ * rule to keep in sync. The assertion checks hidden right after
+ * dispatch("change") with NO await on the fetch/redraw that follows -
+ * proof this is the change handler's own synchronous dismiss, not the
+ * eventual redraw's (which the arm above already covers separately).
+ */
+{
+  const { byId, unitsInputs } = await driven(() =>
+    response(200, ENOUGH_FIXTURE));
+  const distTip = byId.get("tooltip-distribution");
+  const distSvg = byId.get("figure-distribution").querySelector("svg");
+  const hits = distSvg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+
+  await hits[1].dispatch("click");
+  check("0.9-M3-S3 (#388) setup: the distribution tooltip is pinned " +
+    "before the keyboard-driven change below",
+    distTip.hidden === false);
+
+  unitsInputs[0].checked = false;
+  unitsInputs[1].checked = true;
+  unitsInputs[1].dispatch("change");
+  check("0.9-M3-S3 (#388): a keyboard-driven units change - a " +
+    "\"change\" event with no click at all, exactly what an arrow key " +
+    "fires - dismisses a pinned tooltip SYNCHRONOUSLY, before the " +
+    "fetch this same handler starts has any chance to resolve and " +
+    "redraw",
+    distTip.hidden === true);
+
+  // Drained rather than left dangling: each driven() call reassigns
+  // document/fetch on globalThis, and an unresolved promise from this
+  // change's own showMe() call would otherwise write into whatever the
+  // NEXT test block installs once it eventually resolves.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /*
@@ -2999,7 +3116,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 230;
+const EXPECTED = 236;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
