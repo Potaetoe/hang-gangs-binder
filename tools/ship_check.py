@@ -353,10 +353,14 @@ only one set of `Stage` objects for both to read.
 """
 
 import argparse
+import hashlib
+import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 import agent_init
 import claim_vs_diff
@@ -737,7 +741,18 @@ _NEGATION_WORD = re.compile(r"\b(no|not|never)\b|n't\b", re.I)
 MUTATION_COUNT = re.compile(
     r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
     r"mutations?\b", re.I)
-MUTATION_TABLE_ROW = re.compile(r"^\s*\|.*\|.*\|", re.M)
+# Third finding, 0.9-M3-S22 (#435 comment 5376145722): the original
+# pattern (`^\s*\|.*\|.*\|`) matched ANY markdown table row - a file
+# list, a declared-paths table, anything with two pipes - so an honest
+# prose-only draft with an unrelated table in it passed this check with
+# no evidence at all. The row itself is never the evidence; the
+# red/green (or fail/pass) SHAPE sitting inside that same row is - so
+# the pattern now requires both: at least two pipes (a real row, not
+# bare prose) AND the result-pair words inside it, in either order.
+MUTATION_TABLE_ROW = re.compile(
+    r"^\s*\|.*\|.*\|.*\b(?:red|fail(?:ed)?)\b.*\b(?:green|pass(?:ed)?)\b"
+    r"|^\s*\|.*\|.*\|.*\b(?:green|pass(?:ed)?)\b.*\b(?:red|fail(?:ed)?)\b",
+    re.M | re.I)
 MUTATION_RESULT_PAIR = re.compile(
     r"\b(red|fail(?:ed)?)\b[^.\n]{0,60}\b(green|pass(?:ed)?)\b"
     r"|\b(green|pass(?:ed)?)\b[^.\n]{0,60}\b(red|fail(?:ed)?)\b", re.I)
@@ -792,6 +807,355 @@ def _has_browser_evidence(text):
     if BROWSER_DENY.search(text):
         return False
     return bool(BROWSER_WIDTH_OR_DEVICE.search(text))
+
+
+# --------------------------------------------------------------------
+# THE PROSE-ONLY PATH (0.9-M3-S22, #435)
+#
+# 0.9-M3-S20 (#424) was a sensitive-by-path slice (apps/web/signout.js
+# is an auth/session module - tier.py's own "Known cost" paragraph: a
+# comment-only edit to a sensitive file still tiers sensitive) whose
+# every changed line was a comment: four files, 72+/53-, comment-
+# stripped sources byte-identical to the base, dist/ hashes unchanged.
+# This stage refused it anyway, asking for a RED commit, a mutation
+# table and a browser note none of which a prose-only slice honestly
+# has. A slice whose declared files are PROVEN unchanged under comment
+# or token stripping is stronger evidence than a mutation table: the
+# code a mutation would have to break never moved.
+#
+# WHY JS GOES THROUGH build_web.mjs's OWN jsTokens(), NOT A SECOND
+# STRIPPER
+#
+# tools/build_web.mjs already carries the exact function this needs -
+# "the token stream, in order, as types and values" (its own docstring)
+# - built for the identical reason: proving two JS sources differ only
+# in comments and whitespace, never in what they DO. Re-deriving that a
+# second way here would be the second-copy failure this file's own
+# module docstring already warns against for claim_vs_diff and
+# fleet_status, one level over - `_js_or_css_identical()` below bridges
+# to the real function fresh each call instead of reimplementing it.
+# Token identity also catches what a bare comment-range strip would
+# not always isolate cleanly: a string literal is a token like any
+# other, so a change hiding inside one changes the stream and is
+# correctly NOT prose (the ticket's own words: "a string-literal
+# change is NOT prose - strings are code").
+#
+# THE BRIDGE ALWAYS READS *THIS* WORKTREE'S OWN build_web.mjs
+#
+# `BUILD_WEB_MJS` is computed from `REPO` (this file's own directory),
+# never from the `repo` a stage is judging - the tokenizer is a tool
+# applied to file CONTENT read out of git, not a file that belongs to
+# whichever repository (real or, under `ship_check_suite.py`,
+# fabricated) is under test.
+#
+# SQL AND TOML GET A PLAIN LINE-COMMENT STRIP, QUOTE-AWARE
+#
+# Neither has a parser in this tree, so `_strip_line_comments()` below
+# walks the text by hand, tracking whether it is inside a quoted
+# string so a comment marker sitting inside one is never mistaken for
+# a real comment. Known, accepted cost, the same shape tier.py's own
+# docstring names for its own heavier-tier default: a TOML triple-
+# quoted string is not specially recognized, so a `#` inside one could
+# be misread as a comment opener - rare in this repository's own TOML
+# (single-line key/value pairs), and the failure mode is SAFE (a false
+# "not identical" falls through to the normal evidence path, never a
+# false waiver).
+#
+# MARKDOWN AND DOCS ARE PROSE BY NATURE
+#
+# A `.md` file carries no executable code to protect - mutation
+# batteries and browser passes exist to guard CODE changes, not prose
+# changes. Its "stripped" content is therefore always empty on both
+# sides of the comparison, which is a real equality (not a special-
+# cased skip) computed by the exact same "compare the stripped text"
+# rule every other family uses.
+#
+# THE DIST/ HALF, FOR A DECLARED PAGE FILE
+#
+# Token identity alone does not prove the PUBLISHED bytes never moved -
+# `tools/build_web.mjs`'s own module docstring: "WHITESPACE IS LEFT
+# ALONE", so a whitespace-only reflow beside a comment edit changes
+# dist/'s bytes while leaving the token stream identical. A declared
+# page file (`PAGE_FILE`) therefore ALSO needs its dist/ mirror's own
+# git blob id unchanged between base and HEAD before it counts as
+# eligible - the mirror is the byte stream a browser actually
+# downloads, so an unchanged blob is stronger proof than a passing
+# browser check could ever be that nothing a visitor sees moved.
+# --------------------------------------------------------------------
+
+PROSE_JS_EXT = (".js",)
+PROSE_CSS_EXT = (".css",)
+PROSE_SQL_EXT = (".sql",)
+PROSE_TOML_EXT = (".toml",)
+PROSE_DOC_EXT = (".md", ".markdown")
+
+REPO_TOOLS_DIR = os.path.join(REPO, "tools")
+BUILD_WEB_MJS = os.path.join(REPO_TOOLS_DIR, "build_web.mjs")
+
+
+def _prose_family(path):
+    """"js" / "css" / "sql" / "toml" / "doc", or None for an extension
+    this stage has no stripper for. None always disqualifies the whole
+    prose-only path (see `_prose_only_verdict()`) - the safe default
+    when this stage cannot prove a file's code never moved."""
+    ext = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    if ext in PROSE_JS_EXT:
+        return "js"
+    if ext in PROSE_CSS_EXT:
+        return "css"
+    if ext in PROSE_SQL_EXT:
+        return "sql"
+    if ext in PROSE_TOML_EXT:
+        return "toml"
+    if ext in PROSE_DOC_EXT:
+        return "doc"
+    return None
+
+
+def _strip_line_comments(text, marker, quotes):
+    """`text` with every `marker`-to-end-of-line run removed, except one
+    sitting inside a quoted string - any character in `quotes` opens
+    one, a backslash escapes the next character inside it, and the
+    same quote character closes it. The shared engine behind the SQL
+    (`--`) and TOML (`#`) families - see this section's own comment for
+    the one known gap (a TOML triple-quoted string)."""
+    out = []
+    i, n = 0, len(text)
+    mlen = len(marker)
+    while i < n:
+        ch = text[i]
+        if ch in quotes:
+            quote = ch
+            out.append(ch)
+            i += 1
+            while i < n:
+                out.append(text[i])
+                if text[i] == "\\" and i + 1 < n:
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if text[i:i + mlen] == marker:
+            newline = text.find("\n", i)
+            if newline == -1:
+                i = n
+            else:
+                out.append("\n")
+                i = newline + 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _sha_of(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+# The bridge script's own dynamic import needs a URL, not a raw Windows
+# path (`C:\...` is not a valid ESM import specifier) - `pathlib`'s
+# `as_uri()` is what turns `BUILD_WEB_MJS` into one before this runs.
+_PROSE_JS_BRIDGE = """
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+function hash(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+// `node --input-type=module -e "..." -- a b c` hands this eval'd
+// script argv = [node.exe, a, b, c] - no "eval" placeholder the way a
+// real script file gets at argv[1], so the four values this call
+// passes after `--` start at index 1, not 2 (checked empirically:
+// `node --input-type=module -e "console.log(process.argv)" -- js`
+// prints exactly two entries, node.exe and "js").
+const [family, pathA, pathB, buildWebUrl] = process.argv.slice(1);
+try {
+  const { jsTokens, cssShape } = await import(buildWebUrl);
+  const textA = readFileSync(pathA, "utf-8");
+  const textB = readFileSync(pathB, "utf-8");
+  const shapeA = family === "js" ? JSON.stringify(jsTokens(textA))
+                                  : cssShape(textA);
+  const shapeB = family === "js" ? JSON.stringify(jsTokens(textB))
+                                  : cssShape(textB);
+  process.stdout.write(JSON.stringify({
+    ok: true, identical: shapeA === shapeB,
+    hashA: hash(shapeA), hashB: hash(shapeB),
+  }));
+} catch (err) {
+  process.stdout.write(JSON.stringify({
+    ok: false, error: String((err && err.message) || err),
+  }));
+}
+"""
+
+
+def _js_or_css_identical(node, family, text_a, text_b):
+    """(identical, hash_a12, hash_b12, error_or_None) for two JS or CSS
+    texts, read through `tools/build_web.mjs`'s own `jsTokens()` /
+    `cssShape()` - see this section's own module comment for why this
+    is a bridge to the real function rather than a second
+    implementation of it."""
+    if node is None:
+        return False, None, None, ("node is not on PATH; cannot run the "
+                                   "JS/CSS tokenizer.")
+    if not os.path.isfile(BUILD_WEB_MJS):
+        return False, None, None, ("%s is not in this worktree."
+                                   % BUILD_WEB_MJS)
+    fd_a, path_a = tempfile.mkstemp(suffix=".prose-a.txt")
+    fd_b, path_b = tempfile.mkstemp(suffix=".prose-b.txt")
+    try:
+        with os.fdopen(fd_a, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text_a)
+        with os.fdopen(fd_b, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text_b)
+        build_web_url = pathlib.Path(BUILD_WEB_MJS).resolve().as_uri()
+        try:
+            done = subprocess.run(
+                [node, "--input-type=module", "-e", _PROSE_JS_BRIDGE, "--",
+                 family, path_a, path_b, build_web_url],
+                capture_output=True, text=True, timeout=GATE_TIMEOUT,
+                stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return False, None, None, ("the JS/CSS tokenizer did not "
+                                       "answer in time.")
+        except OSError as problem:
+            return False, None, None, ("the JS/CSS tokenizer could not "
+                                       "be run: %s" % problem)
+        try:
+            result = json.loads(done.stdout.strip() or "{}")
+        except ValueError:
+            return False, None, None, (
+                "the JS/CSS tokenizer printed something this stage could "
+                "not read: %s" % (done.stdout + done.stderr)[:300])
+        if not result.get("ok"):
+            return False, None, None, result.get("error",
+                                                  "unknown tokenizer error")
+        return (result["identical"], result["hashA"][:12],
+               result["hashB"][:12], None)
+    finally:
+        for path in (path_a, path_b):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def _git_show(repo, ref, path):
+    """(content_or_None, missing_reason_or_None) for `path` at `ref` -
+    None content means the path does not exist there (a brand-new or
+    since-deleted file), which safely disqualifies prose-only for it
+    rather than comparing against nothing."""
+    code, out = claim_vs_diff.git(repo, "show", "%s:%s" % (ref, path))
+    if code != 0:
+        return None, "%s does not exist at %s" % (path, ref)
+    return out, None
+
+
+def _git_blob(repo, ref, path):
+    """The blob SHA for `path` at `ref`, or None when it does not
+    resolve (missing at that ref)."""
+    code, out = claim_vs_diff.git(repo, "rev-parse", "-q", "--verify",
+                                  "%s:%s" % (ref, path))
+    if code != 0:
+        return None
+    return out.strip()
+
+
+def _dist_path_for(path):
+    """The dist/ mirror of an apps/web page path, or None when `path`
+    is not under apps/web/ at all - build_web.mjs's own `plan()` mirrors
+    apps/web/<rel> to dist/<rel> 1:1 (that file's own "MODE" table)."""
+    prefix = "apps/web/"
+    if not path.startswith(prefix):
+        return None
+    return "dist/" + path[len(prefix):]
+
+
+def _prose_file_eligible(repo, base, path, node):
+    """(eligible, [line, ...]) for one declared file - see this
+    section's own module comment for the per-family rule. A page file
+    (`PAGE_FILE`) additionally needs its dist/ mirror's blob id
+    unchanged, since that mirror is the byte stream a browser actually
+    downloads."""
+    family = _prose_family(path)
+    if family is None:
+        return False, ["  prose  %s  no stripper for this extension - "
+                       "not eligible." % path]
+
+    if family == "doc":
+        lines = ["  prose  %s  markdown/docs - prose by nature, no "
+                 "stripping needed." % path]
+        identical = True
+    else:
+        base_text, missing = _git_show(repo, base, path)
+        if base_text is None:
+            return False, ["  prose  %s  %s - not eligible."
+                           % (path, missing)]
+        head_text, missing = _git_show(repo, "HEAD", path)
+        if head_text is None:
+            return False, ["  prose  %s  %s - not eligible."
+                           % (path, missing)]
+
+        if family in ("sql", "toml"):
+            marker, quotes = (("--", {"'"}) if family == "sql"
+                              else ("#", {'"', "'"}))
+            stripped_base = _strip_line_comments(base_text, marker, quotes)
+            stripped_head = _strip_line_comments(head_text, marker, quotes)
+            identical = stripped_base == stripped_head
+            lines = ["  prose  %s  base=%s head=%s  %s"
+                    % (path, _sha_of(stripped_base), _sha_of(stripped_head),
+                       "identical" if identical else "differs")]
+        else:  # "js" or "css"
+            identical, hash_a, hash_b, error = _js_or_css_identical(
+                node, family, base_text, head_text)
+            if error:
+                return False, ["  prose  %s  %s - not eligible."
+                               % (path, error)]
+            lines = ["  prose  %s  base=%s head=%s  %s"
+                    % (path, hash_a, hash_b,
+                       "identical" if identical else "differs")]
+
+    if not identical:
+        return False, lines
+
+    if PAGE_FILE.match(path):
+        dist_path = _dist_path_for(path)
+        blob_base = _git_blob(repo, base, dist_path) if dist_path else None
+        blob_head = _git_blob(repo, "HEAD", dist_path) if dist_path else None
+        if not dist_path or blob_base is None or blob_head is None:
+            lines.append("  dist   %s  %s missing at base or HEAD - not "
+                         "eligible." % (path, dist_path or "(no mirror)"))
+            return False, lines
+        dist_ok = blob_base == blob_head
+        lines.append("  dist   %s  %s  base=%s head=%s  %s"
+                     % (path, dist_path, blob_base[:12], blob_head[:12],
+                        "unchanged" if dist_ok else "changed"))
+        if not dist_ok:
+            return False, lines
+
+    return True, lines
+
+
+def _prose_only_verdict(repo, base, paths, node):
+    """(eligible, [line, ...]) for the whole declared list - eligible
+    only when EVERY declared file is (`_prose_file_eligible()`). One
+    non-identical or unsupported file turns the whole path off, per the
+    ticket's own rule."""
+    lines = []
+    all_ok = True
+    for path in paths:
+        ok, file_lines = _prose_file_eligible(repo, base, path, node)
+        lines.extend(file_lines)
+        all_ok = all_ok and ok
+    if all_ok and paths:
+        lines.append("prose-only: %d file(s) identical under comment "
+                     "stripping." % len(paths))
+    return (all_ok and bool(paths)), lines
 
 
 def _read_completion_text(path):
@@ -868,6 +1232,23 @@ def stage_tier(repo, declared_path, base, completion_path):
                      "browser-note evidence required.")
         return Stage("slice tier", True, lines, evidence, detail="trivial")
 
+    # THE PROSE-ONLY PATH (0.9-M3-S22, #435) - see this module's own
+    # section comment above `_prose_only_verdict()` for the whole
+    # argument. Tried before any RED-commit/mutation/browser evidence is
+    # asked for: a slice PROVEN unchanged under comment or token
+    # stripping (and, for a declared page file, an unchanged dist/ blob)
+    # owes none of that evidence at all.
+    node = agent_init.find_node()
+    prose_ok, prose_lines = _prose_only_verdict(repo, base, paths, node)
+    lines.append("")
+    lines.extend(prose_lines)
+    if prose_ok:
+        lines.append("")
+        lines.append("prose-only slice: no RED commit, mutation table or "
+                     "browser note required - the code either of those "
+                     "would guard never moved.")
+        return Stage("slice tier", True, lines, evidence, detail=tier_name)
+
     problems = []
     red_shas = _red_commit_shas(repo, base)
     if not red_shas:
@@ -905,11 +1286,19 @@ def stage_tier(repo, declared_path, base, completion_path):
 
     if completion_text is not None:
         if not _has_mutation_evidence(completion_text):
+            # Second finding, 0.9-M3-S22 (#435 comment 5375692397): this
+            # sentence used to say "a red/green (fail/pass) result pair"
+            # - a shape MUTATION_RESULT_PAIR itself matches, so pasting
+            # this very refusal into a --completion satisfied the check
+            # that produced it. Described here without ever putting a
+            # failing word and a succeeding word near each other.
             problems.append(
                 "no real mutation-battery evidence in the --completion "
-                "text - a %s slice's mutation battery needs a count, a "
-                "table row, or a red/green (fail/pass) result pair, not "
-                "just the word 'mutation' (which also matches inside a "
+                "text - a %s slice's mutation battery needs a count of "
+                "mutations, a markdown table row that itself shows a "
+                "broken run next to a working one, or a sentence "
+                "describing that same before-and-after, not just the "
+                "bare word 'mutation' (which also matches inside a "
                 "denial like 'no mutation table')." % tier_name)
         page_files = [path for path, judged_tier, _why in judged
                      if PAGE_FILE.match(path)]
