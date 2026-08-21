@@ -582,6 +582,37 @@ LEDGER = [
         "covers": ["server/worker.js"],
         "status": "never",
     },
+    # The door read added at 0.9-M3-S8 (#414). Unlike the two /content
+    # rows above, this one HAS a consumer coming: the admin page (#416)
+    # writes the three names and the door reads them, so what a sitting
+    # can establish is the whole round trip - set the group name, load
+    # the door signed out, see it. That page is a parallel slice, so the
+    # row is owed rather than performed, and the claim is written
+    # against what a run will actually be able to see.
+    {
+        "id": "GET /config",
+        "surface": "route",
+        "claim": "the three public names come back with no credential "
+                 "at all, and nothing else in site_content does - a "
+                 "floor set on the same deployment is absent from this "
+                 "answer, which is the allow-list holding against real "
+                 "rows rather than against a stub's",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /admin-log",
+        "surface": "route",
+        "claim": "an admin write on a real deployment leaves one line "
+                 "with the actor it really had, and the same read as a "
+                 "member session is 401 with lines in the table to "
+                 "withhold. The half a stub cannot reach is the "
+                 "ordering: `at` ties inside one millisecond and the "
+                 "tiebreak is SQLite's own rowid, so newest-first is a "
+                 "claim about D1 rather than about an array sort",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
     {
         "id": "GET /membership",
         "surface": "route",

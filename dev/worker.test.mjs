@@ -142,6 +142,13 @@ let roster = [];
 // (tests/roster-directory.test.mjs and tests/telegram-auth.test.mjs do);
 // it only has to keep the write off the submissions path.
 const directory = [];
+// The change log every admin write appends to (0.9-M3-S8, #414;
+// server/schema.sql, `admin_log`). Its own bucket for the same reason
+// the directory has one: without it the table detection below falls
+// through to the submissions default, and every admin write would put a
+// row among the ones /me counts. This suite does not assert on the log;
+// it only has to keep the write off the submissions path.
+const adminLog = [];
 
 /*
  * Payloads already spent (0.9-M1-S5, #331; server/schema.sql,
@@ -271,6 +278,7 @@ const DB = {
       : /membership/i.test(sql) ? "membership"
       : /sessions/i.test(sql) ? "sessions"
       : /\bdirectory\b/i.test(sql) ? "directory"
+      : /\badmin_log\b/i.test(sql) ? "admin_log"
       : "submissions";
     const verb = /^\s*(\w+)/.exec(sql)[1].toUpperCase();
     const counting = /COUNT\(\*\)/i.test(sql);
@@ -440,10 +448,18 @@ const DB = {
           const row = sessions.find((s) => s.token_hash === a[1]);
           if (row) row.expires_at = a[0];
         } else {
-          sessions.push({
-            token_hash: a[0], account_id: a[1], is_admin: a[2],
-            is_dev: a[3], created_at: a[4], expires_at: a[5],
+          // The columns are read OFF THE STATEMENT rather than mapped
+          // by hand: 0.9-M3-S8 (#414) inserted `admin_via` fifth, and a
+          // positional map agrees with whatever this file expected
+          // rather than with what the Worker sent - every session's
+          // created_at silently became the source label, so every
+          // deadline parsed to NaN and every credentialed route in the
+          // matrix below answered 401.
+          const row = {};
+          insertColumns.forEach((column, index) => {
+            row[column] = a[index];
           });
+          sessions.push(row);
         }
       } else if (table === "directory") {
         // One UPSERT keyed by account_id, read off the statement the same
@@ -452,9 +468,20 @@ const DB = {
         // dropped, and kept out of `stored` where it would poison the
         // submissions reads.
         upsert(directory, ["account_id"], a);
+      } else if (table === "admin_log") {
+        // Append only, which is the table's whole shape - no key, no
+        // conflict clause, nothing rewritten.
+        adminLog.push(Object.fromEntries(
+          insertColumns.map((column, index) => [column, a[index]])));
       } else if (table === "site_content") {
-        if (verb === "DELETE") content = content.filter((r) => !matches(r, a));
-        else upsert(content, ["name"], a);
+        // CASE IS FOLDED ON BOTH SIDES since 0.9-M3-S8 (#414): the
+        // statements carry COLLATE NOCASE, and a stub matching byte for
+        // byte would pass a delete that misses the row D1 would remove.
+        if (verb === "DELETE") {
+          const wanted = String(a[0]).toLowerCase();
+          content = content.filter((r) =>
+            String(r.name).toLowerCase() !== wanted);
+        } else upsert(content, ["name"], a);
       } else if (table === "membership") {
         if (verb === "DELETE") {
           // The guard refuses by removing nothing, which is what a
@@ -1024,12 +1051,15 @@ check("a correctly signed payload issues a session",
  * The arm that asserted `telegramId` in the sign-in answer is GONE with
  * the field, in the same change that removed it (0.9-M1-S5, #331). It
  * existed so a first-time admin could read their own numeric id off the
- * page and put it in ADMIN_TELEGRAM_IDS; DESIGN.md, "Admin accounts and
- * deletion", retires the founding-admin secret and every other list the
- * site no longer keeps, and what was left without that reason was a
- * route echoing the one identifier that resolves to a person. Replaced
- * here by its opposite, because a field removed is a field that must
- * stay removed.
+ * page and put it in ADMIN_TELEGRAM_IDS. That secret stays, and
+ * DESIGN.md, "Admin accounts and deletion", is where it is ruled: it is
+ * what the first flag starts from. The echo is what nobody needs.
+ * Whoever sets that value holds this deployment's configuration and
+ * reads the id from Telegram, and every admin after the first is made
+ * by a `membership` flag that names no numeric id at all, so a route
+ * handing back the one identifier that resolves to a person stands
+ * without a reason. Replaced here by its opposite, because a field
+ * removed is a field that must stay removed.
  */
 check("sign-in does not echo the caller's Telegram numeric id",
   firstBody.telegramId === undefined);

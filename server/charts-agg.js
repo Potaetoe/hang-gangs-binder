@@ -62,10 +62,11 @@
  * it takes a whole non-negative number or falls back to the default.
  * lockedSystem() reads the second setting the same object carries -
  * which unit system a floor-protected view is served in - by the same
- * rule: a name the spec offers, or the default. 0.9-M3's Settings page
- * fills that object and carries the two side by side, because they are
- * one decision; server/worker.js's CHART_SETTINGS is the single call
- * site it edits. Nothing a caller sends can reach either: askFor()
+ * rule: a name the spec offers, or the default. The Settings page
+ * carries the two side by side, because they are one decision, and what
+ * fills the object is server/worker.js's chartSettings(env), which
+ * reads both from `site_content` - the single call site an admin's
+ * write reaches. Nothing a caller sends can reach either: askFor()
  * refuses a query parameter it does not know rather than ignoring one,
  * so `?floor=1` is a refusal a caller can see, and the `units`
  * parameter it DOES accept is overridden by the lock rather than

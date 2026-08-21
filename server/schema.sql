@@ -82,11 +82,24 @@
 -- recovery if it has.
 --
 -- A whole new table is the easy case of the same rule: re-running this
--- file creates `site_content`, `membership`, `auth_replay` and
--- `directory` where they are absent and skips them where they exist,
+-- file creates `site_content`, `membership`, `auth_replay`, `directory`
+-- and `admin_log` where they are absent and skips them where they exist,
 -- which is the one thing CREATE TABLE IF NOT EXISTS is safe for. The trap
 -- is only ever a table that exists already in a different shape - which is
 -- the block above.
+--
+-- AND `sessions` IS NOW ONE OF THE TABLES THAT TRAP APPLIES TO
+-- (0.9-M3-S8, #414). It gained a nullable `admin_via` column, so a
+-- database created before that slice needs the statement the sessions
+-- block below carries -
+--
+--     ALTER TABLE sessions ADD COLUMN admin_via TEXT;
+--
+-- - before a Worker that reads it is deployed against that database.
+-- Re-running this file will NOT add it: the table exists, so CREATE
+-- TABLE IF NOT EXISTS skips, exactly as the block above describes. A
+-- nullable column is the easy half of the `supersedes` story rather
+-- than the destructive one: it adds without losing a row.
 --
 -- 0.9-M1-S6 (#332) ADDED NO COLUMN AND CHANGED NO SHAPE, so everything
 -- above stays exactly as true as it was. What that slice changed is who
@@ -210,10 +223,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
 -- and nothing says so: this Worker carries no local sign-in route at
 -- all (0.9-M2-S1, #352), so a row with the flag set can only arrive by
 -- hand, through a direct `wrangler d1 execute` or a restored backup.
--- Such a row grants nothing. Adminness is read from the admin lists
--- alone and never from this column, and a caller carrying the flag is
--- refused any write to the admin list - so the flag is a second wall
--- around a hand-written row rather than a privilege attached to it.
+-- Such a row grants nothing, and two separate things make that true.
+-- Adminness is never read from this column: it comes from the admin
+-- lists, re-read per request, on every arm but one. The exception is
+-- `admin_via` = 'telegram', where the session row is the authority
+-- because the group role cannot be re-asked without a numeric id this
+-- database deliberately holds nowhere. On that arm the lists refuse
+-- nothing, so sessionFor() in server/worker.js refuses `is_dev`
+-- outright instead, and a reader who drops that clause trusting the
+-- lists hands a hand-written row the arm it named for itself. On top
+-- of that, a caller carrying the flag is refused any write to the
+-- admin list, so the flag is a second wall around a hand-written row
+-- rather than a privilege attached to it.
 -- Dropping the column is a migration rather than an edit, which is why
 -- 0.9-M3 owns that decision: to take it, or to decline it out loud.
 --
@@ -241,13 +262,42 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
 -- `is_admin` still decides WHICH cap the slide is bounded by, so the two
 -- kinds of row differ in their ceiling and no longer in whether they
 -- have a window at all.
+--
+-- `admin_via` SAYS WHY A SESSION IS AN ADMIN SESSION, and one of its
+-- three values is load-bearing rather than decorative (0.9-M3-S8, #414;
+-- #385 rule 1). Two of them - 'flag' and 'secret' - name a list
+-- server/worker.js re-reads on every request, so a session claiming one
+-- is re-checked against that list and demoted the moment the row or the
+-- id leaves it. The third, 'telegram', names the group role the bot
+-- reported at sign-in, and it CANNOT be re-asked: getChatMember needs
+-- the numeric Telegram id, and this database deliberately holds nowhere
+-- for it (see `account_id` above and DESIGN.md, "The identifier is the
+-- whole problem"). So for that one value the row itself is the
+-- authority until the session ends.
+--
+-- What bounds that, and it is worth reading before writing a row here
+-- by hand: server/worker.js's sessionFor() re-derives the ADMIN CAP
+-- from `created_at` on every read of a 'telegram' row and refuses one
+-- past it, so an `expires_at` chosen by whoever wrote the row does not
+-- extend the one un-re-checkable path. A row also carrying is_dev = 1
+-- is refused that path outright.
+--
+-- NULLABLE, and that is what lets it be added to a database that
+-- already has rows: `ALTER TABLE sessions ADD COLUMN admin_via TEXT;` is
+-- the statement, and the header block above says why a NOT NULL column
+-- would need a DROP and recreate instead. A row from before this column
+-- reads NULL, which is "no source recorded" - a member session, or an
+-- admin session whose adminness is re-read from the lists exactly as it
+-- was before this column existed. Fail-closed in the direction that
+-- matters: NULL never grants the un-re-checkable path.
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
   is_admin   INTEGER NOT NULL DEFAULT 0,
   is_dev     INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL
+  expires_at TEXT NOT NULL,
+  admin_via  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS sessions_expiry
@@ -362,6 +412,71 @@ CREATE TABLE IF NOT EXISTS site_content (
   updated_by TEXT NOT NULL
 );
 
+-- Every admin change, who made it and when (0.9-M3-S8, #414; the ruled
+-- design #385, rule 5, which makes a log line part of every admin
+-- change). Read by an admin session and by nothing else - members see
+-- results, not the paper trail.
+--
+-- APPEND ONLY, and no route here rewrites or removes a line. A log an
+-- admin can edit answers a different question from the one it is asked:
+-- "what happened" becomes "what somebody was willing to leave", and the
+-- two admins tidying the same list that handleDeleteMembership's guard
+-- exists for are exactly the pair this record is read by.
+--
+-- `account_id` IS THE ACTOR, and `name` is what they changed - the
+-- content name for a `site_content` write, the account id whose row
+-- moved for a `membership` write. Both are the same HMAC under
+-- ACCOUNT_SECRET that `membership` and `submissions` already carry in
+-- the clear, so this table shows a dump nothing those two do not; it is
+-- never a raw Telegram id and never a handle (DESIGN.md, "The
+-- identifier is the whole problem"). It carries the literal
+-- "break-glass" for an EXPORT_TOKEN write, which cannot collide with an
+-- account id because an account id is sixty-four hex characters - the
+-- same convention `site_content.updated_by` uses, for the same reason:
+-- inventing an account id would attribute an act to somebody who did
+-- not do it.
+--
+-- NOTHING A MEMBER TYPED GOES HERE. The values this table summarizes
+-- are site copy and settings, which GET /content already serves without
+-- a credential; entry rows are not written through any route that
+-- appends here, and the one admin action over a member's own data -
+-- removing a submission - deliberately does not append, because a line
+-- naming which row was taken down is a fact about a member rather than
+-- about the site. That action is the departed-member cleanup slice's,
+-- and it takes its own security review (#385 rule 4).
+--
+-- `summary` is BOUNDED by server/worker.js rather than by this column,
+-- and the bound is the point: a value may be kilobytes of site copy,
+-- and a change log that stored each one whole would be a second copy of
+-- `site_content` that nothing keeps true.
+--
+-- `id` is the ordering, not an identifier anybody quotes. Two writes in
+-- the same millisecond carry the same `at`, so a listing ordered by
+-- time alone would put them in whatever order SQLite happened to
+-- return; the newest-first read names this column as the tiebreak.
+-- INTEGER PRIMARY KEY is SQLite's rowid alias, so this costs no storage
+-- over the row every table here already has.
+--
+-- Re-running this file is the easy case the header block describes: a
+-- whole new table, created where absent and skipped where it exists.
+-- Unlike `auth_replay` and `directory` it may NOT simply be dropped -
+-- nothing rebuilds it, because the events it records happened once.
+CREATE TABLE IF NOT EXISTS admin_log (
+  id         INTEGER PRIMARY KEY,
+  at         TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  action     TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  summary    TEXT NOT NULL
+);
+
+-- The listing reads newest first and stops at a bound, so the index is
+-- what keeps that a range scan rather than a full read as the table
+-- grows. Additive on a whole new table, so a rerun creates it and never
+-- has the supersedes index's rename-and-drop hazard.
+CREATE INDEX IF NOT EXISTS admin_log_at
+  ON admin_log(at);
+
 -- Who administers, and who bypasses the group check (#69). Readable and
 -- writable by an admin session and by nothing else.
 --
@@ -382,9 +497,10 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- already carries.
 --
 -- THIS TABLE IS ENFORCING. A row here grants what it says it grants:
--- server/worker.js unions `admin` rows with ADMIN_TELEGRAM_IDS in
--- adminAccountIds(), and `always_allow` rows with
--- ALWAYS_ALLOW_TELEGRAM_IDS in groupStanding(). Both arms are live, and
+-- server/worker.js's adminVia() reads `admin` rows as its 'flag' arm
+-- and ADMIN_TELEGRAM_IDS as its 'secret' arm, beside a live Telegram
+-- group role it cannot re-ask; groupStanding() reads `always_allow`
+-- rows beside ALWAYS_ALLOW_TELEGRAM_IDS. Every arm is live, and
 -- handleReadMembership carries the whole argument for why dual-read is
 -- what ships rather than a step passed through.
 --
