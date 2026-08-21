@@ -22,8 +22,29 @@
 # pattern tests/run.mjs's own header describes) removes its line here
 # in the same commit that deletes the file.
 #
-# One path per line, repo-relative, forward-slashed. Blank lines and
-# lines starting with # are ignored.
+# THE OTHER DIRECTION (0.9-M3-S1, #381; tests/roster-two-way.test.mjs
+# proves it by mutation). The paragraph above is direction A: a row
+# naming a file that is gone. Direction B is the one that went
+# unchecked until this ticket - a file discovery finds with no row at
+# all, whether because a row was deleted (0.9-M2-S14's own review did
+# exactly that to prove the gap) or because the file arrived and nobody
+# added one. tests/run.mjs now reds on that too, for every
+# tests/*.test.mjs it finds that is neither required below nor
+# explicitly excluded.
+#
+# A suite that is deliberately non-gating is written down, not just
+# left off: add a line reading
+#     EXCLUDE <path> :: <reason>
+# A path with no "::" after it, or an empty reason, is its own red
+# (MALFORMED EXCLUSION) rather than a silent no-op - and it does not
+# excuse the suite it names. An exclusion for a file discovery cannot
+# find is its own red too (STALE EXCLUSION) - delete the line with the
+# file. A path both required and excluded is a contradiction
+# (REQUIRED AND EXCLUDED) - pick one.
+#
+# One required path per line, repo-relative, forward-slashed, plus the
+# EXCLUDE lines above. Blank lines and lines starting with # are
+# ignored.
 
 tests/bake-hygiene.test.mjs
 tests/charts-aggregate.test.mjs
@@ -41,6 +62,7 @@ tests/origin-gate.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
 tests/roster-directory.test.mjs
+tests/roster-two-way.test.mjs
 tests/route-precedence.test.mjs
 tests/session-open.test.mjs
 tests/ship-check.test.mjs

@@ -153,6 +153,25 @@
  * answers: does every path the roster names still exist among what
  * discovery found? A green run and the roster together are the whole
  * claim "the required set actually ran", which neither says alone.
+ *
+ * BOTH DIRECTIONS (0.9-M3-S1, #381, against 0.9-M2-S14's independent
+ * review, #380). The paragraph above is one direction only - a roster
+ * row naming a file that is gone. The reviewer found the gap in the
+ * other one: DELETE a row for a suite that is still there, and nothing
+ * above objects, because nothing above ever asks "does every file
+ * discovery found have a row" - the gate went green at the reduced
+ * count with a real suite quietly no longer required. tests/ROSTER now
+ * answers both questions from one committed file: every required row
+ * needs a file (as before), and every discovered file needs a row,
+ * required or explicitly excluded via a line reading
+ * "EXCLUDE <path> :: <reason>" - tests/ROSTER's own header carries the
+ * full syntax. A suite deliberately left non-gating is a sentence
+ * somebody wrote, never a row that is merely absent; tools/check.py's
+ * NODE_SUITES_EXCLUDED (#204) is the same mechanism for the old gate's
+ * own roster, checked the same two ways (stale, or both required and
+ * excluded at once). tests/roster-two-way.test.mjs is the permanent
+ * mutation proof, over an isolated copy of this file so the real gate
+ * is never itself mutated to test it.
  */
 import { readdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -360,15 +379,48 @@ if (!(await exists(rosterPath))) {
     "arms: a red, not a note.");
 } else {
   const rosterText = await readFile(rosterPath, "utf8");
-  const required = rosterText.split(/\r?\n/).map((line) => line.trim())
+  const lines = rosterText.split(/\r?\n/).map((line) => line.trim())
     .filter((line) => line !== "" && !line.startsWith("#"));
-  if (required.length === 0) {
-    problems.push(ROSTER + " (empty)");
-    console.log(ROSTER + " names no required arms. An empty roster " +
-      "asserts nothing, which fails the same way no roster at all " +
-      "does.");
+
+  /* EXCLUDE lines (0.9-M3-S1, #381) are the written exception: a suite
+     left off the required list on purpose reads identically, at the
+     file level, to one somebody forgot - "fine unlisted" and "never
+     rostered" are the same fact until one of them is written down.
+     "EXCLUDE <path> :: <reason>" states it. Any line starting with
+     EXCLUDE is treated as an exclusion attempt, well-formed or not -
+     never silently read as a literal required path spelling "EXCLUDE
+     ...", which would just fail as REQUIRED ARM MISSING for the wrong
+     reason. */
+  const EXCLUDE_LINE = /^EXCLUDE\s+(\S+)\s*::\s*(.*)$/;
+  const required = [];
+  const excluded = new Map();
+  for (const line of lines) {
+    if (!line.startsWith("EXCLUDE")) { required.push(line); continue; }
+    const match = EXCLUDE_LINE.exec(line);
+    const reason = match ? match[2].trim() : "";
+    if (!match || reason === "") {
+      problems.push("malformed exclusion: " + line);
+      console.log("MALFORMED EXCLUSION: " + ROSTER + " has the line \"" +
+        line + "\", which does not parse as \"EXCLUDE <path> :: " +
+        "<reason>\" - a path with no reason after \"::\", or no \"::\" " +
+        "at all, states nothing. Fix the line or remove it.");
+      continue;
+    }
+    excluded.set(match[1], reason);
   }
+
+  if (required.length === 0 && excluded.size === 0) {
+    problems.push(ROSTER + " (empty)");
+    console.log(ROSTER + " names no required arms and no exclusions. " +
+      "An empty roster asserts nothing, which fails the same way no " +
+      "roster at all does.");
+  }
+
   const found = new Set(arms.map(rel));
+  const requiredSet = new Set(required);
+
+  /* Direction A (MAJOR5, #311, armed since it landed) - every path the
+     roster REQUIRES must still be among what discovery found. */
   for (const name of required) {
     if (found.has(name)) continue;
     problems.push("required arm missing: " + name);
@@ -377,6 +429,47 @@ if (!(await exists(rosterPath))) {
       "or renamed, or " + ROSTER + " itself needs updating - argue " +
       "for that change in the commit that makes it, per this file's " +
       "own DERIVE, DO NOT PIN header.");
+  }
+
+  /* Direction B (0.9-M3-S1, #381) - the gap 0.9-M2-S14's independent
+     review found: a real suite's row was deleted from tests/ROSTER and
+     the gate stayed green at the reduced count, because nothing ever
+     asked discovery's question the other way round. Every path
+     discovery FOUND must be named by the roster, required or
+     excluded. */
+  for (const name of found) {
+    if (requiredSet.has(name) || excluded.has(name)) continue;
+    problems.push("arm not on roster: " + name);
+    console.log("ARM NOT ON ROSTER: " + name + " is a discovered " +
+      "suite and " + ROSTER + " does not name it, required or " +
+      "excluded. Add \"" + name + "\" to " + ROSTER + ", or, if it is " +
+      "deliberately non-gating, add \"EXCLUDE " + name + " :: " +
+      "<reason>\" - an unrostered suite reads identically to one " +
+      "nobody remembered to keep, which is the gap this check exists " +
+      "to close.");
+  }
+
+  /* The exclusion list against both the roster and discovery, the same
+     two ways tools/check.py's NODE_SUITES_EXCLUDED is already checked
+     (#204): an exclusion nobody can find any more excuses nothing, and
+     a path both required and excluded is a contradiction the gate
+     cannot act on. */
+  for (const [name, reason] of excluded) {
+    if (!found.has(name)) {
+      problems.push("stale exclusion: " + name);
+      console.log("STALE EXCLUSION: " + ROSTER + " excludes " + name +
+        " (\"" + reason + "\") and discovery does not find it. An " +
+        "exclusion for a file that is not there excuses nothing and " +
+        "hides the next reader from the one that is - delete the " +
+        "entry.");
+    }
+    if (requiredSet.has(name)) {
+      problems.push("required and excluded: " + name);
+      console.log("REQUIRED AND EXCLUDED: " + ROSTER + " both requires " +
+        "and excludes " + name + " - the gate runs it either way " +
+        "discovery finds it, so the exclusion is a false sentence " +
+        "about this gate. Delete whichever of the two lines is wrong.");
+    }
   }
 }
 
