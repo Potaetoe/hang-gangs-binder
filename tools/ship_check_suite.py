@@ -582,17 +582,22 @@ try:
           stage.ok and "tier: sensitive" in stage.lines)
 
     mixed_declared = os.path.join(root, "declared-mixed.txt")
+    # Deliberately UNEQUAL bucket sizes (3/2/1, not 1/1/1) - a fixture
+    # where every bucket held the same count would not notice the
+    # buckets being swapped with each other, only whether a number
+    # printed at all.
     write(mixed_declared,
-         "server/worker.js\napps/web/page.html\nREADME.md\n")
+         "server/worker.js\nserver/other.js\nserver/third.js\n"
+         "README.md\nDESIGN.md\napps/web/page.html\n")
     stage = ship_check.stage_tier(repo, mixed_declared, "origin/accounts",
                                   completion_full)
-    check("a mixed list (sensitive + a page file + a doc) tiers "
+    check("a mixed list (sensitive + a page file + docs) tiers "
          "sensitive, and its page file still needs the browser note the "
          "completion above already carries",
           stage.ok and "tier: sensitive" in stage.lines)
-    check("...and the printed bucket counts are exact - 1 sensitive, 1 "
+    check("...and the printed bucket counts are exact - 3 sensitive, 2 "
          "trivial, 1 normal path(s), never a hand count",
-          "1 sensitive, 1 trivial, 1 normal path(s) judged" in stage.lines)
+          "3 sensitive, 2 trivial, 1 normal path(s) judged" in stage.lines)
 
     stage = ship_check.stage_tier(repo, None, "origin/accounts",
                                   completion_full)
