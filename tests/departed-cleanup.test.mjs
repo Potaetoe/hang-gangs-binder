@@ -148,6 +148,11 @@ const STALE_NO_ID = accountFor(STALE_NO_ID_ID);
 const BYPASSED_ID = "756060606";
 const BYPASSED = accountFor(BYPASSED_ID);
 
+/* Stale, carries its id, and the bot says they are still a member - the
+   one case where only the verdict keeps an account off the list. */
+const STALE_MEMBER_ID = "757070707";
+const STALE_MEMBER = accountFor(STALE_MEMBER_ID);
+
 const STORE_SECRET = "canary-s15-store-secret-belonging-to-nobody-v1";
 const direct = await store.openStore({ STORE_SECRET: STORE_SECRET });
 
@@ -448,6 +453,33 @@ function botSaying(status) {
   return async () => new Response(
     JSON.stringify({ ok: true, result: { status: status } }),
     { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+/*
+ * A bot that answers DIFFERENTLY PER PERSON, which is what makes "the
+ * list never contains a current member" a discrimination rather than a
+ * coincidence.
+ *
+ * With one status for every call, a run where the bot says "left" makes
+ * everybody departed and a run where it says "member" makes nobody
+ * departed - so an arm asserting that a current member is absent passes
+ * in the second run without the filter existing at all. Reading the
+ * user_id back out of the URL the Worker built is what lets one answer
+ * hold a leaver and a stayer at once, and it also proves the Worker
+ * asked about the id it should have asked about.
+ */
+function botPerPerson(byId) {
+  return async (url) => {
+    const asked = /user_id=([0-9]+)/.exec(String(url));
+    const status = asked ? byId[asked[1]] : undefined;
+    if (!status) {
+      return new Response(JSON.stringify({ ok: false }), { status: 200,
+        headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify({ ok: true, result: { status: status } }),
+      { status: 200, headers: { "Content-Type": "application/json" } });
+  };
 }
 
 async function withBot(botFetch, fn) {
@@ -1057,6 +1089,80 @@ for (const [who, headers] of [
     erase.status === 200 && db.adminLog.length === 1);
 }
 
+/*
+ * THE LIST NEVER CONTAINS A CURRENT MEMBER - the arm #420 names, and
+ * the mutation it names (drop the verdict filter) is what it is armed
+ * against.
+ *
+ * STALE_MEMBER is the case that matters and the one the fixture did not
+ * have until this arm needed it: an account that IS stale, so staleness
+ * lets it through the pre-filter, and whose sealed id the bot answers
+ * "member" for. Only the verdict keeps it off the list. GONE sits in
+ * the same answer as a leaver, so this is one call telling two people
+ * apart rather than two runs agreeing with themselves.
+ */
+{
+  const db = await fixture();
+  db.directory.set(STALE_MEMBER,
+    await directoryRow(STALE_MEMBER, STALE_MEMBER_ID, OLD));
+  const env = envFor(db);
+
+  const bot = botPerPerson({ [GONE_ID]: "left",
+    [STALE_MEMBER_ID]: "member" });
+  const { value } = await withBot(bot, () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+
+  const listed = (value.body && value.body.departed) || [];
+  check("a stale account the bot calls a current member is NOT on the " +
+    "departed list", !listed.some((row) => row.accountId === STALE_MEMBER));
+  check("...in the very same answer that DOES carry the leaver, so the " +
+    "check above is the verdict filter working and not an empty list",
+    listed.some((row) => row.accountId === GONE));
+  check("the current member is not quietly moved to `unknown` either - " +
+    "the bot answered about them, so nothing is unknown",
+    !((value.body && value.body.unknown) || [])
+      .some((row) => row.accountId === STALE_MEMBER));
+
+  const before = belongingTo(db, STALE_MEMBER);
+  const { value: erase } = await withBot(bot, () =>
+    call(env, "DELETE", "/admin-departed/" + STALE_MEMBER,
+      { headers: ADMIN_BEARER }));
+  check("erasing that current member is refused with Telegram's own " +
+    "word quoted back", erase.status === 409 &&
+    /member/.test(JSON.stringify(erase.body || {})));
+  check("and none of their rows moved", belongingTo(db, STALE_MEMBER) === before);
+}
+
+/*
+ * THE VERDICT IS RE-ASKED AT ERASE TIME, NEVER CARRIED FROM THE LIST
+ * (#420 scope 2). The list is a page an admin may have had open for an
+ * hour, and a person can rejoin a Telegram group in a second.
+ *
+ * Proved by making the two moments DISAGREE: the bot says "left" while
+ * the list is built, then "member" when the erase arrives. An
+ * implementation that trusted the list would erase; this one refuses.
+ */
+{
+  const db = await fixture();
+  const env = envFor(db);
+  const before = belongingTo(db, GONE);
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  check("the list offered the account as departed (the setup for the " +
+    "check below, not an assumption)",
+    ((list.body && list.body.departed) || [])
+      .some((row) => row.accountId === GONE));
+
+  const { value: erase } = await withBot(botSaying("member"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+  check("the erase refuses once the bot changes its mind - the verdict " +
+    "is re-asked, not carried from the list", erase.status === 409);
+  check("nothing was erased on that stale verdict",
+    belongingTo(db, GONE) === before);
+}
+
 /* ------------------------------------------------------------------ */
 /* 6. The route names, checked against the shipped surfaces.           */
 
@@ -1087,7 +1193,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 78;
+const EXPECTED = 86;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);
