@@ -271,9 +271,12 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 #                                 way in that outlives the reason it was
 #                                 added."
 #
-# WHO HOLDS ADMIN ON SIT. server/worker.js's adminVia() answers in four
-# values and callerFor() supplies the fourth; with the roster above,
-# three of them are reachable on a sit deployment and one names nobody:
+# WHO HOLDS ADMIN ON SIT. GET /me's `adminVia` field carries four
+# values. server/worker.js's adminVia() answers three of them, which
+# are the three ways a person holds admin, and callerFor() supplies the
+# fourth, which belongs to no person and no account. With the roster
+# above, three of the four are reachable on a sit deployment and one
+# names nobody:
 #
 #     'telegram'      a creator or an administrator of the TEST group
 #                     TELEGRAM_GROUP_CHAT_ID names. Asked once, at

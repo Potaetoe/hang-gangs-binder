@@ -268,7 +268,20 @@ function makeDb(seed) {
          the parentheses - would come back with the same rows as the
          allow-list asks for and every check here would stay green over
          a genuinely widened read. Parsing the literals is what makes
-         handleReadConfig's second wall reachable from a test at all. */
+         handleReadConfig's second wall reachable from a test at all.
+
+         WHAT THIS SEES, AND WHAT IT DOES NOT. It sees extra literals
+         placed INSIDE the `IN (...)` parentheses, and only those. A
+         statement widened AROUND that clause is invisible to it: write
+         `name IN (?, ?, ?) OR name = 'chart.floor'` and this regex
+         still parses three literals, the rows come back as the
+         allow-list asks for, the behavioral check below stays green,
+         and /config answers 200 where real D1 reaches the second wall
+         and answers 500. Reaching the rewritten shape means parsing the
+         whole predicate, which is a SQL engine in a test stub. The
+         bound is stated instead, so that a slice rewriting this
+         statement can tell it is outside what the arm covers rather
+         than inside it. */
       const clause = /name IN \(([^)]*)\)/.exec(sql);
       const literals = clause
         ? [...clause[1].matchAll(/'([^']*)'/g)].map((m) => m[1]) : [];

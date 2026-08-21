@@ -1051,12 +1051,15 @@ check("a correctly signed payload issues a session",
  * The arm that asserted `telegramId` in the sign-in answer is GONE with
  * the field, in the same change that removed it (0.9-M1-S5, #331). It
  * existed so a first-time admin could read their own numeric id off the
- * page and put it in ADMIN_TELEGRAM_IDS; DESIGN.md, "Admin accounts and
- * deletion", retires the founding-admin secret and every other list the
- * site no longer keeps, and what was left without that reason was a
- * route echoing the one identifier that resolves to a person. Replaced
- * here by its opposite, because a field removed is a field that must
- * stay removed.
+ * page and put it in ADMIN_TELEGRAM_IDS. That secret stays, and
+ * DESIGN.md, "Admin accounts and deletion", is where it is ruled: it is
+ * what the first flag starts from. The echo is what nobody needs.
+ * Whoever sets that value holds this deployment's configuration and
+ * reads the id from Telegram, and every admin after the first is made
+ * by a `membership` flag that names no numeric id at all, so a route
+ * handing back the one identifier that resolves to a person stands
+ * without a reason. Replaced here by its opposite, because a field
+ * removed is a field that must stay removed.
  */
 check("sign-in does not echo the caller's Telegram numeric id",
   firstBody.telegramId === undefined);

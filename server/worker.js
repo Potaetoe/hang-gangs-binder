@@ -1933,10 +1933,18 @@ async function handleTelegramAuth(request, env, origin) {
    * NO TELEGRAM NUMERIC ID IN THIS ANSWER, and nothing may put one back.
    * The numeric id is the one identifier that resolves to a person -
    * DESIGN.md, "The identifier is the whole problem" - so a route that
-   * hands one out needs a reason strong enough to carry that, and there
-   * is none: DESIGN.md, "Admin accounts and deletion", keeps no admin
-   * list and no founding-admin secret, so no deployment of this Worker
-   * is bootstrapped by reading an id off a page.
+   * hands one out needs a reason strong enough to carry that, and no
+   * admin arm supplies one. DESIGN.md, "Admin accounts and deletion",
+   * does keep a founding-admin secret for the first flag to start
+   * from, and ADMIN_TELEGRAM_IDS holds numeric ids, so the bootstrap
+   * is the one place this design still needs them. It is set from
+   * outside the product, by whoever holds this deployment's
+   * configuration and reads the id from Telegram; this Worker carries
+   * no route that writes it, and a member reading this answer is not
+   * the person setting it. Every admin after the first is made by a
+   * `membership` row keyed to the account-id HMAC, or by the group role
+   * groupStanding() reads at sign-in, and neither puts a numeric id in
+   * front of anybody.
    *
    * The handle stays, and the difference is who already holds it. The
    * page POSTed this payload, handle included, and is handed back the
@@ -3534,11 +3542,17 @@ async function route(request, env, url, allowed, admitted) {
   // real one are the same refusal to anybody who may not read the list
   // at all.
   //
-  // A session flagged `is_dev` is not an admin by virtue of the flag:
-  // adminness is read from the admin lists alone, so such a session is
-  // a member unless its account id sits in one. The flag buys a second
-  // refusal on top of that - a caller carrying it may not touch the
-  // admin list at all, which handleAddMembership argues in full. The
+  // A session flagged `is_dev` is not an admin by virtue of the flag,
+  // and two different things say so. On the 'flag' and 'secret' arms
+  // adminness is read from the admin lists, so such a session is a
+  // member unless its account id sits in one. On the 'telegram' arm the
+  // lists are not consulted at all, because the session row is the
+  // authority there, so what refuses the development row is the
+  // explicit !isDev in sessionFor(): drop that clause trusting the
+  // lists to handle it and a hand-written row gets the arm it named for
+  // itself. The flag buys a second refusal on top of both, a caller
+  // carrying it may not touch the admin list at all, which
+  // handleAddMembership argues in full. The
   // role is in the path here, so the refusal is in the router where the
   // rest of the gate is; on POST it is the first thing past the body
   // parse, which is the earliest the role is knowable at all.

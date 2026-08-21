@@ -223,10 +223,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS submissions_supersedes_unique
 -- and nothing says so: this Worker carries no local sign-in route at
 -- all (0.9-M2-S1, #352), so a row with the flag set can only arrive by
 -- hand, through a direct `wrangler d1 execute` or a restored backup.
--- Such a row grants nothing. Adminness is read from the admin lists
--- alone and never from this column, and a caller carrying the flag is
--- refused any write to the admin list - so the flag is a second wall
--- around a hand-written row rather than a privilege attached to it.
+-- Such a row grants nothing, and two separate things make that true.
+-- Adminness is never read from this column: it comes from the admin
+-- lists, re-read per request, on every arm but one. The exception is
+-- `admin_via` = 'telegram', where the session row is the authority
+-- because the group role cannot be re-asked without a numeric id this
+-- database deliberately holds nowhere. On that arm the lists refuse
+-- nothing, so sessionFor() in server/worker.js refuses `is_dev`
+-- outright instead, and a reader who drops that clause trusting the
+-- lists hands a hand-written row the arm it named for itself. On top
+-- of that, a caller carrying the flag is refused any write to the
+-- admin list, so the flag is a second wall around a hand-written row
+-- rather than a privilege attached to it.
 -- Dropping the column is a migration rather than an edit, which is why
 -- 0.9-M3 owns that decision: to take it, or to decline it out loud.
 --
