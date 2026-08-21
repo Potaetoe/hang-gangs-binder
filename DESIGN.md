@@ -184,6 +184,32 @@ record's ruled property that a raw dump reveals nothing, because a
 clear-text roster is the oracle by a shorter route than any hash of a
 handle would be.
 
+**The numeric id is stored in exactly one place: inside the sealed
+directory record** (owner ruling, 2026-08-21, at the departed-member
+cleanup slice). This narrows a rule that used to read as "the numeric
+id is stored nowhere", and it was put to the owner as a decision rather
+than taken as an implementation detail, because the two sides of it are
+both real. What forced it: admins may erase a **departed** member's
+rows, only the bot may say who is departed, and `getChatMember` takes a
+numeric id — the directory is keyed by a one-way HMAC of one, and
+Telegram has no by-username form of that call. So the erasing power and
+the stored id are the same ruling.
+
+The bounds are the reason it is safe, and each is enforced rather than
+promised: the id is **never a column, never an index, never served by
+any route, and never logged**; it sits under the same key, the same
+purpose and the same AAD binding as the handle already sealed beside
+it, so a raw dump still shows an HMAC and two timestamps; and exactly
+one function unseals it — the departed check — which asks the bot and
+drops it. A second reader is a new decision, not a refactor. The
+per-request admin re-check still does **not** use it: sessions are not
+re-validated against Telegram, and a leaver's sessions still end at
+their next sign-in rather than by polling.
+
+A directory record written before that ruling carries no id, and its
+member's status reads **unknown until their next sign-in** — never
+guessed in either direction.
+
 A row has two identities and they are not equally good: the id is set
 server-side from a verified sign-in and cannot be forged by the page;
 anything the client typed is a claim. Treat the id as identity.

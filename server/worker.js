@@ -1123,9 +1123,16 @@ async function membershipAccountIds(env, role) {
  *
  * `status` IS THE GROUP ROLE FROM THIS SIGN-IN and never a stored one.
  * It is null everywhere except inside handleTelegramAuth, which is the
- * only place the numeric id exists at all - see groupStanding(). So the
- * 'telegram' arm is unreachable on any later request, which is exactly
- * why sessionFor() has to read that one from the session row.
+ * only place a numeric id is in hand DURING A REQUEST - see
+ * groupStanding(). So the 'telegram' arm is unreachable on any later
+ * request, which is exactly why sessionFor() has to read that one from
+ * the session row.
+ *
+ * A sealed numeric id does exist in the directory record since
+ * 0.9-M3-S15 (#420), and it does not reach this function: unsealing it
+ * per request to re-ask the group role is the per-request re-check the
+ * design has declined twice, and departedVerdict() is the one reader
+ * the owner's ruling attached to that field.
  */
 async function adminVia(env, accountId, status) {
   if (typeof status === "string" && GROUP_ADMIN_STATUSES.includes(status)) {
@@ -1411,11 +1418,21 @@ async function groupStanding(env, userId) {
  * The lever behind #136, and it fires from exactly one place -
  * handleTelegramAuth, when Telegram has definitively said this person is
  * no longer in the group. NOT from sessionFor(), which cannot ask the
- * question at all: a session row carries `account_id`, the HMAC of a
- * Telegram numeric id, and getChatMember needs the numeric id itself.
- * Storing that beside the session is what a per-request re-check would
- * cost, and server/schema.sql states the account-id-never-the-numeric-id
- * rule as a prohibition rather than a preference. So the bound is:
+ * question: a session row carries `account_id`, the HMAC of a Telegram
+ * numeric id, and getChatMember needs the numeric id itself.
+ *
+ * A NUMERIC ID DOES NOW EXIST AT REST, and it deliberately does not
+ * change this bound (owner ruling, 2026-08-21, at 0.9-M3-S15, #420). It
+ * is sealed inside the DIRECTORY record, and the ruling that allowed it
+ * there attached one reader to it: the departed check, which an admin
+ * invokes deliberately over a stale roster. Wiring it into sessionFor()
+ * instead would make every authenticated request an outbound call to
+ * Telegram - a per-request re-check whose cost the design has weighed
+ * and declined twice - and would turn one admin-invoked lookup into
+ * traffic proportional to the whole site's use. So the bound below
+ * stands as written, and this paragraph is here so the next reader
+ * knows it was re-examined against the new fact rather than left
+ * un-revisited. The bound is:
  *
  *   a leaver's session ends at their NEXT SIGN-IN ATTEMPT, or at natural
  *   expiry, whichever comes first.
@@ -1571,10 +1588,16 @@ async function issueSession(env, accountId, via, isDev) {
  * (0.9-M3-S8, #414; #385 rule 1). The paragraph above said the lists
  * are the only source; that stopped being the whole truth the moment a
  * Telegram group role could grant admin, because the role CANNOT be
- * re-asked here. getChatMember needs the numeric Telegram id, this
- * database holds nowhere for one on purpose, and storing one beside the
- * session is the membership oracle the whole account design exists to
- * kill - the same bound revokeAccountSessions() is written out for.
+ * re-asked here. getChatMember needs the numeric Telegram id, and this
+ * database holds none beside the session on purpose - storing one there
+ * is the membership oracle the whole account design exists to kill, and
+ * it is the same bound revokeAccountSessions() is written out for.
+ *
+ * The directory record has held a SEALED numeric id since 0.9-M3-S15
+ * (#420, owner ruling 2026-08-21), and that deliberately does not open
+ * this door. Unsealing it here would put an outbound Telegram call on
+ * every authenticated request; the ruling attached exactly one reader
+ * to that field, the admin-invoked departed check, and this is not it.
  *
  * So a row carrying admin_via = 'telegram' keeps its adminness without
  * a list to be found in, and three things bound that rather than one:
@@ -1810,10 +1833,36 @@ function log(event, accountId) {
  *
  * A RE-SYNC KEEPS joined_at. The UPSERT rewrites the ciphertext and moves
  * last_seen_at forward on every verified sign-in; joined_at is written
- * once and never touched again, so it stays the first-seen date. The admin
- * read of this table is a later milestone - Members is 0.9-M3 (DESIGN.md,
- * "Admin surfaces") - so nothing here serves a directory record back; this
- * is the write half alone.
+ * once and never touched again, so it stays the first-seen date.
+ *
+ * THE NUMERIC TELEGRAM ID IS IN THIS RECORD, by owner ruling
+ * (2026-08-21, at 0.9-M3-S15, #420) rather than by a builder's choice.
+ * It exists at rest ONLY inside this sealed blob, under the same key,
+ * the same purpose and the same AAD binding as the handle beside it,
+ * and for one purpose only - departedVerdict() unseals it to ask the
+ * bot whether that member has left, and drops it.
+ *
+ * WHY IT HAS TO BE HERE, so nobody removes it as an oversight: #385
+ * rule 4 gives admins the power to erase a DEPARTED member's rows, and
+ * only the bot may say who is departed. getChatMember takes a numeric
+ * id; `directory` is keyed by a one-way HMAC of one, and there is no
+ * by-username form of that call. So an id this Worker can read is what
+ * the ruled power costs, and the two are one decision rather than two.
+ *
+ * WHAT DID NOT CHANGE, which is most of it. The id is never a column,
+ * never an index, never served by any route, never logged, and never
+ * read by the per-request admin re-check - sessionFor() still cannot
+ * re-ask the group role, and revokeAccountSessions() still ends a
+ * leaver's sessions at their next sign-in rather than by polling. A
+ * dump of the tables still shows the HMAC and two timestamps and
+ * nothing that resolves to a person. The id is as protected as the
+ * handle already sealed next to it, which is the whole of the argument
+ * the ruling accepted.
+ *
+ * A record written before that ruling HAS NO id, and every reader must
+ * treat its absence as "unknown" rather than as anything else - the
+ * departed check refuses to guess, and the row's id arrives when that
+ * member next signs in and this UPSERT rewrites the ciphertext.
  */
 async function syncDirectoryEntry(store, env, accountId, fields, now) {
   const bound = rowIdentity(accountId);
@@ -1821,6 +1870,7 @@ async function syncDirectoryEntry(store, env, accountId, fields, now) {
     handle: fields.handle,
     displayName: fields.displayName,
     role: fields.role,
+    telegramId: fields.telegramId,
   });
   const sealed = bytesToBase64(await store.sealDirectory(
     record, { accountId: bound, recordId: DIRECTORY_SLOT }));
@@ -1895,9 +1945,11 @@ async function handleTelegramAuth(request, env, origin) {
    * The group check, and the one place its three-way answer is spent.
    *
    * A definitive departure also ends whatever sessions this account is
-   * still holding. Sign-in is the only moment the numeric id is in hand,
-   * so it is the only moment the question can be asked - the bound that
-   * follows from that is written out on revokeAccountSessions().
+   * still holding. Sign-in is the only moment this path has the numeric
+   * id in hand, so it is the only moment THIS lever can fire - the
+   * bound that follows is written out on revokeAccountSessions(), which
+   * also records why the sealed id added in 0.9-M3-S15 (#420) does not
+   * shorten it.
    *
    * "unknown" refuses and revokes nothing, which is the difference the
    * three-way answer exists to carry. An unreachable Telegram is not
@@ -1969,6 +2021,11 @@ async function handleTelegramAuth(request, env, origin) {
         .filter((part) => typeof part === "string" && part.trim() !== "")
         .join(" "),
       role: isAdmin ? "admin" : "member",
+      // The numeric id, sealed and never stored beside the row. It is
+      // written HERE because this is the only place it exists at all -
+      // see syncDirectoryEntry's own comment for what it is for and
+      // what may read it.
+      telegramId: String(user.id),
     }, new Date().toISOString());
   } catch (e) {
     log("directory.sync.failed", accountId);
@@ -3388,79 +3445,93 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
 
 /*
  * HAS THIS ACCOUNT LEFT THE GROUP? The one question this whole slice
- * turns on, and the one it cannot answer yet (0.9-M3-S15, #420).
+ * turns on (0.9-M3-S15, #420; the ruled design #385, rule 4).
  *
- * THE BOT IS THE ONLY JUDGE. #385 rule 4 gives admins one per-member
- * power and bounds it to a DEPARTED member, and nothing on this side
- * may decide who that is: staleness is a fact about sign-ins, a label
- * is a nickname somebody typed, and neither is evidence anybody left.
- * groupStanding() asks Telegram, and Telegram's answer is the verdict.
+ * THE BOT IS THE ONLY JUDGE, and nothing on this side may stand in for
+ * it. Staleness is a fact about sign-ins, a label is a nickname
+ * somebody typed, and neither is evidence anybody left. groupStanding()
+ * asks Telegram and its answer is the verdict - reached through that
+ * function rather than around it, so the timeout, the always_allow
+ * bypass and the error path that must never log the bot token all keep
+ * one home.
  *
- * AND IT CANNOT BE ASKED ABOUT A STORED ROW TODAY. getChatMember takes
- * a NUMERIC Telegram id - groupStanding() interpolates one into the URL
- * - and this database holds none. `directory` is keyed by
- * HMAC(ACCOUNT_SECRET, numeric id), which is one-way by construction
- * (see server/schema.sql's `directory` block and DESIGN.md, "The
- * identifier is the whole problem"), and the record sealed beside that
- * key holds the handle, the display name and the role and no id at all.
- * The handle does not rescue it either: there is no by-username form of
- * getChatMember. So the numeric id exists only inside a live sign-in,
- * where handleTelegramAuth already has it and already acts on it.
+ * THE NUMERIC ID COMES OUT OF THE SEALED DIRECTORY RECORD AND GOES
+ * NOWHERE ELSE. It is unsealed here, handed to groupStanding(), and
+ * dropped when this function returns: it is never written to another
+ * table, never put in a response, never logged, and never returned from
+ * this function - the verdict that leaves here is a word and a boolean.
+ * This is the ONLY reader of that field, which is the condition the
+ * owner attached to letting the field exist at all (2026-08-21). A
+ * second reader is not a refactor; it is a new decision.
  *
- * Closing that gap is a decision about what may be stored at rest, not
- * an implementation detail, so it is the owner's rather than this
- * slice's and is open at #420. Until it is ruled, this function answers
- * "unknown" for every account and every caller of it fails closed -
- * which is the same answer an unreachable Telegram already produces, and
- * the same direction groupStanding() already fails in: not being able to
- * ask is never evidence that somebody left.
+ * FOUR WAYS TO GET "UNKNOWN", AND UNKNOWN IS NEVER DEPARTED. No
+ * directory row; a row whose record will not open; a record written
+ * before the id existed, which is every row from before that ruling
+ * until its member next signs in; and Telegram not answering. All four
+ * collapse to the same answer on purpose, because "the question could
+ * not be asked" is one fact however it arose, and every caller must
+ * fail closed on all of it. DESIGN.md's bot-failure stance governs here
+ * exactly as it governs sign-in: "cannot check" is never treated as
+ * "not a member".
  *
- * THE PARAMETERS ARE UNDERSCORED BECAUSE NOTHING READS THEM YET, and
- * that is the honest shape rather than a tidy one: an implementation
- * that touched `env` to satisfy a linter would be pretending to ask a
- * question it cannot ask. They are the arguments every candidate answer
- * at #420 needs, so the signature is settled even though the body is
- * not, and the callers below are written against it.
+ * IT THROWS NOTHING. A directory row that will not open is a real
+ * possibility across a key rotation, and an admin looking at a cleanup
+ * list should see that one account sit the list out rather than watch
+ * the whole page fail. The catches are wide for that reason and narrow
+ * in what they can hide: every branch inside them ends in the same
+ * "unknown" the callers already refuse on.
  */
-async function departedVerdict(_env, _accountId) {
-  return { known: false, departed: false, status: null };
+async function departedVerdict(env, accountId) {
+  const unknown = { known: false, departed: false, status: null };
+
+  let row;
+  try {
+    row = await env.DB.prepare(
+      "SELECT ciphertext FROM directory WHERE account_id = ?"
+    ).bind(accountId).first();
+  } catch (e) {
+    return unknown;
+  }
+  if (!row || typeof row.ciphertext !== "string") return unknown;
+
+  let telegramId;
+  try {
+    const store = await openStore(env);
+    const record = JSON.parse(await store.openDirectory(
+      base64ToBytes(row.ciphertext),
+      { accountId: accountId, recordId: DIRECTORY_SLOT }));
+    telegramId = record && record.telegramId;
+  } catch (e) {
+    return unknown;
+  }
+  /*
+   * TELEGRAM_ID rather than a truthiness test, and the difference is
+   * what reaches the network: a record from before the field existed
+   * reads undefined, and one carrying anything that is not a bare
+   * numeric id is not a record this Worker wrote. Both are "cannot
+   * ask", and neither may be interpolated into the bot URL.
+   */
+  if (typeof telegramId !== "string" || !TELEGRAM_ID.test(telegramId)) {
+    return unknown;
+  }
+
+  const standing = await groupStanding(env, telegramId);
+  if (standing.standing === "unknown") return unknown;
+  return {
+    known: true,
+    departed: standing.standing === "left",
+    /*
+     * Telegram's own word where it gave one. The always_allow bypass
+     * answers "member" with no status at all, so it is reported as the
+     * bypass it is rather than as a word Telegram did not say - an
+     * admin reading "allowed" back can tell that this account is on the
+     * bypass list and was never asked about.
+     */
+    status: standing.status ||
+      (standing.standing === "left" ? "left" : "allowed"),
+  };
 }
 
-/*
- * Erase every row one account owns, in one transaction (#420 scope 2;
- * the ruled design #385, rule 4).
- *
- * FOUR ROW CLASSES AND NOTHING ELSE: the entries, the directory row,
- * the membership rows and the sessions. Each statement is scoped to the
- * one account id, which is what makes this a per-member power rather
- * than an admin bulk-delete - and the two-member fixture in
- * tests/departed-cleanup.test.mjs is what proves the scoping held,
- * because counting the erased account's rows down to zero cannot see a
- * clause that also took somebody else's.
- *
- * ONE BATCH, so a failure halfway leaves the account whole rather than
- * half-erased. A half-erased account is the worst of both: the member's
- * entries are gone and their session still opens the site.
- *
- * THE MEMBERSHIP DELETE CARRIES THE LAST-GRANTING-ADMIN GUARD, the same
- * clause handleDeleteMembership puts inside its own statement, and it is
- * here for the same reason it is there rather than as belt-and-braces:
- * an erase that removed every membership row for an account would
- * otherwise be a back door around the one invariant server/schema.sql
- * states as absolute - the last `admin` row that grants cannot go, or
- * the table locks everybody out. handleEraseDeparted refuses such an
- * account before calling this at all, so reaching the clause means two
- * admins raced; the clause is what makes the invariant true rather than
- * likely.
- *
- * NO CASCADE INTO ANYBODY ELSE'S ROWS. `submissions.supersedes` may
- * point at a row this removes, and that pointer resolves as no pointer
- * exactly as handleDeleteSubmission's own comment describes - a
- * correction whose target is gone puts the corrected row back among the
- * current ones. Following the pointer would turn erasing one member
- * into deleting another member's entry, which is the one thing this
- * function must never do.
- */
 async function eraseAccount(env, accountId) {
   const lastGrantingAdmin =
     " AND (role <> 'admin'" +
@@ -3536,22 +3607,39 @@ async function handleReadDeparted(env, origin) {
   }
 
   const departed = [];
+  const unknown = [];
   for (const row of ((stale && stale.results) || [])) {
     const verdict = await departedVerdict(env, row.account_id);
-    // Unknown is not departed. An account the bot could not be asked
-    // about stays off this list entirely rather than appearing with a
-    // softer word beside it, because the list's whole meaning is that
-    // an erase offered against it is safe.
-    if (!verdict.known || !verdict.departed) continue;
-    departed.push({
+    const entry = {
       accountId: row.account_id,
       label: labels.get(String(row.account_id).toLowerCase()) || null,
       lastSeenAt: row.last_seen_at,
-      status: verdict.status,
-    });
+    };
+    /*
+     * TWO LISTS, BECAUSE UNKNOWN IS NOT DEPARTED AND IS NOT NOTHING.
+     * An account the bot could not be asked about must never appear
+     * among the departed - an erase offered against that list has to be
+     * safe, and that is the list's whole meaning. But dropping it
+     * silently is its own lie: the commonest reason to be unaskable is
+     * a directory record written before the numeric id was sealed into
+     * it (owner ruling, 2026-08-21), which every row carries until its
+     * member next signs in. An admin who saw a stale account simply
+     * vanish would conclude it had been checked and cleared.
+     *
+     * So it goes in `unknown` with the reason a person can act on, and
+     * the erase refuses it exactly as this list does.
+     */
+    if (!verdict.known) {
+      unknown.push(Object.assign({ reason: "unknown until next sign-in" },
+        entry));
+      continue;
+    }
+    if (!verdict.departed) continue;
+    departed.push(Object.assign({ status: verdict.status }, entry));
   }
 
-  return json({ ok: true, departed: departed }, 200, origin);
+  return json({ ok: true, departed: departed, unknown: unknown }, 200,
+    origin);
 }
 
 /*

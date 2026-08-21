@@ -23,18 +23,24 @@
  *      id, the verdict and the COUNTS - never a row, never a handle,
  *      never a numeric Telegram id.
  *
- * THE VERDICT SOURCE IS UNDER OWNER RULING AND ITS ARMS ARE RED ON
- * PURPOSE (#420, the fork raised at build time). The route's oracle -
- * "has this account left the group?" - cannot be answered from anything
- * this database stores: getChatMember needs the numeric Telegram id,
- * `directory` is keyed by the HMAC of one, and the sealed record holds
- * the handle, the display name and the role and no id at all. Until the
- * owner rules how the verdict may be obtained, departedVerdict() in
- * server/worker.js answers "unknown" for every account and the route
- * fails closed. The arms in section 5 below assert what the route must
- * do once a verdict CAN be had; they are expected to fail, and the
- * count at the foot of this file says how many. Deleting them to make
- * the file green would be deleting the contract.
+ * THE VERDICT COMES FROM THE SEALED NUMERIC ID, and that is an owner
+ * ruling rather than a design this slice chose (2026-08-21). The
+ * oracle - "has this account left the group?" - cannot be answered from
+ * an HMAC: getChatMember takes a numeric Telegram id, and there is no
+ * by-username form of it. So the id is sealed into the directory
+ * record beside the handle, under the same key and the same AAD, and
+ * departedVerdict() is the ONLY thing that unseals it. The condition
+ * attached to that ruling is armed here rather than trusted: section 5
+ * sweeps both routes' whole answers, and the log line, for every
+ * numeric id on the fixture.
+ *
+ * THREE STATES, NOT TWO, and the third is the ordinary one. An account
+ * is departed, current, or UNKNOWN - and every directory row in the
+ * live database is unknown until its member next signs in, because it
+ * was written before the id was sealed into it. Unknown is never
+ * departed, is never erasable, and is never dropped silently from the
+ * admin's view, since an account that simply vanished from the list
+ * would read as checked and cleared. All three are armed both ways.
  *
  * WHY THE WHOLE WORKER RATHER THAN ITS PARTS, and why a data: URL: the
  * same reasons tests/admin-identity.test.mjs and
@@ -82,6 +88,12 @@ async function loadWorker(src) {
 const workerModule = await loadWorker(workerSrc);
 const worker = workerModule.default;
 
+/* The at-rest format by its own path, so this arm seals directory
+   records the Worker really opens. HKDF's salt is fixed, so a store
+   built from the same STORE_SECRET seals what the Worker unseals. */
+const store = await import(
+  pathToFileURL(ROOT + "server/store-crypto.js").href);
+
 let performed = 0;
 let failures = 0;
 const failed = [];
@@ -93,6 +105,9 @@ function check(label, condition) {
 
 /* ------------------------------------------------------------------ */
 /* Canaries.                                                           */
+
+const OLD = "2020-01-01T00:00:00.000Z";
+const RECENT = new Date(Date.now() - 60 * 1000).toISOString();
 
 const ACCOUNT_SECRET = "canary-s15-account-secret-belonging-to-nobody";
 const EXPORT_TOKEN = "canary-s15-export-token-belonging-to-nobody";
@@ -121,6 +136,42 @@ const GONE = accountFor(GONE_ID);
 const STAYS = accountFor(STAYS_ID);
 const ADMIN = accountFor(ADMIN_ID);
 const FLAGGED = accountFor(FLAGGED_ID);
+
+/* Stale, and its directory record predates the sealed numeric id - the
+   state every row in the live database is in until its member next
+   signs in. */
+const STALE_NO_ID_ID = "755050505";
+const STALE_NO_ID = accountFor(STALE_NO_ID_ID);
+
+/* Stale, carries its id, and sits on the always_allow bypass - so the
+   bot is never asked about it and it is never departed. */
+const BYPASSED_ID = "756060606";
+const BYPASSED = accountFor(BYPASSED_ID);
+
+const STORE_SECRET = "canary-s15-store-secret-belonging-to-nobody-v1";
+const direct = await store.openStore({ STORE_SECRET: STORE_SECRET });
+
+/*
+ * A directory row as the Worker writes one: the record sealed under
+ * purpose 'dir', bound to this account and the directory slot.
+ *
+ * `telegramId` is passed rather than derived, because the two cases
+ * this slice turns on are a record that HAS the numeric id and one
+ * written before the id existed - and the second is not a hypothetical.
+ * Every directory row in the live database predates the owner ruling
+ * that put the id here (2026-08-21), and stays id-less until its member
+ * next signs in. Pass null to build one of those.
+ */
+async function directoryRow(accountId, telegramId, lastSeenAt) {
+  const record = { handle: "sealed-handle-" + String(accountId).slice(0, 4),
+    displayName: "Sealed Name", role: "member" };
+  if (telegramId !== null) record.telegramId = String(telegramId);
+  const sealed = await direct.sealDirectory(JSON.stringify(record),
+    { accountId: accountId, recordId: "directory" });
+  return { account_id: accountId,
+    ciphertext: Buffer.from(sealed).toString("base64"),
+    joined_at: OLD, last_seen_at: lastSeenAt };
+}
 
 /* ------------------------------------------------------------------ */
 /* The D1 stub.                                                        */
@@ -295,6 +346,10 @@ function makeDb(seed) {
       directory.delete(args[0]);
       return { meta: { changes: had ? 1 : 0 } };
     }
+    if (sql.startsWith("SELECT ciphertext FROM directory WHERE account_id")) {
+      const found = directory.get(args[0]);
+      return found ? { ciphertext: found.ciphertext } : null;
+    }
     if (sql.startsWith("SELECT account_id, last_seen_at FROM directory")) {
       const limit = Number(/LIMIT (\d+)/.exec(sql)[1]);
       return { results: [...directory.values()]
@@ -359,7 +414,7 @@ function envFor(db, overrides) {
   return Object.assign({
     DB: db.DB,
     ACCOUNT_SECRET: ACCOUNT_SECRET,
-    STORE_SECRET: "canary-s15-store-secret-belonging-to-nobody-v1",
+    STORE_SECRET: STORE_SECRET,
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_GROUP_CHAT_ID: CHAT_ID,
     EXPORT_TOKEN: EXPORT_TOKEN,
@@ -426,8 +481,7 @@ function sessionRow(token, accountId, fields) {
   }, fields || {});
 }
 
-const OLD = "2020-01-01T00:00:00.000Z";
-const RECENT = new Date(Date.now() - 60 * 1000).toISOString();
+
 
 /*
  * The two-member fixture, built fresh for every scenario so that no arm
@@ -439,7 +493,7 @@ const RECENT = new Date(Date.now() - 60 * 1000).toISOString();
  * anything to the wrong account, or forgot a clause, moves one of
  * STAYS's rows, and the byte comparison below sees it.
  */
-function fixture() {
+async function fixture() {
   return makeDb({
     submissions: [
       { id: 11, account_id: GONE, ciphertext: "gone-one",
@@ -454,17 +508,30 @@ function fixture() {
         received_at: "2025-03-01T00:00:00.000Z", supersedes: null },
     ],
     directory: [
-      { account_id: GONE, ciphertext: "sealed-gone", joined_at: OLD,
-        last_seen_at: OLD },
-      { account_id: STAYS, ciphertext: "sealed-stays", joined_at: OLD,
-        last_seen_at: RECENT },
-      { account_id: ADMIN, ciphertext: "sealed-admin", joined_at: OLD,
-        last_seen_at: RECENT },
+      /* GONE is stale AND carries its numeric id, so the bot can be
+         asked about it - the one row on this fixture that a verdict can
+         actually be had for. STALE_NO_ID is stale and pre-dates the
+         ruling, so it is the "unknown until next sign-in" case. STAYS
+         and ADMIN are recent, so staleness alone keeps them off the
+         candidate list before any verdict is sought. */
+      await directoryRow(GONE, GONE_ID, OLD),
+      await directoryRow(STALE_NO_ID, null, OLD),
+      await directoryRow(STAYS, STAYS_ID, RECENT),
+      await directoryRow(ADMIN, ADMIN_ID, RECENT),
     ],
     membership: [
-      { account_id: GONE, role: "always_allow", label: "gone-bypass",
+      /* An `admin` row rather than an `always_allow` one, and the
+         difference is not cosmetic: groupStanding() answers "member"
+         for anybody on the bypass list WITHOUT asking the bot, so a
+         departed account carrying that row can never be reported
+         departed at all. That is correct behavior - the bypass means
+         "let them in regardless" - and it is pinned as its own arm
+         below rather than left sitting in this fixture, where it
+         silently made the erase unreachable and every arm downstream
+         of it fail for a reason that had nothing to do with the erase. */
+      { account_id: GONE, role: "admin", label: "gone-admin",
         added_at: OLD, added_by: ADMIN },
-      { account_id: STAYS, role: "always_allow", label: "stays-bypass",
+      { account_id: STAYS, role: "admin", label: "stays-admin",
         added_at: OLD, added_by: ADMIN },
       { account_id: ADMIN, role: "admin", label: "the-eraser",
         added_at: OLD, added_by: ADMIN },
@@ -535,7 +602,7 @@ const MEMBER_BEARER = bearer("member-token");
 /* 0. The fixture is real before anything is asked of it.              */
 
 {
-  const db = fixture();
+  const db = await fixture();
   const gone = countsFor(db, GONE);
   const stays = countsFor(db, STAYS);
   check("the fixture seeds GONE rows in all four classes (so an erase " +
@@ -554,20 +621,19 @@ const MEMBER_BEARER = bearer("member-token");
 /*    consult reads first, and it is aimed at eraseAccount() itself    */
 /*    rather than at the route.                                        */
 /*                                                                     */
-/* WHY NOT THROUGH THE ROUTE, when section 1b below does exactly that: */
-/* because the route cannot erase anything while departedVerdict()     */
-/* answers "unknown" for every account, and a byte-identity proof that */
-/* runs after a refusal proves NOTHING - the survivor's rows are       */
-/* unchanged because nothing was erased at all, and the check passes   */
-/* vacuously. That is the stub-default failure AGENTS.md names as the  */
-/* most-repeated defect of 0.9-M2, and it would have been sitting in   */
-/* this file's flagship arm. Calling the transaction directly is what  */
-/* makes the proof real TODAY, independent of the open verdict         */
-/* question; section 1b re-proves it end to end once there is a        */
-/* verdict, and its arms are red until then.                           */
+/* AND NOT ONLY THROUGH THE ROUTE, which section 1b below does. While   */
+/* the verdict source was still an open question the route could not   */
+/* erase at all, and this proof - run after a refusal - passed         */
+/* vacuously: the survivor's rows were unchanged because NOTHING was   */
+/* erased. That is the stub-default failure AGENTS.md names as the     */
+/* most-repeated defect of 0.9-M2, sitting in this file's flagship     */
+/* arm. Aiming it at the transaction itself is what made it real, and  */
+/* it stays aimed there now that the route works: the two prove        */
+/* different things, and a route-level proof can always be hollowed    */
+/* out by a refusal that happens earlier than the erase.               */
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const staysBefore = belongingTo(db, STAYS);
   const goneBefore = countsFor(db, GONE);
@@ -609,11 +675,10 @@ const MEMBER_BEARER = bearer("member-token");
 }
 
 /* ------------------------------------------------------------------ */
-/* 1b. The same thing end to end, through the route. RED until the     */
-/*     verdict question at #420 is ruled - see this file's header.     */
+/* 1b. The same thing end to end, through the route.                   */
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const staysBefore = belongingTo(db, STAYS);
   const adminBefore = belongingTo(db, ADMIN, { callerOwnSession: true });
@@ -658,7 +723,7 @@ for (const [who, headers] of [
   ["no credential at all", {}],
   ["a token that resolves to no session", bearer("not-a-session")],
 ]) {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const before = belongingTo(db, GONE);
 
@@ -682,7 +747,7 @@ for (const [who, headers] of [
    return - the refusal is about who is asking, never about an empty
    table. Forced rather than assumed, per AGENTS.md, "Verification". */
 {
-  const db = fixture();
+  const db = await fixture();
   check("the fixture really does hold a stale directory row for the " +
     "member-session refusal above to be withholding something",
     [...db.directory.values()].some((row) => row.last_seen_at === OLD));
@@ -692,7 +757,7 @@ for (const [who, headers] of [
 /* 3. The guards. Each refuses, and each leaves the store as it was.   */
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const before = belongingTo(db, GONE);
   for (const [why, bad] of [
@@ -712,7 +777,7 @@ for (const [who, headers] of [
 }
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const before = belongingTo(db, ADMIN, { callerOwnSession: true });
   const { value } = await withBot(botSaying("left"), () =>
@@ -775,7 +840,7 @@ for (const [who, headers] of [
 /*    handle.                                                          */
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + GONE,
@@ -814,7 +879,7 @@ for (const [who, headers] of [
    append-after-the-write rule noteAdminWrite states is what makes
    "this happened" mean it. */
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + GONE,
@@ -823,14 +888,10 @@ for (const [who, headers] of [
 }
 
 /* ------------------------------------------------------------------ */
-/* 5. THE VERDICT SOURCE - RED UNTIL THE OWNER RULES (#420).           */
-/*                                                                     */
-/* These are the contract for the half that cannot be built yet. They  */
-/* fail today because departedVerdict() answers "unknown" for every    */
-/* account and the route fails closed. See this file's header.         */
+/* 5. THE VERDICT, AND THE BOUNDS THE OWNER PUT ON IT.                 */
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const { value } = await withBot(botSaying("left"), () =>
     call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
@@ -848,7 +909,7 @@ for (const [who, headers] of [
 }
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const before = belongingTo(db, STAYS);
   const { value } = await withBot(botSaying("member"), () =>
@@ -862,7 +923,7 @@ for (const [who, headers] of [
 }
 
 {
-  const db = fixture();
+  const db = await fixture();
   const env = envFor(db);
   const before = belongingTo(db, GONE);
   /* An unreachable bot is not evidence that anybody left. */
@@ -873,6 +934,127 @@ for (const [who, headers] of [
     value.status === 409);
   check("the fail-closed refusal erased nothing",
     belongingTo(db, GONE) === before);
+}
+
+/*
+ * THE always_allow BYPASS OUTRANKS THE BOT, and this is where that is
+ * pinned rather than left to be discovered in a fixture.
+ *
+ * groupStanding() answers "member" for anybody on the bypass list
+ * WITHOUT asking Telegram at all, so an account carrying that row can
+ * never be reported departed and can never be erased through this
+ * route - even with the bot saying "kicked". That is the bypass meaning
+ * what it says: an explicit standing instruction to let this person in
+ * regardless of what the group says. Erasing them on the group's word
+ * would be the site overruling the instruction.
+ *
+ * It cost this slice an hour of wrong diagnosis to find, because a
+ * fixture that put the departed account on the bypass made the erase
+ * unreachable and every arm downstream fail for an unrelated reason.
+ * That is exactly the kind of fact that belongs in an arm.
+ */
+{
+  const db = await fixture();
+  db.membership().push({ account_id: BYPASSED, role: "always_allow",
+    label: "on-the-bypass", added_at: OLD, added_by: ADMIN });
+  db.directory.set(BYPASSED, await directoryRow(BYPASSED, BYPASSED_ID, OLD));
+  const env = envFor(db);
+  const before = belongingTo(db, BYPASSED);
+
+  const { value: list } = await withBot(botSaying("kicked"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  check("an always_allow account is never reported departed, even with " +
+    "the bot saying kicked - the bypass is not asked about",
+    Boolean(list.body && Array.isArray(list.body.departed) &&
+      !list.body.departed.some((row) => row.accountId === BYPASSED)));
+
+  const { value: erase } = await withBot(botSaying("kicked"), () =>
+    call(env, "DELETE", "/admin-departed/" + BYPASSED,
+      { headers: ADMIN_BEARER }));
+  check("an always_allow account cannot be erased through this route",
+    erase.status === 409);
+  check("that refusal moved none of the bypassed account's rows",
+    belongingTo(db, BYPASSED) === before);
+}
+
+/*
+ * A RECORD WRITTEN BEFORE THE NUMERIC ID EXISTED IS "UNKNOWN", BOTH
+ * DIRECTIONS (owner ruling, 2026-08-21, bound 3).
+ *
+ * Every directory row in the live database is in this state until its
+ * member next signs in, so this is the ordinary case rather than an
+ * edge one. It must not be guessed at in either direction: not reported
+ * departed, and not erasable - and it must not vanish from the admin's
+ * view either, or the admin concludes it was checked and cleared.
+ */
+{
+  const db = await fixture();
+  const env = envFor(db);
+  const before = belongingTo(db, STALE_NO_ID);
+
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+
+  check("a stale row with no sealed id is NOT reported departed, even " +
+    "with the bot saying left",
+    Boolean(list.body && Array.isArray(list.body.departed) &&
+      !list.body.departed.some((row) => row.accountId === STALE_NO_ID)));
+  check("it is reported as unknown rather than dropped silently - an " +
+    "account that simply vanished would read as checked and cleared",
+    Boolean(list.body && Array.isArray(list.body.unknown) &&
+      list.body.unknown.some((row) => row.accountId === STALE_NO_ID)));
+  check("the unknown row carries the reason a person can act on",
+    Boolean(list.body && (list.body.unknown || []).some((row) =>
+      row.accountId === STALE_NO_ID &&
+      /unknown until next sign-in/.test(String(row.reason)))));
+  check("the row that DOES carry a sealed id is reported departed in " +
+    "the same answer (so the check above is a discrimination, not a " +
+    "list that is empty for everybody)",
+    Boolean(list.body && (list.body.departed || []).some((row) =>
+      row.accountId === GONE)));
+
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + STALE_NO_ID,
+      { headers: ADMIN_BEARER }));
+  check("erasing a row with no sealed id is refused - unknown is never " +
+    "departed", erase.status === 409 &&
+    /could not say/.test(JSON.stringify(erase.body || {})));
+  check("that refusal moved none of its rows",
+    belongingTo(db, STALE_NO_ID) === before);
+}
+
+/*
+ * THE NUMERIC ID NEVER LEAVES THE WORKER (owner ruling, bound 1).
+ *
+ * The id was allowed to exist at rest on the condition that
+ * departedVerdict() is its only reader and nothing serves it. This
+ * sweeps the whole of both routes' answers for every numeric id on the
+ * fixture rather than checking one field, because the failure this
+ * guards against is a future field somebody adds "just for the admin
+ * page", not a mistake in the two fields written today.
+ */
+{
+  const db = await fixture();
+  const env = envFor(db);
+  const { value: list } = await withBot(botSaying("left"), () =>
+    call(env, "GET", "/admin-departed", { headers: ADMIN_BEARER }));
+  const { value: erase } = await withBot(botSaying("left"), () =>
+    call(env, "DELETE", "/admin-departed/" + GONE,
+      { headers: ADMIN_BEARER }));
+
+  const served = JSON.stringify(list.body) + JSON.stringify(erase.body) +
+    JSON.stringify(db.adminLog);
+  const ids = [GONE_ID, STAYS_ID, ADMIN_ID, FLAGGED_ID, STALE_NO_ID_ID,
+    BYPASSED_ID];
+  check("no numeric Telegram id appears anywhere in either route's " +
+    "answer or in the log line the erase writes",
+    ids.every((id) => !served.includes(id)));
+  check("no sealed handle appears there either - the directory record " +
+    "is opened for the id and nothing else is carried out of it",
+    !/sealed-handle|Sealed Name/.test(served));
+  check("the erase really did happen in that sweep (so the two checks " +
+    "above are reading a populated answer, not an empty one)",
+    erase.status === 200 && db.adminLog.length === 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -905,7 +1087,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 66;
+const EXPECTED = 78;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);

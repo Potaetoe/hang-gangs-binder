@@ -582,11 +582,28 @@ CREATE TABLE IF NOT EXISTS membership (
 -- directory INSIDE what is encrypted rather than beside it: a clear-text
 -- roster of handles next to `submissions` answers "did @foo submit?"
 -- without opening a single entry, and a hash of a handle is the same
--- oracle over a smaller alphabet. So the handle, the display name and the
--- role live in `ciphertext`, sealed by the Worker under purpose 'dir'
--- (server/store-crypto.js's sealDirectory; 0.9-M1-S11, #340), and the only
--- things this table shows a dump are the account-id HMAC that keys the row
--- and two timestamps.
+-- oracle over a smaller alphabet. So the handle, the display name, the
+-- role AND THE NUMERIC TELEGRAM ID live in `ciphertext`, sealed by the
+-- Worker under purpose 'dir' (server/store-crypto.js's sealDirectory;
+-- 0.9-M1-S11, #340), and the only things this table shows a dump are the
+-- account-id HMAC that keys the row and two timestamps.
+--
+-- THE NUMERIC ID IS IN THAT BLOB BY OWNER RULING (2026-08-21, at
+-- 0.9-M3-S15, #420), and it is there for one reason rather than for
+-- convenience: #385 rule 4 lets an admin erase a DEPARTED member's rows,
+-- only the bot may say who is departed, and getChatMember takes a numeric
+-- id - which a one-way HMAC cannot yield and no by-username call
+-- replaces. The ruled power and the stored id are one decision.
+--
+-- What bounds it, all enforced rather than promised: the id is never a
+-- column here, never an index, never served by any route and never
+-- logged; it is sealed under the same key, purpose and AAD binding as the
+-- handle beside it, so a dump of this table is unchanged by its presence;
+-- and departedVerdict() in server/worker.js is the ONLY thing that
+-- unseals it, to ask the bot and drop it. A second reader is a new
+-- decision rather than a refactor. Rows written before that ruling carry
+-- no id and read as "unknown until next sign-in" - never guessed in
+-- either direction - and gain one when their member next signs in.
 --
 -- `account_id` is the SAME value `submissions` and `membership` carry - an
 -- HMAC of the Telegram numeric id under ACCOUNT_SECRET - and it is the
