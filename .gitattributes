@@ -61,9 +61,12 @@ run     text eol=lf
 # specialist merge-forward. git's own built-in union driver takes both
 # sides' added lines instead of writing conflict markers, so that same
 # shape merges clean now. What it CANNOT do: de-duplicate a row both
-# sides added identically (two branches adding the same line still
-# produces two copies of it), and it has no notion of the roster's
-# ordering rule at all - it just concatenates. tests/run.mjs's roster
+# sides added identically at the SAME position - git collapses that
+# case to one copy on its own, before the union driver ever runs. Two
+# copies happen only when the identical row lands at two DIFFERENT
+# positions, since each side then edits a different hunk and the
+# driver keeps both. It also has no notion of the roster's ordering
+# rule at all - it just concatenates. tests/run.mjs's roster
 # reader is what catches both of those (DUPLICATE REQUIRED ROW /
 # DUPLICATE EXCLUSION, and the ordering check), so a union merge that
 # produces either is red at the gate, never silent. And GitHub's own

@@ -319,10 +319,10 @@ guards, never as the pattern for a new one.
   the same commit that adds the file, or the gate reds naming the file
   unrostered, and add it where the file's own ordering rule puts it —
   the reader refuses a roster with a duplicate row or a disordered one
-  (0.9-M3-S18, #428). Zero arms found is a failure, and so is a stray file
-  under `tests/` that is not an arm, the runner or the preflight seam;
-  both are the armed-looking-but-not failure this repository holds to
-  be worse than no gate. CI runs it beside the old gate
+  (0.9-M3-S18, #428). Zero arms found is a failure, and so is a stray
+  file under `tests/` that is not an arm, the runner or the preflight
+  seam; both are the armed-looking-but-not failure this repository
+  holds to be worse than no gate. CI runs it beside the old gate
   (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it is
   registered exactly where its apparatus registers checks — nothing
   here is the registration-suspended exception it once was.
