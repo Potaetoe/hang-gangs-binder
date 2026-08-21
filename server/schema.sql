@@ -400,11 +400,45 @@ CREATE TABLE IF NOT EXISTS snapshots (
 -- EXPORT_TOKEN write, which cannot collide with an account id because
 -- an account id is sixty-four hex characters.
 --
--- The form definition is NOT this table and is not coming to it. A
--- wrong bound there gets sealed into a record and is discovered on
--- export day, so it stays a repo file the gate reads before it ships.
--- DESIGN.md, "Where configuration lives", holds the rule and the reason
--- the line falls where it does.
+-- The form's BOUNDS are not this table and are not coming to it. A
+-- wrong bound gets sealed into a record and is discovered on export
+-- day, so the units, the limits and the chart bands stay a repo file
+-- the gate reads before it ships. DESIGN.md, "Where configuration
+-- lives", holds the rule and the reason the line falls where it does.
+--
+-- THE `field.` NAMESPACE IS THE ONE PART OF THE FORM THAT DOES LIVE
+-- HERE (0.9-M3-S11, #419; the ruled design #385, rules 6, 7 and 8), and
+-- it is written down here because this is the stored format: one row
+-- per CATEGORICAL field, named `field.` plus that field's own id, whose
+-- `value` is a JSON document
+--
+--     {"v":1,"label":..,"term":..,"multiple":..,"retired":..,
+--      "values":[{"id":..,"label":..,"retired":..}, ..]}
+--
+-- `v` is the document's format version: a change takes a new number and
+-- a decoder for both, and server/worker.js falls back to the shipped
+-- field for a version it does not know rather than serving an empty
+-- one. `id` is the string a member's sealed record actually carries -
+-- the same string apps/web/site.config.js calls a choice's `value` - so
+-- relabeling moves no stored byte and retiring destroys nothing, which
+-- is #385 rule 7 expressed in the format rather than promised in prose.
+-- A retired value STAYS in the document; that is what makes un-retiring
+-- possible and what stops a new value being minted onto an id somebody
+-- 's row already uses.
+--
+-- WRITING ONE BY HAND IS THE HAZARD THIS PARAGRAPH EXISTS FOR. Every
+-- route into this namespace validates the document against what members
+-- have already saved, and `wrangler d1 execute` validates nothing - so
+-- a row written that way is read forgivingly and ignored when it cannot
+-- be used, never half-applied. Two spellings in particular are read and
+-- ignored rather than honored: a row naming a MEASURED field, because
+-- its units and bands are a release somebody read, and a row whose
+-- prefix is capitalized any other way, because `name` is BINARY here
+-- while LIKE folds - so `FIELD.gender` is a second row that would
+-- otherwise compose onto the same field as `field.gender`. GET
+-- /content, which answers without a credential, excludes this namespace
+-- in its own statement; GET /spec, behind a member session, is what
+-- serves it.
 CREATE TABLE IF NOT EXISTS site_content (
   name       TEXT PRIMARY KEY,
   value      TEXT NOT NULL,
