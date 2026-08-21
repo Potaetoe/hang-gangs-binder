@@ -3932,7 +3932,7 @@ async function route(request, env, url, allowed, admitted) {
  * simple enough to have one.
  */
 export { isApiPath, API_SEGMENTS, rowIdentity, syncDirectoryEntry,
-         DIRECTORY_SLOT };
+         DIRECTORY_SLOT, eraseAccount };
 
 export default {
   /*

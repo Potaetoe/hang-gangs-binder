@@ -496,8 +496,67 @@ const MEMBER_BEARER = bearer("member-token");
 }
 
 /* ------------------------------------------------------------------ */
-/* 1. The transaction: exactly one account, exactly four row classes.  */
-/*    This is the proof the batch consult reads first.                 */
+/* 1. THE TRANSACTION, CALLED DIRECTLY. This is the proof the batch    */
+/*    consult reads first, and it is aimed at eraseAccount() itself    */
+/*    rather than at the route.                                        */
+/*                                                                     */
+/* WHY NOT THROUGH THE ROUTE, when section 1b below does exactly that: */
+/* because the route cannot erase anything while departedVerdict()     */
+/* answers "unknown" for every account, and a byte-identity proof that */
+/* runs after a refusal proves NOTHING - the survivor's rows are       */
+/* unchanged because nothing was erased at all, and the check passes   */
+/* vacuously. That is the stub-default failure AGENTS.md names as the  */
+/* most-repeated defect of 0.9-M2, and it would have been sitting in   */
+/* this file's flagship arm. Calling the transaction directly is what  */
+/* makes the proof real TODAY, independent of the open verdict         */
+/* question; section 1b re-proves it end to end once there is a        */
+/* verdict, and its arms are red until then.                           */
+
+{
+  const db = fixture();
+  const env = envFor(db);
+  const staysBefore = belongingTo(db, STAYS);
+  const goneBefore = countsFor(db, GONE);
+
+  const removed = await workerModule.eraseAccount(env, GONE);
+
+  check("the transaction really had something to erase (the proof " +
+    "below is not passing over an empty table)",
+    goneBefore.submissions === 2 && goneBefore.directory === 1 &&
+    goneBefore.membership === 1 && goneBefore.sessions === 2);
+
+  const gone = countsFor(db, GONE);
+  check("the transaction removes every submissions row for the account",
+    gone.submissions === 0);
+  check("the transaction removes the account's directory row",
+    gone.directory === 0);
+  check("the transaction removes every membership row the account held",
+    gone.membership === 0);
+  check("the transaction removes every session the account held",
+    gone.sessions === 0);
+
+  check("THE TWO-MEMBER PROOF: the other member's rows are byte-" +
+    "identical after the transaction, in all four classes",
+    belongingTo(db, STAYS) === staysBefore);
+
+  check("the transaction reports the count it removed in each class",
+    removed.submissions === 2 && removed.directory === 1 &&
+    removed.membership === 1 && removed.sessions === 2);
+
+  /* The survivor's superseding row pointed at a row of their own, and
+     the erased account's chain is gone entirely - so nothing here
+     followed a `supersedes` pointer out of the account it was scoped
+     to. A cascade would turn erasing one member into deleting another
+     member's entry, which is the one thing this must never do. */
+  check("no `supersedes` pointer dragged another account's row out " +
+    "with the erased chain",
+    db.submissions().filter((row) => row.account_id === STAYS).length === 2 &&
+    db.submissions().filter((row) => row.account_id === ADMIN).length === 1);
+}
+
+/* ------------------------------------------------------------------ */
+/* 1b. The same thing end to end, through the route. RED until the     */
+/*     verdict question at #420 is ruled - see this file's header.     */
 
 {
   const db = fixture();
@@ -521,7 +580,7 @@ const MEMBER_BEARER = bearer("member-token");
   check("every session the erased account held is gone",
     gone.sessions === 0);
 
-  check("THE TWO-MEMBER PROOF: the other member's rows are byte-" +
+  check("through the route too: the other member's rows are byte-" +
     "identical after the erase, in all four classes",
     belongingTo(db, STAYS) === staysBefore);
   check("the erasing admin's own rows are byte-identical after the " +
@@ -782,7 +841,7 @@ for (const [who, headers] of [
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 58;
+const EXPECTED = 66;
 if (failures) {
   console.log("\nfailing checks:");
   for (const label of failed) console.log("  - " + label);
