@@ -716,8 +716,15 @@ const putField = (env, token, id, body) =>
   check("a member's entry is sealed and stored", submitted.status === 200 &&
     db.submissions.length === 1);
 
+  /* THE WHOLE TABLE, not one row of it, and the mutation battery is why
+     this is a snapshot rather than a single string: a comparison on
+     `submissions[0]` alone stayed green against a retire path that
+     appended a row of its own, because a row added at the end moves no
+     byte at the front. What "moves no sealed byte" has to mean is the
+     table before and the table after, ids and ciphertexts and all. */
   const sealedBefore = db.submissions[0].ciphertext;
-  const rowsBefore = db.submissions.length;
+  const sealedTable = () => JSON.stringify(db.submissions);
+  const tableBefore = sealedTable();
 
   check("before the retire: the value the member saved is offered",
     valuesIn(await specOf(env, memberToken), "gender").indexOf("other") !== -1);
@@ -737,8 +744,9 @@ const putField = (env, token, id, body) =>
   check("KEEP THE DATA: the sealed row is BYTE-IDENTICAL across the " +
     "retire - not re-sealed, not rewritten, not re-encoded",
     db.submissions[0].ciphertext === sealedBefore);
-  check("KEEP THE DATA: no row was added and none was taken away",
-    db.submissions.length === rowsBefore);
+  check("KEEP THE DATA: the whole submissions table is unchanged - no " +
+    "row added, none taken away, no column touched",
+    sealedTable() === tableBefore);
 
   const mine = await call(env, "GET", "/my-entries",
     { headers: bearer(memberToken) });
@@ -755,9 +763,10 @@ const putField = (env, token, id, body) =>
   check("DELETE /admin-fields/<id> retires the whole field",
     droppedField.status === 200 &&
     fieldIn(await specOf(env, memberToken), "roles") === null);
-  check("KEEP THE DATA: retiring a whole field moves no sealed byte " +
-    "either",
-    db.submissions[0].ciphertext === sealedBefore);
+  check("KEEP THE DATA: retiring a whole field leaves the same table " +
+    "behind, byte for byte",
+    db.submissions[0].ciphertext === sealedBefore &&
+    sealedTable() === tableBefore);
 
   await putField(env, adminToken, "roles", { retired: false });
   const restored = await specOf(env, memberToken);
