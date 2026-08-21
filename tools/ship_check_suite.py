@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 161
+EXPECTED = 162
 
 
 def check(label, condition):
@@ -1036,14 +1036,29 @@ try:
     right_pair_wrong = os.path.join(root, "totals-right-pair-wrong.txt")
     write(right_pair_wrong, "29/29 stages ok.\n")
     stage = ship_check.stage_totals(fixture_prior, right_pair_wrong)
-    check("29 IS this run's own arm total (fixture_new_gate.counted == "
-         "(2, 2, 0) here, but the real pipeline's 0.9 gate would print "
-         "29) - written next to the word \"stages\", it is STILL "
-         "compared only against the STAGE family and refused: the "
-         "wide pool never reaches stage/arm claims, only the "
-         "unanchored check bucket",
+    check("this run's actual stage total is 35 (not 29) - written next "
+         "to the word \"stages\", \"29/29\" is refused",
           not stage.ok and "MISMATCH" in stage.lines[0]
           and "29/29" in stage.lines[0])
+
+    print("\n--- stage_totals: stage/arm claims stay STRICTLY anchored "
+         "to their own family, never falling back to the wide check "
+         "pool - the exact property mutation battery direction 3 (the "
+         "unit-pairing) arms ---")
+    cross_family_leak = os.path.join(root, "totals-cross-family.txt")
+    # 2 is this fixture's REAL arm total (fixture_new_gate.counted ==
+    # (2, 2, 0)) - if a "stages" claim ever fell through to the wide
+    # check pool the way an unanchored "check" claim does, "2/2 stages"
+    # would wrongly MATCH (2 is in the pool, as the arm total). The
+    # real stage total is 35, so it must MISMATCH instead.
+    write(cross_family_leak, "2/2 stages ok.\n")
+    stage = ship_check.stage_totals(fixture_prior, cross_family_leak)
+    check("\"2/2 stages\" - where 2 is a REAL number this run printed, "
+         "just for the WRONG family (the arm total, not the stage "
+         "total) - still fails: the wide pool never reaches stage/arm "
+         "claims, only the unanchored check bucket",
+          not stage.ok and "MISMATCH" in stage.lines[0]
+          and "2/2" in stage.lines[0])
 
     print("\n--- stage_totals: fix-wave F4 (review, #421) - a "
          "--completion draft that is not valid UTF-8 no longer crashes "
