@@ -236,8 +236,17 @@ def parse_declared(text):
     space-containing path at its first space (review finding B1/
     S13-F1). The result is normalized to forward slashes and a leading
     `./` is dropped, so a path copied out of a Windows terminal and a
-    path copied out of a Linux one land on the same set.
+    path copied out of a Linux one land on the same set. A leading
+    byte-order mark is stripped before anything else runs: PowerShell
+    5.1's `Set-Content -Encoding utf8` writes one, and reading those
+    bytes as plain UTF-8 (not `utf-8-sig`) decodes it into a literal
+    U+FEFF character glued onto the first line - left alone, that
+    character rides along inside the first declared path and the tool
+    reports a false MISMATCH on a completion comment that named every
+    file correctly (#387).
     """
+    if text.startswith("\ufeff"):
+        text = text[1:]
     declared = set()
     for raw in text.splitlines():
         line = raw.strip()
