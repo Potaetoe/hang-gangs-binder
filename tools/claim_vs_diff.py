@@ -25,12 +25,17 @@ EXIT CODES, and nothing else decides them:
      A git-ops door check reading this abort naming the delta both
      directions.
   2  COULD NOT ASK - a ref does not resolve, the two refs share no
-     merge-base, git did not answer inside the bound below, or the
+     merge-base, git did not answer inside the bound below, the
      declared list is empty against an empty diff and --allow-empty was
      not passed (NOTHING DECLARED - review finding B3/S13-F3: "nothing
      to compare" is not the same fact as "the declared set is exactly
      the real diff", and it is what a forgotten --declared produces
-     too, so it is refused rather than read as a silent match). This is
+     too, so it is refused rather than read as a silent match), or the
+     declared file cannot be decoded as UTF-8 at all (review finding F2,
+     2026-08-21: a declared list PowerShell 5.1 wrote as UTF-16 - its
+     own redirection default - raised an uncaught UnicodeDecodeError
+     and crashed at exit 1 before this was fixed; an undecodable file is
+     "the question could not be asked", not a named mismatch). This is
      never conflated with 1: "the question could not be asked" and
      "the question was asked and the answer was no" are different
      facts, and a caller that greps for exit-nonzero-means-abort still
@@ -237,16 +242,30 @@ def parse_declared(text):
     S13-F1). The result is normalized to forward slashes and a leading
     `./` is dropped, so a path copied out of a Windows terminal and a
     path copied out of a Linux one land on the same set. A leading
-    byte-order mark is stripped before anything else runs: PowerShell
-    5.1's `Set-Content -Encoding utf8` writes one, and reading those
-    bytes as plain UTF-8 (not `utf-8-sig`) decodes it into a literal
-    U+FEFF character glued onto the first line - left alone, that
-    character rides along inside the first declared path and the tool
+    byte-order mark is stripped before anything else runs, in EITHER
+    of the two shapes it can arrive in - PowerShell 5.1's
+    `Set-Content -Encoding utf8` writes one, and this function is fed
+    that mark's bytes (EF BB BF) by two different callers that decode
+    them two different ways. `--declared FILE` opens with plain UTF-8
+    (not `utf-8-sig`), which decodes the three bytes correctly as one
+    character, U+FEFF - so that shape is a single-character prefix.
+    `main()`'s stdin path (`sys.stdin.read()`) decodes under the
+    process's console locale instead (cp1252 on the machine review
+    finding F1 ran on, 2026-08-21) - the same three bytes, read one at
+    a time under a single-byte codec, come out as three separate
+    characters (`\xef\xbb\xbf`, individually EF/BB/BF's cp1252/Latin-1
+    reading), so that shape is a three-character prefix. Left alone,
+    either one rides along inside the first declared path and the tool
     reports a false MISMATCH on a completion comment that named every
-    file correctly (#387).
+    file correctly (#387, and its stdin-path gap, F1). This function
+    strips whichever one the text actually starts with; it does not
+    change how either caller reads its bytes, since testing what
+    lands here is what actually proves the fix.
     """
     if text.startswith("\ufeff"):
         text = text[1:]
+    elif text.startswith("\xef\xbb\xbf"):
+        text = text[3:]
     declared = set()
     for raw in text.splitlines():
         line = raw.strip()
@@ -372,6 +391,19 @@ def main(argv=None):
                 declared_text = handle.read()
     except OSError as problem:
         print("could not read the declared file list: %s" % problem)
+        return 2
+    except UnicodeDecodeError as problem:
+        # F2 (review finding, 2026-08-21): PowerShell 5.1's own
+        # redirection default (`> file.txt`, not -Encoding utf8) writes
+        # UTF-16, which is not valid UTF-8 - opening it as one raises
+        # UnicodeDecodeError, a ValueError subclass that OSError never
+        # catches. Left uncaught, that crashed with a bare traceback
+        # and Python's own exit 1, colliding with this tool's own
+        # contract: exit 1 is reserved for a named MISMATCH, never a
+        # question the tool could not even ask. An undecodable file is
+        # the "could not ask" case, same family as an unresolvable ref
+        # below, so it exits 2, not 1.
+        print("could not decode the declared file list: %s" % problem)
         return 2
 
     status, report = compare(repo, args.branch, args.base, declared_text,
