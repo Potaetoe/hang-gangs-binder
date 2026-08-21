@@ -57,9 +57,13 @@ brief that names one is quoting them.
 ruling 2026-08-21, the M3 delivery shape, #402). A slice is
 **sensitive** if any declared file is under `server/`, is an
 auth/session module, is deploy configuration (`wrangler.toml`,
-`.github/workflows/`) or crypto; **trivial** if every declared file is
-documentation, a test, or site-configuration text; **normal**
-otherwise. Trivial slices merge on green CI with no review. Normal
+`.github/workflows/`, the deployed `_headers` layer) or crypto;
+**trivial** if every declared file is documentation, a test ARM
+(`tests/*.test.mjs`), or site-configuration text; **normal**
+otherwise — including the 0.9 gate's own runner, preflight and
+`tests/ROSTER`, because a change that can disarm the gate meets a
+review (the first M3 batch merged a runner change with none before
+this sentence was narrowed). Trivial slices merge on green CI with no review. Normal
 slices get the builder's full verification floor and ONE targeted
 independent review, whose report the reviewer posts on the ticket;
 fixes are proven by the builder's fresh printed evidence and CI, and
