@@ -85,7 +85,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 193
+EXPECTED = 213
 
 
 def check(label, condition):
@@ -870,6 +870,153 @@ try:
     check("main survives", "main" in now_there)
     check("the act named an ancestry proof for every branch it deleted",
           said.count("ancestor of") >= 3)
+
+    print("\n--- the harness branch of a live worktree is left alone "
+          "(0.9-M3-S21, #431) ---")
+
+    # Twice on 2026-08-21 `--act` deleted the harness branch of a running
+    # agent that had already switched to its slice branch: the branch was
+    # no longer checked out anywhere, and agent-init had already
+    # overwritten the SAME record's `branch` field to name the slice
+    # branch instead of the harness branch - so neither existing guard
+    # named it. Fixture A reproduces exactly that shape: its tip is an
+    # ancestor of `accounts`, so the old code would have reaped it.
+    harness_live = add_worktree(primary, "agent-harnesslive",
+                                "worktree-agent-harnesslive", first)
+    git(harness_live, "checkout", "-b", "slice-harnesslive", accounts)
+    agent_init.write_json(agent_init.record_path(harness_live, state), {
+        "schema": agent_init.SCHEMA, "contract": agent_init.CONTRACT,
+        "worktree": harness_live, "kind": "linked",
+        "branch": "slice-harnesslive", "state": "live",
+        "initialized_at": agent_init.now(), "ports": [8170, 8175],
+        "scratch": None,
+    })
+
+    # Fixture B: a registered worktree that never wrote a record at all -
+    # the shape of a reviewer that detaches without ever running
+    # agent-init, the ticket's other named timing accident.
+    harness_norecord = add_worktree(
+        primary, "agent-harnessnorecord", "worktree-agent-harnessnorecord",
+        first)
+    git(harness_norecord, "checkout", "--detach", accounts)
+
+    # Fixture C: a PARKED record whose worktree directory is already
+    # gone. The branch is orphaned and MUST fall through to the ordinary
+    # ancestry proof - the worktree's own reap is what disposes of a
+    # parked worktree's branch, and protecting it here on top of that
+    # would be a live branch that can never be reaped once its worktree
+    # is gone.
+    harness_parked = add_worktree(
+        primary, "agent-harnessparked", "worktree-agent-harnessparked",
+        first)
+    park(harness_parked, state)
+    shutil.rmtree(harness_parked)
+
+    # Fixture D: a live record naming a worktree that was NEVER a real,
+    # registered git worktree - the same shape the pre-existing "F1"
+    # fixture below uses for a slice branch (agent_init.record_path only
+    # needs a path string, not a real directory). This is the ONE
+    # fixture the record check protects that the registered-worktree
+    # fallback does not also protect on its own, which is what makes it
+    # the mutation target for "remove the live-record check": disarming
+    # ONLY that check, with fixtures A and B's real worktrees still
+    # registered, would otherwise leave both of THEM protected by the
+    # fallback and prove nothing about the record path specifically.
+    harness_record_only = os.path.join(root, "agent-harnessrecordonly")
+    git(primary, "branch", "worktree-agent-harnessrecordonly", first)
+    agent_init.write_json(agent_init.record_path(harness_record_only, state), {
+        "schema": agent_init.SCHEMA, "contract": agent_init.CONTRACT,
+        "worktree": harness_record_only, "kind": "linked",
+        "branch": "slice-harnessrecordonly", "state": "live",
+        "initialized_at": agent_init.now(), "ports": [8190, 8195],
+        "scratch": None,
+    })
+
+    items = reaper.plan(primary, state, roots)
+    protected_live = find(items, "live harness branch, left alone",
+                          "worktree-agent-harnesslive")
+    check("a live, switched-away worktree's own harness branch is "
+          "protected rather than planned as debris",
+          protected_live is not None and verdict(protected_live) == "report")
+    check("it is NOT also a debris-branch candidate",
+          find(items, "debris branch", "worktree-agent-harnesslive") is None)
+    check("the protection proof names the live record's state",
+          protected_live and "state live" in " ".join(
+              proof.said for proof in protected_live["proofs"]))
+
+    protected_norecord = find(items, "live harness branch, left alone",
+                              "worktree-agent-harnessnorecord")
+    check("a registered worktree with no record at all still protects "
+          "its own harness branch",
+          protected_norecord is not None
+          and verdict(protected_norecord) == "report")
+    check("the protection proof names the registration, not a record",
+          protected_norecord and "registers" in " ".join(
+              proof.said for proof in protected_norecord["proofs"]))
+
+    protected_record_only = find(items, "live harness branch, left alone",
+                                 "worktree-agent-harnessrecordonly")
+    check("a live record protects its harness branch even when no real "
+          "worktree was ever registered for it",
+          protected_record_only is not None
+          and verdict(protected_record_only) == "report")
+    check("it is NOT also a debris-branch candidate",
+          find(items, "debris branch",
+               "worktree-agent-harnessrecordonly") is None)
+    check("the protection proof names the live record's state, same as "
+          "fixture A",
+          protected_record_only and "state live" in " ".join(
+              proof.said for proof in protected_record_only["proofs"]))
+    said_record_only = reaper.act(primary, protected_record_only, state,
+                                  roots)
+    check("acting on the record-only-protected item performs nothing",
+          said_record_only == ["REPORTED and left alone."])
+    check("its branch survives being acted on directly",
+          "worktree-agent-harnessrecordonly" in branches(primary))
+
+    orphaned_debris = find(items, "debris branch",
+                           "worktree-agent-harnessparked")
+    check("a parked record's harness branch is NOT protected once its "
+          "worktree is gone - it falls to the ordinary ancestry proof",
+          orphaned_debris is not None and verdict(orphaned_debris) == "reap")
+    check("it is not misfiled under the protected heading",
+          find(items, "live harness branch, left alone",
+               "worktree-agent-harnessparked") is None)
+
+    # `code`/`said` are deliberately NOT reused here: the "no branch is
+    # deleted without the proof" check right after this section reads
+    # `said` from the branch-classes act() above, and shadowing it with
+    # a report-mode call (which performs nothing and prints no "deleted
+    # branch" lines) would starve that check of its evidence.
+    _code_report, said_report = run_reaper(
+        ["--repo", primary, "--state", state,
+         "--roots", os.pathsep.join(roots)])
+    check("report mode prints the new heading",
+          "live harness branch, left alone" in said_report)
+    check("the report names both protected branches as evidence under it",
+          "worktree-agent-harnesslive" in said_report
+          and "worktree-agent-harnessnorecord" in said_report)
+    check("report mode changed nothing - both protected branches still "
+          "exist",
+          "worktree-agent-harnesslive" in branches(primary)
+          and "worktree-agent-harnessnorecord" in branches(primary))
+
+    said_live = reaper.act(primary, protected_live, state, roots)
+    check("acting on a protected item performs nothing",
+          said_live == ["REPORTED and left alone."])
+    said_norecord = reaper.act(primary, protected_norecord, state, roots)
+    check("acting on the no-record-protected item performs nothing too",
+          said_norecord == ["REPORTED and left alone."])
+    check("both harness branches survive being acted on directly",
+          "worktree-agent-harnesslive" in branches(primary)
+          and "worktree-agent-harnessnorecord" in branches(primary))
+
+    said_parked = reaper.act(primary, orphaned_debris, state, roots)
+    check("the orphaned parked-record's harness branch IS deleted, with "
+          "its ancestry proof in the output",
+          any("ancestor of" in line for line in said_parked))
+    check("--report predicted exactly what --act did: it is gone now",
+          "worktree-agent-harnessparked" not in branches(primary))
 
     print("\n--- no branch is deleted without the proof in the output ---")
 
