@@ -350,26 +350,28 @@ CREATE TABLE IF NOT EXISTS auth_replay (
 CREATE INDEX IF NOT EXISTS auth_replay_expiry
   ON auth_replay(expires_at);
 
--- The published aggregate. It holds counts, medians and histogram bins -
--- no handles, no rows - computed in the keyholder's browser and sent here
--- as JSON.
+-- A table nothing reads and nothing writes, kept on purpose. It holds
+-- the pre-0.9 published aggregate - counts, medians and histogram bins,
+-- no handles and no rows - built in the keyholder's browser and posted
+-- here as JSON.
 --
--- GET /snapshot needs a member session. That gate decides who reads
--- this document and not what may go in it: it carries no handles and no
--- rows, which is why losing the session check here would be a smaller
--- failure than losing one anywhere else and is still a failure. The one
--- table served without a credential is `site_content`, and the
--- difference is what each one holds - counts about people here, site
--- copy there. See DESIGN.md, "The charts and the snapshot".
+-- POST/GET/DELETE /snapshot and their handlers are GONE (0.9-M2-S3,
+-- #354). apps/web/charts.html asks GET /charts-data instead and
+-- server/charts-agg.js computes that answer per request out of
+-- `submissions`, so there is no published document to gate and no
+-- publish step to keep one fresh. See DESIGN.md, "The charts and the
+-- snapshot".
+--
+-- The table stays because dropping one is a schema migration and 0.9-M3
+-- owns that decision, to take it or to decline it out loud, which is the
+-- same deferral `sessions` above carries for `is_dev`. server/worker.js
+-- states the retirement from the other side, in its own header block.
 --
 -- Exactly one row, forced by the CHECK. A history of snapshots would be
--- more published data about the same people kept for nobody's benefit;
--- the current picture is the whole product, so publishing replaces
--- rather than appends. This is also the one table with an UPDATE path
--- in the Worker.
---
--- Nothing here can be turned back into a submission. If this table is
--- lost, the keyholder presses Publish again.
+-- more published data about the same people kept for nobody's benefit,
+-- and the constraint is what makes a row left behind at most one stale
+-- picture rather than a record of how the numbers moved. Nothing in it
+-- can be turned back into a submission.
 CREATE TABLE IF NOT EXISTS snapshots (
   id         INTEGER PRIMARY KEY CHECK (id = 1),
   body       TEXT NOT NULL,

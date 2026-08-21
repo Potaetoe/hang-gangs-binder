@@ -2,12 +2,18 @@
  * Encryption. The only file that stands between a filled-in form and a
  * public database.
  *
- * Two callers: the form encrypts to the published public key, and
- * admin.html decrypts with the private half. One implementation, so the
- * two cannot drift - and one round-trip test in dev/ that proves they
- * still agree, because every way this file can be wrong is silent. A
- * form producing undecryptable ciphertext looks exactly like a working
- * one until export day.
+ * NO PAGE THE SITE PUBLISHES LOADS THIS FILE. The client seal is gone
+ * with the keys (DESIGN.md, "Trust model: the Worker reads"), so the
+ * form seals nothing here and no admin surface opens anything here. The
+ * callers left are the key tooling, tools/keycheck.html and
+ * dev/crypto-browser-check.html, which check a key file and this file's
+ * own behavior in a real browser against the real implementation rather
+ * than a second one. It stays on disk for them.
+ *
+ * One implementation, so a checker and the stored rows cannot drift -
+ * and one round-trip test in dev/ that proves it still reads what it
+ * wrote, because every way this file can be wrong is silent. Ciphertext
+ * nothing can open looks exactly like ciphertext something can.
  *
  *   const blob = await BinderCrypto.encrypt(record, BINDER_CONFIG.publicKey);
  *   const blob = await BinderCrypto.encryptTo(record, [keyholder, member]);
@@ -285,10 +291,10 @@
    * info. It would add nothing here - the ephemeral point is already
    * unique per block, so the shared secrets are already unrelated - and
    * a reader cannot produce it: importPrivateKey imports the private
-   * half non-extractable, which is what lets admin.html hold a key over
-   * a thousand rows without that key being exportable from the page
-   * that also holds plaintext. A derivation needing it would force that
-   * property away.
+   * half non-extractable, which is what lets a page hold a key over a
+   * thousand rows without that key being exportable from the same page
+   * that then holds their plaintext. A derivation needing it would
+   * force that property away.
    */
   async function deriveWrapKey(privateKey, publicKey, ephemeralRaw, usages) {
     const shared = await subtle().deriveBits(
@@ -391,8 +397,8 @@
   }
 
   async function asPrivateKey(value) {
-    // A CryptoKey from importPrivateKey, so admin.html can import once
-    // and decrypt a thousand rows.
+    // A CryptoKey from importPrivateKey, so a caller imports once and
+    // decrypts a thousand rows rather than re-importing per row.
     return value && value.type === "private" ? value : importPrivateKey(value);
   }
 
@@ -479,9 +485,11 @@
    * this function invents and drops; each recipient gets that content
    * key wrapped to them in a block of their own.
    *
-   * No page calls this yet - the form still writes version 1 rows
-   * through `encrypt` above, and the slice that switches it over is its
-   * own change. See #85.
+   * No page calls this, and no page calls `encrypt` above either: the
+   * client seal is gone from the site, as the header block says. Both
+   * writers stay because `decrypt` below has to read what each of them
+   * produced, and a stored row outlives the code that wrote it. See
+   * #85.
    */
   async function encryptTo(record, publicKeys) {
     const recipients = await envelopeRecipients(publicKeys);
@@ -709,14 +717,14 @@
     }
   }
 
-  // Frozen because your-page.html and admin.html both load this file while
-  // holding plaintext: an export a later script can rewrite is an
-  // `encrypt` that can be swapped for a passthrough, or a `decrypt`
-  // handed the private key admin.html just imported. Freezing does not
-  // stop the global itself being reassigned - nothing in a page can be
-  // stopped from doing that - but it removes the quiet edit, where the
-  // object every page already holds a reference to changes underneath
-  // them. dev/crypto.test.mjs asserts it.
+  // Frozen because any page that loads this file is a page holding
+  // plaintext and a key at the same moment: an export a later script can
+  // rewrite is an `encrypt` that can be swapped for a passthrough, or a
+  // `decrypt` handed the private key that page has just imported.
+  // Freezing does not stop the global itself being reassigned - nothing
+  // in a page can be stopped from doing that - but it removes the quiet
+  // edit, where the object every caller already holds a reference to
+  // changes underneath them. dev/crypto.test.mjs asserts it.
   root.BinderCrypto = Object.freeze({
     VERSION: VERSION,
     ENVELOPE_VERSION: ENVELOPE_VERSION,
