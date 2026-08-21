@@ -1526,8 +1526,23 @@
              other system is a different grid, so the toggle asks the
              route again. Wired here, per drawn answer, rather than once
              at load, so a listener never fires against an answer that
-             has not arrived yet. */
-          input.onchange = function () { showMe(); };
+             has not arrived yet.
+
+             dismissTooltipElsewhere() first (0.9-M3-S3, #388): that
+             function is the click path's OWN dismiss, wired to the
+             document's "click" in setUp() - an arrow-key change on this
+             radio fires "change" with no click at all, so it never
+             reached that listener. Calling the same function here,
+             synchronously, ahead of the fetch showMe() starts, closes
+             the gap with no second dismiss rule to keep in sync: a
+             pinned tooltip clears the instant units change, by keyboard
+             or by mouse, rather than waiting on a redraw that a
+             not-enough answer's early return in renderAnswer() would
+             skip calling resetTooltip() from at all. */
+          input.onchange = function () {
+            dismissTooltipElsewhere();
+            showMe();
+          };
         }
       });
   }
