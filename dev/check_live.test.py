@@ -65,7 +65,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 121
+EXPECTED = 135
 
 
 def check(label, condition):
@@ -399,24 +399,95 @@ check("evidence naming an arm its run did not drive is reported",
 
 
 # ------------------------------------------------------------------ #
+# The export spine. Neither route_ids()'s dispatch-block parse nor     #
+# page_names()'s directory listing reaches a file export - see the     #
+# module docstring's "export spine forces on a MIME type" paragraph -  #
+# so export_families() gets its own string-fixture arms first, the     #
+# same shape the router parser earns above.                            #
+
+check("a literal CSV MIME type is read as a csv export",
+      check_live.export_families(
+          'offer("d", c, "text/csv;charset=utf-8", "csv");') == ["csv"])
+
+check("a literal xlsx MIME type is read as an xlsx export",
+      check_live.export_families(
+          'new Blob([b], { type: '
+          '"application/vnd.openxmlformats-officedocument.'
+          'spreadsheetml.sheet" });') == ["xlsx"])
+
+check("a source carrying both families yields both",
+      set(check_live.export_families(
+          '"text/csv;charset=utf-8" ... '
+          '"application/vnd.openxmlformats-officedocument.'
+          'spreadsheetml.sheet"')) == {"csv", "xlsx"})
+
+# The false positive this pattern is anchored against: xlsx.js's own
+# Content-Type string for the workbook part is the xlsx MIME type with
+# one more part-type appended, and a bare prefix match would have read
+# it as a fifth export nothing ever clicks.
+check("the workbook part's own Content-Type string is not an export",
+      check_live.export_families(
+          '"application/vnd.openxmlformats-officedocument.'
+          'spreadsheetml.sheet.main+xml"') == [])
+
+check("a JSON MIME type carries neither registered family",
+      check_live.export_families('"application/json;charset=utf-8"')
+      == [])
+
+check("a source with no MIME literal at all yields nothing",
+      check_live.export_families("nothing exported here") == [])
+
+# The real bytes, after the strings - the same pairing route_ids() gets
+# above. #394 names exactly four: the admin CSV, the admin xlsx,
+# your-page's download and charts.xlsx. The admin JSON export is
+# deliberately not a fifth.
+REAL_EXPORTS = check_live.export_locations()
+
+check("the shipped tree yields exactly #394's four exports",
+      set(REAL_EXPORTS) == {
+          "admin.js: csv export", "admin.js: xlsx export",
+          "submit.js: xlsx export", "charts.js: xlsx export"})
+
+check("each export names the file its MIME type was found in",
+      REAL_EXPORTS["admin.js: csv export"] == "apps/web/admin.js"
+      and REAL_EXPORTS["admin.js: xlsx export"] == "apps/web/admin.js"
+      and REAL_EXPORTS["submit.js: xlsx export"] == "apps/web/submit.js"
+      and REAL_EXPORTS["charts.js: xlsx export"] == "apps/web/charts.js")
+
+check("an export row that does not stand on its own file is reported",
+      len(check_live.entry_problems([entry(
+          id="admin.js: csv export", surface="export",
+          covers=["apps/web/index.html"])])) == 1)
+
+check("an export row standing on its own file raises nothing",
+      check_live.entry_problems([entry(
+          id="admin.js: csv export", surface="export",
+          covers=["apps/web/admin.js"])]) == [])
+
+
+# ------------------------------------------------------------------ #
 # Completeness. This is the forcing arm: the rule that costs a slice   #
 # something rather than the rule that describes.                       #
 
 SPINE_ROUTES = ["GET /me", "POST /submit"]
 SPINE_PAGES = ["index.html", "admin.html"]
+SPINE_EXPORTS = {"admin.js: csv export": "apps/web/admin.js"}
 
 
-def spined(ledger):
-    return check_live.spine_problems(ledger, SPINE_ROUTES, SPINE_PAGES)
+def spined(ledger, exports=SPINE_EXPORTS):
+    return check_live.spine_problems(ledger, SPINE_ROUTES, SPINE_PAGES,
+                                     exports)
 
 
 COVERING = [entry(id="GET /me"), entry(id="POST /submit"),
             entry(id="index.html", surface="page",
                   covers=["apps/web/index.html"]),
             entry(id="admin.html", surface="page",
-                  covers=["apps/web/admin.html"])]
+                  covers=["apps/web/admin.html"]),
+            entry(id="admin.js: csv export", surface="export",
+                  covers=["apps/web/admin.js"])]
 
-check("a ledger covering every route and page raises nothing",
+check("a ledger covering every route, page and export raises nothing",
       spined(COVERING) == [])
 
 check("a dispatched route with no ledger row fails the gate",
@@ -426,7 +497,14 @@ check("the report gives the exact row to add",
       '"id": "GET /me"' in only(spined(COVERING[1:])))
 
 check("a published page with no ledger row fails the gate",
-      len(spined(COVERING[:3])) == 1)
+      len(spined(COVERING[:3] + COVERING[4:])) == 1)
+
+check("a file export with no ledger row fails the gate",
+      len(spined(COVERING[:4])) == 1)
+
+check("the report gives the exact export row to add, with its file",
+      '"id": "admin.js: csv export"' in only(spined(COVERING[:4]))
+      and '"covers": ["apps/web/admin.js"]' in only(spined(COVERING[:4])))
 
 # The other direction. A route deleted leaves a row claiming a surface
 # that no longer exists, and a ledger holding rows for surfaces that
@@ -438,6 +516,12 @@ check("a row for a route the router no longer dispatches is reported",
 check("a row for a page no longer published is reported",
       len(spined([*COVERING, entry(id="old.html", surface="page",
                                    covers=["AGENTS.md"])])) == 1)
+
+check("a row for an export the tree no longer hands the browser is "
+      "reported",
+      len(spined([*COVERING, entry(id="admin.js: json export",
+                                   surface="export",
+                                   covers=["apps/web/admin.js"])])) == 1)
 
 # The qualifier reads through to the same rule. A row that says one more
 # thing about a route names that route and then a comma, so the reverse
@@ -576,6 +660,24 @@ finally:
 
 check("the run-arm rule is wired into problems()",
       any("staging" in problem for problem in wired_arm))
+
+# The export spine, wired through problems() against the real ledger
+# and the real tree - the arm the router mutation above cannot stand in
+# for, because nothing here can plant a fake Blob call the way ROUTER
+# plants a fake dispatch line. Dropping one of #394's four real rows
+# is the mutation instead: apps/web/admin.js still hands the browser
+# that CSV, so the gate has to notice the row is gone.
+saved = check_live.LEDGER
+try:
+    check_live.LEDGER = [e for e in saved
+                         if e["id"] != "admin.js: csv export"]
+    without_export_row = check_live.problems()
+finally:
+    check_live.LEDGER = saved
+
+check("the export spine is wired into problems()",
+      any("admin.js: csv export" in problem
+          for problem in without_export_row))
 
 
 # ------------------------------------------------------------------ #
