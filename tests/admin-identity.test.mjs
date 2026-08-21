@@ -839,11 +839,22 @@ const { default: frozenWorker } = await loadWorker(frozenSrc);
 }
 
 {
-  const locked = await chartsFor({ "chart.floor": "5",
-    "chart.lockedUnit": SYSTEMS[1] });
+  /* THE SYSTEM LOCKED TO IS THE ONE THE SPEC DOES NOT DEFAULT TO, and
+     the whole check turns on that. charts-agg falls back to
+     `units.default` for a lock it cannot read, so locking to the
+     default proves nothing: a Worker that ignored the stored value
+     entirely would answer the same system and this arm would pass. */
+  const other = SYSTEMS.filter((name) => name !== SITE.units.default)[0];
+  const db = makeDb({ submissions: CORPUS, content: {
+    "chart.floor": "5", "chart.lockedUnit": other } });
+  const signed = await signIn(db, MEMBER_ID, "memberhandle", "member");
+  const locked = await call(worker, envFor(db), "GET",
+    "/charts-data?measure=weight&units=" + SITE.units.default,
+    { headers: bearer(signed.body.session) });
   const body = JSON.parse(locked.text);
-  check("the locked unit comes from the store, overriding the ask",
-    body.units && body.units.system === SYSTEMS[1]);
+  check("the locked unit comes from the store, overriding both the ask " +
+    "and the spec's own default", other !== SITE.units.default &&
+    body.units && body.units.system === other);
 }
 
 {
