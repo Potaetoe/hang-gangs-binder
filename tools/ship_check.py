@@ -59,7 +59,14 @@ WHAT IT CHECKS, AND WHY EACH ONE IS ITS OWN STAGE
      page file with no browser-note mention (#403). See "THE
      SLICE-TIER STAGE" below for the whole argument; a trivial-tier
      slice owes none of this.
-  7. Ticket label state via `gh` - REPORT-ONLY, and deliberately never
+  7. Hand-typed gate totals in the `--completion` draft vs what stages
+     1 and 2 of THIS SAME RUN actually printed (0.9-M3-S16, #421) - a
+     claim like "34/34 stages ok" is scanned out of the draft and
+     graded against the counted totals stage 1/2 already computed, so
+     a wrong hand-typed number is a FAILED stage rather than something
+     only a reviewer catches. See "THE HAND-TYPED TOTALS STAGE" below
+     for the whole argument.
+  8. Ticket label state via `gh` - REPORT-ONLY, and deliberately never
      gates the exit code. This program cannot know whether the
      `claude` label is SUPPOSED to be present or absent at the moment
      it runs (Prime's bookkeeping owns that, per the pack's "Claim
@@ -70,7 +77,7 @@ WHAT IT CHECKS, AND WHY EACH ONE IS ITS OWN STAGE
      never PASS/FAIL, and a missing `gh` degrades to a labeled gap
      rather than a crash or a silent skip.
 
-Exit 0 iff stages 1-6 all pass; exit 1 if any of them fails. Stage 7
+Exit 0 iff stages 1-7 all pass; exit 1 if any of them fails. Stage 8
 never changes the exit code - see its own paragraph above for why.
 
 WHY claim_vs_diff IS IMPORTED, NOT REBUILT
@@ -171,6 +178,61 @@ the MUTATION_*/BROWSER_* regexes and `_has_mutation_evidence()`/
 `_has_browser_evidence()` below for the actual shape asked for. A
 trivial-tier slice owes none of this; the M3 shape's own floor never
 asks it to.
+
+THE HAND-TYPED TOTALS STAGE (0.9-M3-S16, #421)
+
+On 2026-08-21 the S12 completion (#418) wrote "34/34 stages ok" three
+times while its OWN pasted ship-check block, in the same comment, said
+"35 stages, 35 ok, 0 FAILED" - the reviewer caught it, not this
+program. 0.9-M3-S5 already taught this file to read the `--completion`
+draft for mutation-table and browser-note MENTIONS (see "THE SLICE-TIER
+STAGE" above); `stage_totals()` below is the same reading aimed at
+NUMBERS instead of words - it never invents a total of its own to check
+a claim against, it only compares a claim already sitting in the draft
+against a total THIS SAME RUN already computed for stage 1 or 2.
+
+WHAT COUNTS AS A CLAIM
+
+  - a PER-FILE claim: an arm path (`tests/*.test.mjs`, `dev/*.test.py`,
+    `tools/*_suite.py`) sitting within twenty characters of an "N
+    checks" phrase, either order ("tests/door.test.mjs - 30 checks" or
+    "30 checks in tests/door.test.mjs"). Graded against that ARM's own
+    printed verdict line in this run's captured stage 1/2 output, when
+    the run produced one (`tests/run.mjs`'s own `report()` prints an
+    arm's own last-printed line right under its row on a green arm -
+    see that file's own header, "On green the runner shows the arm's
+    last line"). When the run did not - the arm's row never appeared,
+    or its verdict carried no parseable number - the claim is
+    UNVERIFIED, never FAILED: this run simply cannot answer for a
+    number it never printed, and refusing over a fact nobody could
+    check is a different failure than refusing over a fact that was
+    checked and disagreed.
+  - a PAIR claim: "N/N" or "N of N", within forty characters of one of
+    the trigger words (check, gate, stage, arm, suite) - graded as
+    "claimed N2 total, N1 ok" against whichever gate's own totals the
+    nearby trigger word names.
+  - a bare UNIT claim: "N stages", "N arms", or "N checks" - graded the
+    same way, against the totals the unit word itself names.
+
+"stage" claims read the OLD gate's own totals only - its own summary
+line (`stage_old_gate()`) literally says "stages". "arm" claims read
+the NEW gate's only - its own summary line (`stage_new_gate()`)
+literally says "arms". Neither claim shape has to guess which gate it
+is about; it is reading the gate's own word back. A "check"/"gate"/
+"suite" claim (or a pair claim whose only nearby trigger word is one of
+those three) is not anchored to either gate's own vocabulary, so it is
+graded against BOTH - a match on either side is a match, and a claim
+that matches neither is FAILED: an un-anchored number is unverifiable,
+and unverifiable is not the same as unclaimed, which is why this stage
+does not let it through quietly.
+
+NEVER A FRESH TOTAL
+
+This stage's own printed lines are prose - "claimed X, this run printed
+Y" - never a bare "N/M" or "N checks" of its own. Printing one more
+total here would hand a tired human a FOURTH number to copy, on top of
+the two gates' own two, which is the exact failure this ticket exists
+to end, one level up from where it already happened once.
 
 THE --completion-block MODE (0.9-M0-S5-era ticket #393)
 
@@ -754,6 +816,278 @@ def stage_tier(repo, declared_path, base, completion_path):
     return Stage("slice tier", True, lines, evidence, detail=tier_name)
 
 
+# --------------------------------------------------------------------
+# Stage: hand-typed gate totals vs what THIS run printed (0.9-M3-S16,
+# #421) - see the module docstring's "THE HAND-TYPED TOTALS STAGE" for
+# the whole argument.
+# --------------------------------------------------------------------
+
+_TRIGGER_WORD = re.compile(
+    r"\b(check|checks|gate|gates|stage|stages|arm|arms|suite|suites)\b",
+    re.I)
+
+# Bare unit claims fire only for these three words. "stages" and "arms"
+# are the literal words the old/new gate's own summary lines print;
+# "checks" is the word this repository's own arms use for their OWN
+# internal counts (door.test.mjs's own verdict: "door OK - 45 checks"),
+# named explicitly alongside stages/arms in the ticket's own scope.
+# "gate"/"suite" stay trigger-only below - "35 gates" and "40 suites"
+# are not phrases this repository's convention produces, so treating
+# them as claim units would invent a pattern nobody writes rather than
+# catch one somebody did.
+_UNIT_CLAIM = re.compile(
+    r"(?P<n>\d+)\s+(?P<unit>checks?|stages?|arms?)\b", re.I)
+
+# "34/34" or "34 of 34" - the exact shape the S12 completion (#418)
+# wrote three times.
+_PAIR_CLAIM = re.compile(r"(?P<ok>\d+)\s*(?:/|\bof\b)\s*(?P<total>\d+)",
+                         re.I)
+
+_ARM_PATH = (r"(?:tests/[\w.-]+\.test\.mjs|dev/[\w.-]+\.test\.py"
+            r"|tools/[\w.-]+_suite\.py)")
+
+_PER_FILE_CLAIM = re.compile(
+    r"(?P<path1>%s)[^\n]{0,20}?(?P<n1>\d+)\s+checks?"
+    r"|(?P<n2>\d+)\s+checks?[^\n]{0,20}?(?P<path2>%s)"
+    % (_ARM_PATH, _ARM_PATH), re.I)
+
+_PROXIMITY_WINDOW = 40
+
+
+def _normalize_unit(word):
+    """"stages"/"stage" -> "stage"; "arms"/"arm" -> "arm"; every other
+    trigger word (check(s), gate(s), suite(s)) -> "check", the
+    not-anchored-to-either-gate bucket the module docstring's "WHAT
+    COUNTS AS A CLAIM" describes."""
+    word = word.lower()
+    if word.startswith("stage"):
+        return "stage"
+    if word.startswith("arm"):
+        return "arm"
+    return "check"
+
+
+def _nearest_trigger_word(text, claim_match):
+    """The `_TRIGGER_WORD` match closest to `claim_match`, among those
+    within `_PROXIMITY_WINDOW` characters either side - or None when
+    none is that close.
+
+    Nearest, not first: a short completion draft routinely names BOTH
+    gates close together ("stages: 35/35 ok. arms: 2/2 green.") - a
+    plain `.search()` over the window always returns the LEFTMOST
+    trigger word in the window, which would tag the second pair claim
+    ("2/2") with the first claim's own "stages" trigger just because it
+    occurs earlier in the text, misreading it as a stage claim instead
+    of an arm claim. Picking the trigger word actually closest to the
+    number is what "near" means here.
+    """
+    window_start = max(0, claim_match.start() - _PROXIMITY_WINDOW)
+    window_end = min(len(text), claim_match.end() + _PROXIMITY_WINDOW)
+    mid = (claim_match.start() + claim_match.end()) / 2
+    best, best_distance = None, None
+    for candidate in _TRIGGER_WORD.finditer(text, window_start, window_end):
+        candidate_mid = (candidate.start() + candidate.end()) / 2
+        distance = abs(candidate_mid - mid)
+        if best is None or distance < best_distance:
+            best, best_distance = candidate, distance
+    return best
+
+
+def _find_claims(text):
+    """[claim, ...] found in `text`, most-specific shape first - a
+    claim already consumed by a more specific match is never matched
+    again by a looser pattern reading the same digits (so "34/34
+    stages" is read ONCE, as a pair claim, never also as a bare "34
+    stages" unit claim on the second "34")."""
+    claims = []
+    consumed = []
+
+    def overlaps(span):
+        start, end = span
+        return any(s < end and start < e for s, e in consumed)
+
+    for match in _PER_FILE_CLAIM.finditer(text):
+        if match.group("path1"):
+            path, n = match.group("path1"), int(match.group("n1"))
+        else:
+            path, n = match.group("path2"), int(match.group("n2"))
+        consumed.append(match.span())
+        claims.append({"kind": "per_file", "quote": match.group(0).strip(),
+                       "path": path, "n": n})
+
+    for match in _PAIR_CLAIM.finditer(text):
+        if overlaps(match.span()):
+            continue
+        trigger = _nearest_trigger_word(text, match)
+        if trigger is None:
+            continue
+        consumed.append(match.span())
+        claims.append({"kind": "pair", "quote": match.group(0),
+                       "ok": int(match.group("ok")),
+                       "total": int(match.group("total")),
+                       "unit": _normalize_unit(trigger.group(0))})
+
+    for match in _UNIT_CLAIM.finditer(text):
+        if overlaps((match.start("n"), match.end("n"))):
+            continue
+        consumed.append(match.span())
+        claims.append({"kind": "unit", "quote": match.group(0),
+                       "n": int(match.group("n")),
+                       "unit": _normalize_unit(match.group("unit"))})
+
+    return claims
+
+
+def _printed_totals(prior_stages):
+    """{"stage": (total, ok, failed) or None, "arm": (...) or None} -
+    the two totals THIS RUN itself printed, read off the SAME Stage
+    objects stage 1/2 already built (never re-run, never re-derived -
+    module docstring: "NEVER A FRESH TOTAL")."""
+    old = next((s for s in prior_stages if s.name.startswith("old gate")),
+              None)
+    new = next((s for s in prior_stages if s.name.startswith("0.9 gate")),
+              None)
+    return {"stage": old.counted if old else None,
+           "arm": new.counted if new else None}
+
+
+# `tests/run.mjs`'s own arm-row shape, matched again here (see
+# `_NEW_GATE_ROW` above) so a per-file claim's row lookup reads the
+# exact same fence `_count_new_gate_table()` already trusts.
+_ARM_ROW = re.compile(r"^(?P<path>\S+\.test\.mjs)\s+(ok|FAILED)\s+\d+\.\d+s$")
+_COUNT_IN_LINE = re.compile(r"(\d+)\s+checks?\b", re.I)
+
+
+def _printed_count_for_path(prior_stages, path):
+    """The check-count THIS run's own captured output printed for arm
+    `path`, or None when this run never showed one - the arm's row
+    never appeared in stage 1 or 2's captured lines, or its own verdict
+    line (printed right after the row on a green arm) carried no
+    parseable number. None is the UNVERIFIED case, not a failure."""
+    for stage in prior_stages:
+        lines = stage.lines
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if not (stripped.startswith(path) and _ARM_ROW.match(stripped)):
+                continue
+            for peek in lines[index + 1:index + 6]:
+                found = _COUNT_IN_LINE.search(peek)
+                if found:
+                    return int(found.group(1))
+            return None
+    return None
+
+
+def _grade_claim(claim, prior_stages, totals):
+    """(verdict, detail) - verdict is "match", "mismatch" or
+    "unverified"; `detail` is the one prose line this stage prints for
+    the claim, always "claimed ... - this run printed ...", never a
+    fresh total of its own."""
+    if claim["kind"] == "per_file":
+        printed = _printed_count_for_path(prior_stages, claim["path"])
+        if printed is None:
+            return "unverified", (
+                "unverified by this run: claimed \"%s\" - this run's "
+                "output never showed a parseable check count for %s."
+                % (claim["quote"], claim["path"]))
+        if printed == claim["n"]:
+            return "match", (
+                "match: claimed \"%s\" - this run's own output for %s "
+                "says %d checks." % (claim["quote"], claim["path"], printed))
+        return "mismatch", (
+            "MISMATCH: claimed \"%s\" (%d checks) - this run's own "
+            "output for %s says %d checks."
+            % (claim["quote"], claim["n"], claim["path"], printed))
+
+    candidates = (["stage"] if claim["unit"] == "stage" else
+                 ["arm"] if claim["unit"] == "arm" else
+                 ["stage", "arm"])
+    claimed_ok = claim["ok"] if claim["kind"] == "pair" else claim["n"]
+    claimed_total = claim["total"] if claim["kind"] == "pair" else claim["n"]
+
+    for name in candidates:
+        counted = totals[name]
+        if counted is None:
+            continue
+        total, ok, _failed = counted
+        matched = (total == claimed_total and ok == claimed_ok
+                  if claim["kind"] == "pair" else total == claimed_total)
+        if matched:
+            return "match", (
+                "match: claimed \"%s\" - matches this run's %s totals "
+                "(%d total, %d ok)." % (claim["quote"], name, total, ok))
+
+    printed_bits = []
+    for name in candidates:
+        counted = totals[name]
+        if counted is not None:
+            total, ok, failed = counted
+            printed_bits.append("%s: %d total, %d ok, %d FAILED"
+                                % (name, total, ok, failed))
+    if not printed_bits:
+        return "unverified", (
+            "unverified by this run: claimed \"%s\" - this run printed "
+            "no %s totals to compare against."
+            % (claim["quote"], " or ".join(candidates)))
+    return "mismatch", (
+        "MISMATCH: claimed \"%s\" - this run printed %s."
+        % (claim["quote"], "; ".join(printed_bits)))
+
+
+def stage_totals(prior_stages, completion_path):
+    """Hand-typed gate totals in `--completion` vs what THIS run
+    printed (0.9-M3-S16, #421) - see the module docstring's "THE
+    HAND-TYPED TOTALS STAGE" for the whole argument. A claim that
+    matches nothing this run printed is a FAILED stage, the claim
+    quoted beside the numbers this run actually printed; a per-file
+    claim this run has no data for is UNVERIFIED, listed but never
+    failing the stage by itself.
+    """
+    evidence = "regex scan of --completion text vs stage 1/2's own totals"
+    if completion_path is None:
+        return Stage("hand-typed gate totals", True,
+                     ["no --completion given; nothing to check."],
+                     evidence, detail="no completion given")
+    try:
+        with open(completion_path, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as problem:
+        return Stage("hand-typed gate totals", False,
+                     ["could not read %s: %s" % (completion_path, problem)],
+                     evidence)
+
+    claims = _find_claims(text)
+    if not claims:
+        return Stage("hand-typed gate totals", True,
+                     ["no N/N, N of N, N stages, N arms, or N checks "
+                      "claim found near check/gate/stage/arm/suite in "
+                      "the --completion text - nothing to compare."],
+                     evidence, detail="no claims found")
+
+    totals = _printed_totals(prior_stages)
+    lines = []
+    mismatches = 0
+    unverified = 0
+    for claim in claims:
+        verdict, detail = _grade_claim(claim, prior_stages, totals)
+        lines.append(detail)
+        if verdict == "mismatch":
+            mismatches += 1
+        elif verdict == "unverified":
+            unverified += 1
+
+    ok = mismatches == 0
+    if unverified:
+        lines.append("(%d claim(s) unverified - this run produced no "
+                     "data to grade them against, which is never counted "
+                     "as a mismatch.)" % unverified)
+    detail = "match" if ok else "%d mismatch(es)" % mismatches
+    if unverified:
+        detail += ", %d unverified" % unverified
+    return Stage("hand-typed gate totals", ok, lines, evidence,
+                detail=detail)
+
+
 def stage_ticket_label(issue):
     evidence = ("gh issue view %d --json labels,title" % issue
                if issue is not None else "none")
@@ -937,16 +1271,21 @@ def main(argv=None):
     # Built EXACTLY ONCE regardless of --completion-block (review F4,
     # #393, module docstring's "ONE RUN, NOT TWO") - both renderings
     # below read this same list, so they cannot disagree about a fact
-    # this run computed.
-    stages = [
-        stage_old_gate(repo),
-        stage_new_gate(repo, args.state),
-        stage_branch_name(repo),
-        stage_clean_head(repo),
-        stage_declared_vs_diff(repo, args.base, args.declared),
-        stage_tier(repo, args.declared, args.base, args.completion),
-        stage_ticket_label(args.issue),
-    ]
+    # this run computed. Built incrementally, not as one list literal,
+    # because stage_totals() (0.9-M3-S16, #421) reads stage 1 and 2's
+    # OWN already-computed totals - it needs the stages built so far,
+    # never a second run of them (module docstring: "NEVER A FRESH
+    # TOTAL").
+    stages = []
+    stages.append(stage_old_gate(repo))
+    stages.append(stage_new_gate(repo, args.state))
+    stages.append(stage_branch_name(repo))
+    stages.append(stage_clean_head(repo))
+    stages.append(stage_declared_vs_diff(repo, args.base, args.declared))
+    stages.append(stage_tier(repo, args.declared, args.base,
+                             args.completion))
+    stages.append(stage_totals(list(stages), args.completion))
+    stages.append(stage_ticket_label(args.issue))
     code = render(stages)
     if args.completion_block:
         render_completion_block(stages)
