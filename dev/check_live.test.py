@@ -47,6 +47,7 @@ No framework and no new dependency, matching the suites beside it.
 import os
 import re
 import sys
+import tempfile
 
 # tools/ is not a package and check_live.py is a script, so the import
 # has to be made reachable before it can be named. isort would hoist
@@ -65,7 +66,7 @@ performed = 0
 # check stops running - an early return, a renamed helper - which is
 # the armed-looking-but-not failure this repository holds to be worse
 # than having no check at all.
-EXPECTED = 121
+EXPECTED = 152
 
 
 def check(label, condition):
@@ -399,24 +400,212 @@ check("evidence naming an arm its run did not drive is reported",
 
 
 # ------------------------------------------------------------------ #
+# The export spine. Neither route_ids()'s dispatch-block parse nor     #
+# page_names()'s directory listing reaches a file export - see the     #
+# module docstring's "export spine forces on a MIME type" paragraph -  #
+# so export_families() gets its own string-fixture arms first, the     #
+# same shape the router parser earns above.                            #
+
+check("a literal CSV MIME type is read as a csv export",
+      check_live.export_families(
+          'offer("d", c, "text/csv;charset=utf-8", "csv");') == ["csv"])
+
+check("a literal xlsx MIME type is read as an xlsx export",
+      check_live.export_families(
+          'new Blob([b], { type: '
+          '"application/vnd.openxmlformats-officedocument.'
+          'spreadsheetml.sheet" });') == ["xlsx"])
+
+check("a source carrying both families yields both",
+      set(check_live.export_families(
+          '"text/csv;charset=utf-8" ... '
+          '"application/vnd.openxmlformats-officedocument.'
+          'spreadsheetml.sheet"')) == {"csv", "xlsx"})
+
+# The false positive this pattern is anchored against: xlsx.js's own
+# Content-Type string for the workbook part is the xlsx MIME type with
+# one more part-type appended, and a bare prefix match would have read
+# it as a fifth export nothing ever clicks.
+check("the workbook part's own Content-Type string is not an export",
+      check_live.export_families(
+          '"application/vnd.openxmlformats-officedocument.'
+          'spreadsheetml.sheet.main+xml"') == [])
+
+check("a literal JSON MIME type WITH a charset is read as a json export",
+      check_live.export_families(
+          'offer("d", j, "application/json;charset=utf-8", "json");')
+      == ["json"])
+
+# The false positive the json family is anchored against: every fetch
+# call in this tree sends a bare "application/json" Content-Type with
+# no charset, and only a real download's literal carries one - fix
+# wave 1 (#394, F1) added the family; this is the header it must not
+# also catch.
+check("a bare application/json Content-Type header is not a json export",
+      check_live.export_families(
+          'headers: { "Content-Type": "application/json" },') == [])
+
+check("a source with no MIME literal at all yields nothing",
+      check_live.export_families("nothing exported here") == [])
+
+# F2 (#394, fix wave 1): a MIME literal that survives only in a
+# comment must not force (or protect) a row - the export it names may
+# already be gone. Both comment shapes this tree actually uses.
+check("a MIME literal inside a // comment is not a real export",
+      check_live.export_families(
+          '// the CSV download was removed; it used to be '
+          '"text/csv;charset=utf-8"') == [])
+
+check("a MIME literal inside a /* */ comment is not a real export",
+      check_live.export_families(
+          '/* dead code: offer("d", c, "text/csv;charset=utf-8", "csv") '
+          '*/') == [])
+
+check("a live literal beside an unrelated comment is still read",
+      check_live.export_families(
+          '// notes\n'
+          'offer("d", c, "text/csv;charset=utf-8", "csv");') == ["csv"])
+
+# The real bytes, after the strings - the same pairing route_ids() gets
+# above. #394 names five exports as of fix wave 1: the admin CSV, the
+# admin xlsx, the admin JSON, your-page's download and charts.xlsx.
+REAL_EXPORTS = check_live.export_locations()
+
+check("the shipped tree yields exactly #394's five exports",
+      set(REAL_EXPORTS) == {
+          "admin.js: csv export", "admin.js: xlsx export",
+          "admin.js: json export",
+          "submit.js: xlsx export", "charts.js: xlsx export"})
+
+check("each export names the file its MIME type was found in",
+      REAL_EXPORTS["admin.js: csv export"] == "apps/web/admin.js"
+      and REAL_EXPORTS["admin.js: xlsx export"] == "apps/web/admin.js"
+      and REAL_EXPORTS["admin.js: json export"] == "apps/web/admin.js"
+      and REAL_EXPORTS["submit.js: xlsx export"] == "apps/web/submit.js"
+      and REAL_EXPORTS["charts.js: xlsx export"] == "apps/web/charts.js")
+
+check("an export row that does not stand on its own file is reported",
+      len(check_live.entry_problems([entry(
+          id="admin.js: csv export", surface="export",
+          covers=["apps/web/index.html"])])) == 1)
+
+check("an export row standing on its own file raises nothing",
+      check_live.entry_problems([entry(
+          id="admin.js: csv export", surface="export",
+          covers=["apps/web/admin.js"])]) == [])
+
+
+# ------------------------------------------------------------------ #
+# The unrecognized-class refusal (F1, #394 fix wave 1). export_       #
+# families() is silent about a MIME type outside EXPORT_MIME - right  #
+# for a fetch header, wrong for a literal handed straight to a real   #
+# `new Blob(` call, which is a download this ledger has to classify   #
+# or refuse rather than let sail through green.                       #
+
+check("a literal Blob() MIME type is read, whatever it is",
+      check_live.blob_mime_types(
+          'new Blob([b], { type: "application/pdf" });')
+      == ["application/pdf"])
+
+check("a registered family's literal Blob() type is read the same way",
+      check_live.blob_mime_types(
+          'new Blob([b], { type: "text/csv;charset=utf-8" });')
+      == ["text/csv;charset=utf-8"])
+
+check("a variable passed as a Blob() type yields no literal - admin.js's "
+      "own shape",
+      check_live.blob_mime_types('new Blob([b], { type: type });') == [])
+
+check("a literal Blob() MIME type inside a comment is not read at all",
+      check_live.blob_mime_types(
+          '// new Blob([b], { type: "application/pdf" });') == [])
+
+check("a Blob() call with no type argument at all yields nothing",
+      check_live.blob_mime_types('new Blob([b]);') == [])
+
+# Two real calls, each read on its own - not the first one's type
+# reused for the second, and not the second one lost because the first
+# had none.
+check("two typed Blob() calls each contribute their own type",
+      check_live.blob_mime_types(
+          'new Blob([a], { type: "text/csv;charset=utf-8" });\n'
+          'new Blob([b], { type: "application/pdf" });')
+      == ["text/csv;charset=utf-8", "application/pdf"])
+
+# The bound exists so an untyped Blob() call - admin.js's own shape -
+# can never reach past its own object literal into unrelated code
+# looking for a `type:` token to claim; today admin.js carries exactly
+# one `type:` token in the whole file (its own, untyped) so this
+# cannot fire from the shipped tree, but the bound is what keeps that
+# true if a later edit adds one far below it.
+check("an untyped Blob() call more than the lookahead bound away from "
+      "any `type:` token yields nothing",
+      check_live.blob_mime_types(
+          'new Blob([b], { type: type });\n' + ("x" * 400) +
+          '\ntype: "text/csv;charset=utf-8";') == [])
+
+check("an unregistered literal Blob() type is unrecognized",
+      check_live.unrecognized_blob_types(
+          'new Blob([b], { type: "application/pdf" });')
+      == ["application/pdf"])
+
+check("a registered family's literal Blob() type is not unrecognized",
+      check_live.unrecognized_blob_types(
+          'new Blob([b], { type: "text/csv;charset=utf-8" });') == [])
+
+check("a source with no Blob() literal at all has nothing unrecognized",
+      check_live.unrecognized_blob_types("nothing here") == [])
+
+# The real bytes: every literal Blob() MIME type this tree actually
+# ships belongs to a registered family, so the real-tree wiring raises
+# nothing today.
+check("the shipped tree carries no unrecognized Blob() export classes",
+      check_live.export_class_problems() == [])
+
+# Wired against a synthetic tree, not only the real one - a probe that
+# only shows the shipped tree is clean today says nothing about
+# whether the rule actually fires when it should. check_live.WEB is
+# swapped the same way LEDGER and RUNS are swapped elsewhere in this
+# file, restored in a `finally` either way.
+with tempfile.TemporaryDirectory() as scratch:
+    with open(os.path.join(scratch, "probe.js"), "w",
+              encoding="utf-8") as probe:
+        probe.write('new Blob([b], { type: "application/pdf" });')
+    saved_web = check_live.WEB
+    try:
+        check_live.WEB = scratch
+        wired_class = check_live.export_class_problems()
+    finally:
+        check_live.WEB = saved_web
+
+check("export_class_problems() is wired to a real file on disk, not "
+      "only the shipped tree",
+      any("application/pdf" in problem for problem in wired_class))
+
+
+# ------------------------------------------------------------------ #
 # Completeness. This is the forcing arm: the rule that costs a slice   #
 # something rather than the rule that describes.                       #
 
 SPINE_ROUTES = ["GET /me", "POST /submit"]
 SPINE_PAGES = ["index.html", "admin.html"]
+SPINE_EXPORTS = {"admin.js: csv export": "apps/web/admin.js"}
 
 
-def spined(ledger):
-    return check_live.spine_problems(ledger, SPINE_ROUTES, SPINE_PAGES)
+def spined(ledger, exports=SPINE_EXPORTS):
+    return check_live.spine_problems(ledger, SPINE_ROUTES, SPINE_PAGES,
+                                     exports)
 
 
 COVERING = [entry(id="GET /me"), entry(id="POST /submit"),
             entry(id="index.html", surface="page",
                   covers=["apps/web/index.html"]),
             entry(id="admin.html", surface="page",
-                  covers=["apps/web/admin.html"])]
+                  covers=["apps/web/admin.html"]),
+            entry(id="admin.js: csv export", surface="export",
+                  covers=["apps/web/admin.js"])]
 
-check("a ledger covering every route and page raises nothing",
+check("a ledger covering every route, page and export raises nothing",
       spined(COVERING) == [])
 
 check("a dispatched route with no ledger row fails the gate",
@@ -426,7 +615,14 @@ check("the report gives the exact row to add",
       '"id": "GET /me"' in only(spined(COVERING[1:])))
 
 check("a published page with no ledger row fails the gate",
-      len(spined(COVERING[:3])) == 1)
+      len(spined(COVERING[:3] + COVERING[4:])) == 1)
+
+check("a file export with no ledger row fails the gate",
+      len(spined(COVERING[:4])) == 1)
+
+check("the report gives the exact export row to add, with its file",
+      '"id": "admin.js: csv export"' in only(spined(COVERING[:4]))
+      and '"covers": ["apps/web/admin.js"]' in only(spined(COVERING[:4])))
 
 # The other direction. A route deleted leaves a row claiming a surface
 # that no longer exists, and a ledger holding rows for surfaces that
@@ -438,6 +634,12 @@ check("a row for a route the router no longer dispatches is reported",
 check("a row for a page no longer published is reported",
       len(spined([*COVERING, entry(id="old.html", surface="page",
                                    covers=["AGENTS.md"])])) == 1)
+
+check("a row for an export the tree no longer hands the browser is "
+      "reported",
+      len(spined([*COVERING, entry(id="admin.js: json export",
+                                   surface="export",
+                                   covers=["apps/web/admin.js"])])) == 1)
 
 # The qualifier reads through to the same rule. A row that says one more
 # thing about a route names that route and then a comma, so the reverse
@@ -576,6 +778,45 @@ finally:
 
 check("the run-arm rule is wired into problems()",
       any("staging" in problem for problem in wired_arm))
+
+# The export spine, wired through problems() against the real ledger
+# and the real tree - the arm the router mutation above cannot stand in
+# for, because nothing here can plant a fake Blob call the way ROUTER
+# plants a fake dispatch line. Dropping one of #394's five real rows
+# is the mutation instead: apps/web/admin.js still hands the browser
+# that CSV, so the gate has to notice the row is gone.
+saved = check_live.LEDGER
+try:
+    check_live.LEDGER = [e for e in saved
+                         if e["id"] != "admin.js: csv export"]
+    without_export_row = check_live.problems()
+finally:
+    check_live.LEDGER = saved
+
+check("the export spine is wired into problems()",
+      any("admin.js: csv export" in problem
+          for problem in without_export_row))
+
+# The unrecognized-class refusal, wired through problems() against a
+# synthetic tree - the same WEB swap export_class_problems()'s own
+# arm above uses, driven through problems() this time so the whole
+# chain (including entry_problems() and spine_problems() running
+# against a tree with no real routes or pages left) is proven not to
+# swallow the finding.
+saved_web = check_live.WEB
+try:
+    with tempfile.TemporaryDirectory() as scratch:
+        with open(os.path.join(scratch, "probe.js"), "w",
+                  encoding="utf-8") as probe:
+            probe.write('new Blob([b], { type: "application/pdf" });')
+        check_live.WEB = scratch
+        wired_class_problems = check_live.problems()
+finally:
+    check_live.WEB = saved_web
+
+check("the unrecognized-class refusal is wired into problems()",
+      any("application/pdf" in problem
+          for problem in wired_class_problems))
 
 
 # ------------------------------------------------------------------ #
