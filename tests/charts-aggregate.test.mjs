@@ -1196,6 +1196,49 @@ check("group makeup: the block describes the FILTERED view, not the " +
     "measure=weight&filter=gender&value=nonbinary"), "country")
     .filter((c) => c.value === "US").length === 0);
 
+/*
+ * A CATEGORICAL FIELD THIS FILE HAS NEVER HEARD OF, handed in as a spec
+ * rather than written into apps/web/site.config.js.
+ *
+ * This is the aggregation half of what an admin gains at 0.9-M3-S11
+ * (#419): the Worker composes an effective spec out of the shipped file
+ * and the admin's edits and hands it here, so a field that exists only
+ * in a database row still becomes a makeup block and a filter. Nothing
+ * below is a new capability - every derivation already takes a spec -
+ * and that is exactly the claim worth pinning, because a slice that
+ * quietly started reading the global instead would still pass every
+ * other arm in this file.
+ */
+const invented = JSON.parse(JSON.stringify(SITE));
+invented.fields.push({
+  name: "mood", kind: "choice", label: "Mood", term: "mood",
+  blank: "Prefer not to say", chart: true,
+  choices: [{ value: "great", label: "Great" },
+    { value: "grim", label: "Grim" }],
+});
+const moodRows = [
+  row(acct(90), "2026-08-01T00:00:00.000Z",
+    Object.assign(record(100, 170, "male", [], "US"), { mood: "great" })),
+  row(acct(91), "2026-08-01T00:00:00.000Z",
+    Object.assign(record(105, 172, "male", [], "US"), { mood: "great" })),
+];
+const inventedAnswer = atShippedFloor(moodRows, "measure=weight", invented);
+
+check("a categorical field only the given spec knows about becomes a " +
+  "makeup block, with no code here naming it",
+  groupBlock(inventedAnswer, "mood").length > 0 &&
+  countIn(groupBlock(inventedAnswer, "mood"), "great") === 2 &&
+  countIn(groupBlock(inventedAnswer, "mood"), "grim") === 0);
+
+check("and the SHIPPED spec still has no such block, so the arm above " +
+  "read the spec it was handed rather than a global",
+  groupBlock(atShippedFloor(moodRows, "measure=weight"), "mood").length === 0);
+
+check("a field only the given spec knows about is a filter dimension " +
+  "too, and is refused under the shipped spec",
+  askFor("measure=weight&filter=mood&value=great", invented).ok === true &&
+  askFor("measure=weight&filter=mood&value=great").ok === false);
+
 /* A member cannot count twice in one line by naming a value twice - the
    row-versus-person distinction arriving through a record a browser
    wrote rather than through the corpus. */
@@ -2039,7 +2082,7 @@ check("tombstones: the correction's own month is the one that draws",
   history.body.enough === true && pointsOf(history.body).length === 1);
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 186;
+const EXPECTED = 189;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

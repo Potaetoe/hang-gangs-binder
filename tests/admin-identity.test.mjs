@@ -273,15 +273,16 @@ function makeDb(seed) {
          WHAT THIS SEES, AND WHAT IT DOES NOT. It sees extra literals
          placed INSIDE the `IN (...)` parentheses, and only those. A
          statement widened AROUND that clause is invisible to it: write
-         `name IN (?, ?, ?) OR name = 'chart.floor'` and this regex
-         still parses three literals, the rows come back as the
-         allow-list asks for, the behavioral check below stays green,
-         and /config answers 200 where real D1 reaches the second wall
-         and answers 500. Reaching the rewritten shape means parsing the
-         whole predicate, which is a SQL engine in a test stub. The
-         bound is stated instead, so that a slice rewriting this
-         statement can tell it is outside what the arm covers rather
-         than inside it. */
+         `name IN (?, ?, ?) OR name = 'chart.floor'` and the added
+         clause falls outside the parentheses this regex reads, so it
+         parses no literal out of it at all; `wanted` is then the three
+         bound names alone, the rows come back as the allow-list asks
+         for, the behavioral check below stays green, and /config
+         answers 200 where real D1 reaches the second wall and answers
+         500. Reaching the rewritten shape means parsing the whole
+         predicate, which is a SQL engine in a test stub. The bound is
+         stated instead, so that a slice rewriting this statement can
+         tell it is outside what the arm covers rather than inside it. */
       const clause = /name IN \(([^)]*)\)/.exec(sql);
       const literals = clause
         ? [...clause[1].matchAll(/'([^']*)'/g)].map((m) => m[1]) : [];
@@ -296,8 +297,23 @@ function makeDb(seed) {
         row.name.toLowerCase() === folded);
       return found ? { name: found.name } : null;
     }
-    if (sql.startsWith("SELECT name, value FROM site_content ORDER BY")) {
+    /* THE `LIKE` PATTERN IS READ FROM THE STATEMENT AS WELL AS FROM THE
+       BOUND ARGUMENT, for the reason the `IN` clause below is parsed:
+       D1 honors a pattern written into the statement, so a stub
+       filtering on `args` alone would answer the same rows for a read
+       somebody widened, and the second wall in each of these two
+       readers would be unreachable from a test. The two statements are
+       the halves 0.9-M3-S11 (#419) split this table into - the field
+       namespace, and everything else. */
+    if (/FROM site_content WHERE name (NOT )?LIKE/.test(sql)) {
+      const written = /LIKE\s+'([^']*)'/.exec(sql);
+      const pattern = written ? written[1] : args[0];
+      const body = String(pattern).replace(/%$/, "").toLowerCase();
+      const inside = (name) => name.toLowerCase().startsWith(body);
+      const wanted = /NOT LIKE/.test(sql)
+        ? (name) => !inside(name) : inside;
       return { results: [...content.values()]
+        .filter((row) => wanted(row.name))
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((row) => ({ name: row.name, value: row.value })) };
     }
