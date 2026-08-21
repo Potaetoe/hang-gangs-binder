@@ -329,14 +329,26 @@ def build_repo(root):
     base_sha = sha(repo, "HEAD")
     git(repo, "update-ref", "refs/remotes/origin/accounts", base_sha)
 
-    write(os.path.join(repo, "apps", "web", "page.html"), "<html></html>\n")
+    # Two commits, not one - review F1(c) (#393): a RED-marked commit
+    # must also TOUCH a real arm (tests/, dev/, or a tools/*_suite.py
+    # file), never just carry the word in its subject. Commit A carries
+    # the marker and touches a throwaway test arm; commit B deletes that
+    # throwaway file again in the same breath it adds the real fixture
+    # page. The NET two-endpoint diff from origin/accounts to the tip
+    # (what every existing MATCH/MISMATCH assertion below reads) is
+    # therefore unchanged - only apps/web/page.html - while `git log`
+    # over the range still carries a RED-marked commit whose OWN
+    # `git show --name-only` names a real tests/ path, which is what
+    # `_has_red_commit()` now reads.
+    write(os.path.join(repo, "tests", "fixture-contract.test.mjs"),
+         "// contract placeholder, undone by the next commit\n")
     git(repo, "add", "-A")
-    # Carries a real "RED" marker, the repository's own naming
-    # convention (git log: "... RED: ... arm/contract ..." then a later
-    # "... GREEN: ..." commit) - this is the ONE commit in every
-    # fixture branch's range, so it doubles as the positive fixture for
-    # stage_tier()'s RED-commit-in-range check without a second branch.
-    git(repo, "commit", "-q", "-m", "0.9-m0-s22 RED: fixture slice change")
+    git(repo, "commit", "-q", "-m", "0.9-m0-s22 RED: pin the fixture contract")
+
+    write(os.path.join(repo, "apps", "web", "page.html"), "<html></html>\n")
+    os.remove(os.path.join(repo, "tests", "fixture-contract.test.mjs"))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "0.9-m0-s22 GREEN: fixture slice change")
     tip_sha = sha(repo, "HEAD")
     return repo, base_sha, tip_sha
 
@@ -529,6 +541,37 @@ try:
     git(repo, "checkout", "-q", "0.9-m0-s22")
     git(repo, "branch", "-D", "no-red-fixture")
 
+    # Review F1(c) (#393): a RED-marked commit that touches NO arm at
+    # all is not contract-first. The reviewer's own adversarial fixture,
+    # reproduced verbatim: a commit whose subject carries the marker but
+    # whose diff never reaches tests/, dev/, or a tools/*_suite.py path.
+    git(repo, "branch", "red-no-arm-fixture", base_sha)
+    git(repo, "checkout", "-q", "red-no-arm-fixture")
+    write(os.path.join(repo, "apps", "web", "other2.html"),
+         "<html></html>\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "0.9-m9-s9 RED: (this commit adds no arm at all)")
+    red_no_arm_declared = os.path.join(root, "declared-red-no-arm.txt")
+    write(red_no_arm_declared, "apps/web/other2.html\n")
+    # Full evidence otherwise (mutation table + browser note) - isolates
+    # the finding to the RED-arm check alone, matching the reviewer's own
+    # report shape ("evidence matches the normal tier" - for a branch
+    # with no arm, no mutation battery and no browser pass).
+    honest_completion = os.path.join(root, "completion-honest.txt")
+    write(honest_completion,
+         "mutation battery: 3 mutations, each red then green.\n"
+         "browser: real browser, phone width.\n")
+    stage = ship_check.stage_tier(repo, red_no_arm_declared,
+                                  "origin/accounts", honest_completion)
+    check("a RED-marked commit that touches no test/dev/suite arm at "
+         "all still fails - a marker that marks nothing is not "
+         "contract-first (review F1(c), #393)",
+          not stage.ok and "no RED commit" in "\n".join(stage.lines))
+
+    git(repo, "checkout", "-q", "0.9-m0-s22")
+    git(repo, "branch", "-D", "red-no-arm-fixture")
+
     sensitive_declared = os.path.join(root, "declared-sensitive.txt")
     write(sensitive_declared, "server/worker.js\n")
     stage = ship_check.stage_tier(repo, sensitive_declared,
@@ -598,6 +641,58 @@ try:
     check("...and the printed bucket counts are exact - 3 sensitive, 2 "
          "trivial, 1 normal path(s), never a hand count",
           "3 sensitive, 2 trivial, 1 normal path(s) judged" in stage.lines)
+
+    print("\n--- F1 (#393): evidence-shape, not word-presence - the "
+         "reviewer's own five rows, reproduced verbatim ---")
+    # Every row below is fed against declared_good (apps/web/page.html,
+    # normal tier, RED commit already present on 0.9-m0-s22's own tip) -
+    # isolates the finding to the mutation/browser TEXT shape alone.
+    row1 = os.path.join(root, "f1-row1-denial.txt")
+    write(row1, "I did NOT run a mutation battery. There is no mutation "
+                "table.\nbrowser: NOT PERFORMED - I never opened a "
+                "browser.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row1)
+    check("F1 row 1: a completion that says IN PLAIN ENGLISH that no "
+         "mutation battery ran and no browser was opened must FAIL - "
+         "the word 'mutation'/'browser' sitting inside its own denial "
+         "is not evidence",
+          not stage.ok)
+
+    row2 = os.path.join(root, "f1-row2-bare-words.txt")
+    write(row2, "mutation browser\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row2)
+    check("F1 row 2: two bare words with nothing else must FAIL",
+          not stage.ok)
+
+    row3 = os.path.join(root, "f1-row3-unrelated.txt")
+    write(row3, "This slice has no tests. The word mutation appears in "
+                "the design doc, and browser support is out of scope.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row3)
+    check("F1 row 3: 'mutation' and 'browser' mentioned only in an "
+         "unrelated, non-evidentiary sentence must FAIL",
+          not stage.ok)
+
+    row4 = os.path.join(root, "f1-row4-honest-plural.txt")
+    write(row4, "I ran five mutations, each red then green. Verified "
+                "in browsers at phone width.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row4)
+    check("F1 row 4: honest evidence using PLURAL nouns ('mutations', "
+         "'browsers') must PASS - the old \\b...\\b word-boundary regex "
+         "failed this exact text because 's' sits against the boundary",
+          stage.ok)
+
+    row5 = os.path.join(root, "f1-row5-labeled.txt")
+    write(row5, "mutation battery: 5 mutations, red then green. "
+                "browser: phone width.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row5)
+    check("F1 row 5: a labeled, counted, red/green mutation line plus "
+         "a labeled, width-bearing browser line must PASS",
+          stage.ok)
 
     stage = ship_check.stage_tier(repo, None, "origin/accounts",
                                   completion_full)
@@ -860,6 +955,59 @@ try:
           and "gating stage(s) passed." in block_fail)
     os.environ.pop("SHIP_CHECK_STUB_OLD_GATE", None)
     os.environ.pop("SHIP_CHECK_STUB_NEW_GATE", None)
+
+    print("\n--- F4 (#393): ONE gate execution, TWO renderings - not two "
+         "runs ---")
+    # Review F4: --completion-block used to re-run both gates from
+    # scratch, so the condensed block and the plain full block in one
+    # completion could disagree (a flaky arm caught mid-run). The fix is
+    # structural: main() builds the `stages` list exactly once and hands
+    # the SAME list to both renderers. Proven here by literally counting
+    # calls into stage_old_gate/stage_new_gate during one
+    # --completion-block invocation, not by re-reading printed numbers
+    # (which would agree by luck on a non-flaky fixture even with the
+    # old, broken two-run shape).
+    call_counts = {"old": 0, "new": 0}
+    real_old_gate = ship_check.stage_old_gate
+    real_new_gate = ship_check.stage_new_gate
+
+    def _counting_old_gate(repo_arg):
+        call_counts["old"] += 1
+        return real_old_gate(repo_arg)
+
+    def _counting_new_gate(repo_arg, state_arg):
+        call_counts["new"] += 1
+        return real_new_gate(repo_arg, state_arg)
+
+    ship_check.stage_old_gate = _counting_old_gate
+    ship_check.stage_new_gate = _counting_new_gate
+    try:
+        buffer5 = io.StringIO()
+        with PatchInitProblems([]), redirect_stdout(buffer5):
+            code5 = ship_check.main(
+                ["--repo", repo, "--declared", declared_good,
+                 "--base", "origin/accounts", "--completion", completion_full,
+                 "--completion-block"])
+    finally:
+        ship_check.stage_old_gate = real_old_gate
+        ship_check.stage_new_gate = real_new_gate
+
+    check("F4: one --completion-block invocation runs the old gate "
+         "exactly once, never twice for two renderings",
+          call_counts["old"] == 1)
+    check("...and the new gate exactly once too",
+          call_counts["new"] == 1)
+    check("...and the run still exits 0", code5 == 0)
+    both = buffer5.getvalue()
+    check("...and BOTH the full verbatim block and the condensed block "
+         "come out of that SAME one run, in one buffer - a mode swap "
+         "would print only one of the two headers below",
+          "=== ship-check: the executor's pre-signal door" in both
+          and "ship-check completion block ===" in both)
+    check("...with matching totals in both renderings, since both are "
+         "read off the identical Stage objects the one run produced",
+          "2 stages, 2 ok, 0 FAILED" in both  # full render's own line
+          and "2 total, 2 ok, 0 FAILED" in both)  # condensed block's line
 
     buffer2 = io.StringIO()
     with PatchInitProblems(["fixture: pretend uninitialized"]), \

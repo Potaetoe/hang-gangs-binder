@@ -5,12 +5,18 @@
 
   sensitive  any path under server/, the page-side auth/session modules,
              deploy configuration (wrangler.toml, .github/workflows/),
-             or crypto. One sensitive file makes the whole slice
-             sensitive.
-  trivial    every path is documentation, a test, or site-configuration
-             text (apps/web/site.config.js and its dist mirror).
-             Nothing else.
-  normal     everything in between - pages, features, tooling.
+             the deployed response-header layer (_headers: the noindex
+             and no-referrer posture), or crypto. One sensitive file
+             makes the whole slice sensitive.
+  trivial    every path is documentation, a test ARM (tests/*.test.mjs),
+             or site configuration text (apps/web/site.config.js and its
+             dist mirror). Nothing else. The 0.9 gate's own machinery -
+             tests/run.mjs, tests/preflight.mjs, tests/ROSTER - is NOT
+             trivial: a change that can disarm the gate meets a review
+             (ruled 2026-08-21 after 0.9-M3-S1 merged its runner change
+             with none - review F2, #393).
+  normal     everything in between - pages, features, tooling, the gate
+             runner.
 
 WHY THIS IS A MIRROR, NOT AN IMPORT
 
@@ -52,14 +58,22 @@ SENSITIVE = [
     (re.compile(r"(^|/)wrangler\.toml$"), "deploy configuration"),
     (re.compile(r"^\.github/workflows/"), "CI/deploy workflow"),
     (re.compile(r"store-crypto|crypto\.js$"), "crypto"),
+    (re.compile(r"(^|/)_headers$"), "deployed response headers"),
 ]
 TRIVIAL = [
     (re.compile(r"\.md$"), "documentation"),
-    (re.compile(r"^tests/"), "test"),
+    # Narrowed from "^tests/" to test ARMS only (review F2, #393): the
+    # wider pattern also caught tests/run.mjs (the runner), preflight.mjs
+    # and ROSTER - the 0.9 gate's own machinery, not a test, so a change
+    # that can disarm the gate merged trivial with no review at all
+    # (0.9-M3-S1 declared exactly tests/run.mjs and tiered trivial on the
+    # old pattern). None of those three paths matches this row now, so
+    # they fall through to "normal" below, same as tools/check.py always
+    # has.
+    (re.compile(r"^tests/.*\.test\.mjs$"), "test arm"),
     (re.compile(r"^dev/.*test.*\.(py|mjs)$"), "test"),
     (re.compile(r"^(apps/web|dist)/site\.config\.js$"),
      "site configuration text"),
-    (re.compile(r"^tests/ROSTER$"), "test roster"),
 ]
 
 
