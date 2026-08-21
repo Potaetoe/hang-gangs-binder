@@ -280,6 +280,168 @@ whether the anchored claim is true; a human still reads the fourteen
 NARRATIVE_PINS mentions and the five TICKET_PINS citations to know
 that. This is a narrower claim than the first build's closing sentence
 made, and the narrowing is the fix.
+
+A SIXTH RULE, AND THE TREE ITSELF IS THE ANCHOR NOW
+-----------------------------------------------------
+0.9-M3-S17 (#422), filed after one batch (m3-b2) shipped sixteen
+comments naming things two of its own slices had just deleted -
+S8's review (#414 F2) found six still naming the deleted
+`adminAccountIds()` and the renamed `CHART_SETTINGS`; S10's review
+(#416 F3-F4) found ten citing exports, a keyfile tool and two suites
+that slice removed. Both gates were green: every rule above checks a
+comment against a PHRASE, another FILE'S text, or a TICKET - none of
+them asks the tree "does this name still exist." dangling_problems()
+below is the one that does.
+
+WHAT COUNTS AS A NAME. Four shapes, each read out of a comment or an
+operative document's prose (README.md, AGENTS.md, DESIGN.md,
+OPERATIONS.md - "the docs it covers" in the ticket's words, because
+CITATION_PINS above already treats exactly these four as first-class
+targets it opens and reads; archive/ is frozen history and security/
+is a dated-snapshot folder, both deliberately excluded for the same
+reason archive/ is never scanned above, and neither carries prose
+about a DIFFERENT repository the way a fork's own local notes might -
+this checker has no way to tell "this name belongs to a fork" from
+"this name is dangling", so the docs it reads are the ones this
+project's own registries already vouch for):
+
+ - a bare call, `name()` or `name(args)` - FUNC_CALL_BARE - checked
+   against every `function name(`, `const/let/var name =`, `.name =
+   function`, and `name: (` definition scan_tree()'s own four
+   directories hold (defined_names() below), plus Python's `def
+   name(`. "A definition, not another mention" (the ticket's words) is
+   why a mention of the same name elsewhere never counts - only these
+   five assignment shapes do, measured against this tree until each of
+   `adminAccountIds()`, `box(i)` (a local callback assigned `const box
+   = boxOf || function (i) {...}`, resolved only once JS_ASSIGN_DEF
+   stopped requiring the arrow to sit immediately after `=`) and
+   `openRow()` (server/store-crypto.js's `openRow: (record, context)
+   =>`, an object-literal method JS_METHOD_DEF exists for) all
+   resolved.
+ - an `UPPER_SNAKE` token with at least one underscore - CONST_BARE -
+   checked the same way, against `(?:const|let|var) UPPER_SNAKE =` and
+   Python's `UPPER_SNAKE =`. The underscore is required for the same
+   reason NARRATIVE and COUNT_CLAIM narrow on a measured shape rather
+   than a guess: a bare "GET" or "OK" is an English word wearing caps,
+   and every real constant this tree defines (`ADMIN_TELEGRAM_IDS`,
+   `API_SEGMENTS`, `CHART_SETTINGS`) has an underscore.
+ - `METHOD /path` - BARE_ROUTE - an HTTP verb immediately before a
+   path, resolved against `known_api_segments()`, which reads
+   server/worker.js's own `API_SEGMENTS` declaration (isApiPath's
+   registry, "Every path above is API-shaped... everything else is a
+   page or an asset, served by env.ASSETS" - server/worker.js's own
+   comment, lines 70-72) rather than parsing route()'s dispatch
+   conditionals or its parameterized regexes. MEASURED, NOT GUESSED: a
+   bare `/path` with no verb is refused this rule entirely - `/p`,
+   `/span`, `/body`, `/head` (HTML tags and CSS selectors), `/x` (a
+   regex character class), `/etc/hosts` (a real Unix path), `/apps/web`
+   and `/dev` (directory fragments) and half a dozen more all matched
+   an unrestricted `/word` scan of this tree with nothing to do with a
+   route; requiring the verb (`GET /config`, `GET /admin-log`, the
+   ticket's own two examples) is what took that list to zero while
+   keeping every real route intact. Every route this checker can
+   confirm resolves is what `route()` answers `env.ASSETS.fetch`
+   without ever reaching - a page or a static asset - is out of scope
+   for the SAME reason: checking it would mean re-deriving dist/'s own
+   routing, which is #181's question, not this one's.
+ - a repo-relative path with a known extension - CITED_TOKEN, already
+   defined above for the citation rules - resolved against the real
+   file at that path OR (known_basenames()) any file anywhere in the
+   tree sharing that basename, because `admin.html`, `form.js` and
+   `worker.js` are written bare, with no directory, throughout
+   DESIGN.md, OPERATIONS.md and README.md - checking only the exact
+   relative path would redden every one of them.
+
+BUILTIN_CALLS is the measured floor under the call-shape rule, not a
+maintained standard-library index: `Boolean()`, `isFinite()`,
+`toISOString()`, `toLocaleString()`, `getBoundingClientRect()`,
+`getClientRects()`, `getComputedStyle()`, `getComputedTextLength()` are
+the JS/DOM platform calls this tree's own comments name to explain
+browser behavior (`getClientRects()` and `getComputedStyle()` sit in
+AGENTS.md's own "Verification" bullets); `dict()`, `tuple()`,
+`isinstance()`, `min()`, `max()`, `print()`, `open()`, `repr()`,
+`ascii()`, `str.startswith()` and `Path.is_dir()` are the Python
+builtins tools/ narrates the same way; `test()` and `after()` are
+`node:test`'s own hook names, discussed by dev/harness.mjs's own
+docstring explaining why this repo does not adopt them; `var()` is CSS
+custom-property syntax (`var(--x)`), not a call at all. None of the
+eleven is a repo definition and none will ever become one by this
+checker's own admission - this is not a ratchet, because a builtin
+never resolves and a growing list here would just be catching up to
+however many the language and the platform ship. A NEW builtin name
+this tree starts discussing joins the set in the same edit that adds
+the comment, same as the two EXEMPT files above may name what they
+forbid.
+
+A HANDFUL OF MEASURED NAMES could not be resolved by any of the four
+shapes above, are not builtins either, and are not really dangling -
+DANGLING_PINS covers each, read for truth rather than assumed rather
+than covered by a wider rule: an ILLUSTRATIVE placeholder a docstring
+invents to explain a shape (`dev/harness.mjs`'s `somethingAsync()`,
+`tools/agent_init.py`'s paired `pinned.txt`/`inned.txt` truncation
+example, `dev/check_web.test.py`'s `defer.js`, `tools/fleet_status.py`'s
+`/path/to/stub.py`, `tools/check_docs.py`'s formula placeholder
+`THAT.md`, `server/worker.js`'s `x.html`); a name inside a SYNTHETIC
+FIXTURE a suite builds to test another checker's own rule
+(`dev/check_web.test.py`'s `helper()`, `dev/check.test.py`'s
+`dev/stray.test.py`); a REJECTED DESIGN OPTION that was never built,
+not a deleted one (`dev/signout.test.mjs`'s `forgetLocalData()`,
+weighed and dropped in the same paragraph - "There was a latent
+third..."); a WORD-STEM notation this file's own spelling docstring
+writes, not a call (`tools/check_spelling.py`'s `-is(e/ing/ation)`); a
+citation of a REAL DEPENDENCY, never this repository
+(`tools/agent_init.py`'s fontTools-internal `woff2.py`); a quotation of
+OLD PROSE a ledger's own history narrates replacing, not a citation of
+a live file (`tools/check_live.py`'s `query.js`, "'query.js frozen in a
+browser engine' stood here"); a shell-redirect EXAMPLE, not a path
+(`tools/claim_vs_diff.py`'s `` `> file.txt` ``); and a path whose
+PLACEHOLDER PREFIX is not part of this tree at all
+(`tools/prime_lock.py`'s `` `<state>/locks/prime.json` ``). Each is
+backward-checked the same way every other pin in this file is: a pin
+whose (file, kind, name) stops matching what dangling_findings() would
+otherwise report fails, naming the entry to delete - which is how
+`tools/reaper_suite.py`'s own `shared/sentinel.txt` (the first fixture
+found, and the reason `_suite.py` files are excluded from the path
+shape entirely rather than pinned one fixture at a time - see
+dangling_findings() below) never became a permanent entry here.
+
+THE "IS GONE" ALLOWANCE, the ticket's own words: a name resolves as
+history rather than as a defect when the SAME SENTENCE that names it
+also says so, in one of five exact phrases - "is gone", "replaced",
+"retired", "deleted", "renamed to" (GONE below, case-insensitive).
+Sentence boundaries (SENTENCE_END below) are a mark followed by
+whitespace or the region's own end, NOT the bare nearest `.`, `!` or `?`
+has_subject() uses above - measured against dev/demo-corpus.js's own
+"...the same file server/worker.js's real POST /snapshot handler
+stored..." sentence, where the bare version split AT THE PERIOD INSIDE
+"worker.js" itself, stranding the route on one side of its own "is
+gone" sentence and the allowed word on the other; a sentence-end mark
+must be followed by space or nothing; a period inside a filename never
+is. Server/worker.js's own header narrates POST/GET/DELETE /snapshot as
+"GONE (0.9-M2-S3, #354)" and dev/demo-corpus.js opens its whole
+retirement comment with "RETIRED (0.9-M2-S3, #354):" before the route
+it retires - both keep the route and the allowed word in ONE sentence,
+by construction rather than by accident, which is what lets the
+ticket's "within the same sentence" survive contact with the real tree
+rather than needing widening to "the same paragraph." Where two
+adjacent sentences carry the retirement and the name separately (the
+measured shape - server/schema.sql's `snapshots` table comment among
+others), the finding stands and is listed for its owner rather than
+silently forgiven; a ratchet that forgave every near-miss would not be
+asking the question the ticket wrote this rule to ask.
+
+WHAT THIS RULE DOES NOT ATTEMPT: it is not a parser, and
+defined_names() is five regexes over raw text, not an AST - a name
+assigned through a destructuring pattern, a computed property, or a
+decorator is invisible to it the same way an unusual definition shape
+was until measurement found `box` and `openRow` and widened
+JS_ASSIGN_DEF and added JS_METHOD_DEF/JS_PROPERTY_DEF to reach them.
+The failure direction this leaves is stated rather than hidden: a
+defined name that JS_ASSIGN_DEF's own shapes cannot see reads as
+"gone" when it is not, which is a false red rather than a false green -
+the direction this repository's own checks consistently prefer, and
+correctable in the open the moment it happens, the same way the four
+widenings above were.
 """
 
 import os
@@ -1808,6 +1970,730 @@ def count_property_pin_problems(scan=None, repo=None, pinned=None):
     return problems
 
 
+# ------------------------------------------------------------------ #
+# Rule 6: DANGLING IDENTIFIERS (0.9-M3-S17, #422). See the module
+# docstring's "A SIXTH RULE" section for the full argument; this is the
+# machinery.
+
+# The operative documents CITATION_PINS already treats as first-class
+# citation targets - "the docs it covers" in the ticket's own words.
+# archive/ (frozen history) and security/ (dated snapshots) are
+# deliberately excluded, for the reason the docstring gives.
+DOCS = ("README.md", "AGENTS.md", "DESIGN.md", "OPERATIONS.md")
+
+# A bare call: `name()` or `name(args)`, no space before the paren (a
+# real English parenthetical always has one - "the answer (obviously)
+# is"). The plural suffix is excluded by name below rather than here,
+# because "(s)" is the one shape measured to collide - "comment(s)",
+# "citation(s)", "occurrence(s)" - and nothing else did.
+FUNC_CALL_BARE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\(([^()]*)\)")
+PLURAL_SUFFIX = re.compile(r"^(?:s|es|ies)$")
+
+# A review-finding label's own sub-point, "F1(c)" - a real, recurring
+# citation shape (tools/ship_check.py, tools/ship_check_suite.py: "review
+# F1(c), #393") that is not a call at all.
+FINDING_LABEL = re.compile(r"^F\d+$")
+FINDING_SUBPOINT = re.compile(r"^[a-z]$")
+
+# UPPER_SNAKE with at least one underscore - see the docstring for why
+# the underscore is required (every real constant this tree defines has
+# one; a bare "GET" or "OK" does not).
+CONST_BARE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
+
+# An HTTP verb immediately before a path - no bare `/word` scan, per the
+# docstring's measurement (`/p`, `/etc/hosts`, `/apps/web` and a dozen
+# more are not routes).
+BARE_ROUTE = re.compile(
+    r"\b(?:GET|POST|DELETE|PUT|PATCH|OPTIONS)\s+(/[\w-]+(?::[\w-]+)?"
+    r"(?:/[\w:-]+)*)")
+
+# CITED_TOKEN (defined above, for rule 3) is too permissive to reuse
+# here unchanged: `tests/*.test.mjs` (a glob) and `` `tests/<name>.test.mjs` ``
+# (a template) both leave a "*" or "<...>" immediately before the
+# extension-bearing remainder once the wildcard/placeholder itself,
+# which is not in CITED's own character class, breaks the match - and
+# ".test.mjs" or "test.mjs" then reads as a path candidate that was
+# never meant literally. The lookbehind refuses a match whose first
+# character is not freshly starting a token (preceded by "*", "<", a
+# word character, or another "." that a real path would have swallowed
+# as part of the same CITED match).
+PATH_BARE = re.compile(r"(?<![*<>\w.])%s\b" % CITED)
+
+# A template filename this repository writes about, never one it holds:
+# `binder-YYYY-MM-DD.sql`, dated by the operator running the command,
+# is a NAMING PATTERN shown in OPERATIONS.md's own backup instructions,
+# not a file this tree can contain.
+TEMPLATE_PATH = re.compile(r"YYYY|DD\b")
+
+# Basenames this repository's own tooling discusses constantly and can
+# never confirm by walking the tree - .claude/ is gitignored WHOLE
+# (.gitignore line 45), so `settings.json` and every `.claude/hooks/*.py`
+# script (bash_guard.py, dispatch_premise.py) are real, local-machine
+# files no checkout ever tracks, mentioned here by bare basename as
+# often as by their full .claude/ path.
+GITIGNORED_BASENAMES = frozenset({
+    "settings.json", "bash_guard.py", "dispatch_premise.py",
+})
+
+# The measured floor under FUNC_CALL_BARE - see "BUILTIN_CALLS is the
+# measured floor" in the module docstring for what each one is and
+# where it is discussed in this tree.
+BUILTIN_CALLS = frozenset({
+    # JS/DOM platform calls this tree's comments name to explain browser
+    # or language behavior - never a repo definition.
+    "Boolean", "Number", "String", "Date", "Response", "Blob",
+    "isFinite", "toISOString", "toLocaleString", "toFixed", "padEnd",
+    "getBoundingClientRect", "getClientRects", "getComputedStyle",
+    "getComputedTextLength", "querySelectorAll", "includes", "slice",
+    "split", "join", "close", "parse", "parseFloat", "freeze",
+    "defineProperty", "length", "reload", "assign",
+    # Node's own vm module, discussed in dev/signout.test.mjs's comment
+    # explaining what vm.createContext() does and does not contextify.
+    "createContext",
+    # Python builtins and stdlib.
+    "dict", "tuple", "isinstance", "min", "max", "print", "open", "repr",
+    "ascii", "startswith", "is_dir", "len", "exit", "strip", "abspath",
+    "require", "which", "mix", "TemporaryDirectory", "SystemExit",
+    "splitlines",
+    # fontTools, a third-party dependency tools/check_fonts.py drives -
+    # not a repo definition.
+    "TTFont",
+    # node:test's own hook names, discussed by dev/harness.mjs's own
+    # docstring explaining why this repo does not adopt them.
+    "test", "after",
+    # CSS custom-property syntax (`var(--x)`), not a call at all.
+    "var",
+    # Spreadsheet formula names apps/web/xlsx.js's own comments quote
+    # verbatim (real Excel functions, never a repo definition),
+    # cryptographic algorithm notation ("HMAC-SHA256(...)", server/
+    # schema.sql and dev/make-sample.mjs's own comments), and
+    # review-finding labels ("F1(CONFIRMED)"-shaped) that are not calls.
+    "SUM", "COUNT", "not", "SHA256", "HMAC",
+})
+
+# Two names neither a definition scan nor the "is gone" sentence can
+# clear, each read for truth once rather than assumed - see "Two more
+# measured names" in the module docstring. {(file, kind, name): reason}.
+# Backward-checked by dangling_pin_problems() below, same as every
+# other pin in this file: an entry whose triple stops being a real,
+# would-be finding fails, naming itself for deletion.
+DANGLING_PINS = {
+    ("dev/signout.test.mjs", "function", "forgetLocalData"):
+        "names a rejected design option (\"There was a latent third...\") "
+        "that was never built, not a deleted one",
+    ("dev/harness.mjs", "function", "somethingAsync"):
+        "an illustrative placeholder name (\"() => somethingAsync() with "
+        "the await forgotten\") explaining a shape, never a real call",
+    ("dev/check_web.test.py", "function", "helper"):
+        "a name inside a synthetic JS fixture string (FROZEN/UNFROZEN) "
+        "this suite builds to test check_web.py's own rule, not real "
+        "apps/web source",
+    ("tools/check_spelling.py", "function", "is"):
+        "\"-is(e/ing/ation)\" is a word-stem/suffix-alternation notation "
+        "in this file's own spelling-pattern docstring, not a call",
+    ("tools/agent_init.py", "path", "woff2.py"):
+        "fontTools' own internal module (from the ImportError path this "
+        "test drives), not a file this repository holds",
+    ("tools/agent_init.py", "path", "pinned.txt"):
+        "a hypothetical filename explaining a one-character truncation "
+        "bug (\"turns pinned.txt into inned.txt\"), never a real fixture",
+    ("tools/agent_init.py", "path", "inned.txt"):
+        "the same hypothetical example's truncated half - see pinned.txt "
+        "above",
+    ("dev/check.test.py", "path", "dev/stray.test.py"):
+        "a synthetic mutation-test fixture name this suite's own "
+        "docstring invents to explain a found-by-mutation bug, never a "
+        "real file",
+    ("tools/check_live.py", "path", "query.js"):
+        "a quoted OLD comment (\"'query.js frozen in a browser engine' "
+        "stood here\") this ledger's own history narrates replacing, "
+        "never a citation of a real file",
+    ("tools/claim_vs_diff.py", "path", "file.txt"):
+        "a PowerShell redirect example (\"`> file.txt`, not -Encoding "
+        "utf8\"), not a path",
+    ("tools/fleet_status.py", "path", "path/to/stub.py"):
+        "an illustrative placeholder (\"/path/to/stub.py\"), never a "
+        "real file",
+    ("tools/prime_lock.py", "path", "locks/prime.json"):
+        "written `<state>/locks/prime.json` - the placeholder prefix is "
+        "not part of this repository's own tree, and the real path is "
+        "outside it by design (the fleet's runtime state directory)",
+    ("dev/check_web.test.py", "path", "defer.js"):
+        "a hypothetical filename (\"a file that happens to be called "
+        "defer.js\") illustrating a bare-attribute-name rule, not a "
+        "real fixture",
+    ("tools/check_docs.py", "path", "THAT.md"):
+        "a placeholder in a formula (`REGISTRY - {\"THAT.md\"}`), never "
+        "a real document",
+    ("server/worker.js", "path", "x.html"):
+        "a generic placeholder (\"a request for /x.html\") illustrating "
+        "html_handling's redirect rule, not a real page",
+
+    # TWO WRAP-SPLIT EXTRACTOR ARTIFACTS: unwrap() (used by every rule in
+    # this file, not only this one) inserts a single space between two
+    # continuation lines unconditionally, which is right for a phrase
+    # reflowed at a word boundary and wrong for a token the ORIGINAL
+    # author's own line-wrap split mid-word. Both measured, both real
+    # citations of files that exist:
+    ("dev/check_live.test.py", "function", "families"):
+        "export_families() wraps as \"export_\\nfamilies()\" in the "
+        "source; unwrap()'s inserted space splits the identifier and "
+        "this rule reads only the second half. export_families() is "
+        "real (tools/check_live.py)",
+    ("dev/worker.test.mjs", "path", "test.mjs"):
+        "tests/route-precedence.test.mjs wraps as \"...precedence.\\n  "
+        "// test.mjs\" in the source; unwrap()'s inserted space lands "
+        "exactly inside the extension. tests/route-precedence.test.mjs "
+        "is real",
+
+    # THE REMAINDER IS REAL, PRE-EXISTING DEBT, MEASURED AT 0.9-M3-S17'S
+    # OWN BUILD (#422) AND LISTED IN ITS COMPLETION FOR EACH OWNING
+    # FILE'S NEXT TOUCH - not a false positive, not fixed here. Grouped
+    # by cause; every file listed is either outside this slice's declared
+    # list or embedded in a paragraph too large to true as a "one-line
+    # comment fix" (the pack's own bar for fixing outside the declared
+    # list). Two are server/ and stay for #424 or the next sensitive
+    # slice; the rest are apps/web/, dev/ or tools/ and stay for whoever
+    # next touches that file, per AGENTS.md's own "comments slim as the
+    # code that made them stale is touched."
+    #
+    # apps/web/dashboard.js, retired whole at 0.9-M2-S3 (#354), and its
+    # own MIN_CELL and public.js alongside it: every entry below narrates
+    # or worked-examples the retired file without "is gone"/"replaced"/
+    # "retired"/"deleted"/"renamed to" in the SAME sentence as the name -
+    # some in an adjacent sentence (dashboard.js IS narrated as retired
+    # elsewhere in most of these files), some as a past-tense worked
+    # example (tools/check_web.py's "dashboard.js did exactly that: it
+    # built its literal, published it, and then bolted render on 424
+    # lines later" - a real historical bug, correctly in the past tense,
+    # just not in the rule's one recognized shape).
+    ("apps/web/charts.js", "path", "apps/web/dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed, not "
+        "fixed - #422",
+    ("apps/web/theme.css", "path", "apps/web/dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("apps/web/theme.css", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("apps/web/xlsx.js", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("dev/build_web.test.mjs", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("dev/check_spelling.test.py", "path", "apps/web/dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("dev/check_web.test.py", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("dev/demo.test.mjs", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("tools/check_budget.py", "path", "apps/web/dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("tools/check_budget.py", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("tools/check_live.py", "path", "apps/web/dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("tools/check_spelling.py", "path", "apps/web/dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("tools/check_web.py", "path", "dashboard.js"):
+        "apps/web/dashboard.js retired 0.9-M2-S3 (#354); listed - #422 "
+        "(five occurrences in this file, lines 301/437/441/468/4125)",
+    ("tools/check_spelling.py", "function", "labeller"):
+        "apps/web/dashboard.js's own exported `labeller`, retired with "
+        "the file (0.9-M2-S3, #354); this docstring cites it by name to "
+        "explain a spelling-ratchet exception, present tense. Listed - "
+        "#422",
+    ("dev/demo-stub.js", "constant", "MIN_CELL"):
+        "MIN_CELL lived in apps/web/dashboard.js, retired with it "
+        "0.9-M2-S3 (#354); listed - #422",
+    ("dev/demo.test.mjs", "constant", "MIN_CELL"):
+        "MIN_CELL lived in apps/web/dashboard.js, retired with it "
+        "0.9-M2-S3 (#354); listed - #422 (two occurrences, both line 24)",
+    ("server/charts-agg.js", "constant", "MIN_CELL"):
+        "MIN_CELL lived in apps/web/dashboard.js, retired with it "
+        "0.9-M2-S3 (#354); listed for #424 or the next sensitive slice "
+        "- #422",
+    ("apps/web/index.html", "path", "public.js"):
+        "apps/web/public.js retired 0.9-M2-S3 (#354, folded into "
+        "charts.js); listed - #422",
+    ("dev/check_web.test.py", "path", "public.js"):
+        "apps/web/public.js retired 0.9-M2-S3 (#354); listed - #422",
+    ("dev/demo-stub.js", "function", "movementOf"):
+        "names apps/web/dashboard.js-era behavior with no surviving "
+        "function of this name anywhere in the tree; listed - #422",
+    ("dev/demo-stub.js", "function", "movementText"):
+        "names apps/web/dashboard.js-era behavior with no surviving "
+        "function of this name anywhere in the tree; listed - #422",
+
+    # A dead-by-design negative-test fixture (the same shape ghost.txt
+    # is pinned for above): dev/worker.test.mjs sets DEV_LOGIN_SECRET ON
+    # PURPOSE to prove the local sign-in door it once gated (retired
+    # 0.9-M2-S1, #352) reads nothing. Not a stale claim, but not phrased
+    # with an allowed word either - listed rather than reworded, since
+    # rewording a deliberately-dead fixture name risks reading as if the
+    # door still exists.
+    ("dev/worker.test.mjs", "constant", "DEV_LOGIN_SECRET"):
+        "dead-by-design fixture proving the retired local sign-in door "
+        "(0.9-M2-S1, #352) reads nothing; listed - #422 (four "
+        "occurrences, lines 1163/1166/1623/1790)",
+
+    # The /snapshot route, retired 0.9-M2-S3 (#354) alongside the whole
+    # publish/unpublish surface. server/worker.js's own header and
+    # dev/demo-corpus.js both narrate it correctly (GONE below resolves
+    # them); these two do not.
+    ("dev/demo.test.mjs", "route", "/snapshot"):
+        "says the calls \"dropped out\" rather than one of the five "
+        "allowed words; route retired 0.9-M2-S3 (#354). Listed - #422",
+    ("server/schema.sql", "route", "/snapshot"):
+        "the snapshots table's own header describes GET /snapshot in "
+        "present tense with no retirement framing; route retired "
+        "0.9-M2-S3 (#354). server/ - listed for #424 or the next "
+        "sensitive slice - #422",
+
+    # ADMIN_IDLE_MINUTES: mentioned twice in server/worker.js's own
+    # comments, never bound anywhere - checked against 0.9-M3-S8's own
+    # branch tip before it merged, same result. Not history (nothing
+    # says it was ever real); a forward reference to a binding S8 named
+    # but has not wired. server/ - listed for #424 or the next sensitive
+    # slice, not S17's to invent a binding for.
+    ("server/worker.js", "constant", "ADMIN_IDLE_MINUTES"):
+        "mentioned, never bound, in this file or 0.9-M3-S8's own branch "
+        "before it merged; listed for #424 or the next sensitive slice "
+        "- #422 (two occurrences, lines 638/1392)",
+
+    # Retired features and files with no single owner obvious enough to
+    # rewrite blind:
+    ("tools/check_live.py", "function", "origin_problems"):
+        "origin_problems() retired at 0.9-M1-S3 (#329) along with the "
+        "\"published-origin-only\" cause it alone corroborated - this "
+        "ledger entry (line 1234) was not trued when the OTHER mention "
+        "in the same file (line ~1851) was. Listed - #422",
+    ("dev/make-sample.mjs", "function", "readForm"):
+        "names a function with no surviving definition anywhere in the "
+        "tree; origin unclear without deeper history. Listed - #422",
+    ("dev/demo-stub.js", "path", "dev/demo-console.js"):
+        "names a file with no surviving twin to dev/demo-server.mjs; "
+        "possibly dev/demo-toolbar.js under a former name. Listed - #422",
+    ("dev/demo-stub.js", "path", "dev/submit.test.mjs"):
+        "claims a page-side guard is \"armed in dev/submit.test.mjs\", "
+        "which does not exist; the real coverage's location is unclear "
+        "without deeper history. Listed - #422",
+    ("dev/signout.test.mjs", "path", "dev/memberkey.test.mjs"):
+        "apps/web/memberkey.js and its test retired 0.9-M2-S5 (#356); "
+        "listed - #422",
+    ("tools/check_live.py", "path", "apps/web/memberkey.js"):
+        "apps/web/memberkey.js retired 0.9-M2-S5 (#356); this ledger "
+        "entry narrates \"RETIRED\" two sentences earlier, not the same "
+        "one as the file mention. Listed - #422",
+    ("server/worker.js", "path", "precedence.test.mjs"):
+        "the real file is tests/route-precedence.test.mjs; this "
+        "abbreviated cross-reference predates that name or drops its "
+        "prefix. server/ - listed for #424 or the next sensitive slice "
+        "- #422",
+
+    # Documents left out of REGISTRY on the owner's own 2026-08-13
+    # directive (0.9-M0-S2) - tools/check_docs.py's own comment records
+    # the decision, but not with one of the five allowed words either.
+    ("dev/check_docs.test.py", "path", "CUTOVER.md"):
+        "CUTOVER.md left out of REGISTRY on the owner's 2026-08-13 "
+        "directive (0.9-M0-S2); not phrased with an allowed word. "
+        "Listed - #422",
+    ("tools/check_docs.py", "path", "CUTOVER.md"):
+        "CUTOVER.md left out of REGISTRY on the owner's 2026-08-13 "
+        "directive (0.9-M0-S2); listed - #422 (two occurrences, lines "
+        "60/78)",
+    ("tools/check_docs.py", "path", "UAT.md"):
+        "UAT.md left out of REGISTRY on the owner's 2026-08-13 directive "
+        "(0.9-M0-S2); listed - #422",
+    ("tools/check_live.py", "path", "UAT.md"):
+        "UAT.md left out of REGISTRY on the owner's 2026-08-13 directive "
+        "(0.9-M0-S2); listed - #422",
+
+    # Machine-held records outside this repository's own tree by design
+    # (the fleet's own review archive, not a document check_docs.py's
+    # REGISTRY could ever hold) - the same shape .claude/ is excused for
+    # above, but named without that directory prefix so the automatic
+    # exclusion cannot see it.
+    ("tools/check_live.py", "path", "fleet-review-M2.md"):
+        "the fleet's own machine-held review record, outside this "
+        "repository by design - not a file check_docs.py's REGISTRY "
+        "could ever hold. Listed - #422",
+
+    # A named scenario ("the no-package.json skip"), not a citation of a
+    # file by that name - close enough to CITED's shape that a more
+    # precise extractor would need to parse "no-X" as a compound, which
+    # is new machinery for one measured instance.
+    ("tools/agent_init.py", "path", "no-package.json"):
+        "\"the no-package.json skip\" names a scenario this file "
+        "handles elsewhere, not a citation of a file called that. "
+        "Listed - #422",
+
+    # A section heading capitalizing the real module tools/prime_lock.py
+    # ("WHY THE EXIT CODE IS PRIME_LOCK'S ALONE"), not a constant.
+    ("tools/session_open.py", "constant", "PRIME_LOCK"):
+        "a section heading capitalizing the real module tools/"
+        "prime_lock.py, not a constant. Listed - #422",
+}
+
+# Five ways this tree assigns a name, widened by measurement (see "a
+# local callback assigned `const box = boxOf || function (i)`" and
+# "server/store-crypto.js's `openRow: (record, context) =>`" in the
+# module docstring) until every real definition in the tree resolved.
+JS_FUNC_KEYWORD_DEF = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(")
+JS_ASSIGN_DEF = re.compile(
+    r"\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=")
+JS_PROPERTY_DEF = re.compile(
+    r"\.([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?function\b")
+JS_METHOD_DEF = re.compile(r"\b([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?\(")
+PY_FUNC_DEF = re.compile(r"^[ \t]*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(",
+                          re.M)
+JS_CONST_DEF = re.compile(
+    r"\b(?:export\s+)?(?:const|let|var)\s+"
+    r"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\s*=")
+PY_CONST_DEF = re.compile(
+    r"^[ \t]*([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\s*=", re.M)
+
+# A dot-accessed UPPER_SNAKE property, read or written: `env.STORE_SECRET`,
+# `bindings.STORE_SECRET_KEY_ID`, `globalThis.BINDER_CONFIG = `. Measured
+# in: a Cloudflare Worker's own secrets and vars (STORE_SECRET,
+# EXPORT_TOKEN, ALLOWED_ORIGINS and a dozen more) are never assigned in
+# this repository at all - that is what a secret IS - and the object
+# they hang off (`env`, `bindings`) is not fixed, so neither
+# JS_ASSIGN_DEF nor a literal "env." prefix reaches all of them; one
+# dot-access pattern, unanchored to the object name, does.
+JS_DOT_CONST = re.compile(r"\.([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b")
+
+# A quoted UPPER_SNAKE string literal in Python source: `os.environ.get(
+# "BINDER_GH_CMD")`, `os.environ["GIT_DIR"]`, `environment.pop("GIT_DIR",
+# None)`, `getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)` - four real
+# shapes measured in tools/ alone, which is why this reads any quoted
+# occurrence rather than chasing a fifth call shape: an environment
+# variable's NAME is data to Python (a string argument), never a
+# binding, so no assignment-shaped regex reaches it.
+PY_STRING_CONST = re.compile(r"""["']([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)["']""")
+
+# The five directories a definition may live in - wider than SCAN's own
+# per-directory extension pairs on purpose: SCAN says where a COMMENT is
+# read from, and a function may be DEFINED in a file that scan never
+# opens (tools/build_web.mjs is the measured case - .mjs is not among
+# tools/'s scanned extensions above, so `differences()`, defined there
+# and cited from tools/check.py's own comment, resolved nowhere until
+# defined_names() below stopped reusing SCAN's pairs and started walking
+# every .py/.js/.mjs file under these directories instead). `tests/` is
+# not in SCAN at all (it holds the 0.9 gate's own runner, not source
+# this checker's comment rules cover), and ARM_SUFFIX - defined in
+# tests/run.mjs, cited from tools/ship_check.py's own comment - is the
+# measured reason it still has to be a definition source.
+DEFINITION_DIRS = ("apps/web", "server", "dev", "tools", "tests")
+
+API_SEGMENTS_DECL = re.compile(r"API_SEGMENTS\s*=\s*new Set\(\[(.*?)\]\)",
+                                re.S)
+
+# Case-insensitive, exactly the five phrases the ticket names - see
+# "THE 'IS GONE' ALLOWANCE" in the module docstring.
+GONE = re.compile(r"\b(?:is gone|replaced|retired|deleted|renamed to)\b",
+                   re.I)
+
+
+def defined_names(dirs=None, repo=None):
+    """(function names, constant names) really assigned in the tree.
+
+    "A definition, not another mention" (the ticket's words): every
+    pattern here is a place a name is BOUND or - for JS_DOT_CONST alone -
+    a place an env/bindings-style property is read or written, since a
+    Worker secret is never assigned in this repository at all. EXEMPT is
+    NOT honored here (unlike scan_tree()'s comment scan): the two files
+    that define this checker's own phrase machinery still hold real,
+    citable function definitions - `check_comments.problems()` is a real
+    function other files' comments correctly name.
+    """
+    dirs = DEFINITION_DIRS if dirs is None else dirs
+    repo = REPO if repo is None else repo
+    functions = set()
+    constants = set()
+    for dirname in dirs:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for root, subdirs, files in os.walk(base):
+            for name in files:
+                ext = os.path.splitext(name)[1]
+                if ext not in (".py", ".js", ".mjs"):
+                    continue
+                full = os.path.join(root, name)
+                relpath = os.path.relpath(full, repo).replace(os.sep, "/")
+                with open(full, encoding="utf-8") as handle:
+                    text = handle.read()
+                if ext == ".py":
+                    functions.update(PY_FUNC_DEF.findall(text))
+                    constants.update(PY_CONST_DEF.findall(text))
+                    # NOT for EXEMPT (tools/check_comments.py and this
+                    # rule's own dev/check_comments.test.py): both hold
+                    # tight-quoted UPPER_SNAKE names for BOOKKEEPING -
+                    # DANGLING_PINS' own keys and reason strings in one,
+                    # this rule's own fixture strings ("set
+                    # ADMIN_IDLE_MINUTES") in the other - never because
+                    # either file assigns them. PY_STRING_CONST cannot
+                    # tell "a real os.environ.get(...) key" from "a pin
+                    # dict's own key naming what does NOT resolve" or "a
+                    # test fixture proving a name does NOT resolve", and
+                    # reading either as proof the name is real is exactly
+                    # backwards. Measured: MIN_CELL, DEV_LOGIN_SECRET,
+                    # ADMIN_IDLE_MINUTES and PRIME_LOCK each "resolved"
+                    # this way in turn, from whichever of the two files
+                    # last grew a fixture or a pin naming them.
+                    if relpath not in EXEMPT:
+                        constants.update(PY_STRING_CONST.findall(text))
+                else:
+                    functions.update(JS_FUNC_KEYWORD_DEF.findall(text))
+                    functions.update(JS_ASSIGN_DEF.findall(text))
+                    functions.update(JS_PROPERTY_DEF.findall(text))
+                    functions.update(JS_METHOD_DEF.findall(text))
+                    constants.update(JS_CONST_DEF.findall(text))
+                if relpath not in EXEMPT:
+                    constants.update(JS_DOT_CONST.findall(text))
+    return functions, constants
+
+
+def known_api_segments(repo=None):
+    """The Worker's own API_SEGMENTS, read out of server/worker.js.
+
+    Not the dispatch conditionals or the parameterized routes' regexes -
+    isApiPath()'s own registry, which is what decides whether a path
+    reaches route() at all ("Every path above is API-shaped... "
+    everything else is a page or an asset" - server/worker.js's own
+    comment). A path outside this set is not this rule's question; see
+    the module docstring for why.
+    """
+    repo = REPO if repo is None else repo
+    full = os.path.join(repo, "server", "worker.js")
+    if not os.path.isfile(full):
+        return set()
+    with open(full, encoding="utf-8") as handle:
+        text = handle.read()
+    match = API_SEGMENTS_DECL.search(text)
+    if not match:
+        return set()
+    return set(re.findall(r'"([\w-]+)"', match.group(1)))
+
+
+# Directories never worth a basename index: somebody else's code
+# (node_modules), the built site (dist/, #181), frozen history
+# (archive/) and VCS/tooling internals.
+BASENAME_SKIP = frozenset({
+    "node_modules", "dist", "archive", ".git", ".wrangler", "__pycache__",
+})
+
+
+def known_basenames(repo=None):
+    """Every real file's basename, anywhere in the tree.
+
+    admin.html, form.js and worker.js are cited bare, with no
+    directory, throughout DESIGN.md, OPERATIONS.md and README.md - an
+    exact-relpath check alone would redden every one of them.
+    """
+    repo = REPO if repo is None else repo
+    names = set()
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in BASENAME_SKIP]
+        names.update(files)
+    return names
+
+
+# A sentence-ending mark followed by whitespace or the region's own
+# end - NOT the bare nearest `.`, `!` or `?` has_subject() above uses,
+# because this tree writes `server/worker.js's` and `dashboard.js`
+# constantly, and a period inside a filename (immediately followed by a
+# word character, never whitespace) is not a sentence end. Measured: the
+# bare version split "...server/worker.js's real POST /snapshot handler
+# stored, byte for byte. That route is deleted..." at "worker.js" itself,
+# stranding the route on one side of its own "is gone" sentence and the
+# allowed word on the other.
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+def sentence_around(flat, start, end):
+    """The sentence containing `flat[start:end]`, crudely.
+
+    Good enough for the one question this asks - does an allowed word
+    sit in the same sentence as the name - without a second real
+    sentence-boundary mechanism beside comment_regions()'s own.
+    """
+    before = -1
+    for match in SENTENCE_END.finditer(flat, 0, start):
+        before = match.start()
+    after_match = SENTENCE_END.search(flat, end)
+    after = after_match.start() if after_match else len(flat)
+    return flat[before + 1:after]
+
+
+def _region_candidates(flat):
+    """[(start, end, kind, name)] for every identifier shape in one
+    flattened region - a code comment region (unwrap()'s output) or a
+    whole document's raw text, both flat strings with no code between
+    two "sentences" to bridge.
+    """
+    out = []
+    for match in CONST_BARE.finditer(flat):
+        out.append((match.start(), match.end(), "constant", match.group(0)))
+    for match in FUNC_CALL_BARE.finditer(flat):
+        if PLURAL_SUFFIX.match(match.group(2)):
+            continue
+        if FINDING_LABEL.match(match.group(1)) and \
+                FINDING_SUBPOINT.match(match.group(2)):
+            continue
+        out.append((match.start(), match.end(), "function", match.group(1)))
+    for match in BARE_ROUTE.finditer(flat):
+        out.append((match.start(), match.end(), "route", match.group(1)))
+    for match in PATH_BARE.finditer(flat):
+        out.append((match.start(), match.end(), "path", match.group(0)))
+    return out
+
+
+def _resolves(kind, name, functions, constants, segments, basenames, repo):
+    if kind == "function":
+        return name in functions or name in BUILTIN_CALLS
+    if kind == "constant":
+        return name in constants
+    if kind == "route":
+        parts = name.split("/")
+        segment = parts[1] if len(parts) > 1 else ""
+        return segment in segments
+    if kind == "path":
+        # .claude/ is gitignored whole (.gitignore line 45): every
+        # session's settings.json and hooks/*.py are real, local-machine
+        # files this repository never tracks, so an os.walk() of the
+        # checked-out tree can never confirm one - by design, not by
+        # staleness.
+        if name == ".claude" or name.startswith(".claude/"):
+            return True
+        if os.path.basename(name) in GITIGNORED_BASENAMES:
+            return True
+        if TEMPLATE_PATH.search(name):
+            return True
+        if re.match(r"^\.\w+(?:\.\w+)*$", name):
+            # A bare suffix with no stem - ".test.py", ".test.mjs" - is a
+            # NAMING PATTERN this tree's own registries discuss (the
+            # PYTHON_SUITE_SUFFIX constant, an arm's own extension), never
+            # a specific file; CITED's character class allows a match to
+            # start on the leading dot precisely because a real path may
+            # too ("../x.md" is not a shape this tree uses, but the class
+            # cannot tell "started mid-token" from "genuinely begins with
+            # a dot" without this rule).
+            return True
+        if os.path.isfile(os.path.join(repo, *name.split("/"))):
+            return True
+        return os.path.basename(name) in basenames
+    return True
+
+
+def dangling_findings(scan=None, docs=None, repo=None):
+    """[(file, line, kind, name)] for every name that resolves nowhere.
+
+    Two source shapes, one resolution pass: a source file's own comment
+    regions (comments_only() + comment_regions() + unwrap(), exactly as
+    citations() reads them) and an operative document's whole text
+    (DOCS - there is no code to mask out of a .md file, so the "region"
+    is the file). EXEMPT is honored for source files the same way every
+    rule above honors it.
+    """
+    scan = SCAN if scan is None else scan
+    docs = DOCS if docs is None else docs
+    repo = REPO if repo is None else repo
+    functions, constants = defined_names(repo=repo)
+    segments = known_api_segments(repo=repo)
+    basenames = known_basenames(repo=repo)
+
+    out = []
+    for dirname, extensions in scan:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            full = os.path.join(base, name)
+            if not os.path.isfile(full) or not name.endswith(extensions):
+                continue
+            relpath = "%s/%s" % (dirname, name)
+            if relpath in EXEMPT:
+                continue
+            with open(full, encoding="utf-8") as handle:
+                text = handle.read()
+            kind_ = KIND[os.path.splitext(name)[1]]
+            masked = comments_only(text, kind_)
+            for start, stop in comment_regions(masked, text):
+                flat, offsets = unwrap(masked, start, stop)
+                for cstart, cend, kind, cname in _region_candidates(flat):
+                    if kind == "path" and relpath.endswith("_suite.py"):
+                        # A *_suite.py file's whole purpose is building
+                        # synthetic fixture trees (tools/reaper_suite.py's
+                        # own "shared/sentinel.txt" is one instance) - bare
+                        # filenames in its comments are overwhelmingly
+                        # invented fixture names, not real repository
+                        # paths, the same reason ghost.txt is pinned
+                        # rather than checked for NARRATIVE_PINS. A whole-
+                        # file exclusion rather than a pin per fixture
+                        # name: measured against the real tree, these
+                        # suites invent new ones constantly, and pinning
+                        # each would just be re-deriving this same rule
+                        # one fixture at a time.
+                        continue
+                    if _resolves(kind, cname, functions, constants,
+                                 segments, basenames, repo):
+                        continue
+                    if GONE.search(sentence_around(flat, cstart, cend)):
+                        continue
+                    at = offsets[cstart]
+                    line = masked.count("\n", 0, at) + 1
+                    out.append((relpath, line, kind, cname))
+
+    for docname in docs:
+        full = os.path.join(repo, docname)
+        if not os.path.isfile(full):
+            continue
+        with open(full, encoding="utf-8") as handle:
+            flat = handle.read()
+        for cstart, cend, kind, cname in _region_candidates(flat):
+            if _resolves(kind, cname, functions, constants, segments,
+                         basenames, repo):
+                continue
+            if GONE.search(sentence_around(flat, cstart, cend)):
+                continue
+            line = flat.count("\n", 0, cstart) + 1
+            out.append((docname, line, kind, cname))
+    return sorted(out)
+
+
+def dangling_problems(scan=None, docs=None, repo=None, pinned=None):
+    """A problem per dangling name, unless DANGLING_PINS covers it."""
+    pinned = DANGLING_PINS if pinned is None else pinned
+    problems = []
+    for relpath, line, kind, name in dangling_findings(scan, docs, repo):
+        if (relpath, kind, name) in pinned:
+            continue
+        problems.append(
+            "%s:%d: names the %s %r, which does not exist in the tree "
+            "any more (no definition, route or file found). If it is "
+            "history, say so in the same sentence - \"is gone\", "
+            "\"replaced\", \"retired\", \"deleted\" or \"renamed to\" - "
+            "otherwise true the comment against the tree as it stands"
+            % (relpath, line, kind, name))
+    return problems
+
+
+def dangling_pin_problems(scan=None, docs=None, repo=None, pinned=None):
+    """A problem per DANGLING_PINS entry no longer a real finding."""
+    pinned = DANGLING_PINS if pinned is None else pinned
+    found = {(relpath, kind, name)
+             for relpath, _line, kind, name in dangling_findings(scan, docs,
+                                                                  repo)}
+    problems = []
+    for key in sorted(pinned):
+        if key not in found:
+            problems.append(
+                "DANGLING_PINS pins %s in %s (%s), and it is not a "
+                "dangling name any more - resolved, reworded or deleted. "
+                "Delete the entry; the list is a ratchet and only shrinks"
+                % (key[2], key[0], key[1]))
+    return problems
+
+
 def problems():
     found, scanned = scan_tree()
     out = generated_tree_problems()
@@ -1825,6 +2711,8 @@ def problems():
     out.extend(ticket_pin_problems())
     out.extend(count_property_problems())
     out.extend(count_property_pin_problems())
+    out.extend(dangling_problems())
+    out.extend(dangling_pin_problems())
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 
@@ -1843,15 +2731,18 @@ def main():
     # citation resolves". The counts are what make the line worth
     # printing.
     print("check_comments: comments explain why, every scanned file is "
-          "text and every quotation of another file is still in it or "
-          "pinned (%d files scanned, %d cross-file citation(s) checked, "
-          "%d phrase occurrence(s), %d citation(s) pinned for the slice "
-          "that rewrites their file, %d unquoted file mention(s) pinned, "
-          "%d ticket citation(s) pinned and %d unanchored count claim(s) "
-          "pinned)."
+          "text, every quotation of another file is still in it or "
+          "pinned, and every named function, constant, route and file "
+          "still exists or says so (%d files scanned, %d cross-file "
+          "citation(s) checked, %d phrase occurrence(s), %d citation(s) "
+          "pinned for the slice that rewrites their file, %d unquoted "
+          "file mention(s) pinned, %d ticket citation(s) pinned, %d "
+          "unanchored count claim(s) pinned and %d dangling-name "
+          "exception(s) pinned)."
           % (len(scanned), len(all_citations()), sum(ALLOWLIST.values()),
              sum(CITATION_PINS.values()), sum(NARRATIVE_PINS.values()),
-             sum(TICKET_PINS.values()), len(COUNT_PROPERTY_PINS)))
+             sum(TICKET_PINS.values()), len(COUNT_PROPERTY_PINS),
+             len(DANGLING_PINS)))
     return 0
 
 
