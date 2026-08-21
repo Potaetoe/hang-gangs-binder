@@ -23,12 +23,43 @@ it was written - which is the same failure one layer up.
 
 **What makes this forced rather than voluntary.** LEDGER is not
 checked against itself. Its completeness is asserted against the code:
-every route in server/worker.js's dispatch block and every page in
-apps/web/ must carry a row. A slice that adds a route and no row turns
-the gate red, and the failure carries the row to paste. That is the
-whole mechanism, and the reason it is narrow: a gate that fails for
-something the failing slice cannot fix gets disabled, and a disabled
-mechanism is worse than a small one.
+every route in server/worker.js's dispatch block, every page in
+apps/web/, and every real file export apps/web/*.js hands the browser
+must carry a row. A slice that adds a route, a page or an export and no
+row turns the gate red, and the failure carries the row to paste. That
+is the whole mechanism, and the reason it is narrow: a gate that fails
+for something the failing slice cannot fix gets disabled, and a
+disabled mechanism is worse than a small one.
+
+**The export spine forces on a MIME type, not a marker.** A route is
+enumerable because server/worker.js's dispatch block names every path
+in one place; a page is enumerable because apps/web lists its own
+files. A file export has neither property - five call sites across
+three files, three of them (admin.js's `offer()`) a single generic
+function called three times with only its arguments distinguishing the
+CSV export from the xlsx one from the JSON one - so nothing here can
+read "this call hands the browser a file" off the code shape the way
+METHOD_TEST reads a dispatch line. What every export carries, at the
+exact call that builds the download, is a literal MIME type a Blob
+never needs for any other reason: `"text/csv..."`, the OOXML
+spreadsheet type, and JSON's own type with a charset parameter -
+`admin.js`'s API calls all send bare `"application/json"`, with no
+charset, so the parameter is what tells a download's Content-Type from
+a request's. export_families() reads all three, each anchored tightly
+enough that xlsx.js's own longer Content-Type string for the workbook
+part - one part-type further, `...spreadsheetml.sheet.main+xml` - does
+not match. **A family EXPORT_MIME has never heard of is not silently
+skipped.** export_families() only ever says which of the *registered*
+families a file carries; a literal MIME type handed straight to a
+`new Blob(` call that matches none of them is a download this ledger
+cannot classify, not one that does not exist - the review that opened
+this second sentence proved the gap by injecting five (0.9-M3-S6 fix
+wave 1, #394). unrecognized_blob_types() finds exactly that shape and
+export_class_problems() below refuses the gate on it, in the same
+breath export_families() is silent about a MIME type nowhere near a
+`new Blob(` call, such as a fetch header's Content-Type - out of
+reach by construction, not by exemption, because a header is never
+inside that call's own parentheses.
 
 **What it deliberately does not force.** Nothing here can make a slice
 declare "my chart has never been painted" - no enumeration produces
@@ -88,17 +119,26 @@ import re
 import subprocess
 import sys
 
+# tools/ is not a package; a script run directly puts its own directory
+# on sys.path, and dev/check_live.test.py inserts it before naming
+# check_live at all - so this resolves either way. Imported rather than
+# copied, the same reason tools/check_server.py imports check_web
+# instead of holding its own key patterns: two JS comment strippers
+# drifting apart is worse than one shared one.
+import check_web
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKER = os.path.join(REPO, "server", "worker.js")
 WEB = os.path.join(REPO, "apps", "web")
 
 STATUSES = ("never", "performed", "first-contact")
 
-# `route` and `page` are the forced spine - both are enumerable from the
-# tree, so a row cannot be silently missing. `flow` is everything else a
-# sitting exercises; nothing can force one into existence, and calling
-# that out is more useful than a spine that pretends to cover it.
-SURFACES = ("route", "page", "flow")
+# `route`, `page` and `export` are the forced spine - all three are
+# enumerable from the tree, so a row cannot be silently missing. `flow`
+# is everything else a sitting exercises; nothing can force one into
+# existence, and calling that out is more useful than a spine that
+# pretends to cover it.
+SURFACES = ("route", "page", "flow", "export")
 
 # The deployments a run can have driven. Two Workers answer for this
 # project - server/wrangler.toml's non-production block and its bare
@@ -777,6 +817,85 @@ LEDGER = [
                 "off-origin under its connect-src 'self'"),
     },
 
+    # ---- exports: the surface #394 opens (fleet-review-M2.md, S14's
+    # F4). The site hands a browser a real file in five places, and
+    # until this slice the ledger's spine stopped at the page: a gate
+    # green at page granularity said nothing about whether any of the
+    # five downloads a keyholder or a member actually presses had ever
+    # been driven for real. export_locations() forces the five below
+    # into existence off the MIME type each download's Blob call
+    # carries - see the module docstring's "export spine forces on a
+    # MIME type" paragraph. The admin JSON export stood outside this
+    # count at this slice's first build; fix wave 1 (#394, F1) found
+    # the review's own read of "every real file export" was the truer
+    # one - JSON is a real file export by the same test the other four
+    # pass - and added it as a fifth rather than an excused fourth.
+    {
+        "id": "admin.js: csv export",
+        "surface": "export",
+        "claim": "a real click on the CSV download button produces a "
+                 "file whose bytes read back as the rows the table "
+                 "shows, and a submitted value that starts like a "
+                 "formula - '=', '+', '-', '@' - opens in the "
+                 "spreadsheet as the literal text csvCell() defused "
+                 "behind a leading apostrophe rather than as a formula "
+                 "it runs",
+        "covers": ["apps/web/admin.js"],
+        "status": "never",
+    },
+    {
+        "id": "admin.js: xlsx export",
+        "surface": "export",
+        "claim": "a real click on the xlsx download button produces a "
+                 "workbook a real spreadsheet application opens and "
+                 "reads back as the same rows, with every non-numeric "
+                 "cell BinderXlsx.build() writes landing as an inline "
+                 "string rather than a formula - the typing guard "
+                 "apps/web/xlsx.js's header describes and "
+                 "dev/xlsx.test.mjs proves on the parsed archive, "
+                 "proved here on a real application instead",
+        "covers": ["apps/web/admin.js"],
+        "status": "never",
+    },
+    {
+        "id": "admin.js: json export",
+        "surface": "export",
+        "claim": "a real click on the JSON download button produces a "
+                 "file that parses and reads back as the same records "
+                 "the table shows, one plain object per row rather "
+                 "than a spreadsheet's typed cells - toJson()'s shape "
+                 "needs no formula guard, only that a real download "
+                 "opens, parses, and its count matches what the page "
+                 "showed at the moment of the click",
+        "covers": ["apps/web/admin.js"],
+        "status": "never",
+    },
+    {
+        "id": "submit.js: xlsx export",
+        "surface": "export",
+        "claim": "a real click on your-page's download button produces "
+                 "a workbook a real spreadsheet application opens and "
+                 "reads back as the member's own entries, in "
+                 "DOWNLOAD_COLUMNS' order, under the date-stamped "
+                 "filename the page names it",
+        "covers": ["apps/web/submit.js"],
+        "status": "never",
+    },
+    {
+        "id": "charts.js: xlsx export",
+        "surface": "export",
+        "claim": "a real click on the charts download button produces "
+                 "a workbook whose rows match the figures drawn on "
+                 "screen at the moment of the click, with any country "
+                 "or group label BinderXlsx.build() writes landing as "
+                 "a string rather than a formula it runs - the same "
+                 "typing guard the admin xlsx export carries, proved "
+                 "here on a workbook built from an aggregate answer "
+                 "rather than raw entries",
+        "covers": ["apps/web/charts.js"],
+        "status": "never",
+    },
+
     # ---- flows: voluntary rows, seeded from the cutover review pack's
     # Tier A and the dev-arm rehearsal's ledger. Nothing forces one into
     # existence; these are the largest debts stated as data so the query
@@ -1285,6 +1404,144 @@ def page_names():
 
 
 # ------------------------------------------------------------------ #
+# The export spine, read off a literal MIME type rather than a         #
+# dispatch line or a file listing - see the module docstring's         #
+# "export spine forces on a MIME type" paragraph for why neither of    #
+# route_ids()'s or page_names()'s tricks reaches this surface.         #
+
+# Anchored, not a bare substring: `"text/csv[^"]*"` still matches a
+# charset suffix, but the xlsx pattern closes on the exact quote a
+# download's Blob type ends on, so it does not fire on
+# `...spreadsheetml.sheet.main+xml"`, xlsx.js's own Content-Type string
+# for the workbook part - one part-type longer, and the reason a bare
+# `"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+# prefix match would have been wrong. The json pattern requires a
+# charset parameter for the opposite reason: admin.js's own fetch calls
+# send `"Content-Type": "application/json"` with no charset at all
+# (apps/web/admin.js, apps/web/auth.js, apps/web/form.js all do), so a
+# bare-prefix match here would have forced a row off an API request
+# rather than off the one download that actually carries a charset.
+EXPORT_MIME = (
+    ("csv", re.compile(r'"text/csv[^"]*"')),
+    ("xlsx", re.compile(
+        r'"application/vnd\.openxmlformats-officedocument\.'
+        r'spreadsheetml\.sheet"')),
+    ("json", re.compile(r'"application/json;charset=[^"]*"')),
+)
+
+
+def export_families(source):
+    """The MIME families a source string carries, in EXPORT_MIME order.
+
+    Pure - a string in, families out - so a fixture drives it without
+    touching the tree, the same reason route_ids() takes a source
+    string rather than reading server/worker.js itself.
+    export_locations() below is what wires this to the real files.
+
+    Comments are blanked first (check_web.strip_js_comments) so a MIME
+    literal that survives only in a comment - the CSV download deleted,
+    the string left behind in a `//` note about it - cannot keep
+    forcing a row for an export nobody can press. The fix wave that
+    added this found the gap concretely: a stale row read `47 rows,
+    OK` while the page it described no longer offered a download
+    (0.9-M3-S6 fix wave 1, #394, F2).
+    """
+    blanked = check_web.strip_js_comments(source)
+    return [family for family, pattern in EXPORT_MIME
+            if pattern.search(blanked)]
+
+
+# Bounded lookahead rather than an unbounded one: `[\s\S]` already
+# spans newlines with no re.S flag needed, but a call with no literal
+# type at all - admin.js's, which passes a bare identifier (`type:
+# type`) - has to stop the search from reading on into some later,
+# unrelated `new Blob(` call and misattributing its type. Every real
+# call in this tree closes its type argument within a couple of lines.
+BLOB_TYPE_LITERAL = re.compile(r'new Blob\([\s\S]{0,300}?type:\s*"([^"]*)"')
+
+
+def blob_mime_types(source):
+    """Every literal MIME type passed straight to a `new Blob(` call.
+
+    Pure, and comments blanked first for the same reason
+    export_families() blanks them. admin.js's one Blob call passes a
+    variable (`type: type`), never a literal, so it yields nothing for
+    that file - its three exports are found by export_families()
+    instead, off the literal MIME strings its offer() call sites pass
+    in, three lines from the Blob call itself. This function reads the
+    other shape: a literal type INSIDE the call, which is what
+    submit.js and charts.js each carry, and what unrecognized_blob_
+    types() below has to classify or refuse rather than silently miss.
+    """
+    return BLOB_TYPE_LITERAL.findall(check_web.strip_js_comments(source))
+
+
+def unrecognized_blob_types(source):
+    """[mime, ...] for source's literal Blob() types no family recognizes.
+
+    Pure, the same shape as export_families() and blob_mime_types()
+    above it stands on. export_families() is silent about a MIME type
+    outside EXPORT_MIME by design - that is right for anything not
+    actually building a download, such as a fetch header's Content-
+    Type, which this function never sees because it is never inside a
+    `new Blob(` call's own parentheses. A literal MIME type that IS
+    inside one is a download, though, and a download this ledger
+    cannot classify is not the same as a download that does not exist:
+    the review that opened this function proved the gap by injecting
+    five (application/pdf, .zip, plain text, text/calendar,
+    application/octet-stream) into apps/web/charts.js and watching the
+    gate stay green (0.9-M3-S6 fix wave 1, #394, F1).
+    """
+    return [mime for mime in blob_mime_types(source)
+            if not any(pattern.search('"%s"' % mime)
+                       for _, pattern in EXPORT_MIME)]
+
+
+def export_locations():
+    """{export id: apps/web file} for every real file export in the tree.
+
+    One row per (file, family): admin.js carries three (csv, xlsx,
+    json), so it yields three ids. The id names the file and the
+    family rather than the button or the export's own prose, because
+    neither of those is derivable from the MIME type alone - deriving
+    less is deriving something the next export cannot silently defeat
+    by being named differently.
+    """
+    found = {}
+    for name in sorted(os.listdir(WEB)):
+        if not name.endswith(".js"):
+            continue
+        source = read(os.path.join(WEB, name))
+        for family in export_families(source):
+            found["%s: %s export" % (name, family)] = "apps/web/%s" % name
+    return found
+
+
+def export_class_problems():
+    """FAIL text for every real file's unrecognized Blob() export class.
+
+    The real-tree wiring for unrecognized_blob_types() above, the same
+    split export_locations() keeps from export_families(): the pure
+    rule takes a fixture, this walks apps/web/*.js and reports.
+    """
+    problems = []
+    for name in sorted(os.listdir(WEB)):
+        if not name.endswith(".js"):
+            continue
+        source = read(os.path.join(WEB, name))
+        for mime in unrecognized_blob_types(source):
+            problems.append(
+                "apps/web/%s hands the browser a file through new "
+                "Blob() typed %r, an export class the live-"
+                "verification ledger does not know. Register it - add "
+                "%r's family to EXPORT_MIME in tools/check_live.py - "
+                "or, if it should not be a real download, drop the "
+                "literal MIME type from that Blob() call"
+                % (name, mime, mime))
+    return problems
+
+
+# ------------------------------------------------------------------ #
 # The rules.                                                          #
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -1378,14 +1635,17 @@ def surface_files(row):
     row goes stale, so a row free to name any path in the tree can buy
     permanent freshness by naming one that never moves.
 
-    Only the two forced surfaces. Nothing enumerates a flow, so nothing
-    here can say which files one ought to name, and a rule that guessed
-    would be a rule the next flow row argues with.
+    Only the three forced surfaces. Nothing enumerates a flow, so
+    nothing here can say which files one ought to name, and a rule that
+    guessed would be a rule the next flow row argues with.
     """
     if row.get("surface") == "route":
         return ["server/worker.js"]
     if row.get("surface") == "page":
         return ["apps/web/%s" % route_of(row.get("id", ""))]
+    if row.get("surface") == "export":
+        path = export_locations().get(row.get("id", ""))
+        return [path] if path else []
     return []
 
 
@@ -1480,15 +1740,20 @@ def route_of(rid):
     return rid.split(",")[0].strip()
 
 
-def spine_problems(ledger, routes, pages):
+def spine_problems(ledger, routes, pages, exports):
     """The forcing rule: the code decides what the ledger must contain.
 
-    Both directions. A surface with no row is the failure #157 is
-    about; a row for a surface that has left is how a reassuring count
-    outlives the thing it counts.
+    Both directions, over all three forced surfaces. A surface with no
+    row is the failure #157 is about; a row for a surface that has left
+    is how a reassuring count outlives the thing it counts. `exports` is
+    export_locations()'s {id: file} shape, unlike `routes` and `pages` -
+    a route always stands on server/worker.js and a page always stands
+    on its own name, but an export's file varies with which of three
+    files carried its MIME type, so the row-to-add message needs it
+    named rather than assumed.
     """
     problems = []
-    claimed = {"route": set(), "page": set()}
+    claimed = {"route": set(), "page": set(), "export": set()}
     for row in ledger:
         surface = row.get("surface")
         if surface in claimed:
@@ -1518,6 +1783,18 @@ def spine_problems(ledger, routes, pages):
                 '         "covers": ["apps/web/%s"],\n'
                 '         "status": "never"},' % (page, page, page))
 
+    for export_id, path in exports.items():
+        if export_id not in claimed["export"]:
+            problems.append(
+                "%s hands the browser a real file and the live-"
+                "verification ledger has no row for it (%s). Add to "
+                "LEDGER in tools/check_live.py:\n"
+                '        {"id": "%s", "surface": "export",\n'
+                '         "claim": "<what a live run would establish>",\n'
+                '         "covers": ["%s"],\n'
+                '         "status": "never"},'
+                % (path, export_id, export_id, path))
+
     for row in ledger:
         rid = row.get("id", "")
         if row.get("surface") == "route" and route_of(rid) not in routes:
@@ -1529,6 +1806,11 @@ def spine_problems(ledger, routes, pages):
             problems.append(
                 "ledger row %r claims a page apps/web no longer "
                 "publishes" % rid)
+        if row.get("surface") == "export" and route_of(rid) not in exports:
+            problems.append(
+                "ledger row %r claims a file export apps/web no longer "
+                "hands the browser; a ledger holding rows for exports "
+                "that have left counts the wrong thing" % rid)
 
     return problems
 
@@ -1911,7 +2193,8 @@ def problems():
         return refused
 
     found = entry_problems(LEDGER)
-    found += spine_problems(LEDGER, routes, page_names())
+    found += spine_problems(LEDGER, routes, page_names(), export_locations())
+    found += export_class_problems()
     found += cause_problems(LEDGER, source)
     found += run_problems(LEDGER)
     return found

@@ -55,7 +55,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 29
+EXPECTED = 36
 
 
 def check(label, condition):
@@ -275,6 +275,118 @@ try:
     code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
                            "--declared", declared_path])
     check("--declared FILE is honored", code == 0 and "MATCH" in said)
+
+    print("\n--- a BOM at the start of a --declared file is tolerated "
+          "(#387) ---")
+    # PowerShell 5.1's `Set-Content -Encoding utf8` writes a UTF-8 byte-
+    # order mark at the start of the file. Read with plain "utf-8" that
+    # BOM decodes into a literal U+FEFF character glued onto the first
+    # path, so the first declared path never matches the real diff -
+    # a false MISMATCH that aborts a good landing at the door.
+    check("parse_declared strips a leading BOM rather than treating it "
+          "as part of the first path",
+          claim_vs_diff.parse_declared("\ufeffnew-file.txt\n")
+          == {"new-file.txt"})
+
+    bom_match_path = os.path.join(root, "declared-bom.txt")
+    with open(bom_match_path, "w", encoding="utf-8-sig",
+              newline="\n") as handle:
+        handle.write("new-file.txt\n")
+    code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
+                           "--declared", bom_match_path])
+    check("a BOM-carrying declared file still matches (BOM stripped, "
+          "not read as part of the first path)",
+          code == 0 and "MATCH" in said)
+
+    print("\n--- a BOM-carrying declared file with a REAL mismatch "
+          "still refuses (BOM tolerance never masks a genuine "
+          "mismatch) ---")
+    # F3 (review finding, 2026-08-21): a check that only asserts
+    # `code == 1 and "MISMATCH" in said` is not discriminating here on
+    # its own - ghost.txt is untouched either way, mark stripped or
+    # not, so it mismatches under the UNFIXED tool too (the reviewer's
+    # RED re-fire proved exactly this: that assertion was the one
+    # survivor of four). What actually distinguishes fixed from unfixed
+    # is the CONTENT of the delta: the unfixed tool would still be
+    # carrying the mark on the declared path, so the untouched line
+    # would read "...): \ufeffghost.txt", not "...): ghost.txt" - a
+    # different substring that this check would (correctly) fail to
+    # find. So the exit code and the exact clean path name are asserted
+    # together, in one check, rather than split into a weak one and a
+    # strong one.
+    bom_mismatch_path = os.path.join(root, "declared-bom-mismatch.txt")
+    with open(bom_mismatch_path, "w", encoding="utf-8-sig",
+              newline="\n") as handle:
+        handle.write("ghost.txt\n")
+    code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
+                           "--declared", bom_mismatch_path])
+    check("a BOM-carrying declared file with a real mismatch still "
+          "exits 1 and names the CLEAN path (ghost.txt, not a "
+          "mark-glued one) as declared-but-untouched",
+          code == 1 and "MISMATCH" in said
+          and "DECLARED-BUT-UNTOUCHED (1): ghost.txt" in said)
+
+    print("\n--- the mark arriving as three separate mis-decoded "
+          "characters (not one U+FEFF) is stripped too (F1, review "
+          "finding, 2026-08-21) ---")
+    # main()'s stdin path (sys.stdin.read()) decodes under the
+    # process's own console locale, not forced UTF-8 - on a non-UTF-8
+    # locale (cp1252, the reviewer's machine) the same three BOM bytes
+    # (EF BB BF) come out as three separate characters instead of one
+    # U+FEFF. A fix that only strips U+FEFF looks complete against
+    # every --declared FILE fixture (open() with encoding="utf-8"
+    # always produces the single-character form) while leaving the
+    # real stdin path broken - this is that shape, driven directly
+    # against parse_declared() first, then against a real OS pipe
+    # below.
+    check("parse_declared strips the three-separate-character "
+          "(mis-decoded) form of the mark too, not only the single "
+          "U+FEFF character",
+          claim_vs_diff.parse_declared("\xef\xbb\xbfnew-file.txt\n")
+          == {"new-file.txt"})
+
+    print("\n--- a real OS pipe carrying raw UTF-8 BOM bytes on stdin "
+          "still matches, under THIS interpreter's own locale-"
+          "dependent decoding (F1) ---")
+    # This is the arm the finding specifically asked for: run_tool()
+    # above drives main() in-process with sys.stdin swapped for an
+    # io.StringIO, which hands back already-decoded text - a fixture
+    # shape that can never reproduce F1, because the bug lives IN the
+    # decoding step a StringIO skips entirely. A real subprocess with
+    # raw bytes on a real stdin pipe runs that decoding step for real,
+    # on whatever locale this machine's Python actually uses - proving
+    # the fix works under this interpreter's real behavior rather than
+    # under a simulation of it.
+    bom_bytes = b"\xef\xbb\xbfnew-file.txt\n"
+    proc = subprocess.run(
+        [sys.executable, claim_vs_diff.__file__, "slice-exact",
+         "accounts", "--repo", primary, "--declared", "-"],
+        input=bom_bytes, capture_output=True, timeout=FIXTURE_TIMEOUT)
+    check("a real stdin pipe carrying raw UTF-8 BOM bytes still "
+          "matches (exit 0, MATCH), decoded however this interpreter "
+          "actually decodes console stdin",
+          proc.returncode == 0 and b"MATCH" in proc.stdout)
+
+    print("\n--- an undecodable declared file (UTF-16, PowerShell "
+          "5.1's plain redirection default) is refused as COULD NOT "
+          "ASK, never a crash and never read as MISMATCH (F2, review "
+          "finding, 2026-08-21) ---")
+    # UnicodeDecodeError is a ValueError, not an OSError - before this
+    # fix it escaped uncaught, printed a bare Python traceback, and
+    # exited 1, which collides with this tool's own documented
+    # contract (exit 1 is reserved for a NAMED mismatch, never for a
+    # question the tool could not even ask).
+    utf16_path = os.path.join(root, "declared-utf16.txt")
+    with open(utf16_path, "w", encoding="utf-16") as handle:
+        handle.write("new-file.txt\n")
+    code, said = run_tool(["slice-exact", "accounts", "--repo", primary,
+                           "--declared", utf16_path])
+    check("an undecodable declared file exits 2, distinct from the 1 "
+          "an uncaught crash used to produce",
+          code == 2)
+    check("the report names a decode problem in plain words, not a "
+          "traceback and not a silent empty match",
+          "could not decode the declared file list" in said)
 
     print("\n--- refs that do not resolve are refused, not misread as a "
           "clean diff ---")
