@@ -3508,7 +3508,7 @@ function mergeValues(current, requested, mode) {
    * THE BOUND IS READ BEFORE ANYTHING IS MINTED. Every requested item
    * contributes at least one entry, so a list already past the ceiling
    * can only end past it - and mintId steps over every id taken so far,
-   * which makes a list of same-labelled values quadratic to merge. The
+   * which makes a list of same-labeled values quadratic to merge. The
    * answer is the same 400 either way; reading the length first is what
    * keeps a body an admin could paste by accident from buying seconds
    * of Worker time to say no.
