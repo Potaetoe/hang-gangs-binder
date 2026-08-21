@@ -1627,15 +1627,17 @@
    * there is no reason to withhold it.
    *
    * REUSES THE REPOSITORY'S ONE XLSX WRITER (apps/web/xlsx.js,
-   * BinderXlsx) rather than a second one - the admin export's own
-   * machinery, xlsx.js's own header explains why the CSV's leading-
-   * apostrophe formula guard is deliberately NOT layered on top here: a
-   * cell BinderXlsx.build() writes for anything but a number is typed
+   * BinderXlsx) rather than a second one. your-page.html's own workbook
+   * download (submit.js) is the other caller today, admin.js's own
+   * three exports having retired whole at 0.9-M3-S10 (#416).
+   * xlsx.js's own header explains why a leading-apostrophe formula
+   * guard is deliberately NOT layered on top here: a cell
+   * BinderXlsx.build() writes for anything but a number is typed
    * `t="inlineStr"`, an inline STRING, and a formula lives only in an
    * `<f>` element this writer never emits - so a hostile country name
    * or group label such as "=SUM(A1:A10)" arrives on the sheet as that
    * exact literal text, never evaluated. That typing IS the guard;
-   * dev/xlsx.test.mjs already proves it on admin.js's own export
+   * dev/xlsx.test.mjs already proves it directly against the writer
    * ("a formula-looking value is a string, not defused"), and this
    * file's own suite proves it again on THIS workbook - see
    * tests/charts-page.test.mjs.

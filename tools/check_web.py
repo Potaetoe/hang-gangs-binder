@@ -1438,11 +1438,22 @@ SENDS_TO_NETWORK = re.compile(
 # rather than by this page. There is no crypto.js call for form.js to
 # make any more - the check this exemption narrows is retired for this
 # page's whole surface, not weakened for it.
+#
+# admin.js joined this list at 0.9-M3-S10 (#416), for the same reason as
+# form.js and one milestone later: the keyfile-decrypt tool and the
+# entry exports it fed are gone, so nothing on this page decrypts and
+# nothing it posts (a /content value, a /membership row) was ever
+# sealed to a key in the first place - both are plain admin-authored
+# text and a numeric id, the Worker's own boundary rather than
+# anything crypto.js could add to.
 UNENCRYPTED_SENDERS = {
     "auth.js": "forwards a sign-in payload and stores the issued session",
     "form.js": "posts the record's plaintext for the Worker to seal at "
                "rest - there is no client-side encryption on this page "
                "any more (DESIGN.md, 'Trust model: the Worker reads')",
+    "admin.js": "posts settings text and membership rows, neither of "
+                "which was ever sealed to a key - the keyfile-decrypt "
+                "tool and the entry exports it fed are retired (#416)",
 }
 
 
@@ -2865,24 +2876,27 @@ LABEL_ROLES = {
 LABELS = {
     "About to clear itself": "caution",
     "Add an entry": "runner",
-    "Before you close this": "caution",
-    "Charts": "runner",
+    # "Before you close this" and "Key" retired 0.9-M3-S10 (#416) with
+    # the keyfile-decrypt tool: there is no private key on this device
+    # any more to warn about clearing. "Development session" stays,
+    # since another page carries it independently and this slice never
+    # touches that page.
+    "Change log": "runner",
     "Development session": "caution",
     "How your entry is handled": "runner",
-    "Key": "runner",
     "Members": "runner",
-    "Membership": "runner",
     "Not open": "flag",
-    "Publish": "runner",
-    "Published": "runner",
-    # The one entry whose role has changed since it was written. It was
-    # a `flag` while Result was an outcome in a box of its own; #178
-    # made the instrument's tools into sections, so Result now names one
-    # of the six rather than reporting a verdict about the page.
-    "Result": "runner",
+    # "Publish", "Published" and "Result" retired 0.9-M3-S10 (#416): the
+    # snapshot publish/unpublish controls and the CSV/xlsx/JSON entry
+    # exports both left with the keyfile tool (Prime's ruling on this
+    # ticket's own fork, 2026-08-21, reading #385 §4 - no admin surface
+    # exposes a current member's data). dashboard.js, the only thing
+    # that could have drawn a preview to publish, was already retired
+    # at 0.9-M2-S3 (#354).
+    "Roles": "runner",
     "Rows that grant nothing": "caution",
-    "Rows that would not open": "caution",
     "Session": "runner",
+    "Settings": "runner",
     "Telegram": "runner",
     "Unavailable": "flag",
     "Your entries": "runner",
@@ -3253,12 +3267,10 @@ DESTINATIONS = {
 # rename. "Go to sign in" is prose, and prose is the owner's to write.
 PROSE_LINKS = {
     ("404.html", "index.html"): frozenset({"Go to sign in"}),
-    # The Publish card's own link, beside the act it belongs to: a
-    # keyholder who has just pressed Publish is one press from reading
-    # what they published. It said something different from the footer's
-    # invitation to the same page while the footers had one (#265
-    # row 22); #274 left it the only link on this page that does.
-    ("admin.html", "charts.html"): frozenset({"Open it"}),
+    # ("admin.html", "charts.html"): {"Open it"} retired 0.9-M3-S10
+    # (#416): the Publish card it sat beside left with the keyfile tool,
+    # and the rail's own "Charts" link is the page's name (no PROSE_LINKS
+    # entry needed for a link that matches DESTINATIONS).
     # ("charts.html", "index.html"): {"Add yours"} retired 0.9-M2-S14
     # (#380 ruling 1): the "What this is" card that carried it is
     # removed outright, and with it the only "Add yours" prose link
@@ -6629,8 +6641,7 @@ def more_style_problems(css):
 PAGE_HEADERS = {
     "404.html": "Not found The link may be old, or the address mistyped.",
     "admin.html":
-        "Admin Decrypts the submissions in this browser — nothing is "
-        "uploaded.",
+        "Admin Site settings, admin roles and the change log.",
     "charts.html":
         "Members Charts Counts and averages — no names, no "
         "individual entries.",

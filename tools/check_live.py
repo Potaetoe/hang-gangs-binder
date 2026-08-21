@@ -34,11 +34,13 @@ disabled mechanism is worse than a small one.
 **The export spine forces on a MIME type, not a marker.** A route is
 enumerable because server/worker.js's dispatch block names every path
 in one place; a page is enumerable because apps/web lists its own
-files. A file export has neither property - five call sites across
-three files, three of them (admin.js's `offer()`) a single generic
-function called three times with only its arguments distinguishing the
-CSV export from the xlsx one from the JSON one - so nothing here can
-read "this call hands the browser a file" off the code shape the way
+files. A file export has neither property - two call sites across two
+files today (submit.js and charts.js, each its own `wireDownload()`
+building a workbook; admin.js's own three exports, and the shared
+`offer()` that built them, retired whole at 0.9-M3-S10, #416 - #385
+§4 rules that no admin surface exposes a current member's data) - so
+nothing here can read "this call hands the browser a file" off the code
+shape the way
 METHOD_TEST reads a dispatch line. What every export carries, at the
 exact call that builds the download, is a literal MIME type a Blob
 never needs for any other reason: `"text/csv..."`, the OOXML
@@ -818,58 +820,19 @@ LEDGER = [
     },
 
     # ---- exports: the surface #394 opens (fleet-review-M2.md, S14's
-    # F4). The site hands a browser a real file in five places, and
-    # until this slice the ledger's spine stopped at the page: a gate
-    # green at page granularity said nothing about whether any of the
-    # five downloads a keyholder or a member actually presses had ever
-    # been driven for real. export_locations() forces the five below
-    # into existence off the MIME type each download's Blob call
-    # carries - see the module docstring's "export spine forces on a
-    # MIME type" paragraph. The admin JSON export stood outside this
-    # count at this slice's first build; fix wave 1 (#394, F1) found
-    # the review's own read of "every real file export" was the truer
-    # one - JSON is a real file export by the same test the other four
-    # pass - and added it as a fifth rather than an excused fourth.
-    {
-        "id": "admin.js: csv export",
-        "surface": "export",
-        "claim": "a real click on the CSV download button produces a "
-                 "file whose bytes read back as the rows the table "
-                 "shows, and a submitted value that starts like a "
-                 "formula - '=', '+', '-', '@' - opens in the "
-                 "spreadsheet as the literal text csvCell() defused "
-                 "behind a leading apostrophe rather than as a formula "
-                 "it runs",
-        "covers": ["apps/web/admin.js"],
-        "status": "never",
-    },
-    {
-        "id": "admin.js: xlsx export",
-        "surface": "export",
-        "claim": "a real click on the xlsx download button produces a "
-                 "workbook a real spreadsheet application opens and "
-                 "reads back as the same rows, with every non-numeric "
-                 "cell BinderXlsx.build() writes landing as an inline "
-                 "string rather than a formula - the typing guard "
-                 "apps/web/xlsx.js's header describes and "
-                 "dev/xlsx.test.mjs proves on the parsed archive, "
-                 "proved here on a real application instead",
-        "covers": ["apps/web/admin.js"],
-        "status": "never",
-    },
-    {
-        "id": "admin.js: json export",
-        "surface": "export",
-        "claim": "a real click on the JSON download button produces a "
-                 "file that parses and reads back as the same records "
-                 "the table shows, one plain object per row rather "
-                 "than a spreadsheet's typed cells - toJson()'s shape "
-                 "needs no formula guard, only that a real download "
-                 "opens, parses, and its count matches what the page "
-                 "showed at the moment of the click",
-        "covers": ["apps/web/admin.js"],
-        "status": "never",
-    },
+    # F4). The site hands a browser a real file, and the ledger's spine
+    # stops at the page unless a row forces each real download into
+    # existence off the MIME type its Blob call carries - see the module
+    # docstring's "export spine forces on a MIME type" paragraph.
+    #
+    # THE ADMIN CSV/XLSX/JSON ROWS RETIRED 0.9-M3-S10 (#416). The entry
+    # exports left with the keyfile tool (Prime's ruling on this
+    # ticket's own fork, 2026-08-21, reading #385 §4: no admin surface
+    # exposes a current member's data) - admin.js's own Blob() calls are
+    # gone, so export_locations() no longer derives these ids and a row
+    # for them would be exactly the "reassuring count outlives the
+    # thing it counts" failure this ledger exists to refuse (this
+    # file's own freshness() docstring).
     {
         "id": "submit.js: xlsx export",
         "surface": "export",
@@ -1452,11 +1415,15 @@ def export_families(source):
 
 
 # Bounded lookahead rather than an unbounded one: `[\s\S]` already
-# spans newlines with no re.S flag needed, but a call with no literal
-# type at all - admin.js's, which passes a bare identifier (`type:
-# type`) - has to stop the search from reading on into some later,
-# unrelated `new Blob(` call and misattributing its type. Every real
-# call in this tree closes its type argument within a couple of lines.
+# spans newlines with no re.S flag needed, but a Blob() call whose type
+# argument is a variable rather than a literal - admin.js's now-retired
+# `offer()` passed one, `type: type`, until 0.9-M3-S10 (#416) removed it
+# with the exports it built - has to stop the search from reading on
+# into some later, unrelated `new Blob(` call and misattributing its
+# type. Nothing in the tree needs that guard today; the bound stays
+# because the shape it guards against is a property of the regex, not
+# of admin.js, and every real call still closes its type argument
+# within a couple of lines regardless.
 BLOB_TYPE_LITERAL = re.compile(r'new Blob\([\s\S]{0,300}?type:\s*"([^"]*)"')
 
 
@@ -1464,14 +1431,15 @@ def blob_mime_types(source):
     """Every literal MIME type passed straight to a `new Blob(` call.
 
     Pure, and comments blanked first for the same reason
-    export_families() blanks them. admin.js's one Blob call passes a
-    variable (`type: type`), never a literal, so it yields nothing for
-    that file - its three exports are found by export_families()
-    instead, off the literal MIME strings its offer() call sites pass
-    in, three lines from the Blob call itself. This function reads the
-    other shape: a literal type INSIDE the call, which is what
-    submit.js and charts.js each carry, and what unrecognized_blob_
-    types() below has to classify or refuse rather than silently miss.
+    export_families() blanks them. Every `new Blob(` call in the tree
+    today (submit.js, charts.js) passes its type as a literal, so this
+    function and export_families() currently agree on every export the
+    tree carries; the two stayed split because a variable type - the
+    shape BLOB_TYPE_LITERAL above is built to skip past, `type: type` -
+    is not a choice only one function in this tree could ever make.
+    This function reads a literal type INSIDE the call, which is what
+    unrecognized_blob_types() below has to classify or refuse rather
+    than silently miss.
     """
     return BLOB_TYPE_LITERAL.findall(check_web.strip_js_comments(source))
 
@@ -1500,12 +1468,14 @@ def unrecognized_blob_types(source):
 def export_locations():
     """{export id: apps/web file} for every real file export in the tree.
 
-    One row per (file, family): admin.js carries three (csv, xlsx,
-    json), so it yields three ids. The id names the file and the
-    family rather than the button or the export's own prose, because
-    neither of those is derivable from the MIME type alone - deriving
-    less is deriving something the next export cannot silently defeat
-    by being named differently.
+    One row per (file, family): submit.js and charts.js each carry one
+    (xlsx), so it yields two ids today. admin.js's own three (csv,
+    xlsx, json) retired with the exports themselves at 0.9-M3-S10
+    (#416). The id names the file and the family rather than the
+    button or the export's own prose, because neither of those is
+    derivable from the MIME type alone - deriving less is deriving
+    something the next export cannot silently defeat by being named
+    differently.
     """
     found = {}
     for name in sorted(os.listdir(WEB)):

@@ -715,6 +715,15 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
 
 .row.buttons { flex-wrap: wrap; }
 
+
+
+.row.wrap-row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.row.wrap-row > .wrap-row-value { flex: 1; }
+
 .suffix {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
