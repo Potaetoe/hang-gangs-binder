@@ -254,7 +254,12 @@ guards, never as the pattern for a new one.
   evidence about nothing.
 - Run both gates before any handoff, and report the exact totals each
   prints — never a remembered count, and never "tests pass". The old
-  one is `./run check` (or `py -3 tools/check.py`).
+  one is `./run check` (or `py -3 tools/check.py`). **No completion,
+  pull-request body, or commit message carries a hand-typed total**:
+  three 0.9-M2 slices running wrote a wrong total beside a correct
+  table, each time in the human abridgement between the tool's stdout
+  and the posted text — paste the stdout, split on GitHub's comment
+  limit if needed, never abridged.
 - **`./run ship-check` is the required act between your last commit and
   your terminal signal** (0.9-M0-S22, #320): three completions in one
   wave reported a remembered stage count ("38", then "39") while the
@@ -297,6 +302,20 @@ guards, never as the pattern for a new one.
 - Exercise affected pages in a real browser. **Verify what renders, not
   what a property says**: `element.hidden` can read true while the
   element paints — use `getComputedStyle()` and `getClientRects()`.
+- **A geometry claim needs geometry evidence from a real rendering
+  engine, at builder time, before the READY signal** — position,
+  overlap, containment, spill. The Node DOM stub proves wiring, never
+  pixels; a builder that skipped the browser in 0.9-M2 shipped a label
+  smothering its bar that only the reviewer's measurements caught.
+  Member pages are checked at phone width FIRST, admin surfaces at
+  desktop (owner lens ruling, 2026-08-20).
+- **An arm reads real shipped state, never a harness default.** Before
+  asserting that something is hidden, absent, or trimmed, force the
+  opposite state first or read the real page text; a stub default that
+  already satisfies the assertion is the most-repeated defect of
+  0.9-M2 (eight instances across three slices), and every one passed
+  its mutation while proving nothing. A sweep is claimed complete only
+  when it was mechanical.
 - **Label every verification claim** as source, local browser, CI or
   live, and never let one imply another. A check you could not run is
   reported as *not performed*, never omitted. A queued CI run is not a
@@ -329,6 +348,17 @@ the file has to say what it may contain.
 
 A finding against the specification is not a finding against whoever
 implemented it. Say which it is.
+
+**A security consult is triaged by what a slice changes about members,
+not by whether it adds a surface.** The question is: does this change
+how members are partitioned, aggregated, floored, or authenticated? If
+it touches `server/charts-agg.js`, `server/worker.js` or
+`server/store-crypto.js`, the orchestrator does not answer that question
+alone — the security consultant's Mode 1 triage does, and the order
+cites it. The case that wrote this rule: a 0.9-M2 slice that added one
+closed parameter and "no new surface" also rebuilt the chart bands per
+unit, which quietly negated the one-partition privacy rule at a raised
+floor; the builder caught what the triage had not asked.
 
 ## Boundaries
 
