@@ -3796,6 +3796,7 @@ MODULE_EXPORTS = {
     "form.js": "BinderForm",
     "session.js": "BinderSession",
     "signout.js": "BinderSignOut",
+    "site-content.js": "BinderSiteContent",
     "ui.js": "BinderUI",
     "xlsx.js": "BinderXlsx",
 }

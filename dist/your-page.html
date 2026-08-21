@@ -313,6 +313,9 @@
 <script src="fields.js"></script>
 <script src="countries.js"></script>
 <script src="ui.js"></script>
+<!-- Needs BINDER_CONFIG (config.js) and BinderUI (ui.js), both loaded
+     above it. tools/check_web.py's run-order arm holds this. -->
+<script src="site-content.js"></script>
 <script src="session.js"></script>
 <!-- After config.js, and that order is load-bearing: signing out asks
      the endpoint to end the session row, and the endpoint is

@@ -10,6 +10,13 @@
    
    
   const KEY = "hgb-palette";
+   
+   
+   
+   
+   
+   
+  const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
     contrast: "#000000",
@@ -49,6 +56,7 @@
    
    
    
+   
   function preferred() {
     if (!window.matchMedia) return "midnight";
     if (matchMedia("(prefers-contrast: more)").matches) return "contrast";
@@ -65,21 +73,38 @@
    
    
    
+   
   if (stored && !Object.prototype.hasOwnProperty.call(BG, stored)) {
     stored = null;
+  }
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+  let adminDefault = null;
+  try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
+  if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {
+    adminDefault = null;
   }
 
   
 
   if (!buttons.length) {
-    paintChrome(stored || preferred());
+    paintChrome(stored || adminDefault || preferred());
     return;
   }
 
    
    
    
-  apply(stored || preferred());
+  apply(stored || adminDefault || preferred());
 
    
    
