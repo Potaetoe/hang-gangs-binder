@@ -144,6 +144,49 @@ function makeDb(seed) {
   const grants = (id) =>
     typeof id === "string" && /^[0-9a-f]{64}$/.test(id);
 
+  /*
+   * THE FOUR ERASING STATEMENTS, PINNED WHOLE AND WRITTEN OUT BY HAND.
+   *
+   * This is the difference between a proof and a formality, and it was
+   * found by mutation rather than by argument: with the branches below
+   * dispatching on startsWith() and filtering in JavaScript from the
+   * BOUND ARGUMENT, `DELETE FROM submissions WHERE account_id = ? OR
+   * 1=1` was answered exactly as the correctly scoped statement was.
+   * The two-member proof stayed green over a delete that would have
+   * emptied the whole table on real D1 - the arm asserting the one
+   * thing it exists to assert, and proving nothing.
+   *
+   * A stub cannot parse SQL, and tests/admin-identity.test.mjs already
+   * records where that road ends ("a SQL engine in a test stub"). So
+   * this goes the other way: the statement must be EXACTLY one of the
+   * four below, byte for byte, or it falls through to the throw at the
+   * foot of answer(). Widening the predicate, dropping a COLLATE,
+   * losing the guard clause, or reordering the batch all become an arm
+   * that reds and names the statement it did not recognize.
+   *
+   * WRITTEN OUT RATHER THAN IMPORTED FROM THE WORKER, for the reason
+   * this repository already applies to Telegram's signing scheme: an
+   * arm built from the code it is checking agrees with any mistake in
+   * it. The cost is that a deliberate change to one of these
+   * statements edits this file too, which is the intended cost - these
+   * four are the whole of the erasing power.
+   */
+  const HEX64 = (column) =>
+    "length(" + column + ") = 64 AND " + column + " NOT GLOB '*[^0-9a-f]*'";
+  const ERASING = new Set([
+    "DELETE FROM submissions WHERE account_id = ?",
+    "DELETE FROM directory WHERE account_id = ?",
+    "DELETE FROM sessions WHERE account_id = ?",
+    "DELETE FROM membership WHERE account_id = ? COLLATE NOCASE" +
+      " AND (role <> 'admin'" +
+      " OR NOT (" + HEX64("account_id") + ")" +
+      " OR (SELECT COUNT(*) FROM membership AS granting" +
+      " WHERE granting.role = 'admin' AND " +
+      HEX64("granting.account_id") + ") > 1)",
+  ]);
+  const erasing = (sql) => /^DELETE FROM (submissions|directory)/.test(sql) ||
+    /^DELETE FROM (sessions|membership) WHERE account_id = \?/.test(sql);
+
   /* The count of `admin` rows that would actually grant - the same
      question grantsAnythingSql() asks in the Worker, answered here in
      JavaScript rather than parsed out of the statement, because the
@@ -152,6 +195,17 @@ function makeDb(seed) {
     row.role === "admin" && grants(row.account_id)).length;
 
   function answer(sql, args) {
+    /* The pin, checked before any branch below can answer. A statement
+       that erases and is not one of the four exact texts is refused
+       here rather than served by a prefix match that cannot see what
+       was added to it. */
+    if (erasing(sql) && !ERASING.has(sql)) {
+      throw new Error("an erasing statement did not match the pinned " +
+        "text byte for byte, so the predicate this arm proves is scoped " +
+        "to one account has changed and the proof no longer covers it: " +
+        sql);
+    }
+
     /* -------- sessions -------- */
     if (sql.startsWith("SELECT account_id, is_admin")) {
       return sessions.get(args[0]) || null;
@@ -664,8 +718,16 @@ for (const [who, headers] of [
   const { value } = await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + ADMIN,
       { headers: ADMIN_BEARER }));
+  /* THE STATUS ALONE IS NOT THE ASSERTION, and a mutation proved why:
+     every refusal this route can give is a 409, so deleting the
+     self-erase guard leaves the caller falling through to the
+     unknown-verdict refusal - same status, same shape, arm still
+     green over a guard that is gone. The refusal is therefore
+     identified by the reason it gives, which is the thing that
+     actually differs. */
   check("an admin may not erase their own account through this route",
-    value.status === 409);
+    value.status === 409 &&
+    /you are signed/.test(JSON.stringify(value.body || {})));
   check("the refused self-erase left the admin's own rows untouched",
     belongingTo(db, ADMIN, { callerOwnSession: true }) === before);
 }
@@ -699,8 +761,10 @@ for (const [who, headers] of [
   const { value } = await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + GONE,
       { headers: bearer("solo-admin-token") }));
-  check("erasing the holder of the last granting admin row is refused",
-    value.status === 409);
+  check("erasing the holder of the last granting admin row is refused, " +
+    "by THAT guard and not by some later refusal that shares its status",
+    value.status === 409 &&
+    /last admin row/.test(JSON.stringify(value.body || {})));
   check("that refusal erased nothing at all - not the submissions, not " +
     "the directory row, not the admin row",
     belongingTo(db, GONE) === before);
