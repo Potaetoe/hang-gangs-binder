@@ -473,6 +473,42 @@ if (!(await exists(rosterPath))) {
     excluded.set(match[1], reason);
   }
 
+  /* THE ORDERING RULE (0.9-M3-S18, #428). tests/ROSTER's own header
+     states it: required rows in ascending alphabetical order among
+     themselves, EXCLUDE rows in ascending alphabetical order among
+     themselves. The reason this exists at all is `.gitattributes`'
+     `tests/ROSTER merge=union` line, added the same slice - the union
+     merge driver is what lets two slices that each append one row (the
+     exact shape that stopped the door on 2026-08-21, 0.9-M3-S8 and
+     0.9-M3-S10) merge clean instead of conflicting, but the driver has
+     no notion this file has an ordering rule at all: it just
+     concatenates both sides' added lines at their own recorded
+     positions. Nothing else here would ever notice a union merge
+     landing two real rows out of order - discovery still finds every
+     arm, both directions above are satisfied, and the file would read
+     as quietly fine. This is what turns that into a red instead of a
+     silent drift. Checked as two separate sequences, not one shared
+     one, because a required row and an EXCLUDE row answer different
+     questions and interleaving them by file position (as opposed to by
+     category) is not itself a rule anything states. */
+  function checkOrder(list, label) {
+    for (let i = 1; i < list.length; i += 1) {
+      if (list[i - 1] > list[i]) {
+        problems.push("roster out of order: " + list[i - 1] + ", " +
+          list[i]);
+        console.log("ROSTER OUT OF ORDER: " + ROSTER + " lists " +
+          list[i] + " immediately after " + list[i - 1] + ", but " +
+          label + " rows belong in ascending alphabetical order and " +
+          list[i] + " sorts before " + list[i - 1] + ". Move the line " +
+          "to where the ordering rule puts it - a union merge could " +
+          "have left it here without anybody writing it out of order " +
+          "by hand; " + ROSTER + "'s own header carries the rule.");
+      }
+    }
+  }
+  checkOrder(required, "required");
+  checkOrder([...excluded.keys()], "EXCLUDE");
+
   /* F3 (0.9-M3-S7, #410): a roster made ENTIRELY of EXCLUDE lines
      still asserts nothing, however many exclusions it carries - the
      review found the guard here read `required.length === 0 &&

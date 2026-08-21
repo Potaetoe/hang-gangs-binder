@@ -317,7 +317,9 @@ guards, never as the pattern for a new one.
   #381): every discovered `tests/<name>.test.mjs` needs a row there
   too, required or explicitly excluded with a reason — add the row in
   the same commit that adds the file, or the gate reds naming the file
-  unrostered. Zero arms found is a failure, and so is a stray file
+  unrostered, and add it where the file's own ordering rule puts it —
+  the reader refuses a roster with a duplicate row or a disordered one
+  (0.9-M3-S18, #428). Zero arms found is a failure, and so is a stray file
   under `tests/` that is not an arm, the runner or the preflight seam;
   both are the armed-looking-but-not failure this repository holds to
   be worse than no gate. CI runs it beside the old gate

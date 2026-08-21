@@ -54,3 +54,23 @@ _headers   text eol=lf
 # CRLF, because cmd.exe misparses multi-line blocks under LF.
 run     text eol=lf
 *.cmd   text eol=crlf
+
+# tests/ROSTER (0.9-M3-S18, #428): two parallel slices that each append
+# one row used to conflict at the door - 0.9-M3-S8 and 0.9-M3-S10 both
+# did, on 2026-08-21, and `gh pr update-branch` had to stop for a
+# specialist merge-forward. git's own built-in union driver takes both
+# sides' added lines instead of writing conflict markers, so that same
+# shape merges clean now. What it CANNOT do: de-duplicate a row both
+# sides added identically (two branches adding the same line still
+# produces two copies of it), and it has no notion of the roster's
+# ordering rule at all - it just concatenates. tests/run.mjs's roster
+# reader is what catches both of those (DUPLICATE REQUIRED ROW /
+# DUPLICATE EXCLUSION, and the ordering check), so a union merge that
+# produces either is red at the gate, never silent. And GitHub's own
+# server-side merge (the "Update branch" button, auto-merge) does NOT
+# read this file at all - confirmed against GitHub's own words in
+# <https://github.com/orgs/community/discussions/9288> ("GitHub doesn't
+# consider user-defined .gitattributes files") - so this driver only
+# fires on a LOCAL `git merge`; the door's merge-forward step still has
+# to run one by hand before it can push.
+tests/ROSTER merge=union
