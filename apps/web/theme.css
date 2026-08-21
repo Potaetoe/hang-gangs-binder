@@ -1620,9 +1620,13 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
 
 /*
  * The charts control row (0.9-M2-S3, #354, design mandate 2): one card,
- * one row, five .field-shaped controls in a fixed order. Wraps on a
- * narrow viewport rather than scrolling, because five controls in a
- * horizontal scroller is a control a thumb cannot find.
+ * one row, four .field-shaped controls in a fixed order. Wraps on a
+ * narrow viewport rather than scrolling, because four controls in a
+ * horizontal scroller is a control a thumb cannot find. The row's own
+ * fixed order, "filter, measure, units, show-me, download" in
+ * apps/web/charts.html's own comment, names two more - Show me and
+ * Download act rather than hold a value, so nothing here styles them
+ * as fields.
  *
  * The Picture toggle lives with the results card now, not this row
  * (0.9-M2-S15, #383): there is nothing to choose a picture of until

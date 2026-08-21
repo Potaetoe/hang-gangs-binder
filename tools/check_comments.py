@@ -166,7 +166,10 @@ THREE MORE HOLES, EACH A COVERAGE GAP RATHER THAN A BROKEN RULE
 -----------------------------------------------------------------
 0.9-M3-S4 (#392), filed at the M2-to-M3 fleet gate over three real
 escapes the rules above could not have caught, each for a different
-reason than "the phrase list is too short":
+reason than "the phrase list is too short". Fix wave 1 (the
+independent review, #392 comment 5369115005) found the first build's
+first and third mechanisms caught the WORDING of a fix rather than the
+DEFECT, and rewrote both; the account below is the wave-1 shape.
 
  - S11 F3 (#372): apps/web/charts.html said "charts.js disables rather
    than shows an empty pane" - a claim about a NAMED FILE with nothing
@@ -174,55 +177,109 @@ reason than "the phrase list is too short":
    citation against; a bare mention has nothing to check, so it never
    entered either rule. See NARRATIVE_PINS below.
  - S15 F5 (#383): apps/web/theme.css said "six .field-shaped controls"
-   long after the row it described dropped to five, and the file had
-   never produced a single ALLOWLIST or CITATION_PINS entry - not
-   because its comments were clean, but because nothing here had ever
-   been shown to fire on THIS file. The fix wave's own truing comment,
-   "FIVE, NOT SIX (0.9-M2-S15, #383): ...", turned out to be the SAME
-   disease the phrase list already names elsewhere: a sentence
-   narrating a past count instead of stating the present one, which
-   "renamed from" and "moved from" already catch for renames and moves.
-   One new phrase entry below catches the shape ("cardinal, not
-   cardinal") generally, and it fires on theme.css's own real comment -
-   see PHRASES' "N, not M" entry.
+   long after the row it described dropped, and the file had never
+   produced a single ALLOWLIST or CITATION_PINS entry - not because its
+   comments were clean, but because nothing here had ever been shown to
+   fire on THIS file. The build's first attempt added a phrase for the
+   fix wave's OWN truing comment ("FIVE, NOT SIX (0.9-M2-S15, #383):
+   ..."), which is real narration but is not the escape: the review
+   proved the literal S15 sentence, restored verbatim, still passes,
+   and so does adding or deleting a control after it. See
+   COUNT_PROPERTY_PINS below for the rebuild.
  - The third shape, found while building the first two: a citation can
    be shaped exactly like the quoted CITATIONS above and cite a GitHub
    ticket instead of a file - `#378: "no numbers over bars, ever"` in
-   apps/web/charts.js is the one real instance. CITED requires a file
-   extension, so `#378` never matched it and the quotation was never
-   checked against anything, in either direction, because a ticket
-   number is not a file this checker can open. See TICKET_PINS below.
+   apps/web/charts.js is one instance. CITED requires a file extension,
+   so `#\\d+` never matched it and the quotation was never checked
+   against anything, in either direction, because a ticket number is
+   not a file this checker can open. The first build's TICKET_CITATIONS
+   only matched the ticket sitting immediately before the connective;
+   `apps/web/site.config.js`'s own escape - S16's, #390's find while
+   #390 was still open - cites `#371 comment 5347769320: "..."` and
+   `(owner ruling, #390): "..."`, both with words between the ticket
+   and the colon, and neither ever reached rule 2 at all. See
+   TICKET_PINS below for the widened connective.
 
 NARRATIVE_PINS answers the first shape the same way ALLOWLIST answers a
 phrase: it cannot verify a bare mention (there is nothing quoted to
 check), so it ratchets the shape itself - a dash-introduced, unquoted
-mention of another file, in a comment that quotes nothing at all, is
-new work the moment it is not already pinned. The dash is deliberate,
-not a stand-in for "any connective": AGENTS.md's own "The review bar"
-and the CITATIONS design above both hold that a connective is what
-makes a rule usable rather than merely correct, and a bare CITED token
-appears constantly in ordinary prose ("apps/web/form.js writes one
-control per field") with no claim behind it at all - narrowing to the
-one connective the real escape used keeps the pin list to fifteen
-honest entries instead of the low thousands a bare-mention scan
-produces. Requiring the comment to quote NOTHING anywhere, not just
-near the file, is what keeps a citation that already resolves (a real
-CITATIONS match sitting two sentences over) from tripping this too.
+mention of another file is new work the moment it is not already
+pinned. The dash is deliberate, not a stand-in for "any connective":
+AGENTS.md's own "The review bar" and the CITATIONS design above both
+hold that a connective is what makes a rule usable rather than merely
+correct, and a bare CITED token appears constantly in ordinary prose
+("apps/web/form.js writes one control per field") with no claim behind
+it at all - narrowing to the one connective the real escape used keeps
+the pin list to fifteen honest entries instead of the low thousands a
+bare-mention scan produces. This is a RATCHET ON ONE SURFACE FORM OF
+SEVEN (the fix wave's own measurement): a dash-mention is caught, but
+"see FILE, which..." or "because FILE does..." or an em dash are not,
+and neither is this exact edit's own new mention in theme.css ("see
+apps/web/charts.html's own comment"), which uses "see" between the dash
+and the file. Widening the connective was measured and rejected at
+first build (it is what keeps the pin list honest rather than a
+few-thousand-line sweep); the surface this rule covers is real but
+narrow, and is stated as narrow rather than implied complete.
+
+Fix wave 1 also narrowed WHAT counts as "quotes nothing": the guard
+used to be region-wide (any `"` anywhere in the comment cleared every
+mention in it, even one naming a completely different file than the
+quote resolves). It is now per-mention - a dash-mentioned file is
+cleared only when THAT SAME file also has a real CITATIONS match
+somewhere in the region, checked by basename so "charts.js" and
+"apps/web/charts.js" are the same clearance. A quote resolving DESIGN.md
+two sentences over no longer silences an unrelated, unquoted mention of
+charts.js.
 
 TICKET_PINS answers the third shape with the CITATIONS machinery
 itself, rather than new machinery: `#\\d+` stands in for CITED inside
-the same two connective-plus-quotation patterns, so the extraction is
-the one already proven precise. What differs is resolution - a ticket
-is never a file on disk, so there is no "does it still say this"
-question to ask the way unresolved_citations() asks it of a file; every
-ticket-anchored citation is broken by definition, exactly once, and
-TICKET_PINS is the ratchet that says which ones were already there.
+the same two connective-plus-quotation patterns. Fix wave 1 widened the
+pre-quote connective from "immediately after the ticket" to "up to
+fifty characters of prose, ending in a colon, with no quote in between"
+- wide enough to reach `#371 comment 5347769320: "..."` and `(owner
+ruling, #390): "..."`, the two real house forms rule 2 missed at first
+build, while still requiring the colon-then-quote shape that keeps this
+a hard extraction rather than a guess. What TICKET_PINS answers, stated
+plainly because the first build's docstring did not say it clearly
+enough: THIS RULE TRACKS THAT A TICKET IS CITED BESIDE A QUOTATION. IT
+NEVER COMPARES THE COMMENT TO THE TICKET'S CONTENT - there is no local
+copy of a GitHub issue to check the quotation against, so a ticket
+citation is broken by construction and TICKET_PINS records which ones
+were already known-unverifiable, exactly as CITATION_PINS records a
+file citation's known-stale ones. A pinned ticket citation later
+rewritten to say something false stays green; nothing here or anywhere
+else in this file can see that happen.
 
-All three are ratchets on the shape of the sentence, the same trade the
-phrase list already makes and states outright: this closes the three
-escapes it was measured against, not the general problem of an
-unverifiable claim - a comment can still narrate a stale fact in prose
-these three rules do not recognize. That gap is inherited, not new.
+COUNT_PROPERTY_PINS rebuilds the third rule around the actual property
+0.9-M2-S15 F5 needed: a comment that both names another file (any
+CITED-shaped mention anywhere in the SAME comment region, not only the
+dash form NARRATIVE_PINS restricts to) and states a count of that
+file's elements (a cardinal immediately near a literal `.class`-shaped
+token written in prose - the exact shape "six .field-shaped controls"
+takes, narrow for the same reason CARDINAL numbers near an ordinary
+countable noun are unfixably common ("two retries", "three steps") and
+a literal CSS class token in prose is not) REDS unless the SAME comment
+region also carries a real CITATIONS match that RESOLVES - reusing
+citations()/unresolved_citations() rather than a new resolver, which is
+what "the house mechanism check_comments already trusts" means in the
+ruling this answers. This still checks a SHAPE, not the count itself:
+a resolving citation proves the file exists and the quotation is really
+in it, never that the cardinal is arithmetically correct. A comment
+that names a file, claims a count, and quotes something true but
+irrelevant from that file still passes - the property is "an anchor
+exists to check by hand," not "the count was checked."
+
+ALL FOUR RULES (NARRATIVE_PINS, TICKET_PINS, COUNT_PROPERTY_PINS, and
+CITATIONS itself) are ratchets on the SHAPE of a sentence. A claim's
+TRUTH is checked only where a quoted anchor exists and only up to
+whatever the anchor quotes - CITATIONS' own resolution is a text-
+presence check against the cited file's real bytes, never a semantic
+one. Where no anchor exists, these rules make the shape mandatory (name
+a file and a count, or provide the anchor) without themselves auditing
+whether the anchored claim is true; a human still reads the fourteen
+NARRATIVE_PINS mentions and the five TICKET_PINS citations to know
+that. This is a narrower claim than the first build's closing sentence
+made, and the narrowing is the fix.
 """
 
 import os
@@ -335,7 +392,19 @@ LEAD = re.compile(r"""[\s*#/<!"'-]+$""")
 # reads as 'Admin -- accounts and deletion' unless the marker comes off.
 # A single leading "-" is a prose bullet and stays - eating one would
 # silently reshape the sentence a quotation is measured against.
-CONTINUATION = re.compile(r"^[ \t]*(?:\*+|\#+|//+|<!--|--+)?[ \t]*")
+#
+# BLANK joins " \t" in the leading class as of 0.9-M3-S4 fix wave 1
+# (F4, #392): comment_regions() now joins an indented "//" continuation
+# line into its region (see that function's own docstring), which means
+# unwrap() sees the line's INDENTATION as literal 0x00 bytes rather than
+# as absent - comments_only() blanks code-level whitespace, and
+# indentation before a comment marker is code, not comment. Without
+# BLANK here, CONTINUATION.match() stops at position 0 (0x00 is not a
+# space or tab), so nothing is stripped and the marker itself - "//" -
+# was read as PROSE, appearing inside citation quotations pulled from
+# an indented file. This is the fix for that, not a new rule.
+CONTINUATION = re.compile(r"^[ \t%s]*(?:\*+|\#+|//+|<!--|--+)?[ \t%s]*"
+                           % (BLANK, BLANK))
 
 # A path this repository could hold. Extensions rather than "anything
 # with a dot" so that "e.g." and "t.me/handle" are not read as files.
@@ -373,31 +442,20 @@ def marker(*words):
     return re.compile(r"\b" + GAP.join(words) + r"\b", re.I)
 
 
-# A cardinal followed by "not" and another cardinal - "five, not six",
-# "11, not 12" - is the same disease "renamed from" and "moved from"
-# above catch for a rename or a move: it narrates what a count USED TO
-# BE instead of stating what it is, and the earlier number belongs in
-# the commit message exactly as a rename does (AGENTS.md, "Code
-# standards"). Found at 0.9-M3-S4 (#392) via the comment this pattern
-# exists to catch: apps/web/theme.css's "FIVE, NOT SIX (0.9-M2-S15,
-# #383): the Picture toggle left this row..." - the fix wave's own
-# truing comment, which corrected the count and narrated the correction
-# in the same breath. Measured against the real tree before this
-# pattern existed: two matches, both real narration, zero false
-# positives - the second is dev/check_web.test.py's "11, not 12: theme-
-# init.js left MODULE_EXPORTS at 0.9-M2-S14 ... when the custom theme
-# it published ... retired with it", the same shape in a different file.
-#
-# The comma is deliberate and outside GAP on purpose. GAP is whitespace,
-# continuation marks and comment openers - not a comma - so marker()
-# cannot spell "five, not six" as a single call; this pattern allows an
-# optional comma before "not" instead of widening GAP for every other
-# phrase, which would let "renamed, from" or "moved, from" match text
-# nobody writes that way.
+# A cardinal number, spelled out or digits - reused below by
+# COUNT_CLAIM. RETIRED FROM PHRASES AT 0.9-M3-S4 FIX WAVE 1 (#392):
+# a first attempt paired this with "not" to catch "five, not six" as a
+# rename-shaped narration marker, on the theory that a corrected count
+# is the same disease "renamed from" and "moved from" already catch.
+# The independent review (comment 5369115005, finding F1) proved that
+# pattern catches the FIX WAVE'S OWN truing sentence, never the ESCAPE:
+# theme.css's original "six .field-shaped controls" - the sentence that
+# actually shipped wrong for a milestone - has no "not" in it at all,
+# and restoring it byte for byte still passed the gate. See
+# COUNT_PROPERTY_PINS below for the rule built on the property this one
+# was never able to reach.
 NUMBER = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
           r"twelve|\d+)")
-CARDINAL_DRIFT = re.compile(
-    r"\b%s\b,?%snot%s%s\b" % (NUMBER, GAP, GAP, NUMBER), re.I)
 
 
 # (label, pattern, why it is not a comment's job). The label is the
@@ -424,8 +482,6 @@ PHRASES = [
     ("was rejected because", marker("was", "rejected", "because"),
      "Say what the code does not do and why, in the present tense; the "
      "decision to reject belongs in the commit and the issue."),
-    ("N, not M", CARDINAL_DRIFT,
-     "The earlier count is in the diff, not the file it describes."),
 ]
 
 # Phrases that narrate only when a subject stands in front of them.
@@ -459,13 +515,18 @@ NEEDS_SUBJECT = frozenset({"used to"})
 # either clears it or says in the commit why it survived the visit.
 ALLOWLIST = {
     ("dev/ui.test.mjs", "used to"): 1,
-    # "11, not 12: theme-init.js left MODULE_EXPORTS at 0.9-M2-S14 (#380
-    # ruling 2) ... when the custom theme it published ... retired with
-    # it." Real narration, same shape as theme.css's own (0.9-M3-S4,
-    # #392) - not this slice's file to reword, so pinned rather than
-    # fixed. Comes off in the pull request that next touches this file.
-    ("dev/check_web.test.py", "N, not M"): 1,
 }
+
+# dev/check_web.test.py's "11, not 12: theme-init.js left MODULE_EXPORTS
+# at 0.9-M2-S14 (#380 ruling 2) ... when the custom theme it published
+# ... retired with it" is real narration, the same shape as theme.css's
+# fix-wave truing comment - RETIRED FROM ALLOWLIST at fix wave 1 (#392)
+# along with the "N, not M" phrase that pinned it (see NUMBER above):
+# the pattern that caught it was proven, by the independent review, to
+# catch a fix's own wording rather than the escape it was named for.
+# Nothing scans for this shape any more; it is not this slice's file to
+# reword, and pinning a phrase this narrow just to keep one honest entry
+# would be the tail wagging the dog.
 
 # {(file, cited path, quotation): count} for every citation the 0.9
 # documentation rewrite falsified. Keyed by the quotation rather than by
@@ -534,64 +595,214 @@ NARRATIVE = re.compile(r"-\s+(%s)\b" % CITED)
 # its file, same as ALLOWLIST and CITATION_PINS; raising a count is an
 # edit to this file with a reason in the pull request.
 #
-# Measured against the real tree at 0.9-M3-S4 (#392): fifteen dash-
-# connected mentions with no quote anywhere in the comment, one of them
-# apps/web/theme.css naming itself ("theme.css says so above") - not the
-# escape this rule exists for, since a file's claim about its own text
-# is checkable by anyone reading the file, so that one is excluded by
-# narrative_problems() below rather than pinned. The remaining fourteen
-# are here.
+# RE-MEASURED at fix wave 1 (F3, #392, comment 5369115005): the first
+# build's guard cleared a whole comment region on ANY quote anywhere in
+# it, so most of what is pinned below was invisible until the guard
+# became per-mention. Thirty-nine (file, path) pairs, forty-five
+# occurrences - up from fourteen. apps/web/theme.css's self-mention
+# ("theme.css says so above") is still excluded rather than pinned, for
+# the same reason as before: a file's claim about its own text is
+# checkable by anyone reading the file.
 NARRATIVE_PINS = {
-    ("apps/web/admin.html", "server/worker.js"): 1,
-    ("apps/web/charts.html", "charts.js"): 1,
-    ("apps/web/theme.css", "apps/web/charts.js"): 1,
-    ("dev/admin.test.mjs", "dashboard.js"): 1,
-    ("dev/check_web.test.py", "public.js"): 1,
-    ("dev/demo-server.mjs", "demo-stub.js"): 1,
-    ("dev/demo-stub.js", "AGENTS.md"): 1,
-    ("dev/worker.test.mjs", "./store-crypto.js"): 1,
-    ("server/charts-agg.js", "apps/web/countries.js"): 1,
-    ("tools/agent_init.py", "tools/requirements-gate.txt"): 1,
-    ("tools/check.py", "dev/form.test.mjs"): 1,
-    ("tools/check_live.py", "server/wrangler.toml"): 1,
-    ("tools/fleet_status.py", "reaper.py"): 1,
-    ("tools/session_open_suite.py", "reaper.py"): 1,
+    ('apps/web/admin.html', 'server/worker.js'): 1,
+    ('apps/web/auth.js', 'submit.js'): 1,
+    ('apps/web/charts.html', 'charts.js'): 1,
+    ('apps/web/config.js', 'auth.js'): 1,
+    ('apps/web/crypto.js', 'DESIGN.md'): 1,
+    ('apps/web/crypto.js', 'dev/crypto.test.mjs'): 1,
+    ('apps/web/form.js', 'admin.js'): 1,
+    ('apps/web/form.js', 'apps/web/site.config.js'): 1,
+    ('apps/web/site.config.js', 'your-page.html'): 1,
+    ('apps/web/theme.css', 'apps/web/charts.js'): 1,
+    ('dev/admin-session.test.mjs', 'dashboard.js'): 1,
+    ('dev/admin.test.mjs', 'dashboard.js'): 1,
+    ('dev/check_web.test.py', 'AGENTS.md'): 1,
+    ('dev/check_web.test.py', 'public.js'): 1,
+    ('dev/demo-bake.test.mjs', 'dev/demo-bake.mjs'): 1,
+    ('dev/demo-server.mjs', 'demo-stub.js'): 1,
+    ('dev/demo-stub.js', 'AGENTS.md'): 1,
+    ('dev/session.test.mjs', 'session.js'): 1,
+    ('dev/signout.test.mjs', 'apps/web/memberkey.js'): 1,
+    ('dev/signout.test.mjs', 'check_web.py'): 1,
+    ('dev/worker.test.mjs', './store-crypto.js'): 1,
+    ('server/charts-agg.js', 'apps/web/countries.js'): 1,
+    ('server/worker.js', 'precedence.test.mjs'): 1,
+    ('server/worker.js', 'server/store-crypto.js'): 1,
+    ('server/worker.js', 'wrangler.toml'): 1,
+    ('tools/agent_init.py', 'tools/requirements-gate.txt'): 1,
+    ('tools/check.py', 'dev/form.test.mjs'): 1,
+    ('tools/check.py', 'tools/build_web.mjs'): 1,
+    ('tools/check_docs.py', 'tools/check_comments.py'): 1,
+    ('tools/check_fonts.py', 'tools/build_web.mjs'): 1,
+    ('tools/check_live.py', 'server/wrangler.toml'): 2,
+    ('tools/check_web.py', 'AGENTS.md'): 2,
+    ('tools/check_web.py', 'admin.html'): 2,
+    ('tools/check_web.py', 'crypto.js'): 1,
+    ('tools/check_web.py', 'index.html'): 1,
+    ('tools/check_web.py', 'theme.js'): 1,
+    ('tools/fleet_status.py', 'reaper.py'): 3,
+    ('tools/session_open_suite.py', 'reaper.py'): 1,
+    ('tools/ship_check.py', 'AGENTS.md'): 2,
 }
 
 # A GitHub ticket number, `#\d+` - never a file, and every one of these
 # resolves against a repository object this checker can open (issues
 # live on GitHub, not on disk), so a citation anchored to one is broken
 # by construction, in the same sense unresolved_citations() already
-# reports "not a file here" for a stale path. Reusing CITED's own
-# connective-plus-quotation shape rather than inventing a new one: the
-# extraction is the one already measured precise in "WHY THE CITATION
-# RULE IS THIS NARROW" above, and #\d+ simply stands where CITED stood.
+# reports "not a file here" for a stale path.
 TICKET = r"#\d+"
 
+# The connective is WIDER than CITATIONS' own on purpose, and that
+# widening is fix wave 1's F4 (#392, comment 5369115005): the first
+# build reused CITATIONS' tight connective ('s, or a bare , or :
+# directly after the token) verbatim, and it missed the house forms
+# apps/web/site.config.js and server/charts-agg.js actually use - a
+# comment number or "owner ruling" sitting between the ticket and the
+# colon, exactly the shape S16's real escape lived in:
+#   #371 comment 5347769320: "in a gaining community the high end IS
+#   the story"                                    (site.config.js)
+#   2026-08-19 (#371 comment 5347769320): "the group sees its own
+#   makeup; the members-only door is what protects it"
+#                                                (server/charts-agg.js)
+# Up to fifty characters of ordinary prose are allowed between the
+# ticket and a terminal comma or colon, never a quote - so a comment
+# that cites a ticket, closes that thought, and only later opens an
+# unrelated quotation is not swept in either. Two characters are also
+# refused in that gap, both found by a wrong pairing in the real tree
+# rather than reasoned in advance: "#" (a SECOND ticket sitting closer
+# to the quote than the one the naive gap would have captured - dev/
+# check_web.test.py cites "0.9-M2-S6 (#82) and 0.9-M2-S13 (#378):
+# 'custom'", and without excluding #, the far ticket #82 wins instead
+# of #378, the one actually beside the colon) and "." (a real FILE
+# citation sitting in the same gap - dev/worker.test.mjs's "(#331),
+# which is DESIGN.md, 'Sessions'" already resolves as a file citation
+# via CITATIONS above, and without excluding the dot in "DESIGN.md"
+# from the gap, the wider ticket pattern claims the same quotation for
+# #331 too). The reversed form (a quotation read backward into a
+# ticket via "in"/"of"/"under") is unchanged from first build; no real
+# instance in the tree needed it widened.
 TICKET_CITATIONS = (
-    (re.compile(r"(%s)(?:'s|[,:])\s+\"([^\"\n]{6,160})\"" % TICKET), 1, 2),
-    (re.compile(r"\"([^\"\n]{6,160})\"\s+(?:in|of|under)\s+(%s)\b" % TICKET),
+    (re.compile(r"(%s)(?:'s|[^\"\n#.]{0,50}[,:])\s+\"([^\"\n]{6,200})\""
+                 % TICKET), 1, 2),
+    (re.compile(r"\"([^\"\n]{6,200})\"\s+(?:in|of|under)\s+(%s)\b" % TICKET),
      2, 1),
 )
 
 # {(file, ticket, quotation): count}. Every ticket-anchored citation is
 # broken - there is no "does the ticket still say this" question this
-# checker can ask - so this pin does the work CITATION_PINS' count does
-# for a file citation: the difference between a claim already known to
-# be unverifiable and new work pointing at the same kind of nothing.
-# Measured against the real tree at 0.9-M3-S4 (#392): five instances,
-# all in apps/web/charts.js, all in comments recording an owner ruling
-# by number rather than by a document a check can open.
+# checker can ask, and ticket_problems() never claims otherwise: this
+# rule tracks that a ticket is cited beside a quotation, never that the
+# quotation still matches the ticket's content - so a pinned citation
+# rewritten to say something false stays green. TICKET_PINS just records
+# which citations were already known to be checked no further than
+# that.
+#
+# RE-MEASURED at fix wave 1 (F4, #392, comment 5369115005), same
+# reason NARRATIVE_PINS was: the widened connective and the comment_
+# regions() indentation fix together reach citations first build's five
+# could not - twenty-four now, including apps/web/site.config.js's own
+# escape (S16's real one) and server/charts-agg.js's twin.
 TICKET_PINS = {
-    ("apps/web/charts.js", "#243",
-     "Edges come from the field spec and never move or merge"): 1,
-    ("apps/web/charts.js", "#378", "a tooltip verifies any value"): 1,
-    ("apps/web/charts.js", "#378", "including an empty slot"): 1,
-    ("apps/web/charts.js", "#378",
-     "the month and the values that point carries - group mean; the You "
-     "point its own value"): 1,
-    ("apps/web/charts.js", "#378", "no numbers over bars, ever"): 1,
+    ('apps/web/charts.js', '#243',
+     'Edges come from the field spec and never move or merge'): 1,
+    ('apps/web/charts.js', '#372',
+     'legibility is a geometry property, not a count target'): 1,
+    ('apps/web/charts.js', '#372',
+     'measured, or estimated conservatively from the caption text'): 1,
+    ('apps/web/charts.js', '#378',
+     'a count scale in whole people (integer ticks only)'): 1,
+    ('apps/web/charts.js', '#378', 'a tooltip verifies any value'): 1,
+    ('apps/web/charts.js', '#378', 'including an empty slot'): 1,
+    ('apps/web/charts.js', '#378', 'no numbers over bars, ever'): 1,
+    ('apps/web/charts.js', '#378',
+     'the month and the values that point carries - group mean; the You '
+     'point its own value'): 1,
+    ('apps/web/charts.js', '#378',
+     'the values that point carries - group mean; the You point its own '
+     'value'): 1,
+    ('apps/web/charts.js', '#390',
+     "the last painted band is the band CONTAINING the data's maximum; "
+     "its upper spec edge is the axis end."): 1,
+    ('apps/web/charts.js', '#390',
+     'the workbook carries exactly the answer on screen'): 1,
+    ('apps/web/charts.js', '#396', 'Showing Weight (lb).'): 1,
+    ('apps/web/site.config.js', '#371',
+     'in a gaining community the high end IS the story'): 1,
+    ('apps/web/theme.css', '#378',
+     "clamp inside the chart figure's bounding box"): 1,
+    ('dev/admin-session.test.mjs', '#354',
+     'a refused unpublish ends the session and leaves'): 1,
+    ('dev/admin-session.test.mjs', '#354',
+     'publishing repeats what the document does not contain'): 1,
+    ('dev/admin.test.mjs', '#275',
+     'the private half of the key this site encrypts to'): 1,
+    ('dev/check_web.test.py', '#378', 'custom'): 1,
+    ('dev/demo.test.mjs', '#354', '-- The snapshot --'): 1,
+    ('dev/demo.test.mjs', '#354',
+     'Publishing, and the takedown that is not the same as never'): 1,
+    ('dev/demo.test.mjs', '#354',
+     'every snapshot row has a control, with the counts on it'): 1,
+    ('server/charts-agg.js', '#243',
+     'Edges come from the field spec and never move or merge.'): 1,
+    ('server/charts-agg.js', '#371',
+     'the group sees its own makeup; the members-only door is what '
+     'protects it'): 1,
+    ('tools/check_web.py', '#191', 'Daylight'): 1,
 }
+
+# A cardinal near a literal CSS-class-shaped token written in prose -
+# "six .field-shaped controls", "four .field-shaped controls" - is a
+# claim about how many elements somewhere carry that class. Measured
+# three times against the real tree before landing on this shape:
+#
+#  - a cardinal within 40 characters of ANY `.identifier` token: 130
+#    findings once combined with a file mention, almost all noise - a
+#    bare "one" (a function word constantly used as a pronoun/article,
+#    "the one file", "at once") near any dotted token, including a
+#    plain file path with no space around its dot ("tools/reaper.py").
+#  - requiring a HYPHEN in the token after the dot (excludes a file
+#    extension, which is never hyphenated here - .py, .js, .css - while
+#    keeping a CSS class written in kebab-case, which always is): 3.
+#    Two were still noise - dev/check_web.test.py's "#187: .rail-links"
+#    (a TICKET number, not a count - `\d+` reads "187" out of "#187")
+#    and tools/check_web.py's "(index % 6) - so that no .series-N" (a
+#    modulo literal, fifteen characters from its dot).
+#  - excluding a number directly preceded by "#" and tightening the gap
+#    to eight characters (kills the modulo case; keeps "five
+#    .field-shaped", one character away): 1 - theme.css's own claim,
+#    and nothing else in the tree takes this shape.
+#
+# "one" is not excluded from NUMBER itself (COUNT_PROPERTY_PINS would
+# still need a real "one .field-shaped" claim to exist for that to
+# matter, and none does); the hyphen requirement is what did the work.
+COUNT_CLAIM = re.compile(
+    r"(?<!#)\b%s\b[^.\n]{0,8}\.[a-zA-Z][a-zA-Z0-9]*-[a-zA-Z0-9-]*"
+    % NUMBER)
+
+# A bare CITED-shaped token, for finding "does this comment name a file
+# at all" without CITATIONS' connective-and-quote requirement - rule 3
+# below needs the WIDE question (any mention, anywhere in the region),
+# unlike NARRATIVE's narrow one, because the property it enforces is
+# "a count claim plus a file mention, with nothing to check the count
+# against", not "was this specific connective used".
+CITED_TOKEN = re.compile(CITED)
+
+# {(file, line): reason}. Fix wave 1's rebuild of rule 3 (F1, #392,
+# comment 5369115005): a comment region that both names another file
+# (CITED_TOKEN, anywhere - not only NARRATIVE's dash form) and claims a
+# count of that file's elements (COUNT_CLAIM) must also carry a real
+# CITATIONS match that RESOLVES somewhere in the same region, or it is
+# new work pointing at an unverifiable count. Measured against the real
+# tree before this slice's own theme.css fix: one instance - theme.css's
+# own control-row comment, which is why theme.css never had an entry
+# here either, the same reason it never had one in ALLOWLIST or
+# CITATION_PINS: nothing had been shown to fire on it. That one instance
+# is fixed in this wave (a real, resolving quote from
+# apps/web/charts.html now backs the count), not pinned - the pin list
+# starts, and stays, empty. An entry would record a count claim about
+# another file's elements that the wave chose not to anchor; there is
+# none.
+COUNT_PROPERTY_PINS = {}
 
 
 def skip_string(text, start):
@@ -908,24 +1119,70 @@ def control_byte_problems(scan=None, repo=None):
     return out
 
 
-def comment_regions(masked):
+def comment_regions(masked, text=None):
     """[(start, stop)] for each comment region of a masked file.
 
     Newlines survive comments_only() everywhere, so a region ends at the
     first blanked code character rather than at a line break - which is
     what makes a run of "//" lines one comment instead of several.
+
+    THE INDENTATION FIX (0.9-M3-S4 fix wave 1, F4, #392, comment
+    5369115005): found while widening rule 2's connective to reach
+    apps/web/site.config.js's real citation, which still did not
+    resolve after the widening. The cause was here, not in the ticket
+    pattern - `citations()` itself already returned nothing for that
+    file, on a citation this rule never touches. Every "//" comment
+    inside a nested object literal is indented, and the leading spaces
+    before EACH LINE's own "//" are code-level whitespace, outside any
+    comment span, so comments_only() blanks them - which used to close
+    the region right there, splitting one wrapped citation into two
+    one-line fragments neither of which carries both the ticket and the
+    quotation. A `/* */` block never had this problem (the whole span
+    between the markers copies verbatim, indentation included), which
+    is why it went unnoticed until a "//"-commented, indented, multi-
+    line citation was measured for the first time.
+
+    `text` is the SAME file's unmasked text, optional so a caller with
+    no unmasked text handy (none currently exist, but the parameter
+    defaults closed rather than required) keeps the old behavior. When
+    given, a blank run that is PURE WHITESPACE in the original - not a
+    blanked comment marker, not real code - does not end a region;
+    real code between two comments still does, since it is never only
+    whitespace. This is who close_blank_run() answers when it is asked.
     """
+    def close_blank_run(run_start, run_stop):
+        """Whether a blank run at these offsets ends a region.
+
+        True (region ends) unless `text` was given and every character
+        in the run is whitespace in the ORIGINAL, unmasked source - the
+        one case this rule exists to reach: indentation before the next
+        continuation line's own comment marker.
+        """
+        if text is None:
+            return True
+        return text[run_start:run_stop].strip() != ""
+
     regions = []
     start = None
-    for index, char in enumerate(masked):
-        if char == BLANK:
-            if start is not None:
-                regions.append((start, index))
+    index = 0
+    length = len(masked)
+    while index < length:
+        if masked[index] == BLANK:
+            if start is None:
+                index += 1
+                continue
+            run_start = index
+            while index < length and masked[index] == BLANK:
+                index += 1
+            if close_blank_run(run_start, index):
+                regions.append((start, run_start))
                 start = None
-        elif start is None:
-            start = index
+        else:
+            if start is None:
+                start = index
+            index += 1
     if start is not None:
-        regions.append((start, len(masked)))
+        regions.append((start, length))
     return regions
 
 
@@ -954,7 +1211,7 @@ def citations(text, kind):
     """[(line, cited path, quotation)] for one file's source, sorted."""
     masked = comments_only(text, kind)
     found = []
-    for start, stop in comment_regions(masked):
+    for start, stop in comment_regions(masked, text):
         flat, offsets = unwrap(masked, start, stop)
         for pattern, path_group, quote_group in CITATIONS:
             for match in pattern.finditer(flat):
@@ -1150,24 +1407,36 @@ def citation_pin_problems(scan=None, repo=None, pinned=None):
 def narrative_mentions(text, kind):
     """[(line, cited path)] for a bare, dash-introduced file mention.
 
-    Only comment regions that quote NOTHING are read - a region holding
-    a real, resolvable CITATIONS match elsewhere is not this escape, and
-    reporting it too would teach the next reader to distrust the rule
-    exactly the way a too-wide phrase would (see "WHY THE PHRASE LIST IS
-    THIS SHORT" in the module docstring for the same trade made once
-    already). unwrap() is reused rather than re-derived so a mention
-    split across a block comment's continuation lines is still one
-    mention, the same reason citations() needs it.
+    PER-MENTION, not region-wide - fix wave 1's F3 (#392, comment
+    5369115005). First build cleared a whole comment region the moment
+    ANY quote appeared in it, which the review broke by rewriting a real
+    pinned mention's CLAIM to its opposite while a citation for a
+    DIFFERENT file sat two sentences over in the same comment: the
+    unrelated quote silenced the falsified one. A mention is cleared now
+    only when the SAME file it names also carries a real CITATIONS match
+    in the SAME region - compared by basename, since a comment may spell
+    the mention short ("charts.js") and the citation long
+    ("apps/web/charts.js") for the same real file. A citation for some
+    OTHER file no longer clears anything.
+
+    unwrap() is reused rather than re-derived so a mention split across
+    a block comment's continuation lines is still one mention, the same
+    reason citations() needs it.
     """
     masked = comments_only(text, kind)
     found = []
-    for start, stop in comment_regions(masked):
+    for start, stop in comment_regions(masked, text):
         flat, offsets = unwrap(masked, start, stop)
-        if '"' in flat:
-            continue
+        cited_here = set()
+        for pattern, path_group, _quote_group in CITATIONS:
+            for cite in pattern.finditer(flat):
+                cited_here.add(os.path.basename(cite.group(path_group)))
         for match in NARRATIVE.finditer(flat):
+            path = match.group(1)
+            if os.path.basename(path) in cited_here:
+                continue
             at = offsets[match.start(1)]
-            found.append((masked.count("\n", 0, at) + 1, match.group(1)))
+            found.append((masked.count("\n", 0, at) + 1, path))
     return sorted(found)
 
 
@@ -1283,7 +1552,7 @@ def ticket_citations(text, kind):
     """
     masked = comments_only(text, kind)
     found = []
-    for start, stop in comment_regions(masked):
+    for start, stop in comment_regions(masked, text):
         flat, offsets = unwrap(masked, start, stop)
         for pattern, path_group, quote_group in TICKET_CITATIONS:
             for match in pattern.finditer(flat):
@@ -1382,6 +1651,121 @@ def ticket_pin_problems(scan=None, repo=None, pinned=None):
     return problems
 
 
+def count_claims(text, kind):
+    """[(line, matched text)] for a cardinal near a literal .class token.
+
+    The extractor half of rule 3's rebuild (fix wave 1, F1, #392,
+    comment 5369115005) - a pure function over strings, the same reason
+    hits() and citations() are, so a mutation exercises the PATTERN and
+    never the file-walking around it.
+    """
+    masked = comments_only(text, kind)
+    found = []
+    for match in COUNT_CLAIM.finditer(masked):
+        line = masked.count("\n", 0, match.start()) + 1
+        found.append((line, match.group(0).strip()))
+    return sorted(found)
+
+
+def count_property_findings(scan=None, repo=None):
+    """[(file, line, (file mentions,))] for an unanchored count claim.
+
+    A comment region qualifies when it both claims a count (COUNT_CLAIM)
+    and names another file (CITED_TOKEN, self-mentions excluded) with no
+    real, RESOLVING CITATIONS match anywhere in the SAME region -
+    "resolving" checked by excluding whatever unresolved_citations()
+    already flags as broken, so a stale citation cannot double as an
+    anchor for a count claim it does not back either. citations() and
+    unresolved_citations() are reused rather than a second resolver
+    written for this rule alone - the house mechanism the ruling this
+    answers named.
+    """
+    scan = SCAN if scan is None else scan
+    repo = REPO if repo is None else repo
+    broken_by_file = {}
+    for relpath, line, _path, _quote, _message in unresolved_citations(
+            scan, repo):
+        broken_by_file.setdefault(relpath, set()).add(line)
+    out = []
+    for dirname, extensions in scan:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            full = os.path.join(base, name)
+            if not os.path.isfile(full) or not name.endswith(extensions):
+                continue
+            relpath = "%s/%s" % (dirname, name)
+            if relpath in EXEMPT:
+                continue
+            with open(full, encoding="utf-8") as handle:
+                text = handle.read()
+            kind = KIND[os.path.splitext(name)[1]]
+            masked = comments_only(text, kind)
+            resolving_lines = ({line for line, _p, _q in citations(
+                text, kind)} - broken_by_file.get(relpath, set()))
+            for start, stop in comment_regions(masked, text):
+                flat, _offsets = unwrap(masked, start, stop)
+                if not COUNT_CLAIM.search(flat):
+                    continue
+                mentions = sorted({
+                    match.group(0) for match in CITED_TOKEN.finditer(flat)
+                    if match.group(0) not in (relpath, name)})
+                if not mentions:
+                    continue
+                start_line = masked.count("\n", 0, start) + 1
+                stop_line = masked.count("\n", 0, stop) + 1
+                anchored = any(start_line <= line <= stop_line
+                               for line in resolving_lines)
+                if anchored:
+                    continue
+                out.append((relpath, start_line, tuple(mentions)))
+    return out
+
+
+def count_property_problems(scan=None, repo=None, pinned=None):
+    """A problem per unanchored count-of-another-file's-elements claim.
+
+    The forward arm. Unlike NARRATIVE_PINS and TICKET_PINS this is keyed
+    by (file, line) rather than counted - a count claim is written once
+    per sentence, not repeated the way a citation to the same file might
+    be, so there is nothing here for a count to distinguish.
+    """
+    pinned = COUNT_PROPERTY_PINS if pinned is None else pinned
+    problems = []
+    for relpath, line, mentions in count_property_findings(scan, repo):
+        if (relpath, line) in pinned:
+            continue
+        problems.append(
+            "%s:%d: names %s and claims a count of its elements with "
+            "nothing quoted anywhere in the comment to check it against - "
+            "the exact shape of 0.9-M2-S15 F5's escape (#383). Add a "
+            "quoted citation from %s (the CITATIONS form above) backing "
+            "the claim, or pin it in COUNT_PROPERTY_PINS"
+            % (relpath, line, ", ".join(mentions), mentions[0]))
+    return problems
+
+
+def count_property_pin_problems(scan=None, repo=None, pinned=None):
+    """A problem per COUNT_PROPERTY_PINS entry that no longer applies.
+
+    The backward arm - a pin whose count claim was anchored, reworded or
+    deleted stops being true, same shape as every other pin's backward
+    arm in this file.
+    """
+    pinned = COUNT_PROPERTY_PINS if pinned is None else pinned
+    found = {(relpath, line) for relpath, line, _mentions in
+             count_property_findings(scan, repo)}
+    problems = []
+    for key in sorted(pinned):
+        if key not in found:
+            problems.append(
+                "COUNT_PROPERTY_PINS pins %s:%d, and it is anchored or "
+                "gone now. Delete the entry; the list is a ratchet and "
+                "only shrinks" % key)
+    return problems
+
+
 def problems():
     found, scanned = scan_tree()
     out = generated_tree_problems()
@@ -1397,6 +1781,8 @@ def problems():
     out.extend(narrative_pin_problems())
     out.extend(ticket_problems())
     out.extend(ticket_pin_problems())
+    out.extend(count_property_problems())
+    out.extend(count_property_pin_problems())
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 
@@ -1418,11 +1804,12 @@ def main():
           "text and every quotation of another file is still in it or "
           "pinned (%d files scanned, %d cross-file citation(s) checked, "
           "%d phrase occurrence(s), %d citation(s) pinned for the slice "
-          "that rewrites their file, %d unquoted file mention(s) pinned "
-          "and %d ticket citation(s) pinned)."
+          "that rewrites their file, %d unquoted file mention(s) pinned, "
+          "%d ticket citation(s) pinned and %d unanchored count claim(s) "
+          "pinned)."
           % (len(scanned), len(all_citations()), sum(ALLOWLIST.values()),
              sum(CITATION_PINS.values()), sum(NARRATIVE_PINS.values()),
-             sum(TICKET_PINS.values())))
+             sum(TICKET_PINS.values()), len(COUNT_PROPERTY_PINS)))
     return 0
 
 
