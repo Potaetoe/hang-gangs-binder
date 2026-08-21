@@ -43,7 +43,7 @@
 # (REQUIRED AND EXCLUDED) - pick one.
 #
 # A roster with zero required rows is empty and reds (ROSTER (empty)),
-# NO MATTER HOW MANY EXCLUDE LINES it carries (0.9-M3-S1b, #410) - an
+# NO MATTER HOW MANY EXCLUDE LINES it carries (0.9-M3-S7, #410) - an
 # exclusion count never substitutes for a requirement. And a line
 # repeated - the same required path twice, or the same path EXCLUDEd
 # twice, even with two different reasons - is its own red too

@@ -185,7 +185,7 @@
  * is never itself mutated to test it.
  *
  * TWO MORE WAYS TO GO GREEN WITHOUT REQUIRING ANYTHING, both closed by
- * 0.9-M3-S1b (#410, from #381's post-merge review). An all-EXCLUDE
+ * 0.9-M3-S7 (#410, from #381's post-merge review). An all-EXCLUDE
  * roster - zero required rows, any number of exclusions - used to pass
  * the empty-roster guard, because that guard checked exclusions too;
  * it did not occur to the guard that "roster requires nothing" is true
@@ -422,7 +422,7 @@ if (!(await exists(rosterPath))) {
   const excluded = new Map();
   for (const line of lines) {
     if (!line.startsWith("EXCLUDE")) {
-      /* F5 (0.9-M3-S1b, #410): a duplicate required row is refused by
+      /* F5 (0.9-M3-S7, #410): a duplicate required row is refused by
          name rather than silently accepted as a no-op repeat - two
          lines naming the same file assert nothing a single line did
          not already, and a second copy is a thing that can drift from
@@ -468,7 +468,7 @@ if (!(await exists(rosterPath))) {
     excluded.set(match[1], reason);
   }
 
-  /* F3 (0.9-M3-S1b, #410): a roster made ENTIRELY of EXCLUDE lines
+  /* F3 (0.9-M3-S7, #410): a roster made ENTIRELY of EXCLUDE lines
      still asserts nothing, however many exclusions it carries - the
      review found the guard here read `required.length === 0 &&
      excluded.size === 0`, so an empty required list was excused by any

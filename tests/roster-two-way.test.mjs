@@ -12,7 +12,7 @@
  * list ("EXCLUDE <path> :: <reason>") this ticket adds so a suite can
  * be deliberately non-gating without going unrostered by accident.
  *
- * WIDENED 0.9-M3-S1b (#410), from 0.9-M3-S1's post-merge independent
+ * WIDENED 0.9-M3-S7 (#410), from 0.9-M3-S1's post-merge independent
  * review (issue 381, comment 5369370080): scenarios 9-11 arm three more
  * failure modes the review found live in the shipped mechanism (an
  * all-EXCLUDE roster asserting nothing, F3; a duplicate required row
@@ -141,7 +141,7 @@ function check(label, condition) {
 /*    suite discovery finds, with no roster row: first by DELETING a    */
 /*    row for a file that is still there (the reviewer's own mutation). */
 
-/* F4 (0.9-M3-S1b, #410): the review found that checking for the bare   */
+/* F4 (0.9-M3-S7, #410): the review found that checking for the bare   */
 /* filename here proved nothing, because beta.test.mjs is a fixture arm */
 /* that still RUNS and PASSES in this scenario - its name is in the      */
 /* result table's "ok" line regardless of whether ARM NOT ON ROSTER ever */
@@ -271,7 +271,7 @@ function check(label, condition) {
 }
 
 /* ================================================================== */
-/* 9. F3 (0.9-M3-S1b, #410) - a roster made ENTIRELY of EXCLUDE lines,  */
+/* 9. F3 (0.9-M3-S7, #410) - a roster made ENTIRELY of EXCLUDE lines,  */
 /*    with zero required rows, still asserts nothing: the review's own  */
 /*    probe (P-EXCL-ONLY / P-EXCL-EVERY) found the merged guard read     */
 /*    `required.length === 0 && excluded.size === 0`, so any number of   */
@@ -294,7 +294,7 @@ function check(label, condition) {
 }
 
 /* ================================================================== */
-/* 10. F5 (0.9-M3-S1b, #410) - the same required path listed twice is   */
+/* 10. F5 (0.9-M3-S7, #410) - the same required path listed twice is   */
 /*     refused by name, not silently accepted as a harmless repeat.      */
 
 {
