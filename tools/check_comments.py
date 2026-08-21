@@ -2412,7 +2412,7 @@ def defined_names(dirs=None, repo=None):
         base = os.path.join(repo, *dirname.split("/"))
         if not os.path.isdir(base):
             continue
-        for root, subdirs, files in os.walk(base):
+        for root, _subdirs, files in os.walk(base):
             for name in files:
                 ext = os.path.splitext(name)[1]
                 if ext not in (".py", ".js", ".mjs"):
@@ -2491,7 +2491,7 @@ def known_basenames(repo=None):
     """
     repo = REPO if repo is None else repo
     names = set()
-    for root, dirs, files in os.walk(repo):
+    for _root, dirs, files in os.walk(repo):
         dirs[:] = [d for d in dirs if d not in BASENAME_SKIP]
         names.update(files)
     return names
