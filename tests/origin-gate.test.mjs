@@ -191,8 +191,17 @@ check("REGRESSION: the renamed charts route with no Origin is answered " +
   /no-store/i.test(String(chartsAbsent.headers.get("Cache-Control"))));
 
 const contentAbsent = await call("GET", "/content");
-check("the one credential-free route answers a no-Origin read too",
+check("a credential-free route answers a no-Origin read too",
   contentAbsent.status === 200 && contentAbsent.body.ok === true);
+
+/* The second one (0.9-M3-S8, #414). The door reads this before anybody
+   has signed in, which is a same-origin GET and therefore carries no
+   Origin header at all - so the widening has to reach it, and an arm
+   that only ever checked /content would not have said so. */
+const configAbsent = await call("GET", "/config");
+check("and so does the other one - GET /config, which the door reads " +
+  "before sign-in", configAbsent.status === 200 &&
+  configAbsent.body.ok === true && Boolean(configAbsent.body.config));
 
 /* ------------------------------------------------------------------ */
 /* 2. The session is still the whole gate.                             */
@@ -238,6 +247,7 @@ for (const [method, path, options] of [
   ["GET", "/me", { token: SESSION_TOKEN }],
   ["GET", "/my-entries", { token: SESSION_TOKEN }],
   ["GET", "/content", {}],
+  ["GET", "/config", {}],
   ["POST", "/submit", { token: SESSION_TOKEN, body: { record: "{}" } }],
   ["DELETE", "/session", { token: SESSION_TOKEN }],
 ]) {
@@ -360,8 +370,9 @@ for (const [label, response] of [
 
 check("no answer in this whole arm carried Access-Control-Allow-Origin: " +
   "* or \"null\"",
-  [meAbsent, entriesAbsent, chartsAbsent, contentAbsent, meNoSession,
-    submitAbsent, allowedRead, sameOrigin, none, preflightAllowed]
+  [meAbsent, entriesAbsent, chartsAbsent, contentAbsent, configAbsent,
+    meNoSession, submitAbsent, allowedRead, sameOrigin, none,
+    preflightAllowed]
     .every((r) => acao(r) !== "*" && acao(r) !== "null"));
 
 /* ------------------------------------------------------------------ */
@@ -402,7 +413,7 @@ check("mutation: the old one-question gate refuses the same-origin read " +
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 37;
+const EXPECTED = 39;
 console.log(failures
   ? `\norigin-gate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
