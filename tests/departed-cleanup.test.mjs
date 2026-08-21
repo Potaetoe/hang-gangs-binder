@@ -432,7 +432,8 @@ function fixture() {
    rather than a count. Sorted by a stable key first: a row order that
    changed while the rows did not is not a finding, and folding it in
    would make this proof fire on the wrong thing. */
-function belongingTo(db, accountId) {
+function belongingTo(db, accountId, options) {
+  const sliding = Boolean(options && options.callerOwnSession);
   return JSON.stringify({
     submissions: db.submissions()
       .filter((row) => row.account_id === accountId)
@@ -444,7 +445,21 @@ function belongingTo(db, accountId) {
       .sort((a, b) => a.role.localeCompare(b.role)),
     sessions: [...db.sessions.values()]
       .filter((row) => row.account_id === accountId)
-      .sort((a, b) => a.token_hash.localeCompare(b.token_hash)),
+      .sort((a, b) => a.token_hash.localeCompare(b.token_hash))
+      /* THE CALLER'S OWN DEADLINE SLIDES, BY DESIGN, and only the
+         caller's. sessionFor() moves `expires_at` forward on every
+         request the session makes (server/schema.sql's `sessions`
+         block: "every row's deadline moves forward each time the
+         session is used"), so the erasing admin's own row differs
+         after any call they make - including a refused one. Comparing
+         it raw would fail on the idle window rather than on anything
+         this slice does, so the deadline is dropped for the CALLER's
+         rows alone. Every other account's sessions, including the two
+         the survivor holds, are compared whole: nothing this Worker
+         does may move those, and if one moves, the proof must see it. */
+      .map((row) => sliding
+        ? Object.assign({}, row, { expires_at: "(slides per request)" })
+        : row),
   });
 }
 
@@ -488,7 +503,7 @@ const MEMBER_BEARER = bearer("member-token");
   const db = fixture();
   const env = envFor(db);
   const staysBefore = belongingTo(db, STAYS);
-  const adminBefore = belongingTo(db, ADMIN);
+  const adminBefore = belongingTo(db, ADMIN, { callerOwnSession: true });
 
   const { value: answer } = await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + GONE,
@@ -511,7 +526,7 @@ const MEMBER_BEARER = bearer("member-token");
     belongingTo(db, STAYS) === staysBefore);
   check("the erasing admin's own rows are byte-identical after the " +
     "erase (the third account nobody named)",
-    belongingTo(db, ADMIN) === adminBefore);
+    belongingTo(db, ADMIN, { callerOwnSession: true }) === adminBefore);
 
   check("the answer reports the counts it removed, per row class",
     answer.body && answer.body.removed &&
@@ -555,7 +570,6 @@ for (const [who, headers] of [
    table. Forced rather than assumed, per AGENTS.md, "Verification". */
 {
   const db = fixture();
-  const env = envFor(db);
   check("the fixture really does hold a stale directory row for the " +
     "member-session refusal above to be withholding something",
     [...db.directory.values()].some((row) => row.last_seen_at === OLD));
@@ -587,14 +601,14 @@ for (const [who, headers] of [
 {
   const db = fixture();
   const env = envFor(db);
-  const before = belongingTo(db, ADMIN);
+  const before = belongingTo(db, ADMIN, { callerOwnSession: true });
   const { value } = await withBot(botSaying("left"), () =>
     call(env, "DELETE", "/admin-departed/" + ADMIN,
       { headers: ADMIN_BEARER }));
   check("an admin may not erase their own account through this route",
     value.status === 409);
   check("the refused self-erase left the admin's own rows untouched",
-    belongingTo(db, ADMIN) === before);
+    belongingTo(db, ADMIN, { callerOwnSession: true }) === before);
 }
 
 /*

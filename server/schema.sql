@@ -436,14 +436,32 @@ CREATE TABLE IF NOT EXISTS site_content (
 -- inventing an account id would attribute an act to somebody who did
 -- not do it.
 --
--- NOTHING A MEMBER TYPED GOES HERE. The values this table summarizes
--- are site copy and settings, which GET /content already serves without
--- a credential; entry rows are not written through any route that
--- appends here, and the one admin action over a member's own data -
--- removing a submission - deliberately does not append, because a line
--- naming which row was taken down is a fact about a member rather than
--- about the site. That action is the departed-member cleanup slice's,
--- and it takes its own security review (#385 rule 4).
+-- NOTHING A MEMBER TYPED GOES HERE, and the two admin actions over a
+-- member's own data are where that rule is decided rather than assumed
+-- (0.9-M3-S15, #420, which #385 rule 4 gives its own security review).
+--
+-- Most of what this table summarizes is site copy and settings, which
+-- GET /content already serves without a credential. The two exceptions
+-- are ruled separately, because they are not the same act:
+--
+--   * ERASING A DEPARTED MEMBER (DELETE /admin-departed/:id) DOES
+--     append. The line carries who erased, twelve characters of the
+--     account id, Telegram's own verdict, and the COUNT of rows
+--     removed in each class - never a row, never a label, never a
+--     handle. What makes it writable is the counting: "four entries
+--     and a directory row came down" is a fact about an administrative
+--     act, and the subject is somebody the group's own bot has said is
+--     gone. #385 rule 5 makes a log line part of every admin change,
+--     and this is the largest one an admin can make.
+--   * REMOVING ONE SUBMISSION (DELETE /submission/:id) does NOT, in
+--     either direction. A member deleting their own row is the
+--     member's own act rather than an admin change, so rule 5 does not
+--     reach it at all; and an admin removing a single row belongs to a
+--     member who is still here, where a line naming the act is a fact
+--     about a present member's data sitting in the clear beside that
+--     member's remaining rows. The erase above can be counted without
+--     naming anybody's data because the account is being emptied; one
+--     row out of a live account cannot.
 --
 -- `summary` is BOUNDED by server/worker.js rather than by this column,
 -- and the bound is the point: a value may be kilobytes of site copy,

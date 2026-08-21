@@ -591,6 +591,51 @@ const ADMIN_LOG_LIMIT = 100;
 const MAX_LOG_SUMMARY = 200;
 
 /*
+ * How stale a directory row must be before the departed list will even
+ * ask about it (0.9-M3-S15, #420; the ruled design #385, rule 4).
+ *
+ * STALENESS IS THE PRE-FILTER AND NEVER THE VERDICT. `last_seen_at`
+ * moves forward on every verified sign-in, so a row nobody has touched
+ * in a month belongs to somebody who has not signed in for a month -
+ * which is not the same fact as having left the group, and must never
+ * be read as it. A member on holiday is stale; a member who left is
+ * departed; only the bot can tell the two apart, and departedVerdict()
+ * is the only thing that says which. What this number buys is a bound
+ * on how many accounts the list asks about at all.
+ *
+ * Thirty days rather than a shorter window because the cost of being
+ * wrong is asymmetric: a departed member who stays on the list one
+ * cycle longer costs nothing, and a current member dragged into an
+ * erasing surface costs the thing #385 rule 4 is careful about.
+ */
+const DEPARTED_STALE_DAYS = 30;
+
+/*
+ * How many stale rows one request may ask the bot about.
+ *
+ * Each candidate is one getChatMember call, so an unbounded list would
+ * make a single admin request into as many outbound calls as the
+ * directory has rows - a self-inflicted rate limit at best, and at
+ * worst a request that never returns. The list is ordered oldest-first,
+ * so the accounts most likely to have left are the ones a capped read
+ * reaches; the rest arrive on the next read once these are cleared.
+ */
+const DEPARTED_LIST_CAP = 50;
+
+/*
+ * How much of an account id the change log records for an erase.
+ *
+ * ENOUGH TO TELL TWO ERASES APART, and deliberately not the whole HMAC.
+ * The log is read to answer "what happened to this group's data", and a
+ * prefix answers that; a full id would let the log be joined against
+ * `submissions` and `membership` rows that still exist for everybody
+ * else, turning the paper trail into a second index over the members
+ * who remain. Twelve hex characters is forty-eight bits, which is far
+ * past collision inside one group's roster and far short of a key.
+ */
+const SHORT_ID_CHARS = 12;
+
+/*
  * The two membership lists, named as roles rather than as tables. The
  * set is closed here rather than accepted from the caller: an unknown
  * role stored would be a row that grants nothing and looks exactly like
@@ -2670,14 +2715,21 @@ function writerOf(caller) {
  * `membership` write. `summary` is bounded here rather than at the call
  * sites, so no future caller can put a kilobyte in it by forgetting.
  *
- * NOTHING A MEMBER WROTE PASSES THROUGH HERE. Every caller is a write
- * to `site_content` or to `membership`, whose values are site copy,
- * settings, roles and labels an admin typed. The one admin power over a
- * member's own data - DELETE /submission/:id on somebody else's row -
- * deliberately does not append: a line naming which row came down is a
- * fact about a member rather than about the site, and that action
- * belongs to the departed-member cleanup slice, which #385 rule 4 gives
- * its own security review.
+ * NOTHING A MEMBER WROTE PASSES THROUGH HERE, which is a property of
+ * what the call sites pass rather than of this function, and is why the
+ * list of them is worth knowing. Most write `site_content` or
+ * `membership`, whose values are site copy, settings, roles and labels
+ * an admin typed. The exception is handleEraseDeparted (0.9-M3-S15,
+ * #420), which passes COUNTS of rows removed and Telegram's own verdict
+ * - no row, no label, no handle - for an account the bot has said is
+ * gone.
+ *
+ * DELETE /submission/:id still appends nothing, in either direction,
+ * and that is a decision rather than an omission: a member deleting
+ * their own row is not an admin change at all, and an admin removing
+ * one row belongs to a member who is still here, where a line naming
+ * the act is a fact about a present member's data. server/schema.sql's
+ * `admin_log` block carries the whole argument for both.
  */
 async function noteAdminWrite(env, caller, action, subject, summary) {
   const text = String(summary);
@@ -3335,6 +3387,277 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
 }
 
 /*
+ * HAS THIS ACCOUNT LEFT THE GROUP? The one question this whole slice
+ * turns on, and the one it cannot answer yet (0.9-M3-S15, #420).
+ *
+ * THE BOT IS THE ONLY JUDGE. #385 rule 4 gives admins one per-member
+ * power and bounds it to a DEPARTED member, and nothing on this side
+ * may decide who that is: staleness is a fact about sign-ins, a label
+ * is a nickname somebody typed, and neither is evidence anybody left.
+ * groupStanding() asks Telegram, and Telegram's answer is the verdict.
+ *
+ * AND IT CANNOT BE ASKED ABOUT A STORED ROW TODAY. getChatMember takes
+ * a NUMERIC Telegram id - groupStanding() interpolates one into the URL
+ * - and this database holds none. `directory` is keyed by
+ * HMAC(ACCOUNT_SECRET, numeric id), which is one-way by construction
+ * (see server/schema.sql's `directory` block and DESIGN.md, "The
+ * identifier is the whole problem"), and the record sealed beside that
+ * key holds the handle, the display name and the role and no id at all.
+ * The handle does not rescue it either: there is no by-username form of
+ * getChatMember. So the numeric id exists only inside a live sign-in,
+ * where handleTelegramAuth already has it and already acts on it.
+ *
+ * Closing that gap is a decision about what may be stored at rest, not
+ * an implementation detail, so it is the owner's rather than this
+ * slice's and is open at #420. Until it is ruled, this function answers
+ * "unknown" for every account and every caller of it fails closed -
+ * which is the same answer an unreachable Telegram already produces, and
+ * the same direction groupStanding() already fails in: not being able to
+ * ask is never evidence that somebody left.
+ *
+ * THE PARAMETERS ARE UNDERSCORED BECAUSE NOTHING READS THEM YET, and
+ * that is the honest shape rather than a tidy one: an implementation
+ * that touched `env` to satisfy a linter would be pretending to ask a
+ * question it cannot ask. They are the arguments every candidate answer
+ * at #420 needs, so the signature is settled even though the body is
+ * not, and the callers below are written against it.
+ */
+async function departedVerdict(_env, _accountId) {
+  return { known: false, departed: false, status: null };
+}
+
+/*
+ * Erase every row one account owns, in one transaction (#420 scope 2;
+ * the ruled design #385, rule 4).
+ *
+ * FOUR ROW CLASSES AND NOTHING ELSE: the entries, the directory row,
+ * the membership rows and the sessions. Each statement is scoped to the
+ * one account id, which is what makes this a per-member power rather
+ * than an admin bulk-delete - and the two-member fixture in
+ * tests/departed-cleanup.test.mjs is what proves the scoping held,
+ * because counting the erased account's rows down to zero cannot see a
+ * clause that also took somebody else's.
+ *
+ * ONE BATCH, so a failure halfway leaves the account whole rather than
+ * half-erased. A half-erased account is the worst of both: the member's
+ * entries are gone and their session still opens the site.
+ *
+ * THE MEMBERSHIP DELETE CARRIES THE LAST-GRANTING-ADMIN GUARD, the same
+ * clause handleDeleteMembership puts inside its own statement, and it is
+ * here for the same reason it is there rather than as belt-and-braces:
+ * an erase that removed every membership row for an account would
+ * otherwise be a back door around the one invariant server/schema.sql
+ * states as absolute - the last `admin` row that grants cannot go, or
+ * the table locks everybody out. handleEraseDeparted refuses such an
+ * account before calling this at all, so reaching the clause means two
+ * admins raced; the clause is what makes the invariant true rather than
+ * likely.
+ *
+ * NO CASCADE INTO ANYBODY ELSE'S ROWS. `submissions.supersedes` may
+ * point at a row this removes, and that pointer resolves as no pointer
+ * exactly as handleDeleteSubmission's own comment describes - a
+ * correction whose target is gone puts the corrected row back among the
+ * current ones. Following the pointer would turn erasing one member
+ * into deleting another member's entry, which is the one thing this
+ * function must never do.
+ */
+async function eraseAccount(env, accountId) {
+  const lastGrantingAdmin =
+    " AND (role <> 'admin'" +
+    " OR NOT (" + grantsAnythingSql("account_id") + ")" +
+    " OR (SELECT COUNT(*) FROM membership AS granting" +
+    " WHERE granting.role = 'admin' AND " +
+    grantsAnythingSql("granting.account_id") + ") > 1)";
+
+  const results = await env.DB.batch([
+    env.DB.prepare("DELETE FROM submissions WHERE account_id = ?")
+      .bind(accountId),
+    env.DB.prepare("DELETE FROM directory WHERE account_id = ?")
+      .bind(accountId),
+    env.DB.prepare(
+      "DELETE FROM membership WHERE account_id = ? COLLATE NOCASE" +
+      lastGrantingAdmin
+    ).bind(accountId),
+    env.DB.prepare("DELETE FROM sessions WHERE account_id = ?")
+      .bind(accountId),
+  ]);
+
+  const changed = (index) => {
+    const meta = results[index] && results[index].meta;
+    return meta && typeof meta.changes === "number" ? meta.changes : 0;
+  };
+  return {
+    submissions: changed(0),
+    directory: changed(1),
+    membership: changed(2),
+    sessions: changed(3),
+  };
+}
+
+/*
+ * The departed list, admin only (#420 scope 1).
+ *
+ * TWO STEPS THAT ARE NOT THE SAME STEP. Staleness picks the candidates
+ * - directory rows nobody has signed in behind for DEPARTED_STALE_DAYS,
+ * oldest first, capped - and the bot decides which of those have
+ * actually left. Only the second list is served. A surface built from
+ * the first would be a list of members who have been quiet, offered to
+ * an admin under a heading that says they are gone.
+ *
+ * WHAT A ROW CARRIES, and what it deliberately does not: the account id
+ * this Worker already writes in the clear beside every entry, the label
+ * `membership` holds when one exists, and `last_seen_at`. Never the
+ * handle - the directory's record stays sealed and this route does not
+ * open it - and never a numeric Telegram id, which is not stored
+ * anywhere to serve. The label is a nickname an admin typed, so it
+ * names nobody Telegram would recognize.
+ *
+ * IT IS A MEMBERSHIP ORACLE, BOUNDED TO ADMINS, and that is the reason
+ * the gate is in the router beside the other admin reads rather than
+ * in this function: answering a non-admin at all - even with an empty
+ * list - would tell them whether anybody has left, which is a fact
+ * about the group's composition and not theirs to have.
+ */
+async function handleReadDeparted(env, origin) {
+  const cutoff = new Date(
+    Date.now() - DEPARTED_STALE_DAYS * 24 * 3600 * 1000).toISOString();
+
+  const stale = await env.DB.prepare(
+    "SELECT account_id, last_seen_at FROM directory WHERE last_seen_at < ? " +
+    "ORDER BY last_seen_at ASC LIMIT " + DEPARTED_LIST_CAP
+  ).bind(cutoff).all();
+
+  const labels = new Map();
+  const rows = await env.DB.prepare(
+    "SELECT account_id, label FROM membership"
+  ).all();
+  for (const row of ((rows && rows.results) || [])) {
+    labels.set(String(row.account_id).toLowerCase(), row.label);
+  }
+
+  const departed = [];
+  for (const row of ((stale && stale.results) || [])) {
+    const verdict = await departedVerdict(env, row.account_id);
+    // Unknown is not departed. An account the bot could not be asked
+    // about stays off this list entirely rather than appearing with a
+    // softer word beside it, because the list's whole meaning is that
+    // an erase offered against it is safe.
+    if (!verdict.known || !verdict.departed) continue;
+    departed.push({
+      accountId: row.account_id,
+      label: labels.get(String(row.account_id).toLowerCase()) || null,
+      lastSeenAt: row.last_seen_at,
+      status: verdict.status,
+    });
+  }
+
+  return json({ ok: true, departed: departed }, 200, origin);
+}
+
+/*
+ * Erase one departed member's rows (#420 scope 2).
+ *
+ * THE VERDICT IS RE-ASKED HERE AND NEVER CARRIED FROM THE LIST. The
+ * list is a page an admin may have been looking at for an hour, and a
+ * member can rejoin a Telegram group in a second. Trusting the list
+ * would make this route's safety a property of how fresh somebody's
+ * browser tab was, which is not a property at all.
+ *
+ * EVERY REFUSAL HAPPENS BEFORE ANYTHING IS DELETED, and the order is
+ * cheapest-and-most-certain first: the shape of the id, then who is
+ * asking about whom, then the membership invariant, then the bot. An
+ * erase that deleted three row classes and then discovered it should
+ * not have would have no way back.
+ *
+ * A CURRENT MEMBER IS REFUSED WITH THE VERDICT QUOTED BACK, because the
+ * admin needs to be able to tell "Telegram says they are still here"
+ * from "Telegram did not answer" - the two look identical from a
+ * surface that only says no, and they call for opposite next actions.
+ * The status is Telegram's own word and names nobody.
+ *
+ * AN ADMIN MAY NOT ERASE THEMSELVES here. The route is for members who
+ * are gone, and a caller holding a live admin session is demonstrably
+ * present; a self-erase would also delete the session mid-request and
+ * answer through a credential that no longer exists. Somebody wanting
+ * their own data gone deletes their entries as a member, which is
+ * self-service and needs no admin at all.
+ */
+async function handleEraseDeparted(env, origin, accountId, caller) {
+  const wanted = String(accountId);
+  if (!ACCOUNT_ID.test(wanted)) {
+    return json({ error: "Not found." }, 404, origin);
+  }
+  if (caller.accountId && caller.accountId === wanted) {
+    return json({
+      error: "This removes a departed member's rows, and you are signed " +
+        "in. To remove your own entries, delete them from your own page.",
+    }, 409, origin);
+  }
+
+  /*
+   * The membership invariant, asked before the transaction rather than
+   * inside it. eraseAccount()'s own statement carries the same guard,
+   * so the invariant does not rest on this read winning a race - what
+   * this read buys is that the ordinary case is a clean refusal that
+   * erases nothing, instead of an erase that silently leaves one row
+   * behind and reports a count nobody expected.
+   */
+  const held = await env.DB.prepare(
+    "SELECT (SELECT COUNT(*) FROM membership AS granting" +
+    " WHERE granting.role = 'admin' AND " +
+    grantsAnythingSql("granting.account_id") + ") AS granting," +
+    " (SELECT COUNT(*) FROM membership AS held" +
+    " WHERE held.account_id = ? COLLATE NOCASE AND held.role = 'admin'" +
+    " AND " + grantsAnythingSql("held.account_id") + ") AS holds"
+  ).bind(wanted).first();
+  if (held && held.holds > 0 && held.granting <= 1) {
+    return json({
+      error: "That is the last admin row. Add another admin before " +
+        "erasing this account.",
+    }, 409, origin);
+  }
+
+  const verdict = await departedVerdict(env, wanted);
+  if (!verdict.known) {
+    return json({
+      error: "The bot could not say whether that member has left, so " +
+        "nothing was erased. Try again shortly.",
+    }, 409, origin);
+  }
+  if (!verdict.departed) {
+    return json({
+      error: "Telegram says that account is still in the group " +
+        "(“" + verdict.status + "”), so nothing was erased.",
+    }, 409, origin);
+  }
+
+  const removed = await eraseAccount(env, wanted);
+
+  /*
+   * The line, after the write like every other one (noteAdminWrite
+   * carries that rule and why it is not best-effort).
+   *
+   * COUNTS AND A VERDICT, NEVER A ROW. server/schema.sql's `admin_log`
+   * block rules that nothing a member typed goes in this table, and
+   * that is what makes this line writable at all: "four entries and a
+   * directory row came down" is a fact about an administrative act,
+   * while a line naming WHICH entry came down would be a fact about a
+   * member's data sitting in the clear beside the entries themselves.
+   * The subject is the short id for the same reason - enough to tell
+   * two erases apart, not enough to join the log against the rows of
+   * everybody who remains.
+   */
+  await noteAdminWrite(env, caller, "erase",
+    wanted.slice(0, SHORT_ID_CHARS),
+    "telegram said " + verdict.status + "; removed " +
+    removed.submissions + " submissions, " + removed.directory +
+    " directory, " + removed.membership + " membership, " +
+    removed.sessions + " sessions");
+
+  return json({ ok: true, removed: removed }, 200, origin);
+}
+
+/*
  * The path shapes this Worker answers for itself; every other path is
  * static-asset territory. One segment per route family below -
  * "submission" rather than "submission/:id", because this guard only
@@ -3368,6 +3691,7 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
 const API_SEGMENTS = new Set([
   "auth", "session", "me", "my-entries", "submit", "charts-data", "export",
   "submission", "content", "membership", "config", "admin-log",
+  "admin-departed",
 ]);
 
 function isApiPath(pathname) {
@@ -3534,6 +3858,28 @@ async function route(request, env, url, allowed, admitted) {
   if (method === "GET" && path === "/admin-log") {
     if (!admin) return unauthorized(allowed);
     return handleReadAdminLog(env, allowed);
+  }
+
+  // Departed-member cleanup, admin only in both directions (#385 rule
+  // 4). Gated here beside the other admin reads rather than in the
+  // handlers, and for the list that gate is the whole privacy property
+  // rather than a formality: who has left is a fact about the group's
+  // composition, so a member and a stranger meet the same refusal and
+  // neither learns whether the list would have been empty.
+  //
+  // The route is hyphenated because "admin" cannot be an API segment at
+  // all: the static-assets layer redirects /admin.html to /admin, so a
+  // segment by that name would answer this router's refusal where the
+  // admin page belongs - the defect /charts had in #365, measured again
+  // at 0.9-M3-S8 (#414).
+  if (method === "GET" && path === "/admin-departed") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadDeparted(env, allowed);
+  }
+  const departed = /^\/admin-departed\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && departed) {
+    if (!admin) return unauthorized(allowed);
+    return handleEraseDeparted(env, allowed, departed[1], caller);
   }
 
   // Membership, admin in every direction, and these two lists are the
