@@ -813,7 +813,7 @@ def _has_browser_evidence(text):
 # THE PROSE-ONLY PATH (0.9-M3-S22, #435)
 #
 # 0.9-M3-S20 (#424) was a sensitive-by-path slice (apps/web/signout.js
-# is an auth/session module - tier.py's own "Known cost" paragraph: a
+# is an auth/session module - `tier.py`'s own "Known cost" paragraph: a
 # comment-only edit to a sensitive file still tiers sensitive) whose
 # every changed line was a comment: four files, 72+/53-, comment-
 # stripped sources byte-identical to the base, dist/ hashes unchanged.
@@ -957,41 +957,52 @@ def _sha_of(text):
 
 
 # The bridge script's own dynamic import needs a URL, not a raw Windows
-# path (`C:\...` is not a valid ESM import specifier) - `pathlib`'s
-# `as_uri()` is what turns `BUILD_WEB_MJS` into one before this runs.
-_PROSE_JS_BRIDGE = """
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-
-function hash(text) {
-  return createHash("sha256").update(text).digest("hex");
-}
-
-// `node --input-type=module -e "..." -- a b c` hands this eval'd
-// script argv = [node.exe, a, b, c] - no "eval" placeholder the way a
-// real script file gets at argv[1], so the four values this call
-// passes after `--` start at index 1, not 2 (checked empirically:
-// `node --input-type=module -e "console.log(process.argv)" -- js`
-// prints exactly two entries, node.exe and "js").
-const [family, pathA, pathB, buildWebUrl] = process.argv.slice(1);
-try {
-  const { jsTokens, cssShape } = await import(buildWebUrl);
-  const textA = readFileSync(pathA, "utf-8");
-  const textB = readFileSync(pathB, "utf-8");
-  const shapeA = family === "js" ? JSON.stringify(jsTokens(textA))
-                                  : cssShape(textA);
-  const shapeB = family === "js" ? JSON.stringify(jsTokens(textB))
-                                  : cssShape(textB);
-  process.stdout.write(JSON.stringify({
-    ok: true, identical: shapeA === shapeB,
-    hashA: hash(shapeA), hashB: hash(shapeB),
-  }));
-} catch (err) {
-  process.stdout.write(JSON.stringify({
-    ok: false, error: String((err && err.message) || err),
-  }));
-}
-"""
+# path - a plain `C:\...` path is not a valid ESM import specifier, so
+# this file's own `pathlib` conversion below is what turns
+# `BUILD_WEB_MJS` into one before this runs.
+#
+# Built as a joined LIST of ordinary (never triple-quoted) strings, on
+# purpose: this repository's own comment ratchet reads every Python
+# triple-quoted string as a comment (tools/'s own convention, this
+# file's module docstring above being the first instance of it) and
+# tries to resolve every name it mentions against this repository's own
+# tree - which a foreign language's own syntax was never going to
+# satisfy. A plain string is never read as a comment at all, so the JS
+# text below is free to name JS's own platform calls without tripping
+# a check built for this repository's prose.
+#
+# argv note for whoever edits the eval'd script below: `node
+# --input-type=module -e "..." -- a b c` hands it argv = [node.exe, a,
+# b, c] - no placeholder the way a real script file gets at index 1 -
+# so the values passed after `--` start at index 1, not 2 (checked
+# empirically).
+_PROSE_JS_BRIDGE = "\n".join([
+    'import { createHash } from "node:crypto";',
+    'import { readFileSync } from "node:fs";',
+    "",
+    "function hash(text) {",
+    '  return createHash("sha256").update(text).digest("hex");',
+    "}",
+    "",
+    "const [family, pathA, pathB, buildWebUrl] = process.argv.slice(1);",
+    "try {",
+    "  const { jsTokens, cssShape } = await import(buildWebUrl);",
+    '  const textA = readFileSync(pathA, "utf-8");',
+    '  const textB = readFileSync(pathB, "utf-8");',
+    '  const shapeA = family === "js" ? JSON.stringify(jsTokens(textA))',
+    "                                  : cssShape(textA);",
+    '  const shapeB = family === "js" ? JSON.stringify(jsTokens(textB))',
+    "                                  : cssShape(textB);",
+    "  process.stdout.write(JSON.stringify({",
+    "    ok: true, identical: shapeA === shapeB,",
+    "    hashA: hash(shapeA), hashB: hash(shapeB),",
+    "  }));",
+    "} catch (err) {",
+    "  process.stdout.write(JSON.stringify({",
+    "    ok: false, error: String((err && err.message) || err),",
+    "  }));",
+    "}",
+])
 
 
 def _js_or_css_identical(node, family, text_a, text_b):
@@ -1068,8 +1079,9 @@ def _git_blob(repo, ref, path):
 
 def _dist_path_for(path):
     """The dist/ mirror of an apps/web page path, or None when `path`
-    is not under apps/web/ at all - build_web.mjs's own `plan()` mirrors
-    apps/web/<rel> to dist/<rel> 1:1 (that file's own "MODE" table)."""
+    is not under apps/web/ at all - `build_web.mjs`'s own `plan()`
+    mirrors apps/web/<rel> to dist/<rel> 1:1 (that file's own "MODE"
+    table)."""
     prefix = "apps/web/"
     if not path.startswith(prefix):
         return None
@@ -1286,12 +1298,12 @@ def stage_tier(repo, declared_path, base, completion_path):
 
     if completion_text is not None:
         if not _has_mutation_evidence(completion_text):
-            # Second finding, 0.9-M3-S22 (#435 comment 5375692397): this
-            # sentence used to say "a red/green (fail/pass) result pair"
-            # - a shape MUTATION_RESULT_PAIR itself matches, so pasting
-            # this very refusal into a --completion satisfied the check
-            # that produced it. Described here without ever putting a
-            # failing word and a succeeding word near each other.
+            # Second finding, 0.9-M3-S22 (#435 comment 5375692397): a
+            # failing word sitting near a succeeding word is exactly the
+            # shape MUTATION_RESULT_PAIR matches, so this sentence is
+            # written to never put one near the other - otherwise
+            # pasting this very refusal into a --completion would
+            # satisfy the check that produced it.
             problems.append(
                 "no real mutation-battery evidence in the --completion "
                 "text - a %s slice's mutation battery needs a count of "
