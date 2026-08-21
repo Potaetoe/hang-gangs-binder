@@ -30,7 +30,12 @@
  * program this runner starts and grades by its exit code, so it may
  * import what it likes, spawn what it likes, and be written in any
  * shape its subject deserves - the three site-* arms that arrived
- * with this runner do exactly that and were adopted without an edit.
+ * with this runner do exactly that. HISTORY, NOT GUIDANCE (0.9-M3-S7
+ * fix wave 1, #410, F4): those three were adopted with no edit to
+ * THIS FILE, back when that was the whole of registration - true the
+ * day they landed, before tests/ROSTER existed. Step 1 above is the
+ * current rule: adopting a suite now also takes a tests/ROSTER row,
+ * every time.
  *
  * DERIVE, DO NOT PIN. Read the spec, the config, or the shipped file
  * and compute what should be true; a hand-copied expected value is a

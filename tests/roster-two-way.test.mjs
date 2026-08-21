@@ -24,6 +24,18 @@
  * roster check fired for it. See each scenario's own comment for the
  * finding it closes.
  *
+ * FIX WAVE 1 (#410, from S7's own post-merge review, comment
+ * 5369810514): the same loose-substring defect class F4 removed from
+ * scenarios 3 and 5 turned up TWICE more in the scenarios that fixed
+ * F3 and F5. Scenario 11 (F1) checked only the DUPLICATE EXCLUSION
+ * label, never that the message actually carries the first, surviving
+ * reason rather than a decoy built from the second, rejected one.
+ * Scenarios 8 and 9 (F2) checked "asserts nothing", a substring the
+ * new DUPLICATE REQUIRED ROW message also emits - latent today because
+ * neither scenario can produce a duplicate row, but the same fragile
+ * shape F4 exists to refuse. All three tightened to the full or
+ * distinguishing text.
+ *
  *     node tests/roster-two-way.test.mjs
  *
  * HOW IT PROVES IT WITHOUT TOUCHING THE REAL GATE. tests/run.mjs
@@ -266,8 +278,16 @@ function check(label, condition) {
   const result = await scenario("# nothing but a comment\n", ["alpha"]);
   check("a roster with no required lines and no exclusions exits " +
     "nonzero", result.code !== 0);
-  check("the red says the roster asserts nothing",
-    result.output.includes("asserts nothing"));
+  /* F2 (0.9-M3-S7 fix wave 1, #410): "asserts nothing" is a loose
+     substring the DUPLICATE REQUIRED ROW message in scenario 10 also
+     emits ("...a repeat asserts nothing a single line did not
+     already..."), so it could not tell the two reds apart - the exact
+     defect class F4 was raised to remove, reintroduced one message
+     over. "names no required arms" is unique to the empty-roster red. */
+  check("the red names no required arms - the distinguishing text, " +
+    "not a substring the newer duplicate-required-row message also " +
+    "emits",
+    result.output.includes("names no required arms"));
 }
 
 /* ================================================================== */
@@ -289,8 +309,10 @@ function check(label, condition) {
   check("a roster with zero required rows and only EXCLUDE lines " +
     "exits nonzero, however many exclusions it carries",
     result.code !== 0);
-  check("the red says the roster asserts nothing",
-    result.output.includes("asserts nothing"));
+  check("the red names no required arms - the same distinguishing " +
+    "text as scenario 8, not the loose \"asserts nothing\" substring " +
+    "(F2)",
+    result.output.includes("names no required arms"));
 }
 
 /* ================================================================== */
@@ -321,14 +343,57 @@ function check(label, condition) {
     ["alpha", "beta"]);
   check("a roster excluding the same path twice exits nonzero",
     result.code !== 0);
-  check("the red names DUPLICATE EXCLUSION",
-    result.output.includes("DUPLICATE EXCLUSION"));
+  /* F1 (0.9-M3-S7 fix wave 1, #410): the label alone does not prove the
+     claimed behavior - "the first, surviving reason" - actually
+     survives. A runner that built the message from `reason` (the
+     second, discarded one) for BOTH slots would still print this
+     label and still pass a check that only looks for the label. The
+     full compound substring can only be present if the FIRST reason
+     shown is "first reason" (the stored, surviving one) and the
+     second shown is "second reason" (the rejected one) - exactly the
+     claim the fix and the completion both make. */
+  check("the red names DUPLICATE EXCLUSION and carries BOTH reasons in " +
+    "order - the first, surviving reason named first, the second, " +
+    "rejected reason named second - not just the bare label",
+    result.output.includes("DUPLICATE EXCLUSION") &&
+    result.output.includes(
+      "(\"first reason\" and now \"second reason\")"));
+}
+
+/* ================================================================== */
+/* 12. F2 (0.9-M3-S7 fix wave 1, #410) - the review's own probe (P2):  */
+/*     a run that is red ONLY for a duplicate required row must NOT be  */
+/*     mistaken for the empty-roster red. The DUPLICATE REQUIRED ROW    */
+/*     message itself contains the words "asserts nothing" ("...a       */
+/*     repeat asserts nothing a single line did not already..."), so a  */
+/*     check using that loose substring would have reported the         */
+/*     empty-roster red as present here when it is not - required ends  */
+/*     up length 1 (tests/alpha.test.mjs, once, after the duplicate is   */
+/*     rejected), never 0. This scenario proves both halves: the tight   */
+/*     "names no required arms" text correctly stays absent, and the     */
+/*     loose "asserts nothing" text is present anyway - which is         */
+/*     exactly why scenarios 8 and 9 no longer use it.                   */
+
+{
+  const result = await scenario(
+    "tests/alpha.test.mjs\ntests/alpha.test.mjs\n" +
+    "EXCLUDE tests/beta.test.mjs :: r\n",
+    ["alpha", "beta"]);
+  check("a run red only for a duplicate required row does NOT also " +
+    "report the empty-roster red (required ends up length 1, not 0)",
+    !result.output.includes("names no required arms"));
+  check("...even though the loose \"asserts nothing\" substring the " +
+    "pre-fix-wave checks used IS present, from the unrelated " +
+    "duplicate-row message - the false positive F2 found, made " +
+    "concrete",
+    result.output.includes("DUPLICATE REQUIRED ROW") &&
+    result.output.includes("asserts nothing"));
 }
 
 /* ------------------------------------------------------------------ */
 for (const root of roots) await rm(root, { recursive: true, force: true });
 
-const EXPECTED = 30;
+const EXPECTED = 32;
 console.log(failures
   ? `\nroster-two-way FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
