@@ -2109,6 +2109,12 @@ BUILTIN_CALLS = frozenset({
     "ascii", "startswith", "is_dir", "len", "exit", "strip", "abspath",
     "require", "which", "mix", "TemporaryDirectory", "SystemExit",
     "splitlines",
+    # re's own Pattern.search()/re.search() - surfaced by 0.9-M3-S17 fix
+    # wave 1's own rebase onto S16 (#422): tools/ship_check.py's own
+    # _nearest_trigger_word() docstring discusses "a plain `.search()`"
+    # to explain why nearest-match, not first-match, is the right
+    # answer - stdlib, never a repo definition.
+    "search",
     # fontTools, a third-party dependency tools/check_fonts.py drives -
     # not a repo definition.
     "TTFont",
