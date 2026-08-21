@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 121
+EXPECTED = 162
 
 
 def check(label, condition):
@@ -736,6 +736,371 @@ try:
     check("an unreadable --declared path fails, names why",
           not stage.ok and "could not read" in stage.lines[0])
 
+    print("\n--- stage_totals: hand-typed gate totals vs what THIS run "
+         "printed (0.9-M3-S16, #421) - the S12 (#418) case: \"34/34 "
+         "stages ok\" typed three times over a printed \"35 stages, 35 "
+         "ok, 0 FAILED\" ---")
+
+    # A fabricated pair of already-computed Stage objects, standing in
+    # for what stage 1/2 of a real run already produced - stage_totals()
+    # never re-runs a gate, only reads what these already carry (module
+    # docstring: "NEVER A FRESH TOTAL"), so a hand-built fixture proves
+    # the reading exactly as well as a real subprocess would.
+    fixture_old_gate = ship_check.Stage(
+        "old gate (py -3 tools/check.py)", True,
+        ["=== fixture stage one ===", "", "=" * 20,
+         "fixture stage one  ok", "=" * 20, "",
+         "35 stages, 35 ok, 0 FAILED"],
+        "fixture", counted=(35, 35, 0))
+    fixture_new_gate = ship_check.Stage(
+        "0.9 gate (node tests/run.mjs)", True,
+        ["tests/door.test.mjs" + " " * 33 + "ok      0.2s",
+         "    door OK - 30 checks",
+         "tests/reaper.test.mjs" + " " * 30 + "ok      0.4s",
+         "    64 checks, 0 failure(s)",
+         "", "2 arms, 2 green, 0 FAILED"],
+        "fixture", counted=(2, 2, 0))
+    fixture_prior = [fixture_old_gate, fixture_new_gate]
+
+    print("\n--- _find_claims: the scanner alone ---")
+    check("\"34/34 stages ok\" near the word stage is one pair claim, "
+         "unit stage",
+          ship_check._find_claims("34/34 stages ok") ==
+          [{"kind": "pair", "quote": "34/34", "ok": 34, "total": 34,
+            "unit": "stage"}])
+    check("\"6/6 arms green\" is one pair claim, unit arm",
+          ship_check._find_claims("6/6 arms green") ==
+          [{"kind": "pair", "quote": "6/6", "ok": 6, "total": 6,
+            "unit": "arm"}])
+    check("\"N of N\" phrasing is read the same way as \"N/N\"",
+          ship_check._find_claims("34 of 34 stages passed") ==
+          [{"kind": "pair", "quote": "34 of 34", "ok": 34, "total": 34,
+            "unit": "stage"}])
+    check("a fraction with NO trigger word nearby is not a claim at all "
+         "- \"3/4 cups of flour\" is prose, not a gate total",
+          ship_check._find_claims("3/4 cups of flour, whisked well") == [])
+    check("\"40 stages\" alone (no slash) is a bare unit claim",
+          ship_check._find_claims("40 stages, all green") ==
+          [{"kind": "unit", "quote": "40 stages", "n": 40, "unit": "stage"}])
+    check("\"40 checks\" alone is a bare unit claim, unit bucket 'check' "
+         "- the not-anchored-to-either-gate bucket",
+          ship_check._find_claims("ran 40 checks total") ==
+          [{"kind": "unit", "quote": "40 checks", "n": 40, "unit": "check"}])
+    check("a pair claim consumes its own digits - \"34/34 stages\" is "
+         "read ONCE, never also as a bare \"34 stages\" unit claim on "
+         "the second number",
+          len(ship_check._find_claims("34/34 stages ok")) == 1)
+    check("a per-file claim, path then count",
+          ship_check._find_claims("tests/door.test.mjs - 30 checks") ==
+          [{"kind": "per_file", "quote": "tests/door.test.mjs - 30 checks",
+            "path": "tests/door.test.mjs", "n": 30}])
+    check("a per-file claim, count then path",
+          ship_check._find_claims("30 checks in tests/door.test.mjs") ==
+          [{"kind": "per_file", "quote": "30 checks in tests/door.test.mjs",
+            "path": "tests/door.test.mjs", "n": 30}])
+    check("a per-file claim's own digits are never ALSO read as a bare "
+         "unit claim",
+          len(ship_check._find_claims(
+              "tests/door.test.mjs - 30 checks")) == 1)
+
+    print("\n--- stage_totals: matching totals pass ---")
+    matching = os.path.join(root, "totals-matching.txt")
+    write(matching, "stages: 35/35 ok. arms: 2/2 green.\n")
+    stage = ship_check.stage_totals(fixture_prior, matching)
+    check("a completion whose claimed totals match what this run "
+         "printed passes",
+          stage.ok and stage.detail == "match")
+    check("...and each claim's own comparison line says match, quoting "
+         "the claim",
+          all("match: claimed" in line for line in stage.lines
+              if line.startswith("match")))
+
+    print("\n--- stage_totals: the S12 (#418) mismatch, reproduced "
+         "verbatim - \"34/34 stages ok\" three times over a printed 35 "
+         "---")
+    s12_shape = os.path.join(root, "totals-s12-shape.txt")
+    write(s12_shape,
+         "ship-check: 34/34 stages ok.\nThe gate table shows 34/34 "
+         "stages ok.\nFinal count: 34/34 stages ok.\n")
+    stage = ship_check.stage_totals(fixture_prior, s12_shape)
+    check("the S12 shape FAILS the stage - three identical wrong claims, "
+         "not caught by a person, caught here",
+          not stage.ok and stage.detail == "3 mismatch(es)")
+    check("every mismatch line quotes the claim AND the printed numbers "
+         "beside it",
+          sum(1 for line in stage.lines
+              if line.startswith("MISMATCH") and "34/34" in line
+              and "35 total, 35 ok" in line) == 3)
+
+    print("\n--- stage_totals: per-file claims - match, mismatch, and "
+         "unverified (the run has no data) ---")
+    per_file_match = os.path.join(root, "totals-per-file-match.txt")
+    write(per_file_match, "tests/door.test.mjs - 30 checks, all green.\n")
+    stage = ship_check.stage_totals(fixture_prior, per_file_match)
+    check("a per-file claim matching this run's own printed count for "
+         "that arm passes",
+          stage.ok and "match" in stage.lines[0])
+
+    per_file_mismatch = os.path.join(root, "totals-per-file-mismatch.txt")
+    write(per_file_mismatch, "tests/door.test.mjs - 99 checks, all "
+                            "green.\n")
+    stage = ship_check.stage_totals(fixture_prior, per_file_mismatch)
+    check("a per-file claim that disagrees with this run's own printed "
+         "count for that arm fails, naming both numbers",
+          not stage.ok and "MISMATCH" in stage.lines[0]
+          and "99 checks" in stage.lines[0] and "30 checks" in stage.lines[0])
+
+    per_file_unverified = os.path.join(root, "totals-per-file-unknown.txt")
+    write(per_file_unverified,
+         "tests/no-such-arm-ran.test.mjs - 12 checks, all green.\n")
+    stage = ship_check.stage_totals(fixture_prior, per_file_unverified)
+    check("a per-file claim about an arm this run never showed a row "
+         "for is UNVERIFIED, never FAILED - this run cannot answer for "
+         "a number it never printed",
+          stage.ok and "unverified" in stage.lines[0].lower())
+    check("...the stage still passes (unverified never fails it on its "
+         "own) and says so in its detail",
+          stage.ok and "unverified" in stage.detail)
+
+    reaper_style = os.path.join(root, "totals-reaper-style.txt")
+    write(reaper_style, "tests/reaper.test.mjs - 64 checks, all green.\n")
+    stage = ship_check.stage_totals(fixture_prior, reaper_style)
+    check("a per-file claim is read off a python-shimmed arm's own "
+         "unlabeled \"N checks, N failure(s)\" verdict line too, not "
+         "only the node arms' own labeled shape",
+          stage.ok and "match" in stage.lines[0])
+
+    print("\n--- stage_totals: THE WIDE CHECK POOL (fix-wave F1, review, "
+         "#421) - a bare \"N checks\" claim is graded against the old "
+         "gate's stage total, the 0.9 gate's arm total, AND every "
+         "individual suite's own printed count, never only the two gate "
+         "summaries ---")
+    generic_match_stage = os.path.join(root, "totals-generic-stage.txt")
+    write(generic_match_stage, "35 checks passed in the old gate.\n")
+    stage = ship_check.stage_totals(fixture_prior, generic_match_stage)
+    check("a bare \"N checks\" claim that equals the OLD gate's own "
+         "total matches, even though the word used was \"checks\" and "
+         "not \"stages\"",
+          stage.ok and "match" in stage.lines[0]
+          and "old gate's own stage total" in stage.lines[0])
+
+    generic_suite_match = os.path.join(root, "totals-generic-suite.txt")
+    write(generic_suite_match, "the suite reports 64 checks overall.\n")
+    stage = ship_check.stage_totals(fixture_prior, generic_suite_match)
+    check("fix-wave F1's own headline defect, fixed: a bare \"N checks\" "
+         "claim that equals a SINGLE SUITE's own printed count (64, "
+         "tests/reaper.test.mjs's own line - not either gate's summary "
+         "total) now matches instead of being wrongly flagged MISMATCH",
+          stage.ok and "match" in stage.lines[0]
+          and "tests/reaper.test.mjs's own printed count" in stage.lines[0])
+
+    generic_no_match = os.path.join(root, "totals-generic-no-match.txt")
+    write(generic_no_match, "37 checks passed overall.\n")
+    stage = ship_check.stage_totals(fixture_prior, generic_no_match)
+    check("a bare \"N checks\" claim matching NOTHING this run printed - "
+         "not either gate's total, not any single suite's own count - "
+         "still fails",
+          not stage.ok and "MISMATCH" in stage.lines[0]
+          and "37 checks" in stage.lines[0])
+
+    print("\n--- stage_totals: fix-wave F1 (review, #421) - a per-file "
+         "claim naming a test file ANYWHERE in the same sentence or "
+         "bullet is graded per-file, not only within twenty characters "
+         "---")
+    two_line_shape = os.path.join(root, "totals-two-line-shape.txt")
+    # The exact shape tests/run.mjs's own output pastes verbatim into a
+    # completion: the arm's path on one line, its own "N checks" detail
+    # indented on the NEXT - review evidence, the "145 checks" defect.
+    write(two_line_shape,
+         "tests/door.test.mjs" + " " * 33 + "ok      0.2s\n"
+         "    door OK - 30 checks\n")
+    stage = ship_check.stage_totals(fixture_prior, two_line_shape)
+    check("the arm-row-then-indented-detail-line shape (path and count "
+         "on TWO separate lines, the exact shape a pasted arm table "
+         "uses) is read as one per-file claim and matches",
+          stage.ok and "match" in stage.lines[0]
+          and "tests/door.test.mjs" in stage.lines[0])
+
+    long_bullet_shape = os.path.join(root, "totals-long-bullet-shape.txt")
+    # ~100 characters between the path and the number - the S10 review
+    # shape ("`tests/charts-page.test.mjs` - ... (242 -> 241 checks).",
+    # about 110 characters), reproduced with this fixture's own reaper
+    # arm so the printed count (64) is real and checkable.
+    write(long_bullet_shape,
+         "`tests/reaper.test.mjs` - the retry loop grew its own "
+         "coverage over several slices, so its count crept up slowly "
+         "and nobody wrote down every step (64 checks).\n")
+    stage = ship_check.stage_totals(fixture_prior, long_bullet_shape)
+    check("a long bullet whose path sits ~100 characters from its own "
+         "\"N checks\" (past the twenty-character short window, well "
+         "inside the widened one) is still read as one per-file claim "
+         "and matches",
+          stage.ok and "match" in stage.lines[0]
+          and "tests/reaper.test.mjs" in stage.lines[0])
+
+    wrong_neighbor_shape = os.path.join(root, "totals-wrong-neighbor.txt")
+    # The hazard the asymmetric window exists to dodge: door's own
+    # detail line is followed almost immediately (next line) by an
+    # UNRELATED arm's path - a naive "nearest path either direction"
+    # search would attach "30 checks" to reaper (the closer-looking
+    # neighbor) instead of door (the correct, PRECEDING one).
+    write(wrong_neighbor_shape,
+         "tests/door.test.mjs" + " " * 33 + "ok      0.2s\n"
+         "    door OK - 30 checks\n"
+         "tests/reaper.test.mjs" + " " * 30 + "ok      0.4s\n")
+    stage = ship_check.stage_totals(fixture_prior, wrong_neighbor_shape)
+    check("...and it is attached to the CORRECT, preceding arm (door, "
+         "30) rather than the unrelated arm whose row merely happens "
+         "to start on the very next line (reaper) - forward search "
+         "never crosses a newline, exactly to prevent this",
+          stage.ok and "match" in stage.lines[0]
+          and "tests/door.test.mjs" in stage.lines[0]
+          and "tests/reaper.test.mjs" not in stage.lines[0])
+
+    false_neighbor_number = os.path.join(root, "totals-false-mismatch.txt")
+    # fix-wave F1's own safety net: even when the proximity heuristic
+    # DOES attach a number to the wrong nearby file, a number that is
+    # genuinely true of the run elsewhere is never called a mismatch -
+    # see _grade_claim's own per_file branch, "ask whether it is true
+    # of the run AT ALL before calling it wrong".
+    write(false_neighbor_number,
+         "tests/door.test.mjs is the arm just above this line, and "
+         "separately the run also showed 64 checks passing.\n")
+    stage = ship_check.stage_totals(fixture_prior, false_neighbor_number)
+    check("a number that is real (64, reaper's own count) but gets "
+         "proximity-attached to an unrelated nearby path (door) is "
+         "still graded a MATCH, never a false MISMATCH, because the "
+         "wide pool is consulted before the claim is called wrong",
+          stage.ok and "match" in stage.lines[0])
+
+    print("\n--- stage_totals: fix-wave F1 (review, #421) - THE "
+         "GATING-STAGE META CLAIM: ship-check's own \"N/N gating "
+         "stage(s) passed.\" line - the one it tells a builder to "
+         "paste - must pass its own stage ---")
+    # fixture_prior holds 2 already-built gating stages (old gate, new
+    # gate) - stage_totals() always gates too, so THIS fixture's own
+    # gating-stage total is 2 + 1 = 3, never the old gate's 35.
+    gating_match = os.path.join(root, "totals-gating-match.txt")
+    write(gating_match, "3/3 gating stage(s) passed.\n")
+    stage = ship_check.stage_totals(fixture_prior, gating_match)
+    check("\"3/3 gating stage(s) passed.\" matches this run's OWN "
+         "structural gating-stage count (2 prior + this stage itself), "
+         "never the old gate's 35 stages",
+          stage.ok and "match" in stage.lines[0]
+          and "gating-stage" in stage.lines[0])
+
+    gating_wrong = os.path.join(root, "totals-gating-wrong.txt")
+    write(gating_wrong, "5/3 gating stage(s) passed.\n")
+    stage = ship_check.stage_totals(fixture_prior, gating_wrong)
+    check("...but a WRONG gating-stage claim still fails - this family "
+         "is a real, checkable total, not a free pass",
+          not stage.ok and "MISMATCH" in stage.lines[0])
+
+    check("_find_claims itself resolves \"7/7 gating stage(s) passed.\" "
+         "to the gating_stage unit, never plain \"stage\"",
+          ship_check._find_claims("7/7 gating stage(s) passed.") ==
+          [{"kind": "pair", "quote": "7/7", "ok": 7, "total": 7,
+            "unit": "gating_stage"}])
+    check("...while a bare \"stages\" trigger with no \"gating\" before "
+         "it still reads as the plain stage unit",
+          ship_check._find_claims("7/7 stages passed.") ==
+          [{"kind": "pair", "quote": "7/7", "ok": 7, "total": 7,
+            "unit": "stage"}])
+
+    print("\n--- _find_claims: fix-wave F2 (review, #421) - ORDINALS "
+         "ARE NOT TOTAL CLAIMS: \"stage 1 of 2\", \"part 3/4\", "
+         "\"step 2/5\" produce NOTHING, matching the ticket's own "
+         "acceptance list verbatim ---")
+    check("\"stage 1 of 2\" (this repository's own batch-position "
+         "phrasing) is not a claim at all",
+          ship_check._find_claims(
+              "this slice is stage 1 of 2 in the batch") == [])
+    check("\"part 3/4\" (S12's real posted text, "
+         "'the paste (part 3/4) correctly showed 35') is not a claim",
+          ship_check._find_claims(
+              "the paste (part 3/4) correctly showed 35") == [])
+    check("\"step 2/5\" is not a claim, even with a real trigger word "
+         "elsewhere in the same sentence",
+          ship_check._find_claims(
+              "step 2/5 of the mutation checks ran clean") == [])
+    check("...but the same shape WITH a colon before the fraction - a "
+         "real total this repository actually writes - still IS a "
+         "claim: the colon breaks the ordinal match on purpose",
+          ship_check._find_claims("stages: 35/35 ok.") ==
+          [{"kind": "pair", "quote": "35/35", "ok": 35, "total": 35,
+            "unit": "stage"}])
+
+    print("\n--- stage_totals: the reviewer's own right-pair case - "
+         "\"29/29 stages\" when the real stage total is 35 - still "
+         "fails (0.9-M3-S16 fix wave, review acceptance (c)) ---")
+    right_pair_wrong = os.path.join(root, "totals-right-pair-wrong.txt")
+    write(right_pair_wrong, "29/29 stages ok.\n")
+    stage = ship_check.stage_totals(fixture_prior, right_pair_wrong)
+    check("this run's actual stage total is 35 (not 29) - written next "
+         "to the word \"stages\", \"29/29\" is refused",
+          not stage.ok and "MISMATCH" in stage.lines[0]
+          and "29/29" in stage.lines[0])
+
+    print("\n--- stage_totals: stage/arm claims stay STRICTLY anchored "
+         "to their own family, never falling back to the wide check "
+         "pool - the exact property mutation battery direction 3 (the "
+         "unit-pairing) arms ---")
+    cross_family_leak = os.path.join(root, "totals-cross-family.txt")
+    # 2 is this fixture's REAL arm total (fixture_new_gate.counted ==
+    # (2, 2, 0)) - if a "stages" claim ever fell through to the wide
+    # check pool the way an unanchored "check" claim does, "2/2 stages"
+    # would wrongly MATCH (2 is in the pool, as the arm total). The
+    # real stage total is 35, so it must MISMATCH instead.
+    write(cross_family_leak, "2/2 stages ok.\n")
+    stage = ship_check.stage_totals(fixture_prior, cross_family_leak)
+    check("\"2/2 stages\" - where 2 is a REAL number this run printed, "
+         "just for the WRONG family (the arm total, not the stage "
+         "total) - still fails: the wide pool never reaches stage/arm "
+         "claims, only the unanchored check bucket",
+          not stage.ok and "MISMATCH" in stage.lines[0]
+          and "2/2" in stage.lines[0])
+
+    print("\n--- stage_totals: fix-wave F4 (review, #421) - a "
+         "--completion draft that is not valid UTF-8 no longer crashes "
+         "this stage (or stage_tier, which reads the same file first) "
+         "---")
+    completion_utf16 = os.path.join(root, "completion-utf16.txt")
+    with open(completion_utf16, "w", encoding="utf-16") as handle:
+        handle.write("mutation battery: 3 mutations, red then green.\n"
+                     "35 checks passed.\n")
+    stage = ship_check.stage_totals(fixture_prior, completion_utf16)
+    check("stage_totals() no longer raises UnicodeDecodeError on a "
+         "non-UTF-8 draft - it reads what decodes and says so",
+          any("not valid UTF-8" in line for line in stage.lines))
+
+    tier_utf16_declared = os.path.join(root, "declared-tier-utf16.txt")
+    write(tier_utf16_declared, "apps/web/page.html\n")
+    stage = ship_check.stage_tier(repo, tier_utf16_declared,
+                                  "origin/accounts", completion_utf16)
+    check("stage_tier() - which reads the same --completion file TWO "
+         "stages earlier - no longer crashes on it either, and its own "
+         "output names the same encoding problem",
+          any("not valid UTF-8" in line for line in stage.lines))
+
+    print("\n--- stage_totals: no claim, no completion, unreadable path "
+         "---")
+    no_claim = os.path.join(root, "totals-no-claim.txt")
+    write(no_claim, "mutation battery: broke it, watched it fail, "
+                    "restored it, watched it pass.\n")
+    stage = ship_check.stage_totals(fixture_prior, no_claim)
+    check("a completion with no N/N, N of N or N-unit claim at all "
+         "passes trivially, saying so",
+          stage.ok and stage.detail == "no claims found")
+
+    stage = ship_check.stage_totals(fixture_prior, None)
+    check("no --completion given passes trivially, saying so",
+          stage.ok and stage.detail == "no completion given")
+
+    missing_totals_path = os.path.join(root, "does-not-exist-totals.txt")
+    stage = ship_check.stage_totals(fixture_prior, missing_totals_path)
+    check("an unreadable --completion path fails, naming why",
+          not stage.ok and "could not read" in stage.lines[0])
+
     print("\n--- _count_old_gate_table / _count_new_gate_table: pure "
          "counters, 0.9-M1-S0 (#323) ---")
     check("a bordered two-row table (one ok row, one FAILED row) counts "
@@ -949,7 +1314,7 @@ try:
           "normal" in block)
     check("the gating summary is the block's own computed total, never "
          "a remembered count",
-          "6/6 gating stage(s) passed." in block)
+          "7/7 gating stage(s) passed." in block)
     check("an all-pass block says READY TO PASTE",
           "READY TO PASTE." in block)
 
@@ -979,9 +1344,9 @@ try:
          "failed stage by name",
           "NOT ready to paste" in block_fail
           and "old gate (py -3 tools/check.py)" in block_fail)
-    check("...and the gating count itself moved off 6/6 - the SAME "
+    check("...and the gating count itself moved off 7/7 - the SAME "
          "computed total the passing block above printed",
-          "6/6 gating stage(s) passed." not in block_fail
+          "7/7 gating stage(s) passed." not in block_fail
           and "gating stage(s) passed." in block_fail)
     os.environ.pop("SHIP_CHECK_STUB_OLD_GATE", None)
     os.environ.pop("SHIP_CHECK_STUB_NEW_GATE", None)
