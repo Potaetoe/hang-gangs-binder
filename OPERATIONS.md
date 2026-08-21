@@ -564,6 +564,91 @@ password.
 lists. Read the deployment rather than this file while that is true —
 "Checking a deployment" above.
 
+## Admin tasks at the Cloudflare level
+
+**Read this if you are the technical member flagged into the admin role
+and the task in front of you needs `wrangler` or the Cloudflare
+dashboard rather than the admin page.** Ruling #385 §3 is why this
+section exists at all: Cloudflare-level values are handled through
+documentation, not the admin page, and this is that documentation.
+
+**Becoming the first admin.** `ADMIN_TELEGRAM_IDS` — comma-separated
+numeric Telegram ids, set the same way any secret is (see "Secrets"
+above; that is its one home, never here) — is the break-glass door: a
+numeric id it names is unioned with `membership`'s own `admin` rows on
+every request (`server/worker.js`, `adminAccountIds()`), so putting
+your own Telegram id there is what gets a fresh fork its first admin
+before any `membership` row exists. Once that admin can sign in, the
+ordinary door is the page: they add the next admin through
+`admin.html`'s membership card, which writes a `membership` row with
+role `admin` through `POST /membership`. `server/schema.sql`'s own
+comment on the `membership` table carries what a row grants and exactly
+when adding, removing, and always-allowing each take effect — read it
+there before doing any of this by hand, not here.
+
+**Checking which door a fresh fork is standing at.** Right after
+`schema.sql` first runs, with nobody signed in and `ADMIN_TELEGRAM_IDS`
+still unset, one hand-run query answers whether a `membership` admin
+row already exists:
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "SELECT COUNT(*) AS admins FROM membership WHERE role = 'admin';"
+```
+
+Zero back means `ADMIN_TELEGRAM_IDS` is the only door in until somebody
+uses it. The row's own shape and what each column means are
+`server/schema.sql`'s comment on `membership`, not repeated here.
+
+**The five settings keys**, when the admin page is unreachable, live in
+`site_content` and are read and written the same way any Cloudflare-
+level value is — `wrangler d1 execute` against the database, never a
+file in this repository:
+
+```bash
+npx wrangler d1 execute hg_binder_db --remote --command "SELECT name, value FROM site_content WHERE name IN ('chart.floor','chart.lockedUnit','site.groupName','site.welcomeText','site.defaultTheme');"
+```
+
+The names are `chart.floor`, `chart.lockedUnit`, `site.groupName`,
+`site.welcomeText`, and `site.defaultTheme`. `server/schema.sql`'s own
+comment on `site_content` carries the table's shape; what each key must
+hold to be a valid write — the floor's bound, the locked unit's allowed
+values, the theme's named palettes — is #414's contract (0.9-M3-S8),
+landing beside this document rather than ahead of it, so read #414's
+landed state before writing one of these five by hand rather than
+trusting a shape guessed here. **Until #414 lands, writing
+`chart.floor` or `chart.lockedUnit` this way has no effect**:
+`CHART_SETTINGS` in `server/worker.js` is a fixed empty object today and
+does not yet read `site_content` — the row is stored and ready, not yet
+live.
+
+**The raised-floor unit lock, in one sentence:** above a floor of 0 the
+charts serve one unit system instead of two, because two independently-
+binned partitions can be differenced back into people a floor of 0
+alone would never expose — `DESIGN.md`, "One partition, not two",
+carries the full reasoning.
+
+**Which secrets exist is not restated here.** "Secrets" above is their
+one home, naming them by pointing at `server/wrangler.toml` and
+`server/worker.js` rather than listing values, and every command on
+this page reaches a secret already established there.
+
+**The break-glass export route.** `GET /export`, gated by the
+`EXPORT_TOKEN` secret sent as a bearer token, returns every submission
+row sealed exactly as stored — `ciphertext`, never plaintext — for a
+keyholder or operator to open outside the browser when the admin page
+or Telegram is unreachable. `server/worker.js`'s own header and its
+comment on `callerFor` carry the route's contract; nothing here
+restates it. **It is not a page feature**: the admin page's entry
+exports retired when the decrypt keys did (Prime ruling 2026-08-21,
+#416, amending #385 §4 — no admin surface shows a current member's
+data), so this
+route is reached only from a shell holding the token, by whoever the
+token was entrusted to, for the operator's own backup or recovery use —
+never routine, and never through a link or a button anywhere on the
+site. #386, the intent record for handing the whole project to a new
+owner, owns the fuller story of who should hold this token across a
+handover; this section states only what is true today.
+
 ## When somebody leaves
 
 **Remove them from the Telegram group.** Site access goes with it: the
