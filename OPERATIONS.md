@@ -544,14 +544,25 @@ back. Only the third proves the backup is worth keeping.
 
 ## Making someone an admin
 
-**Make them an admin of the Telegram group.** That is the whole
-procedure: the site mirrors the group's admins, so there is no list
-here to edit, no id to paste and no secret to change.
+**Make them an admin of the Telegram group.** That is the ordinary
+procedure: the site mirrors the group's admins, so there is no id to
+paste and no secret to change.
 
 Taking it away is the mirror image — remove their admin status in
-Telegram. Both directions take effect as the roster syncs; the bound is
-the last-known-good window under `DESIGN.md`, "Bot failure stance", and
-not a thing anybody presses here.
+Telegram. **Each direction bites at their next sign-in**, because the
+group role is asked once, when the bot can be asked at all, and the
+session carries the answer: a new admin signs out and back in to get
+the powers, and somebody demoted keeps them until their session ends,
+which for an admin session is two hours from sign-in.
+
+**There is a second way in, for a member who should run the technical
+parts without holding admin in Telegram**: flag them into the role from
+the admin surface, which writes a row the Worker reads on every
+request. That direction is not symmetric with the first — removing the
+flag takes effect on that session's very next request, while adding it
+still needs them to sign in again. `server/schema.sql`'s `membership`
+block states all of this per direction, and `GET /me` reports which of
+the ways in a given admin holds.
 
 **The group's own hygiene is the site's access control.** Everyone with
 admin in Telegram can read the directory and every member's entries.
@@ -560,8 +571,9 @@ honest operating advice is the one sentence this replaces a procedure
 with: be as careful with admin in the group as you would be with a
 password.
 
-*Until 0.9-M1 lands* the deployed Worker still reads admin from its own
-lists. Read the deployment rather than this file while that is true —
+*Until the Worker carrying 0.9-M3-S8 is deployed* the running one reads
+admin from its own lists alone and knows nothing about group roles.
+Read the deployment rather than this file while that is true —
 "Checking a deployment" above.
 
 ## Admin tasks at the Cloudflare level

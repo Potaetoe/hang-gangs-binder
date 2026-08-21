@@ -1686,6 +1686,15 @@ function makeDb() {
           })),
       };
     }
+    /* The charts settings, read from `site_content` since 0.9-M3-S8
+       (#414): the floor and the locked unit are two rows an admin sets
+       rather than a frozen constant in server/worker.js. This arm holds
+       no rows, so every check below runs at the shipped floor of 0 -
+       which is the state it was written against, and the reason the
+       route checks here did not have to move. The store's own arms are
+       tests/admin-identity.test.mjs, which drives the same route with
+       rows really set. */
+    if (/FROM site_content/i.test(sql)) return { results: [] };
     throw new Error("unmodelled all(): " + sql);
   }
   function run(sql, args) {

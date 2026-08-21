@@ -8,8 +8,9 @@
  * can be wrong without anything else noticing:
  *
  *   1. WHO IS AN ADMIN. A Telegram group creator or administrator gets
- *      an admin session, unioned with the two lists adminAccountIds()
- *      already reads. One tier: identical powers whichever way in.
+ *      an admin session, beside the two lists this Worker already read -
+ *      the `membership` flag and the bootstrap secret. One tier:
+ *      identical powers whichever way in.
  *   2. THE SETTINGS KEYS. Five names in `site_content`, validated on
  *      write, refused in both directions.
  *   3. THE FLOOR AND THE UNIT LOCK, read from the store rather than
@@ -316,6 +317,16 @@ function makeDb(seed) {
     }
 
     /* -------- submissions -------- */
+    if (/COUNT\(\*\)/.test(sql) && /FROM submissions AS mine/.test(sql)) {
+      const mine = submissions.filter((row) => row.account_id === args[0]);
+      const live = mine.filter((row) => !superseded(row));
+      return {
+        total: mine.length,
+        superseded: mine.length - live.length,
+        last_at: mine.length
+          ? mine.map((row) => row.received_at).sort().at(-1) : null,
+      };
+    }
     if (/FROM submissions AS mine/.test(sql) && /ORDER BY/.test(sql)) {
       return { results: submissions
         .filter((row) => !superseded(row))
@@ -706,7 +717,7 @@ for (const [name, value, why] of REFUSED) {
 {
   const db = makeDb();
   const token = await adminSession(db);
-  const { status, body } = await setContent(db, token, "Chart.Floor", "5");
+  const { status, body } = await setContent(db, token, "chart.Floor", "5");
   check("a settings name in the wrong case is refused rather than " +
     "stored beside the real one - it would shadow the key nothing " +
     "would then be able to set", status === 400 && body &&
@@ -717,7 +728,7 @@ for (const [name, value, why] of REFUSED) {
   const db = makeDb();
   const token = await adminSession(db);
   await setContent(db, token, "door.motto", "Welcome.");
-  const { status } = await setContent(db, token, "DOOR.motto", "Welcome.");
+  const { status } = await setContent(db, token, "door.Motto", "Welcome.");
   check("two free-content names differing only by case cannot both " +
     "exist - the second is refused 409", status === 409);
 }
@@ -1087,8 +1098,9 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
      stays three. The handler refuses the row rather than dropping it,
      so a widened read is loud instead of quiet. */
   const leaky = workerSrc.replace(
-    "\"SELECT name, value FROM site_content WHERE name IN (?, ?, ?)\"",
-    "\"SELECT name, value FROM site_content ORDER BY name\"");
+    /const PUBLIC_CONFIG_SQL = [\s\S]*?;\n/,
+    "const PUBLIC_CONFIG_SQL = \"SELECT name, value FROM site_content " +
+    "ORDER BY name\";\n");
   check("the leaky-statement fixture actually changed the source",
     leaky !== workerSrc);
   const { default: leakyWorker } = await loadWorker(leaky);
