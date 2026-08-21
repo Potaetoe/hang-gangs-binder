@@ -289,7 +289,12 @@ guards, never as the pattern for a new one.
   three 0.9-M2 slices running wrote a wrong total beside a correct
   table, each time in the human abridgement between the tool's stdout
   and the posted text — paste the stdout, split on GitHub's comment
-  limit if needed, never abridged.
+  limit if needed, never abridged. `./run ship-check`'s own
+  `--completion` stage now checks this mechanically (0.9-M3-S16, #421,
+  after an 0.9-M3 completion (#418) typed a stage total that disagreed
+  with the total its own pasted ship-check block printed, three times
+  in the same comment): it scans the draft for a gate-total claim and
+  fails the run if the claim disagrees with what the same run printed.
 - **`./run ship-check` is the required act between your last commit and
   your terminal signal** (0.9-M0-S22, #320): three completions in one
   wave reported a remembered stage count ("38", then "39") while the
@@ -317,10 +322,12 @@ guards, never as the pattern for a new one.
   #381): every discovered `tests/<name>.test.mjs` needs a row there
   too, required or explicitly excluded with a reason — add the row in
   the same commit that adds the file, or the gate reds naming the file
-  unrostered. Zero arms found is a failure, and so is a stray file
-  under `tests/` that is not an arm, the runner or the preflight seam;
-  both are the armed-looking-but-not failure this repository holds to
-  be worse than no gate. CI runs it beside the old gate
+  unrostered, and add it where the file's own ordering rule puts it —
+  the reader refuses a roster with a duplicate row or a disordered one
+  (0.9-M3-S18, #428). Zero arms found is a failure, and so is a stray
+  file under `tests/` that is not an arm, the runner or the preflight
+  seam; both are the armed-looking-but-not failure this repository
+  holds to be worse than no gate. CI runs it beside the old gate
   (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it is
   registered exactly where its apparatus registers checks — nothing
   here is the registration-suspended exception it once was.

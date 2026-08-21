@@ -36,6 +36,16 @@
  * shape F4 exists to refuse. All three tightened to the full or
  * distinguishing text.
  *
+ * WIDENED AGAIN 0.9-M3-S18 (#428): scenarios 13-14 arm the ordering
+ * rule `.gitattributes`' new `tests/ROSTER merge=union` line made
+ * necessary - that driver reconciles two branches that each append a
+ * row (the shape that stopped the door on 2026-08-21) but has no notion
+ * the file is supposed to stay alphabetically ordered, so a real merge
+ * can land two real rows out of order with neither existing direction
+ * ever noticing. tests/roster-merge-driver.test.mjs is the sibling arm
+ * that proves the driver itself, over a real `git merge`; this file
+ * stays about the reader's own rules.
+ *
  *     node tests/roster-two-way.test.mjs
  *
  * HOW IT PROVES IT WITHOUT TOUCHING THE REAL GATE. tests/run.mjs
@@ -390,10 +400,56 @@ function check(label, condition) {
     result.output.includes("asserts nothing"));
 }
 
+/* ================================================================== */
+/* 13. THE ORDERING RULE (0.9-M3-S18, #428). tests/ROSTER's own union    */
+/*     merge driver (.gitattributes' `tests/ROSTER merge=union`) has no  */
+/*     notion the file has an ordering rule - it just concatenates both  */
+/*     sides' added lines at their own positions - so a real merge can   */
+/*     leave two required rows out of alphabetical order with neither    */
+/*     direction A nor B above ever noticing (discovery still finds      */
+/*     both files, and both are correctly required). Required rows out   */
+/*     of order is its own red now, naming both offending lines - the    */
+/*     F4 precise-message technique again, since a bare filename would   */
+/*     already appear in the two arms' own passing result lines.         */
+
+{
+  const result = await scenario(
+    "tests/beta.test.mjs\ntests/alpha.test.mjs\n", ["alpha", "beta"]);
+  check("a required roster out of alphabetical order exits nonzero",
+    result.code !== 0);
+  check("the red names ROSTER OUT OF ORDER and the exact adjacent pair, " +
+    "not merely the two filenames present anywhere (which the arms' " +
+    "own passing result lines would already satisfy)",
+    result.output.includes(
+      "ROSTER OUT OF ORDER: tests/ROSTER lists tests/alpha.test.mjs " +
+      "immediately after tests/beta.test.mjs"));
+}
+
+/* ================================================================== */
+/* 14. The same rule, checked as its own sequence for EXCLUDE rows -     */
+/*     required order and EXCLUDE order are two separate questions, so   */
+/*     a required list that happens to be in order does not excuse an    */
+/*     EXCLUDE list that is not.                                         */
+
+{
+  const result = await scenario(
+    "tests/alpha.test.mjs\n" +
+    "EXCLUDE tests/gamma.test.mjs :: z\n" +
+    "EXCLUDE tests/beta.test.mjs :: y\n",
+    ["alpha", "beta", "gamma"]);
+  check("EXCLUDE rows out of alphabetical order exits nonzero",
+    result.code !== 0);
+  check("the red names ROSTER OUT OF ORDER for the EXCLUDE pair " +
+    "specifically",
+    result.output.includes(
+      "ROSTER OUT OF ORDER: tests/ROSTER lists tests/beta.test.mjs " +
+      "immediately after tests/gamma.test.mjs"));
+}
+
 /* ------------------------------------------------------------------ */
 for (const root of roots) await rm(root, { recursive: true, force: true });
 
-const EXPECTED = 32;
+const EXPECTED = 36;
 console.log(failures
   ? `\nroster-two-way FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

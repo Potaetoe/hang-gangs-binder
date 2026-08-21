@@ -54,6 +54,18 @@
 # One required path per line, repo-relative, forward-slashed, plus the
 # EXCLUDE lines above - each path named at most once, either way.
 # Blank lines and lines starting with # are ignored.
+#
+# THE ORDERING RULE (0.9-M3-S18, #428): required rows are kept in
+# ascending alphabetical order by path, and EXCLUDE rows are kept in
+# ascending alphabetical order among themselves - add your row where
+# this rule puts it, in its own category. tests/run.mjs's reader refuses
+# a roster that breaks it, naming the offending pair, because
+# `.gitattributes`' `tests/ROSTER merge=union` line has no notion the
+# rule exists: it lets two slices that each append one row merge clean
+# instead of conflicting (the shape that stopped the door on
+# 2026-08-21), but it can leave the two new rows in whichever order the
+# merge happened to concatenate them, and nothing else here would ever
+# notice.
 
 tests/admin-identity.test.mjs
 tests/admin-page.test.mjs
@@ -74,6 +86,7 @@ tests/origin-gate.test.mjs
 tests/prime-lock.test.mjs
 tests/reaper.test.mjs
 tests/roster-directory.test.mjs
+tests/roster-merge-driver.test.mjs
 tests/roster-two-way.test.mjs
 tests/route-precedence.test.mjs
 tests/session-open.test.mjs
