@@ -566,11 +566,12 @@ ALLOWLIST = {
 # added. Neither is a new offense; both were already in the tree when the
 # documents moved.
 CITATION_PINS = {
-    ("apps/web/admin.html", "DESIGN.md",
-     "The charts and the snapshot"): 1,
+    # ("apps/web/admin.html", "DESIGN.md", "The charts and the snapshot")
+    # and ("apps/web/admin.js", "DESIGN.md", "Key custody") retired
+    # 0.9-M3-S10 (#416): both comments left with the snapshot/publish
+    # machinery and the keyfile-decrypt tool they described.
     ("apps/web/config.js", "OPERATIONS.md", "The keys"): 1,
     ("tools/check_web.py", "OPERATIONS.md", "The keys"): 1,
-    ("apps/web/admin.js", "DESIGN.md", "Key custody"): 1,
     ("apps/web/config.js", "DESIGN.md", "Key custody"): 1,
     ("server/schema.sql", "DESIGN.md", "The charts and the snapshot"): 1,
     ("server/worker.js", "DESIGN.md",
@@ -615,12 +616,18 @@ NARRATIVE = re.compile(r"-\s+(%s)\b" % CITED)
 # gate's real runner, exactly as AGENTS.md's own "Verification" section
 # does. Forty-three pairs, forty-nine occurrences now.
 #
+# RAISED AGAIN at 0.9-M3-S10 (#416): tools/check_live.py's own admin.js
+# count moves from 1 to 2. The retirement note this slice adds beside
+# LEDGER's export rows ("admin.js's own Blob() calls are gone") is a
+# second, true dash-mention in the same file as the pinned one - read
+# for truth the same way, against the real shipped admin.js, which now
+# carries no Blob() call at all.
+#
 # apps/web/theme.css's self-mention ("theme.css says so above") is
 # still excluded rather than pinned, for
 # the same reason as before: a file's claim about its own text is
 # checkable by anyone reading the file.
 NARRATIVE_PINS = {
-    ('apps/web/admin.html', 'server/worker.js'): 1,
     ('apps/web/auth.js', 'submit.js'): 1,
     ('apps/web/charts.html', 'charts.js'): 1,
     ('apps/web/config.js', 'auth.js'): 1,
@@ -630,9 +637,9 @@ NARRATIVE_PINS = {
     ('apps/web/form.js', 'apps/web/site.config.js'): 1,
     ('apps/web/site.config.js', 'your-page.html'): 1,
     ('apps/web/theme.css', 'apps/web/charts.js'): 1,
-    ('dev/admin-session.test.mjs', 'dashboard.js'): 1,
-    ('dev/admin.test.mjs', 'dashboard.js'): 1,
     ('dev/check_live.test.py', 'admin.js'): 1,
+    # Raised from 1 to 2 at 0.9-M3-S10 (#416) - see the note above
+    # NARRATIVE_PINS.
     ('dev/check_web.test.py', 'AGENTS.md'): 1,
     ('dev/check_web.test.py', 'public.js'): 1,
     ('dev/demo-bake.test.mjs', 'dev/demo-bake.mjs'): 1,
@@ -651,7 +658,7 @@ NARRATIVE_PINS = {
     ('tools/check.py', 'tools/build_web.mjs'): 1,
     ('tools/check_docs.py', 'tools/check_comments.py'): 1,
     ('tools/check_fonts.py', 'tools/build_web.mjs'): 1,
-    ('tools/check_live.py', 'admin.js'): 1,
+    ('tools/check_live.py', 'admin.js'): 2,
     ('tools/check_live.py', 'server/wrangler.toml'): 2,
     ('tools/check_web.py', 'AGENTS.md'): 2,
     ('tools/check_web.py', 'admin.html'): 2,
@@ -757,12 +764,8 @@ TICKET_PINS = {
      'in a gaining community the high end IS the story'): 1,
     ('apps/web/theme.css', '#378',
      "clamp inside the chart figure's bounding box"): 1,
-    ('dev/admin-session.test.mjs', '#354',
-     'a refused unpublish ends the session and leaves'): 1,
-    ('dev/admin-session.test.mjs', '#354',
-     'publishing repeats what the document does not contain'): 1,
-    ('dev/admin.test.mjs', '#275',
-     'the private half of the key this site encrypts to'): 1,
+    # dev/admin-session.test.mjs's and dev/admin.test.mjs's #354/#275
+    # citations retired with the files themselves at 0.9-M3-S10 (#416).
     ('dev/check_web.test.py', '#378', 'custom'): 1,
     ('dev/demo.test.mjs', '#354', '-- The snapshot --'): 1,
     ('dev/demo.test.mjs', '#354',

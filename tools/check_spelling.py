@@ -201,12 +201,11 @@ SPELLING_RULES = [(label, re.compile(pattern, re.IGNORECASE))
 # first and releases the file - this ratchet does not know which that
 # will be, and does not need to.
 PINNED = {
-    ("apps/web/admin.html", "-our words"): 1,
-    ("apps/web/admin.html", "-ll- doubling"): 1,
-    ("apps/web/admin.js", "-ll- doubling"): 1,
+    # apps/web/admin.html's, apps/web/admin.js's,
+    # dev/admin-session.test.mjs's and dev/admin.test.mjs's entries
+    # retired 0.9-M3-S10 (#416): admin.html/admin.js were rewritten and
+    # the two dev/ files deleted with the surfaces they guarded.
     ("apps/web/theme.css", "-our words"): 1,
-    ("dev/admin-session.test.mjs", "-ll- doubling"): 1,
-    ("dev/admin.test.mjs", "-ise family"): 1,
     ("dev/demo-config.js", "-ll- doubling"): 1,
     ("dev/demo-stub.js", "-ll- doubling"): 1,
     ("dev/demo.test.mjs", "-ll- doubling"): 1,

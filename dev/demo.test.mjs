@@ -86,7 +86,7 @@ const Admin = globalThis.BinderAdmin;
 
 const { start, MIRROR_PREFIX, portFrom } = await import("./demo-server.mjs");
 
-const { check, mustReject, report } = suite("demo", 164);
+const { check, mustReject, report } = suite("demo", 162);
 
 /* ------------------------------------------------------------------ */
 /* What apps/web actually contains, read once.                         */
@@ -482,23 +482,26 @@ const callsHas = (method, path) =>
  * with the tabs it stood in. The route itself is unchanged and the
  * checks below that exercise it directly (F3 and the ones after it)
  * still do - this list only names calls a real page still makes.
+ *
+ * GET/POST/DELETE /snapshot and GET /export dropped out at 0.9-M3-S10
+ * (#416): the keyfile-decrypt tool, the entry exports and the snapshot
+ * publish/unpublish controls all left admin.js in the same change, and
+ * nothing else in apps/web ever called either route.
  */
 await check("the endpoint reader finds the calls that are plainly there", () =>
   callsHas("GET", "/my-entries") && callsHas("DELETE", "/submission/") &&
   callsHas("POST", "/submit") &&
-  callsHas("GET", "/snapshot") && callsHas("GET", "/export") &&
+  callsHas("GET", "/membership") && callsHas("POST", "/content") &&
   callsHas("POST", "/auth/telegram"));
 
 /*
  * The verb arm stated separately from the path arm, because the failure
  * this pins is a call whose PATH is still right. DELETE /session is
- * #90's whole behavior; DELETE /snapshot and POST /snapshot are the same
- * route with opposite meanings.
+ * #90's whole behavior.
  */
 await check("the endpoint reader carries the verb each call uses", () =>
   callsHas("DELETE", "/session") && !callsHas("GET", "/session") &&
-  callsHas("POST", "/snapshot") && callsHas("DELETE", "/snapshot") &&
-  callsHas("DELETE", "/submission/"));
+  callsHas("DELETE", "/submission/") && callsHas("DELETE", "/membership/"));
 
 /*
  * #154 F2. THE READER SEES ONE WAY OF SPELLING A CALL, SO THAT IS THE
@@ -534,18 +537,24 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
 });
 
 /*
- * The one deliberate exception (0.9-M2-S3, #354): apps/web/admin.js
- * still calls /snapshot three times, unchanged, because admin.html is
- * stated dead rather than patched (issue #354's own scope) - the route
- * is deleted on the real Worker, not gated, so the honest stub answer
- * is the same 404 an unknown path gets, and "the stub answers every
- * call" would otherwise demand this suite pretend the route still
- * works. Everything else apps/web calls must still resolve.
+ * The old exception (0.9-M2-S3, #354, /snapshot) retired with the
+ * calls it excused: 0.9-M3-S10 (#416) removed the last thing in
+ * apps/web that ever called that route.
+ *
+ * ITS REPLACEMENT (0.9-M3-S10, #416): apps/web/admin.js now calls GET
+ * /admin-log (S8's real, landed route name - #414 completion, comment
+ * 5370945709: "admin" cannot be an API segment without colliding with
+ * apps/web/admin.html's own URL through html_handling, so the ticket's
+ * own /admin/log spelling was corrected before it shipped). S8 is
+ * building the route itself on a separate branch, under review as of
+ * this build, so the honest stub answer here is the same 404 an
+ * unknown path gets until that branch lands. Everything else apps/web
+ * calls must still resolve.
  */
 await check("the stub answers every call apps/web makes, by verb and " +
-  "path - except admin.html's retired /snapshot calls, which the real " +
-  "Worker no longer answers either", () =>
-  calls.every((one) => one.path === "/snapshot" ||
+  "path - except admin.js's GET /admin-log, S8's own route, not yet " +
+  "merged", () =>
+  calls.every((one) => one.path === "/admin-log" ||
     Demo.routeFor(one.path, one.method) !== null));
 
 await check("a route the stub does not know is refused, not passed on", () =>
@@ -911,8 +920,17 @@ await check("the strip offers no control the product already gives a visitor", (
     !/^(go|open|visit|navigate)\b/i.test(one.label)) &&
   !Demo.ENABLERS.some((one) => one.id === "sign-out"));
 
+/*
+ * Empty now (0.9-M3-S10, #416): admin.html's box, the only one this
+ * table ever named, retired with the keyfile-decrypt tool - DESIGN.md,
+ * "Trust model: the Worker reads" already ruled every client-side key
+ * gone, and this is the table catching up to a page that finally does.
+ * The shape check still runs over whatever rows remain, so a row
+ * added back later is still held to naming a real page, a real box
+ * and a real key file.
+ */
 await check("every key box names a page apps/web ships and a real key file", () =>
-  Demo.KEY_BOXES.length >= 1 &&
+  Demo.KEY_BOXES.length === 0 &&
   Demo.KEY_BOXES.every((one) =>
     PAGES.includes(one.page) &&
     shipped[one.page].includes('id="' + one.box + '"') &&
@@ -929,10 +947,10 @@ await check("no page carries a key box the table does not name", () => {
     .every((page) => named.has(page));
 });
 
-await check("a page with no key box is answered with null", () =>
+await check("no page has a key box any more - every one answers null", () =>
   Demo.keyBoxFor("charts.html") === null &&
   Demo.keyBoxFor(null) === null &&
-  Demo.keyBoxFor("admin.html") !== null);
+  Demo.keyBoxFor("admin.html") === null);
 
 await check("every snapshot row is a corpus this file really builds", () =>
   Demo.PRESETS.length === 3 &&
@@ -1038,10 +1056,14 @@ await check("the databases reset takes are the ones apps/web really opens", () =
     named.lastIndex = 0;
     while ((hit = named.exec(src)) !== null) found.add(hit[1]);
   });
-  // Enumerated by the browser half rather than listed, so the arm is
-  // that apps/web really keeps more than one - the fact that makes a
-  // hand-written list in the demo wrong.
-  return found.size >= 2 &&
+  // Enumerated by the browser half rather than listed, so the arm
+  // proves the scan actually runs over apps/web's own real names
+  // rather than passing on an empty set - the fact that would make a
+  // hand-written list in the demo unfalsifiable. Two before 0.9-M3-S10
+  // (#416); one now that the admin export's key-database name retired
+  // with the keyfile-decrypt tool, leaving only the member key
+  // database signout.js still names.
+  return found.size >= 1 &&
     Demo.resetPlan({ databases: [...found] }).databases.length === found.size;
 });
 
@@ -1546,39 +1568,23 @@ await check("signing in clears a refusal the last sign-out left", () => {
 
 /* -- The key ------------------------------------------------------- */
 
-await check("the key control fills the page's own box and says what it is",
-  async () => {
-    const browser = toolbarInRecordedBrowser({ page: "admin.html" });
-    browser.press(Demo.ENABLERS.find((one) => one.id === "key").label);
-    await browser.settled();
-    return browser.read[0] === Demo.DEV_KEY_FILE &&
-      browser.pageNodes.keyfile.value === devKeyFile &&
-      browser.said() === Demo.KEY_STAGED_LINE;
-  });
-
 /*
- * The other direction, and it is the one that matters: a control that
- * quietly did nothing on a page with no box is the false-confidence
- * failure this suite opens on.
+ * RETIRED (0.9-M3-S10, #416): the two checks driving admin.html's own
+ * `keyfile` box - filling it, and catching a rename of it - both
+ * retired with the keyfile-decrypt tool. Demo.KEY_BOXES is empty now
+ * (DESIGN.md, "Trust model: the Worker reads": all client-side crypto
+ * is gone), so there is no page left this suite can press the control
+ * on to reach either scenario. What survives is the one case every
+ * page now hits.
  */
-await check("the key control says so on a page that has no box", async () => {
+await check("the key control says so on a page that has no box - " +
+  "every page, now that none carries one", async () => {
   const browser = toolbarInRecordedBrowser({ page: "charts.html" });
   browser.press(Demo.ENABLERS.find((one) => one.id === "key").label);
   await browser.settled();
   return browser.read.length === 0 &&
-    /no key box/i.test(browser.said()) &&
-    browser.said().includes("admin.html");
+    /no page in this demo has a key box/i.test(browser.said());
 });
-
-await check("a page whose box has been renamed is reported, not written to",
-  async () => {
-    const browser = toolbarInRecordedBrowser({
-      page: "admin.html", absent: ["keyfile"],
-    });
-    browser.press(Demo.ENABLERS.find((one) => one.id === "key").label);
-    await browser.settled();
-    return /moved under the demo/i.test(browser.said());
-  });
 
 /*
  * RETIRED (0.9-M2-S3, #354): "-- The snapshot --" stood here, seven

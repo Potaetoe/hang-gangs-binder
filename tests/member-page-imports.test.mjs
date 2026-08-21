@@ -1,7 +1,8 @@
 /*
- * No member page loads a client-seal module, and the one page that
- * still does is named here with the line that ends it - 0.9-M2-S5
- * (#356).
+ * No page in apps/web loads a client-seal module any more - 0.9-M2-S5
+ * (#356) closed every member page; 0.9-M3-S10 (#416) closed the last
+ * holdout, admin.html, which is why ALLOWED below is empty now rather
+ * than deleted (see its own note).
  *
  *     node tests/member-page-imports.test.mjs
  *
@@ -19,36 +20,39 @@
  * during a merge, re-introduces the seal with every stage of both gates
  * green. That is the regression this file exists to name.
  *
- * THE REMAINDER IS DECLARED, NOT INFERRED - AGENTS.md's review-bar
- * corollary ("a check computed entirely from the file it guards cannot
- * detect that the file was rearranged"). Pre-0.9 `admin.html` still
- * imports `crypto.js` and admin.js still opens rows with it, so the
- * file cannot die in this slice; deleting it would ship a broken page
- * instead of an honest remainder. ALLOWED below is that exemption
- * written down outside every file it describes, with the condition
- * that retires it, and section 3 fails if the exemption stops being
- * used - an allowance for a load that is no longer there is a row a
- * later reader cannot tell from a live one.
+ * ALLOWED SURVIVES EMPTY RATHER THAN BEING DELETED - AGENTS.md's
+ * review-bar corollary ("a check computed entirely from the file it
+ * guards cannot detect that the file was rearranged") still holds: the
+ * question section 2 asks - "does any page load a seal module it is
+ * not declared for" - stays a real question with a real answer, now no
+ * on every page, rather than a hard-coded assumption with nothing
+ * outside the pages themselves to hold it to. apps/web/crypto.js and
+ * dev/crypto.test.mjs are unreferenced by any page as of this slice but
+ * are not deleted here: tools/keygen.html, tools/keycheck.html and
+ * dev/crypto-browser-check.js still reach for the same key-generation
+ * shapes and were judged outside 0.9-M3-S10's own scope to untangle.
  *
- * THE PAGE SET IS DERIVED AND THE EXEMPTION IS PINNED, in that
- * combination on purpose. A hand-kept list of member pages cannot fail
+ * THE PAGE SET IS DERIVED. A hand-kept list of member pages cannot fail
  * when a page is ADDED, and a page being added is exactly when a copied
- * script run arrives; a derived exemption would be no exemption at all.
+ * script run arrives.
  *
  * WHAT EACH SECTION PROVES:
  *
  *   1. memberkey.js is gone from the source tree and from dist. It had
  *      no consumer left at all - no page loaded it once your-page.html
  *      stopped sealing - so nothing here survives it.
- *   2. No page outside ALLOWED loads a seal module, in apps/web and in
- *      dist alike. dist is checked separately rather than trusted to
- *      follow, because it is committed and a hand edit there is exactly
- *      the shape ./run build's byte-compare is the other half of.
- *   3. The declared remainder is real: admin.html does load crypto.js,
- *      and crypto.js is on disk for it to load.
- *   4. No member page's own scripts reach for a seal namespace. A page
- *      that names `BinderCrypto` without loading the module captures
- *      undefined and goes quiet, which is the failure mode
+ *   2. No page loads a seal module, in apps/web and in dist alike. dist
+ *      is checked separately rather than trusted to follow, because it
+ *      is committed and a hand edit there is exactly the shape ./run
+ *      build's byte-compare is the other half of.
+ *   3. ALLOWED itself: empty, and every entry it might one day hold
+ *      would still have to name a real page loading a real, on-disk
+ *      module - the loop runs zero times today and is not thereby
+ *      exempted from what it would check.
+ *   4. No member page's own scripts reach for a seal namespace,
+ *      including admin.html now that ALLOWED no longer skips it. A
+ *      page that names `BinderCrypto` without loading the module
+ *      captures undefined and goes quiet, which is the failure mode
  *      tools/check_web.py's ordering rule describes; here it is the
  *      earlier question of whether the name belongs on the page at all.
  */
@@ -86,16 +90,14 @@ const SEAL_MODULES = ["crypto.js", "memberkey.js"];
 const SEAL_NAMESPACES = ["BinderCrypto", "BinderMemberKey"];
 
 /*
- * The remainder, with the condition that retires it (AGENTS.md, "How
- * documentation is written here", rule 5). 0.9-M3 rebuilds the admin
- * pages; the slice that replaces admin.html deletes apps/web/crypto.js,
- * dev/crypto.test.mjs and its fixtures, and removes this table with
- * them - at which point section 2 judges every page in the tree and
- * section 3 has nothing left to hold honest.
+ * Empty since 0.9-M3-S10 (#416): admin.html was the remainder, and the
+ * slice that rebuilt it (Settings, Roles, the change log) removed the
+ * keyfile-decrypt tool and every crypto.js/BinderCrypto reference with
+ * it. The table stays rather than being deleted - see the module
+ * docstring's note on why - so a load reintroduced later has something
+ * outside every page to be declared against.
  */
-const ALLOWED = {
-  "admin.html": ["crypto.js"],
-};
+const ALLOWED = {};
 
 /*
  * Every comparison below is against an exact string, so a source has to
@@ -196,7 +198,8 @@ for (const name of ["index.html", "your-page.html", "charts.html"]) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 3. The declared remainder is real, in both directions.             */
+/* 3. Whatever ALLOWED declares is real, in both directions - zero      */
+/* iterations today, since ALLOWED is empty (see its own note above).   */
 
 for (const [name, modules] of Object.entries(ALLOWED)) {
   const page = SOURCE_PAGES.find(([found]) => found === name);
@@ -244,7 +247,7 @@ for (const [name, html] of SOURCE_PAGES) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 15;
+const EXPECTED = 13;
 console.log(failures
   ? `\nmember-page-imports FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

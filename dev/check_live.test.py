@@ -467,32 +467,31 @@ check("a live literal beside an unrelated comment is still read",
           'offer("d", c, "text/csv;charset=utf-8", "csv");') == ["csv"])
 
 # The real bytes, after the strings - the same pairing route_ids() gets
-# above. #394 names five exports as of fix wave 1: the admin CSV, the
-# admin xlsx, the admin JSON, your-page's download and charts.xlsx.
+# above. #394 named five exports as of fix wave 1; 0.9-M3-S10 (#416)
+# retired the three admin.js ones with the entry exports themselves
+# (Prime's ruling on that ticket's own fork, 2026-08-21: no admin
+# surface exposes a current member's data), leaving your-page's
+# download and charts.xlsx as the two that remain.
 REAL_EXPORTS = check_live.export_locations()
 
-check("the shipped tree yields exactly #394's five exports",
+check("the shipped tree yields exactly the two exports that survive "
+      "0.9-M3-S10 (#416)",
       set(REAL_EXPORTS) == {
-          "admin.js: csv export", "admin.js: xlsx export",
-          "admin.js: json export",
           "submit.js: xlsx export", "charts.js: xlsx export"})
 
 check("each export names the file its MIME type was found in",
-      REAL_EXPORTS["admin.js: csv export"] == "apps/web/admin.js"
-      and REAL_EXPORTS["admin.js: xlsx export"] == "apps/web/admin.js"
-      and REAL_EXPORTS["admin.js: json export"] == "apps/web/admin.js"
-      and REAL_EXPORTS["submit.js: xlsx export"] == "apps/web/submit.js"
+      REAL_EXPORTS["submit.js: xlsx export"] == "apps/web/submit.js"
       and REAL_EXPORTS["charts.js: xlsx export"] == "apps/web/charts.js")
 
 check("an export row that does not stand on its own file is reported",
       len(check_live.entry_problems([entry(
-          id="admin.js: csv export", surface="export",
+          id="submit.js: xlsx export", surface="export",
           covers=["apps/web/index.html"])])) == 1)
 
 check("an export row standing on its own file raises nothing",
       check_live.entry_problems([entry(
-          id="admin.js: csv export", surface="export",
-          covers=["apps/web/admin.js"])]) == [])
+          id="submit.js: xlsx export", surface="export",
+          covers=["apps/web/submit.js"])]) == [])
 
 
 # ------------------------------------------------------------------ #
@@ -512,8 +511,7 @@ check("a registered family's literal Blob() type is read the same way",
           'new Blob([b], { type: "text/csv;charset=utf-8" });')
       == ["text/csv;charset=utf-8"])
 
-check("a variable passed as a Blob() type yields no literal - admin.js's "
-      "own shape",
+check("a variable passed as a Blob() type yields no literal",
       check_live.blob_mime_types('new Blob([b], { type: type });') == [])
 
 check("a literal Blob() MIME type inside a comment is not read at all",
@@ -532,12 +530,12 @@ check("two typed Blob() calls each contribute their own type",
           'new Blob([b], { type: "application/pdf" });')
       == ["text/csv;charset=utf-8", "application/pdf"])
 
-# The bound exists so an untyped Blob() call - admin.js's own shape -
-# can never reach past its own object literal into unrelated code
-# looking for a `type:` token to claim; today admin.js carries exactly
-# one `type:` token in the whole file (its own, untyped) so this
-# cannot fire from the shipped tree, but the bound is what keeps that
-# true if a later edit adds one far below it.
+# The bound exists so an untyped Blob() call can never reach past its
+# own object literal into unrelated code looking for a `type:` token to
+# claim - admin.js carried exactly this shape before 0.9-M3-S10 (#416)
+# retired its Blob() calls with the entry exports; no shipped file
+# carries an untyped Blob() call today, but the bound is what would
+# keep this true again the day one returns.
 check("an untyped Blob() call more than the lookahead bound away from "
       "any `type:` token yields nothing",
       check_live.blob_mime_types(
@@ -782,19 +780,21 @@ check("the run-arm rule is wired into problems()",
 # The export spine, wired through problems() against the real ledger
 # and the real tree - the arm the router mutation above cannot stand in
 # for, because nothing here can plant a fake Blob call the way ROUTER
-# plants a fake dispatch line. Dropping one of #394's five real rows
-# is the mutation instead: apps/web/admin.js still hands the browser
-# that CSV, so the gate has to notice the row is gone.
+# plants a fake dispatch line. Dropping one of the real rows is the
+# mutation instead: apps/web/submit.js still hands the browser that
+# xlsx download (0.9-M3-S10, #416 left it and charts.js's untouched -
+# only admin.js's three retired), so the gate has to notice the row is
+# gone.
 saved = check_live.LEDGER
 try:
     check_live.LEDGER = [e for e in saved
-                         if e["id"] != "admin.js: csv export"]
+                         if e["id"] != "submit.js: xlsx export"]
     without_export_row = check_live.problems()
 finally:
     check_live.LEDGER = saved
 
 check("the export spine is wired into problems()",
-      any("admin.js: csv export" in problem
+      any("submit.js: xlsx export" in problem
           for problem in without_export_row))
 
 # The unrecognized-class refusal, wired through problems() against a

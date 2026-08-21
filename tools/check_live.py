@@ -818,58 +818,19 @@ LEDGER = [
     },
 
     # ---- exports: the surface #394 opens (fleet-review-M2.md, S14's
-    # F4). The site hands a browser a real file in five places, and
-    # until this slice the ledger's spine stopped at the page: a gate
-    # green at page granularity said nothing about whether any of the
-    # five downloads a keyholder or a member actually presses had ever
-    # been driven for real. export_locations() forces the five below
-    # into existence off the MIME type each download's Blob call
-    # carries - see the module docstring's "export spine forces on a
-    # MIME type" paragraph. The admin JSON export stood outside this
-    # count at this slice's first build; fix wave 1 (#394, F1) found
-    # the review's own read of "every real file export" was the truer
-    # one - JSON is a real file export by the same test the other four
-    # pass - and added it as a fifth rather than an excused fourth.
-    {
-        "id": "admin.js: csv export",
-        "surface": "export",
-        "claim": "a real click on the CSV download button produces a "
-                 "file whose bytes read back as the rows the table "
-                 "shows, and a submitted value that starts like a "
-                 "formula - '=', '+', '-', '@' - opens in the "
-                 "spreadsheet as the literal text csvCell() defused "
-                 "behind a leading apostrophe rather than as a formula "
-                 "it runs",
-        "covers": ["apps/web/admin.js"],
-        "status": "never",
-    },
-    {
-        "id": "admin.js: xlsx export",
-        "surface": "export",
-        "claim": "a real click on the xlsx download button produces a "
-                 "workbook a real spreadsheet application opens and "
-                 "reads back as the same rows, with every non-numeric "
-                 "cell BinderXlsx.build() writes landing as an inline "
-                 "string rather than a formula - the typing guard "
-                 "apps/web/xlsx.js's header describes and "
-                 "dev/xlsx.test.mjs proves on the parsed archive, "
-                 "proved here on a real application instead",
-        "covers": ["apps/web/admin.js"],
-        "status": "never",
-    },
-    {
-        "id": "admin.js: json export",
-        "surface": "export",
-        "claim": "a real click on the JSON download button produces a "
-                 "file that parses and reads back as the same records "
-                 "the table shows, one plain object per row rather "
-                 "than a spreadsheet's typed cells - toJson()'s shape "
-                 "needs no formula guard, only that a real download "
-                 "opens, parses, and its count matches what the page "
-                 "showed at the moment of the click",
-        "covers": ["apps/web/admin.js"],
-        "status": "never",
-    },
+    # F4). The site hands a browser a real file, and the ledger's spine
+    # stops at the page unless a row forces each real download into
+    # existence off the MIME type its Blob call carries - see the module
+    # docstring's "export spine forces on a MIME type" paragraph.
+    #
+    # THE ADMIN CSV/XLSX/JSON ROWS RETIRED 0.9-M3-S10 (#416). The entry
+    # exports left with the keyfile tool (Prime's ruling on this
+    # ticket's own fork, 2026-08-21, reading #385 §4: no admin surface
+    # exposes a current member's data) - admin.js's own Blob() calls are
+    # gone, so export_locations() no longer derives these ids and a row
+    # for them would be exactly the "reassuring count outlives the
+    # thing it counts" failure this ledger exists to refuse (this
+    # file's own freshness() docstring).
     {
         "id": "submit.js: xlsx export",
         "surface": "export",

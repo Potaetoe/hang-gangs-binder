@@ -1033,21 +1033,23 @@
    * The key box each page carries, and the committed half that opens
    * what that page is for.
    *
-   * A TABLE OF ONE IS STILL A TABLE, because the question the toolbar
-   * asks is "does the page I am standing on have a box", and the honest
-   * answer on four of the five pages is no. Hard-coding the admin
-   * page's box would make the control silently do nothing everywhere
-   * else, which is the class of failure this whole demo is built to
-   * refuse; the toolbar reads this and says why instead.
+   * EMPTY NOW, AND THAT IS THE HONEST ANSWER. admin.html carried the
+   * one box this table ever named, and 0.9-M3-S10 (#416) retired it
+   * with the keyfile-decrypt tool (DESIGN.md, "Trust model: the Worker
+   * reads": all client-side crypto is gone) - the page this table
+   * pointed at no longer asks for a key at all. The shape survives
+   * empty rather than being deleted, because the question the toolbar
+   * asks - "does the page I am standing on have a box" - is still a
+   * real question with a real answer, now no on every page; deleting
+   * the table would make that a hard-coded assumption again instead of
+   * something this file states and the checks can hold to.
    *
-   * The member's own key is deliberately absent. It is generated in the
-   * browser and cannot be exported, so there is no box to paste one
-   * into - which is the custody design being demonstrated rather than a
-   * gap in this table.
+   * The member's own key is deliberately absent too, and was even
+   * before this. It was generated in the browser and could not be
+   * exported, so there was never a box to paste one into - the custody
+   * design being demonstrated rather than a gap in this table.
    */
-  const KEY_BOXES = [
-    { page: "admin.html", box: "keyfile", key: DEV_KEY_FILE },
-  ];
+  const KEY_BOXES = [];
 
   function keyBoxFor(file) {
     for (const one of KEY_BOXES) {

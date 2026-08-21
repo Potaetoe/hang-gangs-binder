@@ -26,8 +26,8 @@
  *
  * WHAT EACH SECTION PROVES:
  *
- *   1. The name sign-out deletes is a constant, it is the member key's
- *      database, and it is not admin.html's keyholder database.
+ *   1. The name sign-out deletes is a constant, and it is the member
+ *      key's database.
  *   2. tools/check_web.py's DEFERRED_CAPTURES is still empty, and a row
  *      coming back fails here.
  *   3. signOut() revokes, erases both local things and leaves - in that
@@ -41,7 +41,7 @@ import { suite } from "./harness.mjs";
 
 const HERE = (p) => new URL(p, import.meta.url);
 
-const { check, report } = suite("signout.js", 18);
+const { check, report } = suite("signout.js", 17);
 
 /* ------------------------------------------------------------------ */
 /* 1. The database sign-out destroys, and the one it must not.         */
@@ -66,17 +66,14 @@ const MEMBER_DB = "hgb-member-key";
 const signOutSource = await readFile(HERE("../apps/web/signout.js"), "utf8");
 
 /*
- * The keyholder's working copy on admin.html, read out of the file that
- * owns it. Sign out is in the rail on admin.html too, so "destroy the
- * member's key" and "leave the keyholder's alone" are two claims about
- * the same button - and the second one is only checkable against
- * admin.js's own name for its database.
+ * admin.html carried a second database of its own once - the
+ * keyholder's imported working copy - which is why an earlier build of
+ * this suite read apps/web/admin.js for its name and proved sign-out
+ * left it alone. 0.9-M3-S10 (#416) retired that database with the
+ * keyfile-decrypt tool; admin.js declares no key database of any kind
+ * now, so there is nothing left for a second file to name and nothing
+ * left for this suite to check it against.
  */
-const adminSource = await readFile(HERE("../apps/web/admin.js"), "utf8");
-const KEYHOLDER_DB = (/const KEY_DB = "([^"]+)"/.exec(adminSource) || [])[1];
-
-await check("admin.js's keyholder database is named where this file can read it",
-  () => KEYHOLDER_DB === "hgb-keyholder-key" && KEYHOLDER_DB !== MEMBER_DB);
 
 await check("sign out destroys a database, and names it through a constant",
   () => /deleteDatabase\(\s*\w+\s*\)/.test(signOutSource));
@@ -469,18 +466,16 @@ await check("sign out revokes, then destroys, and only then leaves",
   });
 
 /*
- * ONE DATABASE, AND WHICH ONE. Sign out is in the rail on admin.html,
- * where the keyholder's imported working copy lives in a database of its
- * own - so a sign-out that swept the origin, or that took the wrong
- * name, would destroy the corpus key on the way out of the export page.
- * The whole list is compared rather than the member's name being looked
- * for, because "the right one is among them" is what a sweep passes.
+ * ONE DATABASE, AND WHICH ONE. A sign-out that swept the origin, or
+ * that took the wrong name, would destroy something a member never
+ * asked it to. The whole list is compared rather than the member's
+ * name being looked for, because "the right one is among them" is
+ * what a sweep passes.
  */
 await check("and it destroys that one database and no other", async () => {
   const deleted = (await performSignOut())
     .filter((act) => act.startsWith("delete:"));
-  return deleted.join(",") === DESTROYS &&
-    !deleted.includes("delete:" + KEYHOLDER_DB);
+  return deleted.join(",") === DESTROYS;
 });
 
 /*

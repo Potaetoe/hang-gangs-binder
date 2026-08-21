@@ -3,182 +3,101 @@
 (function (root) {
   "use strict";
 
-  
-
-  const COLUMNS = [
-    "id",
-    "account_id",
-    "received_at",
-    "submitted_at",
-    "telegram",
-    "weight_kg",
-    "weight_lb",
-    "height_cm",
-    "height_total_inches",
-    "height_feet",
-    "height_inches",
-    "entered_units",
-    "entered_weight",
-    "entered_height",
-    "gender",
-    "roles",
-    "country",
-    "over18",
-    "record_version",
-  ];
+   
+   
 
   
 
-  function at(object, path) {
-    let value = object;
-    for (const step of path) {
-      if (value === null || value === undefined) return null;
-      value = value[step];
+  const UNIT_SYSTEMS = Object.freeze(["metric", "imperial"]);
+  const THEMES = Object.freeze(["pink", "daylight", "midnight", "contrast"]);
+  const MAX_GROUP_NAME = 64;
+  const MAX_WELCOME_TEXT = 500;
+
+  
+
+  function validateFloor(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!/^(0|[1-9]\d{0,5})$/.test(text)) {
+      return { ok: false,
+        message: "The floor is a whole number, 0 to 999999, with no " +
+          "leading zero." };
     }
-    return value === null || value === undefined ? null : value;
+    return { ok: true, value: text };
   }
 
-  
-
-  function entryFor(submission, record) {
-    return {
-      id: at(submission, ["id"]),
-      accountId: at(submission, ["account_id"]),
-      receivedAt: at(submission, ["received_at"]),
-      submittedAt: at(record, ["submittedAt"]),
-      telegram: at(record, ["telegram"]),
-      kg: at(record, ["weight", "kg"]),
-      lb: at(record, ["weight", "lb"]),
-      cm: at(record, ["height", "cm"]),
-      totalInches: at(record, ["height", "totalInches"]),
-      feet: at(record, ["height", "feet"]),
-      inches: at(record, ["height", "inches"]),
-      enteredUnits: at(record, ["entered", "units"]),
-      enteredWeight: at(record, ["entered", "weight"]),
-      enteredHeight: at(record, ["entered", "height"]),
-      gender: at(record, ["gender"]),
-      roles: Array.isArray(record && record.roles) ? record.roles.slice() : [],
-      country: at(record, ["country"]),
-      over18: at(record, ["over18"]) === true,
-      recordVersion: at(record, ["record"]),
-    };
-  }
-
-  
-
-  function blank(value) {
-    return value === null || value === undefined ? "" : value;
-  }
-
-  function rowFor(entry) {
-    return [
-      blank(entry.id),
-      blank(entry.accountId),
-      blank(entry.receivedAt),
-      blank(entry.submittedAt),
-      blank(entry.telegram),
-      blank(entry.kg),
-      blank(entry.lb),
-      blank(entry.cm),
-      blank(entry.totalInches),
-      blank(entry.feet),
-      blank(entry.inches),
-      blank(entry.enteredUnits),
-      blank(entry.enteredWeight),
-      blank(entry.enteredHeight),
-      blank(entry.gender),
-      entry.roles.join(";"),
-      blank(entry.country),
-      entry.over18 === true ? "yes" : "",
-      blank(entry.recordVersion),
-    ];
-  }
-
-  
-
-  function csvCell(value) {
-    let text = value === null || value === undefined ? "" : String(value);
-    if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
-    if (/[",\n\r]/.test(text)) text = '"' + text.replace(/"/g, '""') + '"';
-    return text;
-  }
-
-  
-
-  function toCsv(rows) {
-    const lines = [COLUMNS.join(",")];
-    for (const row of rows) lines.push(row.map(csvCell).join(","));
-    return lines.join("\r\n") + "\r\n";
-  }
-
-  
-
-  function toJson(entries) {
-    return JSON.stringify({
-      exported: new Date().toISOString(),
-      count: entries.length,
-      submissions: entries,
-    }, null, 2) + "\n";
-  }
-
-  function fileName(now, extension) {
-    const date = new Date(now).toISOString().slice(0, 10);
-    return "hang-gangs-binder-" + date + "." + (extension || "csv");
-  }
-
-  
-
-  const STORED_KEY_WRONG = "The key stored on this device is not the one " +
-    "this site encrypts to, so it has been removed — choose your key file.";
-  const STORED_KEY_DAMAGED = "What was stored on this device is not a " +
-    "usable key, so it has been removed — choose your key file.";
-
-  function storedKeyVerdict(record, expectedPublicKey) {
-    if (record === null || record === undefined) {
-      return { key: null, erase: false, why: null };
+   
+  function validateLockedUnit(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (text !== "" && UNIT_SYSTEMS.indexOf(text) === -1) {
+      return { ok: false, message: "Pick metric, imperial, or unlocked." };
     }
-    if (record && typeof record === "object" &&
-        record.privateKey && record.privateKey.type === "private" &&
-        record.privateKey.extractable === false &&
-        typeof record.publicKey === "string" && record.publicKey &&
-        typeof expectedPublicKey === "string" && expectedPublicKey &&
-        record.publicKey === expectedPublicKey) {
-      return { key: record.privateKey, erase: false, why: null };
+    return { ok: true, value: text };
+  }
+
+   
+  function validateGroupName(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) {
+      return { ok: false, message: "The group needs a name." };
     }
-    const named = record && typeof record === "object" &&
-      typeof record.publicKey === "string" && record.publicKey &&
-      record.publicKey !== expectedPublicKey;
-    return {
-      key: null,
-      erase: true,
-      why: named ? STORED_KEY_WRONG : STORED_KEY_DAMAGED,
-    };
+    if (text.length > MAX_GROUP_NAME) {
+      return { ok: false,
+        message: "The group name is " + MAX_GROUP_NAME + " characters or " +
+          "fewer." };
+    }
+    return { ok: true, value: text };
   }
 
   
 
-  function storedKeyNotice(persisted) {
-     
-     
-     
-     
-     
-     
-     
-    return persisted
-      ? "Your key is kept on this device — Clear is what removes it."
-      : "Your key is kept on this device, but the browser may drop it — " +
-        "keep your key file.";
+  function validateWelcomeText(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (text.length > MAX_WELCOME_TEXT) {
+      return { ok: false,
+        message: "The welcome text is " + MAX_WELCOME_TEXT + " characters " +
+          "or fewer." };
+    }
+    return { ok: true, value: text };
   }
 
   
 
-  function otherKeyNotice(opened) {
-    return opened
-      ? "This is not this site's key — it opens this export and is not " +
-        "kept on this device."
-      : "This is not this site's key — it was used only for this attempt " +
-        "and is not kept on this device.";
+  function validateDefaultTheme(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (text !== "" && THEMES.indexOf(text) === -1) {
+      return { ok: false, message: "Pick one of the four named themes, " +
+        "or follow the visitor's own system." };
+    }
+    return { ok: true, value: text };
+  }
+
+  const SETTINGS_VALIDATORS = Object.freeze({
+    "chart.floor": validateFloor,
+    "chart.lockedUnit": validateLockedUnit,
+    "site.groupName": validateGroupName,
+    "site.welcomeText": validateWelcomeText,
+    "site.defaultTheme": validateDefaultTheme,
+  });
+
+  
+
+  const SETTINGS_DEFAULTS = Object.freeze({
+    "chart.floor": "0",
+    "chart.lockedUnit": "",
+    "site.groupName": "",
+    "site.welcomeText": "",
+    "site.defaultTheme": "",
+  });
+
+  
+
+  function floorNotice(floorText) {
+    const n = Number(floorText);
+    if (!Number.isFinite(n) || n <= 0) {
+      return "Off — nothing is hidden for being a small group.";
+    }
+    return "On — members will see: \"Groups smaller than " + n +
+      " are hidden.\"";
   }
 
    
@@ -186,11 +105,7 @@
 
   
 
-  const MEMBERSHIP_ROLES = Object.freeze(["admin", "always_allow"]);
-
-  
-
-  const MEMBERSHIP_FIELDS = ["membership", "malformed", "secretOnly"];
+  const MEMBERSHIP_ROLES = Object.freeze(["admin"]);
 
   
 
@@ -198,6 +113,10 @@
     return Boolean(row) && typeof row === "object" &&
       typeof row.account_id === "string" && row.account_id !== "";
   }
+
+  const MEMBERSHIP_FIELDS = ["membership", "malformed", "secretOnly"];
+
+  
 
   function membershipView(payload) {
     const body = payload && typeof payload === "object" ? payload : {};
@@ -222,7 +141,6 @@
       const known = lists.filter(function (list) {
         return list.role === row.role;
       })[0];
-       
       if (known) known.rows.push(row);
       else unknown.push(row);
     }
@@ -251,9 +169,6 @@
 
   function secretOnlyNotice(view) {
     if (!view || view.absent.indexOf("secretOnly") !== -1) {
-       
-       
-       
       return "This service did not report which admins the secret grants " +
         "on its own, so nothing here can say whether the backfill is " +
         "finished. Check the membership list at the service directly " +
@@ -265,21 +180,12 @@
         "would take nobody's authority away.";
     }
     const many = view.secretOnly.length !== 1;
-     
-     
-     
-     
-     
-     
-     
     return view.secretOnly.length + (many ? " admins are" : " admin is") +
-      " granted by the " +
-      "ADMIN_TELEGRAM_IDS secret and by no row above, so the backfill is " +
-      "not finished. Their account ids are listed below, and they name " +
-      "nobody: each is scrambled one-way, nothing on this page can turn " +
-      "one back into a person, and the numeric ids behind them are " +
-      "inside a secret that is unreadable by design. Add each of those " +
-      "people by their numeric id above until this list is empty.";
+      " granted by the ADMIN_TELEGRAM_IDS secret and by no row above, so " +
+      "the backfill is not finished. Their account ids are listed below, " +
+      "and they name nobody: each is scrambled one-way, nothing on this " +
+      "page can turn one back into a person. Add each of those people by " +
+      "their numeric id above until this list is empty.";
   }
 
   
@@ -303,8 +209,8 @@
     if (status === 409) {
       return {
         action: "show",
-        message: (said || "That removal was refused.") +
-          " Nothing was removed — the lists below are what it holds now.",
+        message: (said || "That change was refused.") +
+          " Nothing changed — the lists below are what it holds now.",
       };
     }
     return {
@@ -317,20 +223,14 @@
 
   
 
-  function addedNotice(role, label) {
+  function addedNotice(label) {
     const named = typeof label === "string" && label.trim()
       ? label.trim()
       : "That account";
-    if (role === "admin") {
-      return named + " is on the admin list, and becomes an admin at " +
-        "their NEXT sign-in: the admin flag is minted when a session is " +
-        "created, so a session they are already holding does not change. " +
-        "Ask them to sign out and in again.";
-    }
-    return named + " is on the always-allow list, and is past the group " +
-      "check from their next request. Removing this row later is not a " +
-      "revocation while ALWAYS_ALLOW_TELEGRAM_IDS still names them - that " +
-      "secret is checked first, and it is not managed from here.";
+    return named + " is on the admin list, and becomes an admin at their " +
+      "NEXT sign-in: the admin flag is minted when a session is created, " +
+      "so a session they are already holding does not change. Ask them to " +
+      "sign out and in again.";
   }
 
   
@@ -340,9 +240,7 @@
       ? row.label.trim()
       : "";
     if (armed) {
-      return named
-        ? "Confirm removing " + named
-        : "Confirm removing this row";
+      return named ? "Confirm removing " + named : "Confirm removing this row";
     }
     return named ? "Remove " + named : "Remove this row";
   }
@@ -352,12 +250,58 @@
 
   
 
+  function shortAccountId(accountId) {
+    if (accountId === "break-glass") return "the break-glass tool";
+    return typeof accountId === "string" && accountId
+      ? accountId.slice(0, 12) + "…"
+      : "someone";
+  }
+
+  function logWho(entry) {
+    return shortAccountId(entry && entry.accountId);
+  }
+
+  function logWhen(at) {
+    const parsed = Date.parse(at);
+    if (!Number.isFinite(parsed)) return "an unknown time";
+    return new Date(parsed).toISOString().replace("T", " ").slice(0, 16) +
+      " UTC";
+  }
+
+  
+
+  const LOG_ACTIONS = Object.freeze({
+    "content.set": "changed a setting",
+    "content.unset": "reset a setting",
+    "membership.add": "added an admin",
+    "membership.remove": "removed an admin",
+  });
+
+  function logWhat(entry) {
+    const action = entry && typeof entry.action === "string"
+      ? entry.action.trim() : "";
+    const phrase = LOG_ACTIONS[action] || "made a change";
+    const summary = entry && typeof entry.summary === "string"
+      ? entry.summary.trim() : "";
+    return summary ? phrase + ": " + summary : phrase;
+  }
+
+  
+
+  function logLine(entry) {
+    return { when: logWhen(entry && entry.at), who: logWho(entry),
+      what: logWhat(entry) };
+  }
+
+   
+   
+   
+   
+
   const IDLE_WINDOW = Object.freeze({
     idleMs: 10 * 60 * 1000,
     warnMs: 2 * 60 * 1000,
   });
-
-  
 
   function idleVerdict(lastInteraction, now, limits) {
     const bounds = limits || IDLE_WINDOW;
@@ -374,47 +318,38 @@
     };
   }
 
-  
-
   function idleNotice(verdict) {
     if (!verdict || verdict.state !== "warning") return "";
     const seconds = Math.ceil(verdict.msLeft / 1000);
     const rest = seconds % 60;
-    return "Nobody has touched this page for a while. It is the only " +
-      "place the submissions exist in the clear, so it will clear itself " +
+    return "Nobody has touched this page for a while. It shows the " +
+      "site's settings, roles and change log, so it will clear itself " +
       "and sign you out in " + Math.floor(seconds / 60) + ":" +
       (rest < 10 ? "0" : "") + rest +
-       
-       
-       
-       
-       
-       
-       
       ". Any key, click, touch or wheel keeps it open.";
   }
 
    
    
    
-   
   root.BinderAdmin = Object.freeze({
-    COLUMNS: COLUMNS,
-    entryFor: entryFor,
-    rowFor: rowFor,
-    csvCell: csvCell,
-    toCsv: toCsv,
-    toJson: toJson,
-    fileName: fileName,
-    storedKeyVerdict: storedKeyVerdict,
-    storedKeyNotice: storedKeyNotice,
-    otherKeyNotice: otherKeyNotice,
+    UNIT_SYSTEMS: UNIT_SYSTEMS,
+    THEMES: THEMES,
+    validateFloor: validateFloor,
+    validateLockedUnit: validateLockedUnit,
+    validateGroupName: validateGroupName,
+    validateWelcomeText: validateWelcomeText,
+    validateDefaultTheme: validateDefaultTheme,
+    SETTINGS_VALIDATORS: SETTINGS_VALIDATORS,
+    SETTINGS_DEFAULTS: SETTINGS_DEFAULTS,
+    floorNotice: floorNotice,
     MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
     membershipView: membershipView,
     secretOnlyNotice: secretOnlyNotice,
     refusalFor: refusalFor,
     addedNotice: addedNotice,
     removalStep: removalStep,
+    logLine: logLine,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -438,75 +373,8 @@
     }
   }
 
-  
-
   function why(error) {
     return error && error.message ? error.message : "failed with no message";
-  }
-
-  
-
-  
-
-  const DOWNLOAD_IDS = Object.freeze(
-    ["download", "download-xlsx", "download-json"]);
-
-  
-
-  const DOWNLOAD_ACK = "Downloaded — check your downloads.";
-  const PRESSED_MS = 4000;
-
-  const KEY_DB = "hgb-keyholder-key";
-  const KEY_STORE = "key";
-  const KEY_ROW = "current";
-
-  function openKeyDb() {
-    return new Promise(function (resolve, reject) {
-      if (!root.indexedDB) {
-        reject(new Error("this browser keeps no database for this site"));
-        return;
-      }
-      const request = root.indexedDB.open(KEY_DB, 1);
-      request.onupgradeneeded = function () {
-        request.result.createObjectStore(KEY_STORE);
-      };
-      request.onsuccess = function () { resolve(request.result); };
-      request.onerror = function () { reject(request.error); };
-    });
-  }
-
-   
-   
-  async function withKeyStore(mode, act) {
-    const db = await openKeyDb();
-    try {
-      return await new Promise(function (resolve, reject) {
-        const transaction = db.transaction(KEY_STORE, mode);
-        const request = act(transaction.objectStore(KEY_STORE));
-        request.onsuccess = function () { resolve(request.result); };
-        request.onerror = function () { reject(request.error); };
-      });
-    } finally {
-      db.close();
-    }
-  }
-
-  function readStoredKey() {
-    return withKeyStore("readonly", function (store) {
-      return store.get(KEY_ROW);
-    });
-  }
-
-  function writeStoredKey(record) {
-    return withKeyStore("readwrite", function (store) {
-      return store.put(record, KEY_ROW);
-    });
-  }
-
-  function forgetStoredKey() {
-    return withKeyStore("readwrite", function (store) {
-      return store.delete(KEY_ROW);
-    });
   }
 
   
@@ -516,8 +384,6 @@
     show($("surface-mark"), visible);
     show($("admin-intro"), visible);
   }
-
-  
 
   UI.boot(setUp, function (error) {
     showInstrument(false);
@@ -552,81 +418,9 @@
         "signed in as a member only.";
       return;
     }
-
-    const config = root.BINDER_CONFIG || {};
-    const unavailable = root.BinderCrypto
-      ? root.BinderCrypto.unavailableReason()
-      : "This page did not load its decryption code, so it cannot open " +
-        "anything. Reload, and if it persists the site is broken.";
-
-    if (unavailable) {
-      showInstrument(false);
-      show($("closed"), true);
-      $("closed").querySelector("[data-reason]").textContent = unavailable;
-      return;
-    }
     showInstrument(true);
 
-     
-     
-     
-    let entries = [];
-    let rows = [];
-    let csv = "";
-    let json = "";
-    let xlsx = null;
-    let urls = [];
-
-     
-     
-     
-    let pressedTimer = 0;
-
-     
-     
-     
-    let storedKey = null;
-    let kept = "";
-
-     
-     
-     
-     
-     
-     
-     
-    let otherKey = false;
-
-    function say(message, tone) {
-      UI.setStatus($("status"), message, tone);
-    }
-
-     
-     
-     
-     
-     
-     
-     
-     
-     
-     
-     
-    function finish(message, tone, opened) {
-      const suffix = otherKey ? otherKeyNotice(Boolean(opened)) : kept;
-       
-       
-       
-       
-       
-      const text = message.trim();
-      say(suffix ? text + (/[.!?]$/.test(text) ? " " : ". ") + suffix : message,
-        tone);
-      kept = "";
-      otherKey = false;
-    }
-
-    
+    const config = root.BINDER_CONFIG || {};
 
     function sessionEnded(where) {
       where(refusalFor(REFUSED).message, "bad");
@@ -636,527 +430,126 @@
       }
     }
 
-    
-
     function sessionRefused(response, where) {
       if (response.status !== REFUSED) return false;
       sessionEnded(where);
       return true;
     }
 
-     
-     
-     
-    function revoke() {
-      for (const url of urls) URL.revokeObjectURL(url);
-      urls = [];
-    }
-
-    
-
-    function acknowledge(pressed) {
-      
-
-      for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
-      $(pressed).classList.add("pressed");
-      clearTimeout(pressedTimer);
-      pressedTimer = setTimeout(function () {
-        for (const id of DOWNLOAD_IDS) $(id).classList.remove("pressed");
-      }, PRESSED_MS);
-      UI.setStatus($("download-status"), DOWNLOAD_ACK, null);
+    async function refusalBody(response) {
+      try {
+        return await response.json();
+      } catch (error) {
+        return null;
+      }
     }
 
      
      
-     
-     
-    function offer(id, content, type, extension) {
-      const url = URL.createObjectURL(new Blob([content], { type: type }));
-      urls.push(url);
-      const link = $(id);
-      link.href = url;
-      link.download = fileName(Date.now(), extension);
+
+    function saySettings(message, tone) {
+      UI.setStatus($("settings-status"), message, tone);
     }
 
-     
-     
-     
-    function rebuildDerived() {
-      rows = entries.map(rowFor);
-      csv = toCsv(rows);
-      json = toJson(entries);
-       
-       
-       
-       
-       
-      xlsx = root.BinderXlsx.build(
-        COLUMNS, rows, "Submissions", Date.now());
-    }
-
-    function reset() {
-      entries = [];
-      rows = [];
-      csv = "";
-      json = "";
-      xlsx = null;
-      kept = "";
-      otherKey = false;
-      revoke();
-      $("tbody").textContent = "";
-      $("summary").textContent = "";
-      $("charts").textContent = "";
-      show($("results"), false);
-      show($("dashboard"), false);
-      show($("publish-card"), false);
-      show($("failures"), false);
-      $("failure-list").textContent = "";
-      $("publish-preview-body").textContent = "";
-      show($("publish-preview-body"), false);
-      $("publish-status").textContent = "";
-      show($("publish-status"), false);
-    }
-
-    
-
-    $("keyfile-picker").addEventListener("change", function () {
-      const file = this.files && this.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function () {
-        $("keyfile").value = String(reader.result || "");
-        say("Key file loaded. It stays in this page.", null);
-      };
-      reader.onerror = function () {
-        say("That file could not be read.", "bad");
-      };
-      reader.readAsText(file);
+    const SETTINGS_FIELDS = Object.freeze({
+      "chart.floor": "settings-floor",
+      "chart.lockedUnit": "settings-locked-unit",
+      "site.groupName": "settings-group-name",
+      "site.welcomeText": "settings-welcome-text",
+      "site.defaultTheme": "settings-default-theme",
     });
 
-    
-
-    $("clear").addEventListener("click", async function () {
-      $("keyfile").value = "";
-      $("keyfile-picker").value = "";
-      storedKey = null;
-      reset();
-
-      let removed;
-      try {
-        await forgetStoredKey();
-        removed = true;
-      } catch (error) {
-         
-         
-         
-        removed = !root.indexedDB;
-      }
-
-      say(removed
-        ? "Cleared. Nothing from the last export is on this page, and no " +
-          "key is stored on this device - the next export needs your key " +
-          "file."
-        : "This page is cleared, but the key stored on this device could " +
-          "not be removed. Clear this site's data in the browser's " +
-          "settings, and treat the key as still on this machine until " +
-          "you have.",
-        removed ? null : "bad");
-    });
-
-     
-    
-
-
-    
-
-    const INTERACTION = ["pointerdown", "keydown", "wheel", "touchstart"];
-
-    
-
-    const TICK_MS = 1000;
-
-    let lastInteraction = Date.now();
-    let warned = false;
-    let ticker = null;
-
-    function hideWarning() {
-      if (!warned) return;
-      warned = false;
-      show($("idle-warning"), false);
-    }
-
-     
-     
-     
-    function markInteraction() {
-      lastInteraction = Date.now();
-      hideWarning();
-    }
-
-    for (const type of INTERACTION) {
-      document.addEventListener(type, markInteraction, {
-        capture: true,
-        passive: true,
-      });
-    }
-
-    
-
-    function endForIdle() {
-      root.clearInterval(ticker);
-      $("keyfile").value = "";
-      $("keyfile-picker").value = "";
-      reset();
-      root.BinderSignOut.signOut();
-    }
-
-    function checkAttention() {
-      const verdict = idleVerdict(lastInteraction, Date.now());
-      if (verdict.state === "expired") {
-        endForIdle();
-        return;
-      }
-      if (verdict.state !== "warning") {
-        hideWarning();
-        return;
-      }
-      $("idle-countdown").textContent = idleNotice(verdict);
-      if (warned) return;
-      warned = true;
-      show($("idle-warning"), true);
-       
-       
-       
-       
-       
-      $("idle-stay").focus();
-    }
-
-    ticker = root.setInterval(checkAttention, TICK_MS);
-
-     
-     
-     
-     
-    $("idle-stay").addEventListener("click", markInteraction);
-
-     
-     
-     
-     
-    for (const id of DOWNLOAD_IDS) {
-      const link = $(id);
-       
-       
-       
-      link.addEventListener("click", function () {
-        acknowledge(id);
-      });
-    }
-
-    
-
-    async function rememberKey(key) {
-      
-
-      let isSiteKey = false;
-      try {
-        if (config.publicKey) {
-          const probe = await root.BinderCrypto.encrypt(
-            { probe: true }, config.publicKey);
-          const back = await root.BinderCrypto.decrypt(probe, key);
-          isSiteKey = Boolean(back) && back.probe === true;
-        }
-      } catch (error) {
-        isSiteKey = false;
-      }
-
-       
-       
-       
-      otherKey = !isSiteKey;
-      if (otherKey) return;
-
-      let persisted = false;
-      try {
-        if (root.navigator && root.navigator.storage &&
-            root.navigator.storage.persist) {
-          persisted = await root.navigator.storage.persist() === true;
-        }
-      } catch (error) {
-        persisted = false;
-      }
-
-      try {
-         
-         
-        await writeStoredKey({
-          publicKey: config.publicKey,
-          privateKey: key,
-          storedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        kept = "This key could not be kept on this device, so the next " +
-          "export needs the file again.";
-        return;
-      }
-      kept = storedKeyNotice(persisted);
-    }
-
-    $("run").addEventListener("click", async function () {
-      reset();
-
-      const keyText = $("keyfile").value.trim();
-      let key;
-
-      if (keyText) {
-        
-
-        try {
-          say("Reading the key…", null);
-          key = await root.BinderCrypto.importPrivateKey(keyText);
-        } catch (error) {
-          detail(why(error));
-          say("That key was not usable.", "bad");
-          return;
-        }
-        storedKey = key;
-        await rememberKey(key);
-      } else if (storedKey) {
-         
-         
-        key = storedKey;
-      } else {
-        say("Paste or choose your key file first - the one " +
-          "tools/keygen.html saved.", "bad");
-        return;
-      }
-
-      $("run").disabled = true;
+    async function loadSettings() {
+      saySettings("Loading…", null);
       let payload;
       try {
-        say("Fetching the rows…", null);
-        const response = await fetch(config.endpoint + "/export", {
-          headers: root.BinderSession.authorization(),
-        });
-        if (sessionRefused(response, say)) return;
+        const response = await fetch(config.endpoint + "/content");
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
         payload = await response.json();
       } catch (error) {
-        $("run").disabled = false;
         detail(why(error));
-        finish("The rows could not be fetched.", "bad");
+        saySettings("The current settings could not be read.", "bad");
         return;
       }
-
-      const submissions = (payload && payload.submissions) || [];
-      if (!submissions.length) {
-        $("run").disabled = false;
-        finish("There are no submissions stored yet.", null);
-        return;
+      const content = (payload && payload.content) || {};
+      for (const name of Object.keys(SETTINGS_FIELDS)) {
+        const field = $(SETTINGS_FIELDS[name]);
+        if (!field) continue;
+        field.value = Object.prototype.hasOwnProperty.call(content, name)
+          ? content[name]
+          : root.BinderAdmin.SETTINGS_DEFAULTS[name];
       }
+      $("settings-floor-notice").textContent =
+        root.BinderAdmin.floorNotice($("settings-floor").value);
+      saySettings("", null);
+    }
 
-      
-
-      say("Decrypting " + submissions.length +
-        (submissions.length === 1 ? " row…" : " rows…"), null);
-      const failures = [];
-      for (const submission of submissions) {
-        try {
-          const record = await root.BinderCrypto.decrypt(
-            submission.ciphertext, key);
-          entries.push(entryFor(submission, record));
-        } catch (error) {
-           
-           
-           
-           
-           
-           
-          detail("row " + submission.id + ": " + why(error));
-          failures.push({ id: submission.id });
-        }
-      }
-
-      rebuildDerived();
-      render(submissions.length, failures);
-      $("run").disabled = false;
+    $("settings-floor").addEventListener("input", function () {
+      $("settings-floor-notice").textContent =
+        root.BinderAdmin.floorNotice(this.value);
     });
 
-    
-
-    function currentBasis() {
-      return UI.checkedValue("basis", "people");
-    }
-
-    
-
-    function currentUnits() {
-      return UI.checkedValue("units", root.BinderDashboard.DEFAULT_UNITS);
-    }
-
-    
-
-    function localSnapshot() {
-      return root.BinderDashboard.snapshotOf(entries, { identify: true });
-    }
-
-    function redraw() {
-      if (entries.length) {
-        root.BinderDashboard.render(
-          $("charts"), localSnapshot(), currentBasis(), currentUnits());
-      }
-    }
-
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="basis"], input[name="units"]'),
-      function (input) {
-        input.addEventListener("change", redraw);
+     
+     
+     
+     
+     
+    for (const name of Object.keys(SETTINGS_FIELDS)) {
+      const button = $(SETTINGS_FIELDS[name] + "-save");
+      if (!button) continue;
+      button.addEventListener("click", async function () {
+        const field = $(SETTINGS_FIELDS[name]);
+        const validator = root.BinderAdmin.SETTINGS_VALIDATORS[name];
+        const verdict = validator(field.value);
+        if (!verdict.ok) {
+          saySettings(verdict.message, "bad");
+          return;
+        }
+        button.disabled = true;
+        saySettings("Saving…", null);
+        try {
+          const response = await fetch(config.endpoint + "/content", {
+            method: "POST",
+            headers: Object.assign(
+              { "Content-Type": "application/json" },
+              root.BinderSession.authorization()),
+            body: JSON.stringify({ name: name, value: verdict.value }),
+          });
+          if (sessionRefused(response, saySettings)) return;
+          if (!response.ok) {
+            button.disabled = false;
+            const refusal = refusalFor(response.status,
+              await refusalBody(response));
+            saySettings(refusal.message, "bad");
+            return;
+          }
+        } catch (error) {
+          button.disabled = false;
+          detail(why(error));
+          saySettings("That could not be sent.", "bad");
+          return;
+        }
+        button.disabled = false;
+        field.value = verdict.value;
+        if (name === "chart.floor") {
+          $("settings-floor-notice").textContent =
+            root.BinderAdmin.floorNotice(verdict.value);
+        }
+        saySettings("Saved.", null);
+        loadLog();
       });
-
-    
-
-    function sayUnpublish(message, tone) {
-      UI.setStatus($("unpublish-status"), message, tone);
-    }
-
-    
-
-    let publishedNow = null;
-
-    async function refreshPublishedState() {
-      const state = $("published-state");
-      try {
-        const response = await fetch(config.endpoint + "/snapshot", {
-          headers: root.BinderSession.authorization(),
-        });
-        
-
-        if (sessionRefused(response, function (message) {
-          state.textContent = message;
-        })) return;
-        if (response.status === 404) {
-          publishedNow = null;
-           
-           
-           
-           
-          state.textContent = "Nothing is published. Muse's charts has " +
-            "nothing to show.";
-          show($("unpublish"), false);
-          return;
-        }
-        if (!response.ok) {
-          throw new Error("The server answered " + response.status + ".");
-        }
-        const payload = await response.json();
-        const snapshot = payload.snapshot || {};
-        publishedNow = payload.snapshot || null;
-        const counts = snapshot.counts || {};
-        const when = snapshot.generated
-          ? new Date(snapshot.generated).toISOString()
-              .replace("T", " ").slice(0, 16) + " UTC"
-          : "an unknown time";
-        state.textContent = "Published: " + counts.entries + " entries from " +
-          counts.people + " people, worked out " + when +
-          (snapshot.series ? ", including weight over time." : ".");
-        show($("unpublish"), true);
-      } catch (error) {
-        publishedNow = null;
-        detail(why(error));
-        state.textContent = "Could not check what is published.";
-         
-         
-         
-        show($("unpublish"), true);
-      }
-    }
-
-    $("unpublish").addEventListener("click", async function () {
-      $("unpublish").disabled = true;
-      sayUnpublish("Taking it down…", null);
-      try {
-        const response = await fetch(config.endpoint + "/snapshot", {
-          method: "DELETE",
-          headers: root.BinderSession.authorization(),
-        });
-        if (sessionRefused(response, sayUnpublish)) return;
-        if (!response.ok) {
-          throw new Error("The server answered " + response.status + ".");
-        }
-      } catch (error) {
-        $("unpublish").disabled = false;
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-        detail(why(error));
-        sayUnpublish("It could not be taken down — an admin can clear it "
-          + "by hand, under Publishing and retracting the snapshot in "
-          + "OPERATIONS.md.", "bad");
-        return;
-      }
-
-      $("unpublish").disabled = false;
-      sayUnpublish("Taken down. Muse's charts shows nothing now.", null);
-      await refreshPublishedState();
-    });
-
-    
-
-    async function loadStoredKey() {
-      $("run").disabled = true;
-      try {
-        let record = null;
-        try {
-          record = await readStoredKey();
-        } catch (error) {
-           
-           
-           
-          return;
-        }
-
-        const verdict = storedKeyVerdict(record, config.publicKey);
-        if (verdict.key) {
-          storedKey = verdict.key;
-          say("This device holds your key, so Fetch and decrypt needs no " +
-            "file. Closing the tab leaves it here; Clear removes it.", null);
-          return;
-        }
-        if (verdict.erase) {
-          try { await forgetStoredKey(); } catch (error) {}
-        }
-        if (verdict.why) say(verdict.why, "bad");
-      } finally {
-        $("run").disabled = false;
-      }
-    }
-
-     
-    
-
-    function sayMembership(message, tone) {
-      UI.setStatus($("membership-status"), message, tone);
     }
 
      
      
-     
-    function membershipRow(row, role) {
+
+    function sayRoles(message, tone) {
+      UI.setStatus($("roles-status"), message, tone);
+    }
+
+    function membershipRow(row) {
       const line = document.createElement("div");
       line.className = "row";
 
@@ -1171,8 +564,6 @@
         : "added at an unrecorded time";
       line.appendChild(when);
 
-      
-
       const button = document.createElement("button");
       let armed = false;
       button.type = "button";
@@ -1184,13 +575,13 @@
           button.textContent = removalStep(row, true);
           return;
         }
-        return removeMembership(row, role, button);
+        return removeMembership(row, button);
       });
       line.appendChild(button);
       return line;
     }
 
-    function drawRows(container, rows, role) {
+    function drawRows(container, rows) {
       container.textContent = "";
       if (!rows.length) {
         const empty = document.createElement("p");
@@ -1199,42 +590,28 @@
         container.appendChild(empty);
         return;
       }
-      for (const row of rows) container.appendChild(membershipRow(row, role));
+      for (const row of rows) container.appendChild(membershipRow(row));
     }
 
     function drawMembership(view) {
-      for (const list of view.lists) {
-        drawRows($("membership-" + list.role), list.rows, list.role);
-      }
+      drawRows($("roles-admin"), view.lists[0].rows);
 
-      drawRows($("membership-malformed-list"), view.malformed, "admin");
-      show($("membership-malformed"), view.malformed.length > 0);
+      drawRows($("roles-malformed-list"), view.malformed);
+      show($("roles-malformed"), view.malformed.length > 0);
 
-      $("secret-only").textContent = secretOnlyNotice(view);
-       
-       
-       
-       
-       
-       
-      $("secret-only-ids").textContent = view.secretOnly.join("\n");
-      show($("secret-only-ids"), view.secretOnly.length > 0);
+      $("roles-secret-only").textContent = secretOnlyNotice(view);
+      $("roles-secret-only-ids").textContent = view.secretOnly.join("\n");
+      show($("roles-secret-only-ids"), view.secretOnly.length > 0);
 
-       
-       
       const other = view.unknown.length > 0 || view.dropped > 0 ||
         view.absent.length > 0;
-      show($("membership-other"), other);
+      show($("roles-other"), other);
       if (other) {
         const notes = view.unknown.map(function (row) {
           return "role " + String(row.role) + ": " + String(row.label || "") +
             " (" + String(row.account_id) + ")";
         });
         if (view.dropped) {
-           
-           
-           
-           
           notes.push(view.dropped === 1
             ? "1 entry in this answer was not a row this page could read."
             : view.dropped + " entries in this answer were not rows this " +
@@ -1244,30 +621,18 @@
           notes.push("this answer carried no " + view.absent.join(", ") +
             " list at all.");
         }
-        $("membership-other-body").textContent = notes.join("\n");
+        $("roles-other-body").textContent = notes.join("\n");
       }
     }
-
-    
 
     function handleRefusal(status, payload) {
       const refusal = refusalFor(status, payload);
       if (refusal.action === "signed-out") {
-        sessionEnded(sayMembership);
+        sessionEnded(sayRoles);
         return true;
       }
-      sayMembership(refusal.message, "bad");
+      sayRoles(refusal.message, "bad");
       return false;
-    }
-
-     
-     
-    async function refusalBody(response) {
-      try {
-        return await response.json();
-      } catch (error) {
-        return null;
-      }
     }
 
     async function readMembership() {
@@ -1283,7 +648,7 @@
         payload = await response.json();
       } catch (error) {
         detail(why(error));
-        sayMembership("The membership lists could not be read.", "bad");
+        sayRoles("The role list could not be read.", "bad");
         return;
       }
       drawMembership(membershipView(payload));
@@ -1293,17 +658,13 @@
       const telegramId = $("member-telegram-id").value.trim();
       const label = $("member-label").value.trim();
 
-      
-
       if (!telegramId || !label) {
-        sayMembership("A numeric Telegram id and a label are both needed.",
-          "bad");
+        sayRoles("A numeric Telegram id and a label are both needed.", "bad");
         return;
       }
 
-      const role = UI.checkedValue("member-role", MEMBERSHIP_ROLES[0]);
       $("member-add").disabled = true;
-      sayMembership("Adding…", null);
+      sayRoles("Adding…", null);
       try {
         const response = await fetch(config.endpoint + "/membership", {
           method: "POST",
@@ -1311,7 +672,7 @@
             { "Content-Type": "application/json" },
             root.BinderSession.authorization()),
           body: JSON.stringify({
-            role: role,
+            role: MEMBERSHIP_ROLES[0],
             telegramId: telegramId,
             label: label,
           }),
@@ -1324,30 +685,24 @@
       } catch (error) {
         $("member-add").disabled = false;
         detail(why(error));
-        sayMembership("That could not be sent.", "bad");
+        sayRoles("That could not be sent.", "bad");
         return;
       }
 
-       
-       
-       
-       
       $("member-telegram-id").value = "";
       $("member-add").disabled = false;
       await readMembership();
-      sayMembership(addedNotice(role, label), null);
+      sayRoles(addedNotice(label), null);
+      loadLog();
     });
 
-    async function removeMembership(row, role, button) {
+    async function removeMembership(row, button) {
       button.disabled = true;
-      sayMembership("Removing…", null);
+      sayRoles("Removing…", null);
       try {
-         
-         
-         
         const response = await fetch(
           config.endpoint + "/membership/" +
-            encodeURIComponent(role) + "/" +
+            encodeURIComponent(MEMBERSHIP_ROLES[0]) + "/" +
             encodeURIComponent(String(row.account_id)),
           {
             method: "DELETE",
@@ -1357,223 +712,172 @@
           button.disabled = false;
           const left = handleRefusal(response.status,
             await refusalBody(response));
-           
-           
-           
           if (!left) await readMembership();
           return;
         }
       } catch (error) {
         button.disabled = false;
         detail(why(error));
-        sayMembership("That could not be removed.", "bad");
+        sayRoles("That could not be removed.", "bad");
         return;
       }
 
       await readMembership();
-      sayMembership("Removed.", null);
-    }
-
-    loadStoredKey();
-    refreshPublishedState();
-    readMembership();
-
-    
-
-    function publishable() {
-      return root.BinderDashboard.snapshotOf(entries, {
-        identify: false,
-        series: $("publish-series").checked,
-         
-         
-         
-         
-         
-         
-        previous: publishedNow,
-      });
-    }
-
-    function sayPublish(message, tone) {
-      UI.setStatus($("publish-status"), message, tone);
+      sayRoles("Removed.", null);
+      loadLog();
     }
 
     
 
-    function withheldNote(snapshot) {
-      return snapshot.seriesWithheld
-        ? " Weight over time is not in it: fewer than " +
-          root.BinderDashboard.MIN_CELL +
-          " people have more than one entry."
-        : "";
-    }
-
-    
-
-    $("publish-preview").addEventListener("click", function () {
-      const body = $("publish-preview-body");
-      if (!body.hidden) {
-        body.hidden = true;
-        body.textContent = "";
-        return;
+    async function loadAdminVia() {
+      try {
+        const response = await fetch(config.endpoint + "/me", {
+          headers: root.BinderSession.authorization(),
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const via = payload && typeof payload.adminVia === "string"
+          ? payload.adminVia.trim()
+          : "";
+        const words = { telegram: "your Telegram group role",
+          flag: "being flagged an admin here", secret: "the bootstrap secret",
+          "break-glass": "the break-glass export tool" };
+        if (via && words[via]) {
+          $("roles-via").textContent =
+            "You are an admin through " + words[via] + ".";
+        }
+      } catch (error) {
+         
+         
       }
-      const preview = publishable();
-      body.textContent = JSON.stringify(preview, null, 2);
-      body.hidden = false;
-       
-       
-       
-      const missing = withheldNote(preview);
-      if (missing) sayPublish(missing.trim(), null);
-    });
+    }
 
-    $("publish").addEventListener("click", async function () {
+     
+     
+
+    function sayLog(message, tone) {
+      UI.setStatus($("log-status"), message, tone);
+    }
+
+    function drawLog(entries) {
+      const list = $("log-list");
+      list.textContent = "";
       if (!entries.length) {
-        sayPublish("There is nothing decrypted to publish.", "bad");
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No changes yet.";
+        list.appendChild(empty);
         return;
       }
-      $("publish").disabled = true;
-      sayPublish("Publishing…", null);
-       
-       
-       
-      const sent = publishable();
+      for (const entry of entries) {
+        const line = logLine(entry);
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const when = document.createElement("span");
+        when.className = "hint";
+        when.textContent = line.when;
+        row.appendChild(when);
+
+        const who = document.createElement("span");
+        who.textContent = line.who;
+        row.appendChild(who);
+
+        const what = document.createElement("span");
+        what.textContent = line.what;
+        row.appendChild(what);
+
+        list.appendChild(row);
+      }
+    }
+
+    async function loadLog() {
       try {
-        const response = await fetch(config.endpoint + "/snapshot", {
-          method: "POST",
-          headers: Object.assign(
-            { "Content-Type": "application/json" },
-            root.BinderSession.authorization()),
-          body: JSON.stringify(sent),
+        const response = await fetch(config.endpoint + "/admin-log", {
+          headers: root.BinderSession.authorization(),
         });
-        if (sessionRefused(response, sayPublish)) return;
+        if (sessionRefused(response, sayLog)) return;
         if (!response.ok) {
           throw new Error("The server answered " + response.status + ".");
         }
+        const payload = await response.json();
+        const entries = Array.isArray(payload && payload.log)
+          ? payload.log
+          : [];
+        drawLog(entries);
+        sayLog("", null);
       } catch (error) {
-        $("publish").disabled = false;
         detail(why(error));
-        sayPublish("It could not be published.", "bad");
-        return;
+        sayLog("The change log could not be read.", "bad");
+      }
+    }
+
+     
+     
+     
+
+    function clearAdminData() {
+      $("log-list").textContent = "";
+      $("roles-admin").textContent = "";
+      $("roles-malformed-list").textContent = "";
+      $("roles-other-body").textContent = "";
+      show($("roles-malformed"), false);
+      show($("roles-other"), false);
+    }
+
+    function wireIdle() {
+      const INTERACTION = ["pointerdown", "keydown", "wheel", "touchstart"];
+      const TICK_MS = 1000;
+      let lastInteraction = Date.now();
+      let warned = false;
+      let ticker = null;
+
+      function hideWarning() {
+        if (!warned) return;
+        warned = false;
+        show($("idle-warning"), false);
+      }
+      function markInteraction() {
+        lastInteraction = Date.now();
+        hideWarning();
+      }
+      for (const type of INTERACTION) {
+        document.addEventListener(type, markInteraction, {
+          capture: true, passive: true,
+        });
       }
 
-      $("publish").disabled = false;
-      sayPublish("Published. Muse's charts now shows these numbers." +
-        withheldNote(sent), null);
-      await refreshPublishedState();
-    });
+      function endForIdle() {
+        root.clearInterval(ticker);
+        clearAdminData();
+        root.BinderSignOut.signOut();
+      }
 
-    async function deleteEntry(entry, total, failures, button) {
-      button.disabled = true;
-      say("Deleting row " + entry.id + "…", null);
-      try {
-        const response = await fetch(
-          config.endpoint + "/submission/" +
-            encodeURIComponent(String(entry.id)),
-          {
-            method: "DELETE",
-            headers: root.BinderSession.authorization(),
-          });
-        if (sessionRefused(response, say)) return;
-        if (!response.ok) {
-          throw new Error("The server answered " + response.status + ".");
+      function checkAttention() {
+        const verdict = idleVerdict(lastInteraction, Date.now());
+        if (verdict.state === "expired") {
+          endForIdle();
+          return;
         }
-      } catch (error) {
-        button.disabled = false;
-        detail(why(error));
-        say("Row " + entry.id + " could not be deleted.", "bad");
-        return;
+        if (verdict.state !== "warning") {
+          hideWarning();
+          return;
+        }
+        $("idle-countdown").textContent = idleNotice(verdict);
+        if (warned) return;
+        warned = true;
+        show($("idle-warning"), true);
+        $("idle-stay").focus();
       }
 
-      entries = entries.filter(function (candidate) {
-        return candidate.id !== entry.id;
-      });
-      rebuildDerived();
-      render(total - 1, failures);
-      say("Row " + entry.id + " was deleted. The remaining rows and " +
-        "downloads were rebuilt.", null);
+      ticker = root.setInterval(checkAttention, TICK_MS);
+      $("idle-stay").addEventListener("click", markInteraction);
     }
 
-    const PREVIEW = 50;
-
-    function render(total, failures) {
-       
-       
-      $("summary").textContent = rows.length + " of " + total +
-        (total === 1 ? " row decrypted" : " rows decrypted") +
-        (rows.length > PREVIEW ? "; first " + PREVIEW + " shown below" : "") +
-        ".";
-
-      const head = $("thead");
-      head.textContent = "";
-      const headRow = document.createElement("tr");
-      for (const name of COLUMNS) {
-        const th = document.createElement("th");
-        th.textContent = name;
-        headRow.appendChild(th);
-      }
-      const actionHead = document.createElement("th");
-      actionHead.textContent = "actions";
-      headRow.appendChild(actionHead);
-      head.appendChild(headRow);
-
-      const body = $("tbody");
-      body.textContent = "";
-      rows.slice(0, PREVIEW).forEach(function (row, index) {
-        const tr = document.createElement("tr");
-        row.forEach(function (cell) {
-          const td = document.createElement("td");
-           
-           
-          td.textContent = String(cell);
-          tr.appendChild(td);
-        });
-        const action = document.createElement("td");
-        const button = document.createElement("button");
-        const entry = entries[index];
-        button.type = "button";
-        button.className = "secondary";
-        button.textContent = "Delete row " + entry.id;
-        button.addEventListener("click", function () {
-          return deleteEntry(entry, total, failures, button);
-        });
-        action.appendChild(button);
-        tr.appendChild(action);
-        body.appendChild(tr);
-      });
-
-      if (failures.length) {
-        show($("failures"), true);
-        $("failure-list").textContent = failures.map(function (f) {
-          return "row " + f.id;
-        }).join("\n");
-      }
-
-      revoke();
-      offer("download", csv, "text/csv;charset=utf-8", "csv");
-      offer("download-xlsx", xlsx,
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "xlsx");
-      offer("download-json", json, "application/json;charset=utf-8", "json");
-
-      show($("results"), true);
-
-      if (rows.length) {
-        redraw();
-        show($("dashboard"), true);
-        show($("publish-card"), true);
-      } else {
-        show($("dashboard"), false);
-        show($("publish-card"), false);
-      }
-
-      finish(rows.length
-         
-         
-        ? "Done. All three files are built in this page — nothing was " +
-          "uploaded."
-        : "Nothing could be decrypted with this key.",
-        rows.length ? null : "bad", rows.length);
-    }
+    wireIdle();
+    loadSettings();
+    readMembership();
+    loadAdminVia();
+    loadLog();
   }
 })(globalThis);

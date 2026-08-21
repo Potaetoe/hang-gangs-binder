@@ -796,9 +796,11 @@ INVENTED = ("tools/check_docs.py", "AGENTS.md", "The review bar")
 # A REAL pin standing at 1, so raising it to 2 is a claim about this
 # tree rather than about a fixture. It was apps/web/memberkey.js's
 # "Members hold a key too" until that file was deleted (0.9-M2-S5,
-# #356); admin.js's is the same shape and dies the same way, when 0.9-M3
-# rewrites the admin pages and clears their key-world comments.
-OVERCOUNTED = ("apps/web/admin.js", "DESIGN.md", "Key custody")
+# #356), then apps/web/admin.js's own "Key custody" citation until
+# 0.9-M3-S10 (#416) rewrote the admin pages and cleared their
+# key-world comments, exactly as this comment once predicted it would.
+# config.js still carries the shape unchanged.
+OVERCOUNTED = ("apps/web/config.js", "DESIGN.md", "Key custody")
 
 check("a pin whose citation is not broken is reported",
       len(check_comments.citation_pin_problems(

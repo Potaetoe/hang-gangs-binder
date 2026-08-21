@@ -27,7 +27,6 @@ const load = async (path) => {
 };
 
 await load("../apps/web/xlsx.js");
-await load("../apps/web/admin.js");
 
 const { build, crc32, columnName, escapeXml, cellXml, sheetXml } =
   globalThis.BinderXlsx;
@@ -225,7 +224,21 @@ function unzip(bytes) {
   return { entries: entries, centralSize: size, centralCount: count };
 }
 
-const COLUMNS = globalThis.BinderAdmin.COLUMNS;
+/*
+ * A realistic-shaped row, not admin.js's own COLUMNS - that export
+ * retired with the keyfile-decrypt tool at 0.9-M3-S10 (#416), and this
+ * file's own claim is about apps/web/xlsx.js's writer, which needs no
+ * particular caller's column names to prove itself against. The
+ * eighteen-name shape and the formula-looking handle in row 2 are kept
+ * because they are still the realistic case a real submission produced
+ * - a spreadsheet, once, in this project's history.
+ */
+const COLUMNS = [
+  "id", "account_id", "received_at", "submitted_at", "telegram",
+  "weight_kg", "weight_lb", "height_cm", "height_total_inches",
+  "height_feet", "height_inches", "entered_units", "entered_weight",
+  "entered_height", "gender", "roles", "country", "over18",
+];
 const ROWS = [
   [1, "2026-08-05T00:00:00.000Z", "2026-08-05T00:00:00.000Z", "somehandle",
    90.7, 200, 177.8, 70, 5, 10, "imperial", "200 lb", "5 ft 10 in",
