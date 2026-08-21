@@ -34,6 +34,13 @@
   // value read under a live key is a silent wrong answer, and a key
   // nobody has written is a clean one.
   const KEY = "hgb-palette";
+  // The admin's configured resting palette, cached by apps/web/site-content.js
+  // from GET /config and read here for the same reason theme-init.js
+  // reads it (see that file's header for why this script cannot fetch it
+  // directly). Consulted only when KEY holds nothing usable, exactly
+  // where theme-init.js's own pre-paint read sits, so the two scripts
+  // never confirm two different palettes on one load.
+  const DEFAULT_THEME_KEY = "hgb-default-theme";
   const BG = {
     pink: "#1e141a", daylight: "#f3eadb", midnight: "#120d10",
     contrast: "#000000",
@@ -62,7 +69,8 @@
     });
   }
 
-  // What the stylesheet gives a page carrying no data-theme attribute.
+  // What the stylesheet gives a page carrying no data-theme attribute,
+  // AND no admin default has ever been learned (see adminDefault below).
   // This function is a mirror of the two :root:not([data-theme]) media
   // blocks in theme.css and has to stay one: apply() writes the
   // attribute, which outranks both of them, so a disagreement here does
@@ -86,11 +94,28 @@
   // A stored value naming a palette this file does not paint - "custom"
   // from before the ruling retired it, or anything else hand-edited or
   // from a future version - is not a choice this file can honor. Falls
-  // through to preferred() instead, the same resting state a first-time
-  // visitor gets: no crash, no half-applied state, and BG[name] above
-  // already guards paintChrome() the same way for the browser chrome.
+  // through to adminDefault or preferred() instead, the same resting
+  // state a first-time visitor gets: no crash, no half-applied state,
+  // and BG[name] above already guards paintChrome() the same way for
+  // the browser chrome.
   if (stored && !Object.prototype.hasOwnProperty.call(BG, stored)) {
     stored = null;
+  }
+
+  // The admin's configured resting palette (site.defaultTheme from
+  // GET /config), read from the cache apps/web/site-content.js writes -
+  // see this file's DEFAULT_THEME_KEY comment above and theme-init.js's
+  // header for why neither script fetches it directly. Sits between a
+  // member's own choice and the system-preference fallback, exactly
+  // where theme-init.js's own pre-paint read puts it, so the palette
+  // this file CONFIRMS is always the one theme-init.js already PAINTED -
+  // an admin default this file ignored here would repaint the page the
+  // instant this script ran, which is the flash both files exist to
+  // prevent.
+  let adminDefault = null;
+  try { adminDefault = localStorage.getItem(DEFAULT_THEME_KEY); } catch (e) {}
+  if (adminDefault && !Object.prototype.hasOwnProperty.call(BG, adminDefault)) {
+    adminDefault = null;
   }
 
   /*
@@ -111,14 +136,14 @@
    * following it.
    */
   if (!buttons.length) {
-    paintChrome(stored || preferred());
+    paintChrome(stored || adminDefault || preferred());
     return;
   }
 
   // Reflected without persisting: a visitor who has never touched a
   // control has not made a choice, and writing one would freeze today's
   // system setting into storage.
-  apply(stored || preferred());
+  apply(stored || adminDefault || preferred());
 
   // No document-level listener here, and that is the whole difference
   // the ruling on #274 made. Escape and outside-click both belonged to

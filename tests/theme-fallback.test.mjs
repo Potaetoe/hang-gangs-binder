@@ -73,15 +73,22 @@ function buttonStub(name) {
  * them in, matching PREPAINT_SCRIPT's own seed in
  * tools/check_web.py's loading_problems().
  */
-async function driven(storedPalette) {
+async function driven(storedPalette, defaultTheme) {
   const documentElement = documentElementStub();
   const metas = [{ attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); } }];
   const buttons = ["midnight", "pink", "daylight", "contrast"]
     .map(buttonStub);
 
   const g = globalThis;
-  g.localStorage = storage(
-    storedPalette === undefined ? {} : { "hgb-palette": storedPalette });
+  // defaultTheme, optional: the admin's configured resting palette
+  // (0.9-M3-S12, #418), the same key apps/web/site-content.js writes
+  // from GET /config. Existing callers pass one argument and get
+  // exactly today's behavior - this key is simply absent, the same as
+  // a fork that has never learned one.
+  const initial = {};
+  if (storedPalette !== undefined) initial["hgb-palette"] = storedPalette;
+  if (defaultTheme !== undefined) initial["hgb-default-theme"] = defaultTheme;
+  g.localStorage = storage(initial);
   g.document = {
     documentElement,
     querySelectorAll: (selector) => (selector === "[data-set-theme]"
@@ -144,6 +151,69 @@ async function driven(storedPalette) {
     documentElement.getAttribute("data-theme") === "midnight");
 }
 
+/* ------------------------------------------------------------------ */
+/* THE ADMIN'S CONFIGURED DEFAULT (0.9-M3-S12, #418): site.defaultTheme */
+/* from GET /config, cached by apps/web/site-content.js and read by     */
+/* both scripts through the "hgb-default-theme" key - a member's own    */
+/* choice still wins, an unlearned or corrupted admin default falls     */
+/* through to the same system-preference resting state a first-time    */
+/* visitor with no cache at all gets (the driven(undefined) case just   */
+/* above), and both scripts agree on the answer.                        */
+
+{
+  const { documentElement, metas, buttons } =
+    await driven(undefined, "daylight");
+  check("a cached admin default paints before first paint, with no " +
+    "member choice of the visitor's own to outrank it",
+    documentElement.getAttribute("data-theme") === "daylight");
+  check("theme.js's own load-time read CONFIRMS the same palette " +
+    "theme-init.js already painted, rather than disagreeing with it - " +
+    "a mismatch here is the flash both files exist to prevent",
+    documentElement.getAttribute("data-theme") === "daylight");
+  check("the browser-chrome meta color follows the admin default too",
+    metas[0].attrs.content !== undefined);
+  check("the admin default's own chip is the one marked pressed",
+    buttons.find((b) => b.getAttribute("data-set-theme") === "daylight")
+      .getAttribute("aria-pressed") === "true" &&
+    buttons.filter((b) => b.getAttribute("data-set-theme") !== "daylight")
+      .every((b) => b.getAttribute("aria-pressed") === "false"));
+}
+
+{
+  // A member's OWN saved choice still wins over the admin's configured
+  // default - the ruling's exact words (0.9-M3-S12, #418): "a member's
+  // own saved choice still wins".
+  const { documentElement } = await driven("pink", "daylight");
+  check("a member's own stored palette outranks a cached admin default",
+    documentElement.getAttribute("data-theme") === "pink");
+}
+
+{
+  // A cached value naming no palette either script knows - corrupted
+  // localStorage, or a future config value this build predates - is
+  // not a value either file paints, the same discipline a stored
+  // "custom" choice already gets above.
+  const { documentElement } = await driven(undefined, "neon");
+  check("an admin default naming a palette neither script knows falls " +
+    "through to the system-preference resting state, not to the " +
+    "literal string \"neon\"",
+    documentElement.getAttribute("data-theme") === "midnight");
+}
+
+{
+  // S8's GET /config contract (0.9-M3-S8, #414, comment 5370945709):
+  // site.defaultTheme may come back "" for "unset", which apps/web/
+  // site-content.js's cacheDefaultTheme() already refuses to cache (a
+  // door.test.mjs check proves that half). This is the belt this file
+  // holds beside that suspenders - a "" that reached storage some other
+  // way is still not a value either script paints, the same falsy read
+  // an absent key gets.
+  const { documentElement } = await driven(undefined, "");
+  check("a cached empty string is read the same as no cached value at " +
+    "all, per S8's \"unset\" contract for GET /config",
+    documentElement.getAttribute("data-theme") === "midnight");
+}
+
 /*
  * theme-init.js ALONE, without theme.js running after it - the window
  * theme-init.js's own header exists to cover ("so a saved theme does
@@ -167,6 +237,85 @@ async function driven(storedPalette) {
     "data-theme attribute at all, rather than one CSS has no palette " +
     "block for",
     documentElement.getAttribute("data-theme") === null);
+}
+
+/*
+ * The same isolation for the admin's configured default (0.9-M3-S12,
+ * #418): theme-init.js's OWN synchronous read of "hgb-default-theme"
+ * has to be what paints the palette before first frame, since fetch is
+ * never synchronous and nothing else runs before this file does. If
+ * theme.js were secretly doing the real work here, this block - which
+ * never imports theme.js at all - would show data-theme unset.
+ */
+{
+  const documentElement = documentElementStub();
+  const g = globalThis;
+  g.localStorage = storage({ "hgb-default-theme": "daylight" });
+  g.document = { documentElement, querySelectorAll: () => [] };
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-admin-default-" +
+    Math.random());
+  check("theme-init.js's OWN pre-paint guard paints a cached admin " +
+    "default with nothing else having run yet",
+    documentElement.getAttribute("data-theme") === "daylight");
+}
+
+/*
+ * And the invalid-value half of the same guard, isolated the same way.
+ * The combined driven(undefined, "neon") case above proves the FINAL
+ * state is safe, but theme.js validates adminDefault too (see its own
+ * PALETTES-equivalent guard) and would silently correct a broken
+ * theme-init.js the same way it corrects a broken "custom" guard -
+ * exactly the masking the block above this one exists to rule out, and
+ * a mutation against theme-init.js's own validity check proved it
+ * during this slice's build (0.9-M3-S12, #418): the combined test
+ * stayed green while this isolated one went red.
+ */
+{
+  const documentElement = documentElementStub();
+  const g = globalThis;
+  g.localStorage = storage({ "hgb-default-theme": "neon" });
+  g.document = { documentElement, querySelectorAll: () => [] };
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-bad-default-" +
+    Math.random());
+  check("theme-init.js's OWN pre-paint guard never paints a cached " +
+    "value naming a palette it does not know, with nothing else " +
+    "having run yet to correct a mistake",
+    documentElement.getAttribute("data-theme") === null);
+}
+
+/*
+ * theme-init.js's OWN precedence between a member's saved choice and
+ * the admin's configured default, isolated the same way the two blocks
+ * above isolate its validity guards (0.9-M3-S12 fix wave, #418 comment
+ * 5371848229, finding F3). The combined driven("pink", "daylight")
+ * case far above proves the FINAL painted state always honors the
+ * member's choice, but theme.js runs second and reads the same two
+ * keys in the same order - so a regression that swapped theme-init.
+ * js's OWN precedence (paint the admin default first, only falling
+ * back to a member's choice) would still end on "pink" once theme.js
+ * corrected it a moment later. That is exactly the flash both files
+ * exist to prevent, and the combined test cannot see it - the same
+ * masking the two blocks above this one exist to rule out for the
+ * validity guards. This block never imports theme.js at all, so
+ * nothing can correct a broken precedence before this check reads it.
+ */
+{
+  const documentElement = documentElementStub();
+  const g = globalThis;
+  g.localStorage = storage({
+    "hgb-palette": "pink",
+    "hgb-default-theme": "daylight",
+  });
+  g.document = { documentElement, querySelectorAll: () => [] };
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-precedence-" +
+    Math.random());
+  check("theme-init.js's OWN pre-paint guard paints the member's saved " +
+    "choice over a cached admin default, with nothing else having run " +
+    "yet to correct a wrong first frame",
+    documentElement.getAttribute("data-theme") === "pink");
 }
 
 console.log(failures
