@@ -541,20 +541,34 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
  * calls it excused: 0.9-M3-S10 (#416) removed the last thing in
  * apps/web that ever called that route.
  *
- * ITS REPLACEMENT (0.9-M3-S10, #416): apps/web/admin.js now calls GET
- * /admin-log (S8's real, landed route name - #414 completion, comment
- * 5370945709: "admin" cannot be an API segment without colliding with
- * apps/web/admin.html's own URL through html_handling, so the ticket's
- * own /admin/log spelling was corrected before it shipped). S8 is
- * building the route itself on a separate branch, under review as of
- * this build, so the honest stub answer here is the same 404 an
- * unknown path gets until that branch lands. Everything else apps/web
- * calls must still resolve.
+ * ITS REPLACEMENT (0.9-M3-S10, #416, RE-TRUED 0.9-M3-S13, #433):
+ * apps/web/admin.js calls GET /admin-log (S8's real, landed route
+ * name - #414 completion, comment 5370945709: "admin" cannot be an
+ * API segment without colliding with apps/web/admin.html's own URL
+ * through html_handling, so the ticket's own /admin/log spelling was
+ * corrected before it shipped). The original comment here said S8's
+ * branch was still under review and this exception would close once
+ * it landed - that branch landed long ago and dev/demo-stub.js still
+ * answers nothing for it, so the sentence describing a transitional
+ * state was false: this is a STANDING gap, not a countdown. The demo
+ * (dev/demo-stub.js) models the pre-0.9-M3 Worker surface and has not
+ * grown with the admin API 0.9-M3 is adding; 0.9-M3-S13 (#433) adds
+ * two more of the same shape, GET /spec and PUT/DELETE
+ * /admin-fields/<id> (0.9-M3-S11's landed contract, #419) - the
+ * dynamic id makes the literal path this reader extracts
+ * "/admin-fields/" for both verbs, per endpointCallsIn's own docstring
+ * on the call-site idioms it reads. Building real stub answers for the
+ * admin API is out of scope for a page-only slice; the honest stub
+ * answer for all three stays the same 404 an unknown path gets.
+ * Everything else apps/web calls must still resolve.
  */
+const DEMO_STUB_GAPS = Object.freeze(["/admin-log", "/spec",
+  "/admin-fields/"]);
 await check("the stub answers every call apps/web makes, by verb and " +
-  "path - except admin.js's GET /admin-log, S8's own route, not yet " +
-  "merged", () =>
-  calls.every((one) => one.path === "/admin-log" ||
+  "path - except the admin API's standing gap (GET /admin-log, GET " +
+  "/spec, PUT/DELETE /admin-fields/<id> - the demo has not grown with " +
+  "0.9-M3's admin surface)", () =>
+  calls.every((one) => DEMO_STUB_GAPS.indexOf(one.path) !== -1 ||
     Demo.routeFor(one.path, one.method) !== null));
 
 await check("a route the stub does not know is refused, not passed on", () =>
