@@ -59,7 +59,14 @@ WHAT IT CHECKS, AND WHY EACH ONE IS ITS OWN STAGE
      page file with no browser-note mention (#403). See "THE
      SLICE-TIER STAGE" below for the whole argument; a trivial-tier
      slice owes none of this.
-  7. Ticket label state via `gh` - REPORT-ONLY, and deliberately never
+  7. Hand-typed gate totals in the `--completion` draft vs what stages
+     1 and 2 of THIS SAME RUN actually printed (0.9-M3-S16, #421) - a
+     claim like "34/34 stages ok" is scanned out of the draft and
+     graded against the counted totals stage 1/2 already computed, so
+     a wrong hand-typed number is a FAILED stage rather than something
+     only a reviewer catches. See "THE HAND-TYPED TOTALS STAGE" below
+     for the whole argument.
+  8. Ticket label state via `gh` - REPORT-ONLY, and deliberately never
      gates the exit code. This program cannot know whether the
      `claude` label is SUPPOSED to be present or absent at the moment
      it runs (Prime's bookkeeping owns that, per the pack's "Claim
@@ -70,7 +77,7 @@ WHAT IT CHECKS, AND WHY EACH ONE IS ITS OWN STAGE
      never PASS/FAIL, and a missing `gh` degrades to a labeled gap
      rather than a crash or a silent skip.
 
-Exit 0 iff stages 1-6 all pass; exit 1 if any of them fails. Stage 7
+Exit 0 iff stages 1-7 all pass; exit 1 if any of them fails. Stage 8
 never changes the exit code - see its own paragraph above for why.
 
 WHY claim_vs_diff IS IMPORTED, NOT REBUILT
@@ -171,6 +178,147 @@ the MUTATION_*/BROWSER_* regexes and `_has_mutation_evidence()`/
 `_has_browser_evidence()` below for the actual shape asked for. A
 trivial-tier slice owes none of this; the M3 shape's own floor never
 asks it to.
+
+THE HAND-TYPED TOTALS STAGE (0.9-M3-S16, #421; widened in the fix wave
+that landed the same ticket after review)
+
+On 2026-08-21 the S12 completion (#418) wrote "34/34 stages ok" three
+times while its OWN pasted ship-check block, in the same comment, said
+"35 stages, 35 ok, 0 FAILED" - the reviewer caught it, not this
+program. 0.9-M3-S5 already taught this file to read the `--completion`
+draft for mutation-table and browser-note MENTIONS (see "THE SLICE-TIER
+STAGE" above); `stage_totals()` below is the same reading aimed at
+NUMBERS instead of words - it never invents a total of its own to check
+a claim against, it only compares a claim already sitting in the draft
+against a total THIS SAME RUN already computed for stage 1 or 2.
+
+The first cut FAILED numbers the same run had itself printed (fix-wave
+review F1, #421): a bare "145 checks" claim was graded only against the
+two GATE summary totals, never against the twenty-nine individual
+per-suite counts `tests/run.mjs`'s own arm rows print in the very same
+run - so a completion quoting its own run's real output, verbatim, lost
+to its own gate. The rule below is the corrected one.
+
+WHAT COUNTS AS A CLAIM, AND WHAT NEVER DOES
+
+  - a PER-FILE claim: an arm path (`tests/*.test.mjs`, `dev/*.test.py`,
+    `tools/*_suite.py`) sitting near an "N checks" phrase - close (within
+    twenty characters, either order: "tests/door.test.mjs - 30 checks" or
+    "30 checks in tests/door.test.mjs"), or further off but still the
+    same claim's own subject (fix-wave F1: "a claim naming a test file
+    anywhere in the same sentence or bullet is graded per-file rather
+    than bare") - up to 150 characters BACKWARD (crossing a newline on
+    purpose: an arm's row and its own "N checks, M failure(s))" detail
+    line are two lines in `tests/run.mjs`'s own output, exactly the
+    shape a builder pastes verbatim), or 40 characters FORWARD but never
+    past the end of the current line (a wrong, unrelated arm's row
+    starting on the very next line sits closer in raw characters than
+    the correct, PRECEDING arm a multi-line detail belongs to - forward
+    search stays inside one line so it can never reach across that
+    boundary by mistake). Graded first against that ARM's own printed
+    verdict line in this run's captured stage 1/2 output
+    (`tests/run.mjs`'s own `report()` prints an arm's own last-printed
+    line right under its row on a green arm); when that number does not
+    match (or the run showed no row for that arm at all) the SAME number
+    is checked against the wide pool below before being called wrong -
+    a proximity heuristic can attach a real, correct number to the
+    WRONG nearby file, and "the number is real, just not proven for
+    THIS file" is graded a match, never a mismatch (see "THE WIDE CHECK
+    POOL" below). Only when the number matches nothing anywhere - not
+    that file's own row, not the wide pool - and that file DID print
+    its own row, is it a FAILED per-file mismatch. When the run showed
+    no row for that file at all AND the number is not in the wide pool,
+    the claim is UNVERIFIED, never FAILED: this run simply cannot answer
+    for a number it never printed.
+  - a PAIR claim: "N/N" or "N of N", within forty characters of one of
+    the trigger words (check, gate, stage, arm, suite) - graded as
+    "claimed N2 total, N1 ok" against whichever gate's own totals the
+    nearby trigger word names. EXCLUDED when the fraction is an ORDINAL,
+    not a total - see "ORDINALS ARE NOT TOTAL CLAIMS" below.
+  - a bare UNIT claim: "N stages", "N arms", or "N checks" - graded the
+    same way, against the totals the unit word itself names.
+
+"stage" claims read the OLD gate's own totals only - its own summary
+line (`stage_old_gate()`) literally says "stages" - UNLESS the trigger
+word is specifically "gating stage(s)" (see "THE GATING-STAGE META
+CLAIM" below), a different total. "arm" claims read the NEW gate's
+only - its own summary line (`stage_new_gate()`) literally says "arms".
+Neither claim shape has to guess which gate it is about; it is reading
+the gate's own word back. A "check"/"gate"/"suite" claim (or a pair
+claim whose only nearby trigger word is one of those three) is not
+anchored to either gate's own vocabulary, so it is graded against THE
+WIDE POOL below - a match on any printed count of that unit is a match,
+and a claim that matches none of them is FAILED: an un-anchored number
+is unverifiable, and unverifiable is not the same as unclaimed, which
+is why this stage does not let it through quietly.
+
+THE WIDE CHECK POOL (fix-wave F1, #421)
+
+A "check" claim - bare, or per-file once its own file's row disagrees
+or never ran - is checked against EVERY total this run printed for that
+unit, not only the two gate summaries: the old gate's own stage total,
+the 0.9 gate's own arm total, AND every individual suite's own printed
+count (`tests/run.mjs`'s per-arm "OK - N checks" or "N checks, M
+failure(s))" detail line, read the same way `_printed_count_for_path()`
+already reads one arm's own line, just for every arm at once). A claim
+that equals ANY of those passes; the ticket's own words are the rule:
+"a claim that equals any printed total of the same unit passes... only
+a claim that contradicts the printed total of its own unit fails."
+Matching is on the TOTAL alone (never the ok/failed split) for this
+bucket on purpose - the pool mixes numbers from very different printed
+shapes (a bordered fence's row count, a JS arm's own free-text detail
+line), and inventing a uniform ok/failed reading across all of them
+would be a second, less-trustworthy parse standing in for the one this
+file already trusts elsewhere. The accepted cost (recorded, not chased,
+per this ticket's own review F3): an unrelated arm's check count that
+happens to equal another printed total is accepted as proof by
+coincidence. Narrowing the pool to prevent that reopens the exact
+false-MISMATCH failure this fix wave exists to end - see F3's own
+report on issue #421 for the full argument for leaving it be.
+
+ORDINALS ARE NOT TOTAL CLAIMS (fix-wave F2, #421)
+
+"stage 1 of 2", "part 3/4", "step 2/5" - this repository posts split
+ship-check pastes routinely ("part 2/4", "part 1 of 3") and labels
+which stage of a multi-slice batch a completion is ("this slice is
+stage 1 of 2"); neither names a gate total. The distinguishing shape is
+WORD ORDER: a genuine total claim always has the NUMBERS first and the
+unit word after ("34/34 stages", "arms: 29/29 green" - the colon or
+space before the fraction is not a bare word glued to it); an ordinal
+has the WORD immediately before the smaller number, no separator but
+whitespace ("stage 1 of 2", "(part 3/4)"). `_is_ordinal()` checks the
+fifteen characters immediately before a pair claim's own fraction for
+one of `part`/`step`/`stage`/`arm`/`check`/`suite`/`gate` (optionally
+plural) followed only by whitespace to the fraction - a colon or any
+other character in between breaks the match, which is exactly what
+keeps "stages: 35/35 ok" (a real total) apart from "stage 1 of 2" (not
+one). An excluded ordinal produces NO claim at all, not an unverified
+one - it was never a claim about a total to begin with.
+
+THE GATING-STAGE META CLAIM (fix-wave F1, #421)
+
+`render_completion_block()`'s own closing line - "7/7 gating stage(s)
+passed." - is the exact line this file tells a builder to paste, and
+the ticket names it directly: "the one it tells builders to paste -
+must pass its own stage." The word "stage" there is NOT the old gate's
+35 stages; it is THIS program's own count of its gating stages (the
+ones with `gates=True` - everything except the report-only ticket-label
+stage). `_normalize_unit()` recognizes the two-word phrase "gating
+stage(s)" (not bare "stage") and grades it against a THIRD, separate
+total: `sum(1 for s in prior_stages if s.gates) + 1` - the gating
+stages already built by the time `stage_totals()` runs, plus one for
+`stage_totals()` itself (which always gates too). This count is
+structural, not self-referential - it is the same arithmetic
+`gating_summary()` performs at render time, counted here from the same
+`gates` flags, never a fresh number invented for this one comparison.
+
+NEVER A FRESH TOTAL
+
+This stage's own printed lines are prose - "claimed X, this run printed
+Y" - never a bare "N/M" or "N checks" of its own. Printing one more
+total here would hand a tired human a FOURTH number to copy, on top of
+the two gates' own two, which is the exact failure this ticket exists
+to end, one level up from where it already happened once.
 
 THE --completion-block MODE (0.9-M0-S5-era ticket #393)
 
@@ -646,6 +794,31 @@ def _has_browser_evidence(text):
     return bool(BROWSER_WIDTH_OR_DEVICE.search(text))
 
 
+def _read_completion_text(path):
+    """(text, note_or_None) for a `--completion` draft (F4, review fix
+    wave, #421). A draft that is not valid UTF-8 (PowerShell 5.1's
+    bare `>` redirect writes UTF-16, not the `-Encoding utf8` shape
+    #387 fixed) is a real input this file has to answer for, not a
+    crash: `stage_tier()` reads this same file two stages before
+    `stage_totals()` gets a turn, with a strict decode whose `except
+    OSError` never catches `UnicodeDecodeError` (a `ValueError`, not an
+    `OSError`), so a bare traceback there would end the whole run
+    before any stage could report a named failure. `errors="replace"`
+    never raises: it reads every byte that IS valid UTF-8 and swaps
+    each one that is not for U+FFFD, and the returned note says so - a
+    completion whose own bytes were silently mangled by whatever wrote
+    it is worth flagging to whoever reads this stage's output, even
+    though it is no longer fatal to read it."""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
+    note = None
+    if "\ufffd" in text:
+        note = ("%s contains byte(s) that are not valid UTF-8; they "
+                "were replaced with U+FFFD (the replacement character) "
+                "before reading - fix the file's encoding." % path)
+    return text, note
+
+
 def stage_tier(repo, declared_path, base, completion_path):
     """The M3 delivery shape's own tier (owner ruling 2026-08-21, #402),
     read from the declared file list by `tools/tier.py` - the in-repo
@@ -712,6 +885,7 @@ def stage_tier(repo, declared_path, base, completion_path):
             % len(red_shas))
 
     completion_text = None
+    completion_note = None
     if completion_path is None:
         problems.append(
             "no --completion given - a %s slice's mutation-table (and "
@@ -720,11 +894,14 @@ def stage_tier(repo, declared_path, base, completion_path):
             "and pass --completion <path>." % tier_name)
     else:
         try:
-            with open(completion_path, encoding="utf-8") as handle:
-                completion_text = handle.read()
+            completion_text, completion_note = \
+                _read_completion_text(completion_path)
         except OSError as problem:
             problems.append("could not read --completion %s: %s"
                             % (completion_path, problem))
+
+    if completion_note:
+        lines.append(completion_note)
 
     if completion_text is not None:
         if not _has_mutation_evidence(completion_text):
@@ -752,6 +929,445 @@ def stage_tier(repo, declared_path, base, completion_path):
     lines.append("")
     lines.append("evidence matches the %s tier." % tier_name)
     return Stage("slice tier", True, lines, evidence, detail=tier_name)
+
+
+# --------------------------------------------------------------------
+# Stage: hand-typed gate totals vs what THIS run printed (0.9-M3-S16,
+# #421) - see the module docstring's "THE HAND-TYPED TOTALS STAGE" for
+# the whole argument.
+# --------------------------------------------------------------------
+
+_TRIGGER_WORD = re.compile(
+    r"\b(check|checks|gate|gates|stage|stages|arm|arms|suite|suites)\b",
+    re.I)
+
+# Bare unit claims fire only for these three words. "stages" and "arms"
+# are the literal words the old/new gate's own summary lines print;
+# "checks" is the word this repository's own arms use for their OWN
+# internal counts (door.test.mjs's own verdict: "door OK - 45 checks"),
+# named explicitly alongside stages/arms in the ticket's own scope.
+# "gate"/"suite" stay trigger-only below - "35 gates" and "40 suites"
+# are not phrases this repository's convention produces, so treating
+# them as claim units would invent a pattern nobody writes rather than
+# catch one somebody did.
+_UNIT_CLAIM = re.compile(
+    r"(?P<n>\d+)\s+(?P<unit>checks?|stages?|arms?)\b", re.I)
+
+# "34/34" or "34 of 34" - the exact shape the S12 completion (#418)
+# wrote three times.
+_PAIR_CLAIM = re.compile(r"(?P<ok>\d+)\s*(?:/|\bof\b)\s*(?P<total>\d+)",
+                         re.I)
+
+_ARM_PATH = (r"(?:tests/[\w.-]+\.test\.mjs|dev/[\w.-]+\.test\.py"
+            r"|tools/[\w.-]+_suite\.py)")
+_ARM_PATH_RE = re.compile(_ARM_PATH, re.I)
+
+_PER_FILE_CLAIM = re.compile(
+    r"(?P<path1>%s)[^\n]{0,20}?(?P<n1>\d+)\s+checks?"
+    r"|(?P<n2>\d+)\s+checks?[^\n]{0,20}?(?P<path2>%s)"
+    % (_ARM_PATH, _ARM_PATH), re.I)
+
+_PROXIMITY_WINDOW = 40
+
+# Fix-wave F1 (review, #421): the SHORT window above ("close, either
+# order") only catches a per-file claim sitting right next to its own
+# path. It missed two real shapes: `tests/run.mjs`'s own arm-row-then-
+# indented-detail-line pastes (path and count on TWO lines, ~40-70
+# characters apart), and a hand-written bullet naming its subject up
+# front ("`path` - ... (N checks).", review evidence, ~110 characters
+# apart). Both widen the search; see the module docstring's "WHAT
+# COUNTS AS A CLAIM" for why the window is asymmetric (generous
+# backward, tight same-line-only forward) rather than just bigger both
+# ways.
+_PER_FILE_BACKWARD_WINDOW = 150
+_PER_FILE_FORWARD_WINDOW = 40
+
+# Fix-wave F2 (review, #421) names the three phrases below as what
+# must NOT fire - "stage 1 of 2", "part 3/4", "step 2/5" - since each
+# names a POSITION in a sequence, never a gate total. See the module
+# docstring's "ORDINALS ARE NOT TOTAL CLAIMS" for the word-order
+# argument this pattern encodes. The ordinal word must sit immediately
+# before the fraction with nothing but whitespace between - a colon
+# (as in "stages: 35/35 ok", a real total) breaks the match on purpose.
+_ORDINAL_PREFIX = re.compile(
+    r"\b(?:part|step|stage|arm|check|suite|gate)s?\s*$", re.I)
+
+
+def _is_ordinal(text, match):
+    """Whether the `_PAIR_CLAIM` match `match` is an ordinal ("stage 1
+    of 2", "part 3/4") rather than a gate-total claim - see
+    `_ORDINAL_PREFIX` above."""
+    before = text[max(0, match.start() - 15):match.start()]
+    return bool(_ORDINAL_PREFIX.search(before))
+
+
+# Fix-wave F1 (review, #421): ship-check's OWN "N/N gating stage(s)
+# passed." line - the one this file tells a builder to paste - names a
+# THIRD total, never the old gate's stage count. See the module
+# docstring's "THE GATING-STAGE META CLAIM".
+_GATING_PREFIX = re.compile(r"\bgating\s*$", re.I)
+
+# `tests/run.mjs`'s own arm-row shape, matched again here (see
+# `_NEW_GATE_ROW` above) so a per-file claim's row lookup reads the
+# exact same fence `_count_new_gate_table()` already trusts.
+_ARM_ROW = re.compile(r"^(?P<path>\S+\.test\.mjs)\s+(ok|FAILED)\s+\d+\.\d+s$")
+_COUNT_IN_LINE = re.compile(r"(\d+)\s+checks?\b", re.I)
+
+
+def _normalize_unit(text, word, word_start):
+    """"stages"/"stage" -> "stage" (or "gating_stage" when the word
+    "gating" sits immediately before it - see `_GATING_PREFIX` above);
+    "arms"/"arm" -> "arm"; every other trigger word (check(s), gate(s),
+    suite(s)) -> "check", the not-anchored-to-either-gate bucket the
+    module docstring's "WHAT COUNTS AS A CLAIM" describes. `word_start`
+    is the START of `word` inside `text` - a bare offset rather than a
+    match object, since the two call sites read it out of two different
+    match shapes (the nearest `_TRIGGER_WORD` for a pair claim; a bare
+    unit claim's own captured "unit" group) and only the offset, not
+    the match itself, is what the "gating" lookback needs."""
+    word = word.lower()
+    if word.startswith("stage"):
+        before = text[max(0, word_start - 12):word_start]
+        if _GATING_PREFIX.search(before):
+            return "gating_stage"
+        return "stage"
+    if word.startswith("arm"):
+        return "arm"
+    return "check"
+
+
+def _nearest_trigger_word(text, claim_match):
+    """The `_TRIGGER_WORD` match closest to `claim_match`, among those
+    within `_PROXIMITY_WINDOW` characters either side - or None when
+    none is that close.
+
+    Nearest, not first: a short completion draft routinely names BOTH
+    gates close together ("stages: 35/35 ok. arms: 2/2 green.") - a
+    plain `.search()` over the window always returns the LEFTMOST
+    trigger word in the window, which would tag the second pair claim
+    ("2/2") with the first claim's own "stages" trigger just because it
+    occurs earlier in the text, misreading it as a stage claim instead
+    of an arm claim. Picking the trigger word actually closest to the
+    number is what "near" means here.
+    """
+    window_start = max(0, claim_match.start() - _PROXIMITY_WINDOW)
+    window_end = min(len(text), claim_match.end() + _PROXIMITY_WINDOW)
+    mid = (claim_match.start() + claim_match.end()) / 2
+    best, best_distance = None, None
+    for candidate in _TRIGGER_WORD.finditer(text, window_start, window_end):
+        candidate_mid = (candidate.start() + candidate.end()) / 2
+        distance = abs(candidate_mid - mid)
+        if best is None or distance < best_distance:
+            best, best_distance = candidate, distance
+    return best
+
+
+def _nearest_path_before(text, position):
+    """The `_ARM_PATH_RE` match ending nearest to (and at or before)
+    `position`, within `_PER_FILE_BACKWARD_WINDOW` characters, or None.
+    Allowed to cross a newline on purpose - see `_PER_FILE_BACKWARD_
+    WINDOW`'s own comment for why."""
+    start = max(0, position - _PER_FILE_BACKWARD_WINDOW)
+    best = None
+    for match in _ARM_PATH_RE.finditer(text, start, position):
+        best = match
+    return best.group(0) if best else None
+
+
+def _nearest_path_after_same_line(text, position):
+    """The `_ARM_PATH_RE` match starting nearest to (and at or after)
+    `position`, within `_PER_FILE_FORWARD_WINDOW` characters AND never
+    crossing a newline - see `_PER_FILE_BACKWARD_WINDOW`'s own comment
+    for why forward search stays inside one line (a wrong, unrelated
+    arm's row starting on the very next line sits closer in raw
+    characters than the correct PRECEDING arm a multi-line detail
+    belongs to)."""
+    line_end = text.find("\n", position)
+    if line_end == -1:
+        line_end = len(text)
+    end = min(line_end, position + _PER_FILE_FORWARD_WINDOW)
+    match = _ARM_PATH_RE.search(text, position, end)
+    return match.group(0) if match else None
+
+
+def _find_claims(text):
+    """[claim, ...] found in `text`, most-specific shape first - a
+    claim already consumed by a more specific match is never matched
+    again by a looser pattern reading the same digits (so "34/34
+    stages" is read ONCE, as a pair claim, never also as a bare "34
+    stages" unit claim on the second "34")."""
+    claims = []
+    consumed = []
+
+    def overlaps(span):
+        start, end = span
+        return any(s < end and start < e for s, e in consumed)
+
+    for match in _PER_FILE_CLAIM.finditer(text):
+        if match.group("path1"):
+            path, n = match.group("path1"), int(match.group("n1"))
+        else:
+            path, n = match.group("path2"), int(match.group("n2"))
+        consumed.append(match.span())
+        claims.append({"kind": "per_file", "quote": match.group(0).strip(),
+                       "path": path, "n": n})
+
+    # Fix-wave F1 (review, #421): everything `_PER_FILE_CLAIM` above
+    # missed because its own path sat further than twenty characters
+    # away - see `_PER_FILE_BACKWARD_WINDOW`'s own comment for the two
+    # real shapes this catches.
+    for match in _COUNT_IN_LINE.finditer(text):
+        span = match.span()
+        if overlaps(span):
+            continue
+        path = (_nearest_path_before(text, match.start())
+               or _nearest_path_after_same_line(text, match.end()))
+        if path is None:
+            continue
+        consumed.append(span)
+        claims.append({"kind": "per_file", "quote": match.group(0),
+                       "path": path, "n": int(match.group(1))})
+
+    for match in _PAIR_CLAIM.finditer(text):
+        if overlaps(match.span()):
+            continue
+        if _is_ordinal(text, match):
+            continue
+        trigger = _nearest_trigger_word(text, match)
+        if trigger is None:
+            continue
+        consumed.append(match.span())
+        claims.append({"kind": "pair", "quote": match.group(0),
+                       "ok": int(match.group("ok")),
+                       "total": int(match.group("total")),
+                       "unit": _normalize_unit(text, trigger.group(0),
+                                               trigger.start())})
+
+    for match in _UNIT_CLAIM.finditer(text):
+        if overlaps((match.start("n"), match.end("n"))):
+            continue
+        consumed.append(match.span())
+        claims.append({"kind": "unit", "quote": match.group(0),
+                       "n": int(match.group("n")),
+                       "unit": _normalize_unit(text, match.group("unit"),
+                                               match.start("unit"))})
+
+    return claims
+
+
+def _printed_totals(prior_stages):
+    """{"stage": (total, ok, failed) or None, "arm": (...) or None,
+    "gating_stage": (total, total, 0)} - the totals THIS RUN's own
+    pipeline carries, read off the SAME Stage objects stage 1/2 already
+    built for "stage"/"arm" (never re-run, never re-derived - module
+    docstring: "NEVER A FRESH TOTAL"); "gating_stage" is this run's own
+    structural gating-stage count (module docstring: "THE GATING-STAGE
+    META CLAIM") - every already-built prior stage that gates, plus one
+    for `stage_totals()` itself, which always gates too."""
+    old = next((s for s in prior_stages if s.name.startswith("old gate")),
+              None)
+    new = next((s for s in prior_stages if s.name.startswith("0.9 gate")),
+              None)
+    gating_total = sum(1 for s in prior_stages if s.gates) + 1
+    return {"stage": old.counted if old else None,
+           "arm": new.counted if new else None,
+           "gating_stage": (gating_total, gating_total, 0)}
+
+
+def _printed_count_for_path(prior_stages, path):
+    """The check-count THIS run's own captured output printed for arm
+    `path`, or None when this run never showed one - the arm's row
+    never appeared in stage 1 or 2's captured lines, or its own verdict
+    line (printed right after the row on a green arm) carried no
+    parseable number. None is the UNVERIFIED case, not a failure."""
+    for stage in prior_stages:
+        lines = stage.lines
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if not (stripped.startswith(path) and _ARM_ROW.match(stripped)):
+                continue
+            for peek in lines[index + 1:index + 6]:
+                found = _COUNT_IN_LINE.search(peek)
+                if found:
+                    return int(found.group(1))
+            return None
+    return None
+
+
+def _all_printed_arm_counts(prior_stages):
+    """{path: n, ...} for every arm row this run's own captured output
+    showed a parseable check count for - the exact same row+peek
+    reading `_printed_count_for_path()` trusts for one path at a time,
+    walked over every row at once (fix-wave F1, review, #421)."""
+    counts = {}
+    for stage in prior_stages:
+        lines = stage.lines
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            match = _ARM_ROW.match(stripped)
+            if not match:
+                continue
+            for peek in lines[index + 1:index + 6]:
+                found = _COUNT_IN_LINE.search(peek)
+                if found:
+                    counts[match.group("path")] = int(found.group(1))
+                    break
+    return counts
+
+
+def _check_family_pool(prior_stages, totals):
+    """{n: "where this run printed it", ...} - the WIDE pool a "check"
+    claim (bare, or per-file once its own file disagrees or never ran)
+    is checked against: the old gate's own stage total, the 0.9 gate's
+    own arm total, and every individual suite's own printed count
+    (fix-wave F1, review, #421; see the module docstring's "THE WIDE
+    CHECK POOL"). Gate totals are entered first so a coincidental
+    collision with a per-suite count names the gate in the evidence
+    line, not the suite - either way it is a real, run-printed number,
+    never invented."""
+    pool = {}
+    if totals.get("stage"):
+        pool[totals["stage"][0]] = "the old gate's own stage total"
+    if totals.get("arm"):
+        pool[totals["arm"][0]] = "the 0.9 gate's own arm total"
+    for path, n in _all_printed_arm_counts(prior_stages).items():
+        pool.setdefault(n, "%s's own printed count" % path)
+    return pool
+
+
+def _grade_claim(claim, prior_stages, totals, check_pool):
+    """(verdict, detail) - verdict is "match", "mismatch" or
+    "unverified"; `detail` is the one prose line this stage prints for
+    the claim, always "claimed ... - this run printed/prints ...",
+    never a fresh total of its own."""
+    if claim["kind"] == "per_file":
+        printed = _printed_count_for_path(prior_stages, claim["path"])
+        if printed == claim["n"]:
+            return "match", (
+                "match: claimed \"%s\" - this run's own output for %s "
+                "says %d checks." % (claim["quote"], claim["path"], printed))
+        # Fix-wave F1 (review, #421): a proximity heuristic can attach
+        # a real, correct number to the WRONG nearby file - before
+        # calling it wrong, ask whether it is true of the run AT ALL,
+        # not only of the one file it happened to sit near. See the
+        # module docstring's "WHAT COUNTS AS A CLAIM".
+        if claim["n"] in check_pool:
+            return "match", (
+                "match: claimed \"%s\" - %s (%d checks), which this run "
+                "did print, even though it is not %s's own line."
+                % (claim["quote"], check_pool[claim["n"]], claim["n"],
+                   claim["path"]))
+        if printed is None:
+            return "unverified", (
+                "unverified by this run: claimed \"%s\" - this run's "
+                "output never showed a parseable check count for %s, and "
+                "%d checks matches nothing else this run printed either."
+                % (claim["quote"], claim["path"], claim["n"]))
+        return "mismatch", (
+            "MISMATCH: claimed \"%s\" (%d checks) - this run's own "
+            "output for %s says %d checks, and %d checks matches nothing "
+            "else this run printed either."
+            % (claim["quote"], claim["n"], claim["path"], printed,
+               claim["n"]))
+
+    claimed_ok = claim["ok"] if claim["kind"] == "pair" else claim["n"]
+    claimed_total = claim["total"] if claim["kind"] == "pair" else claim["n"]
+
+    if claim["unit"] == "check":
+        # THE WIDE POOL (fix-wave F1, review, #421) - total only, never
+        # ok/failed, and a match on ANY printed count of this unit is a
+        # match. See the module docstring's "THE WIDE CHECK POOL".
+        if claimed_total in check_pool:
+            return "match", (
+                "match: claimed \"%s\" - matches %s (%d checks)."
+                % (claim["quote"], check_pool[claimed_total], claimed_total))
+        if not check_pool:
+            return "unverified", (
+                "unverified by this run: claimed \"%s\" - this run "
+                "printed no check counts at all to compare against."
+                % claim["quote"])
+        return "mismatch", (
+            "MISMATCH: claimed \"%s\" - this run's own output never "
+            "printed %d checks anywhere (not the old gate's stage total, "
+            "not the 0.9 gate's arm total, and not any single suite's own "
+            "count)." % (claim["quote"], claimed_total))
+
+    unit_label = ("ship-check's own gating-stage count"
+                 if claim["unit"] == "gating_stage" else claim["unit"])
+    counted = totals.get(claim["unit"])
+    if counted is None:
+        return "unverified", (
+            "unverified by this run: claimed \"%s\" - this run printed "
+            "no %s totals to compare against." % (claim["quote"], unit_label))
+    total, ok, failed = counted
+    matched = (total == claimed_total and ok == claimed_ok
+              if claim["kind"] == "pair" else total == claimed_total)
+    if matched:
+        return "match", (
+            "match: claimed \"%s\" - matches this run's %s totals "
+            "(%d total, %d ok)." % (claim["quote"], unit_label, total, ok))
+    return "mismatch", (
+        "MISMATCH: claimed \"%s\" - this run printed %s: %d total, %d ok, "
+        "%d FAILED." % (claim["quote"], unit_label, total, ok, failed))
+
+
+def stage_totals(prior_stages, completion_path):
+    """Hand-typed gate totals in `--completion` vs what THIS run
+    printed (0.9-M3-S16, #421) - see the module docstring's "THE
+    HAND-TYPED TOTALS STAGE" for the whole argument. A claim that
+    contradicts every printed total of its own unit is a FAILED stage,
+    the claim quoted beside the numbers this run actually printed; a
+    claim this run has no data at all to grade (its unit's pool is
+    empty) is UNVERIFIED, listed but never failing the stage by itself.
+    """
+    evidence = "regex scan of --completion text vs stage 1/2's own totals"
+    if completion_path is None:
+        return Stage("hand-typed gate totals", True,
+                     ["no --completion given; nothing to check."],
+                     evidence, detail="no completion given")
+    try:
+        text, note = _read_completion_text(completion_path)
+    except OSError as problem:
+        return Stage("hand-typed gate totals", False,
+                     ["could not read %s: %s" % (completion_path, problem)],
+                     evidence)
+
+    claims = _find_claims(text)
+    if not claims:
+        lines = ["no N/N, N of N, N stages, N arms, or N checks claim "
+                 "found near check/gate/stage/arm/suite in the "
+                 "--completion text - nothing to compare."]
+        if note:
+            lines.append(note)
+        return Stage("hand-typed gate totals", True, lines, evidence,
+                     detail="no claims found")
+
+    totals = _printed_totals(prior_stages)
+    check_pool = _check_family_pool(prior_stages, totals)
+    lines = []
+    mismatches = 0
+    unverified = 0
+    for claim in claims:
+        verdict, detail = _grade_claim(claim, prior_stages, totals,
+                                       check_pool)
+        lines.append(detail)
+        if verdict == "mismatch":
+            mismatches += 1
+        elif verdict == "unverified":
+            unverified += 1
+
+    ok = mismatches == 0
+    if unverified:
+        lines.append("(%d claim(s) unverified - this run produced no "
+                     "data to grade them against, which is never counted "
+                     "as a mismatch.)" % unverified)
+    if note:
+        lines.append(note)
+    detail = "match" if ok else "%d mismatch(es)" % mismatches
+    if unverified:
+        detail += ", %d unverified" % unverified
+    return Stage("hand-typed gate totals", ok, lines, evidence,
+                detail=detail)
 
 
 def stage_ticket_label(issue):
@@ -937,16 +1553,21 @@ def main(argv=None):
     # Built EXACTLY ONCE regardless of --completion-block (review F4,
     # #393, module docstring's "ONE RUN, NOT TWO") - both renderings
     # below read this same list, so they cannot disagree about a fact
-    # this run computed.
-    stages = [
-        stage_old_gate(repo),
-        stage_new_gate(repo, args.state),
-        stage_branch_name(repo),
-        stage_clean_head(repo),
-        stage_declared_vs_diff(repo, args.base, args.declared),
-        stage_tier(repo, args.declared, args.base, args.completion),
-        stage_ticket_label(args.issue),
-    ]
+    # this run computed. Built incrementally, not as one list literal,
+    # because stage_totals() (0.9-M3-S16, #421) reads stage 1 and 2's
+    # OWN already-computed totals - it needs the stages built so far,
+    # never a second run of them (module docstring: "NEVER A FRESH
+    # TOTAL").
+    stages = []
+    stages.append(stage_old_gate(repo))
+    stages.append(stage_new_gate(repo, args.state))
+    stages.append(stage_branch_name(repo))
+    stages.append(stage_clean_head(repo))
+    stages.append(stage_declared_vs_diff(repo, args.base, args.declared))
+    stages.append(stage_tier(repo, args.declared, args.base,
+                             args.completion))
+    stages.append(stage_totals(list(stages), args.completion))
+    stages.append(stage_ticket_label(args.issue))
     code = render(stages)
     if args.completion_block:
         render_completion_block(stages)

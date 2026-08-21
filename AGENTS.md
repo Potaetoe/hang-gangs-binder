@@ -289,7 +289,12 @@ guards, never as the pattern for a new one.
   three 0.9-M2 slices running wrote a wrong total beside a correct
   table, each time in the human abridgement between the tool's stdout
   and the posted text — paste the stdout, split on GitHub's comment
-  limit if needed, never abridged.
+  limit if needed, never abridged. `./run ship-check`'s own
+  `--completion` stage now checks this mechanically (0.9-M3-S16, #421,
+  after an 0.9-M3 completion (#418) typed a stage total that disagreed
+  with the total its own pasted ship-check block printed, three times
+  in the same comment): it scans the draft for a gate-total claim and
+  fails the run if the claim disagrees with what the same run printed.
 - **`./run ship-check` is the required act between your last commit and
   your terminal signal** (0.9-M0-S22, #320): three completions in one
   wave reported a remembered stage count ("38", then "39") while the
