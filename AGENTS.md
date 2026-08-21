@@ -482,7 +482,12 @@ linters cannot express:
   go stale. Take an entry off in the change that next touches its file;
   never raise a count. **A comment that names another file and quotes
   it must still be quoting it**, enforced against the cited file rather
-  than against phrases.
+  than against phrases. **A comment that names a function, constant,
+  route or file that is not in the tree any more is red too** — unless
+  the same sentence says so ("is gone", "replaced", "retired",
+  "deleted", "renamed to") — because a slice that deletes or renames a
+  thing does not always find every comment that named it (0.9-M3-S17,
+  #422).
 - **Comments in the pre-0.9 code slim as 0.9 rewrites each file.** The
   documentation moved to the 0.9 design ahead of the code by owner
   ruling, so a comment in a page or a Worker that argues from the key
