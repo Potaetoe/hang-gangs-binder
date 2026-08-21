@@ -1417,7 +1417,8 @@ check("a review-finding sub-point is not a call - F1(c), #393",
        if c[2] == "function"] == [])
 
 check("an UPPER_SNAKE token with an underscore is read as a constant",
-      [c[3] for c in check_comments._region_candidates("set ADMIN_IDLE_MINUTES")
+      [c[3] for c in check_comments._region_candidates(
+          "set ADMIN_IDLE_MINUTES")
        if c[2] == "constant"] == ["ADMIN_IDLE_MINUTES"])
 
 check("a bare all-caps word with no underscore is not a constant - GET, OK",
@@ -1425,7 +1426,8 @@ check("a bare all-caps word with no underscore is not a constant - GET, OK",
        if c[2] == "constant"] == [])
 
 check("a method-prefixed route is read",
-      [c[3] for c in check_comments._region_candidates("GET /admin-log answers")
+      [c[3] for c in check_comments._region_candidates(
+          "GET /admin-log answers")
        if c[2] == "route"] == ["/admin-log"])
 
 check("a bare path with no verb is never a route - the measured false "
@@ -1475,7 +1477,8 @@ check("and against an object-literal method `openRow: (record) =>`",
                DEFS_FUNC) == [])
 
 check("and against a property assignment `root.onTelegramAuth = function`",
-      dangling({"dev/x.mjs": "// the real widget calls onTelegramAuth(user)\n"},
+      dangling({"dev/x.mjs":
+                "// the real widget calls onTelegramAuth(user)\n"},
                DEFS_FUNC) == [])
 
 check("a call naming nothing defined anywhere fails, with the file, "
@@ -1523,7 +1526,8 @@ check("a constant naming nothing defined anywhere fails",
 
 DEFS_ROUTE = {
     "server/worker.js":
-        'const API_SEGMENTS = new Set([\n  "auth", "config", "admin-log",\n]);\n',
+        'const API_SEGMENTS = new Set([\n'
+        '  "auth", "config", "admin-log",\n]);\n',
 }
 
 check("a route resolves when its leading segment is in the Worker's "
