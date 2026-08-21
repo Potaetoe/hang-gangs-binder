@@ -51,7 +51,7 @@ performed = 0
 # that stops running - an early return, a renamed helper - still prints
 # a confident "OK". Comparing the count is what makes the total mean
 # something.
-EXPECTED = 122
+EXPECTED = 185
 
 
 def check(label, condition):
@@ -248,6 +248,15 @@ for phrase, expected in [
 # runtime referents against one narrating comment is the wrong trade.
 check("a runtime referent is not a history marker",
       clean("// decrypt with the old key, then the new one\n", "js"))
+
+# RETIRED at 0.9-M3-S4 fix wave 1 (F1, #392, comment 5369115005): "N,
+# not M" stood here, pairing a cardinal with "not" and another cardinal
+# to catch "five, not six" as a rename-shaped narration marker. The
+# independent review proved it caught the FIX WAVE'S OWN truing
+# sentence and never the escape - 0.9-M2-S15 F5's real defect,
+# theme.css's original "six .field-shaped controls", has no "not" in
+# it at all, and restoring it byte for byte still passed the gate. See
+# COUNT_CLAIM below for the property this rule was rebuilt around.
 
 
 # ------------------------------------------------------------------ #
@@ -892,6 +901,459 @@ check("an exempt file's unresolvable citation is not reported",
 check("and the same comment in the file beside it is",
       len(exempt_tree("tools/check_docs.py", STALE)) == 1)
 
+# ------------------------------------------------------------------ #
+# A bare, unquoted mention of another file (0.9-M3-S4, #392,          #
+# S11 F3's escape) - the class the citation rule above cannot see,    #
+# because there is nothing quoted to check.                           #
+
+check("a dash-introduced file mention with nothing quoted is read",
+      check_comments.narrative_mentions(
+          "// trend: null - charts.js disables rather than shows an "
+          "empty pane\n", "js")
+      == [(1, "charts.js")])
+
+check("and it is reported on the line the file name starts",
+      check_comments.narrative_mentions(
+          "//\n//\n// disables it - charts.js does\n", "js")
+      == [(3, "charts.js")])
+
+# PER-MENTION, not region-wide - 0.9-M3-S4 fix wave 1 (F3, #392,
+# comment 5369115005). First build cleared a mention on ANY quote
+# anywhere in the region; the review broke that by rewriting a real
+# pinned mention's CLAIM to its opposite while an unrelated citation
+# (a different file) sat two sentences over, and the region-wide guard
+# silenced it. A citation for the SAME file the mention names still
+# clears it - that is the real "this is checkable elsewhere" case.
+check("a real citation of the SAME file clears the mention",
+      check_comments.narrative_mentions(
+          '/* See charts.js, "disables it" - charts.js disables it. */\n',
+          "js")
+      == [])
+
+check("a real citation of a DIFFERENT file does not clear it",
+      check_comments.narrative_mentions(
+          '/* See DESIGN.md, "Key custody" - charts.js disables it. */\n',
+          "js")
+      == [(1, "charts.js")])
+
+check("basenames match a short mention against a long citation",
+      check_comments.narrative_mentions(
+          '/* See apps/web/charts.js, "disables it" - charts.js disables '
+          'it. */\n', "js")
+      == [])
+
+# Code between the two comments is what keeps them two regions rather
+# than one - comment_regions() joins a run of comments with nothing but
+# a newline between them into a single region (the same rule that lets
+# a wrapped block comment or a run of "//" lines read as one sentence),
+# so this needs a real statement between them to test the DIFFERENT-
+# comment case rather than the same-comment case above.
+check("a real citation in a DIFFERENT comment does not clear this one",
+      check_comments.narrative_mentions(
+          '/* See DESIGN.md, "Key custody". */\n'
+          "render();\n"
+          "// disables it - charts.js does\n", "js")
+      == [(3, "charts.js")])
+
+check("a bare mention with no dash is not this escape",
+      check_comments.narrative_mentions(
+          "// charts.js disables rather than shows an empty pane\n", "js")
+      == [])
+
+check("a hyphenated word is not a dash connective",
+      check_comments.narrative_mentions(
+          "// a well-formed charts.js import\n", "js") == [])
+
+
+def narrative_tree(comment, relpath="dev/suite.test.mjs"):
+    root = tempfile.mkdtemp(prefix="check-comments-narrative-")
+    full = os.path.join(root, *relpath.split("/"))
+    os.makedirs(os.path.dirname(full))
+    with open(full, "w", encoding="utf-8") as handle:
+        handle.write(comment)
+    return root
+
+
+UNQUOTED = "// trend: null - charts.js disables rather than shows it\n"
+
+check("an unpinned narrative mention fails",
+      len(check_comments.narrative_problems(
+          scan=[("dev", (".mjs",))], repo=narrative_tree(UNQUOTED),
+          pinned={})) == 1)
+
+check("and the report names the file, the mention and the fix",
+      all(part in check_comments.narrative_problems(
+              scan=[("dev", (".mjs",))], repo=narrative_tree(UNQUOTED),
+              pinned={})[0]
+          for part in ("dev/suite.test.mjs", "charts.js", "quote")))
+
+check("the same mention pinned is not reported",
+      check_comments.narrative_problems(
+          scan=[("dev", (".mjs",))], repo=narrative_tree(UNQUOTED),
+          pinned={("dev/suite.test.mjs", "charts.js"): 1}) == [])
+
+# The forward arm's count, the same shape citation_problems() proves:
+# a pin recording ONE prior mention does not excuse a second.
+TWICE = UNQUOTED * 2
+check("a second mention in an already-pinned file is new work",
+      len(check_comments.narrative_problems(
+          scan=[("dev", (".mjs",))], repo=narrative_tree(TWICE),
+          pinned={("dev/suite.test.mjs", "charts.js"): 1})) == 1)
+
+check("raising the pin to two is what covers both",
+      check_comments.narrative_problems(
+          scan=[("dev", (".mjs",))], repo=narrative_tree(TWICE),
+          pinned={("dev/suite.test.mjs", "charts.js"): 2}) == [])
+
+# The backward arm.
+GONE_ROOT = narrative_tree("// nothing dash-mentioned here\n")
+check("a stale NARRATIVE_PINS entry is reported",
+      len(check_comments.narrative_pin_problems(
+          scan=[("dev", (".mjs",))], repo=GONE_ROOT,
+          pinned={("dev/suite.test.mjs", "charts.js"): 1})) == 1)
+
+check("and it says to delete the entry",
+      "Delete the entry" in check_comments.narrative_pin_problems(
+          scan=[("dev", (".mjs",))], repo=GONE_ROOT,
+          pinned={("dev/suite.test.mjs", "charts.js"): 1})[0])
+
+OVER_ROOT = narrative_tree(UNQUOTED)
+check("a pin that over-counts says what to lower it to",
+      "Lower the count to 1" in check_comments.narrative_pin_problems(
+          scan=[("dev", (".mjs",))], repo=OVER_ROOT,
+          pinned={("dev/suite.test.mjs", "charts.js"): 3})[0])
+
+# The real tree, both directions - the null-result guard every synthetic
+# arm above shares: an extractor that reads nothing passes every one of
+# them by finding no mentions at all.
+REAL_NARRATIVES = {}
+for _file, _line, _path in check_comments.all_narratives():
+    REAL_NARRATIVES[(_file, _path)] = REAL_NARRATIVES.get(
+        (_file, _path), 0) + 1
+check("the real tree's narrative mentions are exactly what is pinned",
+      REAL_NARRATIVES == check_comments.NARRATIVE_PINS)
+
+check("so narrative_problems() and narrative_pin_problems() are both "
+      "clean on the tree as it stands",
+      check_comments.narrative_problems() == []
+      and check_comments.narrative_pin_problems() == [])
+
+check("theme.css's own self-mention is excluded, not pinned",
+      ("apps/web/theme.css", "theme.css")
+      not in check_comments.NARRATIVE_PINS)
+
+check("and the extractor found real, non-self mentions to exclude from",
+      len(check_comments.all_narratives()) >= len(
+          check_comments.NARRATIVE_PINS))
+
+
+# ------------------------------------------------------------------ #
+# A citation anchored to a GitHub ticket instead of a file (0.9-M3-S4, #
+# #392) - CITED requires a file extension, so a ticket number never    #
+# matched it and the quotation was never checked, in either direction.#
+
+check("a ticket-anchored citation is read",
+      check_comments.ticket_citations(
+          '/* owner ruling 5, #243: "Edges never move" */\n', "js")
+      == [(1, "#243", "Edges never move")])
+
+check("the reversed connective is read too",
+      check_comments.ticket_citations(
+          '/* "Edges never move" in #243 */\n', "js")
+      == [(1, "#243", "Edges never move")])
+
+check("a bare ticket mention with nothing quoted is not this citation",
+      check_comments.ticket_citations(
+          "// owner ruling 5, #243, no quote here\n", "js") == [])
+
+check("a real file citation is unaffected by the ticket pattern",
+      check_comments.citations(
+          '/* See DESIGN.md, "Key custody". */\n', "js")
+      == [(1, "DESIGN.md", "Key custody")]
+      and check_comments.ticket_citations(
+          '/* See DESIGN.md, "Key custody". */\n', "js") == [])
+
+# 0.9-M3-S4 fix wave 1 (F4, #392, comment 5369115005): the connective is
+# widened past "immediately after the ticket" to reach the two house
+# forms the review found rule 2 missing entirely.
+check("a comment number between the ticket and the colon is read",
+      check_comments.ticket_citations(
+          '/* (owner ruling, #371 comment 5347769320: "in a gaining '
+          'community the high end IS the story") */\n', "js")
+      == [(1, "#371",
+           "in a gaining community the high end IS the story")])
+
+check("a closing paren between the ticket and the colon is read too",
+      check_comments.ticket_citations(
+          '/* 2026-08-19 (#371 comment 5347769320): "the group sees its '
+          'own makeup" */\n', "js")
+      == [(1, "#371", "the group sees its own makeup")])
+
+# The two real mis-pairings the widened connective produced before the
+# gap excluded "#" and ".", found by measuring the real tree rather than
+# reasoned in advance - see TICKET_CITATIONS' own comment for both.
+check("a second, nearer ticket wins over a more distant one",
+      check_comments.ticket_citations(
+          '/* between 0.9-M2-S6 (#82) and 0.9-M2-S13 (#378): "custom" '
+          'was a chip */\n', "js")
+      == [(1, "#378", "custom")])
+
+check("a real file citation nearer the quote wins over a distant ticket",
+      check_comments.ticket_citations(
+          '/* since 0.9-M1-S5 (#331), which is DESIGN.md, "Sessions": '
+          'one rule */\n', "js")
+      == [])
+
+check("and the same text resolves as a real file citation instead",
+      check_comments.citations(
+          '/* since 0.9-M1-S5 (#331), which is DESIGN.md, "Sessions": '
+          'one rule */\n', "js")
+      == [(1, "DESIGN.md", "Sessions")])
+
+
+# ------------------------------------------------------------------ #
+# comment_regions() and CONTINUATION do not split an indented run of   #
+# "//" lines into one-line fragments (0.9-M3-S4 fix wave 1, F4,        #
+# #392) - found while widening rule 2's connective still did not      #
+# reach apps/web/site.config.js, whose citation is written this way.  #
+
+check("an indented multi-line // citation is read as one citation",
+      check_comments.citations(
+          '      // See DESIGN.md,\n      // "Key custody".\n', "js")
+      == [(2, "DESIGN.md", "Key custody")])
+
+check("and the same shape resolves for a ticket citation too",
+      check_comments.ticket_citations(
+          '      // owner ruling, #371 comment\n'
+          '      // 5347769320: "in a gaining community the high end IS '
+          'the\n      // story"\n', "js")
+      == [(2, "#371",
+           "in a gaining community the high end IS the story")])
+
+check("without the fix, comment_regions() alone already shows the break",
+      check_comments.comment_regions(
+          check_comments.comments_only(
+              "      // a\n      // b\n", "js"))
+      != check_comments.comment_regions(
+          check_comments.comments_only(
+              "      // a\n      // b\n", "js"),
+          "      // a\n      // b\n"))
+
+check("real code between indented lines still breaks the region",
+      len(check_comments.comment_regions(
+          check_comments.comments_only(
+              "      // a\n      render();\n      // b\n", "js"),
+          "      // a\n      render();\n      // b\n")) == 2)
+
+check("a blank line with only whitespace does not break the region",
+      len(check_comments.comment_regions(
+          check_comments.comments_only(
+              "      // a\n      \n      // b\n", "js"),
+          "      // a\n      \n      // b\n")) == 1)
+
+check("passing no text keeps the pre-fix, always-breaks behavior",
+      len(check_comments.comment_regions(
+          check_comments.comments_only(
+              "      // a\n      // b\n", "js"))) == 2)
+
+
+def ticket_tree(comment, relpath="dev/suite.test.mjs"):
+    root = tempfile.mkdtemp(prefix="check-comments-ticket-")
+    full = os.path.join(root, *relpath.split("/"))
+    os.makedirs(os.path.dirname(full))
+    with open(full, "w", encoding="utf-8") as handle:
+        handle.write(comment)
+    return root
+
+
+TICKETED = '/* owner ruling, #390: "the trailing bands never draw" */\n'
+
+check("an unpinned ticket citation fails",
+      len(check_comments.ticket_problems(
+          scan=[("dev", (".mjs",))], repo=ticket_tree(TICKETED),
+          pinned={})) == 1)
+
+check("and the report names the file, the ticket and the quotation",
+      all(part in check_comments.ticket_problems(
+              scan=[("dev", (".mjs",))], repo=ticket_tree(TICKETED),
+              pinned={})[0]
+          for part in ("dev/suite.test.mjs", "#390",
+                       "the trailing bands never draw")))
+
+check("the same citation pinned is not reported",
+      check_comments.ticket_problems(
+          scan=[("dev", (".mjs",))], repo=ticket_tree(TICKETED),
+          pinned={("dev/suite.test.mjs", "#390",
+                   "the trailing bands never draw"): 1}) == [])
+
+TICKETED_TWICE = TICKETED * 2
+check("a second ticket citation in an already-pinned file is new work",
+      len(check_comments.ticket_problems(
+          scan=[("dev", (".mjs",))], repo=ticket_tree(TICKETED_TWICE),
+          pinned={("dev/suite.test.mjs", "#390",
+                   "the trailing bands never draw"): 1})) == 1)
+
+check("raising the pin to two is what covers both",
+      check_comments.ticket_problems(
+          scan=[("dev", (".mjs",))], repo=ticket_tree(TICKETED_TWICE),
+          pinned={("dev/suite.test.mjs", "#390",
+                   "the trailing bands never draw"): 2}) == [])
+
+TICKET_GONE_ROOT = ticket_tree("// nothing cited here\n")
+check("a stale TICKET_PINS entry is reported",
+      len(check_comments.ticket_pin_problems(
+          scan=[("dev", (".mjs",))], repo=TICKET_GONE_ROOT,
+          pinned={("dev/suite.test.mjs", "#390", "gone"): 1})) == 1)
+
+check("and it says to delete the entry",
+      "Delete the entry" in check_comments.ticket_pin_problems(
+          scan=[("dev", (".mjs",))], repo=TICKET_GONE_ROOT,
+          pinned={("dev/suite.test.mjs", "#390", "gone"): 1})[0])
+
+TICKET_OVER_ROOT = ticket_tree(TICKETED)
+check("a ticket pin that over-counts says what to lower it to",
+      "Lower the count to 1" in check_comments.ticket_pin_problems(
+          scan=[("dev", (".mjs",))], repo=TICKET_OVER_ROOT,
+          pinned={("dev/suite.test.mjs", "#390",
+                   "the trailing bands never draw"): 3})[0])
+
+# The real tree, both directions.
+REAL_TICKETS = {}
+for _f, _l, _t, _q in check_comments.all_ticket_citations():
+    REAL_TICKETS[(_f, _t, _q)] = REAL_TICKETS.get((_f, _t, _q), 0) + 1
+check("the real tree's ticket citations are exactly what is pinned",
+      REAL_TICKETS == check_comments.TICKET_PINS)
+
+check("so ticket_problems() and ticket_pin_problems() are both clean on "
+      "the tree as it stands",
+      check_comments.ticket_problems() == []
+      and check_comments.ticket_pin_problems() == [])
+
+check("and the extractor found real ticket citations, not zero",
+      len(check_comments.all_ticket_citations()) > 0)
+
+
+# ------------------------------------------------------------------ #
+# Rule 3, REBUILT at 0.9-M3-S4 fix wave 1 (F1, #392, comment           #
+# 5369115005): a comment that names another file AND claims a count   #
+# of that file's elements must carry a real, resolving citation       #
+# somewhere in the same comment, or it reds. Replaces "N, not M",      #
+# which the review proved catches a fix's wording, never the escape.  #
+
+check("a cardinal near a literal .class token is read",
+      check_comments.count_claims(
+          "// six .field-shaped controls in a row\n", "js")
+      == [(1, "six .field-shaped")])
+
+check("a cardinal near an ordinary noun is not this shape",
+      check_comments.count_claims(
+          "// six retries in a row\n", "js") == [])
+
+check("a cardinal right after a ticket number is not a count claim",
+      check_comments.count_claims(
+          "// #187: .rail-links lists where a member goes\n", "js") == [])
+
+check("a modulo literal eight characters from its dot is out of reach",
+      check_comments.count_claims(
+          "// (index % 6) - so that no .series-N name appears\n", "js")
+      == [])
+
+# The property, over synthetic trees built for it.
+
+
+def count_root(comment, relpath="apps/web/suite.css",
+                other=("apps/web/other.html", "<p>filler</p>\n")):
+    """A temp tree's root: one comment file plus one target file."""
+    root = tempfile.mkdtemp(prefix="check-comments-count-")
+    full = os.path.join(root, *relpath.split("/"))
+    os.makedirs(os.path.dirname(full))
+    with open(full, "w", encoding="utf-8") as handle:
+        handle.write(comment)
+    other_path, other_text = other
+    other_full = os.path.join(root, *other_path.split("/"))
+    if not os.path.isdir(os.path.dirname(other_full)):
+        os.makedirs(os.path.dirname(other_full))
+    with open(other_full, "w", encoding="utf-8") as handle:
+        handle.write(other_text)
+    return root
+
+
+def count_tree(comment, relpath="apps/web/suite.css",
+                other=("apps/web/other.html", "<p>filler</p>\n")):
+    """count_property_problems()/pin_problems() over a two-file tree."""
+    scan = [("apps/web", (".css", ".html"))]
+    root = count_root(comment, relpath, other)
+    return (check_comments.count_property_problems(scan=scan, repo=root),
+            check_comments.count_property_pin_problems(scan=scan, repo=root))
+
+
+UNANCHORED = ("/* one row, six .field-shaped controls, apps/web/other.html "
+              "says so */\n")
+problems_out, pins_out = count_tree(UNANCHORED)
+check("a count claim naming a file with nothing quoted fails",
+      len(problems_out) == 1)
+check("and the report names the file, the line and the fix",
+      all(part in problems_out[0]
+          for part in ("apps/web/suite.css:1", "apps/web/other.html",
+                       "COUNT_PROPERTY_PINS")))
+check("the same tree's pin-problems arm is clean (nothing pinned yet)",
+      pins_out == [])
+
+ANCHORED = ('/* one row, six .field-shaped controls - "filler" in '
+            'apps/web/other.html */\n')
+check("the same claim with a real, resolving quote passes",
+      count_tree(ANCHORED)[0] == [])
+
+WRONG_QUOTE = ('/* one row, six .field-shaped controls - "nonsense" in '
+               'apps/web/other.html */\n')
+check("a quote that does not resolve is not an anchor",
+      len(count_tree(WRONG_QUOTE)[0]) == 1)
+
+NO_COUNT = '/* apps/web/other.html has the filter controls */\n'
+check("a file mention with no count claim is not this rule's business",
+      count_tree(NO_COUNT)[0] == [])
+
+NO_FILE = "/* six .field-shaped controls, in a fixed order */\n"
+check("a count claim naming no file is not this rule's business either",
+      count_tree(NO_FILE)[0] == [])
+
+check("a pinned (file, line) is not reported",
+      check_comments.count_property_problems(
+          scan=[("apps/web", (".css", ".html"))],
+          repo=count_root(UNANCHORED),
+          pinned={("apps/web/suite.css", 1): True}) == [])
+
+# The backward arm: a pin whose count claim was anchored, reworded or
+# deleted stops being true.
+STALE_ROOT = tempfile.mkdtemp(prefix="check-comments-count-stale-")
+os.makedirs(os.path.join(STALE_ROOT, "apps", "web"))
+with open(os.path.join(STALE_ROOT, "apps", "web", "suite.css"), "w",
+          encoding="utf-8") as handle:
+    handle.write("/* nothing about counts here */\n")
+check("a stale COUNT_PROPERTY_PINS entry is reported",
+      len(check_comments.count_property_pin_problems(
+          scan=[("apps/web", (".css",))], repo=STALE_ROOT,
+          pinned={("apps/web/suite.css", 1): True})) == 1)
+
+check("and it says to delete the entry",
+      "Delete the entry" in check_comments.count_property_pin_problems(
+          scan=[("apps/web", (".css",))], repo=STALE_ROOT,
+          pinned={("apps/web/suite.css", 1): True})[0])
+
+# The real tree, both directions - the null-result guard every synthetic
+# arm above shares, and the decisive proof this is armed on real content
+# rather than only on fixtures built for it: theme.css's own control-row
+# comment is exactly this shape, and it is anchored, not pinned.
+check("the real tree has no unanchored count claim",
+      check_comments.count_property_problems() == [])
+
+check("so COUNT_PROPERTY_PINS is empty - nothing needed pinning",
+      check_comments.COUNT_PROPERTY_PINS == {})
+
+check("and count_property_pin_problems() is clean on an empty pin list",
+      check_comments.count_property_pin_problems() == [])
+
+
 # The wiring, asked from outside. Every arm in this suite calls a rule
 # function directly, so a rule dropped from problems() passes all of
 # them while being absent from the gate - armed-looking and unarmed,
@@ -900,7 +1362,10 @@ check("and the same comment in the file beside it is",
 check("the gate's problems() calls every rule this file defines",
       {"generated_tree_problems", "missing_directories",
        "control_byte_problems", "citation_problems",
-       "citation_pin_problems", "ratchet_problems"}
+       "citation_pin_problems", "narrative_problems",
+       "narrative_pin_problems", "ticket_problems", "ticket_pin_problems",
+       "count_property_problems", "count_property_pin_problems",
+       "ratchet_problems"}
       <= set(check_comments.problems.__code__.co_names))
 
 

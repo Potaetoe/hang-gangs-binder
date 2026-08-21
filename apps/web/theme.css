@@ -1300,9 +1300,10 @@ button.primary:disabled {
  * load-bearing twice over. It is what stops one form's controls
  * arriving as a box on top of a box - #68's first candidate - and the
  * selected mark takes --color-accent, which tools/check_contrast.py
- * measures against the page background. Put this strip inside a card
- * and the one thing distinguishing the selected tab is a color nothing
- * has measured on that surface.
+ * measures against the page background, never against a card's. Moved
+ * inside a card, that same mark reads at 3.49:1 there too (measured,
+ * 0.9-M2-S15, #383) - clear of the 3:1 non-text bar, but by a number
+ * nothing here re-checks the way check_contrast.py re-checks the page.
  *
  * Selection is never color alone: aria-selected carries it for
  * assistive technology, the label goes from muted to full text, and the
@@ -1619,13 +1620,18 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
 
 /*
  * The charts control row (0.9-M2-S3, #354, design mandate 2): one card,
- * one row, five .field-shaped controls in a fixed order. Wraps on a
- * narrow viewport rather than scrolling, because five controls in a
- * horizontal scroller is a control a thumb cannot find.
+ * one row, four .field-shaped controls in a fixed order. Wraps on a
+ * narrow viewport rather than scrolling, because four controls in a
+ * horizontal scroller is a control a thumb cannot find. The row's own
+ * fixed order, "filter, measure, units, show-me, download" in
+ * apps/web/charts.html's own comment, names two more - Show me and
+ * Download act rather than hold a value, so nothing here styles them
+ * as fields.
  *
- * FIVE, NOT SIX (0.9-M2-S15, #383): the Picture toggle left this row for
- * the results card, where there is something to choose a picture of -
- * see apps/web/charts.html's own comment on the fieldset it moved to.
+ * The Picture toggle lives with the results card now, not this row
+ * (0.9-M2-S15, #383): there is nothing to choose a picture of until
+ * Show me has drawn one - see apps/web/charts.html's own comment on the
+ * fieldset it moved to.
  */
 .control-row {
   display: flex;
