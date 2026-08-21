@@ -104,6 +104,35 @@ is the single-winner protocol that closes both. `check` stays lock-free:
 it only reads, and a torn read fails closed through `read_lock` to exit 2.
 The mutex is stealable (a crashed holder's is removed single-winner after
 `MUTEX_STALE_SECONDS`) so one dead session cannot wedge the fleet.
+
+WINDOWS CAN REPORT A DELETE RACE AS PermissionError, NOT FileExistsError
+(S23, #436, 2026-08-21)
+
+Every `os.open(..., O_CREAT | O_EXCL | O_WRONLY)` in this module - the
+mutex's own exclusive create in `mutation_lock`, and the primary lock's
+fast-path create in `do_acquire` - catches `PermissionError` alongside
+`FileExistsError`. Reproduced live: a 100-iteration loop of the
+release/takeover storm scenario crashed once (about 1 in 100) with an
+uncaught `PermissionError: [Errno 13] Permission denied` from
+`mutation_lock`'s exclusive create, where the module only caught
+`FileExistsError`. The cause is NTFS's own delete semantics, not the
+storm fixture mis-sequencing its contenders: `os.remove` on Windows
+marks a file for deletion and the directory entry can persist for a
+short window before it is actually gone, and a concurrent `CREATE_NEW`
+open landing in that window is denied (`ERROR_ACCESS_DENIED`) rather
+than told the file exists (`ERROR_FILE_EXISTS`) - the same fact
+("someone else has this path right now") reported through whichever of
+two Windows codes the timing happens to land on. `mutex_is_stale` and
+`steal_mutex` catch it too, for the same reason `FileNotFoundError`
+already had to be caught there: a file this module cannot even stat or
+move during that window is not one it can prove is a crashed holder's,
+so the conservative answer ("not stale, retry") is unchanged either way.
+None of this widens what counts as a real invariant violation - a
+caught `PermissionError` re-enters the exact same stale-check, steal and
+retry path `FileExistsError` already used, bounded by the same
+`MUTEX_TIMEOUT_SECONDS` and `ACQUIRE_ATTEMPTS`, so a genuinely stuck
+permission problem still surfaces as a `TimeoutError` or a refusal
+rather than looping forever.
 """
 
 import argparse
@@ -154,6 +183,63 @@ def read_lock(path):
         return None
     existing = read_json(path)
     return existing if isinstance(existing, dict) else {}
+
+
+# A record that reads unreadable might just be mid-write, not corrupt -
+# S23, #436, 2026-08-21. See settle_unreadable below.
+WRITE_SETTLE_SECONDS = 0.25
+WRITE_SETTLE_SPIN_SECONDS = 0.005
+
+
+def settle_unreadable(path, existing):
+    """Give a just-created, still-filling lock a moment to finish, before
+    a takeover decision reads its unreadable gap as staleness.
+
+    FOUND LIVE (S23, #436): a 200-trial storm of do_acquire's own
+    fast-path create (`write_new_lock`, below) racing a mutation_lock-
+    protected takeover decision hit this twice - the fast-path winner's
+    file existed but was not yet filled (the exact gap `read_lock`'s own
+    docstring names: "the gap between the file existing and the file
+    being readable is real on this platform ... cannot be closed from
+    this end, only narrowed"), the takeover reader saw `{}` (unreadable),
+    `staleness()` reported "its started-at (None) could not be read" and,
+    under an active `--take-stale`, unconditionally overwrote the winner
+    it had not finished announcing - two acquire callers both exited 0,
+    and the second one's write is what survived. A genuinely corrupt or
+    crashed record (the suite's own hand-written-garbage arm) is not
+    mid-write and never settles, so it falls through unchanged to the
+    existing STALE / --take-stale path exactly as before; the budget only
+    ever costs time on the rare unreadable case, never on an ordinary
+    read.
+
+    Deliberately narrower than the mutex's own equivalent
+    (`mutex_is_stale`, which is mtime-only and never re-reads): `check`
+    stays lock-free and instant by design ("check stays lock-free: it
+    only reads" - the module docstring) and does not call this, because
+    a momentary false UNREADABLE there costs a caller a retry, never a
+    corrupted lock. This function is called only from the mutation-lock-
+    protected path that can actually WRITE over what it reads, where the
+    same momentary gap can cost a real invariant instead.
+    """
+    if existing != {}:
+        return existing
+    try:
+        age = time.time() - os.stat(path).st_mtime
+    except FileNotFoundError:
+        return existing  # genuinely gone now; the caller's own "gone in
+                        # the gap" path (existing is None) applies instead
+    if age >= WRITE_SETTLE_SECONDS:
+        # Old enough that "still being filled" is implausible - a real
+        # write_new_lock call finishes in microseconds, not a quarter
+        # second. Presumptively corrupt or crashed, same as before.
+        return existing
+    deadline = time.monotonic() + WRITE_SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(WRITE_SETTLE_SPIN_SECONDS)
+        reread = read_lock(path)
+        if reread != {}:
+            return reread
+    return existing
 
 
 def lock_record(session, host, started_at):
@@ -273,9 +359,15 @@ def mutex_is_stale(path):
     """
     try:
         mtime = os.stat(path).st_mtime
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError):
         # Gone between a spinner's failed create and this stat - not stale,
         # just absent; the caller loops and retries the exclusive create.
+        # PermissionError joins FileNotFoundError for the same reason it
+        # joins FileExistsError in mutation_lock below: Windows can present
+        # a file mid-delete as access-denied rather than not-found for a
+        # few microseconds, and a file this call cannot even stat is not
+        # one it can prove is a crashed holder's - "not stale, retry" is
+        # the same conservative answer either way (S23, #436).
         return False
     return (time.time() - mtime) >= MUTEX_STALE_SECONDS
 
@@ -285,16 +377,44 @@ def steal_mutex(path):
 
     os.replace to a caller-unique name is the same atomic move the port
     allocator and this module lean on elsewhere: exactly one stealer moves
-    the file and the rest get FileNotFoundError and simply retry the
-    exclusive create. The winner then deletes what it moved.
+    the file and the rest get FileNotFoundError (or, on Windows, the same
+    transient PermissionError mutation_lock's exclusive create can see -
+    S23, #436) and simply retry the exclusive create. The winner then
+    deletes what it moved.
+
+    A SECOND, DIFFERENT source of that same PermissionError (a review
+    lead on #436, confirmed by reproduction): Windows can also raise it
+    when the file being replaced or removed is genuinely still open in
+    another process - `os.replace(path, graveyard)` against a file a
+    real process still has open raised exactly
+    `PermissionError(13, 'The process cannot access the file because it
+    is being used by another process')` in a direct reproduction (a
+    subprocess holding the mutex path open while its mtime was aged past
+    the steal threshold, standing in for a holder that is slow rather
+    than crashed). This is a different mechanism from the delete-pending
+    race above - not a timing sliver but an actual live handle - and it
+    is handled the same way for the same reason: a stealer that cannot
+    win right now should retry through the caller's spin loop, not crash.
+    `os.remove(graveyard)` gets the same guard for the same class of
+    reason, even though this module could not force that specific call
+    to fail live: by the time replace has succeeded, `graveyard` is a
+    name only this stealer's pid+random suffix could reach, so nothing
+    else should hold it open - but "should not" is not a promise this
+    function makes about a filesystem it does not control, and a failed
+    cleanup here is a harmless orphaned `.stealing-*` file, never a
+    correctness problem (the exclusivity `path` needed was already
+    settled by the successful replace).
     """
     graveyard = "%s.stealing-%d-%s" % (path, os.getpid(),
                                        os.urandom(6).hex())
     try:
         os.replace(path, graveyard)
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError):
         return
-    os.remove(graveyard)
+    try:
+        os.remove(graveyard)
+    except (FileNotFoundError, PermissionError):
+        pass
 
 
 @contextlib.contextmanager
@@ -321,6 +441,26 @@ def mutation_lock(state):
     MUTEX_STALE_SECONDS is a crashed holder and is stolen single-winner;
     a call that cannot acquire within MUTEX_TIMEOUT_SECONDS raises rather
     than hang.
+
+    WHY THE EXCLUSIVE CREATE ALSO CATCHES PermissionError (S23, #436,
+    2026-08-21): reproduced live in a 100-iteration storm loop on
+    Windows, rate about 1 in 100 - a release/takeover storm's exclusive
+    create on this same mutex path raised `PermissionError: [Errno 13]
+    Permission denied` instead of `FileExistsError`, crashing the caller
+    with an uncaught traceback rather than looping. The cause is NTFS's
+    own delete semantics, not a bug in the barrier fixture: `os.remove`
+    on Windows marks a file for deletion and the directory entry persists
+    for a short window before it is actually gone, and a concurrent
+    `CREATE_NEW` open landing in that window is denied
+    (`ERROR_ACCESS_DENIED`) rather than told the file exists
+    (`ERROR_FILE_EXISTS`) - the two errors are the same fact ("someone
+    else has this path right now") reported through two different
+    Windows codes depending on which side of the delete the caller's
+    open lands. Treating PermissionError as ordinary contention here
+    costs nothing extra: it re-enters the exact same stale-check/steal/
+    retry loop FileExistsError already does, bounded by the same
+    MUTEX_TIMEOUT_SECONDS, so a genuine (non-transient) permission
+    problem still surfaces as a TimeoutError rather than looping forever.
     """
     path = mutex_path(state)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -328,7 +468,7 @@ def mutation_lock(state):
     while True:
         try:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
             if mutex_is_stale(path):
                 steal_mutex(path)
             elif time.monotonic() > deadline:
@@ -348,11 +488,14 @@ def mutation_lock(state):
     finally:
         try:
             os.remove(path)
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):
             # Stolen out from under us because we somehow ran past the
             # stale threshold - impossible for a real section, but if it
             # happened the stealer already owns the slot and removing again
-            # would delete its mutex. Leave it.
+            # would delete its mutex. Leave it. PermissionError joins
+            # FileNotFoundError for the same Windows delete-race reason
+            # documented above the exclusive create in this function
+            # (S23, #436).
             pass
 
 
@@ -373,16 +516,25 @@ def do_acquire(args):
     for _ in range(ACQUIRE_ATTEMPTS):
         try:
             handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            # A lock already exists (or did a moment ago). Deciding what to
-            # do about it is a read-modify-write, so it runs under the
-            # mutation lock - the section that makes the takeover single-
-            # winner and keeps a release from deleting a replacement. Only
-            # the read and the write are inside it; the message is printed
-            # after it is dropped.
+        except (FileExistsError, PermissionError):
+            # A lock already exists (or did a moment ago) - or, on Windows,
+            # is a moment from not existing: a concurrent release's
+            # os.remove(path) can leave this exclusive create seeing
+            # ERROR_ACCESS_DENIED (PermissionError) rather than
+            # ERROR_FILE_EXISTS for the same narrow NTFS delete-pending
+            # window mutation_lock's own exclusive create documents (S23,
+            # #436) - the two errors are the same fact reported through
+            # different Windows codes, and read_lock below already treats
+            # "gone in this exact gap" as a retry regardless of which one
+            # brought it here. Deciding what to do about it is a
+            # read-modify-write, so it runs under the mutation lock - the
+            # section that makes the takeover single-winner and keeps a
+            # release from deleting a replacement. Only the read and the
+            # write are inside it; the message is printed after it is
+            # dropped.
             retry = False
             with mutation_lock(state):
-                existing = read_lock(path)
+                existing = settle_unreadable(path, read_lock(path))
                 if existing is None:
                     # Released in the gap between the failed create and this
                     # read; loop and let the exclusive create try again.
