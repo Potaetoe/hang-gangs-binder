@@ -34,6 +34,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from contextlib import redirect_stdout
 
@@ -93,7 +94,7 @@ def barrier_trial(state, specs):
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 73
+EXPECTED = 85
 
 
 def check(label, condition):
@@ -455,6 +456,200 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           read(mx_state).get("session") == "reaper-session")
     check("a completed mutation leaves no mutex behind",
           not os.path.exists(mpath))
+
+    print("\n--- S23 (#436): a transient PermissionError racing an "
+          "exclusive create is contention, not a crash ---")
+    # Reproduced live: a 100-iteration loop of the release/takeover storm
+    # above crashed about 1 in 100 runs on Windows with an uncaught
+    # `PermissionError: [Errno 13] Permission denied` from an exclusive
+    # create that only caught FileExistsError. NTFS can present a file
+    # mid-delete as access-denied rather than file-exists for a few
+    # microseconds (see the module docstring's WINDOWS CAN REPORT A DELETE
+    # RACE AS PermissionError section) - a real Windows filesystem fact,
+    # not a fixture ordering bug, so it is injected deterministically here
+    # rather than chased through another probabilistic storm. os.open is
+    # patched process-wide for the span of one call because prime_lock.py
+    # reaches it as `os.open` (the same module object this suite imports),
+    # so patching the module attribute reaches prime_lock's call too;
+    # restored in `finally` before anything else in the suite can observe
+    # it.
+    real_open = os.open
+
+    def flaky_once(target):
+        calls = {"n": 0}
+
+        def opener(path, flags, *a, **kw):
+            if path == target and calls["n"] == 0:
+                calls["n"] += 1
+                raise PermissionError(13, "Permission denied (injected, "
+                                          "S23)")
+            return real_open(path, flags, *a, **kw)
+        return opener, calls
+
+    # mutation_lock's own exclusive create on the mutex.
+    inj_mutex_state = os.path.join(root, "injected-collision-mutex")
+    opener, calls = flaky_once(prime_lock.mutex_path(inj_mutex_state))
+    os.open = opener
+    raised = None
+    try:
+        with prime_lock.mutation_lock(inj_mutex_state):
+            pass
+    except Exception as exc:  # proving NONE escapes
+        raised = exc
+    finally:
+        os.open = real_open
+    check("mutation_lock retries a transient PermissionError on the mutex "
+          "instead of propagating it", raised is None)
+    check("the injected collision actually fired once",
+          calls["n"] == 1)
+    check("the mutex is still cleaned up after the retried acquisition",
+          not os.path.exists(prime_lock.mutex_path(inj_mutex_state)))
+
+    # do_acquire's own exclusive create on the primary lock file - the
+    # same Windows quirk threatens this fast path exactly the same way,
+    # racing a concurrent release rather than a concurrent takeover.
+    inj_primary_state = os.path.join(root, "injected-collision-primary")
+    os.makedirs(prime_lock.locks_dir(inj_primary_state), exist_ok=True)
+    opener, calls = flaky_once(prime_lock.lock_path(inj_primary_state))
+    os.open = opener
+    raised, code = None, None
+    try:
+        code = prime_lock.main(["acquire", "session-inj", "--state",
+                                inj_primary_state])
+    except Exception as exc:  # proving NONE escapes
+        raised = exc
+    finally:
+        os.open = real_open
+    check("do_acquire retries a transient PermissionError on the primary "
+          "lock instead of propagating it", raised is None)
+    check("the injected collision actually fired once", calls["n"] == 1)
+    check("the retried acquire still succeeds and installs the lock",
+          raised is None and code == 0
+          and read(inj_primary_state).get("session") == "session-inj")
+
+    print("\n--- S23 (#436): a second, distinct race - a takeover must "
+          "not mistake a fast-path winner's unfilled gap for staleness "
+          "---")
+    # A 500-trial run of the release/takeover storm above (not this
+    # suite's fixed 8, which is too few to reach it reliably) hit this
+    # twice at the 200-trial mark: write_new_lock's own create-then-fill
+    # gap (its docstring already names it: "the gap between the file
+    # existing and the file being readable ... cannot be closed from
+    # this end, only narrowed") left a fast-path winner's record reading
+    # as {} for a moment, a concurrent takeover read that as "its
+    # started-at could not be read" (STALE) and, under --take-stale,
+    # unconditionally overwrote a winner it had not finished announcing -
+    # two acquire callers both exited 0. settle_unreadable gives the gap
+    # a bounded moment to close before a takeover decision trusts it.
+    # Injected deterministically with a background thread standing in
+    # for the racing fast-path winner, on a controlled clock instead of
+    # the storm's own low, timing-dependent rate.
+    settle_state = os.path.join(root, "settle-collision")
+    os.makedirs(prime_lock.locks_dir(settle_state), exist_ok=True)
+    settle_path = prime_lock.lock_path(settle_state)
+    # The exact shape os.open(O_CREAT|O_EXCL) leaves behind before
+    # write_new_lock fills it: present, zero bytes, unreadable as JSON.
+    os.close(os.open(settle_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+
+    def fill_after_pause():
+        time.sleep(prime_lock.WRITE_SETTLE_SECONDS / 5)
+        prime_lock.write_lock(settle_path, "winner", "host-w",
+                              prime_lock.now())
+    filler = threading.Thread(target=fill_after_pause)
+    filler.start()
+    code, said = run(["acquire", "challenger", "--state", settle_state,
+                      "--take-stale", "--stale-hours", "12"])
+    filler.join()
+    check("a takeover racing a fast-path winner's unfilled gap settles "
+          "onto the real, fresh record instead of stealing the gap - "
+          "REFUSED, not acquired", code == 1 and "fresh lock" in said
+          and "winner" in said)
+    check("the winner's record survives untouched",
+          read(settle_state).get("session") == "winner")
+
+    print("\n--- S23 (#436): a third, distinct race - steal_mutex against "
+          "a mutex a real process still has open ---")
+    # A review lead on #436 (S11's re-fire reviewer, unable to reproduce
+    # the storm flake directly) named this one before it was found here:
+    # a contender that loses the takeover race while another process
+    # still holds the file handle. Reproduced directly - a subprocess
+    # holding the mutex path open (standing in for a holder that is slow
+    # rather than crashed) while its mtime is aged past the steal
+    # threshold makes os.replace(path, graveyard) raise exactly
+    # `PermissionError(13, 'The process cannot access the file because
+    # it is being used by another process')`, a THIRD mechanism behind
+    # the same error type as the delete-pending race above but a
+    # genuinely different cause (a live handle, not a timing sliver).
+    # steal_mutex already treats it as ordinary contention; this proves
+    # that call, live, with a real OS-level open handle rather than a
+    # monkeypatched os.open.
+    steal_state = os.path.join(root, "steal-open-handle")
+    steal_path = prime_lock.mutex_path(steal_state)
+    os.makedirs(os.path.dirname(steal_path), exist_ok=True)
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys, time\n"
+         "with open(sys.argv[1], 'w', encoding='utf-8') as f:\n"
+         "    f.write('{}')\n"
+         "    f.flush()\n"
+         "    print('HELD', flush=True)\n"
+         "    time.sleep(2.0)\n",
+         steal_path],
+        stdout=subprocess.PIPE, text=True)
+    holder.stdout.readline()  # blocks until the subprocess has it open
+    old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+    os.utime(steal_path, (old, old))
+    check("the held mutex reads as stale by mtime, same as a crashed "
+          "holder's", prime_lock.mutex_is_stale(steal_path))
+    raised = None
+    try:
+        prime_lock.steal_mutex(steal_path)
+    except Exception as exc:  # proving NONE escapes
+        raised = exc
+    check("steal_mutex against a mutex a live process still has open "
+          "does not crash - it is ordinary contention, retried by the "
+          "caller's own spin loop", raised is None)
+    holder.wait(timeout=10)
+
+    # The subprocess case above proves os.replace itself can raise
+    # PermissionError against a live handle - and steal_mutex already
+    # returns cleanly there without ever reaching os.remove(graveyard).
+    # This proves the OTHER half of the same lead deterministically: a
+    # SUCCESSFUL replace followed by a cleanup os.remove that itself
+    # raises (a virus scanner or search indexer touching the graveyard
+    # name in that split second is a real-world example, even though
+    # this suite cannot force one live) must not crash the caller either
+    # - the exclusivity `path` needed was already settled by the
+    # successful replace, so a failed cleanup is a harmless orphan, not
+    # a correctness problem. Injected by patching os.remove rather than
+    # chasing a real race, since the graveyard name is only reachable by
+    # the pid+random suffix steal_mutex itself just generated.
+    remove_state = os.path.join(root, "steal-remove-collision")
+    remove_path = prime_lock.mutex_path(remove_state)
+    os.makedirs(os.path.dirname(remove_path), exist_ok=True)
+    old = time.time() - (prime_lock.MUTEX_STALE_SECONDS + 5)
+    with open(remove_path, "w", encoding="utf-8") as handle:
+        handle.write('{"pid": 1, "host": "crashed", "at": "old"}')
+    os.utime(remove_path, (old, old))
+    real_remove = os.remove
+
+    def flaky_remove(target, *a, **kw):
+        if ".stealing-" in os.path.basename(target):
+            raise PermissionError(13, "Permission denied (injected, S23)")
+        return real_remove(target, *a, **kw)
+    os.remove = flaky_remove
+    raised = None
+    try:
+        prime_lock.steal_mutex(remove_path)
+    except Exception as exc:  # proving NONE escapes
+        raised = exc
+    finally:
+        os.remove = real_remove
+    check("steal_mutex's own cleanup os.remove(graveyard) failing does "
+          "not crash the caller", raised is None)
+    check("the exclusivity that mattered (path itself) was still won - "
+          "only the graveyard cleanup was interrupted",
+          not os.path.exists(remove_path))
 
 print("\n%d checks, %d failure(s)" % (performed, failures))
 if performed != EXPECTED:
