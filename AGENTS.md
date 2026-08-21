@@ -50,8 +50,25 @@ this project has no money surface today and its client-side crypto is
 dead with the keys, so what it reaches in 0.9 is authentication, the
 stored formats a Worker encrypts and anything holding a credential —
 but a surface that comes back is covered by the list already, without
-a new ruling. Review depth keys to the builder's tier. The tier lives
-in the agent definitions, so a brief that names one is quoting them.
+a new ruling. The builder's tier lives in the agent definitions, so a
+brief that names one is quoting them.
+
+**Review depth keys to the SLICE's tier, read from its files** (owner
+ruling 2026-08-21, the M3 delivery shape, #402). A slice is
+**sensitive** if any declared file is under `server/`, is an
+auth/session module, is deploy configuration (`wrangler.toml`,
+`.github/workflows/`) or crypto; **trivial** if every declared file is
+documentation, a test, or site-configuration text; **normal**
+otherwise. Trivial slices merge on green CI with no review. Normal
+slices get the builder's full verification floor and ONE targeted
+independent review, whose report the reviewer posts on the ticket;
+fixes are proven by the builder's fresh printed evidence and CI, and
+the branch auto-merges on green. Sensitive slices get the full path:
+full review, fix waves re-fired by the non-author reviewer, the
+orchestrator's ruling, and the landing door below. The tier is read by
+a tool, never declared by hand (#403 carries it into `ship-check`); a
+comment-only edit to a sensitive file tiers as sensitive, a cost the
+ruling accepts.
 
 ## The documentation system
 
@@ -144,8 +161,16 @@ and it happens before every edit regardless.
 
 ### The landing door
 
-Before any branch merges, its declared file list is checked against its
-real diff — the mechanism a git-ops merge order runs at the door,
+**The door is the sensitive tier's** (#402). Trivial and normal
+branches merge through the repository's own protection on `accounts`:
+the `verify` check is required and the branch must be current with the
+base, so "green" means green on the latest `accounts`; the orchestrator
+pushes the branch, opens the pull request, and arms auto-merge. Builders
+never push. A sensitive branch lands through the git-ops transaction
+below, every step.
+
+Before a sensitive branch merges, its declared file list is checked
+against its real diff — the mechanism a git-ops merge order runs at the door,
 `tools/claim_vs_diff.py` (0.9-M0-S13, #297; corrected by the S13 fix
 wave, finding S13-F3). The fleet's charter carries the same step
 machine-held; this section is the repository's own copy, so a fork
@@ -289,13 +314,15 @@ guards, never as the pattern for a new one.
   gate (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it
   is registered exactly where its apparatus registers checks — nothing
   here is the registration-suspended exception it once was.
-- **A fix wave's claimed red→greens are re-fired by an agent who did
-  not author the fix, before any landing order issues** (owner ruling
-  A1, audit finding F1, 2026-08-14). A fix wave's own probes already
-  exist, so this is minutes of re-running them, not a second review —
-  but it is not optional: a landing order that includes a fix-wave head
-  names the re-fire verification it rests on, or it is malformed. This
-  is the code half; the pack carries the spawn-side mechanics.
+- **A sensitive slice's fix wave is re-fired by an agent who did not
+  author the fix, before any landing order issues** (owner ruling A1,
+  audit finding F1, 2026-08-14; narrowed to the sensitive tier by
+  #402, 2026-08-21). A fix wave's own probes already exist, so this is
+  minutes of re-running them, not a second review — and a landing order
+  that includes a fix-wave head names the re-fire it rests on, or it is
+  malformed. A **normal** slice's fix is proven by the builder's own
+  fresh printed evidence (the mutation table re-run, ship-check
+  re-pasted) and green CI; no reviewer returns.
 - Mutation is necessary and not sufficient. A mutation only asks "does
   this check enforce what it says?", never "is this the right thing to
   enforce?" — the review bar below is what answers that.
@@ -352,13 +379,16 @@ implemented it. Say which it is.
 **A security consult is triaged by what a slice changes about members,
 not by whether it adds a surface.** The question is: does this change
 how members are partitioned, aggregated, floored, or authenticated? If
-it touches `server/charts-agg.js`, `server/worker.js` or
-`server/store-crypto.js`, the orchestrator does not answer that question
-alone — the security consultant's Mode 1 triage does, and the order
-cites it. The case that wrote this rule: a 0.9-M2 slice that added one
-closed parameter and "no new surface" also rebuilt the chart bands per
-unit, which quietly negated the one-partition privacy rule at a raised
-floor; the builder caught what the triage had not asked.
+it does, the slice is sensitive-tier, and the security consultant
+answers — **once per batch, over the merged batch, before it deploys**
+(#402, owner ruling 2026-08-21: "no more full consults on unfinished
+batches"). A batch holding any sensitive slice gets one full-mandate
+consult; its findings land as fix slices before the deploy; a batch
+with none gets no consult. The case that wrote this rule: a 0.9-M2
+slice that added one closed parameter and "no new surface" also rebuilt
+the chart bands per unit, which quietly negated the one-partition
+privacy rule at a raised floor; the builder caught what the per-slice
+triage had not asked.
 
 ## Boundaries
 
