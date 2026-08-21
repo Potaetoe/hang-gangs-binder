@@ -71,6 +71,37 @@ fleet: no import from dev/, no framework, no new dependency, and
 nothing imported from any sibling *_suite.py (each one runs its own
 checks at import time, unguarded by `if __name__ == "__main__"`, so
 importing one would run it as a side effect of running this one).
+
+0.9-M3-S5 (#393 + #403): TWO ADDITIONS TO THIS SAME FIXTURE, WHY THE
+FIXTURE'S OWN TIP COMMIT NOW SAYS "RED"
+
+`stage_tier()` reads the same declared-file-list shape stage 5 already
+reads, judges it against `tools/tier.py` (the in-repo mirror of the
+machine-held rules - see that file's own module docstring for why it
+is a mirror and not an import), and refuses a normal-or-sensitive
+slice whose branch carries no RED commit, or whose `--completion` text
+never mentions a mutation table, or - when a declared path is a page
+file - never says "browser". Every existing fixture branch in this
+file already carries exactly one commit ahead of `origin/accounts`
+("0.9-m0-s22 RED: fixture slice change"), so that one commit is now
+also the POSITIVE fixture for the RED-commit check everywhere it is
+reused - a second branch is needed only for the NEGATIVE case (a
+commit that never says RED at all), built fresh, checked out, tested,
+and torn down inside the tier section below without disturbing
+`tip_sha`'s meaning for every test after it.
+
+`render_completion_block()` (`--completion-block`) is the condensed,
+GitHub-comment-shaped block #393 asks for - the stage table, the head
+SHA, the branch, the declared-vs-diff verdict, and the gating pass
+count, all read from the SAME `Stage` objects `render()` already
+prints from (`stage.counted`, `stage.verdict`, `stage.branch`,
+`stage.head_sha`), never re-derived by a second calculation. That
+single-source property is what "arm the block's totals" means below: a
+mutation that corrupts a counted tuple corrupts both output shapes
+identically, so the block-mode assertions below are exercised through
+the SAME fixture-stub scenarios ("pass"/"fail") that already prove
+`_count_old_gate_table()`/`_count_new_gate_table()` above, rather than
+a second, separately-invented fixture.
 """
 
 import io
@@ -85,6 +116,7 @@ from contextlib import redirect_stdout
 
 import agent_init
 import ship_check
+import tier
 
 failures = 0
 performed = 0
@@ -299,7 +331,12 @@ def build_repo(root):
 
     write(os.path.join(repo, "apps", "web", "page.html"), "<html></html>\n")
     git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "slice change")
+    # Carries a real "RED" marker, the repository's own naming
+    # convention (git log: "... RED: ... arm/contract ..." then a later
+    # "... GREEN: ..." commit) - this is the ONE commit in every
+    # fixture branch's range, so it doubles as the positive fixture for
+    # stage_tier()'s RED-commit-in-range check without a second branch.
+    git(repo, "commit", "-q", "-m", "0.9-m0-s22 RED: fixture slice change")
     tip_sha = sha(repo, "HEAD")
     return repo, base_sha, tip_sha
 
@@ -420,6 +457,154 @@ try:
     check("an undecodable --declared path fails with a named reason, "
          "not a crash",
           not stage.ok and "could not decode" in stage.lines[0])
+
+    print("\n--- tier.py: the in-repo mirror of the machine-held rules "
+         "(0.9-M3-S5, #403) ---")
+    check("server/ files judge sensitive",
+          tier.judge("server/worker.js")[0] == "sensitive")
+    check("a page-side auth module judges sensitive",
+          tier.judge("apps/web/session.js")[0] == "sensitive")
+    check("its dist mirror judges sensitive too",
+          tier.judge("dist/session.js")[0] == "sensitive")
+    check("wrangler.toml judges sensitive regardless of directory depth",
+          tier.judge("infra/wrangler.toml")[0] == "sensitive")
+    check("a workflow file judges sensitive",
+          tier.judge(".github/workflows/deploy.yml")[0] == "sensitive")
+    check("store-crypto.js judges sensitive",
+          tier.judge("apps/web/store-crypto.js")[0] == "sensitive")
+    check("a markdown file judges trivial",
+          tier.judge("DESIGN.md")[0] == "trivial")
+    check("a tests/ path judges trivial",
+          tier.judge("tests/foo.test.mjs")[0] == "trivial")
+    check("site.config.js judges trivial",
+          tier.judge("apps/web/site.config.js")[0] == "trivial")
+    check("its dist mirror judges trivial too",
+          tier.judge("dist/site.config.js")[0] == "trivial")
+    check("an ordinary page falls through to normal",
+          tier.judge("apps/web/your-page.html")[0] == "normal")
+    check("an empty path judges nothing - no tier, no crash",
+          tier.judge("   ") == (None, ""))
+    check("tier_of: one sensitive path outweighs any number of trivial "
+         "ones",
+          tier.tier_of(["README.md", "server/worker.js",
+                        "tests/x.test.mjs"])[0] == "sensitive")
+    check("tier_of: all-trivial, non-empty, is trivial",
+          tier.tier_of(["README.md", "tests/x.test.mjs"])[0] == "trivial")
+    check("tier_of: one normal path among trivials is normal",
+          tier.tier_of(["README.md", "apps/web/your-page.html"])[0]
+          == "normal")
+    check("tier_of: an empty list is normal, never a crash",
+          tier.tier_of([])[0] == "normal")
+
+    print("\n--- stage: slice tier - the evidence-below-tier refusal "
+         "(0.9-M3-S5, #403) ---")
+
+    # The one negative fixture for "no RED commit in range": a branch off
+    # the SAME base whose one commit never says RED, built, tested, and
+    # torn down here so `tip_sha` keeps meaning "0.9-m0-s22's own tip"
+    # for every test that follows this section.
+    git(repo, "branch", "no-red-fixture", base_sha)
+    git(repo, "checkout", "-q", "no-red-fixture")
+    write(os.path.join(repo, "apps", "web", "other.html"),
+         "<html></html>\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a slice change with no marker at all")
+    no_red_declared = os.path.join(root, "declared-no-red.txt")
+    write(no_red_declared, "apps/web/other.html\n")
+
+    stage = ship_check.stage_tier(repo, no_red_declared, "origin/accounts",
+                                  None)
+    check("a normal-tier slice with no RED commit in its range fails, "
+         "naming the gap",
+          not stage.ok and "no RED commit" in "\n".join(stage.lines))
+
+    trivial_declared = os.path.join(root, "declared-trivial.txt")
+    write(trivial_declared, "README.md\ntests/x.test.mjs\n")
+    stage = ship_check.stage_tier(repo, trivial_declared, "origin/accounts",
+                                  None)
+    check("an all-trivial declared list passes with no RED commit and no "
+         "--completion needed at all - trivial owes no evidence",
+          stage.ok and "tier: trivial" in stage.lines)
+
+    git(repo, "checkout", "-q", "0.9-m0-s22")
+    git(repo, "branch", "-D", "no-red-fixture")
+
+    sensitive_declared = os.path.join(root, "declared-sensitive.txt")
+    write(sensitive_declared, "server/worker.js\n")
+    stage = ship_check.stage_tier(repo, sensitive_declared,
+                                  "origin/accounts", None)
+    check("a sensitive-tier slice is held to the RED-commit bar too - "
+         "0.9-m0-s22's own tip carries one, so only the missing "
+         "--completion should fail it here",
+          not stage.ok and "no RED commit" not in "\n".join(stage.lines)
+          and "no --completion" in "\n".join(stage.lines))
+
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  None)
+    check("declared_good (apps/web/page.html, normal) fails for the same "
+         "reason - RED commit present, no --completion to confirm the "
+         "mutation table",
+          not stage.ok and "no --completion" in "\n".join(stage.lines))
+
+    completion_no_mutation = os.path.join(root,
+                                          "completion-no-mutation.txt")
+    write(completion_no_mutation, "browser: checked at phone width.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  completion_no_mutation)
+    check("a completion mentioning browser but never 'mutation' fails, "
+         "naming the gap",
+          not stage.ok and "mutation" in "\n".join(stage.lines))
+
+    completion_no_browser = os.path.join(root, "completion-no-browser.txt")
+    write(completion_no_browser,
+         "mutation battery: broke it, watched it fail, restored it, "
+         "watched it pass.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  completion_no_browser)
+    check("apps/web/page.html is declared and the completion never says "
+         "'browser' - fails, naming the page file",
+          not stage.ok and "browser" in "\n".join(stage.lines)
+          and "apps/web/page.html" in "\n".join(stage.lines))
+
+    completion_full = os.path.join(root, "completion-full.txt")
+    write(completion_full,
+         "mutation battery: broke it, watched it fail, restored it, "
+         "watched it pass.\nbrowser: checked at phone width first.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  completion_full)
+    check("RED commit + mutation table + browser note together pass",
+          stage.ok and "tier: normal" in stage.lines)
+
+    stage = ship_check.stage_tier(repo, sensitive_declared,
+                                  "origin/accounts", completion_full)
+    check("a sensitive-tier slice with no page files never demands a "
+         "browser note - RED + mutation alone is enough",
+          stage.ok and "tier: sensitive" in stage.lines)
+
+    mixed_declared = os.path.join(root, "declared-mixed.txt")
+    write(mixed_declared,
+         "server/worker.js\napps/web/page.html\nREADME.md\n")
+    stage = ship_check.stage_tier(repo, mixed_declared, "origin/accounts",
+                                  completion_full)
+    check("a mixed list (sensitive + a page file + a doc) tiers "
+         "sensitive, and its page file still needs the browser note the "
+         "completion above already carries",
+          stage.ok and "tier: sensitive" in stage.lines)
+    check("...and the printed bucket counts are exact - 1 sensitive, 1 "
+         "trivial, 1 normal path(s), never a hand count",
+          "1 sensitive, 1 trivial, 1 normal path(s) judged" in stage.lines)
+
+    stage = ship_check.stage_tier(repo, None, "origin/accounts",
+                                  completion_full)
+    check("no --declared file given fails with an actionable message, "
+         "not a crash",
+          not stage.ok and "no --declared file given" in stage.lines[0])
+
+    missing_tier_declared = os.path.join(root, "does-not-exist-tier.txt")
+    stage = ship_check.stage_tier(repo, missing_tier_declared,
+                                  "origin/accounts", completion_full)
+    check("an unreadable --declared path fails, names why",
+          not stage.ok and "could not read" in stage.lines[0])
 
     print("\n--- _count_old_gate_table / _count_new_gate_table: pure "
          "counters, 0.9-M1-S0 (#323) ---")
@@ -576,7 +761,8 @@ try:
     with PatchInitProblems([]), redirect_stdout(buffer):
         code = ship_check.main(["--repo", repo, "--declared", declared_good,
                                 "--base", "origin/accounts",
-                                "--issue", "320"])
+                                "--issue", "320",
+                                "--completion", completion_full])
     rendered = buffer.getvalue()
     check("an all-pass fixture run exits 0", code == 0)
     check("the closing line names this output as the paste-verbatim "
@@ -597,6 +783,77 @@ try:
           "2 stages, 2 ok, 0 FAILED" in rendered)
     check("...and so does the new gate's, in the same pass-through run",
           "2 arms, 2 green, 0 FAILED" in rendered)
+    check("the new slice-tier stage's own row reaches this block too, "
+         "0.9-M3-S5 (#403)",
+          "--- slice tier ---" in rendered and "tier: normal" in rendered)
+
+    print("\n--- --completion-block: the exact paste block, "
+         "0.9-M3-S5 (#393) ---")
+    buffer3 = io.StringIO()
+    with PatchInitProblems([]), redirect_stdout(buffer3):
+        code3 = ship_check.main(["--repo", repo, "--declared", declared_good,
+                                 "--base", "origin/accounts",
+                                 "--issue", "320",
+                                 "--completion", completion_full,
+                                 "--completion-block"])
+    block = buffer3.getvalue()
+    check("--completion-block exits 0 on the same all-pass fixture run",
+          code3 == 0)
+    check("the block names the slice by its slug, derived from the "
+         "branch (0.9-m0-s22 -> 0.9-M0-S22)",
+          "0.9-M0-S22: ship-check completion block" in block)
+    check("the block carries the branch",
+          "branch: 0.9-m0-s22" in block)
+    check("the block carries the full 40-character head SHA",
+          ("head:   " + tip_sha) in block)
+    check("the old gate's own computed totals reach the block, read "
+         "from the SAME Stage.counted the full-output line above came "
+         "from - never a second calculation",
+          "2 total, 2 ok, 0 FAILED" in block)
+    check("...and so do the new gate's - both rows carry it, since "
+         "both fixture stubs are in the same 'pass' scenario",
+          block.count("2 total, 2 ok, 0 FAILED") == 2)
+    check("the declared-vs-diff verdict reaches the block",
+          "MATCH" in block)
+    check("the tier stage's own row reaches the block too",
+          "normal" in block)
+    check("the gating summary is the block's own computed total, never "
+         "a remembered count",
+          "6/6 gating stage(s) passed." in block)
+    check("an all-pass block says READY TO PASTE",
+          "READY TO PASTE." in block)
+
+    # Force the old gate to fail and confirm the block's own totals
+    # track it LIVE - the arm #393 names: "the block's totals are the
+    # tool's own computed values (a mutation forcing a wrong total into
+    # the block must red)". This proves the block never carries a
+    # second, independently-typed number: it is driven by exactly the
+    # same _count_old_gate_table() call the full-output stage already
+    # used, so a real subprocess failure changes both outputs from one
+    # source, not two.
+    os.environ["SHIP_CHECK_STUB_OLD_GATE"] = "fail"
+    buffer4 = io.StringIO()
+    with PatchInitProblems([]), redirect_stdout(buffer4):
+        code4 = ship_check.main(["--repo", repo, "--declared", declared_good,
+                                 "--base", "origin/accounts",
+                                 "--completion", completion_full,
+                                 "--completion-block"])
+    block_fail = buffer4.getvalue()
+    check("a failing old gate exits the block mode 1",
+          code4 == 1)
+    check("...and the block's own totals show the real 1-ok/1-FAILED "
+         "split, computed fresh - never the passing run's numbers above",
+          "1 total, 1 ok, 1 FAILED" in block_fail)
+    check("...and the block says it is NOT ready to paste, naming the "
+         "failed stage by name",
+          "NOT ready to paste" in block_fail
+          and "old gate (py -3 tools/check.py)" in block_fail)
+    check("...and the gating count itself moved off 6/6 - the SAME "
+         "computed total the passing block above printed",
+          "6/6 gating stage(s) passed." not in block_fail
+          and "gating stage(s) passed." in block_fail)
+    os.environ.pop("SHIP_CHECK_STUB_OLD_GATE", None)
+    os.environ.pop("SHIP_CHECK_STUB_NEW_GATE", None)
 
     buffer2 = io.StringIO()
     with PatchInitProblems(["fixture: pretend uninitialized"]), \
