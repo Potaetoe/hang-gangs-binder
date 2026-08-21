@@ -931,13 +931,14 @@ const putField = (env, token, id, body) =>
   check("and it serves NO field row - the spec is behind the session " +
     "gate on GET /spec, and a credential-free read of the same table " +
     "would make that gate a fiction",
-    Object.keys(content.body.content).every((name) =>
+    content.status === 200 &&
+    Object.keys((content.body && content.body.content) || {}).every((name) =>
       !name.toLowerCase().startsWith("field.")));
 
   const config = await call(env, "GET", "/config");
   check("GET /config is unchanged and still serves its three names only",
     config.status === 200 &&
-    Object.keys(config.body.config).length === 3);
+    Object.keys((config.body && config.body.config) || {}).length === 3);
 
   /* THE OTHER DOOR. A field row is written through PUT /admin-fields
      and nowhere else, so the copy route refuses the namespace outright -
