@@ -161,6 +161,68 @@ so it cannot grow one file at a time.
 
 archive/ is never scanned. It is frozen history, and history is exactly
 what it is allowed to contain.
+
+THREE MORE HOLES, EACH A COVERAGE GAP RATHER THAN A BROKEN RULE
+-----------------------------------------------------------------
+0.9-M3-S4 (#392), filed at the M2-to-M3 fleet gate over three real
+escapes the rules above could not have caught, each for a different
+reason than "the phrase list is too short":
+
+ - S11 F3 (#372): apps/web/charts.html said "charts.js disables rather
+   than shows an empty pane" - a claim about a NAMED FILE with nothing
+   quoted. The citation rule above requires a quotation to check a
+   citation against; a bare mention has nothing to check, so it never
+   entered either rule. See NARRATIVE_PINS below.
+ - S15 F5 (#383): apps/web/theme.css said "six .field-shaped controls"
+   long after the row it described dropped to five, and the file had
+   never produced a single ALLOWLIST or CITATION_PINS entry - not
+   because its comments were clean, but because nothing here had ever
+   been shown to fire on THIS file. The fix wave's own truing comment,
+   "FIVE, NOT SIX (0.9-M2-S15, #383): ...", turned out to be the SAME
+   disease the phrase list already names elsewhere: a sentence
+   narrating a past count instead of stating the present one, which
+   "renamed from" and "moved from" already catch for renames and moves.
+   One new phrase entry below catches the shape ("cardinal, not
+   cardinal") generally, and it fires on theme.css's own real comment -
+   see PHRASES' "N, not M" entry.
+ - The third shape, found while building the first two: a citation can
+   be shaped exactly like the quoted CITATIONS above and cite a GitHub
+   ticket instead of a file - `#378: "no numbers over bars, ever"` in
+   apps/web/charts.js is the one real instance. CITED requires a file
+   extension, so `#378` never matched it and the quotation was never
+   checked against anything, in either direction, because a ticket
+   number is not a file this checker can open. See TICKET_PINS below.
+
+NARRATIVE_PINS answers the first shape the same way ALLOWLIST answers a
+phrase: it cannot verify a bare mention (there is nothing quoted to
+check), so it ratchets the shape itself - a dash-introduced, unquoted
+mention of another file, in a comment that quotes nothing at all, is
+new work the moment it is not already pinned. The dash is deliberate,
+not a stand-in for "any connective": AGENTS.md's own "The review bar"
+and the CITATIONS design above both hold that a connective is what
+makes a rule usable rather than merely correct, and a bare CITED token
+appears constantly in ordinary prose ("apps/web/form.js writes one
+control per field") with no claim behind it at all - narrowing to the
+one connective the real escape used keeps the pin list to fifteen
+honest entries instead of the low thousands a bare-mention scan
+produces. Requiring the comment to quote NOTHING anywhere, not just
+near the file, is what keeps a citation that already resolves (a real
+CITATIONS match sitting two sentences over) from tripping this too.
+
+TICKET_PINS answers the third shape with the CITATIONS machinery
+itself, rather than new machinery: `#\\d+` stands in for CITED inside
+the same two connective-plus-quotation patterns, so the extraction is
+the one already proven precise. What differs is resolution - a ticket
+is never a file on disk, so there is no "does it still say this"
+question to ask the way unresolved_citations() asks it of a file; every
+ticket-anchored citation is broken by definition, exactly once, and
+TICKET_PINS is the ratchet that says which ones were already there.
+
+All three are ratchets on the shape of the sentence, the same trade the
+phrase list already makes and states outright: this closes the three
+escapes it was measured against, not the general problem of an
+unverifiable claim - a comment can still narrate a stale fact in prose
+these three rules do not recognize. That gap is inherited, not new.
 """
 
 import os
@@ -311,6 +373,33 @@ def marker(*words):
     return re.compile(r"\b" + GAP.join(words) + r"\b", re.I)
 
 
+# A cardinal followed by "not" and another cardinal - "five, not six",
+# "11, not 12" - is the same disease "renamed from" and "moved from"
+# above catch for a rename or a move: it narrates what a count USED TO
+# BE instead of stating what it is, and the earlier number belongs in
+# the commit message exactly as a rename does (AGENTS.md, "Code
+# standards"). Found at 0.9-M3-S4 (#392) via the comment this pattern
+# exists to catch: apps/web/theme.css's "FIVE, NOT SIX (0.9-M2-S15,
+# #383): the Picture toggle left this row..." - the fix wave's own
+# truing comment, which corrected the count and narrated the correction
+# in the same breath. Measured against the real tree before this
+# pattern existed: two matches, both real narration, zero false
+# positives - the second is dev/check_web.test.py's "11, not 12: theme-
+# init.js left MODULE_EXPORTS at 0.9-M2-S14 ... when the custom theme
+# it published ... retired with it", the same shape in a different file.
+#
+# The comma is deliberate and outside GAP on purpose. GAP is whitespace,
+# continuation marks and comment openers - not a comma - so marker()
+# cannot spell "five, not six" as a single call; this pattern allows an
+# optional comma before "not" instead of widening GAP for every other
+# phrase, which would let "renamed, from" or "moved, from" match text
+# nobody writes that way.
+NUMBER = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+          r"twelve|\d+)")
+CARDINAL_DRIFT = re.compile(
+    r"\b%s\b,?%snot%s%s\b" % (NUMBER, GAP, GAP, NUMBER), re.I)
+
+
 # (label, pattern, why it is not a comment's job). The label is the
 # ALLOWLIST key, so renaming one is a deliberate act that fails the
 # stale-entry arm until the list is edited to match.
@@ -335,6 +424,8 @@ PHRASES = [
     ("was rejected because", marker("was", "rejected", "because"),
      "Say what the code does not do and why, in the present tense; the "
      "decision to reject belongs in the commit and the issue."),
+    ("N, not M", CARDINAL_DRIFT,
+     "The earlier count is in the diff, not the file it describes."),
 ]
 
 # Phrases that narrate only when a subject stands in front of them.
@@ -368,6 +459,12 @@ NEEDS_SUBJECT = frozenset({"used to"})
 # either clears it or says in the commit why it survived the visit.
 ALLOWLIST = {
     ("dev/ui.test.mjs", "used to"): 1,
+    # "11, not 12: theme-init.js left MODULE_EXPORTS at 0.9-M2-S14 (#380
+    # ruling 2) ... when the custom theme it published ... retired with
+    # it." Real narration, same shape as theme.css's own (0.9-M3-S4,
+    # #392) - not this slice's file to reword, so pinned rather than
+    # fixed. Comes off in the pull request that next touches this file.
+    ("dev/check_web.test.py", "N, not M"): 1,
 }
 
 # {(file, cited path, quotation): count} for every citation the 0.9
@@ -418,6 +515,82 @@ CITATION_PINS = {
     ("server/worker.js", "DESIGN.md",
      "The prefill is scoped to the account"): 1,
     ("dev/crypto.test.mjs", "DESIGN.md", "Key custody"): 1,
+}
+
+# A dash immediately before a path this repository could hold - the
+# connective the real escape used (0.9-M2-S11, #372: apps/web/
+# charts.html's "...trend: null - charts.js disables rather than shows
+# an empty pane"). Restricted to this one connective on purpose; see
+# NARRATIVE_PINS below and "NARRATIVE_PINS answers the first shape" in
+# the module docstring for the measurement that ruled out a wider one.
+NARRATIVE = re.compile(r"-\s+(%s)\b" % CITED)
+
+# {(file, cited path): count}. A comment that names another file via
+# NARRATIVE, in a comment region that quotes nothing at all, cannot be
+# checked the way a real citation is - there is nothing quoted to read
+# the target for, so the best this file can do is the ratchet PHRASES
+# already runs for a linguistic marker: pin what is already here, fail
+# what is new. An entry comes OFF in the pull request that next touches
+# its file, same as ALLOWLIST and CITATION_PINS; raising a count is an
+# edit to this file with a reason in the pull request.
+#
+# Measured against the real tree at 0.9-M3-S4 (#392): fifteen dash-
+# connected mentions with no quote anywhere in the comment, one of them
+# apps/web/theme.css naming itself ("theme.css says so above") - not the
+# escape this rule exists for, since a file's claim about its own text
+# is checkable by anyone reading the file, so that one is excluded by
+# narrative_problems() below rather than pinned. The remaining fourteen
+# are here.
+NARRATIVE_PINS = {
+    ("apps/web/admin.html", "server/worker.js"): 1,
+    ("apps/web/charts.html", "charts.js"): 1,
+    ("apps/web/theme.css", "apps/web/charts.js"): 1,
+    ("dev/admin.test.mjs", "dashboard.js"): 1,
+    ("dev/check_web.test.py", "public.js"): 1,
+    ("dev/demo-server.mjs", "demo-stub.js"): 1,
+    ("dev/demo-stub.js", "AGENTS.md"): 1,
+    ("dev/worker.test.mjs", "./store-crypto.js"): 1,
+    ("server/charts-agg.js", "apps/web/countries.js"): 1,
+    ("tools/agent_init.py", "tools/requirements-gate.txt"): 1,
+    ("tools/check.py", "dev/form.test.mjs"): 1,
+    ("tools/check_live.py", "server/wrangler.toml"): 1,
+    ("tools/fleet_status.py", "reaper.py"): 1,
+    ("tools/session_open_suite.py", "reaper.py"): 1,
+}
+
+# A GitHub ticket number, `#\d+` - never a file, and every one of these
+# resolves against a repository object this checker can open (issues
+# live on GitHub, not on disk), so a citation anchored to one is broken
+# by construction, in the same sense unresolved_citations() already
+# reports "not a file here" for a stale path. Reusing CITED's own
+# connective-plus-quotation shape rather than inventing a new one: the
+# extraction is the one already measured precise in "WHY THE CITATION
+# RULE IS THIS NARROW" above, and #\d+ simply stands where CITED stood.
+TICKET = r"#\d+"
+
+TICKET_CITATIONS = (
+    (re.compile(r"(%s)(?:'s|[,:])\s+\"([^\"\n]{6,160})\"" % TICKET), 1, 2),
+    (re.compile(r"\"([^\"\n]{6,160})\"\s+(?:in|of|under)\s+(%s)\b" % TICKET),
+     2, 1),
+)
+
+# {(file, ticket, quotation): count}. Every ticket-anchored citation is
+# broken - there is no "does the ticket still say this" question this
+# checker can ask - so this pin does the work CITATION_PINS' count does
+# for a file citation: the difference between a claim already known to
+# be unverifiable and new work pointing at the same kind of nothing.
+# Measured against the real tree at 0.9-M3-S4 (#392): five instances,
+# all in apps/web/charts.js, all in comments recording an owner ruling
+# by number rather than by a document a check can open.
+TICKET_PINS = {
+    ("apps/web/charts.js", "#243",
+     "Edges come from the field spec and never move or merge"): 1,
+    ("apps/web/charts.js", "#378", "a tooltip verifies any value"): 1,
+    ("apps/web/charts.js", "#378", "including an empty slot"): 1,
+    ("apps/web/charts.js", "#378",
+     "the month and the values that point carries - group mean; the You "
+     "point its own value"): 1,
+    ("apps/web/charts.js", "#378", "no numbers over bars, ever"): 1,
 }
 
 
@@ -974,6 +1147,241 @@ def citation_pin_problems(scan=None, repo=None, pinned=None):
     return problems
 
 
+def narrative_mentions(text, kind):
+    """[(line, cited path)] for a bare, dash-introduced file mention.
+
+    Only comment regions that quote NOTHING are read - a region holding
+    a real, resolvable CITATIONS match elsewhere is not this escape, and
+    reporting it too would teach the next reader to distrust the rule
+    exactly the way a too-wide phrase would (see "WHY THE PHRASE LIST IS
+    THIS SHORT" in the module docstring for the same trade made once
+    already). unwrap() is reused rather than re-derived so a mention
+    split across a block comment's continuation lines is still one
+    mention, the same reason citations() needs it.
+    """
+    masked = comments_only(text, kind)
+    found = []
+    for start, stop in comment_regions(masked):
+        flat, offsets = unwrap(masked, start, stop)
+        if '"' in flat:
+            continue
+        for match in NARRATIVE.finditer(flat):
+            at = offsets[match.start(1)]
+            found.append((masked.count("\n", 0, at) + 1, match.group(1)))
+    return sorted(found)
+
+
+def all_narratives(scan=None, repo=None):
+    """[(file, line, cited path)] over the scan set, self-mentions dropped.
+
+    A file naming itself ("theme.css says so above") is not the escape
+    NARRATIVE_PINS exists for - a claim a file makes about its own text
+    is checkable by anyone reading the same file, which is exactly the
+    property missing from a claim about a DIFFERENT one. Dropped by
+    comparing both the bare name and the scan-relative path, since a
+    comment may spell either.
+    """
+    scan = SCAN if scan is None else scan
+    repo = REPO if repo is None else repo
+    out = []
+    for dirname, extensions in scan:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            full = os.path.join(base, name)
+            if not os.path.isfile(full) or not name.endswith(extensions):
+                continue
+            relpath = "%s/%s" % (dirname, name)
+            if relpath in EXEMPT:
+                continue
+            with open(full, encoding="utf-8") as handle:
+                text = handle.read()
+            kind = KIND[os.path.splitext(name)[1]]
+            for line, path in narrative_mentions(text, kind):
+                if path in (relpath, name):
+                    continue
+                out.append((relpath, line, path))
+    return out
+
+
+def narrative_problems(scan=None, repo=None, pinned=None):
+    """A problem per narrative file mention beyond the count pinned for it.
+
+    The forward arm, the same shape ratchet_problems() runs for a
+    phrase: membership alone would forgive every future mention of an
+    already-pinned pair, so this compares COUNTS, exactly as
+    citation_problems() does above and for the same reason (F1, #279) -
+    a second mention of the same file in the same comment's neighborhood
+    is new work, not the occurrence that was already there.
+    """
+    pinned = NARRATIVE_PINS if pinned is None else pinned
+    broken = {}
+    for relpath, line, path in all_narratives(scan, repo):
+        broken.setdefault((relpath, path), []).append(line)
+    problems = []
+    for key in sorted(broken):
+        relpath, path = key
+        places = broken[key]
+        allowed = pinned.get(key, 0)
+        if len(places) <= allowed:
+            continue
+        if allowed:
+            problems.append(
+                "%s: %d comments dash-mention %s unquoted and %d are "
+                "pinned (lines %s). One is new: quote the claim so it can "
+                "be checked against %s, or pin it"
+                % (relpath, len(places), path, allowed,
+                   ", ".join(str(line) for line in places), path))
+        else:
+            problems.extend(
+                "%s:%d: names %s after a dash with nothing quoted in the "
+                "comment, so nothing here can check what it claims. Quote "
+                "the specific claim so it resolves against %s, or pin the "
+                "mention in NARRATIVE_PINS"
+                % (relpath, line, path, path)
+                for line in places)
+    return problems
+
+
+def narrative_pin_problems(scan=None, repo=None, pinned=None):
+    """A problem per NARRATIVE_PINS entry that no longer describes the tree.
+
+    The backward arm: a pin whose mention was quoted, reworded or
+    deleted stops being true, and the list is written to shrink, not to
+    accumulate excuses.
+    """
+    pinned = NARRATIVE_PINS if pinned is None else pinned
+    broken = {}
+    for relpath, line, path in all_narratives(scan, repo):
+        broken.setdefault((relpath, path), []).append(line)
+    problems = []
+    for key in sorted(pinned):
+        relpath, path = key
+        count = pinned[key]
+        actual = len(broken.get(key, []))
+        if actual == 0:
+            problems.append(
+                "NARRATIVE_PINS pins %s in %s, and it is not there any "
+                "more - quoted, reworded, or deleted. Delete the entry; "
+                "the list is a ratchet and only shrinks"
+                % (path, relpath))
+        elif actual < count:
+            problems.append(
+                "NARRATIVE_PINS pins %d occurrence(s) of %s in %s and %d "
+                "remain. Lower the count to %d"
+                % (count, path, relpath, actual, actual))
+    return problems
+
+
+def ticket_citations(text, kind):
+    """[(line, ticket, quotation)] for one file's source, sorted.
+
+    Same extraction as citations() above, TICKET_CITATIONS in place of
+    CITATIONS - see TICKET_CITATIONS for why the pattern itself needs no
+    change beyond that swap.
+    """
+    masked = comments_only(text, kind)
+    found = []
+    for start, stop in comment_regions(masked):
+        flat, offsets = unwrap(masked, start, stop)
+        for pattern, path_group, quote_group in TICKET_CITATIONS:
+            for match in pattern.finditer(flat):
+                at = offsets[match.start(quote_group)]
+                found.append((masked.count("\n", 0, at) + 1,
+                              match.group(path_group),
+                              match.group(quote_group)))
+    return sorted(found)
+
+
+def all_ticket_citations(scan=None, repo=None):
+    """[(file, line, ticket, quotation)] over the scan set."""
+    scan = SCAN if scan is None else scan
+    repo = REPO if repo is None else repo
+    out = []
+    for dirname, extensions in scan:
+        base = os.path.join(repo, *dirname.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            full = os.path.join(base, name)
+            if not os.path.isfile(full) or not name.endswith(extensions):
+                continue
+            relpath = "%s/%s" % (dirname, name)
+            if relpath in EXEMPT:
+                continue
+            with open(full, encoding="utf-8") as handle:
+                text = handle.read()
+            kind = KIND[os.path.splitext(name)[1]]
+            for line, ticket, quote in ticket_citations(text, kind):
+                out.append((relpath, line, ticket, quote))
+    return out
+
+
+def ticket_problems(scan=None, repo=None, pinned=None):
+    """A problem per ticket citation beyond the count pinned for it.
+
+    Every ticket citation is broken by construction (see TICKET above),
+    so there is no resolution step to run before this - the whole
+    question is whether it was already pinned, the same forward-arm
+    shape narrative_problems() runs.
+    """
+    pinned = TICKET_PINS if pinned is None else pinned
+    broken = {}
+    for relpath, line, ticket, quote in all_ticket_citations(scan, repo):
+        broken.setdefault((relpath, ticket, quote), []).append(line)
+    problems = []
+    for key in sorted(broken):
+        relpath, ticket, quote = key
+        places = broken[key]
+        allowed = pinned.get(key, 0)
+        if len(places) <= allowed:
+            continue
+        if allowed:
+            problems.append(
+                "%s: %d comments cite %s, %r and %d are pinned (lines %s). "
+                "One is new, and a ticket is never a file this checker can "
+                "read: quote the file that carries the ruling instead, or "
+                "pin the citation"
+                % (relpath, len(places), ticket, quote, allowed,
+                   ", ".join(str(line) for line in places)))
+        else:
+            problems.extend(
+                "%s:%d: cites %s, %r - a ticket rather than a file, so "
+                "nothing here can check the quotation against it. Quote "
+                "the file that carries this ruling instead, or pin the "
+                "citation in TICKET_PINS if the ticket is genuinely the "
+                "only record"
+                % (relpath, line, ticket, quote)
+                for line in places)
+    return problems
+
+
+def ticket_pin_problems(scan=None, repo=None, pinned=None):
+    """A problem per TICKET_PINS entry that no longer describes the tree."""
+    pinned = TICKET_PINS if pinned is None else pinned
+    broken = {}
+    for relpath, line, ticket, quote in all_ticket_citations(scan, repo):
+        broken.setdefault((relpath, ticket, quote), []).append(line)
+    problems = []
+    for key in sorted(pinned):
+        relpath, ticket, quote = key
+        count = pinned[key]
+        actual = len(broken.get(key, []))
+        if actual == 0:
+            problems.append(
+                "TICKET_PINS pins %r out of %s in %s, and no comment "
+                "cites it any more. Delete the entry; the list is a "
+                "ratchet and only shrinks"
+                % (quote, ticket, relpath))
+        elif actual < count:
+            problems.append(
+                "TICKET_PINS pins %d occurrence(s) of %r out of %s in %s "
+                "and %d remain. Lower the count to %d"
+                % (count, quote, ticket, relpath, actual, actual))
+    return problems
+
+
 def problems():
     found, scanned = scan_tree()
     out = generated_tree_problems()
@@ -985,6 +1393,10 @@ def problems():
     out.extend(control_byte_problems())
     out.extend(citation_problems())
     out.extend(citation_pin_problems())
+    out.extend(narrative_problems())
+    out.extend(narrative_pin_problems())
+    out.extend(ticket_problems())
+    out.extend(ticket_pin_problems())
     out.extend(ratchet_problems(found, ALLOWLIST, scanned))
     return out
 
@@ -1005,10 +1417,12 @@ def main():
     print("check_comments: comments explain why, every scanned file is "
           "text and every quotation of another file is still in it or "
           "pinned (%d files scanned, %d cross-file citation(s) checked, "
-          "%d phrase occurrence(s) and %d citation(s) pinned for the "
-          "slice that rewrites their file)."
+          "%d phrase occurrence(s), %d citation(s) pinned for the slice "
+          "that rewrites their file, %d unquoted file mention(s) pinned "
+          "and %d ticket citation(s) pinned)."
           % (len(scanned), len(all_citations()), sum(ALLOWLIST.values()),
-             sum(CITATION_PINS.values())))
+             sum(CITATION_PINS.values()), sum(NARRATIVE_PINS.values()),
+             sum(TICKET_PINS.values())))
     return 0
 
 
