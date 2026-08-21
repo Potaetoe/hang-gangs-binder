@@ -339,7 +339,7 @@ def build_repo(root):
     # therefore unchanged - only apps/web/page.html - while `git log`
     # over the range still carries a RED-marked commit whose OWN
     # `git show --name-only` names a real tests/ path, which is what
-    # `_has_red_commit()` now reads.
+    # `_red_commit_touches_arm()` now reads.
     write(os.path.join(repo, "tests", "fixture-contract.test.mjs"),
          "// contract placeholder, undone by the next commit\n")
     git(repo, "add", "-A")
