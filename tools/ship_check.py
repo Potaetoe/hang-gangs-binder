@@ -155,22 +155,29 @@ the same `--declared` file stage 5 already reads (through
 `claim_vs_diff.parse_declared()`, so a completion's bulleted or
 backtick-quoted file list is judged the same way it is compared), then
 refuses a normal-or-sensitive slice whose evidence falls short of the
-M3 shape's own floor: no RED commit anywhere in the branch's own range
-(`base..HEAD`, checked by name against this repository's own commit
-convention - a commit subject containing the word "RED", the exact
-shape `git log --grep` finds in this project's history), no
-`--completion` text mentioning a mutation table, or - only when a
+M3 shape's own floor: no RED-marked commit in the branch's own range
+(`base..HEAD`) whose OWN diff also touches a real arm (tests/, dev/,
+or a tools/*_suite.py file - review F1(c), #393: a commit that merely
+SAYS "RED" and touches nothing is not contract-first), no real
+mutation-battery evidence in the `--completion` text, or - only when a
 declared path is a page file (the same `apps/web/*.{html,js,css}`
 shape `.claude/hooks/dispatch_premise.py` already gates at dispatch
-time) - no mention of "browser" in that same text. A trivial-tier
-slice owes none of this; the M3 shape's own floor never asks it to.
+time) - no real browser-verification evidence in that same text.
+"Real evidence" is deliberately NOT a bare word match (review F1,
+#393: the first cut tested for the word "mutation"/"browser" anywhere
+in the text, which a denial like "I did NOT run a mutation battery"
+satisfies and honest plural prose like "five mutations" fails) - see
+the MUTATION_*/BROWSER_* regexes and `_has_mutation_evidence()`/
+`_has_browser_evidence()` below for the actual shape asked for. A
+trivial-tier slice owes none of this; the M3 shape's own floor never
+asks it to.
 
 THE --completion-block MODE (0.9-M0-S5-era ticket #393)
 
 `render()` above is the FULL, verbatim paste block - every subprocess
 byte, unabridged, because abridging a subprocess's own output by hand
 is the exact failure #320 already exists to end. `--completion-block`
-is a SECOND, condensed rendering of the SAME `Stage` objects, sized
+ADDS a SECOND, condensed rendering of the SAME `Stage` objects, sized
 for a GitHub comment: one row per stage, the totals each gate stage
 already computed (`Stage.counted`), the declared-vs-diff verdict
 (`Stage.verdict`), the branch and the full head SHA, and the same
@@ -181,6 +188,20 @@ read off a `Stage` attribute a stage function already set while
 computing the SAME fact for the full block, so a mutation that
 corrupts a stage's own computed total corrupts both renderings from
 one source, never just one of them quietly.
+
+ONE RUN, NOT TWO (review F4, #393)
+
+The first cut had `--completion-block` REPLACE the full output, which
+meant an executor had to run this program TWICE per signal - once
+plain, once with the flag - to get both pastes a completion needs. Two
+separate process runs can disagree even on an unchanged tree (a flaky
+arm caught by one run and not the other), which is the exact
+hand-abridgement disease this file exists to end, moved one level
+down. `main()` below now builds the `stages` list exactly ONCE per
+invocation and hands that SAME list to `render()` always, then ALSO to
+`render_completion_block()` when `--completion-block` is passed - one
+gate execution, both renderings, guaranteed to agree because there is
+only one set of `Stage` objects for both to read.
 """
 
 import argparse
@@ -498,6 +519,14 @@ def stage_declared_vs_diff(repo, base, declared_path):
 # lowercase "red" is never the marker in this repository's history.
 RED_COMMIT_MARK = re.compile(r"\bRED\b")
 
+# Review F1(c), #393: a RED-marked commit subject is not itself
+# contract-first evidence - the reviewer built one whose subject said
+# "RED" and whose diff touched a page file and nothing else. A marker
+# only counts when the SAME commit's own diff also reaches a real arm:
+# a test file, dev/ (this repository's older suite home), or a
+# tools/*_suite.py module.
+RED_ARM_PATH = re.compile(r"^tests/|^dev/|^tools/[^/]*_suite\.py$")
+
 # The same "a page a person looks at" shape
 # `.claude/hooks/dispatch_premise.py` already gates at dispatch time
 # (its own rule 6: a builder order naming these paths must say
@@ -506,16 +535,115 @@ RED_COMMIT_MARK = re.compile(r"\bRED\b")
 PAGE_FILE = re.compile(r"^apps/web/[\w.-]+\.(html|js|css)$")
 
 
-def _has_red_commit(repo, base):
-    """Whether any commit subject in `base..HEAD` carries the marker
-    above - see RED_COMMIT_MARK's own comment for the convention this
-    reads."""
+def _red_commit_shas(repo, base):
+    """[sha, ...] for every commit in `base..HEAD` whose subject carries
+    RED_COMMIT_MARK, oldest-first order not guaranteed - only membership
+    matters to `_red_commit_touches_arm()` below."""
     code, out = claim_vs_diff.git(repo, "log", "%s..HEAD" % base,
-                                  "--format=%s")
+                                  "--format=%H %s")
     if code != 0:
+        return []
+    shas = []
+    for line in out.splitlines():
+        commit_sha, _sep, subject = line.partition(" ")
+        if RED_COMMIT_MARK.search(subject):
+            shas.append(commit_sha)
+    return shas
+
+
+def _red_commit_touches_arm(repo, shas):
+    """Whether any commit in `shas` touches a real arm path
+    (RED_ARM_PATH) in its OWN diff - review F1(c) (#393): a marker that
+    marks nothing is not contract-first. Reads each candidate commit's
+    own `git show --name-only`, never the branch's net two-endpoint
+    diff, so a RED commit whose file was later reverted by a different
+    commit still counts (the marker's own change is what is being asked
+    about, not what survives to HEAD)."""
+    for commit_sha in shas:
+        code, out = claim_vs_diff.git(repo, "show", "--name-only",
+                                      "--format=", commit_sha)
+        if code != 0:
+            continue
+        touched = (line.strip().replace("\\", "/")
+                  for line in out.splitlines() if line.strip())
+        if any(RED_ARM_PATH.search(path) for path in touched):
+            return True
+    return False
+
+
+# Review F1 (#393): the ORIGINAL checks tested for the bare word
+# "mutation"/"browser" anywhere in the completion text - a denial
+# ("I did NOT run a mutation battery") and a bare label ("mutation
+# browser") both matched, and honest plural prose ("five mutations",
+# "browsers") FAILED because \b...\b sits against the plural "s". Every
+# regex below is built against the reviewer's own five test rows
+# (tools/ship_check_suite.py, "F1 (#393): evidence-shape").
+#
+# Mutation evidence needs the WORD, not inside a negation clause, PLUS
+# one of: a counted mention ("5 mutations", "five mutations"), a
+# markdown table row (`| ... | ... |`), or a red/green (or fail/pass -
+# this repository's own completions often say "watched it fail... watched
+# it pass" rather than the literal words) result pair near each other.
+MUTATION_WORD = re.compile(r"\bmutations?\b", re.I)
+_NEGATION_WORD = re.compile(r"\b(no|not|never)\b|n't\b", re.I)
+MUTATION_COUNT = re.compile(
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"mutations?\b", re.I)
+MUTATION_TABLE_ROW = re.compile(r"^\s*\|.*\|.*\|", re.M)
+MUTATION_RESULT_PAIR = re.compile(
+    r"\b(red|fail(?:ed)?)\b[^.\n]{0,60}\b(green|pass(?:ed)?)\b"
+    r"|\b(green|pass(?:ed)?)\b[^.\n]{0,60}\b(red|fail(?:ed)?)\b", re.I)
+
+# Browser evidence needs the WORD, refuses the phrases that mean it did
+# NOT happen ("not performed", "no browser", "never opened a browser"),
+# and needs a width or device mention - the labeled, geometry-bearing
+# claim AGENTS.md's Verification section already rules ("Member pages
+# are checked at phone width FIRST"), never the bare word alone.
+BROWSER_WORD = re.compile(r"\bbrowsers?\b", re.I)
+BROWSER_DENY = re.compile(
+    r"\bnot\s+performed\b|\bno\s+browsers?\b"
+    r"|\bnever\s+(?:opened|used|ran|tested)\b", re.I)
+BROWSER_WIDTH_OR_DEVICE = re.compile(
+    r"\bphone\s+width\b|\b\d{3,4}\s*px\b|\bmobile\b|\bdesktop\s+width\b"
+    r"|\biphone\b|\bandroid\b|\bviewport\b", re.I)
+
+
+def _clause_before(text, position, window=40):
+    """The text immediately before `position`, trimmed back to the last
+    sentence boundary inside `window` characters - the scope a negation
+    word has to sit inside to count as negating the match at
+    `position`, rather than negating some earlier, unrelated clause."""
+    start = max(0, position - window)
+    chunk = text[start:position]
+    for boundary in (".", "\n", ";"):
+        index = chunk.rfind(boundary)
+        if index != -1:
+            chunk = chunk[index + 1:]
+    return chunk
+
+
+def _has_mutation_evidence(text):
+    """Whether `text` carries real mutation-battery evidence - see the
+    MUTATION_* regexes' own comment above for the shape asked for."""
+    matches = list(MUTATION_WORD.finditer(text))
+    if not matches:
         return False
-    return any(RED_COMMIT_MARK.search(subject)
-              for subject in out.splitlines())
+    if all(_NEGATION_WORD.search(_clause_before(text, match.start()))
+          for match in matches):
+        return False
+    return bool(MUTATION_COUNT.search(text)
+               or MUTATION_TABLE_ROW.search(text)
+               or MUTATION_RESULT_PAIR.search(text))
+
+
+def _has_browser_evidence(text):
+    """Whether `text` carries real browser-verification evidence - see
+    the BROWSER_* regexes' own comment above for the shape asked for."""
+    if not BROWSER_WORD.search(text):
+        return False
+    if BROWSER_DENY.search(text):
+        return False
+    return bool(BROWSER_WIDTH_OR_DEVICE.search(text))
 
 
 def stage_tier(repo, declared_path, base, completion_path):
@@ -568,12 +696,20 @@ def stage_tier(repo, declared_path, base, completion_path):
         return Stage("slice tier", True, lines, evidence, detail="trivial")
 
     problems = []
-    if not _has_red_commit(repo, base):
+    red_shas = _red_commit_shas(repo, base)
+    if not red_shas:
         problems.append(
             "no RED commit found in HEAD's own range since %s - a %s "
             "slice needs a contract-first RED commit (this "
             "repository's own convention: a commit subject containing "
             "the word RED)." % (base, tier_name))
+    elif not _red_commit_touches_arm(repo, red_shas):
+        problems.append(
+            "no RED commit in range touches a real arm - %d commit(s) "
+            "carry the word RED in their subject, but none of them "
+            "touches tests/, dev/, or a tools/*_suite.py file in its own "
+            "diff. A marker that marks nothing is not contract-first."
+            % len(red_shas))
 
     completion_text = None
     if completion_path is None:
@@ -591,19 +727,22 @@ def stage_tier(repo, declared_path, base, completion_path):
                             % (completion_path, problem))
 
     if completion_text is not None:
-        if not re.search(r"\bmutation\b", completion_text, re.I):
+        if not _has_mutation_evidence(completion_text):
             problems.append(
-                "no mention of 'mutation' in the --completion text - a "
-                "%s slice's mutation battery belongs in the completion."
-                % tier_name)
+                "no real mutation-battery evidence in the --completion "
+                "text - a %s slice's mutation battery needs a count, a "
+                "table row, or a red/green (fail/pass) result pair, not "
+                "just the word 'mutation' (which also matches inside a "
+                "denial like 'no mutation table')." % tier_name)
         page_files = [path for path, judged_tier, _why in judged
                      if PAGE_FILE.match(path)]
-        if page_files and not re.search(r"\bbrowser\b", completion_text,
-                                        re.I):
+        if page_files and not _has_browser_evidence(completion_text):
             problems.append(
                 "declared page file(s) changed (%s) and the "
-                "--completion text never says 'browser' - a real-"
-                "browser pass is owed before READY."
+                "--completion text carries no real browser evidence - "
+                "a labeled 'browser' claim with a width or device "
+                "mention is owed before READY, and a phrase like 'not "
+                "performed' or 'no browser' is refused outright."
                 % ", ".join(page_files))
 
     if problems:
@@ -723,7 +862,11 @@ def render_completion_block(stages):
     head_sha = clean_stage.head_sha if clean_stage else None
     slug = _slug_from_branch(branch) if branch else "ship-check"
 
-    lines = ["=== %s: ship-check completion block ===" % slug]
+    # A blank line first - main() prints this right after render()'s own
+    # closing lines in the same run (module docstring, "ONE RUN, NOT
+    # TWO"), so this is the separator between the two pastes, not just
+    # this block's own opening.
+    lines = ["", "=== %s: ship-check completion block ===" % slug]
     if branch:
         lines.append("branch: %s" % branch)
     if head_sha:
@@ -774,10 +917,10 @@ def build_parser():
                              "table mention and, when a declared path is "
                              "a page file, a browser-note mention (#403)")
     parser.add_argument("--completion-block", action="store_true",
-                        help="print the condensed, GitHub-comment-sized "
-                             "block instead of the full verbatim output "
-                             "(#393) - run this ONCE per signal, ALONGSIDE "
-                             "a plain run, and paste both")
+                        help="ALSO print a condensed, GitHub-comment-"
+                             "sized block after the full verbatim output "
+                             "(#393) - one run prints both; paste both "
+                             "into the completion")
     # Suppressed for the reason session_open.py's and fleet_status.py's
     # own --repo/--state are: a real caller never passes either one, and
     # tools/ship_check_suite.py drives this against a fabricated
@@ -791,6 +934,10 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     repo = os.path.abspath(args.repo or REPO)
 
+    # Built EXACTLY ONCE regardless of --completion-block (review F4,
+    # #393, module docstring's "ONE RUN, NOT TWO") - both renderings
+    # below read this same list, so they cannot disagree about a fact
+    # this run computed.
     stages = [
         stage_old_gate(repo),
         stage_new_gate(repo, args.state),
@@ -800,9 +947,10 @@ def main(argv=None):
         stage_tier(repo, args.declared, args.base, args.completion),
         stage_ticket_label(args.issue),
     ]
+    code = render(stages)
     if args.completion_block:
-        return render_completion_block(stages)
-    return render(stages)
+        render_completion_block(stages)
+    return code
 
 
 if __name__ == "__main__":

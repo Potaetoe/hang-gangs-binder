@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 108
+EXPECTED = 121
 
 
 def check(label, condition):
@@ -693,6 +693,36 @@ try:
     check("F1 row 5: a labeled, counted, red/green mutation line plus "
          "a labeled, width-bearing browser line must PASS",
           stage.ok)
+
+    # Two more rows, each isolating ONE of the two checks against a
+    # genuinely valid other one - not in the reviewer's own five, but
+    # needed to arm _has_mutation_evidence() and _has_browser_evidence()
+    # independently: every one of the reviewer's five rows has BOTH
+    # checks fail or BOTH pass together, so a mutation that breaks only
+    # the shape requirement on ONE of the two checks would still be
+    # caught (or missed) by the OTHER check and never show up on its
+    # own in those five alone.
+    row6 = os.path.join(root, "f1-row6-bare-mutation-only.txt")
+    write(row6, "mutation appears in this report, nothing more.\n"
+                "browser: real browser, phone width.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row6)
+    check("F1 row 6: mutation evidence is a bare word (no count, table "
+         "or result pair) while browser evidence is genuinely valid - "
+         "must FAIL on the mutation side alone",
+          not stage.ok
+          and "mutation-battery evidence" in "\n".join(stage.lines))
+
+    row7 = os.path.join(root, "f1-row7-bare-browser-only.txt")
+    write(row7, "mutation battery: 5 mutations, red then green.\n"
+                "browser mentioned here, nothing more.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  row7)
+    check("F1 row 7: browser evidence is a bare word (no width or "
+         "device) while mutation evidence is genuinely valid - must "
+         "FAIL on the browser side alone",
+          not stage.ok
+          and "browser evidence" in "\n".join(stage.lines))
 
     stage = ship_check.stage_tier(repo, None, "origin/accounts",
                                   completion_full)
