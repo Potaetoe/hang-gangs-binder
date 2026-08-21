@@ -20,8 +20,14 @@ Four candidate classes, and nothing else is a candidate:
   vanished worktree  a worktree git still registers whose directory is
                      gone - the prune class
   debris branch      a `worktree-agent-*` branch whose tip is an
-                     ancestor of a mainline; the fleet's harness makes
-                     these per worktree and nothing else deletes them
+                     ancestor of a mainline AND whose own worktree record
+                     says parked or reaped, or names no record and no
+                     registered worktree at all; the fleet's harness
+                     makes these per worktree and nothing else deletes
+                     them. A live record or a registered worktree still
+                     claiming the id is never in this class - see "WHY A
+                     LIVE WORKTREE'S OWN HARNESS BRANCH IS NEVER DEBRIS"
+                     below.
   merged branch      any other local branch proven an ancestor of
                      `accounts`
 
@@ -62,6 +68,39 @@ answered with care:
      the registration is pruned. The suite puts a sentinel file behind a
      real junction and reads it back afterwards, because that is the
      only form of this claim that can fail.
+
+WHY A LIVE WORKTREE'S OWN HARNESS BRANCH IS NEVER DEBRIS
+
+Twice on 2026-08-21, `--act` deleted the harness branch `worktree-agent-<id>`
+of a running builder or reviewer (0.9-M3-S21, #431) - harmless both times
+only because the worktree still had ITS OWN branch checked out, so git
+refused the delete and the loss landed on an abandoned ref instead of a
+live one. The rule as it stood could not tell a live worktree's timing
+accident from a genuinely dead one, for two reasons that compound:
+
+  1. An agent almost always switches off the harness branch within its
+     first minutes, onto its slice branch - so `checked_out` (below) no
+     longer names the harness branch at all once real work starts, even
+     though the worktree is very much alive.
+  2. `agent-init` rewrites that SAME record's `branch` field to the
+     slice branch on every re-run, so the live-record guard
+     branch_items() already carried - protecting a record's OWN branch
+     field - stopped naming the harness branch the moment the agent
+     switched. That guard answers "is this record's current branch
+     live", never "is this record's WORKTREE still live", which is the
+     question the harness branch's own name is asking.
+
+So a `worktree-agent-<id>` branch is asked a further question before it
+is ever treated as debris: does `<id>`'s own worktree record say
+anything other than parked or reaped, or does git still register a
+worktree directory for it at all (`protect_harness_branch`)? Either one
+licenses nothing - the branch is printed under "live harness branch,
+left alone" with the evidence, and `--report` shows the same answer
+`--act` would give, because both walk this one check. Only a record
+that says parked or reaped, or an id matching neither a record nor a
+registered worktree, falls through to the ordinary ancestry proof below
+- a reviewer that stays on the harness branch its whole life needs no
+special case here at all, because `checked_out` already protects it.
 
 WHY `-d` IS TRIED BEFORE `-D`, AND WHAT MAKES `-D` LEGITIMATE
 
@@ -756,8 +795,68 @@ def vanished_items(repo, state, table, primary):
     return items
 
 
+def harness_worktree_dirname(name):
+    """The worktree directory basename a `worktree-agent-*` branch names.
+
+    The harness's own naming convention (0.9-M3-S21, #431): a worktree at
+    `.claude/worktrees/agent-<id>` gets the branch `worktree-agent-<id>`,
+    so the directory a harness branch belongs to is recoverable from the
+    branch's own name, without reading anything else first. `None` for a
+    name outside that shape (not the debris prefix, or an empty id),
+    which is not a question this function can answer.
+    """
+    if not name.startswith(DEBRIS_PREFIX):
+        return None
+    agent_id = name[len(DEBRIS_PREFIX):]
+    return ("agent-" + agent_id) if agent_id else None
+
+
+def protect_harness_branch(state, table, dirname):
+    """A Proof this harness branch's worktree is still live, or None.
+
+    Scope (0.9-M3-S21, #431): `worktree-agent-<id>` is debris ONLY when
+    the worktree record for `<id>` says parked or reaped, or when no
+    record and no registered worktree names `<id>` at all - so this asks
+    about `<id>`'s OWN record and OWN registration, never about a
+    record's `branch` field (that is `live`, above, and it answers a
+    different question - see the module docstring's "WHY A LIVE
+    WORKTREE'S OWN HARNESS BRANCH IS NEVER DEBRIS"). Records are read
+    fresh here rather than passed in, the same way every other proof in
+    this file re-reads the machine rather than trusting a caller's
+    snapshot of it.
+
+    A parked-or-reaped record returns None on purpose: that worktree is
+    itself a parked-worktree or already-gone candidate, whose OWN reap
+    (or the ordinary ancestry proof below, once its directory is fully
+    gone) is what disposes of this branch - protecting it here would be
+    the mutation this slice's suite arms against in the other direction.
+    """
+    for source, record in records(state):
+        worktree = record.get("worktree")
+        if not worktree:
+            continue
+        if os.path.basename(os.path.abspath(worktree)) != dirname:
+            continue
+        record_state = record.get("state")
+        if record_state in ("parked", "reaped"):
+            return None
+        return Proof(
+            "harness", True,
+            "the worktree record %s for %s says state %s, not parked or "
+            "reaped, so this is a live harness ref rather than debris"
+            % (os.path.basename(source), dirname, record_state))
+    registered = {os.path.basename(entry["path"]) for entry in table}
+    if dirname in registered:
+        return Proof(
+            "harness", True,
+            "no worktree record names %s, but git still registers a "
+            "worktree at it, so this is a live harness ref rather than "
+            "debris" % dirname)
+    return None
+
+
 def branch_items(repo, state, table, spoken_for):
-    """The two branch classes, over every local branch nothing holds.
+    """The three branch classes, over every local branch nothing holds.
 
     A branch a parked-worktree candidate names is skipped here whatever
     that candidate's verdict was: the worktree owns its own branch, and
@@ -789,6 +888,17 @@ def branch_items(repo, state, table, spoken_for):
         if name in checked_out or name in live:
             continue
         debris = name.startswith(DEBRIS_PREFIX)
+        if debris:
+            dirname = harness_worktree_dirname(name)
+            harness_proof = (protect_harness_branch(state, table, dirname)
+                             if dirname else None)
+            if harness_proof is not None:
+                items.append({
+                    "kind": "live harness branch, left alone",
+                    "subject": name, "proofs": [harness_proof],
+                    "verdict": "report", "plan": [], "record": None,
+                    "park": {}, "sha": sha})
+                continue
         names = DEBRIS_MAINLINES if debris else SLICE_MAINLINES
         proved = ancestry(repo, sha, names)
         proof = Proof(
@@ -1081,7 +1191,8 @@ def act(repo, item, state=None, roots=None):
 # anything below it happened.
 # ----------------------------------------------------------------------
 
-ORDER = ("parked worktree", "vanished worktree", "debris branch",
+ORDER = ("parked worktree", "vanished worktree",
+         "live harness branch, left alone", "debris branch",
          "merged branch")
 
 
