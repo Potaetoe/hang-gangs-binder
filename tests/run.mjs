@@ -14,8 +14,14 @@
  * WRITING AN ARM
  *
  *   1. Put a file at tests/<name>.test.mjs. That is the declaration:
- *      the suffix is how this runner finds it and there is no list to
- *      add it to. `git add` is registration.
+ *      the suffix is how this runner finds it, and `git add` is what
+ *      registers it with the RUNNER - no edit needed here for that
+ *      half. tests/ROSTER is a SECOND, required registration (MAJOR5,
+ *      #311; both directions since 0.9-M3-S1, #381): add the same
+ *      path as its own line there, in the same commit, or this runner
+ *      reds naming the file unrostered. THE REQUIRED-ARM ROSTER
+ *      section below carries the full rule, including the EXCLUDE
+ *      escape hatch for a suite that is deliberately non-gating.
  *   2. Print what you checked, one line per check.
  *   3. Exit non-zero if anything was wrong. `process.exit(failures ?
  *      1 : 0)` at the bottom is the entire contract.
@@ -106,19 +112,24 @@
  * naming decision is supposed to already be made.
  *
  * ------------------------------------------------------------------
- * RETIRING AN OLD ARM WITH ITS SURFACE - the M2/M3/M4 pattern, one
- * line, in the rebuild slice's own pull request:
+ * RETIRING AN OLD ARM WITH ITS SURFACE - the M2/M3/M4 pattern, a
+ * THREE-PART act now (0.9-M3-S1, #381 widened it from two), in the
+ * rebuild slice's own pull request:
  *
  *     delete dev/<x>.test.mjs AND its NODE_SUITES row in
- *     tools/check.py, in the same commit that lands
+ *     tools/check.py, AND add tests/<x>.test.mjs's own row to
+ *     tests/ROSTER, all in the same commit that lands
  *     tests/<x>.test.mjs over the rebuilt surface.
  *
  * Same commit is the whole of it: the new arm exists before the old
- * one is gone, so no window has neither. Half a retirement cannot
- * hide - check.py's roster_problems() reds on a row whose file is
- * missing and on a dev/*.test.mjs no row names - and this side needs
- * no bookkeeping at all, because the replacement is registered by
- * existing. The old runner's final removal is its own M4-era slice,
+ * one is gone, so no window has neither. Half a retirement cannot hide
+ * on the OLD side - check.py's roster_problems() reds on a row whose
+ * file is missing and on a dev/*.test.mjs no row names. It cannot hide
+ * on the NEW side either: this runner's own roster reds a discovered
+ * tests/<x>.test.mjs that arrived with no tests/ROSTER row, so the new
+ * arm is no longer "registered by existing" the way it was before
+ * #381 - its row is the third part of this act, not a byproduct of the
+ * first two. The old runner's final removal is its own M4-era slice,
  * not something that falls out of the last retirement.
  *
  * THE FIRST STAGE IS THE SEAM, and it is wired: tests/preflight.mjs

@@ -311,12 +311,17 @@ guards, never as the pattern for a new one.
   `node tests/run.mjs`, or `./run gate`. An arm declares itself by being
   `tests/<name>.test.mjs`; the runner discovers it by walking the
   directory, so adopting a suite already there took zero edits and zero
-  moves — no registry to update by hand. Zero arms found is a failure,
-  and so is a stray file under `tests/` that is not an arm, the runner
-  or the preflight seam; both are the armed-looking-but-not failure this
-  repository holds to be worse than no gate. CI runs it beside the old
-  gate (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it
-  is registered exactly where its apparatus registers checks — nothing
+  moves to the runner itself. `tests/ROSTER` **is** a registry that
+  takes a hand edit (MAJOR5, #311; both directions since 0.9-M3-S1,
+  #381): every discovered `tests/<name>.test.mjs` needs a row there
+  too, required or explicitly excluded with a reason — add the row in
+  the same commit that adds the file, or the gate reds naming the file
+  unrostered. Zero arms found is a failure, and so is a stray file
+  under `tests/` that is not an arm, the runner or the preflight seam;
+  both are the armed-looking-but-not failure this repository holds to
+  be worse than no gate. CI runs it beside the old gate
+  (`.github/workflows/deploy.yml`, step "Run the 0.9 gate"), so it is
+  registered exactly where its apparatus registers checks — nothing
   here is the registration-suspended exception it once was.
 - **A sensitive slice's fix wave is re-fired by an agent who did not
   author the fix, before any landing order issues** (owner ruling A1,
