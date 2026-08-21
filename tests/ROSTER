@@ -55,6 +55,7 @@
 # EXCLUDE lines above - each path named at most once, either way.
 # Blank lines and lines starting with # are ignored.
 
+tests/admin-page.test.mjs
 tests/bake-hygiene.test.mjs
 tests/charts-aggregate.test.mjs
 tests/charts-page.test.mjs
