@@ -25,6 +25,7 @@ no wave names and no descriptive titles standing in for it:
 | Issue title | `0.9-M1-S2: <short name>` |
 | Branch | `0.9-m1-s2` |
 | Pull request title | leads with `0.9-M1-S2:` |
+| Commit subject | leads with `0.9-M1-S2:` |
 | GitHub milestone | `0.9-M1` |
 | Fleet routing row | `0.9-m1-s2` |
 
