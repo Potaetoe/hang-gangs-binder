@@ -4,22 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  Same policy as index.html, and load-bearing for the same reason from
-  the other direction: index.html holds plaintext on the way in, this
-  page holds everyone's plaintext on the way out, plus the key that
-  produced it. An injected script here would see the whole corpus.
-
-  connect-src names both Workers exactly, and deliberately does NOT list
-  blob:. The CSV is built in this page and handed over as an object URL
-  on a download link, and a download is not a fetch - confirmed by
-  watching securitypolicyviolation while clicking it, which reports
-  nothing. Adding blob: here would permit something this page never
-  does; the only thing it would enable is reading an object URL back
-  through fetch(), which is how the mistake was nearly made.
+  0.9-M3-S10 (#416): the admin page rebuilt for the keyless world. Rows
+  are plaintext to the Worker and to nobody else (DESIGN.md, "Trust
+  model: the Worker reads") - there is no private key on this device and
+  never was one to protect, so this page's CSP is the ordinary
+  signed-in-page policy, not the export page's.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://hgbinderworker.sorcererbiggz.workers.dev https://hgbinderworker-dev.sorcererbiggz.workers.dev https://hgbinderworker-sit.sorcererbiggz.workers.dev; base-uri 'none'; form-action 'none'">
 <title>Admin — Hang Gang Binder</title>
-<meta name="description" content="The admin surface: decrypt, export and publish the submissions. Requires an admin session and the private key.">
+<meta name="description" content="The admin surface: site settings, admin roles and the change log.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#120d10">
@@ -27,20 +20,14 @@
 <link rel="stylesheet" href="theme.css">
 <script src="theme-init.js"></script>
 </head>
-<!-- The one page that reads as data rather than prose: an eighteen-column
-     table and a grid of charts. `wide` widens the measure for those.
-     Everything else keeps the reading column and stays centered - #71 -
-     by two routes now: inside a `.tool` section theme.css pulls the
-     prose and the inputs back by default and lets only the table and
-     the charts out, and the warning boxes that are left say `narrow`
-     for themselves.
-
-     `instrument` is the owner's decision on #73: this is a panel to be
-     operated rather than a page to be read, so it gives up the gold
-     running heads and the display serif and tightens its spacing. It is
-     the only page allowed to wear it, and tools/check_web.py's SURFACES
-     refuses it anywhere else - a member page that announces itself as
-     the admin surface is what copying this file produces. -->
+<!-- The one page that reads as data rather than prose: this is still
+     `instrument` per the owner's decision on #73 - deliberately cooler
+     than the member pages, and visibly labeled as the admin surface so
+     nobody has to infer from the content which one they are looking at.
+     `wide` and the reading-column carve-out stay from the pre-0.9-M3
+     shape; nothing here widens past it any more, but narrowing the
+     page's own body class is a layout call outside this ticket's scope
+     and tools/check_web.py's instrument rules key off it. -->
 <body class="wide railed instrument">
 
 <!--
@@ -75,61 +62,42 @@
 <div class="page">
 
 <!-- The nameplate. It says what surface this is before it says anything
-     about what is on it, because a reader should never have to work
-     that out from the content - and it absorbs the "keyholder only"
-     line that stood above the heading, which said who may be here
-     without saying where here is.
-
+     about what is on it - #265 row 23's rule survives the rewrite:
      BOTH SENTENCES ARE ABOUT WHAT IS BELOW THEM, so admin.js takes them
-     down when what is below them is a refusal - #265 row 23. The rail
-     offers Admin to every member on the owner's instruction, so the
-     ordinary member experience of this page is the UNAVAILABLE card,
-     and over that card "everything below this line is in the clear" and
-     "decrypts the submissions in this browser" are both false about the
-     screen they are standing on. The copy is unchanged; what changed is
-     that it only appears where it is true.
-
-     They ship VISIBLE, which keeps the no-script resting state exactly
-     what it was: a keyholder with scripts dead sees the page's name and
-     nothing it can do, the same as before. -->
+     down when what is below them is a refusal. The rail offers Admin to
+     every member on the owner's instruction, so the ordinary member
+     experience of this page is the UNAVAILABLE card, and the surface
+     mark would be a false claim over that screen. They ship VISIBLE,
+     which keeps the no-script resting state exactly what it was: a
+     signed-in reader with scripts dead sees the page's name and nothing
+     it can do. -->
 <p class="surface-mark" id="surface-mark">
-  Admin surface — keyholder only. Everything below this line is in the
-  clear.
+  Admin surface — visible to admins only.
 </p>
 
 <header class="stack-tight">
   <h1>Admin</h1>
   <p class="muted" id="admin-intro">
-    Decrypts the submissions in this browser — nothing is uploaded.
+    Site settings, admin roles and the change log.
   </p>
 </header>
 
 <main class="stack">
 
   <!--
-    The attention warning (#91). First in the column because it is the
-    one card here that has to be found rather than come across, and it
-    is built out of the components this page already wears - no new
-    visual grammar, and nothing added to theme.css.
+    The same warn-then-expire timer every signed-in page carries
+    (DESIGN.md, "Sessions": "Idle expiry is one rule everywhere") - ten
+    minutes idle, two minutes' warning, shorter than the Worker's own
+    session-idle window so this page always acts first, on its own
+    initiative. This page shows admin information nobody else should
+    read off an unattended screen, which is what the clock guards here.
+    See apps/web/submit.js for the twin copy this one is written to
+    match.
 
-    NO LIVE REGION, DELIBERATELY. The countdown changes every second, and
-    an assertive region announcing each one is a barrage rather than a
-    warning. admin.js moves focus to the button instead: that announces
-    the card once, reads the countdown through aria-describedby, and puts
-    the way out under the keyboard of whoever was not using a mouse.
-
-    THE CHIP IS LOAD-BEARING NOW, which it was not when this card was
-    written. #91 left it off deliberately - the sentence below is the
-    warning in full, so a two-word chip repeated it - and the rule #178
-    pinned changes what the chip is FOR. On this surface a box IS the
-    warning (check 25), so the chip is how this box says out loud that
-    it is one, to the reader and to the gate alike; without it this card
-    is indistinguishable from a tool that kept its box. The words are
-    registered in LABELS in tools/check_web.py like every other chip's.
-
-    The button is `primary` because staying is what the reader almost
-    always wants, and the alternative is not a control at all - it is
-    doing nothing, which is what this card exists to describe.
+    NO LIVE REGION, DELIBERATELY - the same reasoning admin.js's
+    predecessor carried: the countdown changes every second, and an
+    assertive region announcing each one is a barrage. admin.js moves
+    focus to the button instead.
   -->
   <div class="card narrow" id="idle-warning" hidden>
     <p class="caution">About to clear itself</p>
@@ -140,134 +108,134 @@
     </div>
   </div>
 
-  <div class="card narrow" data-dev-session hidden>
-    <p class="caution">Development session</p>
-    <p class="muted small">
-      Signed in as <strong data-dev-identity></strong> through the local
-      test sign-in — not a Telegram sign-in.
-    </p>
-  </div>
-
-  <!-- Shown instead of the tool when the browser cannot decrypt. -->
+  <!-- Shown instead of the tool for a signed-in member who is not an
+       admin. The rail offers this page to everyone, so this card - not
+       the tool below it - is the ordinary experience of visiting it. -->
   <div class="card narrow" id="closed" hidden>
     <p class="flag">Unavailable</p>
     <p data-reason></p>
   </div>
 
-  <!-- Everything the key gates. The id is this container's and the
-       `tool` CLASS below is each section's - they are two different
-       things with one word, which is worth knowing before reading
-       either: this element is the whole instrument, and each `.tool`
-       inside it is one bench on it. -->
+  <!-- Everything an admin session gates. The id is this container's and
+       the `tool` CLASS below is each card's. -->
   <div class="stack" id="tool" hidden>
 
-    <!-- The runner is here because every other tool on this page has
-         one, and a section with no name among five named ones reads as
-         page furniture rather than as the first step. It is also the
-         first step: nothing below opens without this field. -->
-    <div class="tool">
-      <p class="runner"><span>Key</span></p>
+    <!--
+      Settings (#416 item 2; the ruled design #385 §9 and §11). Five
+      keys, written one at a time through POST /content the moment an
+      admin presses that field's own Save - the ruling's own word is
+      "instant" - each with its own status line so a refusal names the
+      field it belongs to.
+    -->
+    <div class="tool" id="settings-card">
+      <p class="runner"><span>Settings</span></p>
+      <p class="muted">
+        What every member sees. Saving one field does not touch the
+        others.
+      </p>
 
       <div class="field">
-        <label for="keyfile">Private key</label>
-        <textarea id="keyfile" rows="5" autocomplete="off" spellcheck="false"
-                  aria-describedby="key-help"
-                  placeholder="Paste the key file, or choose it below"></textarea>
-        <p class="hint" id="key-help">
-          The file <code>tools/keygen.html</code> saved — read in this
-          page and never sent anywhere.
+        <label for="settings-floor">Smallest group shown on charts</label>
+        <input type="text" id="settings-floor" inputmode="numeric"
+               autocomplete="off" aria-describedby="settings-floor-help">
+        <p class="hint" id="settings-floor-help">
+          A chart hides its result until this many people are in it. 0
+          turns the floor off.
         </p>
-        <input type="file" id="keyfile-picker" accept=".json,application/json"
-               aria-label="Choose the key file">
+        <p class="muted small" id="settings-floor-notice"></p>
+        <div class="row">
+          <button type="button" class="secondary" id="settings-floor-save"
+                  data-save="chart.floor">Save</button>
+        </div>
       </div>
 
-      <div class="row">
-        <button type="button" id="run" class="primary">Fetch and decrypt</button>
-        <button type="button" id="clear" class="secondary">Clear</button>
+      <div class="field">
+        <label for="settings-locked-unit">Units on the charts</label>
+        <select id="settings-locked-unit">
+          <option value="">Follow each member's own choice</option>
+          <option value="metric">Always metric</option>
+          <option value="imperial">Always imperial</option>
+        </select>
+        <p class="hint">
+          Locking this takes the unit switch off the charts page for
+          everyone.
+        </p>
+        <div class="row">
+          <button type="button" class="secondary"
+                  id="settings-locked-unit-save"
+                  data-save="chart.lockedUnit">Save</button>
+        </div>
       </div>
 
-      <p class="status" id="status" role="status" aria-live="polite" hidden></p>
+      <div class="field">
+        <label for="settings-group-name">Group name</label>
+        <input type="text" id="settings-group-name" autocomplete="off"
+               maxlength="64">
+        <p class="hint">
+          Shown as the site's wordmark and title. 64 characters or fewer.
+        </p>
+        <div class="row">
+          <button type="button" class="secondary" id="settings-group-name-save"
+                  data-save="site.groupName">Save</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="settings-welcome-text">Welcome text</label>
+        <textarea id="settings-welcome-text" rows="4" maxlength="500"></textarea>
+        <p class="hint">
+          Shown on the door page before anyone signs in. 500 characters
+          or fewer. Leave it empty to show the page's own default text.
+        </p>
+        <div class="row">
+          <button type="button" class="secondary"
+                  id="settings-welcome-text-save"
+                  data-save="site.welcomeText">Save</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="settings-default-theme">Default color theme</label>
+        <select id="settings-default-theme">
+          <option value="">Follow each visitor's own system</option>
+          <option value="pink">Pink</option>
+          <option value="daylight">Daylight</option>
+          <option value="midnight">Midnight</option>
+          <option value="contrast">Contrast</option>
+        </select>
+        <p class="hint">
+          What a new visitor sees before they pick their own theme.
+        </p>
+        <div class="row">
+          <button type="button" class="secondary"
+                  id="settings-default-theme-save"
+                  data-save="site.defaultTheme">Save</button>
+        </div>
+      </div>
+
+      <p class="status" id="settings-status" role="status" aria-live="polite"
+         hidden></p>
     </div>
 
     <!--
-      What is currently public, and how to stop it being public.
-
-      This sits above the export and outside everything the key gates,
-      on purpose. Reading needs the member session this admin already has;
-      taking one down needs admin authority. Neither needs the key, because
-      retraction should not require decrypting two hundred rows first.
+      Roles (#416 item 3; #385 §1-§2). Two ways in, one tier: a Telegram
+      group admin, checked live, or a member flagged here - this card
+      only manages the second kind, because the first kind is never a
+      row in this table. NO FORM ELEMENT for the id typed here,
+      deliberately, matching the pre-0.9-M3 page's own reasoning: a
+      <form> defaults to a GET submit, which puts a member's numeric
+      Telegram id in the address bar and in browser history.
     -->
-    <div class="tool">
-      <!-- Named for the state it reports rather than for the page it
-           points at: no destination is called "the public dashboard"
-           any more, and the link inside says where it goes (#127). -->
-      <p class="runner"><span>Published</span></p>
-      <p id="published-state" class="muted">Checking…</p>
-      <div class="row">
-        <button type="button" id="unpublish" class="secondary" hidden>
-          Unpublish
-        </button>
-        <a href="charts.html" class="secondary-link">Open it</a>
-      </div>
-      <p class="hint">
-        Takes the page down immediately — the submissions are untouched.
-      </p>
-      <p class="status" id="unpublish-status" role="status"
-         aria-live="polite" hidden></p>
-    </div>
-
-    <!--
-      The membership lists (#69). Beside Published rather than below the
-      export, for Published's reason: this needs the admin session and
-      not the key, and the moment somebody has to be given or taken off
-      the admin list is not the moment to make them find a key file and
-      decrypt two hundred rows first.
-
-      WHAT THIS PANE CAN AND CANNOT DO, said here because #69 asks for
-      more than the Worker offers and a surface implying parity would be
-      lying about which lever revokes what.
-
-      - `admin` is managed outright. adminAccountIds() unions these rows
-        with ADMIN_TELEGRAM_IDS, and the owner's flip shrinks that secret
-        and then drops the arm; the secret-only line is how far that
-        backfill has got.
-      - `always_allow` can only be ADDED to. Its secret arm is checked
-        FIRST and by numeric id, because it is the break-glass for a
-        broken database - server/worker.js argues that at length - so a
-        row removed here is not a revocation while the secret names it.
-      - TELEGRAM_GROUP_CHAT_ID has no route and never gets one: it names
-        a chat rather than people, and isGroupMember() needs it in the
-        clear to interpolate into a URL.
-
-      NO FORM ELEMENT, DELIBERATELY. The numeric id typed here is the
-      last place that id exists - the Worker hashes it on receipt and
-      stores only the hash - and a <form> defaults to a GET submit, which
-      puts it in the address bar and in browser history. That is the
-      membership oracle DESIGN.md exists to prevent, arriving by URL.
-    -->
-    <div class="tool" id="membership-card">
-      <p class="runner"><span>Membership</span></p>
-      <!-- #265 row 32. The second sentence was a migration note about a
-           third-party console: it told a present-day reader nothing,
-           and named a product this site is not. -->
-      <p class="muted">
-        Who administers this site, and who gets past the group check.
-      </p>
+    <div class="tool" id="roles-card">
+      <p class="runner"><span>Roles</span></p>
+      <p class="muted">Who else can reach this page.</p>
+      <p class="muted small" id="roles-via"></p>
 
       <div class="field">
         <label for="member-telegram-id">Telegram id</label>
         <input type="text" id="member-telegram-id" inputmode="numeric"
                autocomplete="off" spellcheck="false"
                aria-describedby="member-telegram-id-help">
-        <!-- #265 row 33, owner-ruled. "Hashed" is trust language and
-             the claim is unchanged: one way, not reversible, not kept.
-             "The Worker" is a third-party product name doing the work
-             of "the service" - which is what every other sentence on
-             the member's side of this site already calls it. -->
-        <!-- The claim is unchanged and is still the whole reason this
-             hint exists: one way, not reversible, not kept. What went
-             is the inventory of the two places it is not shown, which
-             a reader can see for themselves (#275). -->
         <p class="hint" id="member-telegram-id-help">
           The numeric id, not the @handle — scrambled one-way by the
           service and never shown again.
@@ -277,329 +245,81 @@
       <div class="field">
         <label for="member-label">Label</label>
         <input type="text" id="member-label" autocomplete="off"
-               aria-describedby="member-label-help">
+               maxlength="64" aria-describedby="member-label-help">
         <p class="hint" id="member-label-help">
           What you will recognize this row by — adding an id that is
           already listed just changes its label.
         </p>
       </div>
 
-      <fieldset class="field">
-        <legend>List</legend>
-        <div class="choices">
-          <label class="choice">
-            <input type="radio" name="member-role" value="admin" checked>
-            <span>Admin</span>
-          </label>
-          <label class="choice">
-            <input type="radio" name="member-role" value="always_allow">
-            <span>Always allow</span>
-          </label>
-        </div>
-        <p class="hint">
-          Admin grants this whole page — Always allow only gets somebody
-          past the group check.
-        </p>
-      </fieldset>
-
       <div class="row">
-        <button type="button" id="member-add" class="primary">Add</button>
+        <button type="button" id="member-add" class="primary">
+          Make this member an admin
+        </button>
       </div>
 
-      <p class="status" id="membership-status" role="status"
-         aria-live="polite" hidden></p>
+      <p class="status" id="roles-status" role="status" aria-live="polite"
+         hidden></p>
 
-      <!-- Both lists are written out rather than built from the answer,
-           because the state that most needs a screen is an EMPTY admin
-           list - the lockout this issue opens with - and a pane that
-           drew its sections from the rows it was sent would show nothing
-           at all on that day.
+      <p class="muted small">
+        Whoever administers your Telegram group is an admin here too,
+        automatically — that does not show as a row below.
+      </p>
+      <details class="more">
+        <summary>More</summary>
+        <p>
+          Every admin is a signed-in member first — there is no admin
+          account outside the group. Flagging someone here lets a
+          member who is not a Telegram group admin do the technical
+          parts too, and both ways in carry the exact same powers.
+        </p>
+      </details>
+      <h2>Flagged admins</h2>
+      <div id="roles-admin"></div>
+      <p class="hint" id="roles-secret-only"></p>
+      <!-- The ids themselves in the machine-text component rather than
+           in the sentence above, because a 64-character hex string has
+           no break opportunity in it. -->
+      <pre class="failure-list" id="roles-secret-only-ids" hidden></pre>
 
-           The id is the Worker's own role name, so the containers cannot
-           drift from MEMBERSHIP_ROLES in server/worker.js: admin.js
-           looks each one up as "membership-" + role, and a rename on
-           either side leaves a list with nowhere to draw rather than a
-           list quietly drawn in the wrong place. -->
-      <h2>Admin</h2>
-      <div id="membership-admin"></div>
-      <p class="hint" id="secret-only"></p>
-      <!-- The ids themselves in the machine-text component rather than in
-           the sentence above, because a 64-character hex string has no
-           break opportunity in it: left in a paragraph it pushes the
-           whole page sideways at phone width, which is the defect #148
-           had just finished removing from this page. This component
-           scrolls inside itself, which is where wide content belongs. -->
-      <pre class="failure-list" id="secret-only-ids" hidden></pre>
-
-      <h2>Always allow</h2>
-      <div id="membership-always_allow"></div>
-
-      <div class="stack-tight" id="membership-malformed" hidden>
+      <div class="stack-tight" id="roles-malformed" hidden>
         <p class="caution">Rows that grant nothing</p>
-        <!-- The allowance (#275 rule 7): the sentence in front is the
-             one a keyholder acts on, because a table holding only these
-             is a table with no admins in it and the last-admin guard
-             will not say so. What the guard counts, and why these are
-             invisible to it, is the reveal's. -->
         <p class="muted small">
           These rows grant nothing, and the guard that refuses to remove
           the last admin does not count them.
         </p>
-        <details class="more">
-          <summary>More</summary>
-          <p>
-            Their account id is not in the form the service accepts — a
-            row written straight into the database by hand arrives like
-            this. What the guard holds back is the last row that really
-            grants admin; these are neither counted by it nor kept by
-            it, so a table with nothing else left in it has an admin
-            list that is already empty.
-          </p>
-        </details>
-        <div id="membership-malformed-list"></div>
+        <div id="roles-malformed-list"></div>
       </div>
 
-      <div class="stack-tight" id="membership-other" hidden>
+      <div class="stack-tight" id="roles-other" hidden>
         <p class="muted small">
           This answer carried something this page cannot draw — a row
           here still grants whatever its role says.
         </p>
-        <pre class="failure-list" id="membership-other-body"></pre>
+        <pre class="failure-list" id="roles-other-body"></pre>
       </div>
     </div>
 
-    <div class="card narrow" id="failures" hidden>
-      <p class="caution">Rows that would not open</p>
-      <p class="muted small">
-        Usually the key has been rotated and these predate it — the old
-        key still reads them.
+    <!--
+      Change log (#416 item 4; #385 §5 rules that every admin change
+      lands in one). Admin-only reading, newest first, bounded by the
+      Worker.
+    -->
+    <div class="tool" id="log-card">
+      <p class="runner"><span>Change log</span></p>
+      <p class="muted">
+        Every admin change, newest first. Members never see this.
       </p>
-      <pre class="failure-list" id="failure-list"></pre>
-    </div>
-
-    <div class="tool" id="results" hidden>
-      <p class="runner"><span>Result</span></p>
-      <p id="summary"></p>
-      <!--
-        Three downloads, three buttons, ONE ROLE - #174. They do the
-        same kind of thing to the same data, so ranking one of them
-        makes the eye invent a difference that is not there. That the
-        CSV is the one most people want is a fact about people, not a
-        fact about the control, and it is not worth a colour: whoever
-        wants CSV can read.
-
-        They are `secondary` rather than three filled buttons because
-        `primary` still means something on this page - Fetch and
-        decrypt, Add, Publish snapshot, each of which changes the world
-        - and three filled buttons in a row would say the export is
-        three consequential acts instead of one act with three formats.
-        The acknowledgement on press is admin.js's, and theme.css's
-        `.pressed` says what it may and may not claim.
-      -->
-      <div class="row buttons">
-        <a id="download" class="secondary" download>Download CSV</a>
-        <a id="download-xlsx" class="secondary" download>Download Excel</a>
-        <a id="download-json" class="secondary" download>Download JSON</a>
-      </div>
-      <p class="status" id="download-status" role="status" aria-live="polite"
+      <p class="status" id="log-status" role="status" aria-live="polite"
          hidden></p>
-      <!-- Which format to pick, behind the ruled reveal (#275). Nothing
-           here is protective and nothing here is urgent: three buttons
-           labelled with their formats are already the answer for
-           whoever knows which they want, and this is the paragraph for
-           whoever does not. -->
-      <details class="more">
-        <summary>More</summary>
-        <p>
-          Excel keeps the numbers as numbers, so a weight sorts as a
-          weight and a handle of digits stays a handle. CSV is plain
-          text that anything can read. JSON keeps the nesting the other
-          two have to flatten — use it if something other than a person
-          is going to read this.
-        </p>
-      </details>
-      <div class="table-scroll">
-        <table class="tabular">
-          <thead id="thead"></thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!--
-      Charts are built by dashboard.js as inline SVG. No chart library:
-      this page holds every submission in the clear, and script-src
-      'self' is what stops a third party seeing it. Color comes from
-      classes in theme.css rather than style attributes, because
-      style-src has no 'unsafe-inline' either.
-    -->
-    <div class="tool" id="dashboard" hidden>
-      <!-- Named for what it holds rather than for a destination. No page
-           on this site is called Dashboard any more (#127), and a panel
-           borrowing a page's name is how the vocabulary drifted in the
-           first place. -->
-      <p class="runner"><span>Charts</span></p>
-
-      <fieldset class="field">
-        <legend>Count</legend>
-        <div class="choices">
-          <label class="choice">
-            <input type="radio" name="basis" value="people" checked>
-            <span>One per person (latest)</span>
-          </label>
-          <label class="choice">
-            <input type="radio" name="basis" value="entries">
-            <span>Every entry</span>
-          </label>
-        </div>
-        <!-- The same sentence charts.html carries, moved with it -
-             #265 row 24. Two copies of one explanation disagreeing
-             about what the thing being counted is called is the drift
-             #127 inventoried, one noun down. -->
-        <p class="hint">
-          Anyone who weighs in again adds a new entry rather than
-          replacing the old one, so these are two different questions.
-        </p>
-      </fieldset>
-
-      <!--
-        Imperial by default, as on the form. Every row stores both
-        systems, so this picks which stored figure is read and converts
-        nothing — see archive/DESIGN.md, "Why every row carries both unit
-        systems".
-
-        It does not touch the CSV or the JSON. Those carry both systems
-        in every row on purpose, so an export is not a snapshot of
-        whatever this radio happened to say.
-      -->
-      <fieldset class="field">
-        <legend>Units</legend>
-        <div class="choices">
-          <label class="choice">
-            <input type="radio" name="units" value="imperial" checked>
-            <span>Imperial</span>
-          </label>
-          <label class="choice">
-            <input type="radio" name="units" value="metric">
-            <span>Metric</span>
-          </label>
-        </div>
-        <p class="hint">
-          Charts only — the downloads always carry both systems.
-        </p>
-      </fieldset>
-
-      <div id="charts" class="charts"></div>
-    </div>
-
-    <!--
-      Publishing. The one thing on this page that sends anything out,
-      which is why it is a separate card with its own button and its own
-      confirmation rather than a step of the export.
-
-      What goes out is the aggregate above with the names taken out -
-      counts, medians and histograms. No handles, no rows, nothing
-      per-person except the pseudonymous weight history, and only if it
-      is ticked. See DESIGN.md, "The charts and the snapshot".
-    -->
-    <div class="tool" id="publish-card" hidden>
-      <p class="runner"><span>Publish</span></p>
-      <p>
-        Sends the charts above to <a href="charts.html">Charts</a>,
-        replacing what is there now — counts and medians, no handles
-        and no rows.
-      </p>
-
-      <div class="field">
-        <label class="choice">
-          <input type="checkbox" id="publish-series">
-          <span>Include weight over time</span>
-        </label>
-        <!-- The allowance again (#275 rule 7), and this is the card it
-             exists for: ticking this box publishes something about
-             individual people, and a keyholder who does it without
-             reading cannot take it back. So the sentence that stays in
-             front is the one that says the risk is real - the
-             measurements of how small it is are what moves behind the
-             reveal, because they are the half nobody acts on. -->
-        <p class="hint">
-          Someone who knows what a person weighs may recognize their
-          line — off by default for that reason.
-        </p>
-        <details class="more">
-          <summary>More</summary>
-          <p>
-            Published as “Person 1”, “Person 2” — never handles — and
-            each point is rounded to a date and a weight band, so
-            following one person from one publication to the next is
-            guesswork rather than a lookup. Publishing twice still
-            discloses more than publishing once. Fewer than five lines
-            publishes no chart at all.
-          </p>
-        </details>
-      </div>
-
-      <div class="row">
-        <button type="button" id="publish" class="primary">
-          Publish snapshot
-        </button>
-        <button type="button" id="publish-preview" class="secondary">
-          Show what would be sent
-        </button>
-      </div>
-
-      <p class="status" id="publish-status" role="status" aria-live="polite"
-         hidden></p>
-
-      <pre class="failure-list" id="publish-preview-body" hidden></pre>
-    </div>
-
-    <!--
-      The one card here whose job is to be believed: it is what a
-      keyholder acts on when they walk away from the machine, so every
-      sentence has to survive being read as a promise. That is why it
-      says the browser *may* drop stored data rather than naming what
-      any particular browser does, and why Clear is named as the thing
-      that removes the key rather than the tab.
-    -->
-    <div class="card narrow">
-      <p class="caution">Before you close this</p>
-      <!-- THE INSTRUMENT'S ONE ALLOWANCE, spent here (#275 rule 7).
-           Acting wrong on this card means walking away from a browser
-           holding the key that opens every submission, so the one
-           sentence in front of the reader is the act and the thing that
-           makes it urgent - and nothing else, because five sentences
-           are what a keyholder in a hurry skips whole. -->
-      <p class="muted small">
-        Press <strong>Clear</strong> before you leave this browser —
-        the key stays on this device until you do.
-      </p>
-      <details class="more">
-        <summary>More</summary>
-        <p>
-          This page is the only place the submissions exist in the
-          clear. Closing the tab discards everything decrypted here, and
-          the admin session is tab-scoped too — but the key is not. Once
-          you import it, it stays on this device so later exports need
-          no file. Keep your key file as well: the browser may drop
-          stored data, and the file is what puts the key back.
-        </p>
-      </details>
+      <div id="log-list"></div>
     </div>
   </div>
 </main>
 
 <footer>
   <!-- The four palettes as swatches, and the whole of what a footer
-       holds on any page here - the owner's ruling on #274, which made
-       every footer identical and gave navigation back to the rail. The
-       longer note is in your-page.html's footer; the word may be ruled
-       and the id may not, and nothing here is renamed on its own.
-
-       A keyholder who has just pressed Publish still reaches the
-       charts in one press: the Publish card's own "Open it" is beside
-       the act it belongs to, which is where a link to the result of an
-       act belongs and is why PROSE_LINKS names it. -->
+       holds on any page here - the owner's ruling on #274. -->
   <div class="theme-swatches" role="group" aria-label="Color theme">
     <button type="button" data-set-theme="midnight" aria-label="Midnight"
       ><span class="swatch-dot" data-palette="midnight"></span></button>
@@ -614,23 +334,13 @@
 
 </div>
 
-<!-- dashboard.js retired with the snapshot route it drew (0.9-M2-S3,
-     #354): the surviving BinderDashboard.snapshotOf() calls in
-     admin.js now throw TypeError, which is what "the Publish
-     control goes dead-in-water" means in practice - admin.html itself
-     is stated dead rather than patched, and dies whole at 0.9-M3
-     (DESIGN.md, "Admin surfaces"). This tag is removed rather than
-     left dangling because a <script src> naming a file that does not
-     exist is a stronger, more legible signal than a 404 nobody reads
-     the network panel to see. -->
 <script src="config.js"></script>
-<script src="crypto.js"></script>
-<script src="xlsx.js"></script>
 <script src="ui.js"></script>
 <script src="session.js"></script>
 <!-- After config.js: the revoke reads BINDER_CONFIG.endpoint. See the
-     note in your-page.html. Signing out does not touch the stored key -
-     Clear is the lever for that, and this page says so. -->
+     note in your-page.html. Signing out does not touch anything this
+     page keeps in memory - the idle timer's own clearAdminData() does,
+     and this page says so nowhere it does not apply. -->
 <script src="signout.js"></script>
 <script src="admin.js"></script>
 <script src="nav.js"></script>

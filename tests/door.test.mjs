@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 const HERE = (p) => fileURLToPath(new URL(p, import.meta.url));
 const read = (path) => readFile(HERE(path), "utf8");
 
-const EXPECTED = 17;
+const EXPECTED = 30;
 let performed = 0;
 let failures = 0;
 function check(label, condition) {
@@ -189,6 +189,207 @@ await Auth.authenticate("/auth/telegram", { id: 2, hash: "signed" });
 check("a successful sign-in does not leave the refusal's canary behind",
   authStatusElement.textContent !== CANARY &&
   authStatusElement.className !== "status bad");
+
+/* ------------------------------------------------------------------ */
+/* 4. apps/web/site-content.js (0.9-M3-S12, #418): the group's name    */
+/*    and the door's welcome text render from GET /config, with the   */
+/*    shipped markup standing as the fallback in both directions, and */
+/*    only ever through textContent, a created <br>, or a text node - */
+/*    never through markup the server sent.                            */
+
+check("index.html carries the id site-content.js targets for the " +
+  "welcome sentence",
+  indexSource.includes('id="welcome-text"'));
+
+const siteContentSource = await read("../apps/web/site-content.js");
+
+check("site-content.js never assigns innerHTML - every write from the " +
+  "server is textContent, a text node this file creates, or a <br> " +
+  "this file creates, never markup the server sent",
+  !/\.innerHTML/.test(siteContentSource));
+
+/* A plain element stub for the wordmark spans: renderGroupName() only
+   ever reads and reassigns .textContent as a whole value, so a bare
+   mutable property is the whole of what the real element offers it. */
+function textElement(initial) {
+  return { textContent: initial };
+}
+
+/* A structural stub for #welcome-text: renderWelcomeText() walks
+   firstChild/removeChild to clear it and appendChild()s text nodes and
+   <br> elements it asks `document` to create - childNodes is read back
+   directly by the checks below, rather than reconstructed into a
+   string, so a real line break (a <br> element) and a literal "\n"
+   character are never mistaken for each other. */
+function richElement(initial) {
+  return { _initial: initial, childNodes: [],
+    get firstChild() { return this.childNodes[0] || null; },
+    appendChild(node) { this.childNodes.push(node); return node; },
+    removeChild(node) {
+      const at = this.childNodes.indexOf(node);
+      if (at !== -1) this.childNodes.splice(at, 1);
+      return node;
+    },
+  };
+}
+
+function siteContentDocumentStub(owners, names, welcome, title) {
+  return {
+    readyState: "complete",
+    title: title,
+    querySelectorAll(selector) {
+      if (selector === ".wordmark-owner") return owners;
+      if (selector === ".wordmark-name") return names;
+      return [];
+    },
+    getElementById(id) { return id === "welcome-text" ? welcome : null; },
+    createTextNode(text) { return { nodeType: 3, text: text }; },
+    createElement(tag) { return { tagName: String(tag).toUpperCase() }; },
+    addEventListener() {},
+  };
+}
+
+function localStorageStub() {
+  const values = new Map();
+  return {
+    _values: values,
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+}
+
+/* Both arms, against the real module - a stub GET /config that answers
+   (the live case) and one that does not (the fallback case), the same
+   pairing tests/theme-fallback.test.mjs's own CONTROL/ARM split uses. */
+
+{
+  const localStore = localStorageStub();
+  globalThis.localStorage = localStore;
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+
+  const owners = [textElement("Hang Gang"), textElement("Hang Gang")];
+  const names = [textElement("Binder")];
+  const welcome = richElement("Sign in once for this tab.");
+  const doc = siteContentDocumentStub(
+    owners, names, welcome, "Sign in — Hang Gang Binder");
+  globalThis.document = doc;
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        "site.groupName": "The Rebrand Gang",
+        "site.welcomeText": "Line one.\nLine two.",
+        "site.defaultTheme": "daylight",
+      };
+    },
+  });
+
+  await import("data:text/javascript," +
+    encodeURIComponent(siteContentSource) + "#site-content-live-" +
+    Math.random());
+
+  // The module's own boot runs its async load() synchronously up to its
+  // first `await fetch(...)`, then yields - so the DOM it writes is not
+  // there yet the instant import() resolves. A macrotask (setTimeout)
+  // guarantees every microtask load()'s own promise chain queued has
+  // already drained by the time this resumes, which a bare `await` or
+  // two does not reliably promise for a chain this many promises deep
+  // (fetch, then .json(), then two more awaited helpers).
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  check("a live /config renders the fetched group name into every " +
+    "wordmark-owner span, not just the first",
+    owners.every((owner) => owner.textContent === "The Rebrand Gang"));
+  check("...and rewrites the <title>'s own trailing \"Hang Gang Binder\"",
+    doc.title === "Sign in — The Rebrand Gang Binder");
+  check("...and the welcome sentence's \"\\n\" becomes a real <br> " +
+    "element between two text nodes, not a literal backslash-n",
+    welcome.childNodes.length === 3 &&
+    welcome.childNodes[0].text === "Line one." &&
+    welcome.childNodes[1].tagName === "BR" &&
+    welcome.childNodes[2].text === "Line two.");
+  check("...and caches the admin's default theme for theme-init.js's " +
+    "next load",
+    localStore._values.get("hgb-default-theme") === "daylight");
+
+  check("cacheDefaultTheme accepts a name theme.js's own BG object " +
+    "answers to",
+    (function () {
+      localStore._values.delete("hgb-default-theme");
+      globalThis.BinderSiteContent.cacheDefaultTheme("contrast");
+      return localStore._values.get("hgb-default-theme") === "contrast";
+    })());
+  // Both checks below SEED a real cached value first, rather than
+  // deleting the key before calling cacheDefaultTheme() - a fix-wave
+  // correction (#418 comment 5371848229, finding F1). The delete-first
+  // shape made the old checks pass whether or not the function ever
+  // removed anything, since the key was already gone before the call;
+  // seeding a value the admin previously set is the only way to prove
+  // the function actually CLEARS what a member already learned, not
+  // just that it declines to write a new bad value over nothing.
+  check("...and CLEARS a previously cached value when the admin's " +
+    "config answers with a name no palette answers to - a corrupted " +
+    "or future config value, the same discipline theme-init.js and " +
+    "theme.js hold their OWN stored value to",
+    (function () {
+      localStore._values.set("hgb-default-theme", "midnight");
+      globalThis.BinderSiteContent.cacheDefaultTheme("neon");
+      return !localStore._values.has("hgb-default-theme");
+    })());
+  check("...and clears a previously cached value on \"\" too - S8's " +
+    "contract for GET /config (#414, comment 5370945709) states an " +
+    "empty string means the admin turned the default back OFF, so a " +
+    "member who already learned a palette must stop painting it on " +
+    "the next load, not keep painting it forever",
+    (function () {
+      localStore._values.set("hgb-default-theme", "midnight");
+      globalThis.BinderSiteContent.cacheDefaultTheme("");
+      return !localStore._values.has("hgb-default-theme");
+    })());
+}
+
+{
+  const localStore = localStorageStub();
+  globalThis.localStorage = localStore;
+  globalThis.BINDER_CONFIG = { endpoint: "https://worker.example" };
+
+  const owners = [textElement("Hang Gang")];
+  const names = [textElement("Binder")];
+  const welcome = richElement("Sign in once for this tab.");
+  const doc = siteContentDocumentStub(
+    owners, names, welcome, "Sign in — Hang Gang Binder");
+  globalThis.document = doc;
+
+  // Unreachable, the same shape the door's own refusal test above gives
+  // a dead network: fetch itself rejects rather than answering non-ok,
+  // so the SAME code path config.js's absence would take is exercised
+  // too (endpoint() returning nothing is covered by BINDER_CONFIG being
+  // unset entirely, which load() also returns from early - both are
+  // "the route is unreachable" as far as this file's fallback promise
+  // is concerned).
+  globalThis.fetch = async () => { throw new Error("network down"); };
+
+  await import("data:text/javascript," +
+    encodeURIComponent(siteContentSource) + "#site-content-dead-" +
+    Math.random());
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  check("an unreachable /config leaves the wordmark exactly as shipped - " +
+    "the static fallback is the markup itself, untouched",
+    owners[0].textContent === "Hang Gang");
+  check("...and the <title> untouched",
+    doc.title === "Sign in — Hang Gang Binder");
+  check("...and the welcome sentence untouched - no children added over " +
+    "the shipped text",
+    welcome.childNodes.length === 0);
+  check("...and nothing cached for the next load",
+    !localStore._values.has("hgb-default-theme"));
+}
 
 console.log(failures
   ? `\ndoor FAILED ${failures} of ${performed} check(s)`

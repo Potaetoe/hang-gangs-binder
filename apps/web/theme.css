@@ -1078,6 +1078,23 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
    that belongs to it. */
 .row.buttons { flex-wrap: wrap; }
 
+/* A `.row` that renders a value nobody bounded to a single word: a
+   member's own label, a 64-hex account id, a URL a member pasted into
+   a setting, up to 200 characters of summary (#416, F1). A flex child
+   defaults to min-width: auto, which refuses to shrink below its
+   longest unbreakable run and pushes the whole document wider than the
+   screen; `min-width: 0` lifts that floor, and `overflow-wrap: anywhere`
+   on the value column lets the run itself break instead of spilling.
+   Scoped to this modifier rather than every `.row` on the site,
+   because the "control with a unit beside it" row above never renders
+   value nobody controls the length of. */
+.row.wrap-row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.row.wrap-row > .wrap-row-value { flex: 1; }
+
 .suffix {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

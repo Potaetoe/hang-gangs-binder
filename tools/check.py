@@ -124,8 +124,12 @@ NODE_SUITES = [
     # (0.9-M2-S2, #353) - dev/form.test.mjs, dev/form-wiring.test.mjs and
     # dev/submit.test.mjs all guarded exactly those mechanisms and
     # nothing else. tests/your-page.test.mjs is what replaced them.
-    ("admin CSV + formula guard", "dev/admin.test.mjs"),
-    ("admin session + row deletion", "dev/admin-session.test.mjs"),
+    # "admin CSV + formula guard" and "admin session + row deletion"
+    # retired 0.9-M3-S10 (#416) with the surfaces they guarded: the
+    # keyfile-decrypt tool, the CSV/xlsx/JSON entry exports and the
+    # key-holding idle timer all left admin.js in the same change.
+    # tests/admin-page.test.mjs is the 0.9 apparatus that replaced them,
+    # over what actually survives - Settings, Roles and the Change log.
     ("xlsx writer + ZIP reader", "dev/xlsx.test.mjs"),
     ("shared UI wiring", "dev/ui.test.mjs"),
     ("session storage + auth handoff + sign-out boundary",

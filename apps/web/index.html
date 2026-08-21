@@ -70,8 +70,26 @@
   <!-- The first sentence anybody reads. It carries the two facts a
        reader needs - one sign-in, this tab only - as an invitation
        rather than as a notice. The pinned name is the heading above it;
-       this line is free to be warm (#73). -->
-  <p class="muted">
+       this line is free to be warm (#73).
+
+       CONTENT-AS-DATA (#385 §9, the 0.9-M3 design record): this
+       sentence is the door's "welcome text", one of the three keys
+       admin.js writes through GET/POST /content and the only one the
+       Worker also serves publicly, at GET /config, for a visitor with
+       no session yet. The words BELOW are the shipped fallback, not a
+       second copy of an admin value. apps/web/site-content.js
+       overwrites this element's content with the fetched sentence when
+       /config answers, through textContent (and <br> elements it builds
+       itself for a line break in that sentence) rather than through
+       markup the server sent. When the route is unreachable this
+       element is never touched, so the sentence below is also the
+       whole of what a fork with no admin edits ever shows: the same
+       property WORDMARK_PAGES/RULED_LINES already give the mark above
+       and the #signed-out line below, extended to reach a sentence this
+       gate now leaves free for an admin to change. tools/check_web.py's
+       PAGE_HEADERS pin reads this header's rendered text from the FILE,
+       never from a browser, so it still pins exactly the words below. -->
+  <p class="muted" id="welcome-text">
     Sign in once for this tab — then it is your page to fill in, and
     everyone's numbers to read.
   </p>
@@ -189,6 +207,10 @@
 
 <script src="config.js"></script>
 <script src="ui.js"></script>
+<!-- Needs BINDER_CONFIG (config.js) for the Worker's origin and BinderUI
+     (ui.js) to defer its work past DOMContentLoaded - both already
+     loaded above it. tools/check_web.py's run-order arm holds this. -->
+<script src="site-content.js"></script>
 <script src="session.js"></script>
 <script src="auth.js"></script>
 <!-- nav.js is not loaded here: it marks the current entry in the rail,

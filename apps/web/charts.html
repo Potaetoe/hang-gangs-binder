@@ -21,10 +21,11 @@
 <link rel="stylesheet" href="theme.css">
 <script src="theme-init.js"></script>
 </head>
-<!-- Not `wide` any more - #71. admin.html is the one page looking at
-     data rather than reading it; these charts are read one at a time,
-     and at 84rem this page's prose cards were the widest lines on the
-     site. One centered column, like everything except the export. -->
+<!-- Not `wide` any more - #71. These charts are read one at a time, and
+     at 84rem this page's prose cards were the widest lines on the site.
+     One centered column, like every other page. admin.html alone stays
+     `wide`, carried from its pre-0.9-M3 shape rather than for anything
+     the 0.9-M3-S10 rebuild (#416) added - see admin.html's own header. -->
 <body class="railed">
 
 <!--
@@ -270,6 +271,9 @@
 <script src="countries.js"></script>
 <script src="xlsx.js"></script>
 <script src="ui.js"></script>
+<!-- Needs BINDER_CONFIG (config.js) and BinderUI (ui.js), both loaded
+     above it. tools/check_web.py's run-order arm holds this. -->
+<script src="site-content.js"></script>
 <script src="session.js"></script>
 <!-- After config.js: the revoke reads BINDER_CONFIG.endpoint. See the
      note in your-page.html. -->

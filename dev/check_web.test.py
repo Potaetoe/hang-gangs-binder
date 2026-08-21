@@ -1065,10 +1065,12 @@ for module, namespace in sorted(check_web.MODULE_EXPORTS.items()):
         bool(check_web.frozen_publish(check_web.strip_js_comments(source),
                                       namespace)))
 check("every module on the roster freezes its export in the shipped file",
-      # 11, not 12: theme-init.js left MODULE_EXPORTS at 0.9-M2-S14
-      # (#380 ruling 2) when the custom theme it published
-      # (BinderCustomPalette) retired with it.
-      len(frozen_in_place) == 11 and all(frozen_in_place))
+      # 12, not 11: site-content.js joined MODULE_EXPORTS at 0.9-M3-S12
+      # (#418), publishing BinderSiteContent. theme-init.js left the
+      # roster earlier, at 0.9-M2-S14 (#380 ruling 2), when the custom
+      # theme it published (BinderCustomPalette) retired with it - which
+      # is why this was 11 rather than 12 before this change.
+      len(frozen_in_place) == 12 and all(frozen_in_place))
 check("apps/web raises no export problem",
       check_web.module_export_problems() == [])
 

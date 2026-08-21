@@ -56,6 +56,7 @@
 # Blank lines and lines starting with # are ignored.
 
 tests/admin-identity.test.mjs
+tests/admin-page.test.mjs
 tests/bake-hygiene.test.mjs
 tests/charts-aggregate.test.mjs
 tests/charts-page.test.mjs

@@ -3,11 +3,14 @@
  *
  * An .xlsx is a ZIP of XML parts, and this writes both - about a
  * hundred and fifty lines of format rather than a dependency, for the
- * same reason crypto.js composes ECIES itself and dashboard.js draws
- * its own charts: admin.html runs under `default-src 'none'; script-src
- * 'self'` and is the one page where every submission exists in the
- * clear at once. A library loaded here would see the whole corpus, and
- * the CSP forbids the CDN it would come from anyway.
+ * same reason crypto.js composes ECIES itself and dashboard.js drew
+ * its own charts: every page that loads this file runs under
+ * `default-src 'none'; script-src 'self'`, and a library loaded here
+ * would need a CDN the CSP forbids anyway. charts.html and
+ * your-page.html (whose download lives in submit.js) are the two
+ * pages that load this file today. admin.html was the third, and the
+ * one holding every submission in the clear at once, before its own
+ * workbook export retired whole at 0.9-M3-S10 (#416).
  *
  * Nothing here is compressed. ZIP's "stored" method is a length and a
  * checksum around the bytes, which removes the only part of the format
@@ -48,7 +51,9 @@
    * and carriage return are the three that are legal and are kept.
    *
    * Nothing the form accepts contains one. A record is whatever
-   * arrived, which is the same reason admin.js defuses CSV formulas.
+   * arrived, whole - the same principle cellXml()'s own header holds
+   * to for a formula-looking string: neither function edits a value on
+   * its way in, only chooses how the format has to represent it.
    */
   function stripControls(text) {
     let out = "";
@@ -91,13 +96,14 @@
    *
    * A number becomes a numeric cell and everything else becomes an
    * inline string. That distinction is the entire reason this file
-   * exists - see the header - and it is why the CSV's formula guard is
-   * deliberately NOT applied here. A cell typed as a string is a
-   * string: Excel shows `=1+1` rather than evaluating it, because a
-   * formula lives in an <f> element and this never writes one. Adding
-   * the CSV's leading apostrophe would put a literal apostrophe in the
-   * cell, which is the bug that guard exists to avoid the appearance
-   * of.
+   * exists - see the header - and it is why a leading-apostrophe
+   * formula guard is deliberately NOT applied here. A cell typed as a
+   * string is a string: Excel shows `=1+1` rather than evaluating it,
+   * because a formula lives in an <f> element and this never writes
+   * one. Adding a leading apostrophe (the guard the admin page's own
+   * CSV export used, before that export retired whole at 0.9-M3-S10,
+   * #416) would put a literal apostrophe in the cell, which is the bug
+   * that guard existed to avoid the appearance of.
    *
    * An empty value gets no cell at all rather than an empty one. A
    * sheet is a sparse grid, so a missing cell is the format's own way

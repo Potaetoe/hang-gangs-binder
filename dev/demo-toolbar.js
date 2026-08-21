@@ -214,8 +214,18 @@
   async function fillKeyBox() {
     const box = Demo.keyBoxFor(here().file);
     if (box === null) {
-      say("This page has no key box. The one that does is " +
-        Demo.KEY_BOXES.map((one) => one.page).join(", ") + ".");
+      /*
+       * Demo.KEY_BOXES is empty now (0.9-M3-S10, #416: admin.html's
+       * box, the only one this table ever named, retired with the
+       * keyfile-decrypt tool) - so this message is what pressing this
+       * control says on every page, honestly, rather than naming a
+       * page that no longer has one.
+       */
+      say(Demo.KEY_BOXES.length
+        ? "This page has no key box. The one that does is " +
+          Demo.KEY_BOXES.map((one) => one.page).join(", ") + "."
+        : "No page in this demo has a key box any more - the site has " +
+          "no private key for anyone to paste.");
       return;
     }
     const field = document.getElementById(box.box);
