@@ -408,8 +408,16 @@ async function freshWorld() {
     memberToken: member.body.session };
 }
 
-const specOf = async (env, token) =>
-  (await call(env, "GET", "/spec", { headers: bearer(token) })).body.spec;
+/* The effective spec off the route, or an empty one when the route did
+   not answer with a spec at all. Empty rather than a throw for the
+   reason tests/charts-aggregate.test.mjs states about its own countIn:
+   reading a field off an undefined body raises a TypeError that takes
+   the whole run down and hides every arm after it, so a suite that
+   crashes is a suite whose remaining reds nobody saw. */
+const specOf = async (env, token) => {
+  const answer = await call(env, "GET", "/spec", { headers: bearer(token) });
+  return (answer.body && answer.body.spec) || { fields: [] };
+};
 
 const fieldIn = (spec, name) =>
   (spec.fields || []).filter((one) => one.name === name)[0] || null;
@@ -417,6 +425,11 @@ const fieldIn = (spec, name) =>
 const valuesIn = (spec, name) => {
   const one = fieldIn(spec, name);
   return one && one.choices ? one.choices.map((c) => c.value) : [];
+};
+
+const labelOf = (spec, name) => {
+  const one = fieldIn(spec, name);
+  return one ? one.label : null;
 };
 
 const labelIn = (spec, name, value) => {
@@ -812,8 +825,7 @@ const putField = (env, token, id, body) =>
   const countryLabel = await putField(env, adminToken, "country",
     { label: "Where you live" });
   check("that field still takes a label", countryLabel.status === 200 &&
-    fieldIn(await specOf(env, memberToken), "country").label ===
-      "Where you live");
+    labelOf(await specOf(env, memberToken), "country") === "Where you live");
 }
 
 /* ================================================================== */
