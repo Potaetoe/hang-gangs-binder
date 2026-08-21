@@ -14,8 +14,14 @@
  * WRITING AN ARM
  *
  *   1. Put a file at tests/<name>.test.mjs. That is the declaration:
- *      the suffix is how this runner finds it and there is no list to
- *      add it to. `git add` is registration.
+ *      the suffix is how this runner finds it, and `git add` is what
+ *      registers it with the RUNNER - no edit needed here for that
+ *      half. tests/ROSTER is a SECOND, required registration (MAJOR5,
+ *      #311; both directions since 0.9-M3-S1, #381): add the same
+ *      path as its own line there, in the same commit, or this runner
+ *      reds naming the file unrostered. THE REQUIRED-ARM ROSTER
+ *      section below carries the full rule, including the EXCLUDE
+ *      escape hatch for a suite that is deliberately non-gating.
  *   2. Print what you checked, one line per check.
  *   3. Exit non-zero if anything was wrong. `process.exit(failures ?
  *      1 : 0)` at the bottom is the entire contract.
@@ -24,7 +30,12 @@
  * program this runner starts and grades by its exit code, so it may
  * import what it likes, spawn what it likes, and be written in any
  * shape its subject deserves - the three site-* arms that arrived
- * with this runner do exactly that and were adopted without an edit.
+ * with this runner do exactly that. HISTORY, NOT GUIDANCE (0.9-M3-S7
+ * fix wave 1, #410, F4): those three were adopted with no edit to
+ * THIS FILE, back when that was the whole of registration - true the
+ * day they landed, before tests/ROSTER existed. Step 1 above is the
+ * current rule: adopting a suite now also takes a tests/ROSTER row,
+ * every time.
  *
  * DERIVE, DO NOT PIN. Read the spec, the config, or the shipped file
  * and compute what should be true; a hand-copied expected value is a
@@ -106,19 +117,24 @@
  * naming decision is supposed to already be made.
  *
  * ------------------------------------------------------------------
- * RETIRING AN OLD ARM WITH ITS SURFACE - the M2/M3/M4 pattern, one
- * line, in the rebuild slice's own pull request:
+ * RETIRING AN OLD ARM WITH ITS SURFACE - the M2/M3/M4 pattern, a
+ * THREE-PART act now (0.9-M3-S1, #381 widened it from two), in the
+ * rebuild slice's own pull request:
  *
  *     delete dev/<x>.test.mjs AND its NODE_SUITES row in
- *     tools/check.py, in the same commit that lands
+ *     tools/check.py, AND add tests/<x>.test.mjs's own row to
+ *     tests/ROSTER, all in the same commit that lands
  *     tests/<x>.test.mjs over the rebuilt surface.
  *
  * Same commit is the whole of it: the new arm exists before the old
- * one is gone, so no window has neither. Half a retirement cannot
- * hide - check.py's roster_problems() reds on a row whose file is
- * missing and on a dev/*.test.mjs no row names - and this side needs
- * no bookkeeping at all, because the replacement is registered by
- * existing. The old runner's final removal is its own M4-era slice,
+ * one is gone, so no window has neither. Half a retirement cannot hide
+ * on the OLD side - check.py's roster_problems() reds on a row whose
+ * file is missing and on a dev/*.test.mjs no row names. It cannot hide
+ * on the NEW side either: this runner's own roster reds a discovered
+ * tests/<x>.test.mjs that arrived with no tests/ROSTER row, so the new
+ * arm is no longer "registered by existing" the way it was before
+ * #381 - its row is the third part of this act, not a byproduct of the
+ * first two. The old runner's final removal is its own M4-era slice,
  * not something that falls out of the last retirement.
  *
  * THE FIRST STAGE IS THE SEAM, and it is wired: tests/preflight.mjs
@@ -172,6 +188,20 @@
  * excluded at once). tests/roster-two-way.test.mjs is the permanent
  * mutation proof, over an isolated copy of this file so the real gate
  * is never itself mutated to test it.
+ *
+ * TWO MORE WAYS TO GO GREEN WITHOUT REQUIRING ANYTHING, both closed by
+ * 0.9-M3-S7 (#410, from #381's post-merge review). An all-EXCLUDE
+ * roster - zero required rows, any number of exclusions - used to pass
+ * the empty-roster guard, because that guard checked exclusions too;
+ * it did not occur to the guard that "roster requires nothing" is true
+ * regardless of how many files are excused from a list that was empty
+ * anyway. Fixed by reading only `required.length` there. And a
+ * duplicate line - the same required path twice, or the same EXCLUDE
+ * path twice with two different reasons - used to be silently
+ * accepted; the second EXCLUDE line silently overwrote the first's
+ * reason in the Map, which is exactly the silent state this whole
+ * mechanism exists to refuse one line over. Both duplicate shapes are
+ * their own named red now.
  */
 import { readdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -393,9 +423,27 @@ if (!(await exists(rosterPath))) {
      reason. */
   const EXCLUDE_LINE = /^EXCLUDE\s+(\S+)\s*::\s*(.*)$/;
   const required = [];
+  const requiredSeen = new Set();
   const excluded = new Map();
   for (const line of lines) {
-    if (!line.startsWith("EXCLUDE")) { required.push(line); continue; }
+    if (!line.startsWith("EXCLUDE")) {
+      /* F5 (0.9-M3-S7, #410): a duplicate required row is refused by
+         name rather than silently accepted as a no-op repeat - two
+         lines naming the same file assert nothing a single line did
+         not already, and a second copy is a thing that can drift from
+         the first (AGENTS.md, "one home per fact"). */
+      if (requiredSeen.has(line)) {
+        problems.push("duplicate required row: " + line);
+        console.log("DUPLICATE REQUIRED ROW: " + ROSTER + " lists " +
+          line + " more than once as a required row. Remove the extra " +
+          "line - a repeat asserts nothing a single line did not " +
+          "already, and it is a thing that can drift from the first.");
+        continue;
+      }
+      requiredSeen.add(line);
+      required.push(line);
+      continue;
+    }
     const match = EXCLUDE_LINE.exec(line);
     const reason = match ? match[2].trim() : "";
     if (!match || reason === "") {
@@ -406,14 +454,40 @@ if (!(await exists(rosterPath))) {
         "at all, states nothing. Fix the line or remove it.");
       continue;
     }
+    /* F5 again: a duplicate EXCLUDE line for the same path is refused
+       by name too. Without this, `excluded` is a Map and the second
+       reason silently overwrites the first - the exact silent state
+       the exclusion mechanism exists to avoid, just moved one line
+       over. The first entry stands; the duplicate is reported and
+       otherwise ignored, so this path is still correctly excluded by
+       its first, surviving reason. */
+    if (excluded.has(match[1])) {
+      problems.push("duplicate exclusion: " + match[1]);
+      console.log("DUPLICATE EXCLUSION: " + ROSTER + " excludes " +
+        match[1] + " more than once (\"" + excluded.get(match[1]) +
+        "\" and now \"" + reason + "\"). A second EXCLUDE line for the " +
+        "same path would silently overwrite the first's reason - keep " +
+        "exactly one EXCLUDE line per path.");
+      continue;
+    }
     excluded.set(match[1], reason);
   }
 
-  if (required.length === 0 && excluded.size === 0) {
+  /* F3 (0.9-M3-S7, #410): a roster made ENTIRELY of EXCLUDE lines
+     still asserts nothing, however many exclusions it carries - the
+     review found the guard here read `required.length === 0 &&
+     excluded.size === 0`, so an empty required list was excused by any
+     exclusion at all. Delete every arm file, delete every required
+     row, and leave the EXCLUDE lines standing: that state passed green
+     before this fix, and it is exactly the whole-arm SUBTRACTION
+     MAJOR5/#311 built this file to catch. The count of exclusions is
+     never relevant to whether the roster requires anything. */
+  if (required.length === 0) {
     problems.push(ROSTER + " (empty)");
-    console.log(ROSTER + " names no required arms and no exclusions. " +
-      "An empty roster asserts nothing, which fails the same way no " +
-      "roster at all does.");
+    console.log(ROSTER + " names no required arms. However many " +
+      "EXCLUDE lines it carries, a roster that requires nothing " +
+      "asserts nothing - this fails the same way no roster at all " +
+      "does. Add at least one required row.");
   }
 
   const found = new Set(arms.map(rel));
