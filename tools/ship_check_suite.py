@@ -958,11 +958,11 @@ try:
 
     print("\n--- F4 (#393): ONE gate execution, TWO renderings - not two "
          "runs ---")
-    # Review F4: --completion-block used to re-run both gates from
-    # scratch, so the condensed block and the plain full block in one
-    # completion could disagree (a flaky arm caught mid-run). The fix is
-    # structural: main() builds the `stages` list exactly once and hands
-    # the SAME list to both renderers. Proven here by literally counting
+    # main() builds the `stages` list exactly once per invocation and
+    # hands the SAME list to both renderers, so a condensed block and a
+    # full block from one run can never disagree - a flaky arm caught by
+    # one execution reaches both renderings identically, never just one
+    # of them. Proven here by literally counting
     # calls into stage_old_gate/stage_new_gate during one
     # --completion-block invocation, not by re-reading printed numbers
     # (which would agree by luck on a non-flaky fixture even with the
