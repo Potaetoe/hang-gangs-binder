@@ -108,41 +108,31 @@ check("dashboard.js, query.js and public.js are gone, not merely unlinked",
   !webNames.includes("public.js"));
 
 /*
- * One named exception, not this slice's to close. admin.js is ruled
- * dead-in-water rather than patched (issue #354's own scope: "admin.html
- * stated dead, not patched") - its one MIN_CELL reference is checked as
- * dead code two arms below rather than excused silently.
+ * NO NAMED EXCEPTION ANY MORE. admin.js carried one MIN_CELL reference
+ * as dead code, tolerated rather than excused silently while admin.html
+ * stood "dead-in-water rather than patched" (#354's own scope) - and
+ * 0.9-M3-S10 (#416) is the slice that finally patched it: the whole
+ * publish/unpublish card and the local snapshot preview it built with
+ * BinderDashboard left admin.js in the same change that retired the
+ * keyfile-decrypt tool, taking the one MIN_CELL reference with them.
+ * Nothing in apps/web reads a name off this list any more, so the check
+ * two arms below - which asserted that ONE reference and named why it
+ * was safe - has nothing left to assert and is retired with it.
  *
  * apps/web/submit.js and apps/web/your-page.html carried the pre-0.9
  * personal-query engine's own MIN_CELL reference before 0.9-M2-S2
  * retired it (#353); this slice's pre-ship rebase over S2's landed head
  * proved both clean (0.9-M2-S3 fix wave 1, F3 - the reviewer's own
  * probe: injecting a forbidden name into either file reddened this
- * check, 30/30), so neither is exempted here any longer.
+ * check, 30/30), so neither was exempted here even before this.
  */
-const NOT_MINE = new Set(["admin.js", "admin.html"]);
 const dirty = Object.entries(webTexts)
-  .filter(([name]) => !NOT_MINE.has(name))
   .filter(([, text]) => FORBIDDEN.test(text))
   .map(([name]) => name);
 if (dirty.length) console.log("      dirty: " + dirty.join(", "));
 check("no line of MIN_CELL/suppressCounts/suppressBins/repartition/" +
-  "SNAPSHOT survives in apps/web outside the two named exceptions",
+  "SNAPSHOT survives anywhere in apps/web",
   dirty.length === 0);
-
-/*
- * admin.js is the one named, ruled exception (issue #354's own scope:
- * "admin.html stated dead, not patched"). It still reads
- * root.BinderDashboard.MIN_CELL in dead code the deleted dashboard.js
- * script tag can no longer reach - checked here rather than pretended
- * clean, so the exception is a fact this suite states rather than a
- * blind spot it has.
- */
-check("admin.js's one surviving MIN_CELL reference is dead code - " +
-  "dashboard.js, the only thing that could define BinderDashboard, " +
-  "is gone",
-  webTexts["admin.js"].includes("MIN_CELL") &&
-  !webNames.includes("dashboard.js"));
 
 check("charts.html loads no dashboard.js, query.js or public.js script",
   !/src="(dashboard|query|public)\.js"/.test(webTexts["charts.html"]));
@@ -3227,7 +3217,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 241;
+const EXPECTED = 240;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

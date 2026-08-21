@@ -121,8 +121,8 @@ check("and it carries rows", rows.length > 0);
 check("as many rows as the summary claims", rows.length === claimedRows);
 
 // The Worker returns ORDER BY id and ids follow the order things
-// arrived, so the sample has to look like that or the export page is
-// being tested against a table shape it never sees.
+// arrived, so the sample has to look like that or GET /export is being
+// tested against a table shape it never sees.
 check("ids run 1..n, the way an append-only table numbers",
   rows.length > 0 && rows.every((row, i) => row.id === i + 1));
 check("and received_at never goes backwards",
@@ -135,9 +135,9 @@ check("every row carries a non-empty ciphertext",
   rows.length > 0 && rows.every((row) =>
     typeof row.ciphertext === "string" && row.ciphertext.length > 0));
 
-// The export page groups on this and treats the handle as a caption, so
-// a row without one is a person the dashboard cannot count. Hex and
-// length, because that is the whole of what the page reads.
+// GET /export groups on this and treats the handle as a caption, so a
+// row without one is a person a reader of that reply cannot count. Hex
+// and length, because that is the whole of what the shape carries.
 check("every row carries a server-set account id",
   rows.length > 0 && rows.every((row) => /^[0-9a-f]{64}$/.test(row.account_id)));
 
@@ -190,9 +190,11 @@ check("everything but the ciphertexts matches the committed sample",
 /*
  * Two rows carry the branches most likely to be lost in an edit, and
  * losing either leaves this suite green while the coverage goes: the
- * spreadsheet-formula handle is the row admin.js's leading-apostrophe
- * guard exists for, and it is deliberately the one row the generator's
- * own validate() pass expects to be rejected.
+ * spreadsheet-formula handle is the row a leading-apostrophe guard
+ * exists for (the admin page's own CSV export carried one, before that
+ * export retired whole at 0.9-M3-S10, #416 - see dev/make-sample.mjs's
+ * own note on that row), and it is deliberately the one row the
+ * generator's own validate() pass expects to be rejected.
  */
 check("the table still carries the row the form must reject",
   /expect:\s*"invalid"/.test(source));

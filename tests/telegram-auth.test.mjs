@@ -167,11 +167,19 @@ function makeDb(seed) {
       }
       return { meta: { changes: 0 } };
     }
+    /* The columns are read OFF THE STATEMENT rather than mapped by
+       hand, since 0.9-M3-S8 (#414) added `admin_via` in the middle of
+       the list. A hand-written positional map agrees with whatever this
+       file expected rather than with what the Worker sent: with
+       admin_via inserted fifth, `created_at: args[4]` silently became
+       the source label, every deadline parsed to NaN, and three checks
+       about session expiry failed for a reason that had nothing to do
+       with expiry. */
     if (sql.startsWith("INSERT INTO sessions")) {
-      const row = {
-        token_hash: args[0], account_id: args[1], is_admin: args[2],
-        is_dev: args[3], created_at: args[4], expires_at: args[5],
-      };
+      const columns = /INSERT INTO sessions\s*\(([^)]*)\)/.exec(sql)[1]
+        .split(",").map((name) => name.trim());
+      const row = {};
+      columns.forEach((name, index) => { row[name] = args[index]; });
       inserts.push(row);
       sessions.set(row.token_hash, row);
       return { meta: { changes: 1 } };
@@ -850,29 +858,39 @@ check("and it is that constant the group check is bounded by",
 }
 
 /* ------------------------------------------------------------------ */
-/* 8. sit's posture: every session is a member session (mandate 9).    */
+/* 8. sit's posture: a session's kind follows the group role, and       */
+/* nothing else on sit grants one (mandate 9, as 0.9-M3-S8 leaves it).  */
 
 {
   const { db, body } = await signIn({});
-  check("a sit sign-in mints a MEMBER session - no ADMIN_TELEGRAM_IDS, " +
-    "no seeded membership row, and adminness is never inferred from a " +
-    "Telegram chat status", body.isAdmin === false &&
-    db.inserts[0].is_admin === 0);
+  check("a sit sign-in by an ordinary member mints a MEMBER session - " +
+    "no ADMIN_TELEGRAM_IDS and no seeded membership row, so nothing on " +
+    "sit hands adminness to somebody the group does not administer",
+    body.isAdmin === false && db.inserts[0].is_admin === 0 &&
+    db.inserts[0].admin_via === null);
 }
 
+/* The Telegram-admin mirror, wired at 0.9-M3-S8 (#414; the ruled design
+   #385, rule 1: two ways in, one tier). These two checks asserted the
+   opposite until that slice - the mirror was a later milestone's and
+   the arm said so - and they are rewritten here rather than left,
+   because an arm retires WITH the surface it describes. */
 {
   const { db, body } = await signIn({
     bot: { ok: true, result: { status: "creator" } } });
-  check("the group's own creator signs in as a MEMBER on sit - the " +
-    "Telegram-admin mirror is a later milestone's and is not wired here",
-    body.isAdmin === false && db.inserts[0].is_admin === 0);
+  check("the group's own creator signs in as an ADMIN, and the row " +
+    "records that the group role is why",
+    body.isAdmin === true && db.inserts[0].is_admin === 1 &&
+    db.inserts[0].admin_via === "telegram");
 }
 
 {
   const { db, body } = await signIn({
     bot: { ok: true, result: { status: "administrator" } } });
-  check("a Telegram group administrator signs in as a MEMBER too",
-    body.isAdmin === false && db.inserts[0].is_admin === 0);
+  check("a Telegram group administrator signs in as an ADMIN too - one " +
+    "tier, whichever of the two group roles they hold",
+    body.isAdmin === true && db.inserts[0].is_admin === 1 &&
+    db.inserts[0].admin_via === "telegram");
 }
 
 /* The development sign-in door, retired (0.9-M2-S1, #352; the
@@ -1092,8 +1110,10 @@ async function mutant(label, from, to) {
 
 {
   const mutated = await mutant("the unconfigured-chat-id verdict flipped",
-    'if (!env.TELEGRAM_GROUP_CHAT_ID) return "unknown";',
-    'if (!env.TELEGRAM_GROUP_CHAT_ID) return "member";');
+    'if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "unknown", ' +
+      "status: null };",
+    'if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "member", ' +
+      "status: null };");
   const { status } = await signIn({ worker: mutated,
     env: { TELEGRAM_GROUP_CHAT_ID: undefined } });
   check("mutation: a Worker that defaults open on a missing chat id " +

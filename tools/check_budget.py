@@ -338,7 +338,12 @@ WEB = os.path.join(REPO, "dist")
 # nobody had looked at, which is what that arm is written to refuse.
 CEILINGS = {
     "404.html": 113400,
-    "admin.html": 144900,
+    # Re-pinned at HEADROOM 0.9-M3-S10 (#416): the keyfile-decrypt tool,
+    # the entry exports and the snapshot publish/unpublish controls all
+    # left admin.html/admin.js in the same change, and the old ceiling
+    # (144900) sat 35% above the new, much smaller page - past the 25%
+    # stale allowance.
+    "admin.html": 118432,
     "charts.html": 130000,
     "index.html": 119400,
     # 138200 -> 142200. The owner's reviewed act, 2026-08-09 evening,

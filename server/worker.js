@@ -36,12 +36,22 @@
  *                            an admin removes anyone's. See
  *                            handleDeleteSubmission for the whole of the
  *                            difference between the two.
- *   GET    /content          the site copy an admin has set. The one
- *                            route here that answers without a
+ *   GET    /content          the site copy an admin has set. One of the
+ *                            two routes here that answer without a
  *                            credential - see handleReadContent.
- *   POST   /content          set one name. Admin.
+ *   POST   /content          set one name. Admin. The five settings
+ *                            names are validated on arrival; see
+ *                            SETTINGS below.
  *   DELETE /content/:name    unset one, so the page shows the copy it
  *                            ships with again. Admin.
+ *   GET    /config           the three values a page needs before
+ *                            anybody has signed in - the group's name,
+ *                            the door's welcome text, the default
+ *                            palette. The other credential-free route,
+ *                            and an allow-list on the same table
+ *                            /content serves; see handleReadConfig.
+ *   GET    /admin-log        every admin change, newest first and
+ *                            bounded. Admin.
  *   GET    /membership       the admin and always-allow lists. Admin.
  *   POST   /membership       add one, or relabel one. Admin.
  *   DELETE /membership/:role/:accountId
@@ -88,16 +98,18 @@
  *                             names it, takes it, and this file passes it
  *                             through openStore(env). Required wherever
  *                             rows are stored.
- *   ADMIN_TELEGRAM_IDS        secret, comma-separated numeric ids. One
- *                             of the two admin lists - the `membership`
- *                             table is the other, and adminAccountIds()
- *                             reads both. See handleReadMembership for
+ *   ADMIN_TELEGRAM_IDS        secret, comma-separated numeric ids. The
+ *                             bootstrap admin list - the `membership`
+ *                             table is the other, a live Telegram group
+ *                             role is the third, and adminVia() reads
+ *                             all three. See handleReadMembership for
  *                             which way that migration runs.
  *   EXPORT_TOKEN              secret, break-glass admin access
  *   TELEGRAM_GROUP_CHAT_ID    secret, REQUIRED on any Worker that signs
  *                             people in: it names the group whose members
  *                             may sign in, and its absence fails closed -
- *                             groupStanding() returns "unknown" (deny), so
+ *                             groupStanding() answers a standing of
+ *                             "unknown" (deny), so
  *                             a Worker missing it admits nobody but the
  *                             break-glass ids below.
  *   ALWAYS_ALLOW_TELEGRAM_IDS secret, optional; ids that bypass the group
@@ -110,8 +122,9 @@
  *   ALLOWED_ORIGINS           optional, comma-separated
  *
  * Tables: `submissions`, `sessions`, `snapshots`, `site_content`,
- * `membership`, `auth_replay`. server/schema.sql is the whole database
- * and each table's own block there carries its reasoning.
+ * `membership`, `auth_replay`, `directory`, `admin_log`.
+ * server/schema.sql is the whole database and each table's own block
+ * there carries its reasoning.
  *
  * ---------------------------------------------------------------------
  * TWO MECHANISMS IN THIS FILE THE 0.9 RECORD RETIRES, AND WHAT IS
@@ -125,10 +138,21 @@
  * change as its surface, applied to the code under the checks.
  *
  *   1. ADMIN_TELEGRAM_IDS and the `membership` table's `admin` rows.
- *      DESIGN.md, "Admin accounts and deletion": there is no admin list
- *      to maintain and no founding-admin secret, because admins mirror
- *      the Telegram group. Retired by the milestone that builds the
- *      Members page and the mirror with it (0.9-M3).
+ *      DISCHARGED, AND NOT BY DELETION (0.9-M3-S8, #414). This entry
+ *      predicted that the milestone building the mirror would take both
+ *      lists out with it. The owner ruled otherwise at the 2026-08-20
+ *      design sitting: the ruled design #385, rule 1, makes admin TWO
+ *      ways in and one tier - a live Telegram group role, which this
+ *      slice wires, OR a member flagged into the role by another admin,
+ *      which is what the `admin` rows are for and why they stay.
+ *      DESIGN.md's own sentence was corrected in the same change rather
+ *      than left to be argued with; read that section for what is true
+ *      now. The secret is the bootstrap the flagging needs somewhere to
+ *      start from, and GET /me's `adminVia` names all three so nobody
+ *      has to guess which one they hold. Retiring the secret arm is a
+ *      decision with a live consequence - a deployment whose table is
+ *      empty locks itself out - so it stays a later slice's on purpose,
+ *      rather than being this one's silent omission.
  *   2. ALWAYS_ALLOW_TELEGRAM_IDS and the `always_allow` rows.
  *      DESIGN.md, "What is deliberately not here": no always-allow
  *      bypass - a list that skips the membership check is a way in that
@@ -240,12 +264,13 @@ function allowedOrigins(env) {
  * tests/origin-gate.test.mjs asserts from both sides: a no-Origin read
  * with no credential is still 401, and a forged token is still 401.
  *
- * ONE ROUTE IS WIDER FOR IT, deliberately, and it is named here rather
- * than left for a reader to find: GET /content answers without a
- * credential by design, so on that one route an absent Origin reaches
- * the site's own copy rather than a 403. That is the intent - the copy
- * is what an unauthenticated page renders - and the arm asserts the
- * widening rather than only the refusals.
+ * TWO ROUTES ARE WIDER FOR IT, deliberately, and they are named here
+ * rather than left for a reader to find: GET /content and GET /config
+ * answer without a credential by design, so on those two an absent
+ * Origin reaches the site's own copy rather than a 403. That is the
+ * intent - the copy and the door's three values are what an
+ * unauthenticated page renders - and the arm asserts the widening
+ * rather than only the refusals.
  *
  * STATE-CHANGING METHODS KEEP REFUSING AN ABSENT ORIGIN. A browser
  * always sends Origin on POST and DELETE, so the refusal costs a real
@@ -360,15 +385,210 @@ const MAX_CONTENT_VALUE = 8 * 1024;
 
 /*
  * A content name addresses a slot a page reads; it is not prose and
- * nothing renders it. Lowercase, digits and three separators, bounded -
- * so a name is safe in a URL path without escaping, cannot collide with
- * another by case, and a page and an admin pane can agree on one by
- * spelling it.
+ * nothing renders it. Letters, digits and three separators, bounded -
+ * so a name is safe in a URL path without escaping, and a page and an
+ * admin pane can agree on one by spelling it.
  *
  * `name` rather than `key`: in this repository a key is a cryptographic
  * key, and this table holds neither one nor anything derived from one.
+ *
+ * UPPER CASE IS ADMITTED IN THE TAIL, and the property a lowercase-
+ * only charset gave for free is enforced by a check instead
+ * (0.9-M3-S8, #414). The ruled settings names are camel case -
+ * `chart.lockedUnit`, `site.groupName` - so the charset had to widen or
+ * the names had to change, and the names are the spec. What widening
+ * costs is that two names could differ only by case, which is a list an
+ * admin cannot read and a slot two panes disagree about; handleWriteContent
+ * refuses the second spelling outright, so the collision is closed by a
+ * check rather than by an alphabet. The first character stays lower
+ * case or a digit, which keeps every name that already exists valid and
+ * gives the fold below one obvious canonical form to compare against.
  */
-const CONTENT_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const CONTENT_NAME = /^[a-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/*
+ * THE SETTINGS, AND WHAT EACH ONE ACCEPTS (0.9-M3-S8, #414; the ruled
+ * design #385, rules 9 and 11).
+ *
+ * These five names live in `site_content` beside the site's copy, and
+ * that is a deliberate re-use rather than a shortcut: the table already
+ * holds admin-owned, page-read values with an audit column, and giving
+ * settings a second table of their own would give the change log two
+ * writers and the admin pane two shapes to render.
+ *
+ * VALIDATED HERE AND NOWHERE ELSE. A value that reaches the table is a
+ * value some page will act on, and the readers downstream are all
+ * deliberately forgiving: floorOf() in server/charts-agg.js answers its
+ * own shipped default for a value it cannot use, since "answering on a
+ * grid nobody has would be worse than answering on the default one".
+ * That forgiveness is correct for a row `wrangler d1 execute` wrote and wrong
+ * as a substitute for refusing a bad write, which is why the strictness
+ * is on this side: an admin who types "five" is told, rather than
+ * watching a floor silently stay 0.
+ *
+ * EVERY VALUE IS TEXT, because `site_content.value` is TEXT and the
+ * route that writes it takes text (a route accepting an object would be
+ * storing a shape no page knows how to draw). So `chart.floor` is the
+ * SPELLING of a whole number and the check is on the spelling: "5.0" and
+ * "05" both parse to numbers, and neither is what an admin typed to two
+ * different readers.
+ *
+ * AN EMPTY STRING IS A REAL VALUE for two of them and is refused for the
+ * third. Empty means "not locked" for `chart.lockedUnit` and "follow the
+ * visitor's own system" for `site.defaultTheme` - both are states the
+ * shipped code already has, so an admin needs a way back to them that is
+ * not "delete the row". `site.groupName` has no such state: a site with
+ * no name over the door is a broken page, and the way back to the
+ * spec's own name is DELETE /content/site.groupName.
+ */
+const MAX_GROUP_NAME = 64;
+
+/*
+ * The door's welcome paragraph, bounded far below MAX_CONTENT_VALUE.
+ *
+ * The ceiling on this one is about a rendered page rather than about
+ * storage: the value replaces a paragraph the door ships with, and a
+ * value that cannot fit the space it draws in is a broken page the
+ * admin who typed it cannot see from the settings pane. Generous for a
+ * paragraph, short of an essay.
+ */
+const MAX_WELCOME_TEXT = 500;
+
+/*
+ * A floor is a count of PEOPLE, so its ceiling is about the size of a
+ * group rather than about the size of a number. Anything at or past
+ * this hides every cell in any group this binder is for, which is a
+ * setting an admin can reach on purpose but never by a typo of one
+ * digit too many.
+ */
+const MAX_FLOOR = 999999;
+
+/*
+ * The palettes, named here because the file that paints them cannot be
+ * imported by this one.
+ *
+ * apps/web/theme.js holds the four as the keys of its BG map and is the
+ * page-side authority; it is a browser IIFE that exports nothing, so
+ * this Worker cannot read it at run time the way it reads
+ * apps/web/site.config.js through server/charts-agg.js's import. A
+ * second spelling of a set is a thing that can be wrong, so the guard
+ * is outside both files: tests/admin-identity.test.mjs parses
+ * theme.js's own BG map and this constant and fails if they ever name a
+ * different set - the same both-files-derived shape
+ * tests/route-precedence.test.mjs uses for API_SEGMENTS and
+ * wrangler.toml.
+ */
+const SITE_THEMES = ["pink", "daylight", "midnight", "contrast"];
+
+/*
+ * The unit systems the spec offers, read at call time.
+ *
+ * globalThis.BINDER_SITE is assigned by apps/web/site.config.js, which
+ * server/charts-agg.js imports for its own reading of the same field -
+ * so the systems this refuses a value against are the systems the
+ * charts are actually binned in, rather than a list kept in step by
+ * hand. Read inside the function for the reason charts-agg states: it
+ * keeps this file indifferent to the order a bundler evaluates the two
+ * modules in.
+ */
+function unitSystems() {
+  const site = globalThis.BINDER_SITE;
+  return site && site.units && Array.isArray(site.units.systems)
+    ? site.units.systems : [];
+}
+
+const SETTINGS = Object.freeze({
+  "chart.floor": {
+    ok: (value) => /^(0|[1-9][0-9]*)$/.test(value) &&
+      Number(value) <= MAX_FLOOR,
+    error: "The floor is a whole number from 0 to " + MAX_FLOOR +
+      ", written in digits.",
+  },
+  "chart.lockedUnit": {
+    ok: (value) => value === "" || unitSystems().indexOf(value) !== -1,
+    error: "The locked unit is one of the systems this form offers, or " +
+      "is left empty for no lock.",
+  },
+  "site.groupName": {
+    ok: (value) => value.trim() !== "" && value.length <= MAX_GROUP_NAME,
+    error: "A group name is text, up to " + MAX_GROUP_NAME + " characters.",
+  },
+  "site.welcomeText": {
+    ok: (value) => value.length <= MAX_WELCOME_TEXT,
+    error: "The welcome text is up to " + MAX_WELCOME_TEXT + " characters.",
+  },
+  "site.defaultTheme": {
+    ok: (value) => value === "" || SITE_THEMES.indexOf(value) !== -1,
+    error: "A default theme is one of: " + SITE_THEMES.join(", ") +
+      ", or is left empty to follow the visitor's own setting.",
+  },
+});
+
+/*
+ * The settings names folded to lower case, so a spelling that differs
+ * only in case can be told apart from a name that is not a setting at
+ * all.
+ *
+ * The hole this closes: with upper case admitted above, an admin could
+ * write `Chart.Floor` as ordinary free content, and the case-collision
+ * check would then refuse `chart.floor` forever - one settings key made
+ * unsettable by a row that never looked like a setting.
+ */
+const SETTINGS_BY_FOLD = new Map(
+  Object.keys(SETTINGS).map((name) => [name.toLowerCase(), name]));
+
+/*
+ * The three names GET /config serves, and the whole of what it may
+ * serve (0.9-M3-S8, #414 scope 4).
+ *
+ * An ALLOW-LIST, checked twice on purpose. The statement binds exactly
+ * these names, which is what stops a fourth row leaving the database at
+ * all; handleReadConfig then REFUSES any row that is not one of them
+ * rather than dropping it, so a statement somebody widens later answers
+ * 500 instead of quietly serving what it found. The second wall would
+ * be pointless if it filtered - a filter makes a widened statement
+ * invisible, which is the failure the wall is for.
+ */
+const PUBLIC_CONFIG = Object.freeze([
+  "site.groupName", "site.welcomeText", "site.defaultTheme",
+]);
+
+/*
+ * The statement, built FROM the allow-list rather than beside it.
+ *
+ * A hand-written `IN (?, ?, ?)` with the names bound one by one is the
+ * shape where the two drift: a fourth name added above would then be
+ * refused by the wall in handleReadConfig while never being asked for,
+ * which reads as a working allow-list and proves nothing about the
+ * statement. Derived, the list is the single place a name is added or
+ * removed - and the mutation that adds one really does widen what the
+ * database is asked for, which is the state
+ * tests/admin-identity.test.mjs pins from both directions.
+ */
+const PUBLIC_CONFIG_SQL = "SELECT name, value FROM site_content WHERE " +
+  "name IN (" + PUBLIC_CONFIG.map(() => "?").join(", ") + ")";
+
+/*
+ * How many change-log lines one read hands back.
+ *
+ * The log is append-only and nothing prunes it, so an unbounded read is
+ * a response that grows without limit on a table that only grows. The
+ * newest hundred answers "what changed lately", which is the question
+ * the surface asks; anything older is a database read, the same way
+ * every other archive here is.
+ */
+const ADMIN_LOG_LIMIT = 100;
+
+/*
+ * How much of a written value the log records.
+ *
+ * Enough to see what a setting was changed to - every settings value is
+ * far shorter than this - and far short of copying a kilobyte of site
+ * copy into a second table nothing keeps in step with the first. The
+ * value itself is in `site_content`, which GET /content serves without
+ * a credential.
+ */
+const MAX_LOG_SUMMARY = 200;
 
 /*
  * The two membership lists, named as roles rather than as tables. The
@@ -384,6 +604,21 @@ const MAX_LABEL = 64;
 
 // An account id as this Worker writes one: SHA-256 HMAC, hex.
 const ACCOUNT_ID = /^[0-9a-f]{64}$/;
+
+/*
+ * Who wrote a row, when the writer might be a secret rather than a
+ * person. A break-glass EXPORT_TOKEN caller is an admin with no
+ * account, so an audit column has to say that: inventing an account id
+ * would attribute an act to somebody who did not do it, and a null
+ * reads as "nobody recorded it" rather than as "this was the way back
+ * in being used". The literal cannot collide with an account id, which
+ * is sixty-four hex characters.
+ *
+ * It is also the fourth value GET /me's `adminVia` can carry, for the
+ * same reason and by the same word: a break-glass caller is an admin,
+ * and none of the three admin paths is how (0.9-M3-S8, #414).
+ */
+const BREAK_GLASS = "break-glass";
 
 // A Telegram numeric id, which is what an admin has to hand. Twenty
 // digits is past anything Telegram issues and short of a number no
@@ -526,6 +761,21 @@ const GROUP_CHECK_TIMEOUT_MS = 5000;
 // member unless it says otherwise, which is why it cannot simply be
 // tested for equality.
 const MEMBER_STATUSES = ["creator", "administrator", "member", "restricted"];
+
+/*
+ * Administering it, as Telegram spells that - a SUBSET of the list
+ * above rather than a list beside it (0.9-M3-S8, #414; the ruled
+ * design #385, rule 1 - two ways in, one tier).
+ *
+ * Both of these are member statuses first: a creator and an
+ * administrator are in the group, so they sign in for the same reason
+ * everybody else does, and this list only decides whether the session
+ * they get is an admin one. Written as a subset rather than as a
+ * separate list because the moment the two disagree - a status that
+ * administers without being a member - the sign-in path would grant
+ * admin to somebody groupStanding() had already refused.
+ */
+const GROUP_ADMIN_STATUSES = ["creator", "administrator"];
 
 /*
  * Being gone from it, as Telegram spells that - and this list is NOT the
@@ -694,10 +944,10 @@ function idList(value) {
  * - both sides of every comparison are values this Worker already had,
  * and the answer lives for one request.
  *
- * Separate from adminAccountIds() below because the migration needs to
- * ask this half on its own: handleReadMembership answers "which admins
- * does the secret grant that the table has not been told about", and
- * that question has no answer if the two arms are only ever unioned.
+ * Separate from adminVia() below because the migration needs to ask
+ * this half on its own: handleReadMembership answers which admins the
+ * secret grants that the table has not been told about, and that
+ * question has no answer if the arms are only ever folded together.
  */
 async function secretAdminAccountIds(env) {
   const ids = idList(env.ADMIN_TELEGRAM_IDS);
@@ -786,32 +1036,59 @@ async function membershipAccountIds(env, role) {
 }
 
 /*
- * Who administers: the secret OR the table, both live.
+ * WHO ADMINISTERS AND WHY, IN ONE FUNCTION - null if they do not
+ * (0.9-M3-S8, #414; the ruled design #385, rule 1).
  *
- * This is the dual-read posture #69 asked for, and it is deliberately
- * the shipped state rather than a step passed through. Flipping to
+ * ONE FUNCTION AND NOT TWO. A set of account ids answers whether and
+ * cannot say which arm matched, and the answer has to: GET /me reports
+ * it, and sessionFor() needs it to know which arms it may re-check at
+ * all. Splitting whether from why would be two reads of the same table
+ * per request and two places a new arm could be forgotten.
+ *
+ * THREE WAYS IN AND ONE TIER. Nothing anywhere below branches on which
+ * of these a session holds, and that is the ruling rather than an
+ * omission. What the value is for is telling a person which lever
+ * applies to them: a flag another admin can take off, a group role that
+ * lives in Telegram, or a deployment secret no page can reach.
+ *
+ * THE ORDER IS BY WHAT SOMEBODY CAN ACT ON, not by precedence in any
+ * authority sense: an account can be all three at once and the powers
+ * are identical either way. 'telegram' first because it is the one the
+ * group's own membership decides; then 'flag', the row an admin can see
+ * in the role list and remove; then 'secret', last because it is the
+ * bootstrap and the only one invisible from inside the product.
+ *
+ * THE DUAL READ IS THE SHIPPED POSTURE, not a step passed through, and
+ * that is what the 'flag' and 'secret' arms are (#69). Flipping to
  * table-only before a backfill would take authority away from every
  * admin the secret names and the table does not, so the order is
  * dual-read, verify, flip - and what makes the middle step possible is
- * handleReadMembership's `secretOnly`, which is the only place the two
- * arms can be compared at all: the secret holds numeric ids and the
- * table holds HMACs of them, so nothing outside this Worker can line
- * them up.
+ * handleReadMembership's `secretOnly`, the only place the two arms can
+ * be compared at all: the secret holds numeric ids and the table holds
+ * HMACs of them, so nothing outside this Worker can line them up.
+ * Whatever the flip does, the founding admin stays in the secret. A
+ * table that could rewrite the whole list leaves no root of trust
+ * outside itself.
  *
- * Whatever the flip does, the founding admin stays in the secret
- * (DESIGN.md, "Admin accounts and deletion"). A table that could rewrite
- * the whole list leaves no root of trust outside itself.
+ * RECOMPUTED PER REQUEST ON PURPOSE. A cache would be a copy of the
+ * admin list living somewhere other than the places that own it, which
+ * is precisely the stale-admin bug this exists to remove - and it is
+ * what makes removing a row take effect on the next request rather than
+ * whenever a session happens to expire.
  *
- * Recomputed per request on purpose. A cache would be a copy of the
- * admin list living somewhere other than the two places that own it,
- * which is precisely the stale-admin bug this function exists to remove
- * - and it is what makes removing a row take effect on the next request
- * rather than whenever a session happens to expire.
+ * `status` IS THE GROUP ROLE FROM THIS SIGN-IN and never a stored one.
+ * It is null everywhere except inside handleTelegramAuth, which is the
+ * only place the numeric id exists at all - see groupStanding(). So the
+ * 'telegram' arm is unreachable on any later request, which is exactly
+ * why sessionFor() has to read that one from the session row.
  */
-async function adminAccountIds(env) {
-  const ids = await secretAdminAccountIds(env);
-  for (const id of await membershipAccountIds(env, "admin")) ids.add(id);
-  return ids;
+async function adminVia(env, accountId, status) {
+  if (typeof status === "string" && GROUP_ADMIN_STATUSES.includes(status)) {
+    return "telegram";
+  }
+  if ((await membershipAccountIds(env, "admin")).has(accountId)) return "flag";
+  if ((await secretAdminAccountIds(env)).has(accountId)) return "secret";
+  return null;
 }
 
 function corsHeaders(origin) {
@@ -1017,16 +1294,32 @@ async function claimPayload(env, payloadHash) {
  * verifyTelegramPayload refuses ahead of this call and it is never
  * reached; the mandatory-config story is server/wrangler.toml and
  * OPERATIONS.md, which name the chat id as required.
+ *
+ * IT RETURNS TWO THINGS SINCE 0.9-M3-S8 (#414), and only one of them
+ * decides the sign-in. `standing` is the three-way verdict everything
+ * above argues about and it is unchanged: member, left, unknown, and
+ * anything but "member" refuses. `status` is the raw word Telegram
+ * used, and it rides along for one reason - #385 rule 1 makes a group
+ * creator or administrator an admin, and this call is the only moment
+ * anything here knows which one somebody is.
+ *
+ * `status` IS NULL WHENEVER THE ANSWER DID NOT COME FROM THE GROUP, and
+ * that is the property that keeps the two halves from being confused
+ * for each other. Both allow arms return "member" with no status: a
+ * break-glass bypass is a way past the membership check, not evidence
+ * of a role inside the group, and reading it as one would let
+ * ALWAYS_ALLOW_TELEGRAM_IDS mint admins. An unreachable Telegram is
+ * null for the same reason it is "unknown".
  */
 async function groupStanding(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
-    return "member";
+    return { standing: "member", status: null };
   }
   if ((await membershipAccountIds(env, "always_allow"))
     .has(await accountIdFor(env, userId))) {
-    return "member";
+    return { standing: "member", status: null };
   }
-  if (!env.TELEGRAM_GROUP_CHAT_ID) return "unknown";
+  if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "unknown", status: null };
 
   const url = "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN +
     "/getChatMember?chat_id=" +
@@ -1049,16 +1342,22 @@ async function groupStanding(env, userId) {
     // the bot token is interpolated into the URL above, and a fetch
     // failure names the URL it failed on. Logging this error logs the
     // token.
-    return "unknown";
+    return { standing: "unknown", status: null };
   }
-  if (!body || body.ok !== true || !body.result) return "unknown";
+  if (!body || body.ok !== true || !body.result) {
+    return { standing: "unknown", status: null };
+  }
   const status = body.result.status;
   if (MEMBER_STATUSES.includes(status)) {
     // A restricted member who has actually left says so here.
     return status === "restricted" && body.result.is_member === false
-      ? "left" : "member";
+      ? { standing: "left", status: status }
+      : { standing: "member", status: status };
   }
-  return LEFT_STATUSES.includes(status) ? "left" : "unknown";
+  return {
+    standing: LEFT_STATUSES.includes(status) ? "left" : "unknown",
+    status: status,
+  };
 }
 
 /*
@@ -1140,21 +1439,28 @@ function deadlineAt(createdAt, isAdmin, now) {
  * specified, arriving through the wrong value. The row is where the
  * window is enforced, and sessionFor() is what enforces it.
  */
-async function issueSession(env, accountId, isAdmin, isDev) {
+async function issueSession(env, accountId, via, isDev) {
   const raw = new Uint8Array(32);
   crypto.getRandomValues(raw);
   const token = btoa(String.fromCharCode(...raw))
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
+  // Adminness is DERIVED from the source rather than passed beside it
+  // (0.9-M3-S8, #414). Two arguments that have to agree are two
+  // arguments that can disagree, and the disagreement that matters -
+  // an admin flag with no source recorded - is exactly the row
+  // sessionFor() cannot re-check correctly.
+  const isAdmin = via !== null;
   const now = Date.now();
   const expires = new Date(absoluteExpiry(now, isAdmin));
 
   await env.DB.prepare(
     "INSERT INTO sessions " +
-    "(token_hash, account_id, is_admin, is_dev, created_at, expires_at) " +
-    "VALUES (?, ?, ?, ?, ?, ?)"
+    "(token_hash, account_id, is_admin, is_dev, admin_via, created_at, " +
+    "expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(await sha256Hex(token), accountId, isAdmin ? 1 : 0, isDev ? 1 : 0,
+      via,
       new Date(now).toISOString(),
       new Date(deadlineAt(now, isAdmin, now)).toISOString())
     .run();
@@ -1214,12 +1520,52 @@ async function issueSession(env, accountId, isAdmin, isDev) {
  * nothing and is a second wall on the same hand-written row; dropping
  * the column is a schema migration for the milestone that owns the
  * table.
+ *
+ * ---------------------------------------------------------------------
+ * ONE SOURCE OF ADMINNESS IS NOW THE ROW ITSELF, AND ONLY ONE
+ * (0.9-M3-S8, #414; #385 rule 1). The paragraph above said the lists
+ * are the only source; that stopped being the whole truth the moment a
+ * Telegram group role could grant admin, because the role CANNOT be
+ * re-asked here. getChatMember needs the numeric Telegram id, this
+ * database holds nowhere for one on purpose, and storing one beside the
+ * session is the membership oracle the whole account design exists to
+ * kill - the same bound revokeAccountSessions() is written out for.
+ *
+ * So a row carrying admin_via = 'telegram' keeps its adminness without
+ * a list to be found in, and three things bound that rather than one:
+ *
+ *   1. THE ADMIN CAP, RE-DERIVED FROM created_at ON THIS READ, AND
+ *      CLOSED AT BOTH ENDS. Every row this Worker writes already
+ *      satisfies it - deadlineAt() never sets an expiry past the cap,
+ *      and nothing here writes a created_at in the future - so the
+ *      check costs a real session nothing and is aimed squarely at a
+ *      row somebody wrote by hand with dates of their choosing.
+ *      THE LOWER BOUND IS THE HALF THAT LOOKS REDUNDANT AND IS NOT:
+ *      created_at is written by the same statement that would lie
+ *      about expires_at, so a window measured only from its start is a
+ *      window the writer positions. A row dated an hour ahead sits
+ *      inside its own two hours from the moment it is written, and the
+ *      slide above renews its expiry on every read, which is a
+ *      credential with no end at all. With both ends, one `wrangler d1
+ *      execute` buys at most the two hours the cap allows and cannot
+ *      buy them starting whenever it likes. Two hours is also the whole
+ *      exposure of a demotion in Telegram that this side cannot see.
+ *   2. NO DEVELOPMENT SESSION TAKES THIS PATH. is_dev = 1 means
+ *      Telegram never authenticated the row, and the one un-re-checkable
+ *      path is the last place to make an exception for a session that
+ *      arrived by hand.
+ *   3. EVERY OTHER VALUE IS STILL RE-READ FROM THE LISTS, including
+ *      NULL. A row from before this column, or one whose source is
+ *      'flag' or 'secret', is exactly as revocable as it was before -
+ *      delisting takes effect on the next request, which is the lever
+ *      #69 asked for and this slice does not weaken.
+ * ---------------------------------------------------------------------
  */
 async function sessionFor(env, token) {
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
-    "SELECT account_id, is_admin, is_dev, created_at, expires_at " +
+    "SELECT account_id, is_admin, is_dev, admin_via, created_at, expires_at " +
     "FROM sessions WHERE token_hash = ?"
   ).bind(tokenHash).first();
 
@@ -1272,8 +1618,29 @@ async function sessionFor(env, token) {
 
   const isDev = row.is_dev === 1;
   let isAdmin = row.is_admin === 1;
+  let via = isAdmin && typeof row.admin_via === "string"
+    ? row.admin_via : null;
   if (isAdmin) {
-    isAdmin = (await adminAccountIds(env)).has(row.account_id);
+    if (via === "telegram") {
+      // The three bounds the block above argues, in the order they
+      // fail closed: no development row, and no row outside the admin
+      // window measured from when it was written rather than from the
+      // expiry whoever wrote it chose. `created <= now` is the start of
+      // that window and belongs to the same hand-written row the cap is
+      // for: without it a future date opens the window instead of
+      // closing it.
+      const within = Number.isFinite(created) && created <= now &&
+        now < absoluteExpiry(created, true);
+      isAdmin = !isDev && within;
+    } else {
+      // The lists, re-read - and the SOURCE re-derived with them rather
+      // than trusted from the row, so an admin who was flagged and is
+      // now named by the secret instead reads as what is true today.
+      // One call, so one read of the table per request.
+      via = await adminVia(env, row.account_id, null);
+      isAdmin = via !== null;
+    }
+    if (!isAdmin) via = null;
   }
 
   /*
@@ -1295,6 +1662,7 @@ async function sessionFor(env, token) {
     accountId: row.account_id,
     isAdmin: isAdmin,
     isDev: isDev,
+    adminVia: via,
   };
 }
 
@@ -1323,7 +1691,15 @@ async function callerFor(request, env) {
   if (!given) return null;
 
   if (env.EXPORT_TOKEN && tokenMatches(given, env.EXPORT_TOKEN)) {
-    return { accountId: null, isAdmin: true, isDev: false, breakGlass: true };
+    // Its own source of adminness, named rather than borrowed. Calling
+    // it "secret" would put the break-glass token and
+    // ADMIN_TELEGRAM_IDS behind one word, and they are answered by
+    // different levers: this one is rotated, that one is edited. The
+    // literal is the same one the audit columns already carry for it.
+    return {
+      accountId: null, isAdmin: true, isDev: false, breakGlass: true,
+      adminVia: BREAK_GLASS,
+    };
   }
   return sessionFor(env, given);
 }
@@ -1489,7 +1865,7 @@ async function handleTelegramAuth(request, env, origin) {
    * this deployment's Telegram integration to anybody with a signed
    * payload, and neither answer changes what the caller should do.
    */
-  const standing = await groupStanding(env, user.id);
+  const { standing, status } = await groupStanding(env, user.id);
   if (standing !== "member") {
     if (standing === "left") {
       await revokeAccountSessions(env, await accountIdFor(env, user.id));
@@ -1504,13 +1880,19 @@ async function handleTelegramAuth(request, env, origin) {
   }
 
   const accountId = await accountIdFor(env, user.id);
-  // Both arms, through the one function that unions them. Minting from
-  // the secret alone here while sessionFor() re-checks both would hand a
-  // table-only admin a member session that could never become an admin
-  // one: the stored flag is a necessary condition and nothing would ever
-  // set it.
-  const isAdmin = (await adminAccountIds(env)).has(accountId);
-  const session = await issueSession(env, accountId, isAdmin, false);
+  // All three arms, through the one function that decides between them.
+  // Minting from one arm here while sessionFor() re-checks another
+  // would hand that arm's admins a member session that could never
+  // become an admin one: the stored flag is a necessary condition and
+  // nothing would ever set it.
+  //
+  // `status` is this sign-in's own group role and is the only moment it
+  // is knowable - see groupStanding(). It is passed rather than
+  // re-derived because there is nothing to re-derive it from once this
+  // handler returns.
+  const via = await adminVia(env, accountId, status);
+  const isAdmin = via !== null;
+  const session = await issueSession(env, accountId, via, false);
   log("signin.ok", accountId);
 
   /*
@@ -1551,10 +1933,18 @@ async function handleTelegramAuth(request, env, origin) {
    * NO TELEGRAM NUMERIC ID IN THIS ANSWER, and nothing may put one back.
    * The numeric id is the one identifier that resolves to a person -
    * DESIGN.md, "The identifier is the whole problem" - so a route that
-   * hands one out needs a reason strong enough to carry that, and there
-   * is none: DESIGN.md, "Admin accounts and deletion", keeps no admin
-   * list and no founding-admin secret, so no deployment of this Worker
-   * is bootstrapped by reading an id off a page.
+   * hands one out needs a reason strong enough to carry that, and no
+   * admin arm supplies one. DESIGN.md, "Admin accounts and deletion",
+   * does keep a founding-admin secret for the first flag to start
+   * from, and ADMIN_TELEGRAM_IDS holds numeric ids, so the bootstrap
+   * is the one place this design still needs them. It is set from
+   * outside the product, by whoever holds this deployment's
+   * configuration and reads the id from Telegram; this Worker carries
+   * no route that writes it, and a member reading this answer is not
+   * the person setting it. Every admin after the first is made by a
+   * `membership` row keyed to the account-id HMAC, or by the group role
+   * groupStanding() reads at sign-in, and neither puts a numeric id in
+   * front of anybody.
    *
    * The handle stays, and the difference is who already holds it. The
    * page POSTed this payload, handle included, and is handed back the
@@ -1649,6 +2039,16 @@ const SUPERSEDED =
  *     token, and handleSubmit takes account_id from the session and
  *     never from the body, so a stolen account id opens no door.
  *
+ * `adminVia` SAYS WHY, WHICH IS THE HALF `isAdmin` CANNOT (0.9-M3-S8,
+ * #414; #385 rule 1). Three ways in and identical powers, so nothing
+ * branches on this - what it is for is the admin surface being able to
+ * tell a person which lever applies to them: a flag another admin can
+ * take off, a group role that lives in Telegram, or a deployment secret
+ * no page can reach. 'break-glass' is the fourth value and names the
+ * EXPORT_TOKEN caller. A member gets null, and so does an admin session
+ * whose source this Worker never recorded - a row written before the
+ * column existed, which is admin by the lists exactly as it was.
+ *
  * A break-glass EXPORT_TOKEN caller has no account and gets null,
  * reported rather than special-cased. See DESIGN.md, "The prefill is
  * scoped to the account".
@@ -1695,6 +2095,7 @@ async function handleMe(request, env, origin, caller) {
     lastAt: (row && row.last_at) || null,
     isAdmin: caller.isAdmin === true,
     isDev: caller.isDev === true,
+    adminVia: typeof caller.adminVia === "string" ? caller.adminVia : null,
   }, 200, origin);
 }
 
@@ -2117,31 +2518,75 @@ const CHART_ROWS =
  * THE CHARTS SETTINGS, AND THE ONE SEAM THE FLOOR ARRIVES THROUGH.
  *
  * server/charts-agg.js reads `floor` from this object and falls back to
- * its own shipped default of 0 when it is absent, which is what this
- * empty table means today: the floor ships off, per the owner's ruling
- * at the 2026-08-19 charts sitting (#243 comment 5346978974). 0.9-M3's
- * Settings page replaces this constant with a read of the stored
- * setting, and that is the entire change - one call site, one object,
- * validated on arrival.
+ * its own shipped default of 0 when it is absent: the floor ships off,
+ * per the owner's ruling at the 2026-08-19 charts sitting (#243 comment
+ * 5346978974). This WAS a frozen empty object with a note saying 0.9-M3
+ * would replace it with a read of the stored setting; 0.9-M3-S8 (#414)
+ * is that slice, and this is that read.
+ *
+ * AN UNSET STORE IS THE EMPTY OBJECT, byte for byte. Nothing is
+ * defaulted in here - no `{ floor: 0 }`, which would behave identically
+ * and still be a different fact - because the shipped behavior at floor
+ * 0 has to be provably unchanged by wiring the seam, and the honest
+ * form of that proof is the same object the constant was.
+ * tests/admin-identity.test.mjs pins it by driving GET /charts-data
+ * against this function and against a copy of this file with this
+ * function replaced by `return Object.freeze({})`, and comparing the
+ * response bodies as text.
  *
  * IT CARRIES A SECOND SETTING, `units`, AND THE TWO ARE ONE DECISION
  * (0.9-M2-S17, #396). Raising the floor locks the charts to a single
  * unit system, because two independently-binned systems can be overlaid
  * into cells the floor was meant to hide; `units` names which system a
- * locked view is served in, and an absent one is the spec's own first
- * system. There is nothing to set while the floor is 0 - both systems
- * are served then and the setting is not read - so the empty table
- * above is the whole of it until 0.9-M3's Settings page carries the
- * pair together.
+ * locked view is served in, and an absent one is the spec's own default
+ * system. There is nothing to lock while the floor is 0 - both systems
+ * are served then and the setting is not read - so a stored
+ * `chart.lockedUnit` with no floor beside it changes nothing, which is
+ * charts-agg's rule rather than a special case here.
+ *
+ * THE STORED NAMES ARE NOT THE OBJECT'S NAMES, and the mapping is here
+ * because this is the seam: `chart.floor` and `chart.lockedUnit` are
+ * what an admin sets and what the settings pane renders, `floor` and
+ * `units` are what charts-agg reads. Renaming either side is a one-file
+ * change rather than a hunt.
+ *
+ * A ROW THIS SIDE COULD NOT HAVE WRITTEN IS LEFT TO charts-agg, which
+ * answers its own shipped default for anything it cannot read - and
+ * that is the correct division. `wrangler d1 execute` validates
+ * nothing, so a `chart.floor` of "banana" can exist; refusing the whole
+ * view over it would let one hand-written row take the charts down for
+ * everybody, and floorOf()'s own comment argues the fallback in full.
+ * What this Worker will not do is store such a row: POST /content
+ * validates on arrival (SETTINGS above).
  *
  * NOTHING ON THE WIRE REACHES EITHER. askFor() refuses a query
  * parameter it does not know, so `?floor=1` is a 400 rather than a
  * lowered floor (0.9-M2-S0 security mandate 2); the `units` parameter it
- * does accept is OVERRIDDEN by this table whenever a floor is set,
- * never merged with it. This object is built here from server-side
- * state alone.
+ * does accept is OVERRIDDEN by this object whenever a floor is set,
+ * never merged with it. This object is built from server-side state
+ * alone - two rows of a table only an admin session may write.
  */
-const CHART_SETTINGS = Object.freeze({});
+async function chartSettings(env) {
+  const rows = await env.DB.prepare(
+    "SELECT name, value FROM site_content WHERE name IN (?, ?)"
+  ).bind("chart.floor", "chart.lockedUnit").all();
+
+  const held = {};
+  for (const row of (rows && rows.results) || []) {
+    if (row.name === "chart.floor" && SETTINGS["chart.floor"].ok(row.value)) {
+      held.floor = Number(row.value);
+    }
+    // An empty lockedUnit is "no lock" and is deliberately NOT carried
+    // over: charts-agg reads an absent `units` and a value it does not
+    // offer the same way, and leaving the key off is what keeps the
+    // unset store identical to the empty object above.
+    if (row.name === "chart.lockedUnit" && row.value !== "" &&
+        SETTINGS["chart.lockedUnit"].ok(row.value)) {
+      held.units = row.value;
+    }
+  }
+  return Object.freeze(held);
+}
 
 async function handleCharts(request, env, origin, caller) {
   const accountId = rowIdentity(caller.accountId);
@@ -2149,6 +2594,7 @@ async function handleCharts(request, env, origin, caller) {
   const asked = askFor(new URL(request.url).searchParams);
   if (!asked.ok) return json({ error: asked.error }, 400, origin);
 
+  const settings = await chartSettings(env);
   const store = await openStore(env);
   const rows = await env.DB.prepare(CHART_ROWS).all();
 
@@ -2171,13 +2617,15 @@ async function handleCharts(request, env, origin, caller) {
     });
   }
 
-  const answer = aggregate(opened, asked.ask, undefined, CHART_SETTINGS);
-  /* The same settings object both ways: the overlay is drawn over the
-     group trend on one pair of axes, so it has to be in whatever unit
-     system the group's own answer came back in (0.9-M2-S17, #396 - a
-     raised floor decides that, not the caller). */
+  const answer = aggregate(opened, asked.ask, undefined, settings);
+  /* The same settings object both ways, and READ ONCE for the request:
+     the overlay is drawn over the group trend on one pair of axes, so
+     it has to be in whatever unit system the group's own answer came
+     back in (0.9-M2-S17, #396 - a raised floor decides that, not the
+     caller). Two reads of the table could straddle an admin's write and
+     put a member's own line on a different grid from the group's. */
   answer.self = selfSeries(opened, accountId, asked.ask, undefined,
-    CHART_SETTINGS);
+    settings);
 
   return new Response(JSON.stringify(answer), {
     status: 200,
@@ -2192,32 +2640,180 @@ async function handleCharts(request, env, origin, caller) {
   });
 }
 
-/*
- * Who wrote a row, when the writer might be a secret rather than a
- * person. A break-glass EXPORT_TOKEN caller is an admin with no
- * account, so an audit column has to say that: inventing an account id
- * would attribute an act to somebody who did not do it, and a null
- * reads as "nobody recorded it" rather than as "this was the way back
- * in being used". The literal cannot collide with an account id, which
- * is sixty-four hex characters.
- */
-const BREAK_GLASS = "break-glass";
-
 function writerOf(caller) {
   return caller && caller.accountId ? caller.accountId : BREAK_GLASS;
 }
 
 /*
+ * One line in the change log (0.9-M3-S8, #414; the ruled design #385,
+ * rule 5, which makes the log a property of every admin change).
+ *
+ * AFTER THE WRITE, NEVER BEFORE, at every call site. A line written
+ * first would record an act that then failed, and a log an admin cannot
+ * trust is worse than none: the two admins tidying the same list -
+ * handleDeleteMembership's own scenario - are exactly the readers who
+ * need "this happened" to mean it. The other order was considered and
+ * rejected: recording an intention is a different record with a
+ * different name.
+ *
+ * IT IS NOT BEST-EFFORT. A failed append fails the request, which is
+ * the opposite of the directory sync at sign-in, and the difference is
+ * what the request is for: there the roster is a cache of a sign-in
+ * that already succeeded, here the log is half of what an admin write
+ * IS - #385 rule 5 states the log as a property of every admin change,
+ * not as a convenience beside it. The throw reaches fetch()'s handler
+ * and answers 500 with no detail, exactly as any other D1 failure on a
+ * write does.
+ *
+ * `subject` IS WHAT CHANGED and the actor is the caller: a content
+ * name for a `site_content` write, the account id whose row moved for a
+ * `membership` write. `summary` is bounded here rather than at the call
+ * sites, so no future caller can put a kilobyte in it by forgetting.
+ *
+ * NOTHING A MEMBER WROTE PASSES THROUGH HERE. Every caller is a write
+ * to `site_content` or to `membership`, whose values are site copy,
+ * settings, roles and labels an admin typed. The one admin power over a
+ * member's own data - DELETE /submission/:id on somebody else's row -
+ * deliberately does not append: a line naming which row came down is a
+ * fact about a member rather than about the site, and that action
+ * belongs to the departed-member cleanup slice, which #385 rule 4 gives
+ * its own security review.
+ */
+async function noteAdminWrite(env, caller, action, subject, summary) {
+  const text = String(summary);
+  await env.DB.prepare(
+    "INSERT INTO admin_log (at, account_id, action, name, summary) " +
+    "VALUES (?, ?, ?, ?, ?)"
+  ).bind(
+    new Date().toISOString(), writerOf(caller), action, subject,
+    text.length > MAX_LOG_SUMMARY ? text.slice(0, MAX_LOG_SUMMARY) : text
+  ).run();
+}
+
+/*
+ * The change log, read.
+ *
+ * ADMIN ONLY, gated in the router like every other admin read here.
+ * The ruled design #385, rule 5, states the gate rather than leaving
+ * it to be inferred: the log is admin-only reading, and members see
+ * results rather than the paper trail. What it holds is who did what
+ * - the account ids of the people
+ * who administer, and which names they touched - which is the same
+ * shape as GET /membership and belongs behind the same door.
+ *
+ * NEWEST FIRST AND BOUNDED. `id` breaks the tie inside one millisecond
+ * (server/schema.sql's `admin_log` block says why the column exists),
+ * so two writes in the same instant come back in the order they were
+ * made rather than in whatever order SQLite returns them.
+ *
+ * The rows go out with camel-cased field names rather than the table's
+ * own, and that is the one place this file re-spells a column: `at`,
+ * `action`, `name` and `summary` are already the words a reader wants,
+ * while `account_id` is not - and a surface rendering "who" from a
+ * field called account_id beside three plain words is a surface that
+ * has to explain itself.
+ */
+async function handleReadAdminLog(env, origin) {
+  const rows = await env.DB.prepare(
+    "SELECT at, account_id, action, name, summary FROM admin_log " +
+    "ORDER BY at DESC, id DESC LIMIT " + ADMIN_LOG_LIMIT
+  ).all();
+
+  return json({
+    ok: true,
+    log: ((rows && rows.results) || []).map((row) => ({
+      at: row.at,
+      accountId: row.account_id,
+      action: row.action,
+      name: row.name,
+      summary: row.summary,
+    })),
+  }, 200, origin);
+}
+
+/*
+ * The three values a page needs BEFORE anybody has signed in
+ * (0.9-M3-S8, #414 scope 4; the ruled design #385, rule 9).
+ *
+ * WHY A SECOND CREDENTIAL-FREE ROUTE BESIDE GET /content, when
+ * handleReadContent's own comment argues that a route named for
+ * configuration in general is an invitation to move the form
+ * definition into a table. That argument stands and this route does not
+ * weaken it: what makes /content safe is that every value in it stands
+ * in for bytes anybody can already fetch from the published site, and
+ * this route is a strictly SMALLER window on the same table - three
+ * names, fixed in code. The form definition is still refused this
+ * table, still a repository file the gate reads before it ships, and
+ * DESIGN.md, "Where configuration lives", still holds the rule; what
+ * moved is only that the group's name, the door's welcome text and the
+ * default palette are runtime state the Worker serves, which that same
+ * section already ruled they are.
+ *
+ * SO WHY NOT LET THE DOOR READ /content? Because /content answers with
+ * whatever is in the table, and the table is where the floor and every
+ * future setting live. A door reading it would be handed the group's
+ * privacy floor before sign-in, on every page load, forever - not
+ * because anybody put something private in a copy table, but because
+ * settings and copy share it by design. The allow-list is what keeps
+ * the credential-free surface from growing every time a setting is
+ * added.
+ *
+ * DEFAULTS RATHER THAN ABSENCES. A page asking this before sign-in has
+ * to render something, and a missing key would make every first-run
+ * deployment look like a failure - the same reason handleReadContent
+ * answers `{}` and a 200 rather than a 404. The group's name defaults
+ * to the spec's own, which is where it lives when nobody has overridden
+ * it (apps/web/site.config.js, read through the import
+ * server/charts-agg.js makes); the other two default to the empty
+ * string, which means "the page's own HTML is the fallback" - this
+ * Worker holding a copy of the door's paragraph would be a second home
+ * for a fact that has one.
+ */
+function publicConfigDefaults() {
+  const site = globalThis.BINDER_SITE;
+  return {
+    "site.groupName": site && site.group && typeof site.group.name === "string"
+      ? site.group.name : "",
+    "site.welcomeText": "",
+    "site.defaultTheme": "",
+  };
+}
+
+async function handleReadConfig(env, origin) {
+  const rows = await env.DB.prepare(PUBLIC_CONFIG_SQL)
+    .bind(...PUBLIC_CONFIG).all();
+
+  const config = publicConfigDefaults();
+  for (const row of (rows && rows.results) || []) {
+    /*
+     * REFUSED, NOT DROPPED. A row outside the allow-list cannot reach
+     * here while the statement above binds exactly three names, so one
+     * that does means the statement was widened - and a filter would
+     * make that widening invisible, which is the whole failure this
+     * second wall exists for. The throw reaches fetch()'s handler and
+     * answers 500 with no detail, so nothing leaks on the way out
+     * either.
+     */
+    if (PUBLIC_CONFIG.indexOf(row.name) === -1) {
+      throw new Error("the public config read returned a name outside " +
+        "its allow-list");
+    }
+    config[row.name] = row.value;
+  }
+
+  return json({ ok: true, config: config }, 200, origin);
+}
+
+/*
  * The site copy an admin can change without a release.
  *
- * This route answers a caller with no credential at all, and it is the
- * only one here that does. The argument is what these values are: each
- * page ships the copy it needs in its own HTML and reads this document
- * to override it, so the bytes this route serves stand in for bytes
- * anybody can already fetch from the published site. Gating it would
- * promise a confidentiality the fallback does not have, and the cost of
- * promising it is that somebody eventually puts something private in a
- * table designed for site copy.
+ * This route answers a caller with no credential at all. The argument
+ * is what these values are: each page ships the copy it needs in its
+ * own HTML and reads this document to override it, so the bytes this
+ * route serves stand in for bytes anybody can already fetch from the
+ * published site. Gating it would promise a confidentiality the
+ * fallback does not have, and the cost of promising it is that somebody
+ * eventually puts something private in a table designed for site copy.
  *
  * What follows from that is a rule with a structural expression rather
  * than a warning: nothing about a person goes in this table. The lists
@@ -2225,12 +2821,21 @@ function writerOf(caller) {
  * filter on a shared route is one `if` away from serving the list to a
  * member session, and that mistake would look like nothing at all.
  *
- * `/content` rather than `/config`, because the form definition is
- * configuration and is refused this table on purpose: a wrong bound
- * gets sealed into a record and is discovered on export day, so it
- * stays a repo file the gate reads before it ships. A route named for
- * configuration in general is an invitation to move it here.
- * DESIGN.md, "Where configuration lives", holds the rule.
+ * THE FORM DEFINITION IS REFUSED THIS TABLE, and that is the rule this
+ * paragraph is really about: a wrong bound gets sealed into a record
+ * and is discovered on export day, so the field spec stays a repository
+ * file the gate reads before it ships. DESIGN.md, "Where configuration
+ * lives", holds it.
+ *
+ * There IS a route named /config, and the rule above is unchanged by
+ * it (0.9-M3-S8, #414). A route named for configuration in general
+ * would be an invitation to move the spec into this table; this one is
+ * not that route. The owner ruled it at the 2026-08-20 sitting (#385
+ * rule 9), and what it serves is three names
+ * fixed in code - the group's name, the door's welcome text, the
+ * default palette - which DESIGN.md's same section already calls
+ * runtime state. handleReadConfig carries the argument for why the
+ * door does not simply read this route instead.
  *
  * An absent document is `{}` and a 200. A page whose value has never
  * been set is in its normal state, not in an error, and answering 404
@@ -2271,8 +2876,9 @@ async function handleWriteContent(request, env, origin, caller) {
   const name = payload && payload.name;
   if (typeof name !== "string" || !CONTENT_NAME.test(name)) {
     return json({
-      error: "A content name is lowercase letters, digits, dot, dash or " +
-        "underscore, up to 64 characters.",
+      error: "A content name starts with a lowercase letter or a digit, " +
+        "then letters, digits, dot, dash or underscore, up to 64 " +
+        "characters.",
     }, 400, origin);
   }
 
@@ -2287,6 +2893,54 @@ async function handleWriteContent(request, env, origin, caller) {
     return json({ error: "Content too large." }, 413, origin);
   }
 
+  /*
+   * A SETTINGS NAME IS SPELLED ONE WAY (0.9-M3-S8, #414). Matched by
+   * the fold rather than exactly, so a near-miss is told apart from a
+   * name that is not a setting: `Chart.Floor` stored as ordinary
+   * content would take the slot `chart.floor` needs, and the collision
+   * check below would then refuse the real setting forever. Refusing
+   * the near-miss here is what keeps every settings key reachable.
+   */
+  const canonical = SETTINGS_BY_FOLD.get(name.toLowerCase());
+  if (canonical !== undefined && canonical !== name) {
+    return json({
+      error: "That is a setting, and its name is spelled " + canonical + ".",
+    }, 400, origin);
+  }
+
+  // Validated on arrival, never on the way out. Every reader downstream
+  // answers its own shipped default for a value it cannot use, which is
+  // right for a row `wrangler d1 execute` wrote and wrong as a
+  // substitute for telling an admin their number did not take.
+  const setting = SETTINGS[name];
+  if (setting && !setting.ok(value)) {
+    return json({ error: setting.error }, 400, origin);
+  }
+
+  /*
+   * TWO NAMES DIFFERING ONLY BY CASE ARE ONE SLOT AS FAR AS A PERSON IS
+   * CONCERNED, and the charset admits both since this slice. So the
+   * second spelling is refused rather than stored: a settings pane
+   * listing `door.motto` beside `Door.Motto` is a list an admin cannot
+   * read, and the page that renders one of them would answer to the
+   * wrong row for reasons nothing on screen explains.
+   *
+   * A read before a write is a race in general, and it is not one here:
+   * the loser of two simultaneous writes of two spellings gets its own
+   * row through the UPSERT, which is a duplicate an admin can see and
+   * remove, not a lost write. What this refuses is the ordinary case -
+   * somebody typing a name that is nearly one that exists.
+   */
+  const clash = await env.DB.prepare(
+    "SELECT name FROM site_content WHERE name = ? COLLATE NOCASE"
+  ).bind(name).first();
+  if (clash && clash.name !== name) {
+    return json({
+      error: "A content name differing only in case is already set: " +
+        clash.name + ". Use that spelling, or unset it first.",
+    }, 409, origin);
+  }
+
   await env.DB.prepare(
     "INSERT INTO site_content (name, value, updated_at, updated_by) " +
     "VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET " +
@@ -2296,6 +2950,7 @@ async function handleWriteContent(request, env, origin, caller) {
     .bind(name, value, new Date().toISOString(), writerOf(caller))
     .run();
 
+  await noteAdminWrite(env, caller, "content.set", name, value);
   return json({ ok: true }, 200, origin);
 }
 
@@ -2307,13 +2962,21 @@ async function handleWriteContent(request, env, origin, caller) {
  *
  * Deleting nothing succeeds, for the reason unpublishing twice does.
  */
-async function handleDeleteContent(env, origin, name) {
+async function handleDeleteContent(env, origin, name, caller) {
   if (!CONTENT_NAME.test(name)) {
     return json({ error: "Not found." }, 404, origin);
   }
-  await env.DB.prepare("DELETE FROM site_content WHERE name = ?")
-    .bind(name).run();
+  // CASE IS FOLDED, the same way handleDeleteMembership folds it and
+  // for a related reason: at most one row can exist per spelling
+  // (handleWriteContent's collision guard), so folding here cannot
+  // remove a row the caller did not mean, while matching byte for byte
+  // would answer 200-and-nothing-happened to an admin who typed one
+  // capital differently from whoever set the row.
+  await env.DB.prepare(
+    "DELETE FROM site_content WHERE name = ? COLLATE NOCASE"
+  ).bind(name).run();
 
+  await noteAdminWrite(env, caller, "content.unset", name, "");
   return json({ ok: true }, 200, origin);
 }
 
@@ -2323,10 +2986,11 @@ async function handleDeleteContent(env, origin, name) {
  *
  * THIS TABLE IS ENFORCING, and it is the first thing to know about all
  * three of these routes. A row here grants what it says it grants:
- * adminAccountIds() unions `admin` rows with ADMIN_TELEGRAM_IDS, and
- * groupStanding() unions `always_allow` rows with
- * ALWAYS_ALLOW_TELEGRAM_IDS. Both arms are live, and that is the
- * shipped posture rather than a moment in a migration.
+ * adminVia() reads `admin` rows beside ADMIN_TELEGRAM_IDS and beside
+ * the group role the bot reports, and groupStanding() unions
+ * `always_allow` rows with ALWAYS_ALLOW_TELEGRAM_IDS. Every arm is
+ * live, and that is the shipped posture rather than a moment in a
+ * migration.
  *
  * Why dual-read is what ships. Table-only before a backfill takes
  * authority away from every admin the secret names and the table does
@@ -2545,6 +3209,12 @@ async function handleAddMembership(request, env, origin, caller) {
     .run();
 
   noteSelfWrite("add", caller, accountId, role);
+  // The change log records every admin write, this one included, and it
+  // is not the same record as the line above: noteSelfWrite is a
+  // console line about an admin changing their OWN row, which is a
+  // narrower question and one nobody reads through a route.
+  await noteAdminWrite(env, caller, "membership.add", accountId,
+    role + ": " + label);
   return json({ ok: true }, 200, origin);
 }
 
@@ -2656,6 +3326,11 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
   // The folded id rather than the path's spelling, so an admin removing
   // their own row is recorded as themselves however they typed it.
   noteSelfWrite("remove", caller, wanted, role);
+  // Reached only past the 409, so the line records a removal that
+  // happened. A removal of nothing still appends: "I pressed remove and
+  // the row was already gone" is a thing the next reader of the log
+  // needs to be able to tell from "nobody touched it".
+  await noteAdminWrite(env, caller, "membership.remove", wanted, role);
   return json({ ok: true }, 200, origin);
 }
 
@@ -2692,7 +3367,7 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
  */
 const API_SEGMENTS = new Set([
   "auth", "session", "me", "my-entries", "submit", "charts-data", "export",
-  "submission", "content", "membership",
+  "submission", "content", "membership", "config", "admin-log",
 ]);
 
 function isApiPath(pathname) {
@@ -2745,8 +3420,8 @@ async function route(request, env, url, allowed, admitted) {
     return json({ error: "Origin not allowed." }, 403, null);
   }
 
-  // The one route that answers without a credential, because issuing one
-  // is what it is for. There is no local sign-in beside it: a second
+  // The one route that ISSUES a credential, and it answers without one
+  // because that is what it is for. There is no local sign-in beside it: a second
   // credential-issuing door gated on a binding is a door that opens
   // wherever that binding is set, and this Worker has none (0.9-M2-S1,
   // #352). Anything else under /auth falls through to this function's
@@ -2826,9 +3501,9 @@ async function route(request, env, url, allowed, admitted) {
     return handleDeleteSubmission(env, allowed, submission[1], caller);
   }
 
-  // The site copy. The read takes no credential, which is the one
-  // exception in this router and is argued in handleReadContent; the
-  // two writes are an admin session like every other write here.
+  // The site copy. The read takes no credential, which is argued in
+  // handleReadContent; the two writes are an admin session like every
+  // other write here.
   if (method === "GET" && path === "/content") {
     return handleReadContent(env, allowed);
   }
@@ -2839,7 +3514,26 @@ async function route(request, env, url, allowed, admitted) {
   const contentName = /^\/content\/([^/]+)$/.exec(path);
   if (method === "DELETE" && contentName) {
     if (!admin) return unauthorized(allowed);
-    return handleDeleteContent(env, allowed, contentName[1]);
+    return handleDeleteContent(env, allowed, contentName[1], caller);
+  }
+
+  // The three values a page needs before anybody has signed in - the
+  // second route here that answers without a credential, and the
+  // narrower of the two. GET only: this is a window on a table the
+  // admin routes above write, and a second write door onto the same
+  // rows would be a second place the settings validation has to be
+  // remembered. Anything else under /config falls through to the
+  // closing 404.
+  if (method === "GET" && path === "/config") {
+    return handleReadConfig(env, allowed);
+  }
+
+  // The change log, admin only (#385 rule 5). Gated here rather than in
+  // the handler, so a member and a stranger meet the same refusal -
+  // that lines exist at all is an answer only an admin may have.
+  if (method === "GET" && path === "/admin-log") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadAdminLog(env, allowed);
   }
 
   // Membership, admin in every direction, and these two lists are the
@@ -2848,11 +3542,17 @@ async function route(request, env, url, allowed, admitted) {
   // real one are the same refusal to anybody who may not read the list
   // at all.
   //
-  // A session flagged `is_dev` is not an admin by virtue of the flag:
-  // adminness is read from the admin lists alone, so such a session is
-  // a member unless its account id sits in one. The flag buys a second
-  // refusal on top of that - a caller carrying it may not touch the
-  // admin list at all, which handleAddMembership argues in full. The
+  // A session flagged `is_dev` is not an admin by virtue of the flag,
+  // and two different things say so. On the 'flag' and 'secret' arms
+  // adminness is read from the admin lists, so such a session is a
+  // member unless its account id sits in one. On the 'telegram' arm the
+  // lists are not consulted at all, because the session row is the
+  // authority there, so what refuses the development row is the
+  // explicit !isDev in sessionFor(): drop that clause trusting the
+  // lists to handle it and a hand-written row gets the arm it named for
+  // itself. The flag buys a second refusal on top of both, a caller
+  // carrying it may not touch the admin list at all, which
+  // handleAddMembership argues in full. The
   // role is in the path here, so the refusal is in the router where the
   // rest of the gate is; on POST it is the first thing past the body
   // parse, which is the earliest the role is knowable at all.

@@ -257,10 +257,18 @@ is a courtesy; the gate is the Worker refusing the write.
 
 ### Admin accounts and deletion
 
-There is no admin list to maintain, no founding-admin secret and no
-last-admin guard: the root of trust is the Telegram group, and every
-one of those mechanisms existed to hold a list the site no longer
-keeps.
+**An admin is a Telegram group admin, or a member another admin flagged
+into the role** — two ways in, identical powers, and the second exists
+so a technical member can run the technical parts without holding
+group-admin in Telegram (owner ruling, 2026-08-20, recorded at #385).
+The root of trust is still the group: every admin is a signed-in
+member, and there is no outside-the-group superadmin. The flagged list
+therefore stays, and with it the last-admin guard that keeps a
+deployment from tidying its way into a lockout; the founding-admin
+secret is what the first flag starts from. `GET /me` reports which of
+the three an admin holds, because a person who cannot see why they are
+an admin cannot tell a flag another admin can remove from a group role
+that lives in Telegram.
 
 **Deletion is deletion.** A member corrects and deletes their own rows,
 in full self-service — no trace, no admin notice, and the charts move

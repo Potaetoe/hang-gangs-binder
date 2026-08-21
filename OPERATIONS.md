@@ -544,14 +544,25 @@ back. Only the third proves the backup is worth keeping.
 
 ## Making someone an admin
 
-**Make them an admin of the Telegram group.** That is the whole
-procedure: the site mirrors the group's admins, so there is no list
-here to edit, no id to paste and no secret to change.
+**Make them an admin of the Telegram group.** That is the ordinary
+procedure: the site mirrors the group's admins, so there is no id to
+paste and no secret to change.
 
 Taking it away is the mirror image — remove their admin status in
-Telegram. Both directions take effect as the roster syncs; the bound is
-the last-known-good window under `DESIGN.md`, "Bot failure stance", and
-not a thing anybody presses here.
+Telegram. **Each direction bites at their next sign-in**, because the
+group role is asked once, when the bot can be asked at all, and the
+session carries the answer: a new admin signs out and back in to get
+the powers, and somebody demoted keeps them until their session ends,
+which for an admin session is two hours from sign-in.
+
+**There is a second way in, for a member who should run the technical
+parts without holding admin in Telegram**: flag them into the role from
+the admin surface, which writes a row the Worker reads on every
+request. That direction is not symmetric with the first — removing the
+flag takes effect on that session's very next request, while adding it
+still needs them to sign in again. `server/schema.sql`'s `membership`
+block states all of this per direction, and `GET /me` reports which of
+the ways in a given admin holds.
 
 **The group's own hygiene is the site's access control.** Everyone with
 admin in Telegram can read the directory and every member's entries.
@@ -560,8 +571,9 @@ honest operating advice is the one sentence this replaces a procedure
 with: be as careful with admin in the group as you would be with a
 password.
 
-*Until 0.9-M1 lands* the deployed Worker still reads admin from its own
-lists. Read the deployment rather than this file while that is true —
+*Until the Worker carrying 0.9-M3-S8 is deployed* the running one reads
+admin from its own lists alone and knows nothing about group roles.
+Read the deployment rather than this file while that is true —
 "Checking a deployment" above.
 
 ## Admin tasks at the Cloudflare level
@@ -575,10 +587,12 @@ documentation, not the admin page, and this is that documentation.
 **Becoming the first admin.** `ADMIN_TELEGRAM_IDS` — comma-separated
 numeric Telegram ids, set the same way any secret is (see "Secrets"
 above; that is its one home, never here) — is the break-glass door: a
-numeric id it names is unioned with `membership`'s own `admin` rows on
-every request (`server/worker.js`, `adminAccountIds()`), so putting
-your own Telegram id there is what gets a fresh fork its first admin
-before any `membership` row exists. Once that admin can sign in, the
+numeric id it names is the `secret` arm of `adminVia()`
+(`server/worker.js`), re-read on every request beside `membership`'s
+own `admin` rows and beside the group role Telegram answers for, so
+putting your own Telegram id there is what gets a fresh fork its first
+admin when no `membership` row exists yet and the bot cannot be asked
+about the group. Once that admin can sign in, the
 ordinary door is the page: they add the next admin through
 `admin.html`'s membership card, which writes a `membership` row with
 role `admin` through `POST /membership`. `server/schema.sql`'s own
@@ -612,14 +626,16 @@ The names are `chart.floor`, `chart.lockedUnit`, `site.groupName`,
 `site.welcomeText`, and `site.defaultTheme`. `server/schema.sql`'s own
 comment on `site_content` carries the table's shape; what each key must
 hold to be a valid write — the floor's bound, the locked unit's allowed
-values, the theme's named palettes — is #414's contract (0.9-M3-S8),
-landing beside this document rather than ahead of it, so read #414's
-landed state before writing one of these five by hand rather than
-trusting a shape guessed here. **Until #414 lands, writing
-`chart.floor` or `chart.lockedUnit` this way has no effect**:
-`CHART_SETTINGS` in `server/worker.js` is a fixed empty object today and
-does not yet read `site_content` — the row is stored and ready, not yet
-live.
+values, the theme's named palettes — is `SETTINGS` in
+`server/worker.js`, the one place it is written down, so read it there
+rather than trusting a shape guessed here. **A hand-written row is not
+validated on the way in**, because `wrangler d1 execute` goes nowhere
+near `POST /content`. What catches a bad one is the read:
+`chartSettings(env)` re-checks `chart.floor` and `chart.lockedUnit`
+against the same rules on every `/charts-data` request and drops a
+value that fails, so a malformed floor does not raise the floor — it
+leaves it at zero, silently. Write these two through the admin page
+unless the page is what is broken.
 
 **The raised-floor unit lock, in one sentence:** above a floor of 0 the
 charts serve one unit system instead of two, because two independently-
