@@ -3294,6 +3294,18 @@ async function fieldDocs(env) {
       throw new Error("the field-spec read returned a name outside the " +
         "field namespace");
     }
+    /*
+     * THE PREFIX'S OWN CASE IS PART OF THE ID, and SPEC_ID cannot say
+     * so because it never sees the prefix. LIKE folds, so the statement
+     * above hands back `FIELD.gender` exactly as readily as
+     * `field.gender`, and a blind six-character cut composes both onto
+     * `gender` - two rows of a BINARY primary key answering as one
+     * field, with nothing able to say which of them the form meant.
+     * Ignored rather than refused, because a row written by hand is
+     * what the stored format promises to read forgivingly; the write
+     * routes are where a folded spelling is told no.
+     */
+    if (!row.name.startsWith(FIELD_PREFIX)) continue;
     const id = row.name.slice(FIELD_PREFIX.length);
     // A row whose id this Worker could never have written - upper case,
     // too long, an empty tail - is ignored rather than composed, for
@@ -3464,6 +3476,10 @@ function currentValues(shipped, held) {
     id: one.value, label: one.label, retired: false }));
 }
 
+const TOO_MANY_VALUES =
+  "A field carries up to " + MAX_FIELD_VALUES +
+  " values, retired ones counted.";
+
 const RENAME_NEEDS_MODE =
   "Renaming a value asks what it means: \"relabel\" if it is the same " +
   "thing re-worded, so entries already saved follow the new word, or " +
@@ -3488,6 +3504,19 @@ const RENAME_NEEDS_MODE =
  * behind quietly invents options.
  */
 function mergeValues(current, requested, mode) {
+  /*
+   * THE BOUND IS READ BEFORE ANYTHING IS MINTED. Every requested item
+   * contributes at least one entry, so a list already past the ceiling
+   * can only end past it - and mintId steps over every id taken so far,
+   * which makes a list of same-labelled values quadratic to merge. The
+   * answer is the same 400 either way; reading the length first is what
+   * keeps a body an admin could paste by accident from buying seconds
+   * of Worker time to say no.
+   */
+  if (requested.length > MAX_FIELD_VALUES) {
+    return { error: TOO_MANY_VALUES };
+  }
+
   const byId = new Map(current.map((one) => [one.id, one]));
   const taken = new Set(current.map((one) => one.id));
   const out = [];
@@ -3552,9 +3581,12 @@ function mergeValues(current, requested, mode) {
     }
   }
 
+  // The bound again, on the list that came OUT: `replace` pushes two
+  // entries for one requested item and every value the request left out
+  // is carried over retired, so a merge can pass the ceiling from a
+  // request that was under it.
   if (out.length > MAX_FIELD_VALUES) {
-    return { error: "A field carries up to " + MAX_FIELD_VALUES +
-      " values, retired ones counted." };
+    return { error: TOO_MANY_VALUES };
   }
   return { values: out, renames: renames };
 }
@@ -3694,10 +3726,23 @@ async function handleWriteField(request, env, origin, id, caller) {
     renames = merged.renames;
   }
 
-  if (!exists && site.fields.length + docs.size + 1 > MAX_SPEC_FIELDS) {
-    return json({
-      error: "This form already carries " + MAX_SPEC_FIELDS + " fields.",
-    }, 409, origin);
+  /*
+   * THE CEILING COUNTS THE FORM, not the rows behind it. `docs` holds
+   * one entry per overlay row, and an overlay on a shipped field is
+   * that field a second time - so adding the two numbers refuses a
+   * binder whose admins have edited three shipped fields three fields
+   * early, while the sentence it prints says the form carries forty.
+   * Composing is what makes the number the one an admin can count on
+   * the page, and it is the same composition the readers do.
+   */
+  if (!exists) {
+    const effective = staticSpec();
+    for (const [key, overlay] of docs) applyOverlay(effective, key, overlay);
+    if (effective.fields.length + 1 > MAX_SPEC_FIELDS) {
+      return json({
+        error: "This form already carries " + MAX_SPEC_FIELDS + " fields.",
+      }, 409, origin);
+    }
   }
 
   const doc = { v: FIELD_FORMAT, label: label.value, term: term.value,

@@ -430,9 +430,15 @@ CREATE TABLE IF NOT EXISTS snapshots (
 -- route into this namespace validates the document against what members
 -- have already saved, and `wrangler d1 execute` validates nothing - so
 -- a row written that way is read forgivingly and ignored when it cannot
--- be used, never half-applied. GET /content, which answers without a
--- credential, excludes this namespace in its own statement; GET /spec,
--- behind a member session, is what serves it.
+-- be used, never half-applied. Two spellings in particular are read and
+-- ignored rather than honored: a row naming a MEASURED field, because
+-- its units and bands are a release somebody read, and a row whose
+-- prefix is capitalized any other way, because `name` is BINARY here
+-- while LIKE folds - so `FIELD.gender` is a second row that would
+-- otherwise compose onto the same field as `field.gender`. GET
+-- /content, which answers without a credential, excludes this namespace
+-- in its own statement; GET /spec, behind a member session, is what
+-- serves it.
 CREATE TABLE IF NOT EXISTS site_content (
   name       TEXT PRIMARY KEY,
   value      TEXT NOT NULL,

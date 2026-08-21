@@ -635,11 +635,16 @@ LEDGER = [
                  "deployment, a member's form and the charts' filter "
                  "chips offer it on the next load with no release, and "
                  "the change log carries the line. The half a stub "
-                 "cannot reach is D1's own LIKE: the field namespace is "
-                 "split off from the site copy by a pattern SQLite "
-                 "applies, folded, and whether a hand-written "
+                 "cannot reach is D1's own text handling, in two "
+                 "places. The LIKE that splits the field namespace off "
+                 "from the site copy folds, so whether a hand-written "
                  "`Field.Gender` row lands on the same side of that "
-                 "split as `field.gender` is a claim about SQLite",
+                 "split as `field.gender` is a claim about SQLite; and "
+                 "`ORDER BY name` decides which of two rows composing "
+                 "onto one id is read last, which the arms pin to "
+                 "BINARY because that is D1's collation. A stub can "
+                 "state both and only a running deployment can settle "
+                 "them",
         "covers": ["server/worker.js"],
         "status": "never",
     },

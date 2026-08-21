@@ -26,7 +26,10 @@
  *      entries keep the retired value and stop being counted under it.
  *   5. NUMERIC FIELDS ARE NOT EDITABLE HERE (#385 rule 6). Weight,
  *      height and BMI carry units and fixed chart bands that are code,
- *      and the consent box is one bit; each is refused by name.
+ *      and the consent box is one bit; each is refused by name at the
+ *      write route, AND a row written around that route - the only way
+ *      one can exist - is ignored by the composer rather than honored.
+ *      Both halves, because either alone is a formality.
  *   6. THE SPEC IS NOT SITE COPY. The overlay lives in `site_content`
  *      beside the settings, and GET /content answers with no credential
  *      at all - so the field rows are refused that route in the two
@@ -52,6 +55,13 @@
  * statement somebody widened - which is the state the second wall in
  * effectiveSpec() exists to catch and the state an arm has to be able
  * to reach.
+ *
+ * AND IT ORDERS BY CODE UNIT, because D1's TEXT collation is BINARY.
+ * `ORDER BY name` decides which of two rows composing onto one id the
+ * composer keeps, and localeCompare orders a case-differing pair the
+ * other way round from SQLite - so a stub ordering by locale would let
+ * an arm about a collision agree with a production that did the
+ * opposite.
  *
  * THE ARMS READ REAL SHIPPED STATE. Nothing below asserts an absence
  * against a stub default: every "this is gone", "this is hidden" and
@@ -171,6 +181,14 @@ function makeDb() {
     return written ? written[1] : args[0];
   };
 
+  /* `ORDER BY name`, the way D1 orders it: BINARY, by code unit, where
+     `F` (0x46) precedes `f` (0x66). localeCompare puts those two the
+     other way round, and the row that sorts LAST is the one a composer
+     keyed by id keeps - so a stub ordering by locale would hand a
+     collision the opposite winner from production, which is the one
+     thing an arm about a collision must not do. */
+  const binary = (a, b) => (a.name < b.name ? -1 : (a.name > b.name ? 1 : 0));
+
   const superseded = (row) => submissions.some((other) =>
     other.supersedes === row.id && other.account_id === row.account_id);
 
@@ -232,7 +250,7 @@ function makeDb() {
       const pattern = patternOf(sql, args);
       return { results: [...content.values()]
         .filter((row) => likeMatch(row.name, pattern))
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort(binary)
         .map((row) => ({ name: row.name, value: row.value })) };
     }
     if (sql.startsWith(
@@ -240,7 +258,7 @@ function makeDb() {
       const pattern = patternOf(sql, args);
       return { results: [...content.values()]
         .filter((row) => !likeMatch(row.name, pattern))
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort(binary)
         .map((row) => ({ name: row.name, value: row.value })) };
     }
     if (sql.startsWith("SELECT name, value FROM site_content WHERE name IN")) {
@@ -828,6 +846,64 @@ const putField = (env, token, id, body) =>
     labelOf(await specOf(env, memberToken), "country") === "Where you live");
 }
 
+/* THE READ SIDE OF THE SAME RULE. The refusals above are one half of a
+   double wall and the composer is the other: a row naming a measured
+   field can only be written the way that goes around the route -
+   `wrangler d1 execute` - and what reaches the effective spec is
+   NOTHING. Without this half, a hand-written row would relabel a
+   measure, hang choices off a number, or splice the consent box out of
+   the form, and the write route's refusal would be a formality. Every
+   non-choice kind the shipped spec has is here: a weight, a length, a
+   computed number and a consent bit. */
+
+{
+  const { db, env, memberToken } = await freshWorld();
+
+  const seed = (name, value) => db.content.set(name,
+    { name: name, value: value, updated_at: "2026-01-01T00:00:00.000Z",
+      updated_by: "seed" });
+
+  seed("field.weight", JSON.stringify({ v: 1, label: "Tonnage",
+    term: "tonnage", values: [{ id: "heavy", label: "Heavy" }] }));
+  seed("field.height", JSON.stringify({ v: 1, term: "tallness" }));
+  seed("field.bmi", JSON.stringify({ v: 1, label: "Body mass" }));
+  seed("field.over18", JSON.stringify({ v: 1, retired: true }));
+
+  check("all four measured-field rows really are in the table - what " +
+    "follows is an absence forced against real rows, not a stub default",
+    db.content.size === 4 && ["weight", "height", "bmi", "over18"]
+      .every((name) => db.content.has("field." + name)));
+
+  const overlaid = await specOf(env, memberToken);
+  check("a hand-written `field.weight` row does not relabel the measure " +
+    "and does not hang choices off a number",
+    labelOf(overlaid, "weight") === labelOf(SITE, "weight") &&
+    fieldIn(overlaid, "weight").choices === undefined);
+  check("a hand-written `field.height` row does not change the term the " +
+    "form asks the question in",
+    fieldIn(overlaid, "height").term === fieldIn(SITE, "height").term);
+  check("a hand-written `field.bmi` row does not relabel the computed " +
+    "number", labelOf(overlaid, "bmi") === labelOf(SITE, "bmi"));
+  check("a hand-written `field.over18` row does not retire consent",
+    fieldIn(overlaid, "over18") !== null);
+  check("and the whole effective spec is the shipped one byte for byte " +
+    "with four measured-field rows sitting in the table",
+    JSON.stringify(overlaid) === JSON.stringify(SITE));
+
+  /* THE OTHER READER. server/charts-agg.js decides every measure and
+     every band against the same composed spec, so a hand-written retire
+     that this half honored would take a chart away rather than merely
+     mislabel a box. */
+  seed("field.weight", JSON.stringify({ v: 1, retired: true }));
+  check("a hand-written row cannot retire a measured field either",
+    fieldIn(await specOf(env, memberToken), "weight") !== null);
+  const charted = await call(env, "GET", "/charts-data?measure=weight",
+    { headers: bearer(memberToken) });
+  check("and the aggregation, composing the same spec on its own " +
+    "request, still charts the measure",
+    charted.status === 200);
+}
+
 /* ================================================================== */
 /* 6. Admin-added fields, and what reads them.                         */
 
@@ -1006,6 +1082,47 @@ const putField = (env, token, id, body) =>
   check("a field row whose id the charset refuses is ignored",
     JSON.stringify(await specOf(env, memberToken)) === JSON.stringify(SITE));
 
+  /* THE SPELLING THE CHARSET CANNOT SEE. `FIELD.gender` differs from
+     the real name only in the PREFIX's case, which SPEC_ID never reads,
+     and D1's LIKE folds - so the statement hands this row over and a
+     blind cut at six characters would compose it onto `gender`. Alone
+     in the table it would retire the shipped field; the id charset is
+     no help, because the id it produces is a perfectly good one. */
+  db.content.delete("FIELD.Gender");
+  write("FIELD.gender", JSON.stringify({ v: 1, retired: true }));
+  check("a row differing from the real name only in the PREFIX's case " +
+    "is ignored, alone in the table, where nothing else could hide it",
+    db.content.size === 1 && db.content.has("FIELD.gender") &&
+    JSON.stringify(await specOf(env, memberToken)) === JSON.stringify(SITE));
+
+  await putField(env, adminToken, "gender", { label: "Canonical gender" });
+  check("with BOTH spellings in the table it is the exact one that " +
+    "composes - one field, never two rows answering as one",
+    db.content.size === 2 && db.content.has("field.gender") &&
+    labelOf(await specOf(env, memberToken), "gender") === "Canonical gender");
+
+  /* AND THE COLLISION IS ORDERED THE WAY D1 ORDERS IT. `ORDER BY name`
+     is BINARY on a real deployment, so the folded row comes back FIRST
+     and the exact one last; under localeCompare the two swap, and the
+     row a composer keyed by id keeps is the last one. The arm above
+     would then be asking a different question from production, which is
+     why the stub's collation is pinned here rather than assumed. */
+  const ordered = await db.DB.prepare(
+    "SELECT name, value FROM site_content WHERE name LIKE ? ORDER BY name")
+    .bind("field.%").all();
+  check("the stub orders a colliding pair by code unit, as D1 does - " +
+    "the folded spelling first, the exact one last",
+    ordered.results.map((row) => row.name).join(",") ===
+      "FIELD.gender,field.gender");
+
+  /* The write side of the same wall: the read ignores a folded spelling
+     and the write never makes one. POST /content refuses the namespace
+     folded (section 7); the field route refuses the id itself. */
+  check("PUT /admin-fields/<id> refuses an id the charset folds - so " +
+    "there is no route that writes the row the composer skips",
+    (await putField(env, adminToken, "Gender", { label: "x" }))
+      .status === 404);
+
   db.content.clear();
 
   /* AND THE SHAPE THE ROUTE REALLY WRITES carries the version byte, so
@@ -1076,6 +1193,42 @@ const putField = (env, token, id, body) =>
     { multiple: false });
   check("flipping `multiple` on a field that already exists is refused",
     flipped.status === 400);
+}
+
+/* THE FIELD CEILING COUNTS THE FORM, not the rows behind it. An overlay
+   on a SHIPPED field is that field a second time, so a count that added
+   the shipped list to the row list would refuse a binder three fields
+   early for every shipped field its admins had edited - and print a
+   sentence claiming the form carries forty while it carried thirty-
+   seven. The arm drives the ceiling from a table that has one such
+   overlay in it, which is the state where the two counts disagree. */
+
+{
+  const { env, adminToken, memberToken } = await freshWorld();
+
+  const shipped = SITE.fields.length;
+  await putField(env, adminToken, "gender", { label: "Gender, edited" });
+
+  let added = 0;
+  let refusedAt = 0;
+  for (let i = 1; i <= shipped + 40; i += 1) {
+    const answer = await putField(env, adminToken, "extra" + i,
+      { label: "Extra " + i });
+    if (answer.status === 200) {
+      added += 1;
+      continue;
+    }
+    refusedAt = answer.status;
+    break;
+  }
+
+  check("the form fills up to exactly the ceiling, counting an edited " +
+    "shipped field once rather than twice",
+    added === 40 - shipped && refusedAt === 409);
+  const full = await specOf(env, memberToken);
+  check("and the effective spec at that point really carries forty " +
+    "fields, which is what the refusal says it carries",
+    (full.fields || []).length === 40);
 }
 
 /* ------------------------------------------------------------------ */
