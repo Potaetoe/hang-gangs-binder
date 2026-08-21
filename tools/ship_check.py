@@ -50,7 +50,16 @@ WHAT IT CHECKS, AND WHY EACH ONE IS ITS OWN STAGE
      REBUILT" below for why this is safe here where claim_vs_diff.py's
      own docstring insists on reimplementing the same discipline
      itself.
-  6. Ticket label state via `gh` - REPORT-ONLY, and deliberately never
+  6. The slice's tier (owner ruling 2026-08-21, #402), read from the
+     same declared file list by `tools/tier.py`'s in-repo mirror of
+     the machine-held rules, and refused when a normal-or-sensitive
+     slice's own branch evidence falls short of what the M3 delivery
+     shape asks of that tier - no RED commit in range, no
+     `--completion` text mentioning a mutation table, or a declared
+     page file with no browser-note mention (#403). See "THE
+     SLICE-TIER STAGE" below for the whole argument; a trivial-tier
+     slice owes none of this.
+  7. Ticket label state via `gh` - REPORT-ONLY, and deliberately never
      gates the exit code. This program cannot know whether the
      `claude` label is SUPPOSED to be present or absent at the moment
      it runs (Prime's bookkeeping owns that, per the pack's "Claim
@@ -61,7 +70,7 @@ WHAT IT CHECKS, AND WHY EACH ONE IS ITS OWN STAGE
      never PASS/FAIL, and a missing `gh` degrades to a labeled gap
      rather than a crash or a silent skip.
 
-Exit 0 iff stages 1-5 all pass; exit 1 if any of them fails. Stage 6
+Exit 0 iff stages 1-6 all pass; exit 1 if any of them fails. Stage 7
 never changes the exit code - see its own paragraph above for why.
 
 WHY claim_vs_diff IS IMPORTED, NOT REBUILT
@@ -133,6 +142,66 @@ the table - `tools/check.py`'s own bordered block of "<label> ok" /
 `tests/<name>.test.mjs` arm rows for the new one - so a subprocess
 whose own self-reported count disagreed with its own rows would be
 caught here, not echoed.
+
+THE SLICE-TIER STAGE (0.9-M3-S5, #403)
+
+The M3 delivery shape (owner ruling 2026-08-21, #402) reads a slice's
+review path off its declared files, never by hand. `tools/tier.py`
+carries the judging rules as an IN-REPO MIRROR of the machine-held
+`~/.claude/binder-tools/tier.py` - #403's brief is explicit that this
+file is mirrored, not imported, so a fork of this repository keeps the
+rule without the operator's home directory. `stage_tier()` below reads
+the same `--declared` file stage 5 already reads (through
+`claim_vs_diff.parse_declared()`, so a completion's bulleted or
+backtick-quoted file list is judged the same way it is compared), then
+refuses a normal-or-sensitive slice whose evidence falls short of the
+M3 shape's own floor: no RED-marked commit in the branch's own range
+(`base..HEAD`) whose OWN diff also touches a real arm (tests/, dev/,
+or a tools/*_suite.py file - review F1(c), #393: a commit that merely
+SAYS "RED" and touches nothing is not contract-first), no real
+mutation-battery evidence in the `--completion` text, or - only when a
+declared path is a page file (the same `apps/web/*.{html,js,css}`
+shape `.claude/hooks/dispatch_premise.py` already gates at dispatch
+time) - no real browser-verification evidence in that same text.
+"Real evidence" is deliberately NOT a bare word match (review F1,
+#393: the first cut tested for the word "mutation"/"browser" anywhere
+in the text, which a denial like "I did NOT run a mutation battery"
+satisfies and honest plural prose like "five mutations" fails) - see
+the MUTATION_*/BROWSER_* regexes and `_has_mutation_evidence()`/
+`_has_browser_evidence()` below for the actual shape asked for. A
+trivial-tier slice owes none of this; the M3 shape's own floor never
+asks it to.
+
+THE --completion-block MODE (0.9-M0-S5-era ticket #393)
+
+`render()` above is the FULL, verbatim paste block - every subprocess
+byte, unabridged, because abridging a subprocess's own output by hand
+is the exact failure #320 already exists to end. `--completion-block`
+ADDS a SECOND, condensed rendering of the SAME `Stage` objects, sized
+for a GitHub comment: one row per stage, the totals each gate stage
+already computed (`Stage.counted`), the declared-vs-diff verdict
+(`Stage.verdict`), the branch and the full head SHA, and the same
+gating pass/fail count `render()`'s own closing line is built from
+(`gating_summary()`, the one function both renderers call). Nothing in
+the block is a second, hand-derived number: every value it prints is
+read off a `Stage` attribute a stage function already set while
+computing the SAME fact for the full block, so a mutation that
+corrupts a stage's own computed total corrupts both renderings from
+one source, never just one of them quietly.
+
+ONE RUN, NOT TWO (review F4, #393)
+
+The first cut had `--completion-block` REPLACE the full output, which
+meant an executor had to run this program TWICE per signal - once
+plain, once with the flag - to get both pastes a completion needs. Two
+separate process runs can disagree even on an unchanged tree (a flaky
+arm caught by one run and not the other), which is the exact
+hand-abridgement disease this file exists to end, moved one level
+down. `main()` below now builds the `stages` list exactly ONCE per
+invocation and hands that SAME list to `render()` always, then ALSO to
+`render_completion_block()` when `--completion-block` is passed - one
+gate execution, both renderings, guaranteed to agree because there is
+only one set of `Stage` objects for both to read.
 """
 
 import argparse
@@ -143,6 +212,7 @@ import sys
 
 import agent_init
 import claim_vs_diff
+import tier
 from fleet_status import gh, sanitize
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -186,16 +256,37 @@ class Stage:
     `gates` is False for exactly one stage (ticket label state) - see
     the module docstring's paragraph on stage 6 for why that stage
     never changes the exit code no matter what it finds.
+
+    The five fields below `status_word` exist for exactly one reader,
+    `render_completion_block()` (module docstring: "THE
+    --completion-block MODE") - each is the SAME value a stage already
+    computed for its own full-output `lines`, carried on the object
+    instead of re-parsed back out of text, so the condensed block can
+    never disagree with the full one about a fact both describe:
+      counted    (total, ok, failed) - the old/new gate stages' own
+                 machine-counted tuple (see "THE COUNTED SUMMARY LINE").
+      verdict    "match" | "mismatch" | "error" - stage 5's own
+                 `claim_vs_diff.compare()` status string.
+      branch     the real branch name stage 3 read.
+      head_sha   the full 40-character SHA stage 4 read.
+      detail     a short, stage-specific one-line summary (the slice
+                 tier stage uses this for "<tier>; N sensitive, ...").
     """
 
     def __init__(self, name, ok, lines, evidence, gates=True,
-                 status_word=None):
+                 status_word=None, counted=None, verdict=None,
+                 branch=None, head_sha=None, detail=None):
         self.name = name
         self.ok = ok
         self.lines = lines
         self.evidence = evidence
         self.gates = gates
         self.status_word = status_word or ("PASS" if ok else "FAIL")
+        self.counted = counted
+        self.verdict = verdict
+        self.branch = branch
+        self.head_sha = head_sha
+        self.detail = detail
 
 
 def _run_captured(argv, cwd, label):
@@ -307,7 +398,7 @@ def stage_old_gate(repo):
         lines = [*lines, "", "%d stages, %d ok, %d FAILED"
                              % (total, passed, failed)]
     return Stage("old gate (%s)" % label, ok, lines,
-                 "%s, captured verbatim above" % label)
+                 "%s, captured verbatim above" % label, counted=counted)
 
 
 def stage_new_gate(repo, state):
@@ -343,7 +434,7 @@ def stage_new_gate(repo, state):
         lines = [*lines, "", "%d arms, %d green, %d FAILED"
                              % (total, passed, failed)]
     return Stage("0.9 gate (%s)" % label, ok, lines,
-                 "%s, captured verbatim above" % label)
+                 "%s, captured verbatim above" % label, counted=counted)
 
 
 def stage_branch_name(repo):
@@ -358,8 +449,9 @@ def stage_branch_name(repo):
         return Stage("branch name", False,
                      ["branch %r does not match the naming standard `%s` "
                       "- no scratch names at signal time."
-                      % (branch, BRANCH_STANDARD)], evidence)
-    return Stage("branch name", True, ["branch: %s" % branch], evidence)
+                      % (branch, BRANCH_STANDARD)], evidence, branch=branch)
+    return Stage("branch name", True, ["branch: %s" % branch], evidence,
+                branch=branch)
 
 
 def stage_clean_head(repo):
@@ -369,11 +461,13 @@ def stage_clean_head(repo):
     evidence = "git status --porcelain, git rev-parse HEAD"
     lines = []
     ok = True
+    head_sha = None
     if hcode != 0 or len(head) != 40:
         ok = False
         lines.append("head SHA could not be read: %s" % hout.strip())
     else:
         lines.append("head: %s" % head)
+        head_sha = head
     if scode != 0:
         ok = False
         lines.append("git status --porcelain failed: %s" % sout.strip())
@@ -383,7 +477,8 @@ def stage_clean_head(repo):
         lines.extend("    " + line for line in sout.splitlines())
     else:
         lines.append("working tree clean.")
-    return Stage("working tree clean + head SHA", ok, lines, evidence)
+    return Stage("working tree clean + head SHA", ok, lines, evidence,
+                head_sha=head_sha)
 
 
 def stage_declared_vs_diff(repo, base, declared_path):
@@ -413,7 +508,250 @@ def stage_declared_vs_diff(repo, base, declared_path):
                       % (declared_path, problem)], evidence)
     status, report = claim_vs_diff.compare(repo, "HEAD", base, declared_text)
     return Stage("declared files vs real diff", status == "match",
-                 report.splitlines(), evidence)
+                 report.splitlines(), evidence, verdict=status)
+
+
+# This repository's own commit-message convention for a contract-first
+# commit (git log: "0.9-M2-S16 RED: ...", later "... GREEN: ..."), read
+# as a whole word so a subject that merely contains "RED" as a
+# substring of some other word ("REDACTED") does not count - and
+# case-sensitive, since the convention is always written in caps and a
+# lowercase "red" is never the marker in this repository's history.
+RED_COMMIT_MARK = re.compile(r"\bRED\b")
+
+# Review F1(c), #393: a RED-marked commit subject is not itself
+# contract-first evidence - the reviewer built one whose subject said
+# "RED" and whose diff touched a page file and nothing else. A marker
+# only counts when the SAME commit's own diff also reaches a real arm:
+# a test file, dev/ (this repository's older suite home), or a
+# tools/*_suite.py module.
+RED_ARM_PATH = re.compile(r"^tests/|^dev/|^tools/[^/]*_suite\.py$")
+
+# The same "a page a person looks at" shape
+# `.claude/hooks/dispatch_premise.py` already gates at dispatch time
+# (its own rule 6: a builder order naming these paths must say
+# "browser") - reused here rather than re-invented, on a declared path
+# already normalized to forward slashes by `claim_vs_diff.parse_declared`.
+PAGE_FILE = re.compile(r"^apps/web/[\w.-]+\.(html|js|css)$")
+
+
+def _red_commit_shas(repo, base):
+    """[sha, ...] for every commit in `base..HEAD` whose subject carries
+    RED_COMMIT_MARK, oldest-first order not guaranteed - only membership
+    matters to `_red_commit_touches_arm()` below."""
+    code, out = claim_vs_diff.git(repo, "log", "%s..HEAD" % base,
+                                  "--format=%H %s")
+    if code != 0:
+        return []
+    shas = []
+    for line in out.splitlines():
+        commit_sha, _sep, subject = line.partition(" ")
+        if RED_COMMIT_MARK.search(subject):
+            shas.append(commit_sha)
+    return shas
+
+
+def _red_commit_touches_arm(repo, shas):
+    """Whether any commit in `shas` touches a real arm path
+    (RED_ARM_PATH) in its OWN diff - review F1(c) (#393): a marker that
+    marks nothing is not contract-first. Reads each candidate commit's
+    own `git show --name-only`, never the branch's net two-endpoint
+    diff, so a RED commit whose file was later reverted by a different
+    commit still counts (the marker's own change is what is being asked
+    about, not what survives to HEAD)."""
+    for commit_sha in shas:
+        code, out = claim_vs_diff.git(repo, "show", "--name-only",
+                                      "--format=", commit_sha)
+        if code != 0:
+            continue
+        touched = (line.strip().replace("\\", "/")
+                  for line in out.splitlines() if line.strip())
+        if any(RED_ARM_PATH.search(path) for path in touched):
+            return True
+    return False
+
+
+# Review F1 (#393): the ORIGINAL checks tested for the bare word
+# "mutation"/"browser" anywhere in the completion text - a denial
+# ("I did NOT run a mutation battery") and a bare label ("mutation
+# browser") both matched, and honest plural prose ("five mutations",
+# "browsers") FAILED because \b...\b sits against the plural "s". Every
+# regex below is built against the reviewer's own five test rows
+# (tools/ship_check_suite.py, "F1 (#393): evidence-shape").
+#
+# Mutation evidence needs the WORD, not inside a negation clause, PLUS
+# one of: a counted mention ("5 mutations", "five mutations"), a
+# markdown table row (`| ... | ... |`), or a red/green (or fail/pass -
+# this repository's own completions often say "watched it fail... watched
+# it pass" rather than the literal words) result pair near each other.
+MUTATION_WORD = re.compile(r"\bmutations?\b", re.I)
+_NEGATION_WORD = re.compile(r"\b(no|not|never)\b|n't\b", re.I)
+MUTATION_COUNT = re.compile(
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"mutations?\b", re.I)
+MUTATION_TABLE_ROW = re.compile(r"^\s*\|.*\|.*\|", re.M)
+MUTATION_RESULT_PAIR = re.compile(
+    r"\b(red|fail(?:ed)?)\b[^.\n]{0,60}\b(green|pass(?:ed)?)\b"
+    r"|\b(green|pass(?:ed)?)\b[^.\n]{0,60}\b(red|fail(?:ed)?)\b", re.I)
+
+# Browser evidence needs the WORD, refuses the phrases that mean it did
+# NOT happen ("not performed", "no browser", "never opened a browser"),
+# and needs a width or device mention - the labeled, geometry-bearing
+# claim AGENTS.md's Verification section already rules ("Member pages
+# are checked at phone width FIRST"), never the bare word alone.
+BROWSER_WORD = re.compile(r"\bbrowsers?\b", re.I)
+BROWSER_DENY = re.compile(
+    r"\bnot\s+performed\b|\bno\s+browsers?\b"
+    r"|\bnever\s+(?:opened|used|ran|tested)\b", re.I)
+BROWSER_WIDTH_OR_DEVICE = re.compile(
+    r"\bphone\s+width\b|\b\d{3,4}\s*px\b|\bmobile\b|\bdesktop\s+width\b"
+    r"|\biphone\b|\bandroid\b|\bviewport\b", re.I)
+
+
+def _clause_before(text, position, window=40):
+    """The text immediately before `position`, trimmed back to the last
+    sentence boundary inside `window` characters - the scope a negation
+    word has to sit inside to count as negating the match at
+    `position`, rather than negating some earlier, unrelated clause."""
+    start = max(0, position - window)
+    chunk = text[start:position]
+    for boundary in (".", "\n", ";"):
+        index = chunk.rfind(boundary)
+        if index != -1:
+            chunk = chunk[index + 1:]
+    return chunk
+
+
+def _has_mutation_evidence(text):
+    """Whether `text` carries real mutation-battery evidence - see the
+    MUTATION_* regexes' own comment above for the shape asked for."""
+    matches = list(MUTATION_WORD.finditer(text))
+    if not matches:
+        return False
+    if all(_NEGATION_WORD.search(_clause_before(text, match.start()))
+          for match in matches):
+        return False
+    return bool(MUTATION_COUNT.search(text)
+               or MUTATION_TABLE_ROW.search(text)
+               or MUTATION_RESULT_PAIR.search(text))
+
+
+def _has_browser_evidence(text):
+    """Whether `text` carries real browser-verification evidence - see
+    the BROWSER_* regexes' own comment above for the shape asked for."""
+    if not BROWSER_WORD.search(text):
+        return False
+    if BROWSER_DENY.search(text):
+        return False
+    return bool(BROWSER_WIDTH_OR_DEVICE.search(text))
+
+
+def stage_tier(repo, declared_path, base, completion_path):
+    """The M3 delivery shape's own tier (owner ruling 2026-08-21, #402),
+    read from the declared file list by `tools/tier.py` - the in-repo
+    mirror of the machine-held rules, see that file's own module
+    docstring - and refused when the branch's evidence falls short of
+    what the tier owes (#403). See this module's own docstring, "THE
+    SLICE-TIER STAGE", for the full argument; a trivial-tier slice
+    short-circuits before any evidence is asked for, since the M3
+    shape's own floor never asks it of one.
+    """
+    evidence = ("tools/tier.py judge() + git log %s..HEAD + --completion "
+               "text" % base)
+    if declared_path is None:
+        return Stage("slice tier", False,
+                     ["no --declared file given. Write the paths this "
+                      "slice touched, one per line, to a file and pass "
+                      "--declared <path> - the tier is read from them."],
+                     evidence)
+    try:
+        with open(declared_path, encoding="utf-8") as handle:
+            declared_text = handle.read()
+    except OSError as problem:
+        return Stage("slice tier", False,
+                     ["could not read %s: %s" % (declared_path, problem)],
+                     evidence)
+
+    # The SAME parser stage 5 already uses (claim_vs_diff.parse_declared),
+    # never tools/tier.py's own naive line reader - a completion's real
+    # shape is bulleted and backtick-quoted, and re-deriving that parse a
+    # second, simpler way here would judge the identical declared list
+    # differently between the two stages that both read it.
+    paths = sorted(claim_vs_diff.parse_declared(declared_text))
+    tier_name, judged = tier.tier_of(paths)
+
+    lines = ["tier: %s" % tier_name]
+    for path, judged_tier, why in judged:
+        lines.append("  %-9s %s  (%s)" % (judged_tier, path, why))
+    n_sensitive = sum(1 for _, t, _ in judged if t == "sensitive")
+    n_trivial = sum(1 for _, t, _ in judged if t == "trivial")
+    n_normal = sum(1 for _, t, _ in judged if t == "normal")
+    lines.append("%d sensitive, %d trivial, %d normal path(s) judged"
+                 % (n_sensitive, n_trivial, n_normal))
+
+    if tier_name == "trivial":
+        lines.append("")
+        lines.append("trivial tier: no RED-commit, mutation-table or "
+                     "browser-note evidence required.")
+        return Stage("slice tier", True, lines, evidence, detail="trivial")
+
+    problems = []
+    red_shas = _red_commit_shas(repo, base)
+    if not red_shas:
+        problems.append(
+            "no RED commit found in HEAD's own range since %s - a %s "
+            "slice needs a contract-first RED commit (this "
+            "repository's own convention: a commit subject containing "
+            "the word RED)." % (base, tier_name))
+    elif not _red_commit_touches_arm(repo, red_shas):
+        problems.append(
+            "no RED commit in range touches a real arm - %d commit(s) "
+            "carry the word RED in their subject, but none of them "
+            "touches tests/, dev/, or a tools/*_suite.py file in its own "
+            "diff. A marker that marks nothing is not contract-first."
+            % len(red_shas))
+
+    completion_text = None
+    if completion_path is None:
+        problems.append(
+            "no --completion given - a %s slice's mutation-table (and "
+            "any browser-note) evidence has to be confirmed from the "
+            "completion text. Write your completion draft to a file "
+            "and pass --completion <path>." % tier_name)
+    else:
+        try:
+            with open(completion_path, encoding="utf-8") as handle:
+                completion_text = handle.read()
+        except OSError as problem:
+            problems.append("could not read --completion %s: %s"
+                            % (completion_path, problem))
+
+    if completion_text is not None:
+        if not _has_mutation_evidence(completion_text):
+            problems.append(
+                "no real mutation-battery evidence in the --completion "
+                "text - a %s slice's mutation battery needs a count, a "
+                "table row, or a red/green (fail/pass) result pair, not "
+                "just the word 'mutation' (which also matches inside a "
+                "denial like 'no mutation table')." % tier_name)
+        page_files = [path for path, judged_tier, _why in judged
+                     if PAGE_FILE.match(path)]
+        if page_files and not _has_browser_evidence(completion_text):
+            problems.append(
+                "declared page file(s) changed (%s) and the "
+                "--completion text carries no real browser evidence - "
+                "a labeled 'browser' claim with a width or device "
+                "mention is owed before READY, and a phrase like 'not "
+                "performed' or 'no browser' is refused outright."
+                % ", ".join(page_files))
+
+    if problems:
+        lines.append("")
+        lines.extend(problems)
+        return Stage("slice tier", False, lines, evidence, detail=tier_name)
+    lines.append("")
+    lines.append("evidence matches the %s tier." % tier_name)
+    return Stage("slice tier", True, lines, evidence, detail=tier_name)
 
 
 def stage_ticket_label(issue):
@@ -439,6 +777,18 @@ def stage_ticket_label(issue):
                 gates=False, status_word="REPORT")
 
 
+def gating_summary(stages):
+    """(gating stages, the ones that passed, the ones that failed) - the
+    ONE place both `render()` and `render_completion_block()` read the
+    pass/fail totals from (module docstring, "THE --completion-block
+    MODE"), so the two renderings of the same run can never disagree
+    about how many stages passed."""
+    gating = [stage for stage in stages if stage.gates]
+    passed = [stage for stage in gating if stage.ok]
+    failed = [stage for stage in gating if not stage.ok]
+    return gating, passed, failed
+
+
 def render(stages):
     print("=== ship-check: the executor's pre-signal door "
          "(0.9-M0-S22, #320) ===")
@@ -454,8 +804,7 @@ def render(stages):
         print("%-*s %s" % (width + 2, stage.name, stage.status_word))
     print("=" * (width + 12))
 
-    gating = [stage for stage in stages if stage.gates]
-    failed = [stage for stage in gating if not stage.ok]
+    _gating, _passed, failed = gating_summary(stages)
     if failed:
         print("\nNot safe to signal - %d gating stage(s) failed: %s"
              % (len(failed), ", ".join(stage.name for stage in failed)))
@@ -466,6 +815,83 @@ def render(stages):
          "completion comment - it is the exact table, not a remembered "
          "count.")
     return 0
+
+
+def _stage_detail(stage):
+    """The one-line detail printed beside a stage's status word in the
+    completion block - always a value the STAGE ITSELF already
+    computed (module docstring, "THE --completion-block MODE"), never a
+    second calculation this function performs on its own. Checked in
+    the order a reader would want it: a gate's own counted total first,
+    then a verdict word, then a stage-specific detail string."""
+    if stage.counted is not None:
+        total, ok, failed = stage.counted
+        return "%d total, %d ok, %d FAILED" % (total, ok, failed)
+    if stage.verdict is not None:
+        return stage.verdict.upper()
+    if stage.detail is not None:
+        return stage.detail
+    return ""
+
+
+def _slug_from_branch(branch):
+    """`0.9-m3-s5` -> `0.9-M3-S5` - the exact naming-standard transform
+    AGENTS.md's table describes (branch lowercase; issue title, PR
+    title and every other string uppercase M/S). Falls back to the raw
+    branch name when it does not match the standard so the block still
+    renders something readable instead of crashing on a scratch name -
+    `stage_branch_name()` already fails the branch-name stage in that
+    case; this is display only."""
+    if not _branch_ok(branch):
+        return branch
+    milestone, _sep, tail = branch[len("0.9-m"):].partition("-s")
+    return "0.9-M%s-S%s" % (milestone, tail)
+
+
+def render_completion_block(stages):
+    """The condensed, GitHub-comment-shaped block #393 asks for - see
+    the module docstring's "THE --completion-block MODE" for why every
+    value here is read off a `Stage` attribute a stage already computed
+    for the full block above, never re-derived."""
+    branch_stage = next((s for s in stages if s.name == "branch name"),
+                        None)
+    clean_stage = next(
+        (s for s in stages if s.name == "working tree clean + head SHA"),
+        None)
+    branch = branch_stage.branch if branch_stage else None
+    head_sha = clean_stage.head_sha if clean_stage else None
+    slug = _slug_from_branch(branch) if branch else "ship-check"
+
+    # A blank line first - main() prints this right after render()'s own
+    # closing lines in the same run (module docstring, "ONE RUN, NOT
+    # TWO"), so this is the separator between the two pastes, not just
+    # this block's own opening.
+    lines = ["", "=== %s: ship-check completion block ===" % slug]
+    if branch:
+        lines.append("branch: %s" % branch)
+    if head_sha:
+        lines.append("head:   %s" % head_sha)
+    lines.append("")
+
+    width = max(len(stage.name) for stage in stages)
+    for stage in stages:
+        detail = _stage_detail(stage)
+        row = "%-*s %-7s" % (width + 2, stage.name, stage.status_word)
+        if detail:
+            row += "  (%s)" % detail
+        lines.append(row)
+
+    gating, passed, failed = gating_summary(stages)
+    lines.append("")
+    lines.append("%d/%d gating stage(s) passed."
+                 % (len(passed), len(gating)))
+    if failed:
+        lines.append("NOT ready to paste - failed: %s"
+                     % ", ".join(stage.name for stage in failed))
+    else:
+        lines.append("READY TO PASTE.")
+    print("\n".join(lines))
+    return 1 if failed else 0
 
 
 def build_parser():
@@ -485,6 +911,16 @@ def build_parser():
     parser.add_argument("--issue", type=int, default=None,
                         help="the ticket number, for the report-only "
                              "label-state stage")
+    parser.add_argument("--completion", default=None,
+                        help="path to your drafted completion text - the "
+                             "slice-tier stage reads it for a mutation-"
+                             "table mention and, when a declared path is "
+                             "a page file, a browser-note mention (#403)")
+    parser.add_argument("--completion-block", action="store_true",
+                        help="ALSO print a condensed, GitHub-comment-"
+                             "sized block after the full verbatim output "
+                             "(#393) - one run prints both; paste both "
+                             "into the completion")
     # Suppressed for the reason session_open.py's and fleet_status.py's
     # own --repo/--state are: a real caller never passes either one, and
     # tools/ship_check_suite.py drives this against a fabricated
@@ -498,15 +934,23 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     repo = os.path.abspath(args.repo or REPO)
 
+    # Built EXACTLY ONCE regardless of --completion-block (review F4,
+    # #393, module docstring's "ONE RUN, NOT TWO") - both renderings
+    # below read this same list, so they cannot disagree about a fact
+    # this run computed.
     stages = [
         stage_old_gate(repo),
         stage_new_gate(repo, args.state),
         stage_branch_name(repo),
         stage_clean_head(repo),
         stage_declared_vs_diff(repo, args.base, args.declared),
+        stage_tier(repo, args.declared, args.base, args.completion),
         stage_ticket_label(args.issue),
     ]
-    return render(stages)
+    code = render(stages)
+    if args.completion_block:
+        render_completion_block(stages)
+    return code
 
 
 if __name__ == "__main__":
