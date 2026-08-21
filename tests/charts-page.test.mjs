@@ -2854,6 +2854,23 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * resetTooltip(tip) call, at the top of each - and only then checks
  * hidden. Deleting hideTooltip(tip) from resetTooltip() fails this and
  * only this arm; the "starts hidden" arm above stays green throughout.
+ *
+ * F1 (review, comment 5368921505): the two checks above proved only
+ * that the tooltip NODE hides after the redraw - resetTooltip() also
+ * clears pinnedTooltipTarget/pinnedTooltipElement, and nothing here
+ * touched those two lines. Deleting them (keeping hideTooltip(tip))
+ * left this file green at 236: wireTooltip()'s own mouseenter starts
+ * with `if (pinnedTooltipTarget) return;`, so a stale pin left pointing
+ * at a bar/point the redraw already discarded kills hover preview
+ * PAGE-WIDE from that moment on - a member sees no tooltip on anything,
+ * with no error and no visible cause, until they happen to click blank
+ * space. Each block now dispatches mouseenter on a FRESH hit (queried
+ * off the same svg reference AFTER the redraw - target.querySelector()
+ * inside drawDistribution()/drawTrend() returns the same svg element
+ * with its children replaced, never a new element, so `distSvg`/
+ * `trendSvg` stay valid) and asserts the tooltip shows again. That
+ * check is what fails under the pin-state mutation; the hidden-check
+ * above it does not.
  */
 {
   const { byId } = await driven(() => response(200, ENOUGH_FIXTURE));
@@ -2874,6 +2891,16 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     "default of hidden could not have satisfied this the way it " +
     "satisfied the old arm",
     distTip.hidden === true);
+
+  const freshHits = distSvg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+  await freshHits[0].dispatch("mouseenter");
+  check("0.9-M3-S3 F1 (#388, review 5368921505): the redraw cleared the " +
+    "PIN STATE too, not just the node - hovering a FRESH hit target " +
+    "shows a tooltip. A stale pinnedTooltipTarget left over from the " +
+    "click above would make wireTooltip()'s mouseenter early-return " +
+    "here and this would fail even though the check above passed",
+    distTip.hidden === false);
 }
 
 {
@@ -2894,6 +2921,90 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
     "distribution figure above, run against the other figure so the " +
     "sweep covers both tooltip nodes this file drives",
     trendTip.hidden === true);
+
+  const freshDots = trendSvg.children.filter((c) => c.tag === "circle" &&
+    c.attrs.class === "chart-dot series-0");
+  await freshDots[0].dispatch("mouseenter");
+  check("0.9-M3-S3 F1 (#388, review 5368921505): same pin-state proof " +
+    "against the trend figure - a fresh hover after the redraw shows " +
+    "a tooltip, which a leftover pin pointing at a discarded point " +
+    "would silently block",
+    trendTip.hidden === false);
+}
+
+/*
+ * F2 (review, comment 5368921505): the completion and this file's own
+ * applyUnitLock() comment used to claim the keyboard-dismiss fix
+ * "closes the gap a not-enough answer's early return leaves open", as
+ * if a stale PINNED TOOLTIP would otherwise paint over a not-enough
+ * answer. Neither half of that held up: no arm ever drove a pin into
+ * the not-enough branch at all, and that branch hides picture-trend/
+ * picture-distribution (renderAnswer()'s own show(..., false) calls,
+ * ahead of its early return) - a tooltip nested inside either figure
+ * paints NOTHING there whether or not the fix exists, so there was
+ * never a visible stale tooltip on this branch to close.
+ *
+ * What the fix actually buys, armed honestly: dismissTooltipElsewhere()
+ * runs SYNCHRONOUSLY in the onchange handler, ahead of the fetch, so
+ * pinnedTooltipTarget is already null by the time a not-enough answer's
+ * early return skips resetTooltip() (that branch calls neither
+ * drawTrend() nor drawDistribution(), so it never reaches
+ * resetTooltip() either way). The observable difference is PIN STATE,
+ * not the tooltip's own hidden flag - both are already hidden either
+ * way, since dismissTooltipElsewhere() hides distTip regardless. So
+ * this arm pins a target, drives a keyboard-driven not-enough answer,
+ * and then hovers a DIFFERENT pre-existing chart element (the SVG from
+ * the first draw is untouched - drawDistribution() never runs a second
+ * time on this branch) and checks its CONTENT, not just `hidden`: a
+ * stale pin left pointing at the first target would block
+ * wireTooltip()'s mouseenter on the second one and the tooltip would
+ * keep showing the FIRST target's old text (still not hidden from the
+ * pin) rather than switching to the second target's own.
+ */
+{
+  const served = [ENOUGH_FIXTURE, NOT_ENOUGH_FIXTURE];
+  let at = 0;
+  const { byId, unitsInputs } = await driven(() =>
+    response(200, served[Math.min(at++, served.length - 1)]));
+  const distTip = byId.get("tooltip-distribution");
+  const distSvg = byId.get("figure-distribution").querySelector("svg");
+  const hits = distSvg.children.filter((c) => c.tag === "rect" &&
+    c.attrs.class === "chart-hit");
+  const fixtureBins = ENOUGH_FIXTURE.distribution.bins;
+  const fixtureUnit = ENOUGH_FIXTURE.units.unit;
+
+  await hits[1].dispatch("click");
+  check("0.9-M3-S3 F2 (#388, review 5368921505) setup: the distribution " +
+    "tooltip is pinned to hits[1] before the not-enough answer below",
+    distTip.hidden === false);
+
+  unitsInputs[0].checked = false;
+  unitsInputs[1].checked = true;
+  unitsInputs[1].dispatch("change");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check("0.9-M3-S3 F2 (#388) setup: the answer that came back really is " +
+    "the not-enough one - its own early return hid the picture, the " +
+    "branch renderAnswer() never calls resetTooltip() from",
+    byId.get("picture-distribution").hidden === true &&
+    byId.get("status")._text.indexOf(NOT_ENOUGH_FIXTURE.note) === 0);
+
+  // hits[0] is a DIFFERENT target than the one pinned above, still
+  // wired from the FIRST draw - drawDistribution() never ran a second
+  // time (the not-enough branch returns before it), so this is a real
+  // pre-existing hit target, not a fresh one the second draw made.
+  const parts0 = Charts.binTooltipParts(fixtureBins[0].from,
+    fixtureBins[0].to, fixtureUnit, fixtureBins[0].count);
+  await hits[0].dispatch("mouseenter");
+  check("0.9-M3-S3 F2 (#388, review 5368921505): hovering a DIFFERENT " +
+    "pre-existing target while the not-enough answer is showing " +
+    "switches the tooltip to THAT target's own content - proof the " +
+    "PIN STATE cleared (a stale pinnedTooltipTarget from the click " +
+    "above would block wireTooltip()'s mouseenter here and leave the " +
+    "FIRST target's old text showing, still not hidden, rather than " +
+    "switching)",
+    distTip.hidden === false &&
+    distTip.textContent === parts0.lead + parts0.number);
 }
 
 /*
@@ -3116,7 +3227,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 236;
+const EXPECTED = 241;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

@@ -1534,11 +1534,25 @@
              radio fires "change" with no click at all, so it never
              reached that listener. Calling the same function here,
              synchronously, ahead of the fetch showMe() starts, closes
-             the gap with no second dismiss rule to keep in sync: a
-             pinned tooltip clears the instant units change, by keyboard
-             or by mouse, rather than waiting on a redraw that a
-             not-enough answer's early return in renderAnswer() would
-             skip calling resetTooltip() from at all. */
+             that gap with no second dismiss rule to keep in sync: a
+             pinned tooltip's PIN STATE (pinnedTooltipTarget/
+             pinnedTooltipElement, not merely the node's own hidden
+             flag) clears the instant units change, by keyboard or by
+             mouse, rather than waiting on a redraw. This matters even
+             when the answer that comes back is the not-enough one,
+             whose early return in renderAnswer() never reaches
+             resetTooltip() (drawTrend()/drawDistribution() are what
+             call it, and that branch calls neither): with no pin left
+             standing, a hover on whatever chart element the LAST real
+             draw left wired still works right through the not-enough
+             state, instead of wireTooltip()'s own `if
+             (pinnedTooltipTarget) return;` silently blocking every
+             hover until the member happens to click blank space. That
+             branch also hides picture-trend/picture-distribution
+             (show(..., false), above its own early return), so there
+             is no VISIBLE stale tooltip to paint over there either way
+             - this is state cleanup for the hover that follows, not a
+             fix to something the member could see. */
           input.onchange = function () {
             dismissTooltipElsewhere();
             showMe();
