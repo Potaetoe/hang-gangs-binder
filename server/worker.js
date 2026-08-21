@@ -2601,16 +2601,22 @@ async function handleExport(request, env, origin, caller) {
     return json({ error: "Not authorized." }, 401, origin);
   }
 
-  // account_id travels with the row. The export page groups by it rather
-  // than by the decrypted handle, which is what makes "one per person" a
-  // fact instead of a guess about two rows spelling a name the same way.
+  // account_id travels with the row. Nothing on this side groups these
+  // rows and no page fetches them: /export is the admin-only route an
+  // operator reads by hand, break-glass EXPORT_TOKEN included. So the
+  // column has to be in the response for "one per person" to be a fact
+  // instead of a guess about two rows spelling a name the same way -
+  // whoever reads it groups on the id, never on a handle they would have
+  // to open the ciphertext to see.
   //
   // `supersedes` travels for the same reason and is resolved in the same
   // place. This side knows which row a correction replaces and cannot
   // know what either of them says, so dropping tombstones from a series
-  // is work for the keyholder's browser, where the plaintext already is.
-  // Without the column in this response that resolution is not possible
-  // at all, and a correction reads as a repeat measurement.
+  // is work for whatever opens the ciphertext after this response - not
+  // this Worker, which never decrypts, and not a page, because none
+  // fetches this route. Without the column in this response that
+  // resolution is not possible at all, and a correction reads as a
+  // repeat measurement.
   const rows = await env.DB.prepare(
     "SELECT id, account_id, ciphertext, received_at, supersedes " +
     "FROM submissions ORDER BY id"

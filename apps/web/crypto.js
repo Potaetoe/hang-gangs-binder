@@ -8,7 +8,10 @@
  * callers left are the key tooling, tools/keycheck.html and
  * dev/crypto-browser-check.html, which check a key file and this file's
  * own behavior in a real browser against the real implementation rather
- * than a second one. It stays on disk for them.
+ * than a second one, and dev/make-sample.mjs, which loads it in Node and
+ * calls `encrypt` to build disposable rows shaped like stored ones - a
+ * path dev/make-sample.test.mjs runs on every gate run. It stays on disk
+ * for them.
  *
  * One implementation, so a checker and the stored rows cannot drift -
  * and one round-trip test in dev/ that proves it still reads what it
