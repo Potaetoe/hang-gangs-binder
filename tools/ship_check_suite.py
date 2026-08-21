@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 65
+EXPECTED = 108
 
 
 def check(label, condition):
@@ -841,9 +841,10 @@ try:
     block_fail = buffer4.getvalue()
     check("a failing old gate exits the block mode 1",
           code4 == 1)
-    check("...and the block's own totals show the real 1-ok/1-FAILED "
-         "split, computed fresh - never the passing run's numbers above",
-          "1 total, 1 ok, 1 FAILED" in block_fail)
+    check("...and the block's own totals show the real 2-total/1-ok/"
+         "1-FAILED split, computed fresh - never the passing run's "
+         "numbers above",
+          "2 total, 1 ok, 1 FAILED" in block_fail)
     check("...and the block says it is NOT ready to paste, naming the "
          "failed stage by name",
           "NOT ready to paste" in block_fail
