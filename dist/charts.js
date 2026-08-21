@@ -918,7 +918,10 @@
         } else {
           
 
-          input.onchange = function () { showMe(); };
+          input.onchange = function () {
+            dismissTooltipElsewhere();
+            showMe();
+          };
         }
       });
   }
