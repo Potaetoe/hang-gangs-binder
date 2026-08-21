@@ -301,6 +301,65 @@
     </div>
 
     <!--
+      Fields (0.9-M3-S13, #433; the ruled design #385 §6-§8, built
+      against 0.9-M3-S11's landed Worker contract on #419). The
+      categorical half of the form only - numeric fields (weight,
+      height, BMI, the age confirmation) stay code, shown here
+      read-only with the reason (#385 §6). NO MEMBER DATA (#385 rule
+      1): this card draws the spec, never a count of who picked what -
+      group-makeup counts stay on the charts page, so nothing here
+      fetches or reads GET /charts-data.
+
+      UN-RETIRE IS SESSION-SCOPED, HONESTLY - see admin.js's own block
+      comment above mergeFieldsRoster/fieldsRosterView for why: GET
+      /spec answers the EFFECTIVE spec (what a member reads), and a
+      retired field or value is not in it at all, so this card can only
+      offer to bring back what IT has already shown THIS session.
+    -->
+    <div class="tool" id="fields-card">
+      <p class="runner"><span>Fields</span></p>
+      <p class="muted">
+        The categorical questions the form asks. Numeric fields stay
+        code-defined and are shown, not edited, below.
+      </p>
+      <p class="status" id="fields-status" role="status" aria-live="polite"
+         hidden></p>
+
+      <div class="field">
+        <label for="fields-new-id">New field id</label>
+        <input type="text" id="fields-new-id" autocomplete="off"
+               spellcheck="false" maxlength="48"
+               aria-describedby="fields-new-id-help">
+        <p class="hint" id="fields-new-id-help">
+          Lowercase letters, digits, hyphens and underscores, up to 48
+          characters. This is what a stored answer carries, not what a
+          member reads, and it cannot change once members have
+          answered.
+        </p>
+      </div>
+      <div class="field">
+        <label for="fields-new-label">Label</label>
+        <input type="text" id="fields-new-label" autocomplete="off"
+               maxlength="64">
+      </div>
+      <div class="field">
+        <label for="fields-new-values">Starting values, one per line</label>
+        <textarea id="fields-new-values" rows="3"></textarea>
+        <p class="hint">
+          Optional — values can be added one at a time below once the
+          field exists.
+        </p>
+      </div>
+      <div class="row">
+        <button type="button" id="fields-new-add" class="primary">
+          Add field
+        </button>
+      </div>
+
+      <div id="fields-list"></div>
+    </div>
+
+    <!--
       Change log (#416 item 4; #385 §5 rules that every admin change
       lands in one). Admin-only reading, newest first, bounded by the
       Worker.
