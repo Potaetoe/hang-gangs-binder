@@ -962,9 +962,11 @@ const putField = (env, token, id, body) =>
   check("POST /content refuses the field namespace", squat.status === 400);
   const squatFolded = await call(env, "POST", "/content",
     { headers: bearer(adminToken),
-      body: { name: "Field.Gender", value: "not a spec" } });
+      body: { name: "fIELD.gender", value: "not a spec" } });
   check("and refuses it however it is capitalized - a fold-only " +
-    "difference would take the slot the real name needs",
+    "difference would take the slot the real name needs, and this " +
+    "spelling is one CONTENT_NAME itself admits so the fold is what " +
+    "has to catch it",
     squatFolded.status === 400);
   const unset = await call(env, "DELETE", "/content/field.mood",
     { headers: bearer(adminToken) });
