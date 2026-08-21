@@ -599,8 +599,24 @@ NARRATIVE = re.compile(r"-\s+(%s)\b" % CITED)
 # build's guard cleared a whole comment region on ANY quote anywhere in
 # it, so most of what is pinned below was invisible until the guard
 # became per-mention. Thirty-nine (file, path) pairs, forty-five
-# occurrences - up from fourteen. apps/web/theme.css's self-mention
-# ("theme.css says so above") is still excluded rather than pinned, for
+# occurrences - up from fourteen.
+#
+# RE-MEASURED AGAIN on the rebase order (#392, 2026-08-21): S2/S3/S5/S6
+# landed comments carrying this same dash-mention shape after fix wave
+# 1's count was taken, so the ratchet reddened on a tree it had never
+# scanned - not a broken rule, the rule doing exactly what a ratchet
+# does to an unmeasured tree. Four more pairs, each read for truth
+# before pinning (a pin is a claim vouched for, not a count copied):
+# dev/check_live.test.py's and tools/check_live.py's own admin.js
+# mentions both check out against apps/web/admin.js's real, single
+# untyped `type:` token; tools/claim_vs_diff_suite.py's "ghost.txt" is
+# its own declared-but-untouched fixture path, used the same way
+# throughout that file; tools/tier.py's "tests/run.mjs" names the 0.9
+# gate's real runner, exactly as AGENTS.md's own "Verification" section
+# does. Forty-three pairs, forty-nine occurrences now.
+#
+# apps/web/theme.css's self-mention ("theme.css says so above") is
+# still excluded rather than pinned, for
 # the same reason as before: a file's claim about its own text is
 # checkable by anyone reading the file.
 NARRATIVE_PINS = {
@@ -616,6 +632,7 @@ NARRATIVE_PINS = {
     ('apps/web/theme.css', 'apps/web/charts.js'): 1,
     ('dev/admin-session.test.mjs', 'dashboard.js'): 1,
     ('dev/admin.test.mjs', 'dashboard.js'): 1,
+    ('dev/check_live.test.py', 'admin.js'): 1,
     ('dev/check_web.test.py', 'AGENTS.md'): 1,
     ('dev/check_web.test.py', 'public.js'): 1,
     ('dev/demo-bake.test.mjs', 'dev/demo-bake.mjs'): 1,
@@ -634,15 +651,18 @@ NARRATIVE_PINS = {
     ('tools/check.py', 'tools/build_web.mjs'): 1,
     ('tools/check_docs.py', 'tools/check_comments.py'): 1,
     ('tools/check_fonts.py', 'tools/build_web.mjs'): 1,
+    ('tools/check_live.py', 'admin.js'): 1,
     ('tools/check_live.py', 'server/wrangler.toml'): 2,
     ('tools/check_web.py', 'AGENTS.md'): 2,
     ('tools/check_web.py', 'admin.html'): 2,
     ('tools/check_web.py', 'crypto.js'): 1,
     ('tools/check_web.py', 'index.html'): 1,
     ('tools/check_web.py', 'theme.js'): 1,
+    ('tools/claim_vs_diff_suite.py', 'ghost.txt'): 1,
     ('tools/fleet_status.py', 'reaper.py'): 3,
     ('tools/session_open_suite.py', 'reaper.py'): 1,
     ('tools/ship_check.py', 'AGENTS.md'): 2,
+    ('tools/tier.py', 'tests/run.mjs'): 1,
 }
 
 # A GitHub ticket number, `#\d+` - never a file, and every one of these
@@ -700,8 +720,15 @@ TICKET_CITATIONS = (
 # RE-MEASURED at fix wave 1 (F4, #392, comment 5369115005), same
 # reason NARRATIVE_PINS was: the widened connective and the comment_
 # regions() indentation fix together reach citations first build's five
-# could not - twenty-four now, including apps/web/site.config.js's own
+# could not - twenty-four then, including apps/web/site.config.js's own
 # escape (S16's real one) and server/charts-agg.js's twin.
+#
+# RE-MEASURED AGAIN on the rebase order (#392, 2026-08-21), for the
+# same reason NARRATIVE_PINS was: S5 and S6 landed two more real ticket
+# citations after the count above was taken. Both read for truth: tools/
+# ship_check_suite.py's #393 citation and tools/tier.py's #403 citation
+# each quote coherent, complete instructions from their own named
+# tickets, the same shape as every existing entry. Twenty-six now.
 TICKET_PINS = {
     ('apps/web/charts.js', '#243',
      'Edges come from the field spec and never move or merge'): 1,
@@ -748,6 +775,12 @@ TICKET_PINS = {
      'the group sees its own makeup; the members-only door is what '
      'protects it'): 1,
     ('tools/check_web.py', '#191', 'Daylight'): 1,
+    ('tools/ship_check_suite.py', '#393',
+     "the block's totals are the tool's own computed values (a "
+     "mutation forcing a wrong total into the block must red)"): 1,
+    ('tools/tier.py', '#403',
+     'mirror its rules in-repo (a fork needs them), do not import '
+     'it.'): 1,
 }
 
 # A cardinal near a literal CSS-class-shaped token written in prose -
