@@ -639,8 +639,9 @@ keyholder or operator to open outside the browser when the admin page
 or Telegram is unreachable. `server/worker.js`'s own header and its
 comment on `callerFor` carry the route's contract; nothing here
 restates it. **It is not a page feature**: the admin page's entry
-exports retired with the keys (Prime ruling 2026-08-21, #416, amending
-#385 §4 — no admin surface shows a current member's data), so this
+exports retired when the decrypt keys did (Prime ruling 2026-08-21,
+#416, amending #385 §4 — no admin surface shows a current member's
+data), so this
 route is reached only from a shell holding the token, by whoever the
 token was entrusted to, for the operator's own backup or recovery use —
 never routine, and never through a link or a button anywhere on the
