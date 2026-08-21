@@ -655,13 +655,17 @@ function fault(message) {
  * else.
  *
  * EVERY REFUSAL HERE IS ABOUT THE CONFIGURATION, NEVER ABOUT THE GROUP.
- * The measure list, the filter list and the choice values are all in
- * apps/web/site.config.js, which anybody may read in the repository - so a
- * 400 from this function discloses exactly what a fork's own config file
- * already says, and nothing about who is in the binder. What a caller
- * must never be able to tell apart is a filter value nobody holds from
- * one too few hold, and neither of those is refused here: both are valid
- * questions that aggregate() answers with the same document.
+ * The measure list, the filter list and the choice values are all the
+ * spec's, and since 0.9-M3-S11 (#419) the spec this reads is the
+ * EFFECTIVE one: apps/web/site.config.js overlaid by what admins have
+ * edited. That widens what a 400 stands for and discloses nothing new,
+ * because the same caller may read the whole effective spec at GET
+ * /spec, behind the same session gate this route is behind. A refusal
+ * says what that document already says, and nothing about who is in the
+ * binder. What a caller must never be able to tell apart is a filter
+ * value nobody holds from one too few hold, and neither of those is
+ * refused here: both are valid questions that aggregate() answers with
+ * the same document.
  */
 function askFor(params, spec) {
   const site = siteSpec(spec);

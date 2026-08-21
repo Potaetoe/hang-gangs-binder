@@ -613,6 +613,47 @@ LEDGER = [
         "covers": ["server/worker.js"],
         "status": "never",
     },
+    # The form builder added at 0.9-M3-S11 (#419). The three rows below
+    # are owed rather than performed because the pages that drive them
+    # are parallel slices, and each claim is written against what a
+    # sitting will actually be able to see once they land.
+    {
+        "id": "GET /spec",
+        "surface": "route",
+        "claim": "with nothing in the overlay the answer is the shipped "
+                 "spec byte for byte, on a real deployment reading a "
+                 "real table rather than a stub's empty result - and a "
+                 "caller with no session gets 401 while rows exist to "
+                 "withhold",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "PUT /admin-fields/{}",
+        "surface": "route",
+        "claim": "an admin adds a categorical field on a real "
+                 "deployment, a member's form and the charts' filter "
+                 "chips offer it on the next load with no release, and "
+                 "the change log carries the line. The half a stub "
+                 "cannot reach is D1's own LIKE: the field namespace is "
+                 "split off from the site copy by a pattern SQLite "
+                 "applies, folded, and whether a hand-written "
+                 "`Field.Gender` row lands on the same side of that "
+                 "split as `field.gender` is a claim about SQLite",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "DELETE /admin-fields/{}",
+        "surface": "route",
+        "claim": "retiring a field takes it out of the form and the "
+                 "charts while every sealed row keeps the answers "
+                 "members gave it, read back byte for byte out of a "
+                 "real `submissions` table - and un-retiring brings the "
+                 "field back with its values",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
     {
         "id": "GET /membership",
         "surface": "route",

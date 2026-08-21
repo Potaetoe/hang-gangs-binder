@@ -112,11 +112,11 @@ const ORIGIN = "http://localhost:8170";
 const ADMIN_ID = "711010101";
 const MEMBER_ID = "712020202";
 
+/* An account id as this Worker mints one, computed here rather than
+   read back off a response: an arm comparing the Worker's answer with
+   the Worker's own arithmetic would agree with any mistake in it. */
 const accountFor = (numericId) =>
   createHmac("sha256", ACCOUNT_SECRET).update(String(numericId)).digest("hex");
-
-const sha256hex = (text) =>
-  createHash("sha256").update(text, "utf8").digest("hex");
 
 /* Telegram's scheme, written out rather than imported from the Worker:
    an arm that signed with the code it is checking would agree with any
@@ -404,8 +404,8 @@ async function freshWorld() {
   const env = envFor(db);
   const admin = await signIn(env, ADMIN_ID);
   const member = await signIn(env, MEMBER_ID);
-  return { db, env, adminToken: admin.body.token,
-    memberToken: member.body.token };
+  return { db, env, adminToken: admin.body.session,
+    memberToken: member.body.session };
 }
 
 const specOf = async (env, token) =>
@@ -620,7 +620,7 @@ const putField = (env, token, id, body) =>
 
   /* RELABEL: the same thing re-worded. The id does not move, so every
      stored answer follows the new word. */
-  const relabelled = await putField(env, adminToken, "gender", {
+  const relabeled = await putField(env, adminToken, "gender", {
     mode: "relabel",
     values: [
       { id: "male", label: "Man" },
@@ -629,7 +629,7 @@ const putField = (env, token, id, body) =>
       { id: "other", label: "Other" },
     ],
   });
-  check("relabel: the write is accepted", relabelled.status === 200);
+  check("relabel: the write is accepted", relabeled.status === 200);
 
   const afterRelabel = await specOf(env, memberToken);
   check("relabel: the stable id is untouched and only the word changed",
@@ -873,10 +873,14 @@ const putField = (env, token, id, body) =>
     "block with no code change",
     charts.status === 200 && moodBlock !== undefined &&
     moodBlock.label === "Mood");
+  const countIn = (cells, value) => {
+    const found = (cells || []).filter((one) => one.value === value)[0];
+    return found ? found.count : null;
+  };
   check("and its counts are the real ones, drawn from a sealed record " +
     "the admin's field taught the aggregation to read",
-    moodBlock.counts.filter((one) => one.value === "great")[0].count === 1 &&
-    moodBlock.counts.filter((one) => one.value === "grim")[0].count === 0);
+    countIn(moodBlock && moodBlock.values, "great") === 1 &&
+    countIn(moodBlock && moodBlock.values, "grim") === 0);
 
   /* The other direction: the charts also stop offering what an admin
      retires, which is the filter half of the same seam. */
@@ -988,8 +992,7 @@ const putField = (env, token, id, body) =>
   check("the stored row carries its own version byte",
     JSON.parse(db.content.get("field.gender").value).v === 1);
   check("the stored row is written by the admin who wrote it",
-    db.content.get("field.gender").updated_by ===
-      createHmac("sha256", ACCOUNT_SECRET).update(ADMIN_ID).digest("hex"));
+    db.content.get("field.gender").updated_by === accountFor(ADMIN_ID));
 
   /* THE CHANGE LOG. One line per write, naming the field and carrying
      what the admin typed - and never a handle or a numeric id. */
