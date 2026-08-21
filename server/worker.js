@@ -1534,14 +1534,22 @@ async function issueSession(env, accountId, via, isDev) {
  * So a row carrying admin_via = 'telegram' keeps its adminness without
  * a list to be found in, and three things bound that rather than one:
  *
- *   1. THE ADMIN CAP, RE-DERIVED FROM created_at ON THIS READ. Every
- *      row this Worker writes already satisfies it - deadlineAt() never
- *      sets an expiry past the cap - so the check costs a real session
- *      nothing and is aimed squarely at a row somebody wrote by hand
- *      with an expires_at of their choosing. Without it, one `wrangler
- *      d1 execute` would be a permanent admin credential that no list
- *      could revoke. Two hours is the whole exposure of a demotion in
- *      Telegram that this side cannot see.
+ *   1. THE ADMIN CAP, RE-DERIVED FROM created_at ON THIS READ, AND
+ *      CLOSED AT BOTH ENDS. Every row this Worker writes already
+ *      satisfies it - deadlineAt() never sets an expiry past the cap,
+ *      and nothing here writes a created_at in the future - so the
+ *      check costs a real session nothing and is aimed squarely at a
+ *      row somebody wrote by hand with dates of their choosing.
+ *      THE LOWER BOUND IS THE HALF THAT LOOKS REDUNDANT AND IS NOT:
+ *      created_at is written by the same statement that would lie
+ *      about expires_at, so a window measured only from its start is a
+ *      window the writer positions. A row dated an hour ahead sits
+ *      inside its own two hours from the moment it is written, and the
+ *      slide above renews its expiry on every read, which is a
+ *      credential with no end at all. With both ends, one `wrangler d1
+ *      execute` buys at most the two hours the cap allows and cannot
+ *      buy them starting whenever it likes. Two hours is also the whole
+ *      exposure of a demotion in Telegram that this side cannot see.
  *   2. NO DEVELOPMENT SESSION TAKES THIS PATH. is_dev = 1 means
  *      Telegram never authenticated the row, and the one un-re-checkable
  *      path is the last place to make an exception for a session that
@@ -1615,10 +1623,13 @@ async function sessionFor(env, token) {
   if (isAdmin) {
     if (via === "telegram") {
       // The three bounds the block above argues, in the order they
-      // fail closed: no development row, and no row past the admin cap
-      // measured from when it was written rather than from the expiry
-      // whoever wrote it chose.
-      const within = Number.isFinite(created) &&
+      // fail closed: no development row, and no row outside the admin
+      // window measured from when it was written rather than from the
+      // expiry whoever wrote it chose. `created <= now` is the start of
+      // that window and belongs to the same hand-written row the cap is
+      // for: without it a future date opens the window instead of
+      // closing it.
+      const within = Number.isFinite(created) && created <= now &&
         now < absoluteExpiry(created, true);
       isAdmin = !isDev && within;
     } else {

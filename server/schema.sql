@@ -489,9 +489,10 @@ CREATE INDEX IF NOT EXISTS admin_log_at
 -- already carries.
 --
 -- THIS TABLE IS ENFORCING. A row here grants what it says it grants:
--- server/worker.js unions `admin` rows with ADMIN_TELEGRAM_IDS in
--- adminAccountIds(), and `always_allow` rows with
--- ALWAYS_ALLOW_TELEGRAM_IDS in groupStanding(). Both arms are live, and
+-- server/worker.js's adminVia() reads `admin` rows as its 'flag' arm
+-- and ADMIN_TELEGRAM_IDS as its 'secret' arm, beside a live Telegram
+-- group role it cannot re-ask; groupStanding() reads `always_allow`
+-- rows beside ALWAYS_ALLOW_TELEGRAM_IDS. Every arm is live, and
 -- handleReadMembership carries the whole argument for why dual-read is
 -- what ships rather than a step passed through.
 --

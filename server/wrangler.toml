@@ -257,31 +257,50 @@ database_id = "948f3464-e93c-4c8c-b64f-871065c3ee74"
 # asymmetry by setting any of these:
 #
 #     ADMIN_TELEGRAM_IDS          DESIGN.md, "Admin accounts and
-#                                 deletion": "There is no admin list to
-#                                 maintain, no founding-admin secret and
-#                                 no last-admin guard... every one of
-#                                 those mechanisms existed to hold a list
-#                                 the site no longer keeps." Until the
-#                                 Worker is rewritten to mirror Telegram
-#                                 admins live, its absence means no
-#                                 account is treated as admin on sit -
-#                                 the honest state, not a convenient one.
+#                                 deletion" - the founding-admin secret,
+#                                 which is what a first flag starts
+#                                 from. Sit has nothing to found: the
+#                                 group role below mints its admins
+#                                 unaided, so an id set here would be a
+#                                 way in that neither a Telegram
+#                                 demotion nor the admin page can take
+#                                 back.
 #     ALWAYS_ALLOW_TELEGRAM_IDS   DESIGN.md, "What is deliberately not
 #                                 here": "No always-allow bypass. A list
 #                                 that skips the membership check is a
 #                                 way in that outlives the reason it was
 #                                 added."
 #
-# server/worker.js is untouched by this rename (out of this slice's
-# scope; #325's own boundary). Concretely, that means: with only the
-# four secrets above set, groupStanding() can genuinely check the real
-# test group (unlike the old dev arm, which always fell through its
-# missing-bot-token guard), but adminAccountIds() still reads only
-# ADMIN_TELEGRAM_IDS, which is empty here on purpose - so no account
-# reads as admin on sit until the Worker is rewritten to mirror Telegram
-# admins live. That gap is real and is flagged in this slice's
-# completion rather than papered over with a secret DESIGN.md just ruled
-# out.
+# WHO HOLDS ADMIN ON SIT. server/worker.js's adminVia() answers in four
+# values and callerFor() supplies the fourth; with the roster above,
+# three of them are reachable on a sit deployment and one names nobody:
+#
+#     'telegram'      a creator or an administrator of the TEST group
+#                     TELEGRAM_GROUP_CHAT_ID names. Asked once, at
+#                     sign-in, through getChatMember - the numeric id
+#                     that call needs is written nowhere, so the session
+#                     row carries the verdict instead. Bounded at TWO
+#                     HOURS from sign-in, re-derived from created_at on
+#                     every read, and refused outright on a row carrying
+#                     is_dev = 1. Somebody demoted in Telegram holds
+#                     admin for the rest of that window and no longer.
+#     'flag'          an `admin` row in sit's own `membership` table,
+#                     re-read on every request, so removing the row
+#                     bites on the very next one.
+#     'secret'        an id in ADMIN_TELEGRAM_IDS. Absent here per the
+#                     citation above, so this arm names nobody - and it
+#                     is re-read per request, so it stays that way
+#                     without anything else enforcing it.
+#     'break-glass'   whoever presents EXPORT_TOKEN as a bearer token.
+#                     Not a person and holding no account, which is why
+#                     it is its own value rather than 'secret': the two
+#                     answer to different levers, one rotated and one
+#                     edited.
+#
+# So sit HAS admins, and gets them with no secret set: whoever runs the
+# test group is one from their first sign-in. Weigh that before pointing
+# a real person at a sit URL, because a sit admin can read the directory
+# and every member's entries there exactly as on production.
 [env.sit]
 name = "hgbinderworker-sit"
 preview_urls = false

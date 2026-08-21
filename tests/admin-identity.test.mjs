@@ -261,7 +261,18 @@ function makeDb(seed) {
 
     /* -------- site_content -------- */
     if (sql.startsWith("SELECT name, value FROM site_content WHERE name IN")) {
-      const wanted = new Set(args);
+      /* THE IN LIST IS READ FROM THE STATEMENT, NOT ONLY FROM THE BOUND
+         ARGUMENTS. D1 answers an `IN` clause with a literal in it; a
+         stub filtering on `args` alone does not, so the smallest
+         widening anybody would actually write - one more name inside
+         the parentheses - would come back with the same rows as the
+         allow-list asks for and every check here would stay green over
+         a genuinely widened read. Parsing the literals is what makes
+         handleReadConfig's second wall reachable from a test at all. */
+      const clause = /name IN \(([^)]*)\)/.exec(sql);
+      const literals = clause
+        ? [...clause[1].matchAll(/'([^']*)'/g)].map((m) => m[1]) : [];
+      const wanted = new Set([...args, ...literals]);
       return { results: [...content.values()]
         .filter((row) => wanted.has(row.name))
         .map((row) => ({ name: row.name, value: row.value })) };
@@ -600,6 +611,46 @@ async function meFor(db, numericId, handle, status, env) {
 }
 
 {
+  /* The other end of the same window. created_at is written by the same
+     statement that would lie about expires_at, so a date in the FUTURE
+     puts the row inside its own two hours indefinitely - the cap read
+     from below alone is a cap the writer positions. One hour ahead is
+     the smallest lie that does it. */
+  const db = makeDb();
+  const ahead = Date.now() + 3600 * 1000;
+  seedSession(db, "future-dated-token", MEMBER, {
+    is_admin: 1, admin_via: "telegram",
+    created_at: new Date(ahead).toISOString(),
+    expires_at: new Date(ahead + 3600 * 1000).toISOString(),
+  });
+  const { body } = await call(worker, envFor(db), "GET", "/me",
+    { headers: bearer("future-dated-token") });
+  check("a hand-written session claiming adminVia \"telegram\" dated an " +
+    "hour in the FUTURE is a MEMBER - the admin window is closed at " +
+    "both ends, so a chosen created_at cannot open it",
+    body && body.isAdmin === false && body.adminVia === null);
+}
+
+{
+  /* The control the check above needs: the same seam, dated where a
+     real row is dated, must still read as an admin. Without it a
+     sessionFor() that refused every telegram row would satisfy the
+     future-dated check while breaking the feature. */
+  const db = makeDb();
+  const recent = Date.now() - 30 * 60 * 1000;
+  seedSession(db, "recent-token", MEMBER, {
+    is_admin: 1, admin_via: "telegram",
+    created_at: new Date(recent).toISOString(),
+    expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+  });
+  const { body } = await call(worker, envFor(db), "GET", "/me",
+    { headers: bearer("recent-token") });
+  check("a telegram session dated half an hour ago is still an ADMIN - " +
+    "the window's lower bound refuses a future date and nothing else",
+    body && body.isAdmin === true && body.adminVia === "telegram");
+}
+
+{
   const db = makeDb();
   seedSession(db, "dev-token", MEMBER, {
     is_admin: 1, is_dev: 1, admin_via: "telegram",
@@ -744,7 +795,7 @@ for (const [name, value, why] of REFUSED) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 3. CHART_SETTINGS read from the store (#414 scope 2, #385 rule 11). */
+/* 3. chartSettings() read from the store (#414 scope 2, #385 rule 11). */
 
 /* A corpus of six people, one row each, sealed the way POST /submit
    seals one. Six clears a floor of five; three of them share a
@@ -1124,6 +1175,31 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
 }
 
 {
+  /* THE WIDENING SOMEBODY WOULD ACTUALLY WRITE, and the one the check
+     above cannot see: not a different statement but the same one with
+     one more name inside its parentheses. Replacing the whole statement
+     proves the wall against a shape nobody types by accident; a literal
+     appended to the IN list is the shape a hurry produces, and it is
+     invisible to any stub that filters on the bound arguments. This arm
+     therefore reads the IN list out of the statement text (see the D1
+     stub above), and this check is what pins that it does. */
+  const inList = workerSrc.replace(
+    /(const PUBLIC_CONFIG_SQL = [\s\S]*?)\+\n(\s*)"name IN \(" \+ ([\s\S]*?) \+ "\)";/,
+    (whole, head, indent, middle) =>
+      head + "+\n" + indent + "\"name IN (\" + " + middle +
+      " + \", 'chart.floor')\";");
+  check("the widened-IN-list fixture actually changed the source",
+    inList !== workerSrc);
+  const { default: inListWorker } = await loadWorker(inList);
+  const db = makeDb({ content: { "chart.floor": "5" } });
+  const { status, text } = await call(inListWorker, envFor(db), "GET",
+    "/config", { headers: {} });
+  check("mutation: one extra literal in the statement's IN list answers " +
+    "500 too - the wall catches a widened read, not a rewritten one",
+    status === 500 && !/chart\.floor/.test(text));
+}
+
+{
   const db = makeDb();
   const { status } = await call(worker, envFor(db), "POST", "/config", {
     headers: bearer(EXPORT_TOKEN), body: { name: "x", value: "y" },
@@ -1161,7 +1237,7 @@ const PUBLIC_NAMES = ["site.groupName", "site.welcomeText",
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 82;
+const EXPECTED = 86;
 console.log(failures
   ? `\nadmin-identity FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
