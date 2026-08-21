@@ -103,16 +103,6 @@ needs owner approval first, asked in chat:**
 and never cite it as current; it is where the full reasoning lives when
 an operative document compresses a decision to a sentence.
 
-### The status artifact
-
-The owner keeps a Claude artifact — **"Hang Gang's Binder — status"** —
-as a daily historical-record dashboard. A session that materially
-changes the repository updates it before ending; find it in the
-artifact gallery by title, and do not commit its URL to this public
-repository. It is a rendering of the record and never the record
-itself: everything on it must be recoverable from issues, pull requests
-and `git log`.
-
 ## Working an issue
 
 Work is claimed and released on GitHub issues, and the collision that
