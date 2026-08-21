@@ -164,6 +164,29 @@
    */
   const MEMBERSHIP_ROLES = Object.freeze(["admin"]);
 
+  /* The Worker's own bound on a membership label (server/worker.js's
+   * MAX_LABEL), mirrored the same way MAX_GROUP_NAME and
+   * MAX_WELCOME_TEXT already mirror the Settings card's bounds (#416,
+   * F6) - the fourth text input on this page was the only one left
+   * unbounded, and an admin label is exactly the kind of unbroken run
+   * (a pasted handle, a long name with no spaces) that overflows a
+   * `.row` the same way a change-log summary does (F1). */
+  const MAX_LABEL = 64;
+
+  /* Trim, refuse empty or over-length, matching validateGroupName's own
+   * shape - a courtesy ahead of the Worker's own 400. */
+  function validateLabel(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) {
+      return { ok: false, message: "A label is needed." };
+    }
+    if (text.length > MAX_LABEL) {
+      return { ok: false,
+        message: "The label is " + MAX_LABEL + " characters or fewer." };
+    }
+    return { ok: true, value: text };
+  }
+
   /* A row this page can draw: an object carrying an account id it can
    * put on a button. Anything else is counted rather than drawn. */
   function isRow(row) {
@@ -375,12 +398,28 @@
     "membership.remove": "removed an admin",
   });
 
+  /* The Worker's own bound on a summary - S8's completion on #414 says
+   * up to 200 characters of a written value - assumed and never
+   * enforced here before #416's fix wave (F1/F5). This page has no way
+   * to confirm the Worker held its own contract on any given row, so
+   * the display enforces it too: a summary past the ceiling is cut and
+   * marked, never rendered whole. That also bounds the worst case of
+   * the overflow F1 found - a long run inside the cap still needs
+   * ".row.wrap-row" (theme.css) to wrap rather than spill, but nothing
+   * arriving after this page's own build can hand the row an unbounded
+   * one. */
+  const MAX_LOG_SUMMARY = 200;
+  const TRUNCATION_MARK = "…";
+
   function logWhat(entry) {
     const action = entry && typeof entry.action === "string"
       ? entry.action.trim() : "";
     const phrase = LOG_ACTIONS[action] || "made a change";
-    const summary = entry && typeof entry.summary === "string"
+    let summary = entry && typeof entry.summary === "string"
       ? entry.summary.trim() : "";
+    if (summary.length > MAX_LOG_SUMMARY) {
+      summary = summary.slice(0, MAX_LOG_SUMMARY) + TRUNCATION_MARK;
+    }
     return summary ? phrase + ": " + summary : phrase;
   }
 
@@ -442,6 +481,7 @@
     SETTINGS_DEFAULTS: SETTINGS_DEFAULTS,
     floorNotice: floorNotice,
     MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
+    validateLabel: validateLabel,
     membershipView: membershipView,
     secretOnlyNotice: secretOnlyNotice,
     refusalFor: refusalFor,
@@ -651,9 +691,16 @@
 
     function membershipRow(row) {
       const line = document.createElement("div");
-      line.className = "row";
+      // "row wrap-row", not plain "row" - a member's own label is
+      // unbounded prose from this page's point of view (up to
+      // MAX_LABEL, but nothing here enforced that until #416, F1/F6),
+      // and `.row`'s default flex-child min-width pushes the whole
+      // document wider than the screen the moment one arrives as a
+      // single unbroken run. See apps/web/theme.css, ".row.wrap-row".
+      line.className = "row wrap-row";
 
       const name = document.createElement("span");
+      name.className = "wrap-row-value";
       name.textContent = row.label ? String(row.label) : "(no label)";
       line.appendChild(name);
 
@@ -756,12 +803,21 @@
 
     $("member-add").addEventListener("click", async function () {
       const telegramId = $("member-telegram-id").value.trim();
-      const label = $("member-label").value.trim();
+      const rawLabel = $("member-label").value;
 
-      if (!telegramId || !label) {
+      if (!telegramId || !rawLabel.trim()) {
         sayRoles("A numeric Telegram id and a label are both needed.", "bad");
         return;
       }
+      // The Worker's own MAX_LABEL bound (#416, F6) - mirrors
+      // validateGroupName's own shape, refused before any request is
+      // sent, the same way the Settings card's four fields already are.
+      const verdict = validateLabel(rawLabel);
+      if (!verdict.ok) {
+        sayRoles(verdict.message, "bad");
+        return;
+      }
+      const label = verdict.value;
 
       $("member-add").disabled = true;
       sayRoles("Adding…", null);
@@ -876,7 +932,11 @@
       for (const entry of entries) {
         const line = logLine(entry);
         const row = document.createElement("div");
-        row.className = "row";
+        // "row wrap-row" - this row's own contract data is exactly
+        // where the overflow lives (#416, F1): a 64-hex account id, a
+        // URL a member pasted into the welcome text, up to 200
+        // characters of summary. See apps/web/theme.css, ".row.wrap-row".
+        row.className = "row wrap-row";
 
         const when = document.createElement("span");
         when.className = "hint";
@@ -888,6 +948,7 @@
         row.appendChild(who);
 
         const what = document.createElement("span");
+        what.className = "wrap-row-value";
         what.textContent = line.what;
         row.appendChild(what);
 

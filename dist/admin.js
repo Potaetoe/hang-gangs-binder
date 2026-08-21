@@ -109,6 +109,24 @@
 
   
 
+  const MAX_LABEL = 64;
+
+  
+
+  function validateLabel(raw) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) {
+      return { ok: false, message: "A label is needed." };
+    }
+    if (text.length > MAX_LABEL) {
+      return { ok: false,
+        message: "The label is " + MAX_LABEL + " characters or fewer." };
+    }
+    return { ok: true, value: text };
+  }
+
+  
+
   function isRow(row) {
     return Boolean(row) && typeof row === "object" &&
       typeof row.account_id === "string" && row.account_id !== "";
@@ -277,12 +295,20 @@
     "membership.remove": "removed an admin",
   });
 
+  
+
+  const MAX_LOG_SUMMARY = 200;
+  const TRUNCATION_MARK = "…";
+
   function logWhat(entry) {
     const action = entry && typeof entry.action === "string"
       ? entry.action.trim() : "";
     const phrase = LOG_ACTIONS[action] || "made a change";
-    const summary = entry && typeof entry.summary === "string"
+    let summary = entry && typeof entry.summary === "string"
       ? entry.summary.trim() : "";
+    if (summary.length > MAX_LOG_SUMMARY) {
+      summary = summary.slice(0, MAX_LOG_SUMMARY) + TRUNCATION_MARK;
+    }
     return summary ? phrase + ": " + summary : phrase;
   }
 
@@ -344,6 +370,7 @@
     SETTINGS_DEFAULTS: SETTINGS_DEFAULTS,
     floorNotice: floorNotice,
     MEMBERSHIP_ROLES: MEMBERSHIP_ROLES,
+    validateLabel: validateLabel,
     membershipView: membershipView,
     secretOnlyNotice: secretOnlyNotice,
     refusalFor: refusalFor,
@@ -551,9 +578,16 @@
 
     function membershipRow(row) {
       const line = document.createElement("div");
-      line.className = "row";
+       
+       
+       
+       
+       
+       
+      line.className = "row wrap-row";
 
       const name = document.createElement("span");
+      name.className = "wrap-row-value";
       name.textContent = row.label ? String(row.label) : "(no label)";
       line.appendChild(name);
 
@@ -656,12 +690,21 @@
 
     $("member-add").addEventListener("click", async function () {
       const telegramId = $("member-telegram-id").value.trim();
-      const label = $("member-label").value.trim();
+      const rawLabel = $("member-label").value;
 
-      if (!telegramId || !label) {
+      if (!telegramId || !rawLabel.trim()) {
         sayRoles("A numeric Telegram id and a label are both needed.", "bad");
         return;
       }
+       
+       
+       
+      const verdict = validateLabel(rawLabel);
+      if (!verdict.ok) {
+        sayRoles(verdict.message, "bad");
+        return;
+      }
+      const label = verdict.value;
 
       $("member-add").disabled = true;
       sayRoles("Adding…", null);
@@ -772,7 +815,11 @@
       for (const entry of entries) {
         const line = logLine(entry);
         const row = document.createElement("div");
-        row.className = "row";
+         
+         
+         
+         
+        row.className = "row wrap-row";
 
         const when = document.createElement("span");
         when.className = "hint";
@@ -784,6 +831,7 @@
         row.appendChild(who);
 
         const what = document.createElement("span");
+        what.className = "wrap-row-value";
         what.textContent = line.what;
         row.appendChild(what);
 

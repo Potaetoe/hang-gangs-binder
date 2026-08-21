@@ -644,6 +644,22 @@ const BASE_ROUTES = {
 }
 
 {
+  // The Worker's own MAX_LABEL bound (server/worker.js), mirrored here
+  // the same shape validateGroupName's own arm already proves (#416,
+  // F6) - the fourth text input on this page was the only one left
+  // unbounded, and it is the other half of F1's Roles-card overflow.
+  const { byId, calls } = await driven({}, { isAdmin: true });
+  byId.get("member-telegram-id").value = "123456";
+  byId.get("member-label").value = "x".repeat(65);
+  byId.get("member-add").dispatch("click");
+  check("a label past the Worker's own 64-character bound is refused " +
+    "BEFORE a request is sent - client validation mirrors the Worker's " +
+    "own refusal the same way the Settings card's four fields already do",
+    calls.filter((c) => c.method === "POST").length === 0 &&
+    /64 characters or fewer/.test(byId.get("roles-status").textContent));
+}
+
+{
   let removed = null;
   const routes = Object.assign({}, BASE_ROUTES, {
     "DELETE /membership/*/*": ({ path }) => {
@@ -686,6 +702,85 @@ const BASE_ROUTES = {
     rows[0].children[2].textContent ===
       "changed a setting: set site.groupName" &&
     rows[1].children[2].textContent === "added an admin: flagged an admin");
+}
+
+/* -- Wiring for #416, F1: the row and its value cell carry the classes  */
+/* theme.css's ".row.wrap-row" fix keys on, and a summary past the       */
+/* Worker's own 200-char bound is cut rather than rendered whole. This   */
+/* is wiring, not pixels - a Node DOM stub proves an id exists in a      */
+/* string and carries a class name; it cannot compute whether the real  */
+/* CSS actually stops that string spilling past the screen's edge. The  */
+/* pixel proof is a real-browser measurement, printed in the completion */
+/* on #416, not a suite arm - AGENTS.md's "Verify what renders" section  */
+/* says plainly that a DOM stub proves wiring, never pixels. -- */
+
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const rows = byId.get("log-list").children;
+  check("every change-log row carries wrap-row, not plain row - the " +
+    "modifier class theme.css's overflow fix (#416, F1) keys on",
+    rows.every((row) => row.className === "row wrap-row"));
+  check("the change log's value cell (the summary column) carries " +
+    "wrap-row-value, which is what gets flex:1 and overflow-wrap so it " +
+    "takes the row's slack instead of the fixed when/who columns",
+    rows.every((row) => row.children[2].className === "wrap-row-value"));
+}
+
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const row = byId.get("roles-admin").children[0];
+  check("a Roles row carries wrap-row too - the same overflow the " +
+    "change log has, a member's own label can trigger just as easily",
+    row.className === "row wrap-row");
+  check("the Roles row's label cell carries wrap-row-value",
+    row.children[0].className === "wrap-row-value");
+}
+
+{
+  const HEX_ID = "b".repeat(64);
+  const URL = "https://" + "sub.".repeat(20) + "example.com/path";
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-log": () => ok({ ok: true, log: [
+      { at: "2026-08-21T12:00:00.000Z", accountId: "a1",
+        action: "membership.remove", name: HEX_ID,
+        summary: "removed " + HEX_ID },
+      { at: "2026-08-21T11:00:00.000Z", accountId: "a1",
+        action: "content.set", name: "site.welcomeText",
+        summary: "set site.welcomeText to " + URL },
+    ] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const rows = byId.get("log-list").children;
+  check("a 64-hex account id named inside a summary renders whole (it " +
+    "is under the 200-char bound), inside the cell the overflow fix " +
+    "targets - F1's own sharpest trigger",
+    rows[0].children[2].textContent.includes(HEX_ID) &&
+    rows[0].children[2].className === "wrap-row-value");
+  check("a URL a member pasted into a setting and echoed back in the " +
+    "log renders whole, inside the same cell - the welcome text is a " +
+    "setting this very page edits",
+    rows[1].children[2].textContent.includes(URL) &&
+    rows[1].children[2].className === "wrap-row-value");
+}
+
+{
+  const LONG_SUMMARY = "x".repeat(5000);
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-log": () => ok({ ok: true, log: [
+      { at: "2026-08-21T12:00:00.000Z", accountId: "a1",
+        action: "content.set", name: "site.welcomeText",
+        summary: LONG_SUMMARY },
+    ] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const what = byId.get("log-list").children[0].children[2];
+  check("a summary past the Worker's own 200-char bound is cut, not " +
+    "rendered whole (#416, F1/F5) - the display enforces the contract " +
+    "ceiling rather than assuming the Worker held it on every row",
+    what.textContent.length < LONG_SUMMARY.length);
+  check("and the cut is marked, not silent - a reader can tell the row " +
+    "was truncated rather than reading a short summary as the whole one",
+    what.textContent.endsWith("…"));
 }
 
 {
@@ -758,7 +853,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 79;
+const EXPECTED = 88;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

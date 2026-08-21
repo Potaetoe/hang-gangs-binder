@@ -209,9 +209,11 @@
    * property every length-kind field owes a reader. This one field
    * keeps them anyway because the pin comment on #353 (issue 5335377958)
    * is explicit that the record matches the pre-0.9 one exactly, and
-   * the pre-0.9 record carried both alongside cm and totalInches -
-   * admin.js's CSV still reads them by name. Silent no-op on a fork
-   * that renamed "height" away, same as enteredText() above.
+   * the pre-0.9 record carried both alongside cm and totalInches. The
+   * pin holds the record's shape on its own terms, independent of
+   * which reader depends on it today (0.9-M3-S10, #416, retired the
+   * admin page's own reader). Silent no-op on a fork that renamed
+   * "height" away, same as enteredText() above.
    */
   function addHeightFeetInches(record) {
     if (!record || typeof record.height !== "object") return;

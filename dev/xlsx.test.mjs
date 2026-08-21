@@ -45,10 +45,13 @@ const { check, report } = nodeTestSuite("xlsx.js", 31);
 /* The shape of the export itself.                                     */
 
 await check("the exported object is frozen", () =>
-  // admin.html builds this workbook out of decrypted rows, so an export
-  // a later script can rewrite is a `build` that keeps a copy of every
-  // submission it writes out. tools/check_web.py check 15 holds the rule
-  // across the whole directory; this asserts it for the shipped bytes.
+  // charts.html and your-page.html each build a workbook out of the
+  // answer or the record already on screen (admin.html did too, out of
+  // decrypted rows, before its own export retired whole at 0.9-M3-S10,
+  // #416), so an export a later script can rewrite is a `build` that
+  // keeps a copy of every value it writes out. tools/check_web.py
+  // check 15 holds the rule across the whole directory; this asserts
+  // it for the shipped bytes.
   Object.isFrozen(globalThis.BinderXlsx));
 
 const encoder = new TextEncoder();

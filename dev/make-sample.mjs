@@ -1,6 +1,6 @@
 /*
- * Builds dev/sample-submissions.json - disposable test data for
- * admin.html and its dashboard.
+ * Builds dev/sample-submissions.json - disposable test data shaped
+ * like the Worker's GET /export reply.
  *
  *     node dev/make-sample.mjs [output path]
  *
@@ -11,13 +11,15 @@
  * Left out, the path is dev/sample-submissions.json, which is what a
  * person regenerating the sample by hand wants.
  *
- * Why this exists: admin.html and the dashboard were the only parts of
- * this project with no repeatable way to exercise them. Every test of
- * them meant hand-building fake rows in a browser console and stubbing
- * fetch, differently each time, gone the moment the tab closed. And
- * anyone inheriting this project could not see the export working
- * without pointing it at real submissions, which is the one thing they
- * should not have to do.
+ * Why this exists: admin.html's now-retired decrypt view (the keyfile
+ * tool, gone whole at 0.9-M3-S10, #416, along with the CSV/xlsx/JSON
+ * exports it built) was, until then, the only part of this project
+ * with no repeatable way to exercise it - every test of it meant
+ * hand-building fake rows in a browser console and stubbing fetch,
+ * differently each time, gone the moment the tab closed. This file
+ * outlives that reason: GET /export is still the Worker's break-glass
+ * route (S9, #415), and this is still the repeatable way to exercise
+ * whatever reads its reply, without pointing it at real submissions.
  *
  * DO NOT CONFUSE THIS WITH dev/fixture.json. They are opposites:
  *
@@ -33,13 +35,12 @@
  * real apps/web/crypto.js, to dev/test-key.json's throwaway public
  * half. Nothing real is involved at any point.
  *
- * The output is shaped exactly like the Worker's GET /export reply, so
- * it drops into admin.html with no translation. dev/README.md has the
- * console snippet. There is deliberately no ?sample= hook or any other
- * dev branch in apps/web - ./run build takes that directory whole into
- * the published dist/, stripping comments and nothing else, so a code
- * path that loads fake data into the export page would ship to a live
- * site (#181).
+ * The output is shaped exactly like the Worker's GET /export reply.
+ * There is deliberately no ?sample= hook or any other dev branch in
+ * apps/web - ./run build takes that directory whole into the published
+ * dist/, stripping comments and nothing else, so a code path that
+ * loaded fake data into a shipped page would ship to a live site
+ * (#181).
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -85,10 +86,10 @@ const keyFile = JSON.parse(await readFile(HERE("test-key.json"), "utf8"));
  * person it came from.
  *
  * `account` is optional and names the person a row belongs to when the
- * handle cannot: the export page groups on the account id and treats
- * the handle as a caption, so two rows with one `account` and two
- * handles are one member who renamed. Left out, a row's account is its
- * own normalized handle, which is what the ordinary case looks like.
+ * handle cannot: GET /export groups on the account id and treats the
+ * handle as a caption, so two rows with one `account` and two handles
+ * are one member who renamed. Left out, a row's account is its own
+ * normalized handle, which is what the ordinary case looks like.
  *
  * `telegram` sits inside the row rather than beside it because three
  * separate things read it, and they want it in the same place:
@@ -270,8 +271,11 @@ const SAMPLE = [
    * so, and this row skips the validation check on purpose. That is
    * exactly the point: a record is whatever arrived, and this design
    * assumes the submitter's browser is the submitter's, not that it ran
-   * our JavaScript. admin.js defuses the cell with a leading
-   * apostrophe; this is the row that shows it working.
+   * our JavaScript. Whatever next reads GET /export's reply and turns a
+   * handle into a spreadsheet cell owes a hostile one this same
+   * defense - a leading apostrophe, or an equivalent guard - and this
+   * row is the sample's own reminder that the input a real defense has
+   * to survive looks exactly like this.
    */
   {
     at: "2026-07-12T14:26:00.000Z", expect: "invalid",
@@ -285,9 +289,10 @@ const SAMPLE = [
    * Encrypted to a keypair generated fresh in this script and then
    * dropped, so nothing can ever open it. This is the rotated-key case
    * - old rows that predate the current key - and it is the branch most
-   * likely to be wrong on the day it matters. admin.html must list it
-   * by id under "Rows that would not open" and export every other row
-   * regardless.
+   * likely to be wrong on the day it matters: whoever reads GET
+   * /export's reply has to notice this row cannot be opened and account
+   * for it by id rather than silently dropping it or refusing every
+   * other row along with it.
    */
   {
     at: "2026-07-25T09:30:00.000Z", wrongKey: true,
@@ -361,10 +366,10 @@ const lostKey = await unopenablePublicKey();
  * is the whole problem". There is no secret in this repository and
  * there must not be one, so this is a plain SHA-256: the same length
  * and alphabet, stable across regenerations, and derived from nothing
- * anybody would want back. What it models is the only property the
- * export page reads - one id per person, identical on every row that
- * person submitted, and set by the server rather than by the browser
- * that sealed the blob.
+ * anybody would want back. What it models is the only property GET
+ * /export's reply carries - one id per person, identical on every row
+ * that person submitted, and set by the server rather than by the
+ * browser that sealed the blob.
  *
  * A row's account comes from its own `account` field if it has one and
  * from its normalized handle otherwise, because the table above has no
@@ -418,8 +423,8 @@ for (const row of ordered) {
 }
 
 /*
- * Shaped exactly like GET /export, so admin.html needs no translation
- * and the stub in dev/README.md is three lines.
+ * Shaped exactly like GET /export's own reply, so whatever reads that
+ * route needs no translation to read this file instead.
  */
 const payload = {
   ok: true,
@@ -440,4 +445,4 @@ const people = new Set(
 console.log(
   OUT_LABEL + " written - " + submissions.length +
   " row(s), " + people + " handle(s), 1 unopenable.");
-console.log("Load it into admin.html with the snippet in dev/README.md.");
+console.log("Shaped like GET /export's own reply - see dev/README.md.");

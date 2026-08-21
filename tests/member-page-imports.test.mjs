@@ -186,10 +186,15 @@ check("no page in apps/web loads a seal module it is not declared for",
 check("and no page in dist does either",
   sealLoads(BUILT_PAGES).length === 0);
 
-/* The three member pages, asked by name as well. The derived arms above
-   pass over a page that is not there; these fail if one goes missing,
-   which is the direction a rename would otherwise slip through. */
-for (const name of ["index.html", "your-page.html", "charts.html"]) {
+/* The four judged pages, asked by name as well - admin.html included
+   since 0.9-M3-S10 (#416) made it a fully judged page rather than the
+   remainder ALLOWED used to skip (see the note above ALLOWED's own
+   declaration). The derived arms above pass over a page that is not
+   there; these fail if one goes missing, which is the direction a
+   rename would otherwise slip through - and admin.html is the page
+   most likely to be renamed next, being the newest of the four. */
+for (const name of
+  ["index.html", "your-page.html", "charts.html", "admin.html"]) {
   const page = SOURCE_PAGES.find(([found]) => found === name);
   check(name + " is present and loads no seal module at all",
     Boolean(page) &&
@@ -247,7 +252,7 @@ for (const [name, html] of SOURCE_PAGES) {
 
 /* ------------------------------------------------------------------ */
 
-const EXPECTED = 13;
+const EXPECTED = 14;
 console.log(failures
   ? `\nmember-page-imports FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

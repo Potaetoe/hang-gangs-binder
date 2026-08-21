@@ -627,13 +627,19 @@ NARRATIVE = re.compile(r"-\s+(%s)\b" % CITED)
 # still excluded rather than pinned, for
 # the same reason as before: a file's claim about its own text is
 # checkable by anyone reading the file.
+#
+# DROPPED at 0.9-M3-S10's own fix wave (#416): ('apps/web/form.js',
+# 'admin.js'). The comment that pin covered cited admin.js's now-gone
+# CSV export as the reason form.js keeps height.feet/height.inches;
+# rewritten to say the export retired rather than to still claim it
+# reads them, which removed the dash-mention this pin existed for. The
+# list is a ratchet and only shrinks, per its own rule above.
 NARRATIVE_PINS = {
     ('apps/web/auth.js', 'submit.js'): 1,
     ('apps/web/charts.html', 'charts.js'): 1,
     ('apps/web/config.js', 'auth.js'): 1,
     ('apps/web/crypto.js', 'DESIGN.md'): 1,
     ('apps/web/crypto.js', 'dev/crypto.test.mjs'): 1,
-    ('apps/web/form.js', 'admin.js'): 1,
     ('apps/web/form.js', 'apps/web/site.config.js'): 1,
     ('apps/web/site.config.js', 'your-page.html'): 1,
     ('apps/web/theme.css', 'apps/web/charts.js'): 1,
