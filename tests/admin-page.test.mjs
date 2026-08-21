@@ -283,6 +283,121 @@ check("logLine renders a real time as a UTC minute, and an unparseable " +
   "2026-08-21 12:34 UTC" &&
   Admin.logLine({ at: "not a date" }).when === "an unknown time");
 
+/* -- Fields: validation, categorization, the session roster (#433,   */
+/* against 0.9-M3-S11's landed contract on #419) -- */
+
+check("validateFieldId accepts the Worker's own SPEC_ID charset and " +
+  "refuses anything else",
+  Admin.validateFieldId("gender").ok === true &&
+  Admin.validateFieldId("has_underscore-2").ok === true &&
+  Admin.validateFieldId("Gender").ok === false &&
+  Admin.validateFieldId("").ok === false &&
+  Admin.validateFieldId("x".repeat(49)).ok === false);
+
+check("validateFieldLabel refuses empty and past 64 characters, trims " +
+  "otherwise",
+  Admin.validateFieldLabel("").ok === false &&
+  Admin.validateFieldLabel("x".repeat(65)).ok === false &&
+  Admin.validateFieldLabel("  Gender  ").value === "Gender");
+
+check("validateValueLabel holds to the Worker's own 64-character bound",
+  Admin.validateValueLabel("x".repeat(64)).ok === true &&
+  Admin.validateValueLabel("x".repeat(65)).ok === false);
+
+check("parseValueLines trims each line and drops empty ones",
+  JSON.stringify(Admin.parseValueLines("  Male \n\nFemale\n ")) ===
+  JSON.stringify(["Male", "Female"]));
+
+const CATEGORY_SAMPLE = {
+  fields: [
+    { name: "weight", kind: "weight", label: "Weight" },
+    { name: "gender", kind: "choice", label: "Gender",
+      choices: [{ value: "male", label: "Male" }] },
+    { name: "country", kind: "choice", label: "Country",
+      choicesFrom: "countries" },
+  ],
+};
+const categorySplit = Admin.categoricalFields(CATEGORY_SAMPLE);
+check("categoricalFields sorts choice fields apart from every other " +
+  "kind (#385 §6) - weight stays in `other`, gender and country in " +
+  "`choice`",
+  categorySplit.choice.length === 2 &&
+  categorySplit.choice.every((f) => f.kind === "choice") &&
+  categorySplit.other.length === 1 && categorySplit.other[0].name ===
+  "weight");
+
+check("FIELD_READ_ONLY_REASON and VALUES_OUTSIDE_REASON are each a " +
+  "real, distinct sentence",
+  Admin.FIELD_READ_ONLY_REASON !== Admin.VALUES_OUTSIDE_REASON &&
+  Admin.FIELD_READ_ONLY_REASON.length > 0 &&
+  Admin.VALUES_OUTSIDE_REASON.length > 0);
+
+check("RENAME_CHOICES names exactly relabel and replace, each with its " +
+  "own one-sentence consequence (#385 §8)",
+  Admin.RENAME_CHOICES.length === 2 &&
+  Admin.RENAME_CHOICES.map((c) => c.mode).sort().join(",") ===
+    "relabel,replace" &&
+  Admin.RENAME_CHOICES.every((c) => c.consequence.length > 0));
+
+check("mergeFieldsRoster remembers a value even after a later read " +
+  "stops offering it - the whole of what makes un-retire possible " +
+  "(the judgment call in the completion on #433)",
+  (() => {
+    const withValue = { fields: [{ name: "gender", kind: "choice",
+      label: "Gender", choices: [{ value: "female", label: "Female" }] }] };
+    const withoutValue = { fields: [{ name: "gender", kind: "choice",
+      label: "Gender", choices: [] }] };
+    const known1 = Admin.mergeFieldsRoster(new Map(), withValue);
+    const known2 = Admin.mergeFieldsRoster(known1, withoutValue);
+    return known2.get("gender").values.get("female") === "Female";
+  })());
+
+check("mergeFieldsRoster never forgets a field once it is retired out " +
+  "of the spec entirely",
+  (() => {
+    const present = { fields: [{ name: "gender", kind: "choice",
+      label: "Gender", choices: [] }] };
+    const gone = { fields: [] };
+    const known1 = Admin.mergeFieldsRoster(new Map(), present);
+    const known2 = Admin.mergeFieldsRoster(known1, gone);
+    return known2.has("gender") && known2.get("gender").label === "Gender";
+  })());
+
+check("fieldsRosterView marks an offered value active and a known-but-" +
+  "no-longer-offered value retired, offered ones first",
+  (() => {
+    const known = new Map([["gender",
+      { label: "Gender", values: new Map([["male", "Male"],
+        ["female", "Female"]]) }]]);
+    const spec = { fields: [{ name: "gender", kind: "choice",
+      label: "Gender", choices: [{ value: "male", label: "Male" }] }] };
+    const view = Admin.fieldsRosterView(known, spec)[0];
+    return view.active === true && view.values.length === 2 &&
+      view.values[0].id === "male" && view.values[0].retired === false &&
+      view.values[1].id === "female" && view.values[1].retired === true;
+  })());
+
+check("fieldsRosterView marks a whole field retired when the roster " +
+  "knows it but the spec offers it nowhere any more",
+  (() => {
+    const known = new Map([["gender",
+      { label: "Gender", values: new Map([["male", "Male"]]) }]]);
+    const spec = { fields: [] };
+    const view = Admin.fieldsRosterView(known, spec)[0];
+    return view.active === false && view.values.length === 1 &&
+      view.values[0].retired === true;
+  })());
+
+check("fieldsRosterView marks a choicesFrom field's values as living " +
+  "outside the spec, and copes with no `choices` array at all - the " +
+  "real shape a choicesFrom field ships in apps/web/site.config.js",
+  (() => {
+    const spec = { fields: [{ name: "country", kind: "choice",
+      label: "Country", choicesFrom: "countries" }] };
+    const view = Admin.fieldsRosterView(new Map(), spec)[0];
+    return view.outside === true && view.values.length === 0;
+  })());
+
 /* -- The idle timer, unchanged in shape from every other signed-in page -- */
 
 check("idleVerdict is active well before the warning window",
@@ -359,6 +474,8 @@ const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "roles-via", "roles-admin", "roles-secret-only", "roles-secret-only-ids",
   "roles-malformed", "roles-malformed-list", "roles-other",
   "roles-other-body",
+  "fields-status", "fields-new-id", "fields-new-label", "fields-new-values",
+  "fields-new-add", "fields-list",
   "log-status", "log-list"];
 check("every element this suite drives is really in apps/web/admin.html",
   NEEDED.every((id) => IDS.includes(id)));
@@ -373,7 +490,7 @@ check("dist/admin.html carries the same ids - the mirror is not stale",
 // every element to visible, which is wrong for exactly these ids.
 const STATIC_HIDDEN = ["idle-warning", "closed", "tool", "settings-status",
   "roles-status", "roles-secret-only-ids", "roles-malformed", "roles-other",
-  "log-status"];
+  "fields-status", "log-status"];
 check("every id this suite starts hidden really ships the hidden " +
   "attribute in apps/web/admin.html",
   STATIC_HIDDEN.every((id) => new RegExp(
@@ -389,7 +506,7 @@ function buildDom() {
   byId.get("member-add").tag = "button";
   for (const id of ["settings-floor-save", "settings-locked-unit-save",
     "settings-group-name-save", "settings-welcome-text-save",
-    "settings-default-theme-save", "idle-stay"]) {
+    "settings-default-theme-save", "idle-stay", "fields-new-add"]) {
     byId.get(id).tag = "button";
   }
   const reason = node("p");
@@ -528,11 +645,39 @@ const LOG = { ok: true, log: [
     action: "membership.add", name: "b".repeat(64),
     summary: "flagged an admin" },
 ] };
+// The effective spec (0.9-M3-S11's landed GET /spec shape, #419): two
+// non-choice kinds (a consent, a measure) beside two choice fields, one
+// of which (country) has `choicesFrom` and so ships with NO `choices`
+// array at all - the real shape apps/web/site.config.js's own country
+// row has. Every DOM test below relies on fields-list's resulting
+// order being deterministic: categoricalFields() and fieldsRosterView()
+// both preserve the spec's own field order, so with a fresh roster (no
+// prior session state) the render is [over18, weight, gender, country]
+// - documented once here rather than re-derived at every call site.
+const SPEC_FIXTURE = {
+  group: { name: "Hang Gang", binder: "Binder" },
+  fields: [
+    { name: "over18", kind: "consent", label: "I confirm I am 18 or older.",
+      term: "age confirmation", chart: false },
+    { name: "weight", kind: "weight", label: "Weight", term: "weight",
+      chart: true },
+    { name: "gender", kind: "choice", label: "Gender", term: "gender",
+      chart: true,
+      choices: [
+        { value: "male", label: "Male" },
+        { value: "female", label: "Female" },
+      ] },
+    { name: "country", kind: "choice", label: "Country", term: "country",
+      chart: true, choicesFrom: "countries" },
+  ],
+};
+
 const BASE_ROUTES = {
   "GET /content": () => ok({ ok: true, content: CONTENT }),
   "GET /membership": () => ok(MEMBERSHIP),
   "GET /me": () => ok({ ok: true, adminVia: "flag" }),
   "GET /admin-log": () => ok(LOG),
+  "GET /spec": () => ok({ ok: true, spec: SPEC_FIXTURE }),
 };
 
 {
@@ -680,6 +825,422 @@ const BASE_ROUTES = {
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   check("the second press removes the exact role and id GET handed back",
     removed === "/membership/admin/a1");
+}
+
+/* -- Fields: render, add/retire/un-retire a value, rename both modes,  */
+/* reorder, retire/un-retire a field, add a field, numeric read-only,   */
+/* choicesFrom read-only, refused writes, no member data (#433).        */
+/*                                                                       */
+/* fields-list's own order is documented once here rather than          */
+/* re-derived at every call site: categoricalFields() and                */
+/* fieldsRosterView() both preserve the spec's own field order, so with  */
+/* SPEC_FIXTURE and a fresh session roster the render is                 */
+/* [over18, weight, gender, country]. -- */
+
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const list = byId.get("fields-list");
+  check("Fields lists the numeric field read-only, with the one-" +
+    "sentence reason (#385 §6)",
+    list.children.length === 4 &&
+    /Weight/.test(list.children[1].textContent) &&
+    /release somebody read/.test(list.children[1].textContent));
+  check("Fields lists the consent field read-only too - every non-" +
+    "choice kind, not only the measured ones",
+    /I confirm I am 18 or older/.test(list.children[0].textContent));
+  const genderHeader = list.children[2].children[0];
+  const genderValues = list.children[2].children[1];
+  check("Fields lists the categorical field's offered values, in order",
+    /Gender/.test(genderHeader.textContent) &&
+    genderValues.children.length === 2 &&
+    /Male/.test(genderValues.children[0].textContent) &&
+    /Female/.test(genderValues.children[1].textContent));
+  check("a choicesFrom field (country) is shown but offers no values " +
+    "to edit - the Worker's own reason, in this card's words",
+    /Country/.test(list.children[3].children[0].textContent) &&
+    /live outside the form spec/.test(list.children[3].children[1]
+      .textContent));
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const addRow = genderBlock.children[2];
+  addRow.children[0].value = "Non-binary";
+  addRow.children[1].dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("adding a value PUTs the current offered list plus the new " +
+    "one, with no id on it - the Worker mints one",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Male" }, { id: "female", label: "Female" },
+      { label: "Non-binary" },
+    ]));
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const femaleBlock = genderBlock.children[1].children[1];
+  const retireButton = femaleBlock.children[1].children[3];
+  retireButton.dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("retiring a value PUTs the offered list with it OMITTED - " +
+    "omission retires (server/worker.js's own mergeValues), never a " +
+    "`retired: true` row this page invented",
+    puts.length === 1 && JSON.stringify(puts[0].values) ===
+      JSON.stringify([{ id: "male", label: "Male" }]));
+}
+
+{
+  // Un-retire: retire female, then bring her back in the same session -
+  // the judgment call's own arm. The stub's /spec answer changes after
+  // the retire PUT, and the card is proven to follow it (ticket item 4).
+  let spec = SPEC_FIXTURE;
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /spec": () => ok({ ok: true, spec: spec }),
+    "PUT /admin-fields/gender": ({ body }) => {
+      const parsed = JSON.parse(body);
+      puts.push(parsed);
+      spec = Object.assign({}, SPEC_FIXTURE, { fields:
+        SPEC_FIXTURE.fields.map((f) => f.name === "gender"
+          ? Object.assign({}, f, { choices: parsed.values.map((v) =>
+              ({ value: v.id, label: v.label })) })
+          : f) });
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  let genderBlock = byId.get("fields-list").children[2];
+  let femaleBlock = genderBlock.children[1].children[1];
+  femaleBlock.children[1].children[3].dispatch("click"); // Retire
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+  genderBlock = byId.get("fields-list").children[2];
+  femaleBlock = genderBlock.children[1].children[1];
+  check("after retiring, the value still appears - marked retired - " +
+    "rather than simply gone from the card",
+    genderBlock.children[1].children.length === 2 &&
+    /Female \(retired\)/.test(femaleBlock.textContent));
+  check("the retired row offers exactly one button - Bring back",
+    femaleBlock.children[1].children.length === 1 &&
+    /Bring back/.test(femaleBlock.children[1].children[0].textContent));
+  femaleBlock.children[1].children[0].dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("un-retiring PUTs the value back with the SAME id this page " +
+    "watched it retire under - never a freshly minted one",
+    puts.length === 2 &&
+    JSON.stringify(puts[1].values) === JSON.stringify([
+      { id: "male", label: "Male" },
+      { id: "female", label: "Female", retired: false },
+    ]));
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const maleBlock = genderBlock.children[1].children[0];
+  const form = maleBlock.children[2];
+  check("the rename form is hidden until Rename is pressed",
+    form.hidden === true);
+  maleBlock.children[1].children[2].dispatch("click"); // Rename
+  check("pressing Rename reveals the form, pre-filled with the " +
+    "current label",
+    form.hidden === false && form.children[0].value === "Male");
+  form.children[0].value = "Man";
+  // form children: [input, relabel consequence, relabel button, replace
+  // consequence, replace button, cancel].
+  form.children[2].dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("choosing \"same thing, new word\" sends mode: relabel with " +
+    "the id kept and the label changed - the choice IS the send (#385 " +
+    "§8)",
+    puts.length === 1 && puts[0].mode === "relabel" &&
+    JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Man" }, { id: "female", label: "Female" },
+    ]));
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const maleBlock = genderBlock.children[1].children[0];
+  maleBlock.children[1].children[2].dispatch("click"); // Rename
+  const form = maleBlock.children[2];
+  form.children[0].value = "Guy";
+  form.children[4].dispatch("click"); // "A different thing"
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("choosing \"a different thing\" sends mode: replace with the " +
+    "same request shape - the Worker decides the retire-and-mint, this " +
+    "page only names which word means what",
+    puts.length === 1 && puts[0].mode === "replace" &&
+    JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "male", label: "Guy" }, { id: "female", label: "Female" },
+    ]));
+}
+
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const maleBlock = genderBlock.children[1].children[0];
+  const form = maleBlock.children[2];
+  maleBlock.children[1].children[2].dispatch("click"); // open
+  form.children[5].dispatch("click"); // Cancel
+  check("Cancel hides the rename form without sending anything",
+    form.hidden === true);
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const maleBlock = genderBlock.children[1].children[0];
+  const femaleBlock = genderBlock.children[1].children[1];
+  check("the first value's Move up is disabled - nowhere to move it",
+    maleBlock.children[1].children[0].disabled === true);
+  check("the last value's Move down is disabled the same way",
+    femaleBlock.children[1].children[1].disabled === true);
+  maleBlock.children[1].children[1].dispatch("click"); // Move down
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("Move down PUTs the two values swapped, ids and labels " +
+    "unchanged - a reorder is not a rename",
+    puts.length === 1 && JSON.stringify(puts[0].values) === JSON.stringify([
+      { id: "female", label: "Female" }, { id: "male", label: "Male" },
+    ]));
+}
+
+{
+  const calls = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "DELETE /admin-fields/gender": () => {
+      calls.push("delete");
+      return { ok: true, status: 200, async json() { return {}; } };
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const retireField = genderBlock.children[3].children[0];
+  retireField.dispatch("click");
+  check("Retire field arms on the first press rather than sending",
+    calls.length === 0 && /Confirm retiring/.test(retireField.textContent));
+  retireField.dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("the second press DELETEs the field",
+    calls.length === 1);
+}
+
+{
+  // Bring a whole field back, the same shape as the value-level arm:
+  // retire it, then use the roster's own memory to un-retire.
+  let spec = SPEC_FIXTURE;
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /spec": () => ok({ ok: true, spec: spec }),
+    "DELETE /admin-fields/gender": () => {
+      spec = Object.assign({}, SPEC_FIXTURE, { fields:
+        SPEC_FIXTURE.fields.filter((f) => f.name !== "gender") });
+      return { ok: true, status: 200, async json() { return {}; } };
+    },
+    "PUT /admin-fields/gender": ({ body }) => {
+      puts.push(JSON.parse(body));
+      spec = SPEC_FIXTURE;
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const retireField = byId.get("fields-list").children[2].children[3]
+    .children[0];
+  retireField.dispatch("click");
+  retireField.dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+  // gender dropped out of the active choice list, so fieldsRosterView
+  // now renders [country (active)] before [gender (retired-as-known)] -
+  // fields-list becomes [over18, weight, country, gender].
+  check("a retired field is drawn after the fields still active, not " +
+    "simply gone from the card",
+    byId.get("fields-list").children.length === 4 &&
+    /Gender \(retired\)/.test(byId.get("fields-list").children[3]
+      .textContent));
+  const retiredBlock = byId.get("fields-list").children[3];
+  check("a retired field offers exactly one button - Bring back",
+    retiredBlock.children[1].children.length === 1 &&
+    /Bring back/.test(retiredBlock.children[1].children[0].textContent));
+  retiredBlock.children[1].children[0].dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("un-retiring a field PUTs retired: false and sends no `values` " +
+    "at all - the Worker keeps what the field held when it retired " +
+    "(server/worker.js's own currentValues/handleRetireField)",
+    puts.length === 1 && puts[0].retired === false &&
+    !("values" in puts[0]));
+}
+
+{
+  const puts = [];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/pronouns": ({ body }) => {
+      puts.push(JSON.parse(body));
+      return ok({ ok: true });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  byId.get("fields-new-id").value = "pronouns";
+  byId.get("fields-new-label").value = "Pronouns";
+  byId.get("fields-new-values").value = "She/her\nHe/him\n\nThey/them";
+  byId.get("fields-new-add").dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("adding a field PUTs the id, label and the starting values, " +
+    "blank lines dropped, each with no id of its own",
+    puts.length === 1 && JSON.stringify(puts[0]) === JSON.stringify({
+      label: "Pronouns",
+      values: [{ label: "She/her" }, { label: "He/him" },
+        { label: "They/them" }],
+    }));
+  check("the three inputs clear after a successful add",
+    byId.get("fields-new-id").value === "" &&
+    byId.get("fields-new-label").value === "" &&
+    byId.get("fields-new-values").value === "");
+}
+
+{
+  const { byId, calls } = await driven(BASE_ROUTES, { isAdmin: true });
+  byId.get("fields-new-id").value = "Bad Id!";
+  byId.get("fields-new-label").value = "Whatever";
+  byId.get("fields-new-add").dispatch("click");
+  check("a field id outside the Worker's own charset is refused BEFORE " +
+    "a request is sent",
+    calls.filter((c) => c.method === "PUT").length === 0 &&
+    /lowercase letters/.test(byId.get("fields-status").textContent));
+}
+
+{
+  const { byId, calls } = await driven(BASE_ROUTES, { isAdmin: true });
+  byId.get("fields-new-id").value = "waist";
+  byId.get("fields-new-label").value = "";
+  byId.get("fields-new-add").dispatch("click");
+  check("an empty new-field label is refused before anything is sent",
+    calls.filter((c) => c.method === "PUT").length === 0 &&
+    /needs a label/.test(byId.get("fields-status").textContent));
+}
+
+{
+  const { byId, calls } = await driven(BASE_ROUTES, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const addRow = genderBlock.children[2];
+  addRow.children[0].value = "x".repeat(65);
+  addRow.children[1].dispatch("click");
+  check("a value label past the Worker's own 64-character bound is " +
+    "refused before a request is sent",
+    calls.filter((c) => c.method === "PUT").length === 0 &&
+    /64 characters or fewer/.test(byId.get("fields-status").textContent));
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "PUT /admin-fields/gender": () => refused(409, {
+      error: "A value list is refused on a field whose choices live " +
+        "elsewhere.",
+    }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const addRow = genderBlock.children[2];
+  addRow.children[0].value = "Enby";
+  addRow.children[1].dispatch("click");
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check("a write the Worker refuses shows the Worker's own words, on " +
+    "this card's own status line",
+    /choices live elsewhere/.test(byId.get("fields-status").textContent));
+}
+
+check("Fields never fetches per-member counts - no /charts-data call " +
+  "anywhere on this page (#385 rule 1: the card draws the spec, never " +
+  "who picked what)",
+  !/\/charts-data/.test(adminJs));
+
+{
+  const HOSTILE = "<img src=x onerror=alert(1)>";
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /spec": () => ok({ ok: true, spec: { fields: [
+      { name: "gender", kind: "choice", label: HOSTILE,
+        choices: [{ value: "x", label: HOSTILE }] },
+    ] } }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const block = byId.get("fields-list").children[0];
+  check("a hostile field or value label from GET /spec renders as " +
+    "literal text, not markup",
+    block.children[0].children[0].textContent === HOSTILE &&
+    block.children[0].children[0]._text.includes("<img"));
+}
+
+{
+  const LONG_ID = "x".repeat(64);
+  const LONG_LABEL = "A very long value label, repeated to overflow. ".
+    repeat(3).trim();
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /spec": () => ok({ ok: true, spec: { fields: [
+      { name: LONG_ID, kind: "choice", label: "Long field",
+        choices: [{ value: "v1", label: LONG_LABEL }] },
+    ] } }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const block = byId.get("fields-list").children[0];
+  check("a 64-character field id and a long value label both render " +
+    "whole, inside the wrap-row/wrap-row-value cells the geometry " +
+    "proof targets - the pixel measurement itself is a real-browser " +
+    "reading, printed in the completion on #433, not a suite arm",
+    block.children[0].children[1].textContent === LONG_ID &&
+    block.children[1].children[0].children[0].children[0].textContent ===
+      LONG_LABEL);
+}
+
+{
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const genderBlock = byId.get("fields-list").children[2];
+  const header = genderBlock.children[0];
+  const maleLabelRow = genderBlock.children[1].children[0].children[0];
+  check("a Fields header row carries wrap-row/wrap-row-value, the same " +
+    "overflow protection every other row on this page uses",
+    header.className === "row wrap-row" &&
+    header.children[0].className === "wrap-row-value");
+  check("a Fields value row carries the same classes",
+    maleLabelRow.className === "row wrap-row" &&
+    maleLabelRow.children[0].className === "wrap-row-value");
 }
 
 /* -- Change log: newest first, actor id (never a label the Worker      */
@@ -836,6 +1397,8 @@ check("no download/export id survives in the real shipped markup - the " +
   await Promise.resolve();
   check("before idle: the roles list is drawn, not empty",
     byId.get("roles-admin").children.length > 0);
+  check("before idle: the fields list is drawn, not empty",
+    byId.get("fields-list").children.length > 0);
   // wireIdle's own checkAttention() is registered on setInterval, which
   // this harness stubs to never fire (real timers have no place in a
   // suite run under Node) - so idleVerdict/idleNotice/endForIdle's own
@@ -853,7 +1416,7 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 88;
+const EXPECTED = 134;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
