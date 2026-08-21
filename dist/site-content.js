@@ -73,9 +73,12 @@
   
 
   function cacheDefaultTheme(name) {
-    if (VALID_PALETTES.indexOf(name) === -1) return;
     try {
-      root.localStorage.setItem(DEFAULT_THEME_KEY, name);
+      if (VALID_PALETTES.indexOf(name) === -1) {
+        root.localStorage.removeItem(DEFAULT_THEME_KEY);
+      } else {
+        root.localStorage.setItem(DEFAULT_THEME_KEY, name);
+      }
     } catch (e) {}
   }
 

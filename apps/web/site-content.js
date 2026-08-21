@@ -123,16 +123,30 @@
 
   /*
    * Learned, not applied - see this file's header comment for why a
-   * value from THIS load is never painted onto THIS load's page. An
-   * unknown name is dropped rather than cached, the same discipline
-   * theme-init.js and theme.js already hold their OWN stored value to:
-   * a corrupted or future palette name reaching data-theme is a page
-   * with a resting state no stylesheet block answers to.
+   * value from THIS load is never painted onto THIS load's page. A
+   * name that is not one of the four palettes clears whatever was
+   * cached rather than merely refusing to overwrite it (0.9-M3-S12
+   * fix wave, #418 comment 5371848229, finding F1): S8's GET /config
+   * contract answers "" for "the admin turned the default off", and a
+   * refuse-but-keep read of that answer left a member who once learned
+   * a palette painting it forever - the admin could never turn it back
+   * off. An absent key (the field missing from /config's body
+   * entirely, so this runs as cacheDefaultTheme(undefined)) and an
+   * unrecognized name (a corrupted value, or one a future config
+   * predates this build) get the same treatment: nothing on this
+   * origin should keep painting a resting palette the admin's last
+   * answer does not stand behind. Clearing it is exactly what lets
+   * the NEXT load fall through to theme-init.js's own "nothing
+   * learned" branch, which paints the shipped, system-preference
+   * default - see that file's header.
    */
   function cacheDefaultTheme(name) {
-    if (VALID_PALETTES.indexOf(name) === -1) return;
     try {
-      root.localStorage.setItem(DEFAULT_THEME_KEY, name);
+      if (VALID_PALETTES.indexOf(name) === -1) {
+        root.localStorage.removeItem(DEFAULT_THEME_KEY);
+      } else {
+        root.localStorage.setItem(DEFAULT_THEME_KEY, name);
+      }
     } catch (e) {}
   }
 

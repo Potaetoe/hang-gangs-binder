@@ -285,6 +285,39 @@ async function driven(storedPalette, defaultTheme) {
     documentElement.getAttribute("data-theme") === null);
 }
 
+/*
+ * theme-init.js's OWN precedence between a member's saved choice and
+ * the admin's configured default, isolated the same way the two blocks
+ * above isolate its validity guards (0.9-M3-S12 fix wave, #418 comment
+ * 5371848229, finding F3). The combined driven("pink", "daylight")
+ * case far above proves the FINAL painted state always honors the
+ * member's choice, but theme.js runs second and reads the same two
+ * keys in the same order - so a regression that swapped theme-init.
+ * js's OWN precedence (paint the admin default first, only falling
+ * back to a member's choice) would still end on "pink" once theme.js
+ * corrected it a moment later. That is exactly the flash both files
+ * exist to prevent, and the combined test cannot see it - the same
+ * masking the two blocks above this one exist to rule out for the
+ * validity guards. This block never imports theme.js at all, so
+ * nothing can correct a broken precedence before this check reads it.
+ */
+{
+  const documentElement = documentElementStub();
+  const g = globalThis;
+  g.localStorage = storage({
+    "hgb-palette": "pink",
+    "hgb-default-theme": "daylight",
+  });
+  g.document = { documentElement, querySelectorAll: () => [] };
+  await import("data:text/javascript," +
+    encodeURIComponent(themeInitSrc) + "#theme-init-precedence-" +
+    Math.random());
+  check("theme-init.js's OWN pre-paint guard paints the member's saved " +
+    "choice over a cached admin default, with nothing else having run " +
+    "yet to correct a wrong first frame",
+    documentElement.getAttribute("data-theme") === "pink");
+}
+
 console.log(failures
   ? `\ntheme-fallback FAILED ${failures} of ${performed} check(s)`
   : `\ntheme-fallback OK - ${performed} checks`);

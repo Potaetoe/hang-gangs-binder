@@ -255,6 +255,7 @@ function localStorageStub() {
     _values: values,
     getItem: (key) => (values.has(key) ? values.get(key) : null),
     setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
   };
 }
 
@@ -321,18 +322,30 @@ function localStorageStub() {
       globalThis.BinderSiteContent.cacheDefaultTheme("contrast");
       return localStore._values.get("hgb-default-theme") === "contrast";
     })());
-  check("...and drops a name no palette answers to, the same discipline " +
-    "theme-init.js and theme.js hold their OWN stored value to",
+  // Both checks below SEED a real cached value first, rather than
+  // deleting the key before calling cacheDefaultTheme() - a fix-wave
+  // correction (#418 comment 5371848229, finding F1). The delete-first
+  // shape made the old checks pass whether or not the function ever
+  // removed anything, since the key was already gone before the call;
+  // seeding a value the admin previously set is the only way to prove
+  // the function actually CLEARS what a member already learned, not
+  // just that it declines to write a new bad value over nothing.
+  check("...and CLEARS a previously cached value when the admin's " +
+    "config answers with a name no palette answers to - a corrupted " +
+    "or future config value, the same discipline theme-init.js and " +
+    "theme.js hold their OWN stored value to",
     (function () {
-      localStore._values.delete("hgb-default-theme");
+      localStore._values.set("hgb-default-theme", "midnight");
       globalThis.BinderSiteContent.cacheDefaultTheme("neon");
       return !localStore._values.has("hgb-default-theme");
     })());
-  check("...and drops \"\" too - S8's contract for GET /config (#414, " +
-    "comment 5370945709) states an empty string means \"unset\", the " +
-    "same as the key being absent entirely",
+  check("...and clears a previously cached value on \"\" too - S8's " +
+    "contract for GET /config (#414, comment 5370945709) states an " +
+    "empty string means the admin turned the default back OFF, so a " +
+    "member who already learned a palette must stop painting it on " +
+    "the next load, not keep painting it forever",
     (function () {
-      localStore._values.delete("hgb-default-theme");
+      localStore._values.set("hgb-default-theme", "midnight");
       globalThis.BinderSiteContent.cacheDefaultTheme("");
       return !localStore._values.has("hgb-default-theme");
     })());
