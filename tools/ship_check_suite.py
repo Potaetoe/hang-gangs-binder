@@ -92,7 +92,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 64
+EXPECTED = 65
 
 
 def check(label, condition):
@@ -401,6 +401,25 @@ try:
                                               missing)
     check("an unreadable --declared path fails, names why",
           not stage.ok and "could not read" in stage.lines[0])
+
+    print("\n--- an undecodable --declared path (UTF-16, PowerShell "
+         "5.1's plain redirection default) fails with a named reason, "
+         "not an uncaught UnicodeDecodeError crash (F2, review "
+         "finding, 2026-08-21) ---")
+    # UnicodeDecodeError is a ValueError, not an OSError - the except
+    # clause directly above this one never caught it, so before the
+    # fix this call raised straight through stage_declared_vs_diff()
+    # and crashed this suite process itself with a bare traceback
+    # instead of returning a failed Stage. tools/claim_vs_diff.py's own
+    # main() had the identical gap, fixed the identical way.
+    declared_utf16 = os.path.join(root, "declared-utf16.txt")
+    with open(declared_utf16, "w", encoding="utf-16") as handle:
+        handle.write("apps/web/page.html\n")
+    stage = ship_check.stage_declared_vs_diff(repo, "origin/accounts",
+                                              declared_utf16)
+    check("an undecodable --declared path fails with a named reason, "
+         "not a crash",
+          not stage.ok and "could not decode" in stage.lines[0])
 
     print("\n--- _count_old_gate_table / _count_new_gate_table: pure "
          "counters, 0.9-M1-S0 (#323) ---")

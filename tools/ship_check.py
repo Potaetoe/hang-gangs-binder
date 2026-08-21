@@ -401,6 +401,16 @@ def stage_declared_vs_diff(repo, base, declared_path):
         return Stage("declared files vs real diff", False,
                      ["could not read %s: %s" % (declared_path, problem)],
                      evidence)
+    except UnicodeDecodeError as problem:
+        # F2 (review finding, 2026-08-21): a declared list PowerShell
+        # 5.1 wrote with a bare `>` redirect (its own default, UTF-16,
+        # not the `-Encoding utf8` shape #387 fixed) is not valid UTF-8
+        # at all. Uncaught, that crashed this stage with a bare
+        # traceback instead of a named, failed stage - matched to
+        # tools/claim_vs_diff.py's own fix for the same gap.
+        return Stage("declared files vs real diff", False,
+                     ["could not decode %s: %s"
+                      % (declared_path, problem)], evidence)
     status, report = claim_vs_diff.compare(repo, "HEAD", base, declared_text)
     return Stage("declared files vs real diff", status == "match",
                  report.splitlines(), evidence)
