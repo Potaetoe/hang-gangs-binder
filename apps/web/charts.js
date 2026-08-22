@@ -584,26 +584,6 @@
   }
 
   /*
-   * One field's value list, from the spec and nothing else. A
-   * `choicesFrom` field reads its list from the page global that spec
-   * points at (apps/web/countries.js is the one that exists), matching
-   * server/charts-agg.js's own CHOICE_LIST_SHAPES comment: the Worker
-   * has no such list to enumerate, so the page holding one is what
-   * makes the value control possible at all.
-   */
-  function valueChoices(measure, countries) {
-    if (measure.choicesFrom === "countries") {
-      const table = countries || {};
-      return Object.keys(table)
-        .sort(function (a, b) { return table[a].localeCompare(table[b]); })
-        .map(function (code) { return { value: code, label: table[code] }; });
-    }
-    return (measure.choices || []).map(function (choice) {
-      return { value: choice.value, label: choice.label };
-    });
-  }
-
-  /*
    * One group-makeup cell's own display text.
    *
    * A field whose choices live outside the spec - country is the one -
@@ -1054,7 +1034,6 @@
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
-    valueChoices: valueChoices,
     groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
     unitFor: unitFor,
@@ -1266,8 +1245,16 @@
      field the baseline answer's own makeup block sent no present value
      for (nobody has entered it, or a raised floor pooled every cell
      away) offers no row at all, since there is nothing honest to
-     narrow by. `groups` is the baseline (unfiltered) answer's own
-     makeup block, or null when even that ask was not enough. */
+     narrow by. Neither does a field with exactly ONE present value
+     (Prime's ruling on #434, applying #454 items 16-17: all lit means
+     everyone, and the last lit chip can never be unlit, so a single
+     candidate is always selected and never restricts anything - a row
+     that could never change what it draws is not an honest choice
+     either, just a slower way to offer none). That field still names
+     its one value in the group-makeup block, which reads straight from
+     the response and does not go through this function. `groups` is
+     the baseline (unfiltered) answer's own makeup block, or null when
+     even that ask was not enough. */
   function buildFieldStates(site, groups) {
     return categoricalMeasures(Fields, site).map(function (measure) {
       const entry = (groups || []).filter(function (g) {
@@ -1287,7 +1274,7 @@
         // (#455's identity, this file's header).
         selected: candidates.map(function (c) { return c.value; }),
       };
-    }).filter(function (state) { return state.candidateValues.length > 0; });
+    }).filter(function (state) { return state.candidateValues.length > 1; });
   }
 
   function fieldState(fieldName) {
@@ -2378,16 +2365,24 @@
      * values the filter controls may offer (#454 item 18; this file's
      * header) - the group-makeup block a drawn answer carries describes
      * every categorical field regardless of which measure was asked
-     * for, so any drawable measure serves. A baseline that is itself
-     * not enough leaves every field with nothing present to filter by,
-     * which buildFieldStates() reads honestly as no rows at all rather
-     * than guessing at a value list from the spec.
+     * for, so any drawable measure that HAS data serves. Not every one
+     * does: `drawable[0]` alone is not enough, because a group with
+     * nothing entered for the first drawable measure would then offer
+     * no filter rows at all for the rest of the page's life, while the
+     * makeup block a later measure draws goes on naming real values
+     * (the reviewer's fixture on #434, finding F1). So this tries each
+     * drawable measure in turn, in the same order the measure list
+     * itself uses, and stops at the first one whose baseline answer is
+     * enough. Only when NONE of them is - the group itself has nothing
+     * drawable yet - does buildFieldStates() read the honest empty
+     * result as no rows at all rather than guessing at a value list
+     * from the spec.
      */
     const drawable = drawableMeasures(Fields, effectiveSite);
     let baselineGroups = null;
-    if (drawable.length) {
+    for (let i = 0; i < drawable.length && !baselineGroups; i++) {
       const baseline = await fetchAnswer(config,
-        { measure: drawable[0].name, units: currentSystem(), filters: [] });
+        { measure: drawable[i].name, units: currentSystem(), filters: [] });
       if (baseline.ok && baseline.answer.enough) {
         baselineGroups = baseline.answer.groups;
       }

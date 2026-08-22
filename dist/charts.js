@@ -223,20 +223,6 @@
 
   
 
-  function valueChoices(measure, countries) {
-    if (measure.choicesFrom === "countries") {
-      const table = countries || {};
-      return Object.keys(table)
-        .sort(function (a, b) { return table[a].localeCompare(table[b]); })
-        .map(function (code) { return { value: code, label: table[code] }; });
-    }
-    return (measure.choices || []).map(function (choice) {
-      return { value: choice.value, label: choice.label };
-    });
-  }
-
-  
-
   function groupCellLabel(measure, cell, countries) {
     if (measure && measure.choicesFrom === "countries" &&
         cell.bucket !== "blank") {
@@ -489,7 +475,6 @@
     scaleLinear: scaleLinear,
     categoricalMeasures: categoricalMeasures,
     drawableMeasures: drawableMeasures,
-    valueChoices: valueChoices,
     groupCellLabel: groupCellLabel,
     chartsURL: chartsURL,
     unitFor: unitFor,
@@ -690,7 +675,7 @@
          
         selected: candidates.map(function (c) { return c.value; }),
       };
-    }).filter(function (state) { return state.candidateValues.length > 0; });
+    }).filter(function (state) { return state.candidateValues.length > 1; });
   }
 
   function fieldState(fieldName) {
@@ -1500,9 +1485,9 @@
 
     const drawable = drawableMeasures(Fields, effectiveSite);
     let baselineGroups = null;
-    if (drawable.length) {
+    for (let i = 0; i < drawable.length && !baselineGroups; i++) {
       const baseline = await fetchAnswer(config,
-        { measure: drawable[0].name, units: currentSystem(), filters: [] });
+        { measure: drawable[i].name, units: currentSystem(), filters: [] });
       if (baseline.ok && baseline.answer.enough) {
         baselineGroups = baseline.answer.groups;
       }

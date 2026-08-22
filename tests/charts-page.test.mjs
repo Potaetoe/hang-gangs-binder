@@ -1016,10 +1016,9 @@ check("no request ever names a floor - the floor is a server-side " +
   "setting and the wire cannot reach it (security mandate 2)",
   !bare.searchParams.has("floor") && !filtered.searchParams.has("floor"));
 
-/* categoricalMeasures / drawableMeasures / valueChoices, against a small
-   fixture spec shaped like apps/fields.js's measureFor() output - never
-   against a response, matching design mandate 2's "never from a
-   response". */
+/* categoricalMeasures / drawableMeasures, against a small fixture spec
+   shaped like apps/fields.js's measureFor() output - never against a
+   response, matching design mandate 2's "never from a response". */
 const FieldsFixture = {
   measures: () => [
     { name: "weight", kind: "bins" },
@@ -1040,19 +1039,6 @@ const drawable = Charts.drawableMeasures(FieldsFixture, {});
 check("only numeric measures are offered as a measure - gender and " +
   "country are never chartable any more",
   drawable.length === 1 && drawable[0].name === "weight");
-
-const genderChoices = Charts.valueChoices(cats[0], null);
-check("a plain choice field's values come from its own spec entry",
-  genderChoices.length === 2 &&
-  genderChoices[0].value === "male" && genderChoices[0].label === "Male");
-
-const countryChoices = Charts.valueChoices(cats[1],
-  { US: "United States", AL: "Albania" });
-check("a choicesFrom field reads the page's own table, sorted by " +
-  "label - never a value list the route enumerated",
-  countryChoices.length === 2 &&
-  countryChoices[0].label === "Albania" &&
-  countryChoices[1].label === "United States");
 
 /* groupCellLabel: the country carry (S12's review, #373; the wake to
    this file). server/charts-agg.js sends `label: value` (the code) as
@@ -1945,11 +1931,25 @@ async function driven(fetchImpl, opts) {
   const specBody = Object.prototype.hasOwnProperty.call(options, "spec")
     ? options.spec : {};
   let baselineServed = false;
+  // `options.baselineSequence` is F1's own escape hatch (0.9-M3-S14 fix
+  // wave 3, #434 finding F1): setUp() now tries EVERY drawable measure's
+  // baseline in turn until one comes back enough, so a single `baseline`
+  // answer can no longer stand in for "the first measure has nothing and
+  // the second one does" - this serves one array entry per /charts-data
+  // call, in order, until the array runs out, then falls through to
+  // `fetchImpl` exactly as the single-`baseline` path already does.
+  let baselineSeqIndex = 0;
   g.fetch = async (url, init) => {
     calls.push(String(url));
     const target = new URL(String(url));
     if (target.pathname === "/spec") {
       return response(200, { spec: specBody });
+    }
+    if (Object.prototype.hasOwnProperty.call(options, "baselineSequence")) {
+      if (baselineSeqIndex < options.baselineSequence.length) {
+        return response(200, options.baselineSequence[baselineSeqIndex++]);
+      }
+      return fetchImpl(url, init);
     }
     if (!baselineServed) {
       baselineServed = true;
@@ -2814,6 +2814,53 @@ function lastChartsDataCall(calls) {
 }
 
 /*
+ * F1 (0.9-M3-S14 fix wave 3, #434 comment 5379687423): the FIRST
+ * drawable measure having nothing entered must not leave the page with
+ * zero filter rows for the rest of its life. Two bins measures - weight
+ * first (nobody has entered it, matching the review's own fixture),
+ * height second (twenty members have) - so setUp()'s baseline loop has
+ * to fall through to the second before it finds a group-makeup block to
+ * build rows from.
+ */
+{
+  const twoMeasureFixture = [
+    { name: "weight", label: "Weight", term: "weight", kind: "bins",
+      unitful: true },
+    { name: "height", label: "Height", term: "height", kind: "bins",
+      unitful: true },
+    { name: "gender", label: "Gender", term: "gender", kind: "categorical",
+      choices: [{ value: "male", label: "Male" },
+                { value: "female", label: "Female" }] },
+  ];
+  const weightNotEnough = { ok: true, enough: false, filters: [],
+    note: "Not enough people for this view.", groups: null };
+  const heightEnough = {
+    ok: true, enough: true, filters: [],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+          { value: "female", label: "Female", count: 10, bucket: null },
+        ] },
+    ],
+  };
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { skipPress: true, measures: twoMeasureFixture,
+      baselineSequence: [weightNotEnough, heightEnough] });
+
+  const genderRow = filterRowFor(byId, "gender");
+  check("0.9-M3-S14 F1: the second drawable measure's baseline (real " +
+    "makeup values) still builds the filter rows when the first " +
+    "measure's own baseline was not enough - never left permanently " +
+    "empty",
+    genderRow !== null);
+  check("and the row carries the real candidates from that later answer",
+    genderRow !== null &&
+    filterChipsOf(genderRow).map((c) => c.value).sort().join(",") ===
+    "female,male");
+}
+
+/*
  * Resting state (0.9-M3-S14; #454 item 16): driven()'s own default
  * press, nothing tapped - every candidate lit in every field.
  */
@@ -2954,6 +3001,52 @@ function lastChartsDataCall(calls) {
     "makeup block) never renders as a filter chip",
     genderChips.map((c) => c.value).sort().join(",") === "female,male" &&
     !genderChips.some((c) => c.value === "nonbinary"));
+}
+
+/*
+ * F3 (0.9-M3-S14 fix wave 3, #434 comment 5379687423; Prime's ruling in
+ * comment 5379693011): a field whose baseline holds exactly ONE present
+ * value offers no expressible choice - all lit already means everyone
+ * (#454 item 16) and that one chip could never be unlit (#454 item 17),
+ * so its row is not rendered at all, no dead chip and no notice. A
+ * field with two present values still gets its row. "vibe" carries the
+ * one-value case, "gender" the two-value case, in the same baseline.
+ */
+{
+  const oneValueMeasures = measureFixture().concat([
+    { name: "vibe", label: "Vibe", term: "vibe", kind: "categorical",
+      choices: [{ value: "calm", label: "Calm" },
+                { value: "wild", label: "Wild" }] },
+  ]);
+  const oneValueBaseline = {
+    ok: true, enough: true, filters: [],
+    groups: [
+      { field: "gender", label: "Gender", term: "gender", multiple: false,
+        values: [
+          { value: "male", label: "Male", count: 10, bucket: null },
+          { value: "female", label: "Female", count: 8, bucket: null },
+        ] },
+      { field: "vibe", label: "Vibe", term: "vibe", multiple: false,
+        values: [
+          { value: "calm", label: "Calm", count: 11, bucket: null },
+          { value: "wild", label: "Wild", count: 0, bucket: null },
+        ] },
+    ],
+  };
+  const { byId } = await driven(() => response(200, ENOUGH_FIXTURE),
+    { measures: oneValueMeasures, baseline: oneValueBaseline });
+
+  const vibeRow = filterRowFor(byId, "vibe");
+  check("0.9-M3-S14 F3: a field with exactly one present value (\"vibe\" " +
+    "- only \"calm\" cleared the floor) renders no filter row at all - " +
+    "no dead chip, no select, no notice",
+    vibeRow === null);
+  const genderRow = filterRowFor(byId, "gender");
+  check("a field with two present values still renders its row, " +
+    "unaffected by the one-value field beside it",
+    genderRow !== null &&
+    filterChipsOf(genderRow).map((c) => c.value).sort().join(",") ===
+    "female,male");
 }
 
 /*
@@ -4199,7 +4292,7 @@ const WEIGHT_TRIM_ANSWER = Object.assign({}, ENOUGH_FIXTURE, {
  * source text contains.
  */
 
-const EXPECTED = 316;
+const EXPECTED = 318;
 console.log(failures
   ? `\ncharts-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
