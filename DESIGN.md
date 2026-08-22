@@ -184,6 +184,86 @@ record's ruled property that a raw dump reveals nothing, because a
 clear-text roster is the oracle by a shorter route than any hash of a
 handle would be.
 
+**The numeric id is stored in exactly one place in this database:
+inside the sealed directory record** (owner ruling, 2026-08-21, at the
+departed-member cleanup slice). "In this database" is the whole of the
+scope and is not a hedge: `ADMIN_TELEGRAM_IDS` and
+`ALWAYS_ALLOW_TELEGRAM_IDS` are deployment secrets that hold numeric
+ids and always have, and a rule that read wider than the tables would
+be false the day anybody checked it. This narrows a rule that used to
+read as "the numeric id is stored nowhere", and it was put to the owner
+as a decision rather
+than taken as an implementation detail, because the two sides of it are
+both real. What forced it: admins may erase a **departed** member's
+rows, only the bot may say who is departed, and `getChatMember` takes a
+numeric id — the directory is keyed by a one-way HMAC of one, and
+Telegram has no by-username form of that call. So the erasing power and
+the stored id are the same ruling.
+
+The bounds are the reason it is safe, and each is enforced rather than
+promised: the id is **never a column, never an index, never served by
+any route, and never logged**; it sits under the same key, the same
+purpose and the same AAD binding as the handle already sealed beside
+it, so a raw dump still shows an HMAC and two timestamps; and exactly
+one function unseals it — the departed check — which asks the bot and
+drops it. A second reader is a new decision, not a refactor. The
+per-request admin re-check still does **not** use it: sessions are not
+re-validated against Telegram, and a leaver's sessions still end at
+their next sign-in rather than by polling.
+
+A directory record written before that ruling carries no id, and its
+member's status reads **unknown until their next sign-in** — never
+guessed in either direction.
+
+An account held open by an operator's always-allow list is a **third
+answer and not a quiet "still a member"**: the bot is never asked about
+it, so the cleanup surface reports the list — and says which entry to
+remove — rather than putting words in Telegram's mouth. Never attribute
+to the bot what the bot did not say.
+
+**A row in either letter case holds an account open**, and the reason
+is the erase and not the list. `wrangler d1 execute` writes upper-case
+hex, so an operator's hand-written row is spelled in a case the
+authority read refuses — it grants nothing, and that is right, because
+a row nobody can prove was meant must not admit anybody. But the
+erase's own delete matches without regard to case, so it would remove
+that row: a guard that could not see it erased the account *and* the
+entry protecting it, in one request. **Granting and protecting are
+different questions, and they fail closed in opposite directions.** A
+near-miss row grants nothing and protects everything; it stays on the
+membership surface's malformed list, which is where an operator learns
+which spelling to fix. And before it deletes anything, the erase
+refuses outright whenever its guard's view of a member's rows and its
+delete's view disagree — the general form of the same defect, so a
+later branch added to one view and not the other is refused rather
+than discovered.
+
+**And a read that does not answer is unknown too.** The erasing path
+fails closed on every read it makes, not only on the bot. Five reads
+stand between an erase request and a deleted row, and every one of them
+refuses when it does not answer — named here so the sentence can be
+checked rather than believed: the **directory row**, the **sealed
+record** it opens, the **operator's allow list**, the **bot**, and the
+erase's own **membership pre-check**, which counts the rows the delete
+would remove. A read that throws, answers nothing, or answers a shape
+without the columns it named is the same fact to all five — the
+question could not be asked — and none of them is ever spent as an
+answer. The refusals say which read failed rather than which is
+nearest, because the next action differs: a record with no usable id is
+fixed by that member signing in, and the other three waits are fixed by
+waiting on different systems. The list is the case worth writing down,
+because it is the one where an empty answer looks exactly like a real
+one — "not on the list" and "the list did not answer" are the same
+empty set — and spending the second as the first erased the rows of an
+account an operator was holding open. So "cannot check" is never "not a
+member", and it is never "not on the list" either. Sign-in carries the same
+fact the other way round: a member the group still confirms signs in
+regardless, because refusing everybody over one unreadable table is a
+worse outage than the one that caused it, while a sign-in that would
+otherwise be refused answers as the Worker answers any error rather
+than telling somebody they are not allowed on the word of a list
+nobody could read.
+
 A row has two identities and they are not equally good: the id is set
 server-side from a verified sign-in and cannot be forged by the page;
 anything the client typed is a claim. Treat the id as identity.

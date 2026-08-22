@@ -95,7 +95,7 @@ preview_urls = false
 directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "404-page"
-run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts-data", "/export", "/submission/*", "/content", "/content/*", "/config", "/admin-log", "/spec", "/admin-fields", "/admin-fields/*", "/membership", "/membership/*" ]
+run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts-data", "/export", "/submission/*", "/content", "/content/*", "/config", "/admin-log", "/admin-departed", "/admin-departed/*", "/spec", "/admin-fields", "/admin-fields/*", "/membership", "/membership/*" ]
 
 # The site allowed to POST here. Set this and the Worker never needs
 # editing - see the comment above DEFAULT_ORIGINS in worker.js.
@@ -318,7 +318,7 @@ preview_urls = false
 directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "404-page"
-run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts-data", "/export", "/submission/*", "/content", "/content/*", "/config", "/admin-log", "/spec", "/admin-fields", "/admin-fields/*", "/membership", "/membership/*" ]
+run_worker_first = [ "/auth/*", "/session", "/me", "/my-entries", "/submit", "/charts-data", "/export", "/submission/*", "/content", "/content/*", "/config", "/admin-log", "/admin-departed", "/admin-departed/*", "/spec", "/admin-fields", "/admin-fields/*", "/membership", "/membership/*" ]
 
 # sit's own workers.dev origin joins localhost (0.9-M1-S3, #329): the
 # Worker now serves the static site from its own origin (DESIGN.md,
