@@ -2109,6 +2109,17 @@ BUILTIN_CALLS = frozenset({
     "ascii", "startswith", "is_dir", "len", "exit", "strip", "abspath",
     "require", "which", "mix", "TemporaryDirectory", "SystemExit",
     "splitlines",
+    # Array.prototype.filter() - surfaced by 0.9-M3-S24 (#438), and the
+    # way it surfaced is the argument for it being here. This name
+    # resolved until that slice only because server/charts-agg.js
+    # happened to hold a local `filter` variable, so two comments that
+    # were always naming the LANGUAGE'S method - apps/web/charts.js's
+    # `measures.filter(...)` beside askFor(), and apps/web/submit.js's
+    # "the trend's own filter(Boolean)" - were passing on a coincidence.
+    # Removing that variable while combining the chart filters is what
+    # made the gap visible; the method is a builtin either way and will
+    # never be a repo definition.
+    "filter",
     # re's own Pattern.search()/re.search() - surfaced by 0.9-M3-S17 fix
     # wave 1's own rebase onto S16 (#422): tools/ship_check.py's own
     # _nearest_trigger_word() docstring discusses "a plain `.search()`"

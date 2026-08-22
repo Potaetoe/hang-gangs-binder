@@ -489,7 +489,8 @@ LEDGER = [
         "id": "GET /charts-data",
         "surface": "route",
         "claim": "the Worker aggregates the whole corpus on request and "
-                 "answers one filter and one measure - the trend, the "
+                 "answers one measure over the filters it was given - "
+                 "the trend, the "
                  "fixed-band distribution and the group makeup - with "
                  "the floor the settings hold already applied (0.9-M2-"
                  "S0, #351; reshaped by 0.9-M2-S10, #371, to the owner's "
@@ -515,6 +516,36 @@ LEDGER = [
                  "measure with a filter and without, on a corpus with "
                  "several members and a correction among them, and "
                  "watch the no-store header arrive",
+        "covers": ["server/worker.js", "server/charts-agg.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /charts-data, combined filters",
+        "surface": "route",
+        "claim": "the combined-filter parameter shape the chips send "
+                 "(0.9-M3-S24, #438, building the design ruled at "
+                 "#384): repeated `filter=`/`value=` pairs, paired by "
+                 "position, at most one value per categorical field and "
+                 "at most MAX_FILTERS fields per request, aggregated "
+                 "over the population matching ALL of them. "
+                 "tests/charts-aggregate.test.mjs section 10 decides "
+                 "every rule of it off-line against real seals - the "
+                 "intersection rather than the union on a fixture where "
+                 "the two numbers differ, the refusals (a repeated "
+                 "field, an unpaired name, a value the effective spec "
+                 "no longer offers, one filter past the cap), the floor "
+                 "applied to the intersection exactly as to the whole, "
+                 "and the disclosure claim that a combination matching "
+                 "one member and a combination matching nobody come "
+                 "back as the same document. WHAT STAYS LIVE-ONLY is "
+                 "the CPU a multi-predicate aggregation really costs on "
+                 "a Worker: every current row is opened per request and "
+                 "each predicate is another read per person, so the "
+                 "shape of the answer is proven off-line but its cost "
+                 "under a real platform limit is not. Send two chips "
+                 "and then the cap's worth against a corpus with "
+                 "several members, and watch one answer come back "
+                 "inside the limit",
         "covers": ["server/worker.js", "server/charts-agg.js"],
         "status": "never",
     },
