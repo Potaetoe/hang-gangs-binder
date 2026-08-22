@@ -445,11 +445,19 @@ function makeDb(seed) {
     if (sql.startsWith("SELECT account_id, last_seen_at, " +
         "COUNT(*) OVER () AS candidates FROM directory")) {
       const limit = Number(/LIMIT (\d+)/.exec(sql)[1]);
+      /* The DIRECTION is read out of the statement, never assumed. A
+         stub that sorted oldest-first whatever the statement said would
+         make the gone-longest-first arm (#454 item 13) unfalsifiable:
+         a Worker that asked D1 for DESC would still be served ASC here
+         and the arm would go on passing. The mutation that found this
+         is in 0.9-M3-S38's own battery. */
+      const descending = /ORDER BY last_seen_at DESC/.test(sql);
       const matching = [...directory.values()]
         .filter((row) => row.last_seen_at < args[0]);
       return { results: matching
         .slice()
-        .sort((a, b) => String(a.last_seen_at).localeCompare(b.last_seen_at))
+        .sort((a, b) => (descending ? -1 : 1) *
+          String(a.last_seen_at).localeCompare(b.last_seen_at))
         .slice(0, limit)
         .map((row) => ({ account_id: row.account_id,
           last_seen_at: row.last_seen_at, candidates: matching.length })) };
