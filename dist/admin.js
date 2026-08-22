@@ -482,6 +482,20 @@
       hasMore: shown < total };
   }
 
+  
+
+  function departedCapNote(payload, rows) {
+    const total = payload && payload.total;
+    const cap = payload && payload.cap;
+    if (typeof total !== "number" || !Number.isFinite(total)) return "";
+    if (typeof cap !== "number" || !Number.isFinite(cap)) return "";
+    if (typeof rows !== "number" || !Number.isFinite(rows) || rows < 0) {
+      return "";
+    }
+    if (!(total > cap)) return "";
+    return "Showing " + rows + " (checked " + cap + " of " + total + ")";
+  }
+
    
    
    
@@ -558,6 +572,7 @@
     eraseDepartedSentence: eraseDepartedSentence,
     DEPARTED_PAGE_SIZE: DEPARTED_PAGE_SIZE,
     departedSections: departedSections,
+    departedCapNote: departedCapNote,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
     idleNotice: idleNotice,
@@ -1732,27 +1747,36 @@
         empty.className = "hint";
         empty.textContent = "Nobody has left - nothing to clean up.";
         list.appendChild(empty);
-        return;
-      }
-      for (const section of view.sections) {
-        if (!section.rows.length) continue;
-        const heading = document.createElement("h2");
-        heading.textContent = DEPARTED_TITLES[section.key];
-        list.appendChild(heading);
-        for (const entry of section.rows) {
-          list.appendChild(departedRow(entry, section.key));
+      } else {
+        for (const section of view.sections) {
+          if (!section.rows.length) continue;
+          const heading = document.createElement("h2");
+          heading.textContent = DEPARTED_TITLES[section.key];
+          list.appendChild(heading);
+          for (const entry of section.rows) {
+            list.appendChild(departedRow(entry, section.key));
+          }
+        }
+        if (view.hasMore) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.className = "secondary";
+          more.textContent = "More";
+          more.addEventListener("click", function () {
+            departedRevealed += DEPARTED_PAGE_SIZE;
+            renderDeparted();
+          });
+          list.appendChild(more);
         }
       }
-      if (!view.hasMore) return;
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "secondary";
-      more.textContent = "More";
-      more.addEventListener("click", function () {
-        departedRevealed += DEPARTED_PAGE_SIZE;
-        renderDeparted();
-      });
-      list.appendChild(more);
+      
+
+      const capNote = departedCapNote(departedPayload, view.total);
+      if (!capNote) return;
+      const footer = document.createElement("p");
+      footer.className = "hint";
+      footer.textContent = capNote;
+      list.appendChild(footer);
     }
 
     async function loadDeparted() {
