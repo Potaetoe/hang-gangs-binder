@@ -681,8 +681,9 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
     # SECOND ARM (S23 fix wave 2, #436). What steal_mutex must do is
     # absorb a denied move, whatever denied it - a property of this
     # module, true on every operating system. The live-handle fixture is
-    # a Windows-only way to PRODUCE that denial, because POSIX rename(2)
-    # succeeds against an open file; run on Linux it denies nothing, the
+    # a Windows-only way to PRODUCE that denial, because the POSIX rename
+    # system call succeeds against an open file; run on Linux it denies
+    # nothing, the
     # steal goes through, and the arm passes without ever exercising the
     # catch it names. So the denial is injected into os.replace - the
     # same shape the os.remove and os.stat injections in this file use -
@@ -815,8 +816,9 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
           prime_lock.MUTEX_TIMEOUT_SECONDS > prime_lock.MUTEX_STALE_SECONDS)
     # UNSTEALABLE IS INJECTED, NOT HELD OPEN (S23 fix wave 2, #436). The
     # first version made the mutex unstealable by holding its handle in a
-    # live subprocess, which is a Windows-only condition: on Linux
-    # rename(2) succeeds against an open file, so the steal went through,
+    # live subprocess, which is a Windows-only condition: on Linux the
+    # POSIX rename system call succeeds against an open file, so the
+    # steal went through,
     # the acquire succeeded, no TimeoutError was raised and the arm's own
     # premise was false - CI on ubuntu-latest red on exactly that while
     # every Windows run was green. What is under test is the loop's
