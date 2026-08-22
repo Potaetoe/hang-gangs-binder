@@ -124,7 +124,7 @@ performed = 0
 # Asserted at the end, not merely printed - the floor every suite in
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
-EXPECTED = 162
+EXPECTED = 210
 
 
 def check(label, condition):
@@ -735,6 +735,373 @@ try:
                                   "origin/accounts", completion_full)
     check("an unreadable --declared path fails, names why",
           not stage.ok and "could not read" in stage.lines[0])
+
+    print("\n--- MUTATION_TABLE_ROW: the pattern needs the red/green shape "
+         "INSIDE the row, not any markdown table row (third finding, "
+         "0.9-M3-S22, #435 comment 5376145722) ---")
+    ordinary_table = os.path.join(root, "completion-ordinary-table.txt")
+    write(ordinary_table,
+         "mutation battery: see the file list below.\n\n"
+         "| file | status |\n| --- | --- |\n| a.js | done |\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  ordinary_table)
+    check("an ordinary markdown table with no red/green (or fail/pass) "
+         "shape inside any row is NOT mutation evidence, even though "
+         "'mutation' appears un-negated and a table row is present",
+          not stage.ok
+          and "mutation-battery evidence" in "\n".join(stage.lines))
+
+    evidence_table = os.path.join(root, "completion-evidence-table.txt")
+    write(evidence_table,
+         "mutation battery:\n\n"
+         "| mutation | before | after |\n"
+         "| 1 | red (failed) | green (passed) |\n"
+         "browser: checked at phone width.\n")
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  evidence_table)
+    check("a table row that DOES carry the red/green (fail/pass) shape "
+         "inside it is real mutation evidence and passes",
+          stage.ok and "tier: normal" in stage.lines)
+
+    print("\n--- the prose-only path (0.9-M3-S22, #435): a slice whose "
+         "declared files are provably unchanged under comment/token "
+         "stripping owes no RED commit, mutation table or browser note "
+         "---")
+
+    # A dedicated two-commit history off the SHARED base_sha, held apart
+    # from tip_sha's own RED-marked lineage - `stage_tier()` takes `base`
+    # as a real parameter, so this fixture passes its OWN base sha rather
+    # than "origin/accounts", exactly the way a fork's own default-branch
+    # flag already lets a real caller do.
+    git(repo, "branch", "prose-only-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-base")
+    write(os.path.join(repo, "apps", "web", "util.js"),
+         "const LABEL = \"hello\";\n// a note about LABEL\n")
+    write(os.path.join(repo, "dist", "util.js"),
+         "const LABEL = \"hello\";\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: base state")
+    prose_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "prose-only-head", "prose-only-base")
+    git(repo, "checkout", "-q", "prose-only-head")
+    write(os.path.join(repo, "apps", "web", "util.js"),
+         "const LABEL = \"hello\";\n"
+         "// a totally different note about LABEL, reworded entirely\n")
+    write(os.path.join(repo, "README.md"),
+         "fixture, with a prose note added\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword, no RED marker in this subject at all")
+    # dist/util.js is untouched here on purpose - its blob stays the
+    # SAME one prose-only-base committed, which is what "dist/ blob ids
+    # unchanged" (the ticket's own second half) is checking for.
+
+    prose_declared = os.path.join(root, "declared-prose.txt")
+    write(prose_declared, "apps/web/util.js\nREADME.md\n")
+    stage = ship_check.stage_tier(repo, prose_declared, prose_base_sha,
+                                  None)
+    check("a JS page file whose only change is inside a comment, "
+         "declared alongside a markdown file that genuinely changed, "
+         "passes with NO RED commit and NO --completion at all - "
+         "markdown is prose by nature and needs no stripping",
+          stage.ok
+          and "prose-only: 2 file(s) identical under comment "
+              "stripping." in "\n".join(stage.lines))
+    check("...the tier bucket itself is unaffected - still judged "
+         "normal by tier.py, never silently downgraded to trivial",
+          "tier: normal" in stage.lines)
+    check("...and the per-file base/head hashes are printed for both "
+         "declared files, not just a bare pass/fail",
+          any(line.strip().startswith("prose") and "apps/web/util.js" in
+              line and "base=" in line and "head=" in line
+              for line in stage.lines))
+    check("...and the dist/ mirror's own blob comparison is printed too "
+         "- the page-file half of the proof",
+          any("dist" in line and "unchanged" in line
+              for line in stage.lines))
+
+    git(repo, "branch", "prose-only-string-head", "prose-only-base")
+    git(repo, "checkout", "-q", "prose-only-string-head")
+    write(os.path.join(repo, "apps", "web", "util.js"),
+         "const LABEL = \"world\";\n// a note about LABEL\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "change the string literal value only")
+    stage = ship_check.stage_tier(repo, prose_declared, prose_base_sha,
+                                  None)
+    check("a JS file whose only change sits INSIDE a string literal is "
+         "NOT prose-only - a string is code, not a comment (the "
+         "ticket's own words) - normal evidence is still required",
+          not stage.ok and "no RED commit" in "\n".join(stage.lines))
+
+    prose_unsupported = os.path.join(root, "declared-prose-unsupported.txt")
+    write(prose_unsupported, "apps/web/util.js\nnotes.txt\n")
+    stage = ship_check.stage_tier(repo, prose_unsupported, prose_base_sha,
+                                  None)
+    check("a declared file with no stripper for its extension (a bare "
+         ".txt) turns the WHOLE prose-only path off, even though every "
+         "OTHER declared file is genuinely prose-only",
+          not stage.ok
+          and "no stripper for this extension" in "\n".join(stage.lines)
+          and "no RED commit" in "\n".join(stage.lines))
+
+    git(repo, "branch", "prose-only-sensitive-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-sensitive-base")
+    write(os.path.join(repo, "server", "worker.js"),
+         "function ping() {\n  return true; // old note\n}\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: sensitive base")
+    prose_sensitive_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "prose-only-sensitive-head",
+       "prose-only-sensitive-base")
+    git(repo, "checkout", "-q", "prose-only-sensitive-head")
+    write(os.path.join(repo, "server", "worker.js"),
+         "function ping() {\n  return true; // NEW NOTE, reworded\n}\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "comment-only reword in server/")
+    prose_sensitive_declared = os.path.join(
+        root, "declared-prose-sensitive.txt")
+    write(prose_sensitive_declared, "server/worker.js\n")
+    stage = ship_check.stage_tier(repo, prose_sensitive_declared,
+                                  prose_sensitive_base_sha, None)
+    check("a SENSITIVE-tier file (server/, no page-file dist check "
+         "owed) whose only change is a comment also gets the "
+         "prose-only waiver - S20's own real scenario, #424",
+          stage.ok and "tier: sensitive" in stage.lines
+          and "prose-only" in "\n".join(stage.lines))
+
+    print("\n--- F1, fix wave (0.9-M3-S22, #435 comment 5376851627): SQL "
+         "and TOML get the same blank-line-drop the JS/CSS tokenizer "
+         "gets for free, so a comment edit that changes the comment "
+         "LINE COUNT is still prose-only - 0.9-M3-S20's real "
+         "server/schema.sql (#424) is this exact shape, no fixture "
+         "existed for either family before this fix wave ---")
+
+    git(repo, "branch", "prose-only-sql-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-sql-base")
+    write(os.path.join(repo, "server", "schema.sql"),
+         "-- one line of note\nCREATE TABLE t (id INTEGER);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: sql base")
+    prose_sql_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "prose-only-sql-linecount-head",
+       "prose-only-sql-base")
+    git(repo, "checkout", "-q", "prose-only-sql-linecount-head")
+    write(os.path.join(repo, "server", "schema.sql"),
+         "-- one line of note,\n-- now split across two lines\n"
+         "CREATE TABLE t (id INTEGER);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword that grows the comment from one line to two")
+    prose_sql_declared = os.path.join(root, "declared-prose-sql.txt")
+    write(prose_sql_declared, "server/schema.sql\n")
+    stage = ship_check.stage_tier(repo, prose_sql_declared,
+                                  prose_sql_base_sha, None)
+    check("a .sql comment-only reword that CHANGES THE LINE COUNT (one "
+         "comment line splits into two, S20's exact defect) is still "
+         "prose-only - the bare _strip_line_comments() output would "
+         "have differed only in blank-line positions",
+          stage.ok and "prose-only" in "\n".join(stage.lines))
+    check("...and the per-file base/head hashes are printed for the "
+         ".sql file, same as every other family",
+          any(line.strip().startswith("prose") and "schema.sql" in line
+              and "base=" in line and "head=" in line
+              for line in stage.lines))
+
+    git(repo, "branch", "prose-only-sql-statement-head",
+       "prose-only-sql-base")
+    git(repo, "checkout", "-q", "prose-only-sql-statement-head")
+    write(os.path.join(repo, "server", "schema.sql"),
+         "-- one line of note\nCREATE TABLE t (id INTEGER, name TEXT);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a real statement change, not a comment")
+    stage = ship_check.stage_tier(repo, prose_sql_declared,
+                                  prose_sql_base_sha, None)
+    check("a .sql change that ALTERS A STATEMENT (a column added) still "
+         "reads as differs - dropping blank lines never hides a real "
+         "code change, only a comment's own line-count churn",
+          not stage.ok
+          and any(line.strip().startswith("prose") and "schema.sql" in line
+                  and line.rstrip().endswith("differs")
+                  for line in stage.lines))
+
+    git(repo, "branch", "prose-only-toml-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-toml-base")
+    write(os.path.join(repo, "config", "site.toml"), "# one line\nkey = 1\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: toml base")
+    prose_toml_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "prose-only-toml-linecount-head",
+       "prose-only-toml-base")
+    git(repo, "checkout", "-q", "prose-only-toml-linecount-head")
+    write(os.path.join(repo, "config", "site.toml"),
+         "# one line,\n# now split across two lines\nkey = 1\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword that grows the comment from one line to two")
+    prose_toml_declared = os.path.join(root, "declared-prose-toml.txt")
+    write(prose_toml_declared, "config/site.toml\n")
+    stage = ship_check.stage_tier(repo, prose_toml_declared,
+                                  prose_toml_base_sha, None)
+    check("a .toml comment-only reword that changes the comment line "
+         "count is prose-only too - TOML shares _strip_line_comments() "
+         "with SQL and had the identical defect",
+          stage.ok and "prose-only" in "\n".join(stage.lines))
+
+    print("\n--- F4, fix wave (0.9-M3-S22, #435 comment 5376851627): "
+         "PAGE_FILE now matches a JS/CSS file in an apps/web/ "
+         "SUBDIRECTORY, so its dist/ mirror is still checked ---")
+
+    git(repo, "branch", "prose-only-subdir-base", base_sha)
+    git(repo, "checkout", "-q", "prose-only-subdir-base")
+    write(os.path.join(repo, "apps", "web", "sub", "util.js"),
+         "const X = 1;\n// a note\n")
+    write(os.path.join(repo, "dist", "sub", "util.js"), "const X = 1;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "prose-only fixture: subdirectory base")
+    prose_subdir_base_sha = sha(repo, "HEAD")
+    prose_subdir_declared = os.path.join(root, "declared-prose-subdir.txt")
+    write(prose_subdir_declared, "apps/web/sub/util.js\n")
+
+    git(repo, "branch", "prose-only-subdir-clean-head",
+       "prose-only-subdir-base")
+    git(repo, "checkout", "-q", "prose-only-subdir-clean-head")
+    write(os.path.join(repo, "apps", "web", "sub", "util.js"),
+         "const X = 1;\n// a different note\n")
+    # dist/sub/util.js untouched - same blob prose-only-subdir-base
+    # committed, proving PAGE_FILE reached this nested path at all.
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "comment-only reword in a subdirectory")
+    stage = ship_check.stage_tier(repo, prose_subdir_declared,
+                                  prose_subdir_base_sha, None)
+    check("a comment-only reword to a JS file NESTED under apps/web/ "
+         "(apps/web/sub/util.js) is prose-only with its dist/ mirror "
+         "checked - PAGE_FILE no longer stops at the top level",
+          stage.ok and any("dist" in line and "unchanged" in line
+                           for line in stage.lines))
+
+    git(repo, "branch", "prose-only-subdir-moved-head",
+       "prose-only-subdir-base")
+    git(repo, "checkout", "-q", "prose-only-subdir-moved-head")
+    # The SOURCE is untouched (token-identical to base, trivially) but
+    # the PUBLISHED bytes moved - the exact hazard PAGE_FILE's dist/
+    # guard exists for, now reachable one directory down.
+    write(os.path.join(repo, "dist", "sub", "util.js"), "const X = 1 ;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "dist/ reflow only, source untouched")
+    stage = ship_check.stage_tier(repo, prose_subdir_declared,
+                                  prose_subdir_base_sha, None)
+    check("...and when the nested file's dist/ mirror moves while the "
+         "source stays token-identical, the waiver is refused - before "
+         "this fix PAGE_FILE never matched the nested path, so this "
+         "dist/ move would have gone unchecked and prose-only would "
+         "have wrongly passed",
+          not stage.ok
+          and any("dist" in line and "changed" in line
+                  and "unchanged" not in line for line in stage.lines))
+
+    print("\n--- browser-note waiver, fix wave (0.9-M3-S22, #435, "
+         "review comment following 5376851627): a page file "
+         "individually proven prose-only owes no browser note even "
+         "when a DIFFERENT declared file breaks the whole-batch "
+         "waiver - S20's exact shape ---")
+
+    git(repo, "branch", "mixed-waiver-base", base_sha)
+    git(repo, "checkout", "-q", "mixed-waiver-base")
+    write(os.path.join(repo, "apps", "web", "waived.js"),
+         "const X = 1;\n// a note\n")
+    write(os.path.join(repo, "dist", "waived.js"), "const X = 1;\n")
+    write(os.path.join(repo, "server", "other.sql"),
+         "CREATE TABLE t (id INTEGER);\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "mixed-waiver fixture: base state")
+    mixed_base_sha = sha(repo, "HEAD")
+
+    git(repo, "branch", "mixed-waiver-red", "mixed-waiver-base")
+    git(repo, "checkout", "-q", "mixed-waiver-red")
+    write(os.path.join(repo, "tests", "mixed-waiver-fixture.test.mjs"),
+         "// fixture arm, never run by a real suite\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "RED: fixture contract for mixed-waiver")
+    write(os.path.join(repo, "apps", "web", "waived.js"),
+         "const X = 1;\n// a different note\n")
+    write(os.path.join(repo, "server", "other.sql"),
+         "CREATE TABLE t (id INTEGER, name TEXT);\n")
+    # dist/waived.js untouched - proves the individually-eligible page
+    # file's own waiver, same shape the top-level prose-only fixture
+    # above already proves for the whole-batch case.
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m",
+       "comment-only reword in waived.js, a real statement change in "
+       "other.sql")
+
+    mixed_declared = os.path.join(root, "declared-mixed-waiver.txt")
+    write(mixed_declared, "apps/web/waived.js\nserver/other.sql\n")
+    completion_mixed_waiver = os.path.join(
+        root, "completion-mixed-waiver.txt")
+    write(completion_mixed_waiver,
+         "mutation battery: broke it, watched it fail, restored it, "
+         "watched it pass.\nbrowser: not performed - waived.js's only "
+         "change is a comment and its dist/ blob is unchanged.\n")
+    stage = ship_check.stage_tier(repo, mixed_declared, mixed_base_sha,
+                                  completion_mixed_waiver)
+    check("a page file individually proven prose-only (comment-only + "
+         "dist/ unchanged) owes NO browser note even though a "
+         "different declared file (server/other.sql, a real statement "
+         "change) broke the whole-batch waiver - passes on real "
+         "mutation evidence alone, with an honest 'not performed' "
+         "browser note that is never itself a reason to refuse",
+          stage.ok
+          and "browser note waived for apps/web/waived.js"
+              in "\n".join(stage.lines))
+    check("...and the tier is still sensitive (server/ dominates), "
+         "same as any other mixed declared list - the waiver changes "
+         "only what evidence is owed, never the tier",
+          "tier: sensitive" in stage.lines)
+
+    print("\n--- browser evidence, clause-scoped DENY, fix wave "
+         "(0.9-M3-S22, #435, review comment following 5376851627): an "
+         "honest 'not performed' clause about one thing must not "
+         "poison a DIFFERENT clause's real width/device evidence ---")
+
+    mixed_clause_text = (
+        "browser: apps/web/other.html not performed - unrelated, "
+        "already covered by CI.\n"
+        "browser: apps/web/page.html checked at phone width, "
+        "iPhone.\n")
+    check("a completion carrying an honest 'not performed' clause "
+         "about one file AND a real width/device clause about a "
+         "different file still counts as browser evidence overall - "
+         "before this fix, 'not performed' anywhere in the text "
+         "vetoed the whole check",
+          ship_check._has_browser_evidence(mixed_clause_text))
+
+    still_denied_text = (
+        "browser: not performed - only the 320px layout changed, and "
+        "nothing else was checked.\n")
+    check("...and a denial that happens to mention a width IN THE "
+         "SAME CLAUSE still does not count as evidence - the original "
+         "hazard DENY exists for is still caught, just scoped to the "
+         "clause instead of the whole text",
+          not ship_check._has_browser_evidence(still_denied_text))
+
+    git(repo, "checkout", "-q", "0.9-m0-s22")
+    for throwaway in ("prose-only-head", "prose-only-string-head",
+                      "prose-only-base", "prose-only-sensitive-head",
+                      "prose-only-sensitive-base",
+                      "prose-only-sql-linecount-head",
+                      "prose-only-sql-statement-head", "prose-only-sql-base",
+                      "prose-only-toml-linecount-head",
+                      "prose-only-toml-base",
+                      "prose-only-subdir-clean-head",
+                      "prose-only-subdir-moved-head",
+                      "prose-only-subdir-base",
+                      "mixed-waiver-red", "mixed-waiver-base"):
+        git(repo, "branch", "-D", throwaway)
 
     print("\n--- stage_totals: hand-typed gate totals vs what THIS run "
          "printed (0.9-M3-S16, #421) - the S12 (#418) case: \"34/34 "
@@ -1417,6 +1784,123 @@ try:
     check("a report-only stage passing does not rescue a failed "
          "gating stage from the exit code",
           "[REPORT]" in buffer2.getvalue())
+
+    print("\n--- the self-satisfying refusal, generalized (0.9-M3-S22, "
+         "#435): every stage's OWN failure text, pasted back in as a "
+         "--completion, must not accidentally satisfy the evidence "
+         "checks it (or a later stage) would grade a real draft "
+         "against - the arm walks every stage that can print one ---")
+    refusal_texts = []
+
+    def collect(label, stage_obj):
+        refusal_texts.append((label, "\n".join(stage_obj.lines)))
+
+    git(repo, "branch", "0.9-M0-S22-refusal-fixture", tip_sha)
+    git(repo, "checkout", "-q", "0.9-M0-S22-refusal-fixture")
+    collect("branch name (bad case)", ship_check.stage_branch_name(repo))
+    git(repo, "checkout", "-q", "0.9-m0-s22")
+    git(repo, "branch", "-D", "0.9-M0-S22-refusal-fixture")
+
+    write(os.path.join(repo, "README.md"), "fixture, dirty for the arm\n")
+    collect("working tree clean + head SHA (dirty)",
+            ship_check.stage_clean_head(repo))
+    git(repo, "checkout", "-q", "--", "README.md")
+
+    collect("declared files vs real diff (mismatch)",
+            ship_check.stage_declared_vs_diff(repo, "origin/accounts",
+                                              declared_bad))
+
+    git(repo, "branch", "0.9-m0-s22-refusal-no-red", base_sha)
+    git(repo, "checkout", "-q", "0.9-m0-s22-refusal-no-red")
+    write(os.path.join(repo, "apps", "web", "refusal.html"),
+         "<html></html>\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a change with no marker at all")
+    refusal_no_red_declared = os.path.join(
+        root, "declared-refusal-no-red.txt")
+    write(refusal_no_red_declared, "apps/web/refusal.html\n")
+    collect("slice tier (no RED commit)",
+            ship_check.stage_tier(repo, refusal_no_red_declared,
+                                  "origin/accounts", None))
+    git(repo, "checkout", "-q", "0.9-m0-s22")
+    git(repo, "branch", "-D", "0.9-m0-s22-refusal-no-red")
+
+    collect("slice tier (no --completion)",
+            ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  None))
+    collect("slice tier (mutation evidence missing)",
+            ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  completion_no_mutation))
+    collect("slice tier (browser evidence missing)",
+            ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  completion_no_browser))
+    collect("slice tier (ordinary table, no red/green shape)",
+            ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  ordinary_table))
+    collect("slice tier (declared file with no stripper)",
+            ship_check.stage_tier(repo, prose_unsupported, prose_base_sha,
+                                  None))
+    collect("stage_totals (S12 mismatch)",
+            ship_check.stage_totals(fixture_prior, s12_shape))
+
+    os.environ["SHIP_CHECK_STUB_OLD_GATE"] = "fail"
+    collect("old gate (FAILED)", ship_check.stage_old_gate(repo))
+    os.environ.pop("SHIP_CHECK_STUB_OLD_GATE", None)
+
+    os.environ["SHIP_CHECK_STUB_NEW_GATE"] = "fail"
+    with PatchInitProblems([]):
+        collect("new gate (FAILED)", ship_check.stage_new_gate(repo, None))
+    os.environ.pop("SHIP_CHECK_STUB_NEW_GATE", None)
+
+    with PatchInitProblems(["fixture: pretend uninitialized"]):
+        collect("new gate (not initialized)",
+                ship_check.stage_new_gate(repo, None))
+
+    for label, text in refusal_texts:
+        check("%s: its own refusal text does not self-satisfy mutation "
+             "evidence when pasted back in as a --completion" % label,
+              not ship_check._has_mutation_evidence(text))
+        check("%s: its own refusal text does not self-satisfy browser "
+             "evidence when pasted back in as a --completion" % label,
+              not ship_check._has_browser_evidence(text))
+
+    print("\n--- F2, fix wave (0.9-M3-S22, #435 comment 5376851627): a "
+         "completion that is nothing but the MANDATORY pasted ship-check "
+         "block must not satisfy the mutation check by itself - every "
+         "completion is required to paste this block (AGENTS.md: 'paste "
+         "the stdout... never abridged'), and it alone read as evidence "
+         "before this fix ---")
+
+    buffer_f2 = io.StringIO()
+    with PatchInitProblems([]), redirect_stdout(buffer_f2):
+        ship_check.main(["--repo", repo, "--declared", declared_good,
+                         "--base", "origin/accounts", "--completion",
+                         completion_full, "--completion-block"])
+    own_output = buffer_f2.getvalue()
+    check("sanity: the captured run's own completion-block row carries "
+         "a PASS sitting near a FAILED, the exact shape "
+         "MUTATION_RESULT_PAIR looks for - otherwise this arm would "
+         "prove nothing about the fix",
+          ship_check.MUTATION_RESULT_PAIR.search(own_output) is not None)
+
+    pasted_only_text = ("## Mutation battery\n\nRan clean, nothing more "
+                        "to add.\n\n```\n" + own_output + "\n```\n")
+    check("F2: a draft that is only a 'mutation' heading, one sentence, "
+         "and the mandatory pasted ship-check block does NOT satisfy "
+         "the mutation check on its own - before this fix, the pasted "
+         "block's own PASS/FAILED row was enough",
+          not ship_check._has_mutation_evidence(pasted_only_text))
+
+    pasted_only_path = os.path.join(root, "completion-pasted-block-only.txt")
+    write(pasted_only_path, pasted_only_text)
+    stage = ship_check.stage_tier(repo, declared_good, "origin/accounts",
+                                  pasted_only_path)
+    check("...and stage_tier() itself refuses the same draft, naming "
+         "the missing mutation-battery evidence - the mandatory paste "
+         "can never manufacture the evidence a completion is required "
+         "to sit beside it",
+          not stage.ok
+          and "mutation-battery evidence" in "\n".join(stage.lines))
 
     del os.environ["SHIP_CHECK_STUB_SCENARIO"]
     del os.environ["BINDER_GH_CMD"]
