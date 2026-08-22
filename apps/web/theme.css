@@ -2096,15 +2096,13 @@ body.instrument main.stack { gap: var(--space-8); }
      (`.row.wrap-row > .wrap-row-value`, above, outside any
      breakpoint) rather than switching to a column - #463 fix wave 1
      F1, side by side stays on desktop (owner ruling #454 item 21).
-     NO `.wrap-row-value` override lives in this block: one used to
-     reset its flex to `none`, on the claim that leaving `flex: 1`
-     (basis 0%) active in a column layout would grow the cell
-     vertically to fill the row's height - measured false (#463 fix
-     wave 1 F3): with or without that override, `.row.wrap-row` is
-     auto-height here, so there is no free space on the column's main
-     axis for any flex-grow value to claim, and the two states render
-     pixel-identical. A rule with no measured effect does not get to
-     stay on a story, so it is gone rather than kept "just in case". */
+     NO `.wrap-row-value` override lives in this block, because
+     resetting its flex to `none` here has no measured effect (#463
+     fix wave 1 F3): `.row.wrap-row` is auto-height in this column
+     layout, so there is no free space on the column's main axis for
+     any flex-grow value to claim - with or without a `flex: none`
+     override, the two states render pixel-identical. A rule with no
+     measured effect does not get to stay on a story. */
   .row.wrap-row {
     flex-direction: column;
     align-items: stretch;
