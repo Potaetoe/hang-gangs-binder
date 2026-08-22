@@ -79,6 +79,8 @@ const adminHtml = await read("../apps/web/admin.html");
 const adminJs = await read("../apps/web/admin.js");
 const distHtml = await read("../dist/admin.html");
 const distJs = await read("../dist/admin.js");
+const themeCss = await read("../apps/web/theme.css");
+const distThemeCss = await read("../dist/theme.css");
 
 const DEAD_IDS = ["keyfile", "keyfile-picker", "run", "clear",
   "published-state", "unpublish", "unpublish-status", "membership-card",
@@ -1856,6 +1858,208 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     /No changes yet/.test(byId.get("log-list").textContent));
 }
 
+/* -- Wiring for #463: the wrap-row squeeze - a long, unbroken run in   */
+/* one `.row.wrap-row` child could crowd a shorter sibling down to 0px, */
+/* at ANY width, because `.wrap-row-value`'s `flex: 1` (basis 0%) gave  */
+/* it zero weight in the shrink math a deficit row runs (fix wave 1,    */
+/* #463, F1 - the review's own 1280px Roles-row fixture, CONFIRMED).    */
+/* This suite has no layout engine (the Node DOM stub cannot compute a  */
+/* rendered width), so it proves the three things it CAN: theme.css     */
+/* carries the phone-width stacking rule (`flex-direction: column` AND  */
+/* `align-items: stretch`, both read from the SAME parsed rule body -   */
+/* fix wave 1, F2 - dropping either one alone must fail this check,     */
+/* never just the first) inside the site's phone breakpoint; it carries */
+/* the desktop-width fix (`.wrap-row-value { flex: 1 1 auto; }`,        */
+/* OUTSIDE any breakpoint - basis `auto` rather than `0%`, so a width    */
+/* deficit shrinks every child by its own size instead of routing all   */
+/* of it away from this one); and that a wrap-row site this suite had   */
+/* not yet covered (the numeric-field read-only row) still emits the    */
+/* classes both rules key on. Every check below is a PARSED rule, never */
+/* a string match on a comment - the same discipline tools/check_web.py's */
+/* own media_block_bodies()/rule_bodies() hold reviewing CSS to,        */
+/* reimplemented here in JS since this apparatus is Node, not Python.   */
+/* The real geometry proof - the squeezed cell legible at 375/360/1280, */
+/* and short-content desktop rects staying byte-for-byte the same       */
+/* before and after fix wave 1 - is a real-browser measurement, printed */
+/* in the completion, exactly as #433 F1's own pixel claim was (a Node  */
+/* stub proves wiring, never pixels). -- */
+
+// Comments only - a rule inside a comment ("/* .row.wrap-row { ... */")
+// must not satisfy either check below, so both strip them first.
+function stripCssComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+// The body of every @media block, brace-matched exactly the way
+// tools/check_web.py's media_block_bodies() is - counted rather than
+// stopped at the first "}", because a media block is a block OF
+// blocks. Each entry also carries the block's own header text, so a
+// caller can pick the block by the width it names rather than by
+// position.
+function mediaBlocks(css) {
+  const blocks = [];
+  const opener = /@media[^{]*\{/g;
+  let match;
+  while ((match = opener.exec(css))) {
+    let depth = 1;
+    let index = opener.lastIndex;
+    while (index < css.length && depth) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") depth -= 1;
+      index += 1;
+    }
+    blocks.push({ header: match[0], body: css.slice(opener.lastIndex,
+      index - 1) });
+    opener.lastIndex = index;
+  }
+  return blocks;
+}
+
+// Every rule body in `block` whose selector list names `selector`
+// exactly - a compared, split list rather than a substring search, so
+// ".row.wrap-row" is never mistaken for ".row" or ".row.buttons".
+function ruleBodies(block, selector) {
+  const bodies = [];
+  const rule = /([^{}]+)\{([^{}]*)\}/gs;
+  let match;
+  while ((match = rule.exec(block))) {
+    const parts = match[1].split(",").map((one) => one.trim());
+    if (parts.includes(selector)) bodies.push(match[2]);
+  }
+  return bodies;
+}
+
+// Every rule outside any @media block - the same slice-and-replace
+// shape mediaBlocks() already walks, minus what it found, so a
+// selector this check reads here is one theme.css applies at EVERY
+// width, phone included.
+function outsideMediaBlocks(css) {
+  let out = "";
+  let last = 0;
+  const opener = /@media[^{]*\{/g;
+  let match;
+  while ((match = opener.exec(css))) {
+    out += css.slice(last, match.index);
+    let depth = 1;
+    let index = opener.lastIndex;
+    while (index < css.length && depth) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") depth -= 1;
+      index += 1;
+    }
+    last = index;
+    opener.lastIndex = index;
+  }
+  out += css.slice(last);
+  return out;
+}
+
+// The site's own phone breakpoint (52rem), named where it is defined
+// rather than guessed at every call site below: the comment directly
+// above that block in theme.css calls it "the whole of the small-
+// screen [layout]" and states its own reason ("whether two fields fit
+// side by side"), and .pair (a label/control pair, the same side-by-
+// side-to-stacked shape wrap-row needs) already switches to
+// flex-direction: column there - not the 64rem block, which only
+// turns the rail into a strip and is about the two-column threshold,
+// and not the 22rem block, which is a stats-grid-only exception the
+// site's own comment says is deliberately narrower than "phone-sized".
+function phoneBreakpointBody(css) {
+  const block = mediaBlocks(css).find(
+    (candidate) => /max-width:\s*52rem/.test(candidate.header));
+  return block ? block.body : null;
+}
+
+function wrapRowStacksUnderPhoneBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const phone = phoneBreakpointBody(css);
+  if (phone === null) return false;
+  const stacked = ruleBodies(phone, ".row.wrap-row");
+  return stacked.some((body) => /flex-direction\s*:\s*column/.test(body));
+}
+
+// F2 (#463 fix wave 1, CONFIRMED): the stacking rule alone does not
+// give each stacked child the row's full width - `.row`'s own
+// `align-items: center` (unscoped, above) keeps a child at its own
+// content width unless the cross axis says otherwise, and
+// `align-items: stretch` is what says otherwise. Read from the SAME
+// rule body the flex-direction check above reads (both conditions on
+// one `.some()` pass), not a second rule found anywhere in the file,
+// so a stray `align-items: stretch` elsewhere cannot pass this by
+// coincidence. Deleting just this declaration left the suite at
+// 148/148 green before this check existed - the id cell rendered
+// 13px wide, centred, instead of the row's full width.
+function wrapRowStretchesUnderPhoneBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const phone = phoneBreakpointBody(css);
+  if (phone === null) return false;
+  const stacked = ruleBodies(phone, ".row.wrap-row");
+  return stacked.some((body) => /flex-direction\s*:\s*column/.test(body) &&
+    /align-items\s*:\s*stretch/.test(body));
+}
+
+// F1 (#463 fix wave 1, CONFIRMED): `.wrap-row-value` needs a real,
+// content-sized flex-basis (`auto`), not `0%` (what plain `flex: 1`
+// means) - a 0% basis gives this cell zero weight in the shrink math
+// a flex row runs once its children's combined width exceeds the
+// row's own, so 100% of any squeeze routed onto whichever sibling was
+// not this one, and this one could render 0px wide holding nothing
+// longer than a two-character id. That happened at 1280 with a
+// 62-character unbroken Roles label (the review's own fixture) -
+// nothing here was ever scoped to a width, so the desktop rule needed
+// the same fix as the phone one. Read outside every @media block: the
+// phone breakpoint below switches the whole row to a column, where
+// this same declaration still applies but does nothing observable
+// (fix wave 1, F3 - measured, not assumed).
+function wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const top = outsideMediaBlocks(css);
+  const rows = ruleBodies(top, ".row.wrap-row > .wrap-row-value");
+  return rows.some((body) => /flex\s*:\s*1\s+1\s+auto\s*;/.test(body));
+}
+
+check("apps/web/theme.css: .row.wrap-row stacks (flex-direction: " +
+  "column) inside the site's own phone breakpoint (max-width: 52rem, " +
+  "the same one .pair already stacks under) - a parsed rule, not a " +
+  "string match on a comment",
+  wrapRowStacksUnderPhoneBreakpoint(themeCss));
+check("dist/theme.css carries the same stacking rule - the build is " +
+  "apps/web with the comments removed, never a second source",
+  wrapRowStacksUnderPhoneBreakpoint(distThemeCss));
+check("apps/web/theme.css: the same stacking rule also carries " +
+  "align-items: stretch - without it a stacked child keeps its own " +
+  "content width, centred, instead of the row's full width (#463 fix " +
+  "wave 1, F2)",
+  wrapRowStretchesUnderPhoneBreakpoint(themeCss));
+check("dist/theme.css: same stretch declaration, same rule body, " +
+  "survives the build",
+  wrapRowStretchesUnderPhoneBreakpoint(distThemeCss));
+check("apps/web/theme.css: .row.wrap-row > .wrap-row-value gets " +
+  "flex: 1 1 auto OUTSIDE any breakpoint - basis auto rather than 0%, " +
+  "so a desktop width deficit shrinks this cell by its own size " +
+  "instead of routing the whole squeeze onto a sibling (#463 fix " +
+  "wave 1, F1)",
+  wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(themeCss));
+check("dist/theme.css: same desktop flex-basis fix survives the build",
+  wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(distThemeCss));
+
+{
+  // The numeric-field read-only row (readOnlyFieldBlock, e.g. "Weight")
+  // was never checked for the wrap-row/wrap-row-value classes the
+  // stacking rule above keys on - every other wrap-row site in this
+  // file already was (the Fields header/value rows above, Roles below,
+  // the Change log above). Closing that gap here rather than leaving
+  // it implied by the others.
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const weightRow = byId.get("fields-list").children[1].children[0];
+  check("the numeric Fields row (readOnlyFieldBlock) carries row " +
+    "wrap-row, the same overflow protection every other row on this " +
+    "page uses",
+    weightRow.className === "row wrap-row");
+  check("its label span carries wrap-row-value",
+    weightRow.children[0].className === "wrap-row-value");
+}
+
 /* -- Render-only: a hostile string lands as inert text everywhere this  */
 /* page draws server-authored content. -- */
 
@@ -1919,7 +2123,12 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 171;
+// merge-forward over origin/accounts, 0.9-M3-S37: base (merge-base
+// 71f9f4a8dbe6) had 142; this branch's own head (9a1999e) added 8 for
+// the stacking/desktop-squeeze arms, reaching 150; S30's fix wave (PR
+// #468, merged to origin/accounts) added 29 more, reaching 171 there;
+// this merge keeps every arm from both sides, so 142 + 8 + 29 = 179.
+const EXPECTED = 179;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
