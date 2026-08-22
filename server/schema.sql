@@ -355,7 +355,7 @@ CREATE INDEX IF NOT EXISTS auth_replay_expiry
 -- no handles and no rows - built in the keyholder's browser and posted
 -- here as JSON.
 --
--- POST/GET/DELETE /snapshot and their handlers are GONE (0.9-M2-S3,
+-- POST/GET/DELETE /snapshot and their handlers are retired (0.9-M2-S3,
 -- #354). apps/web/charts.html asks GET /charts-data instead and
 -- server/charts-agg.js computes that answer per request out of
 -- `submissions`, so there is no published document to gate and no

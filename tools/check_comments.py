@@ -2249,10 +2249,11 @@ DANGLING_PINS = {
     # by cause; every file listed is either outside this slice's declared
     # list or embedded in a paragraph too large to true as a "one-line
     # comment fix" (the pack's own bar for fixing outside the declared
-    # list). Two are server/ and stay for #424 or the next sensitive
-    # slice; the rest are apps/web/, dev/ or tools/ and stay for whoever
-    # next touches that file, per AGENTS.md's own "comments slim as the
-    # code that made them stale is touched."
+    # list). Each entry names its own owner rather than a running count,
+    # which is what keeps this paragraph true as the list shrinks: a
+    # server/ one waits for a sensitive slice, the rest for whoever next
+    # touches that file, per AGENTS.md's own "comments slim as the code
+    # that made them stale is touched."
     #
     # apps/web/dashboard.js, retired whole at 0.9-M2-S3 (#354), and its
     # own MIN_CELL and public.js alongside it: every entry below narrates
@@ -2356,18 +2357,14 @@ DANGLING_PINS = {
             "door (0.9-M2-S1, #352) reads nothing; listed - #422"),
 
     # The /snapshot route, retired 0.9-M2-S3 (#354) alongside the whole
-    # publish/unpublish surface. server/worker.js's own header and
-    # dev/demo-corpus.js both narrate it correctly (GONE below resolves
-    # them); these two do not.
+    # publish/unpublish surface. server/worker.js's own header,
+    # dev/demo-corpus.js and server/schema.sql's snapshots-table header
+    # all narrate it correctly (GONE below resolves them); this one does
+    # not.
     ("dev/demo.test.mjs", "route", "/snapshot"):
         (1, "says the calls \"dropped out\" rather than one of the "
             "five allowed words; route retired 0.9-M2-S3 (#354). "
             "Listed - #422"),
-    ("server/schema.sql", "route", "/snapshot"):
-        (1, "the snapshots table's own header describes GET /snapshot "
-            "in present tense with no retirement framing; route "
-            "retired 0.9-M2-S3 (#354). server/ - listed for #424 or "
-            "the next sensitive slice - #422"),
 
     # Retired features and files with no single owner obvious enough to
     # rewrite blind:
