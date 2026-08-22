@@ -360,8 +360,11 @@ guards, never as the pattern for a new one.
   overlap, containment, spill. The Node DOM stub proves wiring, never
   pixels; a builder that skipped the browser in 0.9-M2 shipped a label
   smothering its bar that only the reviewer's measurements caught.
-  Member pages are checked at phone width FIRST, admin surfaces at
-  desktop (owner lens ruling, 2026-08-20).
+  Member pages are checked at phone width FIRST (375, then 360, then
+  desktop); admin pages are proven at desktop and get ONE phone check
+  for legibility - nothing squeezed, clipped, or scrolling sideways -
+  not the full phone-first treatment (owner ruling, #454 item 22,
+  2026-08-22).
 - **An arm reads real shipped state, never a harness default.** Before
   asserting that something is hidden, absent, or trimmed, force the
   opposite state first or read the real page text; a stub default that

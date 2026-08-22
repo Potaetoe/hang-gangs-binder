@@ -2052,6 +2052,34 @@ body.instrument main.stack { gap: var(--space-8); }
   /* Two across rather than one, so the summary is not a long list of
      single numbers. */
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* The squeeze (#463, owner ruling #454 item 21): `.row.wrap-row`
+     stayed a flex row at every width, and a label (`.hint`, its own
+     natural width) beside a value that only grows (`.wrap-row-value`,
+     flex: 1, basis 0%) is fine while the row is wide enough for both -
+     at 375/360 a realistic label can exceed the row's own shrunk
+     width alone, leaving the value 0px wide and wrapping its id
+     letter by letter. Stacked here, both take the full row width in
+     their own turn instead of splitting one - `align-items: stretch`
+     is what makes that automatic (a flex column's cross axis is
+     inline here, and stretch is what fills it; `.row`'s own
+     `align-items: center` above would otherwise keep each child at
+     its own content width). `.wrap-row-value`'s flex: 1 no longer
+     needs to claim anything, so it is reset to `none` - unset it would
+     grow the value vertically to fill the row's height instead, which
+     nothing here wants. `min-width: 0` and `overflow-wrap: anywhere`
+     on `.row.wrap-row > *` above stay unscoped by width on purpose:
+     that is the #416 spill guard (a 64-hex id, a pasted URL cannot
+     widen the page), and stacking removes the SQUEEZE, not the wrap
+     protection - both are still needed once each child is its own
+     full-width line. Above this breakpoint neither rule applies, so
+     `.row.wrap-row` stays the plain flex row it always was. */
+  .row.wrap-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row.wrap-row > .wrap-row-value { flex: none; }
 }
 
 /* Very narrow: one stat per row, since two no longer fit their labels.
