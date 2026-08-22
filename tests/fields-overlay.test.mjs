@@ -1389,6 +1389,31 @@ const retiredValuesIn = (spec, name) => {
 {
   const { db, env, adminToken } = await freshWorld();
 
+  await putField(env, adminToken, "mood", {
+    label: "Mood", values: [{ label: "Great" }, { label: "Grim" }] });
+
+  /* THE VOCABULARY THE OFFERED SPEC USES, read off the member spec
+     BEFORE anything is retired - every field still in it, including the
+     one the admin invented, whose keys this Worker mints rather than
+     the shipped file. Derived rather than written out, because a list
+     of key names typed here would go stale the moment the spec grows a
+     key and would then be the check passing for the wrong reason; read
+     before the retires, because a field taken out of this read takes
+     its own keys with it and would widen nothing while looking as
+     though it had. */
+  const offeredKeys = new Set();
+  const choiceKeys = new Set();
+  for (const one of (await specOf(env, adminToken)).fields) {
+    Object.keys(one).forEach((key) => offeredKeys.add(key));
+    for (const choice of one.choices || []) {
+      Object.keys(choice).forEach((key) => choiceKeys.add(key));
+    }
+  }
+  check("the vocabulary was read off a spec that really carries every " +
+    "field - the shipped seven plus the admin's own",
+    offeredKeys.has("multiple") && offeredKeys.has("choicesFrom") &&
+    offeredKeys.has("choices"));
+
   await putField(env, adminToken, "gender", {
     values: [
       { id: "male", label: "Male" },
@@ -1399,8 +1424,6 @@ const retiredValuesIn = (spec, name) => {
   });
   await call(env, "DELETE", "/admin-fields/roles",
     { headers: bearer(adminToken) });
-  await putField(env, adminToken, "mood", {
-    label: "Mood", values: [{ label: "Great" }, { label: "Grim" }] });
   await call(env, "DELETE", "/admin-fields/mood",
     { headers: bearer(adminToken) });
 
@@ -1449,15 +1472,19 @@ const retiredValuesIn = (spec, name) => {
     fieldIn(view, "gender") !== null &&
     fieldOr(view, "gender").retiredAt === undefined);
 
-  check("NO MEMBER DATA AND NO COUNTS: the admin read carries the same " +
-    "keys the spec does plus the two markers, and nothing else - read " +
-    "off a view that really carries every shipped field plus the one " +
-    "the admin added, so an empty answer cannot satisfy it",
+  check("NO MEMBER DATA AND NO COUNTS: every key on every field is one " +
+    "the offered spec already uses, or one of the two markers - a " +
+    "count, a member or an id would be a word this vocabulary has no " +
+    "room for",
     (view.fields || []).length === SITE.fields.length + 1 &&
     view.fields.every((one) => Object.keys(one).every((key) =>
-      ["name", "kind", "label", "term", "blank", "choices", "chart",
-        "multiple", "unit", "units", "min", "max", "bands", "choicesFrom",
-        "retired", "retiredAt"].indexOf(key) !== -1)));
+      offeredKeys.has(key) || key === "retired" || key === "retiredAt")));
+  check("and the same of every value: the offered shape plus the one " +
+    "marker, so a retired value is a value and not a record about one",
+    choiceKeys.size > 0 &&
+    view.fields.every((one) => (one.choices || []).every((choice) =>
+      Object.keys(choice).every((key) =>
+        choiceKeys.has(key) || key === "retired"))));
 }
 
 /* 10d. The fence, both ways. */
