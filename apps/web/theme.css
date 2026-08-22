@@ -1093,7 +1093,28 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   overflow-wrap: anywhere;
 }
 
-.row.wrap-row > .wrap-row-value { flex: 1; }
+/* F1 (#463 fix wave 1): `flex: 1` is shorthand for `flex-basis: 0%`,
+   which gave `.wrap-row-value` a ZERO weight in the shrink math a flex
+   row runs when its children's own widths do not fit - the item with
+   basis 0% absorbs none of a width deficit (its scaled shrink factor,
+   basis times shrink, is 0), so every pixel of the deficit landed on
+   whichever sibling had a real (auto) basis, and `.wrap-row-value`
+   stayed pinned at 0 regardless of how short its own text was. That
+   is what let a Roles row with a 62-character unbroken label render
+   0px wide at 1280 - not a phone-only defect, since nothing scoped
+   the squeeze to a width. `flex-basis: auto` gives `.wrap-row-value`
+   the same real, content-sized basis every other child here already
+   has, so a width deficit now shrinks every child in proportion to
+   its OWN size: a short id stays close to its own text's width, and
+   whichever sibling is long absorbs most of the deficit and wraps
+   (`min-width: 0` and `overflow-wrap: anywhere` above already make
+   that wrap possible - this is the change that lets the flex sizing
+   actually use it, instead of handing 100% of a squeeze to whichever
+   sibling is not this one). `flex-grow: 1` is unchanged, so a row
+   with room to spare still gives this cell the slack, exactly as
+   before: measured byte-for-byte identical at 1280 for every existing
+   short-content row (completion on #463, fix wave 1). */
+.row.wrap-row > .wrap-row-value { flex: 1 1 auto; }
 
 .suffix {
   font-size: var(--text-sm);
@@ -2054,32 +2075,40 @@ body.instrument main.stack { gap: var(--space-8); }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* The squeeze (#463, owner ruling #454 item 21): `.row.wrap-row`
-     stayed a flex row at every width, and a label (`.hint`, its own
-     natural width) beside a value that only grows (`.wrap-row-value`,
-     flex: 1, basis 0%) is fine while the row is wide enough for both -
-     at 375/360 a realistic label can exceed the row's own shrunk
-     width alone, leaving the value 0px wide and wrapping its id
-     letter by letter. Stacked here, both take the full row width in
-     their own turn instead of splitting one - `align-items: stretch`
-     is what makes that automatic (a flex column's cross axis is
-     inline here, and stretch is what fills it; `.row`'s own
-     `align-items: center` above would otherwise keep each child at
-     its own content width). `.wrap-row-value`'s flex: 1 no longer
-     needs to claim anything, so it is reset to `none` - unset it would
-     grow the value vertically to fill the row's height instead, which
-     nothing here wants. `min-width: 0` and `overflow-wrap: anywhere`
-     on `.row.wrap-row > *` above stay unscoped by width on purpose:
-     that is the #416 spill guard (a 64-hex id, a pasted URL cannot
-     widen the page), and stacking removes the SQUEEZE, not the wrap
-     protection - both are still needed once each child is its own
-     full-width line. Above this breakpoint neither rule applies, so
-     `.row.wrap-row` stays the plain flex row it always was. */
+     stayed a flex row at every width, and one child (whichever one
+     carries the long, unbroken run - a label, a member name, a
+     64-hex id, a pasted URL) could crowd a shorter sibling down to
+     0px, wrapping it letter by letter. Stacked here, every child
+     takes the full row width in its own turn instead of splitting
+     one - `align-items: stretch` is what makes that automatic (a flex
+     column's cross axis is inline here, and stretch is what fills
+     it; `.row`'s own `align-items: center` above would otherwise keep
+     each child at its own content width - measured: dropping
+     `align-items: stretch` alone, with `flex-direction: column` still
+     in place, renders a short id cell centred at 13px wide instead of
+     the row's full width, #463 fix wave 1 F2). `min-width: 0` and
+     `overflow-wrap: anywhere` on `.row.wrap-row > *` above stay
+     unscoped by width on purpose: that is the #416 spill guard (a
+     64-hex id, a pasted URL cannot widen the page), and stacking
+     removes the SQUEEZE, not the wrap protection - both are still
+     needed once each child is its own full-width line. Above this
+     breakpoint `.row.wrap-row` keeps its own fix for the same squeeze
+     (`.row.wrap-row > .wrap-row-value`, above, outside any
+     breakpoint) rather than switching to a column - #463 fix wave 1
+     F1, side by side stays on desktop (owner ruling #454 item 21).
+     NO `.wrap-row-value` override lives in this block: one used to
+     reset its flex to `none`, on the claim that leaving `flex: 1`
+     (basis 0%) active in a column layout would grow the cell
+     vertically to fill the row's height - measured false (#463 fix
+     wave 1 F3): with or without that override, `.row.wrap-row` is
+     auto-height here, so there is no free space on the column's main
+     axis for any flex-grow value to claim, and the two states render
+     pixel-identical. A rule with no measured effect does not get to
+     stay on a story, so it is gone rather than kept "just in case". */
   .row.wrap-row {
     flex-direction: column;
     align-items: stretch;
   }
-
-  .row.wrap-row > .wrap-row-value { flex: none; }
 }
 
 /* Very narrow: one stat per row, since two no longer fit their labels.

@@ -722,7 +722,9 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   overflow-wrap: anywhere;
 }
 
-.row.wrap-row > .wrap-row-value { flex: 1; }
+
+
+.row.wrap-row > .wrap-row-value { flex: 1 1 auto; }
 
 .suffix {
   font-size: var(--text-sm);
@@ -1360,8 +1362,6 @@ body.instrument main.stack { gap: var(--space-8); }
     flex-direction: column;
     align-items: stretch;
   }
-
-  .row.wrap-row > .wrap-row-value { flex: none; }
 }
 
 
