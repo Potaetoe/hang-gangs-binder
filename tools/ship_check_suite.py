@@ -139,8 +139,10 @@ performed = 0
 # this fleet holds itself to: a hand-counted total nothing compares
 # against still prints a confident pass when a check stops running.
 # 213, then 218 - the five added at 0.9-M3-S35 fix wave 1 (#460, F4)
-# prove tools/reaper.py and tools/prime_lock.py tier sensitive now.
-EXPECTED = 218
+# prove tools/reaper.py and tools/prime_lock.py tier sensitive now. Then
+# 223 - the five added at fix wave 2 (#460, re-fire #1, F4) prove a
+# prefixed "./" spelling of either file tiers the same as the bare one.
+EXPECTED = 223
 
 
 def check(label, condition):
@@ -558,6 +560,29 @@ try:
          "amendment names - stays normal, so it is the two named files "
          "that are sensitive, not everything under tools/",
           tier.judge("tools/reaper_suite.py")[0] == "normal")
+
+    print("\n--- F4 fix wave 2 (#460, re-fire #1, finding F4): the two "
+         "sensitive rows above judge a PREFIXED spelling the same as "
+         "the bare one - a leading './' (any number of times, and with "
+         "either slash direction) is stripped before judging, not just "
+         "backslashes ---")
+    check("./tools/reaper.py judges sensitive, the same as the bare "
+         "spelling",
+          tier.judge("./tools/reaper.py")[0] == "sensitive")
+    check("./tools/prime_lock.py judges sensitive, the same as the bare "
+         "spelling",
+          tier.judge("./tools/prime_lock.py")[0] == "sensitive")
+    check(".\\tools\\reaper.py (both a leading dot-slash AND backslashes, "
+         "the Windows-relative spelling) judges sensitive too",
+          tier.judge(".\\tools\\reaper.py")[0] == "sensitive")
+    check("a declared list naming ./tools/reaper.py tiers the WHOLE "
+         "slice sensitive, exactly like the bare spelling does",
+          tier.tier_of(["README.md", "./tools/reaper.py",
+                        "tests/x.test.mjs"])[0] == "sensitive")
+    check("the amendment stays narrow under the prefixed spelling too: "
+         "./tools/reaper_suite.py - the neighbor, not the reaper itself "
+         "- still judges normal",
+          tier.judge("./tools/reaper_suite.py")[0] == "normal")
 
     print("\n--- stage: slice tier - the evidence-below-tier refusal "
          "(0.9-M3-S5, #403) ---")

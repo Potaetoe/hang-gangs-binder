@@ -97,8 +97,22 @@ TRIVIAL = [
 def judge(path):
     """(tier, why) for one repo-relative path - "sensitive", "trivial"
     or "normal", never None for a non-empty path (the fallback IS
-    "normal", per the ruling's "everything in between")."""
+    "normal", per the ruling's "everything in between").
+
+    Fix wave 2 (#460, re-fire #1, finding F4): normalize backslashes AND
+    strip a leading "./" (however many times it repeats - "././x" is the
+    same path as "x") BEFORE judging, not just backslashes. Without this
+    a prefixed spelling of an anchored sensitive row - `^tools/reaper\\.py$`
+    matches "tools/reaper.py" but not "./tools/reaper.py" - silently
+    tiered normal, the exact gap the review's own probe demonstrated.
+    claim-vs-diff's own declared-list paths never carry a "./" prefix in
+    practice, but the anchored rows this amendment sits beside
+    (`(^|/)wrangler\\.toml$`) already tolerate a prefix by construction,
+    and the two rows modelled on them should read the same regardless of
+    which of the two spellings a caller happens to use."""
     p = path.strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
     if not p:
         return None, ""
     for rx, why in SENSITIVE:

@@ -312,6 +312,67 @@ const DEFAULT_ARM_TIMEOUT_SECONDS = 180;
 const ARM_TIMEOUT_SECONDS = envNumber("BINDER_ARM_TIMEOUT_SECONDS",
   DEFAULT_ARM_TIMEOUT_SECONDS);
 
+/* THE TEST-DURATION SEAM (0.9-M3-S35 fix wave 2, #460, re-fire #1,
+   finding F1). tests/gate-budget.test.mjs used to grade two things by
+   comparing REAL measured wall-clock durations against each other - a
+   pool-of-3-vs-pool-of-1 ratio, and the "slowest" line's claimed name
+   ordering. Both flaked, on two different checks in the same file,
+   under real contention on the machine this ticket was built on:
+   `runFile()`'s own `ms` starts before `spawn()`, so it carries node's
+   own process start-up jitter, and neither check's margin survived it.
+   Fix wave 1 widened the ordering check's fixture gaps to fix the FIRST
+   flake; the re-fire found that widening pushed the ratio check's ideal
+   value from about 0.5 up to about 0.69 against an unmoved 0.75
+   threshold, and it flaked twice in 26 runs - a wider margin on one
+   check narrowed the other's, because both read the SAME three
+   fixture arms. A real deadline is no answer to a check whose margin is
+   a measurement of the machine, not of the code.
+
+   The fix is structural rather than a wider margin. An arm may report
+   its OWN duration by printing a line reading
+   "__GATE_TEST_DURATION_MS__ <n>", and this runner substitutes that
+   EXACT number for the REAL measured `ms` everywhere `ms` feeds once
+   arm reporting happens - the per-arm printed duration and the
+   "slowest" sort - but ONLY when BINDER_GATE_TEST_DURATIONS_MS reads
+   EXACTLY "1". With an injected, exact duration,
+   tests/gate-budget.test.mjs's ordering and "right total" checks
+   compare a number the fixture arm CHOSE against this runner's own
+   arithmetic on that number - there is no measurement left for a busy
+   machine to jitter, so there is nothing left to flake.
+
+   ARMED AGAINST A LYING ARM IN A REAL RUN. BINDER_GATE_TEST_DURATIONS_MS
+   is never set by CI (`.github/workflows/deploy.yml` sets no
+   BINDER_GATE_* variable at all - confirmed in review comment
+   5379811881, "What held"), by `./run check`, or by any of this
+   repository's own tooling - so a real arm's own
+   __GATE_TEST_DURATION_MS__ line, printed for any reason, is inert:
+   `effectiveMs()` below never even looks for the marker unless the
+   variable is EXACTLY "1", not merely truthy or merely present, so a
+   stray or malicious print cannot inflate or shrink what the gate
+   reports about a real arm's speed without a human deliberately
+   opting into test mode by name - the same opt-in shape
+   BINDER_GATE_POOL and BINDER_GATE_BUDGET_SECONDS already use, except
+   this lever defaults OFF rather than to a number, because an arm's own
+   claim about its own duration is exactly the one thing this gate must
+   not trust unless a human turned that trust on by name.
+   tests/gate-budget.test.mjs's own "SEAM OFF" scenario proves this both
+   ways the variable could fail to read as an explicit "1" - genuinely
+   absent, and present but reading something else - against a fixture
+   arm that lies outright (claims ~999 real seconds). */
+const TEST_DURATIONS_ARMED =
+  process.env.BINDER_GATE_TEST_DURATIONS_MS === "1";
+const DURATION_MARKER = /^__GATE_TEST_DURATION_MS__ (\d+)\r?$/m;
+
+/* The ms this arm's report() row and the "slowest" sort should use: the
+   REAL measured wall-clock time from runFile(), unless the seam is
+   armed AND this arm's own captured output carries the marker line -
+   see THE TEST-DURATION SEAM above. */
+function effectiveMs(result) {
+  if (!TEST_DURATIONS_ARMED) return result.ms;
+  const match = DURATION_MARKER.exec(result.output);
+  return match ? Number(match[1]) : result.ms;
+}
+
 /* Windows has no process GROUPS the way POSIX does, so `-pid` (the
    POSIX kill-the-group trick, which needs `detached: true` at spawn
    time to put the child in its own group) does nothing there - the one
@@ -498,7 +559,7 @@ for (let index = 0; index < arms.length; index += 1) {
   const result = results[index];
   const name = rel(path);
   const ok = result.code === 0;
-  report(name, ok, result.ms);
+  report(name, ok, effectiveMs(result));
   if (ok) console.log("    " + verdictLine(result.output));
   else {
     spill(name, result);
@@ -748,7 +809,7 @@ if (!(await exists(rosterPath))) {
    next when the total is a surprise. */
 const wallMs = Date.now() - gateStarted;
 const slowest = arms
-  .map((path, index) => ({ name: rel(path), ms: results[index].ms }))
+  .map((path, index) => ({ name: rel(path), ms: effectiveMs(results[index]) }))
   .sort((a, b) => b.ms - a.ms)
   .slice(0, 3);
 console.log("\nwall time    " + (wallMs / 1000).toFixed(1) +
