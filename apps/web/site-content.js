@@ -22,17 +22,21 @@
  * the literal six-odd characters of that string on screen, not an
  * element.
  *
- * THE RESTING THEME'S PART OF THIS FETCH IS A CACHE WRITE, NOT A REPAINT.
- * A member's resting palette is painted before first frame by
- * theme-init.js (blocking, in <head>) and confirmed by theme.js
+ * THE RESTING THEME'S PART OF THIS FETCH IS A CACHE WRITE, NEVER A
+ * REPAINT, and - since the owner's ruling in UX record #454 item 15
+ * (2026-08-22; 0.9-M3-S32, #456, superseding 0.9-M3-S12's #418 "admin
+ * default from the second load" rule) - never a paint at all. A
+ * member's resting palette is decided before first frame by
+ * theme-init.js's own synchronous read of the phone's light/dark
+ * scheme (blocking, in <head>) and confirmed the same way by theme.js
  * (classic, at the end of the body) - both of which run and finish
  * before this script's fetch can possibly resolve, since fetch is
- * never synchronous.
- * Repainting data-theme once the admin's configured default arrives
- * would itself be the flash this design exists to avoid, on whatever
- * load first learns a new value. So this file only writes the value to
- * localStorage, for theme-init.js to read, synchronously, before paint,
- * on the NEXT load. See theme-init.js and theme.js for the read side.
+ * never synchronous, and neither one reads this file's cache to decide
+ * what paints any more. So this file only writes the value to
+ * localStorage, for theme.js to read on the NEXT load - not to repaint
+ * the page, but to decide which swatch the picker shows as pre-
+ * selected for a member who has made no choice of their own. See
+ * theme-init.js and theme.js for the read side.
  */
 (function (root) {
   "use strict";
@@ -43,12 +47,13 @@
   // having already run.
   const VALID_PALETTES = ["midnight", "pink", "daylight", "contrast"];
 
-  // The key theme-init.js and theme.js read. Named separately from
+  // The key theme.js reads for its picker (0.9-M3-S32, #456: theme-
+  // init.js no longer reads this key at all). Named separately from
   // apps/web/theme.js's "hgb-palette" because the two answer different
-  // questions:
-  // that key is a member's OWN choice and always wins; this one is the
-  // admin's configured resting palette, consulted only when the member
-  // has made no choice of their own.
+  // questions: that key is a member's OWN choice and always wins; this
+  // one is the admin's configured resting palette, consulted only to
+  // pre-select a swatch when the member has made no choice of their
+  // own - never to decide what paints.
   const DEFAULT_THEME_KEY = "hgb-default-theme";
 
   function endpoint() {
@@ -122,23 +127,24 @@
   }
 
   /*
-   * Learned, not applied - see this file's header comment for why a
-   * value from THIS load is never painted onto THIS load's page. A
-   * name that is not one of the four palettes clears whatever was
-   * cached rather than merely refusing to overwrite it (0.9-M3-S12
-   * fix wave, #418 comment 5371848229, finding F1): S8's GET /config
-   * contract answers "" for "the admin turned the default off", and a
-   * refuse-but-keep read of that answer left a member who once learned
-   * a palette painting it forever - the admin could never turn it back
-   * off. An absent key (the field missing from /config's body
-   * entirely, so this runs as cacheDefaultTheme(undefined)) and an
-   * unrecognized name (a corrupted value, or one a future config
-   * predates this build) get the same treatment: nothing on this
-   * origin should keep painting a resting palette the admin's last
-   * answer does not stand behind. Clearing it is exactly what lets
-   * the NEXT load fall through to theme-init.js's own "nothing
-   * learned" branch, which paints the shipped, system-preference
-   * default - see that file's header.
+   * Learned, never painted - see this file's header comment for why a
+   * value from THIS load never reaches THIS load's page, and 0.9-M3-S32
+   * (#456) for why it now never reaches any page's paint at all, only
+   * theme.js's picker. A name that is not one of the four palettes
+   * clears whatever was cached rather than merely refusing to overwrite
+   * it (0.9-M3-S12 fix wave, #418 comment 5371848229, finding F1): S8's
+   * GET /config contract answers "" for "the admin turned the default
+   * off", and a refuse-but-keep read of that answer left a member who
+   * once learned a palette pre-selected in the picker forever - the
+   * admin could never turn it back off. An absent key (the field
+   * missing from /config's body entirely, so this runs as
+   * cacheDefaultTheme(undefined)) and an unrecognized name (a corrupted
+   * value, or one a future config predates this build) get the same
+   * treatment: nothing on this origin should keep suggesting a resting
+   * palette the admin's last answer does not stand behind. Clearing it
+   * is exactly what lets the NEXT load fall through to theme.js's own
+   * "nothing learned" branch, which pre-selects whatever the phone's
+   * light/dark scheme already painted - see that file's header.
    */
   function cacheDefaultTheme(name) {
     try {

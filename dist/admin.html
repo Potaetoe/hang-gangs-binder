@@ -121,13 +121,34 @@
   <div class="stack" id="tool" hidden>
 
     <!--
+      Tabs, one per area (#385 item (b), #454 item 20, owner ruling
+      2026-08-22 - this page was four stacked cards before 0.9-M3-S30,
+      #452). The [role="tab"]/[role="tablist"] family and the
+      selected-mark rule already live in theme.css (0.9-M2-S13, #378,
+      built for apps/web/charts.html's own picture toggle) - nothing
+      here is a new component, only a new user of one. admin.js wires
+      the click and keeps exactly one panel below un-hidden.
+    -->
+    <div role="tablist" aria-label="Admin sections">
+      <button type="button" role="tab" id="tab-settings"
+        aria-controls="settings-card" aria-selected="true">Settings</button>
+      <button type="button" role="tab" id="tab-roles"
+        aria-controls="roles-card" aria-selected="false">Roles</button>
+      <button type="button" role="tab" id="tab-fields"
+        aria-controls="fields-card" aria-selected="false">Fields</button>
+      <button type="button" role="tab" id="tab-log"
+        aria-controls="log-card" aria-selected="false">Change log</button>
+    </div>
+
+    <!--
       Settings (#416 item 2; the ruled design #385 §9 and §11). Five
       keys, written one at a time through POST /content the moment an
       admin presses that field's own Save - the ruling's own word is
       "instant" - each with its own status line so a refusal names the
       field it belongs to.
     -->
-    <div class="tool" id="settings-card">
+    <div class="tool" id="settings-card" role="tabpanel"
+      aria-labelledby="tab-settings">
       <p class="runner"><span>Settings</span></p>
       <p class="muted">
         What every member sees. Saving one field does not touch the
@@ -226,7 +247,8 @@
       <form> defaults to a GET submit, which puts a member's numeric
       Telegram id in the address bar and in browser history.
     -->
-    <div class="tool" id="roles-card">
+    <div class="tool" id="roles-card" role="tabpanel"
+      aria-labelledby="tab-roles" hidden>
       <p class="runner"><span>Roles</span></p>
       <p class="muted">Who else can reach this page.</p>
       <p class="muted small" id="roles-via"></p>
@@ -310,24 +332,24 @@
       group-makeup counts stay on the charts page, so nothing here
       fetches or reads GET /charts-data.
 
-      UN-RETIRE IS SESSION-SCOPED, HONESTLY - see admin.js's own block
-      comment above mergeFieldsRoster/fieldsRosterView for why: GET
-      /spec answers the EFFECTIVE spec (what a member reads), and a
-      retired field or value is not in it at all, so this card can only
-      offer to bring back what IT has already shown THIS session. F6
-      (#433 fix wave): this comment and the completion on #433 are not
-      where an admin reads the limit, so the ".hint" paragraph right
-      below states the same fact once, in the card's own visible prose.
+      BRING BACK, FROM ANY SESSION (0.9-M3-S30, #452, against 0.9-M3-S25
+      on #440): this card reads GET /admin-fields, the admin-only read
+      that answers with what is retired still in it, marked - so the
+      old session-scoped limit (0.9-M3-S13's own honest sentence here)
+      is gone; see admin.js's own block comment above fieldView() for
+      the shape. The one hazard that survives is real regardless of
+      which session retired a value - the ".hint" paragraph right below
+      states it once, in the card's own visible prose.
     -->
-    <div class="tool" id="fields-card">
+    <div class="tool" id="fields-card" role="tabpanel"
+      aria-labelledby="tab-fields" hidden>
       <p class="runner"><span>Fields</span></p>
       <p class="muted">
         The categorical questions the form asks. Numeric fields stay
         code-defined and are shown, not edited, below.
       </p>
       <p class="hint">
-        Bring back only works for a value retired here this session —
-        retyping a value retired earlier makes a new id, and stored
+        Retyping a value retired earlier makes a new id, and stored
         answers split between the two.
       </p>
       <p class="status" id="fields-status" role="status" aria-live="polite"
@@ -372,7 +394,8 @@
       lands in one). Admin-only reading, newest first, bounded by the
       Worker.
     -->
-    <div class="tool" id="log-card">
+    <div class="tool" id="log-card" role="tabpanel"
+      aria-labelledby="tab-log" hidden>
       <p class="runner"><span>Change log</span></p>
       <p class="muted">
         Every admin change, newest first. Members never see this.
@@ -382,6 +405,17 @@
       <div id="log-list"></div>
     </div>
   </div>
+
+  <!--
+    The toast (#454 item 8) - the one element and one function this
+    ticket owes (0.9-M3-S30, #452), so 0.9-M3-S33 can lift both
+    site-wide unchanged. role="status"/aria-live="polite": a save
+    confirmation is not urgent enough to interrupt a screen reader
+    mid-sentence, the same call this page's idle countdown already
+    makes for the same reason (see the comment above #idle-warning).
+    admin.js's showToast() is the one function that writes to it.
+  -->
+  <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 </main>
 
 <footer>

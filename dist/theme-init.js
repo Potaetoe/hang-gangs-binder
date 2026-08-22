@@ -3,22 +3,18 @@
 (function () {
   "use strict";
 
-   
-   
-   
-   
-   
-  const PALETTES = ["midnight", "pink", "daylight", "contrast"];
+  function schemeDefault() {
+    return (window.matchMedia &&
+      matchMedia("(prefers-color-scheme: dark)").matches)
+      ? "midnight" : "daylight";
+  }
 
   try {
     const chosen = localStorage.getItem("hgb-palette");
     if (chosen && chosen !== "custom") {
       document.documentElement.setAttribute("data-theme", chosen);
     } else {
-      const learned = localStorage.getItem("hgb-default-theme");
-      if (learned && PALETTES.indexOf(learned) !== -1) {
-        document.documentElement.setAttribute("data-theme", learned);
-      }
+      document.documentElement.setAttribute("data-theme", schemeDefault());
     }
   } catch (e) {}
 })();
