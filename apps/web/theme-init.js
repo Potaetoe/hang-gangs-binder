@@ -14,55 +14,50 @@
  * 0.9-M2-S6, #82) IS GONE (0.9-M2-S14, #380 ruling 2): the custom theme
  * is retired outright, so there is nothing left here to derive a
  * palette from two colors, and nothing to warn about their contrast.
- * What remains is this file's original, whole job - painting a saved
- * NAMED palette before the first frame - so it assigns no global any
- * more (tools/check_web.py's MODULE_EXPORTS records the same fact).
+ * What remains is this file's original, whole job - painting a resting
+ * palette before the first frame - so it assigns no global any more
+ * (tools/check_web.py's MODULE_EXPORTS records the same fact).
  *
  * A stored choice reading "custom" - an older browser's localStorage,
  * or a hand-edited value - is not a palette this file paints. It is
  * read and DISCARDED here (see below) rather than trusted, so a member
- * in that state falls through to theme.css's own system-preference
- * defaults, the same resting state a first-time visitor gets - no
- * crash, no half-applied state. theme.js's own guard on load does the
- * matching thing for the same stored value.
+ * in that state gets the same first-visit resting state described
+ * below - no crash, no half-applied state. theme.js's own guard on
+ * load does the matching thing for the same stored value.
  *
- * THE ADMIN'S CONFIGURED DEFAULT (0.9-M3-S12, #418; site.defaultTheme
- * from the Worker's GET /config), for a member with no saved choice of
- * their own. This file cannot fetch it: fetch is never synchronous, and
- * blocking first paint on a network round trip would be the very flash
- * this file exists to prevent, worse than the one it would fix. So it
- * reads a CACHE instead. apps/web/site-content.js writes the last value
- * a page on this origin actually learned from /config into the key
- * "hgb-default-theme", and this file's own read of it is synchronous,
- * the same as the member-choice read two lines up.
+ * FIRST VISIT FOLLOWS THE PHONE (owner ruling, UX record #454 item 15,
+ * 2026-08-22; 0.9-M3-S32, #456, superseding 0.9-M3-S12's #418 "admin
+ * default from the second load" rule - not deleted silently, replaced):
+ * a member with no saved choice of their own gets the plain dark
+ * palette when the phone reports prefers-color-scheme: dark, and the
+ * plain light palette otherwise - including "no preference", the
+ * ruling's own words. matchMedia is synchronous, so this reads it
+ * directly rather than caching anything or waiting on a network round
+ * trip; there is no flash because the decision is made and painted in
+ * the same tick as everything else in this file.
  *
- * A fork's first-ever visit, or one where /config has never answered,
- * finds nothing cached and leaves data-theme unset, so
- * apps/web/theme.css's own system-preference defaults paint exactly as
- * they do today: the "falling back to the shipped default" the design
- * ruling asks for. theme.js's own guard on load mirrors this read too,
- * so the two never disagree about which value a page with no
- * data-theme attribute yet should confirm.
+ * THE ADMIN'S CONFIGURED DEFAULT (site.defaultTheme from the Worker's
+ * GET /config, 0.9-M3-S8/#414) is no longer read here at all. It never
+ * paints a page on its own any more - it is read by theme.js instead,
+ * only to decide which swatch the picker shows as pre-selected. See
+ * theme.js's own header and apps/web/site-content.js's for the read
+ * side and why the cache write there stays a cache write.
  */
 (function () {
   "use strict";
 
-  // The four palettes theme.js knows how to paint. Duplicated rather
-  // than read off a shared global: this script runs before every other
-  // one on the page, including theme.js's own copy (its BG object), so
-  // it cannot depend on anything else having run first. A fifth palette
-  // lands here in the same change that adds it there.
-  const PALETTES = ["midnight", "pink", "daylight", "contrast"];
+  function schemeDefault() {
+    return (window.matchMedia &&
+      matchMedia("(prefers-color-scheme: dark)").matches)
+      ? "midnight" : "daylight";
+  }
 
   try {
     const chosen = localStorage.getItem("hgb-palette");
     if (chosen && chosen !== "custom") {
       document.documentElement.setAttribute("data-theme", chosen);
     } else {
-      const learned = localStorage.getItem("hgb-default-theme");
-      if (learned && PALETTES.indexOf(learned) !== -1) {
-        document.documentElement.setAttribute("data-theme", learned);
-      }
+      document.documentElement.setAttribute("data-theme", schemeDefault());
     }
   } catch (e) {}
 })();

@@ -522,30 +522,65 @@ LEDGER = [
     {
         "id": "GET /charts-data, combined filters",
         "surface": "route",
-        "claim": "the combined-filter parameter shape the chips send "
-                 "(0.9-M3-S24, #438, building the design ruled at "
-                 "#384): repeated `filter=`/`value=` pairs, paired by "
-                 "position, at most one value per categorical field and "
-                 "at most MAX_FILTERS fields per request, aggregated "
-                 "over the population matching ALL of them. "
-                 "tests/charts-aggregate.test.mjs section 10 decides "
-                 "every rule of it off-line against real seals - the "
-                 "intersection rather than the union on a fixture where "
-                 "the two numbers differ, the refusals (a repeated "
-                 "field, an unpaired name, a value the effective spec "
-                 "no longer offers, one filter past the cap), the floor "
-                 "applied to the intersection exactly as to the whole, "
-                 "and the disclosure claim that a combination matching "
-                 "one member and a combination matching nobody come "
-                 "back as the same document. WHAT STAYS LIVE-ONLY is "
+        "claim": "the multi-select filter shape the chips send "
+                 "(0.9-M3-S31, #455, generalizing 0.9-M3-S24's #438 to "
+                 "the chips ruled at #454 items 16-18): repeated "
+                 "`filter=`/`value=` pairs, paired by position, SEVERAL "
+                 "pairs allowed to name one field and forming that "
+                 "field's set, at most MAX_FILTER_PAIRS pairs per "
+                 "request, aggregated over the population that holds "
+                 "one of each named field's values - OR within a "
+                 "field, AND across fields. "
+                 "tests/charts-aggregate.test.mjs sections 10 and 11 "
+                 "decide every rule of it off-line against real seals - "
+                 "the union and the intersection on fixtures where the "
+                 "two numbers differ, the identity between a set "
+                 "naming every value of a field and no set at all, the "
+                 "refusals (a duplicate value in one set, an unpaired "
+                 "name, a value the effective spec no longer offers, "
+                 "one pair past the cap), the floor applied to a union "
+                 "and to an intersection exactly as to the whole, and "
+                 "the disclosure claim that an ask matching one member "
+                 "and an ask matching nobody come back as the same "
+                 "document across all twenty-seven pairs of sets. WHAT "
+                 "STAYS LIVE-ONLY is "
                  "the CPU a multi-predicate aggregation really costs on "
                  "a Worker: every current row is opened per request and "
-                 "each predicate is another read per person, so the "
+                 "each named field is another read per person, so the "
                  "shape of the answer is proven off-line but its cost "
-                 "under a real platform limit is not. Send two chips "
-                 "and then the cap's worth against a corpus with "
+                 "under a real platform limit is not. Send two chips, "
+                 "then a field's whole set, then the cap's worth of "
+                 "pairs against a corpus with "
                  "several members, and watch one answer come back "
                  "inside the limit",
+        "covers": ["server/worker.js", "server/charts-agg.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /charts-data, the present-values list",
+        "surface": "route",
+        "claim": "the group-makeup block is where a page learns which "
+                 "values a big list should offer (0.9-M3-S31, #455 "
+                 "scope 4, serving the owner's ruling at #454 item 18): "
+                 "a line whose count is above zero and whose value is "
+                 "not null, the blank and the pooled bucket being "
+                 "keyed by null and neither of them a value. Because "
+                 "those cells are floored before they leave, presence "
+                 "obeys the floor with no rule of its own - a value too "
+                 "few members hold has no line, so it is never offered "
+                 "as a filter. tests/charts-aggregate.test.mjs section "
+                 "11e arms both directions on one corpus: at the "
+                 "shipped floor of 0 the list is exactly what the group "
+                 "holds, and at a raised floor the value one member "
+                 "holds is gone from it while the block still names "
+                 "another. WHAT STAYS LIVE-ONLY is what a REAL group's "
+                 "list looks like: the country codes a real membership "
+                 "holds are the one input no fixture can stand for, and "
+                 "0.9-M3-S14's drop list is built from them. Read the "
+                 "group-makeup block of an unfiltered view against a "
+                 "corpus with several countries in it and check the "
+                 "list a member is offered against the codes really "
+                 "entered",
         "covers": ["server/worker.js", "server/charts-agg.js"],
         "status": "never",
     },
@@ -711,6 +746,48 @@ LEDGER = [
                  "members gave it, read back byte for byte out of a "
                  "real `submissions` table - and un-retiring brings the "
                  "field back with its values",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "GET /admin-departed",
+        "surface": "route",
+        "claim": "the list an admin sees is built from the bot's live "
+                 "verdict and not from staleness, so a member who has "
+                 "simply been quiet for a month is absent from it "
+                 "while a real leaver is present. No stub can reach "
+                 "this: the verdict comes from Telegram's own "
+                 "getChatMember against a real group, and the whole "
+                 "point of the route is that the answer is theirs "
+                 "rather than this Worker's",
+        "covers": ["server/worker.js"],
+        "status": "never",
+    },
+    {
+        "id": "DELETE /admin-departed/{}",
+        "surface": "route",
+        "claim": "erasing one departed member on a real deployment "
+                 "removes that account's submissions, directory row, "
+                 "membership rows and sessions and nothing of anybody "
+                 "else's, in one D1 transaction - the half a stub "
+                 "cannot reach is the atomicity, since a batch that "
+                 "half-applied would leave a member's entries gone and "
+                 "their session still opening the site. A call this "
+                 "route refuses erases nothing, and the refusal names "
+                 "whichever of the route's several guards stopped it "
+                 "rather than answering one bare no: the bot's own "
+                 "word quoted back for a member Telegram says is still "
+                 "there, the operator's-list sentence for an account "
+                 "an always_allow entry holds open - about which the "
+                 "bot is never asked, so nobody is quoted - the named "
+                 "failure for an account whose standing could not be "
+                 "settled at all, and the ones that never reach a "
+                 "verdict: a malformed id, the caller's own account, "
+                 "the last granting admin row, a membership pre-check "
+                 "that did not answer, and a membership row spelled in "
+                 "a letter case the guard and the delete disagree "
+                 "about. Counting them is this row's job on any slice "
+                 "that adds one",
         "covers": ["server/worker.js"],
         "status": "never",
     },
@@ -2057,7 +2134,8 @@ def changed_since(sha, paths):
         done = subprocess.run(
             ["git", "log", "--format=", "--name-only", "%s..HEAD" % sha,
              "--", *paths],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2139,7 +2217,8 @@ def commits_since(sha):
     try:
         done = subprocess.run(
             ["git", "rev-list", "--count", "%s..HEAD" % sha],
-            cwd=REPO, capture_output=True, text=True, timeout=30)
+            cwd=REPO, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     if done.returncode != 0:
@@ -2303,6 +2382,19 @@ def problems():
 
 
 def main():
+    # Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2 - the
+    # write-side twin ship_check.py's main() already carries): the
+    # read-side UTF-8 fix in changed_since()/commits_since() can now
+    # hand back a real non-ASCII character or a replacement character
+    # (U+FFFD) - this console's own cp1252 stdout cannot re-encode
+    # either one, and printing either crashes print() with
+    # UnicodeEncodeError, which is exactly what this reconfigure block
+    # exists to prevent. Guarded by hasattr() so a caller with no real
+    # stream (a StringIO capture, as some suites use) is untouched.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     found = problems()
     for problem in found:
         print("FAIL  %s" % problem)
