@@ -1024,9 +1024,15 @@ for (const [who, headers] of [
     "answer is known, it is just not the group's",
     !((list.body && list.body.unknown) || [])
       .some((row) => row.accountId === BYPASSED));
-  check("nothing in that whole answer says Telegram spoke about the " +
-    "bypassed account, because Telegram was never asked",
-    !/Telegram/i.test(JSON.stringify(list.body || {})));
+  /* The row QUOTES NOBODY: no status word rides with it, and its reason
+     names the list. Scoped to the row rather than to the whole answer
+     on purpose - a whole-answer sweep for the word "Telegram" also
+     fires on the id-never-served mutation, which is a different arm's
+     job, and an arm that reds for two reasons proves neither. */
+  check("the bypassed row quotes nobody: no status word travels with " +
+    "it, and its reason names the operator's list rather than Telegram",
+    Boolean(listedAllowed) && listedAllowed.status === undefined &&
+    !/telegram/i.test(String(listedAllowed.reason)));
 
   const { value: erase } = await withBot(botSaying("kicked"), () =>
     call(env, "DELETE", "/admin-departed/" + BYPASSED,
