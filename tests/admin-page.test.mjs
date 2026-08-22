@@ -498,12 +498,19 @@ check("departedSections copes with a malformed answer - a missing list " +
       view.sections.every((s) => s.rows.length === 0);
   })());
 
-/* -- The cap note (0.9-M3-S38, #471; the owner's ruling at #454 item 23  */
-/* - a capped list sends its total and the page says "showing 50 of N").  */
-/* GET /admin-departed asks the bot about at most DEPARTED_LIST_CAP       */
-/* accounts, so a group with more stale rows than that has a list which   */
-/* stops short; without this line an admin cannot tell it from a          */
-/* complete one, and the More button above can never reach past it. -- */
+/* -- The cap note (0.9-M3-S38, #471; the owner's ruling at #454 item 23, */
+/* refined by the owner on 2026-08-22 to "Showing 43 (checked 50 of       */
+/* 120)"). GET /admin-departed asks the bot about at most                 */
+/* DEPARTED_LIST_CAP accounts, so a group with more stale rows than that  */
+/* has a list which stops short; without this line an admin cannot tell   */
+/* it from a complete one, and the More button above can never reach      */
+/* past it.                                                               */
+/*                                                                        */
+/* THREE NUMBERS, AND THE FIRST IS NOT THE SECOND. The route drops a      */
+/* candidate the bot calls a current member, so the rows the card holds   */
+/* are fewer than the accounts examined - which is why the first number   */
+/* is counted off the three lists that arrived and only the other two     */
+/* come off the response. -- */
 
 check("apps/web/admin.js exports departedCapNote - the page's whole " +
   "share of item 23, a pure function the card below renders",
@@ -516,25 +523,41 @@ const capNote = typeof Admin.departedCapNote === "function"
   ? Admin.departedCapNote : () => "(no departedCapNote export)";
 
 check("departedCapNote says the owner's own words when the total is " +
-  "past the cap - the numbers straight off the response",
-  capNote({ total: 120, cap: 50 }) === "showing 50 of 120");
+  "past the cap: the rows in hand, then the accounts examined, then " +
+  "the candidates there were",
+  capNote({ total: 120, cap: 50 }, 43) === "Showing 43 (checked 50 of 120)");
+check("the rows shown are the rows it was given, never the cap - " +
+  "fifty examined can be five rows drawn, and a line printing the cap " +
+  "there would promise an admin fifty rows that are not on the page",
+  capNote({ total: 120, cap: 50 }, 5) === "Showing 5 (checked 50 of 120)" &&
+  capNote({ total: 120, cap: 50 }, 50) === "Showing 50 (checked 50 of 120)");
+check("a card holding nothing at all still says what was examined - " +
+  "zero rows is a number, not a reason to go quiet",
+  capNote({ total: 120, cap: 50 }, 0) === "Showing 0 (checked 50 of 120)");
 check("it reads the cap the Worker sent rather than a 50 of its own - " +
   "a page holding its own copy of the constant would go on printing 50 " +
   "after the Worker's moved",
-  capNote({ total: 120, cap: 7 }) === "showing 7 of 120");
+  capNote({ total: 120, cap: 7 }, 5) === "Showing 5 (checked 7 of 120)");
 check("nothing renders when the cap did not truncate: at the cap " +
   "exactly, under it, and at zero",
-  capNote({ total: 50, cap: 50 }) === "" &&
-  capNote({ total: 49, cap: 50 }) === "" &&
-  capNote({ total: 0, cap: 50 }) === "");
+  capNote({ total: 50, cap: 50 }, 43) === "" &&
+  capNote({ total: 49, cap: 50 }, 43) === "" &&
+  capNote({ total: 0, cap: 50 }, 0) === "");
 check("a Worker that sent no counts at all draws no line - the two " +
   "fields are read as numbers or not at all, so an older answer, a " +
   "missing payload and a string are all silent rather than " +
-  "'showing undefined of NaN'",
-  capNote({}) === "" &&
-  capNote(null) === "" &&
-  capNote({ total: "120", cap: "50" }) === "" &&
-  capNote({ departed: [], unknown: [], allowed: [] }) === "");
+  "'Showing 3 (checked undefined of NaN)'",
+  capNote({}, 3) === "" &&
+  capNote(null, 3) === "" &&
+  capNote({ total: "120", cap: "50" }, 3) === "" &&
+  capNote({ departed: [], unknown: [], allowed: [] }, 3) === "");
+check("and a rows count that is not a usable number is silent too - " +
+  "the line's first number is the one thing the response cannot " +
+  "supply, so a caller that fails to count is not covered for",
+  capNote({ total: 120, cap: 50 }) === "" &&
+  capNote({ total: 120, cap: 50 }, "43") === "" &&
+  capNote({ total: 120, cap: 50 }, NaN) === "" &&
+  capNote({ total: 120, cap: 50 }, -1) === "");
 
 /* -- The idle timer, unchanged in shape from every other signed-in page -- */
 
@@ -2222,18 +2245,59 @@ function departedRowByLabel(list, label) {
     const list = byId.get("departed-list");
     const last = list.children[list.children.length - 1];
     check("a truncated read ends the card with the owner's own line, " +
-      "carrying the Worker's two numbers",
-      last.tag === "p" && last.textContent === "showing 50 of 120");
+      "carrying the one row it drew and the Worker's two numbers",
+      last.tag === "p" &&
+      last.textContent === "Showing 1 (checked 50 of 120)");
     check("the line is the LAST thing in the card - a footer, under the " +
       "rows it is about", list.children.indexOf(last) === 2);
     check("it is written as text and holds no markup of its own - one " +
       "text-only node, set through textContent",
       last.children.length === 0 &&
-      serializeSubtree(list).includes(">showing 50 of 120<"));
+      serializeSubtree(list).includes(">Showing 1 (checked 50 of 120)<"));
     check("the rows above it are untouched by the line", list.children[0]
       .textContent === "Departed" &&
       list.children[1].children[0].children[0].textContent ===
         "Departed One");
+  }
+
+  {
+    /* THE NUMBER THE ROUTE CANNOT SUPPLY (the owner's refinement of
+       item 23, 2026-08-22, and #471's review finding F1). Fifty
+       candidates were examined and seven of them came back current
+       members, which the route drops from all three lists - so
+       forty-three rows arrived and forty-three is what the card says.
+       A page that printed the cap there would tell an admin fifty rows
+       are here when forty-three are, which is the misreading the
+       refinement exists to close. */
+    const many = (prefix, n) => Array.from({ length: n },
+      (_unused, i) => ({ accountId: prefix + i, label: prefix + " " + i,
+        lastSeenAt: "2026-07-01T00:00:00.000Z" }));
+    const routes = Object.assign({}, BASE_ROUTES, {
+      "GET /admin-departed": () => ok({ ok: true,
+        departed: many("gone", 20), unknown: many("unsure", 15),
+        allowed: many("kept", 8), total: 120, cap: 50 }),
+    });
+    const { byId } = await driven(routes, { isAdmin: true });
+    const list = byId.get("departed-list");
+    const last = list.children[list.children.length - 1];
+    check("the rows the card holds are counted off the three lists that " +
+      "arrived, not read off the cap: fifty examined, seven of them " +
+      "still members, forty-three rows",
+      last.tag === "p" &&
+      last.textContent === "Showing 43 (checked 50 of 120)");
+    check("and it counts everything that arrived, not the twenty the " +
+      "More button has revealed so far - the window is about scrolling " +
+      "and this line is about what the route did not look at",
+      buttonByText(list, "More") !== undefined &&
+      list.children.length === 23 &&
+      list.children[21].textContent === "More");
+    buttonByText(list, "More").dispatch("click");
+    buttonByText(list, "More").dispatch("click");
+    check("revealing more does not move the number - the same " +
+      "forty-three, with the button gone and every row on screen",
+      buttonByText(list, "More") === undefined &&
+      list.children[list.children.length - 1].textContent ===
+        "Showing 43 (checked 50 of 120)");
   }
 
   {
@@ -2242,7 +2306,23 @@ function departedRowByLabel(list, label) {
     check("a read the cap did not truncate draws nothing new - the card " +
       "ends on its rows, with no line anywhere in it",
       list.children.length === 2 &&
-      !/showing/.test(list.textContent));
+      !/Showing|checked/.test(list.textContent));
+  }
+
+  {
+    const routes = Object.assign({}, BASE_ROUTES, {
+      "GET /admin-departed": () => ok({ ok: true, departed: [], unknown: [],
+        allowed: [], total: 0, cap: 50 }),
+    });
+    const { byId } = await driven(routes, { isAdmin: true });
+    const list = byId.get("departed-list");
+    check("and a route that found no candidates at all is silent too - " +
+      "there is nothing it did not look at, so the empty sentence " +
+      "stands alone",
+      list.children.length === 1 &&
+      list.children[0].textContent ===
+        "Nobody has left - nothing to clean up." &&
+      !/Showing|checked/.test(list.textContent));
   }
 
   {
@@ -2253,13 +2333,13 @@ function departedRowByLabel(list, label) {
     const { byId } = await driven(routes, { isAdmin: true });
     const list = byId.get("departed-list");
     check("a truncated read whose fifty candidates are all still " +
-      "members says BOTH things: nobody has left, and only fifty of a " +
-      "hundred and twenty were asked about - the empty sentence alone " +
-      "would read as the whole group checked",
+      "members says BOTH things: nobody has left, and no rows came out " +
+      "of the fifty examined - the empty sentence alone would read as " +
+      "the whole group checked",
       list.children.length === 2 &&
       list.children[0].textContent ===
         "Nobody has left - nothing to clean up." &&
-      list.children[1].textContent === "showing 50 of 120");
+      list.children[1].textContent === "Showing 0 (checked 50 of 120)");
   }
 }
 
@@ -2685,8 +2765,11 @@ check("no download/export id survives in the real shipped markup - the " +
 // wiring, #463 fix wave 1) to reach 179. Both additions are disjoint
 // (Departed-tab arms vs. wrap-row-wiring arms) and both are kept in
 // full, so the union is the base plus both sides' own additions:
-// 171 + 36 + 8 = 215.
-const EXPECTED = 226;
+// 171 + 36 + 8 = 215. 0.9-M3-S38 (#471) adds 11 on top of that union
+// for the cap note, and its fix wave 1 adds 7 more for the owner's
+// three-number wording and the rows the card counts for itself:
+// 215 + 11 + 7 = 233.
+const EXPECTED = 233;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
