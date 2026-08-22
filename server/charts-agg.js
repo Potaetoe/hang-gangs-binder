@@ -34,12 +34,12 @@
  * because everyone IS every option selected. So the values of one field
  * are ORed, the fields are ANDed, and a field the caller does not name
  * matches everybody. A union is a population like any other and the
- * floor reduces it by the one rule it reduces the whole group by -
- * exact at floor 0, and above it a union too small to draw gets the
- * same document an intersection that small and a whole group that small
- * both get. What DID change with sets is a channel the floor has never
- * bounded, and WHAT THE FLOOR DOES NOT BOUND below states it whole
- * rather than leaving it to be discovered.
+ * floor reduces it by the one rule it reduces the whole group by, on
+ * the terms the paragraph above states: at every floor a union is
+ * treated exactly as a whole population of the same size, the same
+ * document cell for cell. What DID change with sets is a channel the
+ * floor has never bounded, and WHAT THE FLOOR DOES NOT BOUND below
+ * states it whole rather than leaving it to be discovered.
  *
  * NOTHING WAS RIPPED OUT. The Other bucket, person-pooling and band
  * merging all still stand below and all obey whatever floor they are
@@ -1379,11 +1379,7 @@ function echoFilters(filters) {
  * WHAT THIS SHUTS IS THE DIRECT QUESTION AND NOTHING WIDER. Two
  * documents that both DRAW can still be subtracted, and with sets that
  * subtraction is easy to set up; this file's header, under WHAT THE
- * FLOOR DOES NOT BOUND, carries that limit whole. "At any floor above
- * 0" would also be the wrong words for what holds here: a floor of 1
- * draws a whole population of one, so the real property is the stronger
- * one - a union and an intersection are treated exactly as a whole
- * population of the same size, at every floor.
+ * FLOOR DOES NOT BOUND, carries that limit whole.
  * Telling any two of those apart would answer "does anybody in this
  * group hold that value", which is the question a floor exists to
  * refuse, asked from outside the data. At the shipped floor of 0 only
