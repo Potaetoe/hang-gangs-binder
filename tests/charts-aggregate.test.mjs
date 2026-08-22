@@ -2301,8 +2301,13 @@ check("combined: a retired value beside a live predicate refuses the " +
     retiredSpec).ok === false);
 
 /*
- * THE CAP. A bound on the REQUEST, and the arm reads the shipped number
- * rather than carrying a copy of it.
+ * THE CAP, as this section can still reach it. It counts PAIRS since
+ * 0.9-M3-S31 (#455) rather than fields, so a request of the shape this
+ * section arms - one value per field - can no longer meet it, and the
+ * bound itself is armed in section 11 where it lives. What is still
+ * worth pinning here is the relationship the cap has to the FORM: a
+ * request naming every categorical field the form offers, shipped and
+ * admin-added alike, is answered.
  */
 const capFields = JSON.parse(JSON.stringify(SITE));
 for (const name of ["mood", "shift", "hue"]) {
@@ -2318,29 +2323,17 @@ const capQuery = (n) => "measure=weight" + CAP_PAIRS.slice(0, n)
 
 check("combined: the cap is a shipped constant this arm reads rather " +
   "than a number copied into it",
-  typeof agg.MAX_FILTER_PAIRS === "number" && Number.isInteger(agg.MAX_FILTER_PAIRS) &&
-  agg.MAX_FILTER_PAIRS > 0);
+  typeof agg.MAX_FILTER_PAIRS === "number" &&
+  Number.isInteger(agg.MAX_FILTER_PAIRS) && agg.MAX_FILTER_PAIRS > 0);
 check("combined: the cap covers every categorical field the shipped " +
   "form has, so nothing the shipped chips can build is out of reach",
   agg.MAX_FILTER_PAIRS >= SITE.fields
     .filter((one) => one.kind === "choice" && one.chart === true).length);
-check("combined: a request carrying exactly the cap's number of filters " +
-  "is answered",
-  askFor(capQuery(agg.MAX_FILTER_PAIRS), capFields).ok === true);
-const overCap = askFor(capQuery(agg.MAX_FILTER_PAIRS + 1), capFields);
-check("combined: one filter past the cap is refused, with a reason that " +
-  "names the number - the bound is on the request, so a form an admin " +
-  "grows does not grow it",
-  overCap.ok === false &&
-  overCap.error.indexOf(String(agg.MAX_FILTER_PAIRS)) !== -1);
-/* The count is checked BEFORE any field name is resolved, so an
-   over-cap request costs one comparison whatever it names - and a
-   caller cannot use the ordering to learn which of their invented
-   fields the form happens to have. */
-check("combined: past the cap is refused on the count alone, before any " +
-  "field is looked up - the same refusal under the shipped spec, which " +
-  "has three of those six fields and not the other three",
-  askFor(capQuery(agg.MAX_FILTER_PAIRS + 1)).error === overCap.error);
+check("combined: one value for each of six categorical fields - the " +
+  "shipped three and three an admin added - is answered, and is still " +
+  "far under the bound, because the bound counts pairs",
+  askFor(capQuery(CAP_PAIRS.length), capFields).ok === true &&
+  CAP_PAIRS.length < agg.MAX_FILTER_PAIRS);
 
 /* -------------------------------------------------------------- */
 /* 10b. The AND itself, and the echo.                              */
@@ -3230,7 +3223,7 @@ check("route: and that suppressed answer still echoes the caller's own " +
     .join(",") === String(RAISED));
 
 /* ------------------------------------------------------------------ */
-const EXPECTED = 289;
+const EXPECTED = 287;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

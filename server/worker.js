@@ -17,14 +17,16 @@
  *                            seals it at rest. Needs a member session.
  *   GET    /charts-data      aggregate the whole corpus on request and
  *                            answer one measure over the population
- *                            matching every filter given - at most one
- *                            value per categorical field, ANDed
- *                            (0.9-M3-S24, #438): the trend, the
- *                            distribution and the group makeup, with
- *                            the suppression floor the settings hold
- *                            already applied by server/charts-agg.js,
- *                            to the intersection exactly as to the
- *                            whole. Needs a member session. The Worker
+ *                            matching every filter given - a SET of
+ *                            values per categorical field, ORed inside
+ *                            the field and ANDed across fields
+ *                            (0.9-M3-S31, #455, generalizing #438):
+ *                            the trend, the distribution and the group
+ *                            makeup, with the suppression floor the
+ *                            settings hold already applied by
+ *                            server/charts-agg.js, to a union and to an
+ *                            intersection exactly as to the whole.
+ *                            Needs a member session. The Worker
  *                            opens every current row
  *                            to compute it - DESIGN.md, "Charts": "The
  *                            Worker aggregates on request".
