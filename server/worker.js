@@ -4885,15 +4885,14 @@ async function handleReadDeparted(env, origin) {
  * erase that deleted three row classes and then discovered it should
  * not have would have no way back.
  *
- * AND THAT SENTENCE IS TRUE OF THE READS TOO SINCE FIX WAVE 3 (review
- * finding F2). It used to hold only while every read on the way
- * answered: the membership pre-check spent a null or column-less row
- * as "no problem" and the route went on to answer ok:true having
- * deleted three of the four row classes, with the statement-level
- * guard - which protects the membership row alone - quietly keeping
- * the fourth. A read that does not answer is now a refusal in its own
- * words, taken before the transaction, so the ordering above is a
- * property of the route rather than of the database being well.
+ * AND IT IS TRUE OF THE READS AND NOT ONLY OF THE BRANCHES (review
+ * finding F2). Every read below refuses when it does not answer, which
+ * is what makes the ordering a property of THIS ROUTE rather than of
+ * the database being well. A pre-check that walks past a null or a
+ * column-less row reaches the transaction and answers ok:true having
+ * deleted three of the four row classes, because the statement-level
+ * guard underneath protects the membership row and nothing else - and
+ * `removed.membership: 0` is the only signal, which nothing reads.
  *
  * A CURRENT MEMBER IS REFUSED WITH THE VERDICT QUOTED BACK, because the
  * admin needs to be able to tell "Telegram says they are still here"
@@ -4955,14 +4954,15 @@ async function handleEraseDeparted(env, origin, accountId, caller) {
    * with. `wanted` is lower case by ACCOUNT_ID above, so "not equal by
    * bytes but equal ignoring case" is exactly "spelled some other way".
    *
-   * AND THE READ ITSELF FAILS CLOSED (review finding F2). A throw here
-   * used to escape to the catch-all 500 - nothing deleted, but nothing
-   * named either - and a null or column-less row skipped the check
-   * entirely, so the route answered ok:true having deleted three of
-   * the four row classes while the statement-level guard, which
-   * protects the membership row alone, silently kept the fourth. Every
-   * shape this read can fail in now refuses BEFORE the transaction, in
-   * the same words, with nothing deleted.
+   * AND THE READ ITSELF FAILS CLOSED (review finding F2). Every shape
+   * this read can fail in - a throw, no row, a row without the columns
+   * it named - refuses BEFORE the transaction, in the same words, with
+   * nothing deleted. Left to the catch-all a throw gives a 500 that
+   * names nothing, and a null or column-less row is worse than that:
+   * it reads as "no problem" and the erase proceeds. The reason is
+   * this read's own, because "the membership table did not answer" and
+   * "the operator's allow list did not answer" send an admin to
+   * different places even though they are the same table.
    */
   let held;
   try {
