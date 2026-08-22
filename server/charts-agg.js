@@ -544,8 +544,9 @@ const REPEATABLE = new Set(["filter", "value"]);
  *
  * IT IS NOT A PRIVACY RULE AND MUST NOT BE READ AS ONE. The floor is
  * that rule, and it applies to an intersection exactly as it applies to
- * the whole - #384 ruling 2, "the same rule, exact at floor 0". Raising
- * this number would cost nothing in disclosure that the floor does not
+ * the whole - this file's own header carries the ruling and what was put
+ * to the owner adversarially before it was re-accepted. Raising this
+ * number would cost nothing in disclosure that the floor does not
  * already answer for; lowering it would not protect anybody the floor
  * leaves exposed.
  */
