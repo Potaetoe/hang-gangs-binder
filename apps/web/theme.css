@@ -1778,6 +1778,65 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
   color: var(--color-text-muted);
 }
 
+/*
+ * The FILTER chips (0.9-M3-S14, #454 items 16-18) - a fourth family
+ * beside the ACTION/CHIP/TAB three the control-row comment above names,
+ * because this is the one place on the page a control both PICKS a
+ * setting (like the palette swatches) and MULTI-selects (unlike them).
+ * Real <button>s with their own aria-pressed, not a re-skinned .chip
+ * span - the read-only group-makeup chips above never receive a click.
+ *
+ * 44px min tap target and 16px text (owner ruling, #454 item 3) - the
+ * one control on this page that needed a rule stated for it rather
+ * than inherited from .primary/.secondary, since a pill this small
+ * would otherwise size to its own text.
+ */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background: var(--color-field);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  /* The blanket prefers-reduced-motion rule further down this file
+     already zeroes this duration for a member who asked for it - see
+     that rule's own comment on why it stays a blanket `*` selector. */
+  transition: background-color 150ms ease, color 150ms ease,
+              border-color 150ms ease;
+}
+
+.filter-chip:hover:not(:disabled) { border-color: var(--color-accent); }
+
+.filter-chip[aria-pressed="true"] {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.filter-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.filter-row select {
+  min-height: 2.75rem;
+  font-size: var(--text-base);
+}
+
+/* The gate's own plain-words refusal ("Combining filters is being
+   reviewed.", "Choosing several at once is being reviewed.") - .hint's
+   existing muted, small-text treatment, not an error color: nothing
+   here failed, a review is in progress (Prime's ruling on #455,
+   comment 5378956164; this file's own header). */
+.filter-notice { margin: 0; }
+
 .secondary-link {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
