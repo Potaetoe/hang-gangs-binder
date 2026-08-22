@@ -79,7 +79,7 @@ performed = 0
 # stops running - an early return, a renamed helper - which is the
 # armed-looking-but-not failure this repository holds to be worse than
 # no check at all.
-EXPECTED = 166
+EXPECTED = 178
 
 
 def check(label, condition):
@@ -1484,6 +1484,227 @@ try:
           "nothing pretended a release that did not happen",
           agent_init.current_lease(f3_move_linked, f3_move_state)
           == f3_first_block)
+
+    # ------------------------------------------------------------------
+    # L. The fix wave for #448's own review of this slice (comment
+    # 5378165718). F1: the two end-to-end arms above (the park path and
+    # the hand_over path) both inject a PERSISTENT denial and assert the
+    # OUTCOME - a clean refusal, lease still on disk - which is exactly
+    # what do_init's and do_park's own except handlers produce whether
+    # or not remove_lease_file's retry ever ran. Reverting either
+    # release_lease's or hand_over's own os.remove to a bare call left
+    # the suite at 166 checks, 0 failure(s) - the reviewer measured it.
+    # What actually proves the retry is a TRANSIENT denial (fails N
+    # times, then succeeds): only the ARMED call site turns that into a
+    # SUCCESS. F2: the mixed held+denied state. F3: do_init's own
+    # except PermissionError, narrowed. F4: remove_lease_file's own
+    # catch, proven specific the same way take_lease's create already
+    # is (F6 below).
+    # ------------------------------------------------------------------
+    print("\n--- F1 fix wave (#448 review, comment 5378165718): a "
+          "TRANSIENT denial at release_lease's own delete is retried "
+          "through to SUCCESS, not merely reported as the same clean "
+          "refusal a persistent denial produces with or without the "
+          "retry ever running ---")
+    f1_park_primary = build_repo(os.path.join(base, "f1-park-primary"))
+    f1_park_linked = os.path.join(base, "f1-park-linked")
+    git(f1_park_primary, "worktree", "add", "-q", "-b", "f1-park-branch",
+        f1_park_linked)
+    f1_park_state = os.path.join(base, "f1-park-state")
+    run_verb(["init", "--repo", f1_park_linked, "--state", f1_park_state,
+              "--no-install"])
+    f1_park_block = agent_init.current_lease(f1_park_linked, f1_park_state)
+    f1_park_path = agent_init.lease_path(f1_park_block, f1_park_state)
+
+    real_remove_f1 = os.remove
+    f1_park_calls = {"n": 0}
+
+    def flaky_park_remove(target, *a, **kw):
+        if target == f1_park_path and f1_park_calls["n"] < 2:
+            f1_park_calls["n"] += 1
+            raise PermissionError(32, "used by another process (injected, "
+                                      "F1 fix wave, #448 review, "
+                                      "transient, park path)")
+        return real_remove_f1(target, *a, **kw)
+
+    os.remove = flaky_park_remove
+    try:
+        code, out = run_verb(["park", "--repo", f1_park_linked, "--state",
+                              f1_park_state])
+    finally:
+        os.remove = real_remove_f1
+    check("agent-park exits 0 once the transient denial clears, rather "
+          "than the refusal a persistent one produces (F1 fix wave, "
+          "#448 review, comment 5378165718)",
+          code == 0 and f1_park_calls["n"] == 2)
+    check("and the lease file is really gone, not left on disk behind a "
+          "false success",
+          not os.path.isfile(f1_park_path))
+
+    f1_move_primary = build_repo(os.path.join(base, "f1-move-primary"))
+    f1_move_linked = os.path.join(base, "f1-move-linked")
+    git(f1_move_primary, "worktree", "add", "-q", "-b", "f1-move-branch",
+        f1_move_linked)
+    f1_move_state = os.path.join(base, "f1-move-state")
+    run_verb(["init", "--repo", f1_move_linked, "--state", f1_move_state,
+              "--no-install"])
+    f1_first_block = agent_init.current_lease(f1_move_linked, f1_move_state)
+    f1_first_path = agent_init.lease_path(f1_first_block, f1_move_state)
+    f1_target_block = (agent_init.PORT_BLOCKS[1]
+                       if f1_first_block != agent_init.PORT_BLOCKS[1]
+                       else agent_init.PORT_BLOCKS[2])
+    f1_move_calls = {"n": 0}
+
+    def flaky_move_remove(target, *a, **kw):
+        if target == f1_first_path and f1_move_calls["n"] < 2:
+            f1_move_calls["n"] += 1
+            raise PermissionError(32, "used by another process (injected, "
+                                      "F1 fix wave, #448 review, "
+                                      "transient, hand_over path)")
+        return real_remove_f1(target, *a, **kw)
+
+    os.remove = flaky_move_remove
+    try:
+        code, out = run_verb(
+            ["init", "--repo", f1_move_linked, "--state", f1_move_state,
+             "--ports", str(f1_target_block[0]), "--no-install"])
+    finally:
+        os.remove = real_remove_f1
+    check("agent-init --ports moves the block once the transient denial "
+          "on the old block's release clears, rather than the refusal a "
+          "persistent one produces (F1 fix wave, #448 review, comment "
+          "5378165718)",
+          code == 0 and f1_move_calls["n"] == 2)
+    check("the worktree really moved onto the new block",
+          agent_init.current_lease(f1_move_linked, f1_move_state)
+          == f1_target_block)
+    check("and the old lease file is really gone",
+          not os.path.isfile(f1_first_path))
+
+    print("\n--- F2 fix wave (#448 review, comment 5378165718): a MIXED "
+          "state - some blocks held for real, some denied on the same "
+          "scan - is reported as itself, not as a false claim about the "
+          "held or the denied set ---")
+    f2b_state = os.path.join(base, "f2-mixed-state")
+    os.makedirs(agent_init.leases_dir(f2b_state), exist_ok=True)
+    f2b_held_blocks = agent_init.PORT_BLOCKS[:5]
+    for f2b_i, f2b_block in enumerate(f2b_held_blocks):
+        f2b_holder = os.path.join(base, "f2b-holder-%d" % f2b_i)
+        os.makedirs(f2b_holder, exist_ok=True)
+        agent_init.write_lease(
+            agent_init.lease_path(f2b_block, f2b_state),
+            os.path.abspath(f2b_holder), "branch-%d" % f2b_i, f2b_block)
+    f2b_denied_blocks = agent_init.PORT_BLOCKS[5:10]
+    f2b_repo = os.path.join(base, "f2b-asker")
+    os.makedirs(f2b_repo, exist_ok=True)
+    f2b_denied_paths = {agent_init.lease_path(block, f2b_state)
+                        for block in f2b_denied_blocks}
+    real_open_f2b = os.open
+
+    def deny_the_other_five(target, flags, *a, **kw):
+        if target in f2b_denied_paths:
+            raise PermissionError(5, "Access is denied (injected, F2 "
+                                     "fix wave, #448 review, mixed)")
+        return real_open_f2b(target, flags, *a, **kw)
+
+    os.open = deny_the_other_five
+    try:
+        taken_f2b, why_f2b = agent_init.take_lease(f2b_repo, "slice-f2b",
+                                                    f2b_state)
+    finally:
+        os.open = real_open_f2b
+    check("a mixed pool (five held for real, five denied on the create) "
+          "is still a refusal, not a crash",
+          taken_f2b is None)
+    check("the header does not claim every block is leased when only "
+          "half were - the false-universal the pre-fix header would "
+          "have printed (F2 fix wave, #448 review, comment 5378165718)",
+          "every port block this fleet allocates is leased"
+          not in why_f2b)
+    check("the five real leases are still listed as held, with their "
+          "three facts each",
+          all(("branch branch-%d" % i) in why_f2b for i in range(5)))
+    check("the message contains no sentence denying the held blocks are "
+          "proven - 'No block above is a proven hold' is false when "
+          "five of them are, and sits right above the --reclaim remedy "
+          "(F2 fix wave, #448 review, comment 5378165718)",
+          "No block above is a proven hold" not in why_f2b)
+    check("both remedies print - agent-park for the real holds, and the "
+          "denial's own remedy - since a mixed reader needs both, and "
+          "the pre-fix `elif denied` suppressed the second one whenever "
+          "anything was held",
+          "run `./run agent-park`" in why_f2b
+          and "the ports directory refuses a create there" in why_f2b)
+
+    print("\n--- F3 fix wave (#448 review, comment 5378165718): "
+          "do_init's own except is narrower than its message - a "
+          "denial with nothing to do with releasing a previous block "
+          "is never reported as one ---")
+    f3fix_primary = build_repo(os.path.join(base, "f3fix-primary"))
+    f3fix_state = os.path.join(base, "f3fix-state")
+    # No agent-init has ever run against this state directory, so
+    # os.makedirs(leases_dir(...)) - take_lease's own first line - is
+    # the very first write it attempts. Denying only that call proves
+    # the "previous block" message is never printed here: there IS no
+    # previous block on a first-ever run.
+    real_makedirs = os.makedirs
+
+    def deny_makedirs(path, *a, **kw):
+        if path == agent_init.leases_dir(f3fix_state):
+            raise PermissionError(5, "Access is denied (injected, F3 "
+                                     "fix wave, #448 review, the ports "
+                                     "directory itself)")
+        return real_makedirs(path, *a, **kw)
+
+    os.makedirs = deny_makedirs
+    try:
+        code, out = run_verb(["init", "--repo", f3fix_primary, "--state",
+                              f3fix_state, "--no-install"])
+    finally:
+        os.makedirs = real_makedirs
+    check("a denial on take_lease's own os.makedirs - nothing to do "
+          "with releasing a previous block, since there is no previous "
+          "block on a first-ever run - is reported as a refused write "
+          "during allocation, never as a failed release (F3 fix wave, "
+          "#448 review, comment 5378165718)",
+          code == 1 and "refused a write during allocation" in out
+          and "previous block" not in out)
+
+    print("\n--- F4 fix wave (#448 review, comment 5378165718): "
+          "remove_lease_file's own catch is specific too, never "
+          "widened to a blanket except Exception: ---")
+    f4_state = os.path.join(base, "f4-specific-delete-catch")
+    os.makedirs(agent_init.leases_dir(f4_state), exist_ok=True)
+    f4_block = agent_init.PORT_BLOCKS[0]
+    f4_path = agent_init.lease_path(f4_block, f4_state)
+    agent_init.write_lease(f4_path, os.path.abspath(base), "slice-f4",
+                           f4_block)
+    real_remove_f4 = os.remove
+    f4_calls = {"n": 0}
+
+    def raise_value_error_remove(target, *a, **kw):
+        if target == f4_path:
+            f4_calls["n"] += 1
+            raise ValueError("not a filesystem contention error "
+                             "(injected, F4 fix wave, #448 review)")
+        return real_remove_f4(target, *a, **kw)
+
+    os.remove = raise_value_error_remove
+    raised_f4 = None
+    try:
+        agent_init.remove_lease_file(f4_path)
+    except Exception as exc:
+        raised_f4 = exc
+    finally:
+        os.remove = real_remove_f4
+    check("a non-OSError exception on the delete propagates "
+          "immediately rather than being retried as contention - the "
+          "catch is (FileNotFoundError, PermissionError), never a "
+          "blanket except Exception: (F4 fix wave, #448 review, "
+          "comment 5378165718)",
+          isinstance(raised_f4, ValueError) and f4_calls["n"] == 1)
+    if os.path.isfile(f4_path):
+        os.remove(f4_path)
 
     print("\n--- F4 (#448 review of #441, comment 5377511579): the "
           "first six blocks and PRIMARY_BLOCK are pinned, not just "
