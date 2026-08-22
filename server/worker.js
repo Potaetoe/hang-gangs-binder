@@ -802,6 +802,115 @@ const ADMIN_LOG_LIMIT = 100;
 const MAX_LOG_SUMMARY = 200;
 
 /*
+ * How stale a directory row must be before the departed list will even
+ * ask about it (0.9-M3-S15, #420; the ruled design #385, rule 4).
+ *
+ * STALENESS IS THE PRE-FILTER AND NEVER THE VERDICT. `last_seen_at`
+ * moves forward on every verified sign-in, so a row nobody has touched
+ * in a month belongs to somebody who has not signed in for a month -
+ * which is not the same fact as having left the group, and must never
+ * be read as it. A member on holiday is stale; a member who left is
+ * departed; only the bot can tell the two apart, and departedVerdict()
+ * is the only thing that says which. What this number buys is a bound
+ * on how many accounts the list asks about at all.
+ *
+ * Thirty days rather than a shorter window because the cost of being
+ * wrong is asymmetric: a departed member who stays on the list one
+ * cycle longer costs nothing, and a current member dragged into an
+ * erasing surface costs the thing #385 rule 4 is careful about.
+ */
+const DEPARTED_STALE_DAYS = 30;
+
+/*
+ * How many stale rows one request may ask the bot about.
+ *
+ * Each candidate is one getChatMember call, so an unbounded list would
+ * make a single admin request into as many outbound calls as the
+ * directory has rows - a self-inflicted rate limit at best, and at
+ * worst a request that never returns. The list is ordered oldest-first,
+ * so the accounts most likely to have left are the ones a capped read
+ * reaches; the rest arrive on the next read once these are cleared.
+ */
+const DEPARTED_LIST_CAP = 50;
+
+/*
+ * What an admin is told about an account an operator's list is holding
+ * open (Prime's ruling on review finding F3, 2026-08-21: never
+ * attribute to the bot what the bot did not say).
+ *
+ * ONE STRING, TWO SURFACES, because the list and the erase are the same
+ * fact reached twice: an admin reads it on the row and meets it again
+ * on the refusal, and two hand-kept wordings would be two chances for
+ * one of them to drift back into speaking for Telegram. Either
+ * always_allow arm - the deployment secret or the `membership` row -
+ * answers "member" before any call is made, so this account's departed
+ * state is the operator's decision and not the group's.
+ *
+ * IT NAMES THE NEXT ACTION, which is the whole reason it exists.
+ * Removing the always_allow entry is the only thing that changes this
+ * answer, and an admin met with a bare refusal has no way to learn
+ * that: the bypass is a deployment secret on one arm and a role row on
+ * the other, and neither is visible from the cleanup surface.
+ */
+const ALLOWED_BY_LIST =
+  "allowed by the operator's list - remove it there first";
+
+/*
+ * The three ways an account is unknown, told apart (review finding F4;
+ * the third added by fix wave 2, finding F1).
+ *
+ * All three mean "the question could not be asked" and all three fail
+ * closed identically - that part is deliberate and unchanged. What
+ * differs is the NEXT ACTION, and the reason string is the only thing
+ * an admin acts on. A record with no sealed id is fixed by that member
+ * signing in, and by nothing else; a Telegram outage is fixed by
+ * waiting, and a next sign-in will not touch it. Printing the sign-in
+ * wording over an outage told an admin to wait for the wrong event.
+ */
+const UNKNOWN_UNTIL_SIGN_IN = "unknown until next sign-in";
+const UNKNOWN_BOT_SILENT =
+  "Telegram could not be asked, so try again shortly";
+/*
+ * The third one, and the third next action (fix wave 2, review finding
+ * F1). Neither of the two above is true here: a next sign-in does
+ * nothing for an unreadable `membership` table, and Telegram answered
+ * perfectly well - it is the operator's own list that could not be
+ * consulted, so the account's departed state cannot be settled either
+ * way. Borrowing one of the other wordings would send an admin to wait
+ * for the wrong event, which is the whole of what F4 was.
+ */
+const UNKNOWN_LIST_UNREADABLE =
+  "the operator's allow list could not be read, so try again shortly";
+
+/*
+ * A FOURTH, AND IT BELONGS TO THE ERASE ALONE (fix wave 3, review
+ * finding F2). The three above are verdict reasons: they say why the
+ * question "has this account left?" could not be answered.
+ * handleEraseDeparted() makes one more read before it asks that
+ * question at all - the membership invariant it checks ahead of the
+ * transaction - and a read that did not answer there is neither a
+ * silent bot nor an unreadable allow list. It is the erase's own
+ * pre-check, and it has the same next action as the other two waits.
+ * Borrowing UNKNOWN_LIST_UNREADABLE would point an admin at the allow
+ * list, which is a different question about the same table.
+ */
+const MEMBERSHIP_UNREADABLE =
+  "the membership table could not be read, so try again shortly";
+
+/*
+ * How much of an account id the change log records for an erase.
+ *
+ * ENOUGH TO TELL TWO ERASES APART, and deliberately not the whole HMAC.
+ * The log is read to answer "what happened to this group's data", and a
+ * prefix answers that; a full id would let the log be joined against
+ * `submissions` and `membership` rows that still exist for everybody
+ * else, turning the paper trail into a second index over the members
+ * who remain. Twelve hex characters is forty-eight bits, which is far
+ * past collision inside one group's roster and far short of a key.
+ */
+const SHORT_ID_CHARS = 12;
+
+/*
  * The two membership lists, named as roles rather than as tables. The
  * set is closed here rather than accepted from the caller: an unknown
  * role stored would be a row that grants nothing and looks exactly like
@@ -815,6 +924,27 @@ const MAX_LABEL = 64;
 
 // An account id as this Worker writes one: SHA-256 HMAC, hex.
 const ACCOUNT_ID = /^[0-9a-f]{64}$/;
+
+/*
+ * An account id as SQLITE would still match one, which is a wider set
+ * and a different question (0.9-M3-S15 fix wave 3, review finding F1).
+ *
+ * Nothing this Worker writes is upper case; `wrangler d1 execute` is
+ * what writes upper-case hex, so a row spelled that way is an
+ * operator's hand-written one. ACCOUNT_ID refuses it, and that refusal
+ * is right for AUTHORITY - a row nobody can prove was meant grants
+ * nothing. It is wrong for PROTECTION: `COLLATE NOCASE` is how the
+ * erase's own DELETE matches, so a row spelled either way is a row the
+ * erase would destroy, and a guard that cannot see it lets the erase
+ * destroy the entry that was meant to stop it.
+ *
+ * So the two questions are asked with two patterns, and this one means
+ * "the erase would match this row" and never "this row grants
+ * anything". Anything not matching this cannot be equal to a
+ * sixty-four-character hex id under NOCASE either, which is what makes
+ * the pair exact rather than approximate.
+ */
+const ACCOUNT_ID_ANY_CASE = /^[0-9a-fA-F]{64}$/;
 
 /*
  * Who wrote a row, when the writer might be a secret rather than a
@@ -1215,36 +1345,76 @@ function grantsAnythingSql(column) {
 }
 
 /*
- * The account ids the `membership` table grants one role.
+ * The account ids the `membership` table grants one role, AND WHETHER
+ * THE READ ANSWERED AT ALL.
  *
- * FAILS CLOSED IN EVERY DIRECTION A READ CAN GO WRONG, which is the
- * whole of this function's design now that a row is a grant: a thrown
+ * THE SET IS EMPTY IN EVERY DIRECTION A READ CAN GO WRONG, which is
+ * half of this function's design now that a row is a grant: a thrown
  * query, a missing `results`, a shape that is not an array, a row whose
  * account id is not one - each gives the empty set rather than a partial
  * answer or a permissive default. An error swallowed into "assume they
  * are an admin" is the failure nothing else here would catch, because it
  * looks exactly like a working list on a working database.
  *
- * An unreadable row is dropped rather than coerced, by grantsAnything()
- * above. The near-miss it refuses reads as a working list right up until
- * somebody cannot get in - the undetectable-wrong-value failure #69
- * opens with, arriving through the back door.
+ * BUT AN EMPTY SET IS NOT ALWAYS THE FAIL-CLOSED DIRECTION, and that is
+ * why `read` rides beside it (0.9-M3-S15 fix wave 2, review finding F1).
+ * Closed is a property of the CALLER, not of this read: adminVia() below
+ * spends the set as "who is an admin", where empty admits nobody and the
+ * failure is safe; groupStanding() spends it as "who an operator has
+ * allowed regardless of the group", where empty means "not on the list"
+ * and the departed check turns that into an ERASE. One failed read there
+ * destroyed the rows of an account the operator's list was holding open.
+ * So the failure is stated rather than folded into the answer, and each
+ * caller decides what it means for what it is deciding.
+ *
+ * `read` IS FALSE FOR A SHAPE THAT IS NOT AN ARRAY as well as for a
+ * throw, because a `results` that cannot be walked is a read that did
+ * not answer however it arrived - the same argument departedVerdict()
+ * makes for collapsing every way it cannot ask into one answer.
+ * A row this Worker walked and refused is different: the read answered,
+ * and grantsAnything() dropping a near-miss is the answer being read
+ * correctly, not a failure to read it.
+ *
+ * AND `named` IS WHAT THAT NEAR-MISS STILL MEANS (fix wave 3, review
+ * finding F1). Refusing a near-miss the authority read reads as a
+ * working list right up until somebody cannot get in - the
+ * undetectable-wrong-value failure #69 opens with, arriving through the
+ * back door - and since this slice there is a second consequence: the
+ * erase's DELETE matches `COLLATE NOCASE`, so it removes the near-miss
+ * row the authority read cannot see. An account whose only allow-list
+ * entry is spelled in upper case was therefore served as departed and
+ * erased, taking the entry with it.
+ *
+ * So one read answers two questions and both travel. `ids` is who a
+ * row GRANTS something to, unchanged and still lower case only.
+ * `named` is who the table NAMES at all in any spelling the erase
+ * would match, folded to lower case so a caller compares one shape.
+ * Naming is not granting: no caller may spend `named` as authority,
+ * and the two callers that decide anything say which they are asking
+ * for at the call site.
  */
 async function membershipAccountIds(env, role) {
   const ids = new Set();
+  const named = new Set();
   let rows;
   try {
     rows = await env.DB.prepare(
       "SELECT account_id FROM membership WHERE role = ?"
     ).bind(role).all();
   } catch (e) {
-    return ids;
+    return { ids: ids, named: named, read: false };
   }
-  if (!rows || !Array.isArray(rows.results)) return ids;
+  if (!rows || !Array.isArray(rows.results)) {
+    return { ids: ids, named: named, read: false };
+  }
   for (const row of rows.results) {
     if (grantsAnything(row)) ids.add(row.account_id);
+    if (row && typeof row.account_id === "string" &&
+      ACCOUNT_ID_ANY_CASE.test(row.account_id)) {
+      named.add(row.account_id.toLowerCase());
+    }
   }
-  return ids;
+  return { ids: ids, named: named, read: true };
 }
 
 /*
@@ -1290,15 +1460,30 @@ async function membershipAccountIds(env, role) {
  *
  * `status` IS THE GROUP ROLE FROM THIS SIGN-IN and never a stored one.
  * It is null everywhere except inside handleTelegramAuth, which is the
- * only place the numeric id exists at all - see groupStanding(). So the
- * 'telegram' arm is unreachable on any later request, which is exactly
- * why sessionFor() has to read that one from the session row.
+ * only place a numeric id REACHES THIS DECISION - see groupStanding().
+ * So the 'telegram' arm is unreachable on any later request, which is
+ * exactly why sessionFor() has to read that one from the session row.
+ *
+ * Reaching this decision is a narrower claim than being in hand, and
+ * the difference is deliberate: since 0.9-M3-S15 (#420) a sealed
+ * numeric id exists in the directory record, and departedVerdict()
+ * holds one during a request on both /admin-departed routes. Neither
+ * reaches this function. Unsealing that id per request to re-ask the
+ * group role is the per-request re-check the design has declined twice,
+ * and departedVerdict() is the one reader the owner's ruling attached
+ * to that field.
  */
 async function adminVia(env, accountId, status) {
   if (typeof status === "string" && GROUP_ADMIN_STATUSES.includes(status)) {
     return "telegram";
   }
-  if ((await membershipAccountIds(env, "admin")).has(accountId)) return "flag";
+  // The set alone, and the `read` flag deliberately ignored: an
+  // unreadable table here means "not an admin", which is the direction
+  // this decision must fail in. membershipAccountIds() says why the
+  // same empty set is the wrong answer for groupStanding().
+  if ((await membershipAccountIds(env, "admin")).ids.has(accountId)) {
+    return "flag";
+  }
   if ((await secretAdminAccountIds(env)).has(accountId)) return "secret";
   return null;
 }
@@ -1526,16 +1711,89 @@ async function claimPayload(env, payloadHash) {
  * of a role inside the group, and reading it as one would let
  * ALWAYS_ALLOW_TELEGRAM_IDS mint admins. An unreachable Telegram is
  * null for the same reason it is "unknown".
+ *
+ * `bypassed` SAYS SO OUT LOUD rather than leaving it to be inferred
+ * from the null (0.9-M3-S15 fix wave 1, review finding F3). A caller
+ * that has to work out "member with no status must mean an operator
+ * allowed them" is one refactor away from getting it wrong, and the
+ * departed check got it wrong in exactly that shape: it told an admin
+ * "Telegram says that account is still in the group" about an account
+ * Telegram was never asked about, and could say so while the bot would
+ * have said the opposite. Sign-in ignores this field - both arms are
+ * "member" there and always were - so what it adds is a caller's
+ * ability to refuse to speak for the bot.
+ *
+ * `bypassUnknown` IS THE SAME MOVE FOR THE READ THAT FAILS (fix wave 2,
+ * review finding F1). The table arm is a D1 read, so "is this account on
+ * the operator's list" has a third answer - the read did not say - and
+ * an empty set cannot be told apart from "no" by anybody downstream.
+ * Spend that as a refusal and it is a person told they are not a member
+ * on the word of a table nobody could read; spend it as the departed
+ * check's verdict and it is an account the list is holding open, erased.
+ * So the fact travels instead of being inferred, exactly as `bypassed`
+ * does, and every answer produced after that read carries it.
+ *
+ * THE BOT IS STILL ASKED WHEN THAT READ FAILS, deliberately. The two
+ * failure directions pull apart here: an unreadable list must not be
+ * spent as a refusal, and it must not lock out members the GROUP still
+ * confirms either - a whole site refusing every sign-in over one
+ * unreadable table would be a worse outage than the one that caused it.
+ * Asking costs one call the bypass would have saved and settles the
+ * common case; the callers refuse only where the answer would otherwise
+ * be acted on against the account.
+ *
+ * `bypassNearMiss` IS THE THIRD FLAG AND THE THIRD KIND OF FACT (fix
+ * wave 3, review finding F1): the list NAMES this account in a spelling
+ * the granting predicate refuses. Granting and naming come apart on
+ * purpose here, and they fail in opposite directions on purpose too. A
+ * near-miss row grants nothing, so this function's own verdict is
+ * unchanged and sign-in refuses such an account exactly as before -
+ * widening who may sign in on the strength of a row nobody can prove
+ * was meant would be a different decision from the one this finding
+ * asks for. But the erase's DELETE matches `COLLATE NOCASE`, so that
+ * same row IS one the erase destroys, and the caller that erases has
+ * to treat "named" as protection. Grants nothing, protects everything.
  */
 async function groupStanding(env, userId) {
   if (idList(env.ALWAYS_ALLOW_TELEGRAM_IDS).includes(String(userId))) {
-    return { standing: "member", status: null };
+    return { standing: "member", status: null, bypassed: true };
   }
-  if ((await membershipAccountIds(env, "always_allow"))
-    .has(await accountIdFor(env, userId))) {
-    return { standing: "member", status: null };
+  const allow = await membershipAccountIds(env, "always_allow");
+  const mine = await accountIdFor(env, userId);
+  if (allow.ids.has(mine)) {
+    return { standing: "member", status: null, bypassed: true };
   }
-  if (!env.TELEGRAM_GROUP_CHAT_ID) return { standing: "unknown", status: null };
+  /*
+   * A row that names this account without granting it anything - the
+   * operator's own entry, spelled in the case `wrangler d1 execute`
+   * writes (fix wave 3, review finding F1). It is NOT a bypass and
+   * this function's own answer is unchanged by it: sign-in still
+   * refuses such an account exactly as it did, because a row nobody
+   * can prove was meant is not a reason to let somebody in.
+   *
+   * What it is is a fact the erasing caller has to have, so it travels
+   * beside the answer rather than being folded into it. Naming it here
+   * rather than re-reading the table there is what keeps one read
+   * behind both questions - two reads could disagree, and disagreeing
+   * about this row is the whole finding.
+   */
+  const nearMiss = allow.named.has(mine);
+  /*
+   * Every answer from here down is an answer reached WITHOUT knowing
+   * whether the operator's list holds this account open, so each one
+   * carries that fact. Wrapping the returns rather than repeating the
+   * flag on each is what keeps a later branch from being added without
+   * it - the failure mode this whole finding is an instance of.
+   */
+  const answer = (value) => {
+    const out = Object.assign({}, value);
+    if (!allow.read) out.bypassUnknown = true;
+    if (nearMiss) out.bypassNearMiss = true;
+    return out;
+  };
+  if (!env.TELEGRAM_GROUP_CHAT_ID) {
+    return answer({ standing: "unknown", status: null });
+  }
 
   const url = "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN +
     "/getChatMember?chat_id=" +
@@ -1558,22 +1816,22 @@ async function groupStanding(env, userId) {
     // the bot token is interpolated into the URL above, and a fetch
     // failure names the URL it failed on. Logging this error logs the
     // token.
-    return { standing: "unknown", status: null };
+    return answer({ standing: "unknown", status: null });
   }
   if (!body || body.ok !== true || !body.result) {
-    return { standing: "unknown", status: null };
+    return answer({ standing: "unknown", status: null });
   }
   const status = body.result.status;
   if (MEMBER_STATUSES.includes(status)) {
     // A restricted member who has actually left says so here.
-    return status === "restricted" && body.result.is_member === false
+    return answer(status === "restricted" && body.result.is_member === false
       ? { standing: "left", status: status }
-      : { standing: "member", status: status };
+      : { standing: "member", status: status });
   }
-  return {
+  return answer({
     standing: LEFT_STATUSES.includes(status) ? "left" : "unknown",
     status: status,
-  };
+  });
 }
 
 /*
@@ -1582,11 +1840,21 @@ async function groupStanding(env, userId) {
  * The lever behind #136, and it fires from exactly one place -
  * handleTelegramAuth, when Telegram has definitively said this person is
  * no longer in the group. NOT from sessionFor(), which cannot ask the
- * question at all: a session row carries `account_id`, the HMAC of a
- * Telegram numeric id, and getChatMember needs the numeric id itself.
- * Storing that beside the session is what a per-request re-check would
- * cost, and server/schema.sql states the account-id-never-the-numeric-id
- * rule as a prohibition rather than a preference. So the bound is:
+ * question: a session row carries `account_id`, the HMAC of a Telegram
+ * numeric id, and getChatMember needs the numeric id itself.
+ *
+ * A NUMERIC ID DOES NOW EXIST AT REST, and it deliberately does not
+ * change this bound (owner ruling, 2026-08-21, at 0.9-M3-S15, #420). It
+ * is sealed inside the DIRECTORY record, and the ruling that allowed it
+ * there attached one reader to it: the departed check, which an admin
+ * invokes deliberately over a stale roster. Wiring it into sessionFor()
+ * instead would make every authenticated request an outbound call to
+ * Telegram - a per-request re-check whose cost the design has weighed
+ * and declined twice - and would turn one admin-invoked lookup into
+ * traffic proportional to the whole site's use. So the bound below
+ * stands as written, and this paragraph is here so the next reader
+ * knows it was re-examined against the new fact rather than left
+ * un-revisited. The bound is:
  *
  *   a leaver's session ends at their NEXT SIGN-IN ATTEMPT, or at natural
  *   expiry, whichever comes first.
@@ -1742,10 +2010,16 @@ async function issueSession(env, accountId, via, isDev) {
  * (0.9-M3-S8, #414; #385 rule 1). The paragraph above said the lists
  * are the only source; that stopped being the whole truth the moment a
  * Telegram group role could grant admin, because the role CANNOT be
- * re-asked here. getChatMember needs the numeric Telegram id, this
- * database holds nowhere for one on purpose, and storing one beside the
- * session is the membership oracle the whole account design exists to
- * kill - the same bound revokeAccountSessions() is written out for.
+ * re-asked here. getChatMember needs the numeric Telegram id, and this
+ * database holds none beside the session on purpose - storing one there
+ * is the membership oracle the whole account design exists to kill, and
+ * it is the same bound revokeAccountSessions() is written out for.
+ *
+ * The directory record has held a SEALED numeric id since 0.9-M3-S15
+ * (#420, owner ruling 2026-08-21), and that deliberately does not open
+ * this door. Unsealing it here would put an outbound Telegram call on
+ * every authenticated request; the ruling attached exactly one reader
+ * to that field, the admin-invoked departed check, and this is not it.
  *
  * So a row carrying admin_via = 'telegram' keeps its adminness without
  * a list to be found in, and three things bound that rather than one:
@@ -1981,10 +2255,36 @@ function log(event, accountId) {
  *
  * A RE-SYNC KEEPS joined_at. The UPSERT rewrites the ciphertext and moves
  * last_seen_at forward on every verified sign-in; joined_at is written
- * once and never touched again, so it stays the first-seen date. The admin
- * read of this table is a later milestone - Members is 0.9-M3 (DESIGN.md,
- * "Admin surfaces") - so nothing here serves a directory record back; this
- * is the write half alone.
+ * once and never touched again, so it stays the first-seen date.
+ *
+ * THE NUMERIC TELEGRAM ID IS IN THIS RECORD, by owner ruling
+ * (2026-08-21, at 0.9-M3-S15, #420) rather than by a builder's choice.
+ * It exists at rest ONLY inside this sealed blob, under the same key,
+ * the same purpose and the same AAD binding as the handle beside it,
+ * and for one purpose only - departedVerdict() unseals it to ask the
+ * bot whether that member has left, and drops it.
+ *
+ * WHY IT HAS TO BE HERE, so nobody removes it as an oversight: #385
+ * rule 4 gives admins the power to erase a DEPARTED member's rows, and
+ * only the bot may say who is departed. getChatMember takes a numeric
+ * id; `directory` is keyed by a one-way HMAC of one, and there is no
+ * by-username form of that call. So an id this Worker can read is what
+ * the ruled power costs, and the two are one decision rather than two.
+ *
+ * WHAT DID NOT CHANGE, which is most of it. The id is never a column,
+ * never an index, never served by any route, never logged, and never
+ * read by the per-request admin re-check - sessionFor() still cannot
+ * re-ask the group role, and revokeAccountSessions() still ends a
+ * leaver's sessions at their next sign-in rather than by polling. A
+ * dump of the tables still shows the HMAC and two timestamps and
+ * nothing that resolves to a person. The id is as protected as the
+ * handle already sealed next to it, which is the whole of the argument
+ * the ruling accepted.
+ *
+ * A record written before that ruling HAS NO id, and every reader must
+ * treat its absence as "unknown" rather than as anything else - the
+ * departed check refuses to guess, and the row's id arrives when that
+ * member next signs in and this UPSERT rewrites the ciphertext.
  */
 async function syncDirectoryEntry(store, env, accountId, fields, now) {
   const bound = rowIdentity(accountId);
@@ -1992,6 +2292,7 @@ async function syncDirectoryEntry(store, env, accountId, fields, now) {
     handle: fields.handle,
     displayName: fields.displayName,
     role: fields.role,
+    telegramId: fields.telegramId,
   });
   const sealed = bytesToBase64(await store.sealDirectory(
     record, { accountId: bound, recordId: DIRECTORY_SLOT }));
@@ -2066,9 +2367,11 @@ async function handleTelegramAuth(request, env, origin) {
    * The group check, and the one place its three-way answer is spent.
    *
    * A definitive departure also ends whatever sessions this account is
-   * still holding. Sign-in is the only moment the numeric id is in hand,
-   * so it is the only moment the question can be asked - the bound that
-   * follows from that is written out on revokeAccountSessions().
+   * still holding. Sign-in is the only moment this path has the numeric
+   * id in hand, so it is the only moment THIS lever can fire - the
+   * bound that follows is written out on revokeAccountSessions(), which
+   * also records why the sealed id added in 0.9-M3-S15 (#420) does not
+   * shorten it.
    *
    * "unknown" refuses and revokes nothing, which is the difference the
    * three-way answer exists to carry. An unreachable Telegram is not
@@ -2081,7 +2384,35 @@ async function handleTelegramAuth(request, env, origin) {
    * this deployment's Telegram integration to anybody with a signed
    * payload, and neither answer changes what the caller should do.
    */
-  const { standing, status } = await groupStanding(env, user.id);
+  const { standing, status, bypassUnknown } = await groupStanding(env, user.id);
+  /*
+   * A REFUSAL NEEDS THE OPERATOR'S LIST TO HAVE BEEN READ, and this is
+   * the only place that matters (0.9-M3-S15 fix wave 2, review finding
+   * F1). The always_allow arms answer before the bot, so "not allowed"
+   * is a claim about that list as much as about the group - and if the
+   * list did not answer, the Worker is not entitled to make it. The
+   * unread row might have been holding this person open.
+   *
+   * ONLY ON THE REFUSING SIDE. A "member" standing is admitted with the
+   * flag ignored, exactly as `bypassed` is ignored: the list could only
+   * have agreed, so nothing it might have said changes the answer. That
+   * is what keeps one unreadable table from becoming a site-wide outage.
+   *
+   * AND IT REVOKES NOTHING, which is why this sits ABOVE the revoke.
+   * Ending a member's sessions is the other irreversible act on this
+   * path, and a departure the operator's list may have overridden is
+   * not grounds for it.
+   *
+   * The answer is this Worker's ordinary error, not a membership
+   * verdict: the caller is told the request failed, which is true, and
+   * is told nothing about the group, which is not the caller's to
+   * learn from a failed read. The log line carries the real reason.
+   */
+  if (standing !== "member" && bypassUnknown) {
+    log("signin.failed.allow-list-unreadable",
+      await accountIdFor(env, user.id));
+    return json({ error: "Something went wrong." }, 500, origin);
+  }
   if (standing !== "member") {
     if (standing === "left") {
       await revokeAccountSessions(env, await accountIdFor(env, user.id));
@@ -2140,6 +2471,13 @@ async function handleTelegramAuth(request, env, origin) {
         .filter((part) => typeof part === "string" && part.trim() !== "")
         .join(" "),
       role: isAdmin ? "admin" : "member",
+      // The numeric id, sealed and never stored beside the row. It is
+      // written HERE because a verified sign-in is the only place it
+      // arrives from outside this Worker; after this it exists only
+      // inside the sealed record, where departedVerdict() unseals it -
+      // see syncDirectoryEntry's own comment for what it is for and
+      // what may read it.
+      telegramId: String(user.id),
     }, new Date().toISOString());
   } catch (e) {
     log("directory.sync.failed", accountId);
@@ -2907,16 +3245,22 @@ function writerOf(caller) {
  * `membership` write. `summary` is bounded here rather than at the call
  * sites, so no future caller can put a kilobyte in it by forgetting.
  *
- * NOTHING A MEMBER WROTE PASSES THROUGH HERE. Every caller is a write
- * to `site_content` or to `membership`, whose values are site copy,
- * settings, roles, field definitions and labels an admin typed - the
- * form's own words in every case, never a member's answer to one of
- * them. The one admin power over a
- * member's own data - DELETE /submission/:id on somebody else's row -
- * deliberately does not append: a line naming which row came down is a
- * fact about a member rather than about the site, and that action
- * belongs to the departed-member cleanup slice, which #385 rule 4 gives
- * its own security review.
+ * NOTHING A MEMBER WROTE PASSES THROUGH HERE, which is a property of
+ * what the call sites pass rather than of this function, and is why the
+ * list of them is worth knowing. Most write `site_content` or
+ * `membership`, whose values are site copy, settings, roles, field
+ * definitions and labels an admin typed - the form's own words in every
+ * case, never a member's answer to one of them. The exception is
+ * handleEraseDeparted (0.9-M3-S15, #420), which passes COUNTS of rows
+ * removed and Telegram's own verdict - no row, no label, no handle -
+ * for an account the bot has said is gone.
+ *
+ * DELETE /submission/:id still appends nothing, in either direction,
+ * and that is a decision rather than an omission: a member deleting
+ * their own row is not an admin change at all, and an admin removing
+ * one row belongs to a member who is still here, where a line naming
+ * the act is a fact about a present member's data. server/schema.sql's
+ * `admin_log` block carries the whole argument for both.
  */
 async function noteAdminWrite(env, caller, action, subject, summary) {
   const text = String(summary);
@@ -4140,9 +4484,17 @@ async function handleRetireField(env, origin, id, caller) {
  * row - and `malformed` holds the rest.
  * A row whose account id is not sixty-four lowercase hex characters -
  * which `wrangler d1 execute` writes without complaint, since it
- * validates nothing - is dropped by every read that decides anything,
- * so listing it beside the rows that grant is the undetectable-wrong-
- * value failure #69 opens with, wearing the interface's own clothes.
+ * validates nothing - grants nobody anything anywhere, so listing it
+ * beside the rows that grant is the undetectable-wrong-value failure
+ * #69 opens with, wearing the interface's own clothes.
+ *
+ * GRANTING IS NOT THE ONLY THING A ROW DOES, though, and this list is
+ * where an operator finds that out (fix wave 3, review finding F1). A
+ * near-miss row still names an account to the departed check, which
+ * refuses to erase an account the list names in any spelling - because
+ * the erase's own DELETE would remove that row. So `malformed` is the
+ * surface that says which spelling to fix, and it is the reason the
+ * erase's refusal can send an admin somewhere real.
  *
  * The split rather than a flag on each row, because the fail-safe
  * direction matters more than the tidier shape: a surface that has
@@ -4339,9 +4691,9 @@ async function handleAddMembership(request, env, origin, caller) {
  * GRANTS AND NOT ROWS, which is the whole of the subquery's shape. A
  * row whose account id is not sixty-four lowercase hex characters
  * grants nobody anything - grantsAnything() above drops it from every
- * read that decides - so counting it here would let one real admin
- * beside one dud read as two, and the last granting row would come off
- * against a count that was never authority. The dual-read is the only
+ * read that decides AUTHORITY - so counting it here would let one real
+ * admin beside one dud read as two, and the last granting row would
+ * come off against a count that was never authority. The dual-read is the only
  * reason that is not a live lockout today: the secret still grants
  * while the flip has not happened. OPERATIONS.md, "Making someone an
  * admin", carries the precondition in the other direction, for whoever
@@ -4443,6 +4795,520 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
 }
 
 /*
+ * HAS THIS ACCOUNT LEFT THE GROUP? The one question this whole slice
+ * turns on (0.9-M3-S15, #420; the ruled design #385, rule 4).
+ *
+ * THE BOT IS THE ONLY JUDGE, and nothing on this side may stand in for
+ * it. Staleness is a fact about sign-ins, a label is a nickname
+ * somebody typed, and neither is evidence anybody left. groupStanding()
+ * asks Telegram and its answer is the verdict - reached through that
+ * function rather than around it, so the timeout, the always_allow
+ * bypass and the error path that must never log the bot token all keep
+ * one home.
+ *
+ * THE NUMERIC ID COMES OUT OF THE SEALED DIRECTORY RECORD AND GOES
+ * NOWHERE ELSE. It is unsealed here, handed to groupStanding(), and
+ * dropped when this function returns: it is never written to another
+ * table, never put in a response, never logged, and never returned from
+ * this function - what leaves here is two booleans and, when somebody
+ * actually said one, a word. This is the ONLY reader of that field,
+ * which is the condition the owner attached to letting the field exist
+ * at all (2026-08-21). A second reader is not a refactor; it is a new
+ * decision.
+ *
+ * THREE ANSWERS, NOT TWO. Departed, still here, or allowed by an
+ * operator's list - and the third is not a flavor of the second. It is
+ * reached without asking Telegram at all, so a caller that reports it
+ * as the group's verdict is speaking for somebody who never spoke; the
+ * `allowed` flag below carries that, and `status` stays null with it.
+ * Unknown sits outside all three, as its own refusal. The third answer
+ * covers a row the operator wrote in the wrong letter case too (fix
+ * wave 3, review finding F1) - see the branch itself for why a row
+ * that grants nothing still protects everything.
+ *
+ * FIVE WAYS TO GET "UNKNOWN", AND UNKNOWN IS NEVER DEPARTED. No
+ * directory row; a row whose record will not open; a record written
+ * before the id existed, which is every row from before that ruling
+ * until its member next signs in; the operator's allow list not
+ * answering; and Telegram not answering. All five collapse to the same
+ * answer on purpose, because "the question could not be asked" is one
+ * fact however it arose, and every caller must fail closed on all of
+ * it. (A sixth branch below catches a standing that carries no word at
+ * all, which groupStanding() does not produce today; it is a guard
+ * against inventing a quotation, not another way for a real deployment
+ * to get here.) DESIGN.md's bot-failure stance governs here exactly as
+ * it governs sign-in: "cannot check" is never treated as "not a
+ * member" - and since fix wave 2 it is not treated as "not on the
+ * operator's list" either, which was the one read on this path that
+ * failed permissive.
+ *
+ * THE REASONS ARE THREE, NOT FIVE, and the grouping is by what fixes
+ * it rather than by where it broke: a record with no usable id is
+ * fixed by that member signing in, an unanswering bot and an unread
+ * allow list are each fixed by waiting, and the two waits are told
+ * apart because an admin who reads "Telegram" while the `membership`
+ * table is the thing that is unwell would go and look at the wrong
+ * system.
+ *
+ * IT THROWS NOTHING. A directory row that will not open is a real
+ * possibility across a key rotation, and an admin looking at a cleanup
+ * list should see that one account sit the list out rather than watch
+ * the whole page fail. The catches are wide for that reason and narrow
+ * in what they can hide: every branch inside them ends in the same
+ * "unknown" the callers already refuse on.
+ */
+async function departedVerdict(env, accountId) {
+  /*
+   * The reason travels WITH the refusal rather than being reconstructed
+   * by the caller: this function is the only place that knows which of
+   * the ways it failed actually happened, and a caller guessing from a
+   * bare `known: false` is how the sign-in wording ended up printed
+   * over a Telegram outage.
+   */
+  const unknown = (reason) => ({
+    known: false, departed: false, allowed: false, status: null,
+    reason: reason,
+  });
+
+  let row;
+  try {
+    row = await env.DB.prepare(
+      "SELECT ciphertext FROM directory WHERE account_id = ?"
+    ).bind(accountId).first();
+  } catch (e) {
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
+  }
+  if (!row || typeof row.ciphertext !== "string") {
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
+  }
+
+  let telegramId;
+  try {
+    const store = await openStore(env);
+    const record = JSON.parse(await store.openDirectory(
+      base64ToBytes(row.ciphertext),
+      { accountId: accountId, recordId: DIRECTORY_SLOT }));
+    telegramId = record && record.telegramId;
+  } catch (e) {
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
+  }
+  /*
+   * TELEGRAM_ID rather than a truthiness test, and the difference is
+   * what reaches the network: a record from before the field existed
+   * reads undefined, and one carrying anything that is not a bare
+   * numeric id is not a record this Worker wrote. Both are "cannot
+   * ask", and neither may be interpolated into the bot URL.
+   */
+  if (typeof telegramId !== "string" || !TELEGRAM_ID.test(telegramId)) {
+    return unknown(UNKNOWN_UNTIL_SIGN_IN);
+  }
+
+  /*
+   * FROM HERE ON A FAILURE IS TELEGRAM'S, NOT THE RECORD'S, and that is
+   * where the two reasons part company (review finding F4). Everything
+   * above is fixed by that member signing in again; nothing below is.
+   */
+  const standing = await groupStanding(env, telegramId);
+  /*
+   * THE OPERATOR'S LIST NOT ANSWERING IS UNKNOWN, AND IT IS CHECKED
+   * FIRST (fix wave 2, review finding F1). It sits above every other
+   * branch because it is the one that can make a CONFIDENT WRONG
+   * ANSWER out of a read that did not happen: the list is what holds an
+   * account open regardless of the group, so with it unread a "left"
+   * from the bot is not a departure this route may act on - and one
+   * such answer erased the rows of an account an operator was holding
+   * open, which is what this branch exists to have made impossible.
+   *
+   * It applies to a "member" answer too rather than only to "left",
+   * because the rule is about the READ and not about which way the
+   * verdict happened to fall: a verdict reached over a failed read is
+   * unknown, full stop, and a rule with an exception in it is a rule
+   * the next branch added here can be forgotten from. The cost is one
+   * row an admin sees as unknown that a working read would have left
+   * unlisted, which is the honest report of what happened.
+   */
+  if (standing.bypassUnknown) return unknown(UNKNOWN_LIST_UNREADABLE);
+  if (standing.standing === "unknown") return unknown(UNKNOWN_BOT_SILENT);
+
+  /*
+   * AN OPERATOR'S LIST IS ITS OWN ANSWER, not a quiet "still a member"
+   * (Prime's ruling on review finding F3, 2026-08-21: never attribute
+   * to the bot what the bot did not say).
+   *
+   * groupStanding() answers "member" for an account on either
+   * always_allow arm WITHOUT asking Telegram, so such an account's
+   * departed state is decided by the operator's list and not by the
+   * group. The previous shape folded that into the same "still a
+   * member" answer a real bot verdict produces, and the refusal built
+   * on it told an admin Telegram had spoken - which it can do while the
+   * bot would have said the exact opposite, since the bypass is checked
+   * before the call is ever made.
+   *
+   * `status` STAYS NULL HERE on purpose. Every word this function hands
+   * out is a word somebody said; there is nobody to quote for this one,
+   * so the callers name the list instead.
+   *
+   * A NEAR-MISS ROW IS THE SAME ANSWER, and that is the fix wave 3
+   * finding (review F1). The erase's membership DELETE matches
+   * `COLLATE NOCASE`, so an entry an operator wrote by hand in
+   * upper-case hex - which is what `wrangler d1 execute` produces - is
+   * a row this route would destroy while the granting predicate above
+   * cannot see it. Serving that account as departed erased the account
+   * AND the entry protecting it, in one request, from two spellings of
+   * "this account's row" disagreeing inside it.
+   *
+   * A row that only has to be FOUND is asked a finding question, not a
+   * granting one: for THIS decision the list holds the account open in
+   * either spelling, which is the same normalization the DELETE's
+   * collation already implies. Nothing about authority moves with it -
+   * sign-in still refuses such an account, and handleReadMembership
+   * still reports the row as malformed so the operator can go and fix
+   * the spelling. The cost is that removing the row is what unlocks
+   * the erase, which is exactly what the reason sentence already says.
+   */
+  if (standing.bypassed || standing.bypassNearMiss) {
+    return { known: true, departed: false, allowed: true, status: null };
+  }
+
+  /*
+   * Everything left came from the group and carries the group's own
+   * word. A member-or-left standing with no word is a shape
+   * groupStanding() does not produce; if one ever arrives it is
+   * "cannot ask" rather than a word to invent, because a quoted status
+   * that nobody said is the whole of what F3 was.
+   */
+  if (typeof standing.status !== "string" || standing.status === "") {
+    return unknown(UNKNOWN_BOT_SILENT);
+  }
+  return {
+    known: true,
+    departed: standing.standing === "left",
+    allowed: false,
+    status: standing.status,
+  };
+}
+
+async function eraseAccount(env, accountId) {
+  const lastGrantingAdmin =
+    " AND (role <> 'admin'" +
+    " OR NOT (" + grantsAnythingSql("account_id") + ")" +
+    " OR (SELECT COUNT(*) FROM membership AS granting" +
+    " WHERE granting.role = 'admin' AND " +
+    grantsAnythingSql("granting.account_id") + ") > 1)";
+
+  const results = await env.DB.batch([
+    env.DB.prepare("DELETE FROM submissions WHERE account_id = ?")
+      .bind(accountId),
+    env.DB.prepare("DELETE FROM directory WHERE account_id = ?")
+      .bind(accountId),
+    env.DB.prepare(
+      "DELETE FROM membership WHERE account_id = ? COLLATE NOCASE" +
+      lastGrantingAdmin
+    ).bind(accountId),
+    env.DB.prepare("DELETE FROM sessions WHERE account_id = ?")
+      .bind(accountId),
+  ]);
+
+  const changed = (index) => {
+    const meta = results[index] && results[index].meta;
+    return meta && typeof meta.changes === "number" ? meta.changes : 0;
+  };
+  return {
+    submissions: changed(0),
+    directory: changed(1),
+    membership: changed(2),
+    sessions: changed(3),
+  };
+}
+
+/*
+ * The departed list, admin only (#420 scope 1).
+ *
+ * TWO STEPS THAT ARE NOT THE SAME STEP. Staleness picks the candidates
+ * - directory rows nobody has signed in behind for DEPARTED_STALE_DAYS,
+ * oldest first, capped - and the bot decides which of those have
+ * actually left. Only the second list is served. A surface built from
+ * the first would be a list of members who have been quiet, offered to
+ * an admin under a heading that says they are gone.
+ *
+ * WHAT A ROW CARRIES, and what it deliberately does not: the account id
+ * this Worker already writes in the clear beside every entry, the label
+ * `membership` holds when one exists, and `last_seen_at`. Never the
+ * handle - the directory's record stays sealed and this route does not
+ * open it - and never a numeric Telegram id, which is not stored
+ * anywhere to serve. The label is a nickname an admin typed, so it
+ * names nobody Telegram would recognize.
+ *
+ * IT IS A MEMBERSHIP ORACLE, BOUNDED TO ADMINS, and that is the reason
+ * the gate is in the router beside the other admin reads rather than
+ * in this function: answering a non-admin at all - even with an empty
+ * list - would tell them whether anybody has left, which is a fact
+ * about the group's composition and not theirs to have.
+ */
+async function handleReadDeparted(env, origin) {
+  const cutoff = new Date(
+    Date.now() - DEPARTED_STALE_DAYS * 24 * 3600 * 1000).toISOString();
+
+  const stale = await env.DB.prepare(
+    "SELECT account_id, last_seen_at FROM directory WHERE last_seen_at < ? " +
+    "ORDER BY last_seen_at ASC LIMIT " + DEPARTED_LIST_CAP
+  ).bind(cutoff).all();
+
+  const labels = new Map();
+  const rows = await env.DB.prepare(
+    "SELECT account_id, label FROM membership"
+  ).all();
+  for (const row of ((rows && rows.results) || [])) {
+    labels.set(String(row.account_id).toLowerCase(), row.label);
+  }
+
+  const departed = [];
+  const unknown = [];
+  const allowed = [];
+  for (const row of ((stale && stale.results) || [])) {
+    const verdict = await departedVerdict(env, row.account_id);
+    const entry = {
+      accountId: row.account_id,
+      label: labels.get(String(row.account_id).toLowerCase()) || null,
+      lastSeenAt: row.last_seen_at,
+    };
+    /*
+     * THREE LISTS, BECAUSE THE TWO REASONS AN ACCOUNT IS NOT ERASABLE
+     * ARE DIFFERENT REASONS AND NEITHER IS NOTHING.
+     *
+     * An account the bot could not be asked about must never appear
+     * among the departed - an erase offered against that list has to be
+     * safe, and that is the list's whole meaning. But dropping it
+     * silently is its own lie: the commonest reason to be unaskable is
+     * a directory record written before the numeric id was sealed into
+     * it (owner ruling, 2026-08-21), which every row carries until its
+     * member next signs in. An admin who saw a stale account simply
+     * vanish would conclude it had been checked and cleared. The row
+     * carries the verdict's OWN reason rather than a wording chosen
+     * here, because a Telegram outage, a record with no sealed id and
+     * an unreadable operator's list are all unknown and each calls for
+     * a different next action (review finding F4; the third from fix
+     * wave 2's finding F1).
+     *
+     * `allowed` is the same argument for a different fact (Prime's
+     * ruling on review finding F3): an account on either always_allow
+     * arm is held here by the OPERATOR'S LIST, not by the group, and
+     * the bot was never asked about it. Reporting it as still-a-member
+     * would put words in Telegram's mouth, and dropping it would leave
+     * an admin unable to erase it and unable to find out why. The
+     * reason names the list and the next action, because removing the
+     * always_allow row is the only thing that changes this answer.
+     *
+     * A current member simply is not listed: the bot answered, the
+     * answer was "still here", and that is a fact about somebody who is
+     * not being cleaned up.
+     */
+    if (!verdict.known) {
+      unknown.push(Object.assign({ reason: verdict.reason }, entry));
+      continue;
+    }
+    if (verdict.allowed) {
+      allowed.push(Object.assign({ reason: ALLOWED_BY_LIST }, entry));
+      continue;
+    }
+    if (!verdict.departed) continue;
+    departed.push(Object.assign({ status: verdict.status }, entry));
+  }
+
+  return json(
+    { ok: true, departed: departed, unknown: unknown, allowed: allowed },
+    200, origin);
+}
+
+/*
+ * Erase one departed member's rows (#420 scope 2).
+ *
+ * THE VERDICT IS RE-ASKED HERE AND NEVER CARRIED FROM THE LIST. The
+ * list is a page an admin may have been looking at for an hour, and a
+ * member can rejoin a Telegram group in a second. Trusting the list
+ * would make this route's safety a property of how fresh somebody's
+ * browser tab was, which is not a property at all.
+ *
+ * EVERY REFUSAL HAPPENS BEFORE ANYTHING IS DELETED, and the order is
+ * cheapest-and-most-certain first: the shape of the id, then who is
+ * asking about whom, then the membership invariant, then the bot. An
+ * erase that deleted three row classes and then discovered it should
+ * not have would have no way back.
+ *
+ * AND IT IS TRUE OF THE READS AND NOT ONLY OF THE BRANCHES (review
+ * finding F2). Every read below refuses when it does not answer, which
+ * is what makes the ordering a property of THIS ROUTE rather than of
+ * the database being well. A pre-check that walks past a null or a
+ * column-less row reaches the transaction and answers ok:true having
+ * deleted three of the four row classes, because the statement-level
+ * guard underneath protects the membership row and nothing else - and
+ * `removed.membership: 0` is the only signal, which nothing reads.
+ *
+ * A CURRENT MEMBER IS REFUSED WITH THE VERDICT QUOTED BACK, because the
+ * admin needs to be able to tell "Telegram says they are still here"
+ * from "Telegram did not answer" - the two look identical from a
+ * surface that only says no, and they call for opposite next actions.
+ * The status is Telegram's own word and names nobody.
+ *
+ * AND AN ACCOUNT AN OPERATOR'S LIST IS HOLDING OPEN IS A THIRD
+ * REFUSAL, in the list's words rather than Telegram's (Prime's ruling
+ * on review finding F3). The bot is never asked about such an account,
+ * so quoting it here reported a verdict nobody gave - and could report
+ * the opposite of the one the bot would have given, since the bypass
+ * short-circuits the call. Worse, that refusal was permanent and said
+ * nothing about why: the branch below names the list and the next
+ * action instead. It sits ABOVE the still-a-member branch because a
+ * bypassed account satisfies that test too, and the more specific
+ * reason is the true one.
+ *
+ * AN ADMIN MAY NOT ERASE THEMSELVES here. The route is for members who
+ * are gone, and a caller holding a live admin session is demonstrably
+ * present; a self-erase would also delete the session mid-request and
+ * answer through a credential that no longer exists. Somebody wanting
+ * their own data gone deletes their entries as a member, which is
+ * self-service and needs no admin at all.
+ */
+async function handleEraseDeparted(env, origin, accountId, caller) {
+  const wanted = String(accountId);
+  if (!ACCOUNT_ID.test(wanted)) {
+    return json({ error: "Not found." }, 404, origin);
+  }
+  if (caller.accountId && caller.accountId === wanted) {
+    return json({
+      error: "This removes a departed member's rows, and you are signed " +
+        "in. To remove your own entries, delete them from your own page.",
+    }, 409, origin);
+  }
+
+  /*
+   * The membership invariant, asked before the transaction rather than
+   * inside it. eraseAccount()'s own statement carries the same guard,
+   * so the invariant does not rest on this read winning a race - what
+   * this read buys is that the ordinary case is a clean refusal that
+   * erases nothing, instead of an erase that silently leaves one row
+   * behind and reports a count nobody expected.
+   *
+   * IT CARRIES A THIRD COLUMN AND IT IS THE BELT TO THE BRACES (fix
+   * wave 3, review finding F1). `granting` and `holds` are counted
+   * with the granting predicate, which refuses a row spelled in
+   * upper-case hex; the DELETEs below match `COLLATE NOCASE`, which
+   * does not. `nearMiss` counts exactly the rows the two views
+   * disagree about - named by the erase, invisible to the guard - and
+   * any at all refuses the erase. The verdict path already refuses an
+   * `always_allow` row spelled that way; this catches every other
+   * role, and it catches the same class again if a later branch is
+   * added to one view and not the other.
+   *
+   * `COLLATE BINARY` rather than a bare `<>`, so the comparison is
+   * pinned to bytes whatever collation the column is ever declared
+   * with. `wanted` is lower case by ACCOUNT_ID above, so "not equal by
+   * bytes but equal ignoring case" is exactly "spelled some other way".
+   *
+   * AND THE READ ITSELF FAILS CLOSED (review finding F2). Every shape
+   * this read can fail in - a throw, no row, a row without the columns
+   * it named - refuses BEFORE the transaction, in the same words, with
+   * nothing deleted. Left to the catch-all a throw gives a 500 that
+   * names nothing, and a null or column-less row is worse than that:
+   * it reads as "no problem" and the erase proceeds. The reason is
+   * this read's own, because "the membership table did not answer" and
+   * "the operator's allow list did not answer" send an admin to
+   * different places even though they are the same table.
+   */
+  let held;
+  try {
+    held = await env.DB.prepare(
+      "SELECT (SELECT COUNT(*) FROM membership AS granting" +
+      " WHERE granting.role = 'admin' AND " +
+      grantsAnythingSql("granting.account_id") + ") AS granting," +
+      " (SELECT COUNT(*) FROM membership AS held" +
+      " WHERE held.account_id = ? COLLATE NOCASE AND held.role = 'admin'" +
+      " AND " + grantsAnythingSql("held.account_id") + ") AS holds," +
+      " (SELECT COUNT(*) FROM membership AS spelled" +
+      " WHERE spelled.account_id = ? COLLATE NOCASE" +
+      " AND spelled.account_id <> ? COLLATE BINARY) AS nearMiss"
+    ).bind(wanted, wanted, wanted).first();
+  } catch (e) {
+    held = null;
+  }
+  const counted = (value) => typeof value === "number" && value >= 0;
+  if (!held || !counted(held.granting) || !counted(held.holds) ||
+    !counted(held.nearMiss)) {
+    return json({
+      error: "That member's departure could not be confirmed - " +
+        MEMBERSHIP_UNREADABLE + ". Nothing was erased.",
+    }, 409, origin);
+  }
+  if (held.nearMiss > 0) {
+    return json({
+      error: "That account has a membership row written in a different " +
+        "letter case, so this erase and the rows it would remove do not " +
+        "agree about what belongs to it. Fix that row's spelling, or " +
+        "remove it, before erasing this account. Nothing was erased.",
+    }, 409, origin);
+  }
+  if (held.holds > 0 && held.granting <= 1) {
+    return json({
+      error: "That is the last admin row. Add another admin before " +
+        "erasing this account.",
+    }, 409, origin);
+  }
+
+  const verdict = await departedVerdict(env, wanted);
+  if (!verdict.known) {
+    /*
+     * THE LEAD NAMES NOBODY (fix wave 2, review finding F1). One of the
+     * three ways to be unknown is a failed read of the operator's list,
+     * and that one is reached AFTER the bot has answered - so a lead
+     * saying the bot could not speak is false exactly there, which is
+     * the never-attribute-to-the-bot rule F3 settled, applied to the
+     * sentence's first clause rather than to its reason. What names the
+     * failure is the reason, and it differs per branch on purpose.
+     */
+    return json({
+      error: "That member's departure could not be confirmed - " +
+        verdict.reason + ". Nothing was erased.",
+    }, 409, origin);
+  }
+  if (verdict.allowed) {
+    return json({
+      error: "That account is " + ALLOWED_BY_LIST + ". Telegram was " +
+        "never asked about it, so nothing was erased.",
+    }, 409, origin);
+  }
+  if (!verdict.departed) {
+    return json({
+      error: "Telegram says that account is still in the group " +
+        "(“" + verdict.status + "”), so nothing was erased.",
+    }, 409, origin);
+  }
+
+  const removed = await eraseAccount(env, wanted);
+
+  /*
+   * The line, after the write like every other one (noteAdminWrite
+   * carries that rule and why it is not best-effort).
+   *
+   * COUNTS AND A VERDICT, NEVER A ROW. server/schema.sql's `admin_log`
+   * block rules that nothing a member typed goes in this table, and
+   * that is what makes this line writable at all: "four entries and a
+   * directory row came down" is a fact about an administrative act,
+   * while a line naming WHICH entry came down would be a fact about a
+   * member's data sitting in the clear beside the entries themselves.
+   * The subject is the short id for the same reason - enough to tell
+   * two erases apart, not enough to join the log against the rows of
+   * everybody who remains.
+   */
+  await noteAdminWrite(env, caller, "erase",
+    wanted.slice(0, SHORT_ID_CHARS),
+    "telegram said " + verdict.status + "; removed " +
+    removed.submissions + " submissions, " + removed.directory +
+    " directory, " + removed.membership + " membership, " +
+    removed.sessions + " sessions");
+
+  return json({ ok: true, removed: removed }, 200, origin);
+}
+
+/*
  * The path shapes this Worker answers for itself; every other path is
  * static-asset territory. One segment per route family below -
  * "submission" rather than "submission/:id", because this guard only
@@ -4476,7 +5342,7 @@ async function handleDeleteMembership(env, origin, role, accountId, caller) {
 const API_SEGMENTS = new Set([
   "auth", "session", "me", "my-entries", "submit", "charts-data", "export",
   "submission", "content", "membership", "config", "admin-log", "spec",
-  "admin-fields",
+  "admin-departed", "admin-fields",
 ]);
 
 function isApiPath(pathname) {
@@ -4645,6 +5511,28 @@ async function route(request, env, url, allowed, admitted) {
     return handleReadAdminLog(env, allowed);
   }
 
+  // Departed-member cleanup, admin only in both directions (#385 rule
+  // 4). Gated here beside the other admin reads rather than in the
+  // handlers, and for the list that gate is the whole privacy property
+  // rather than a formality: who has left is a fact about the group's
+  // composition, so a member and a stranger meet the same refusal and
+  // neither learns whether the list would have been empty.
+  //
+  // The route is hyphenated because "admin" cannot be an API segment at
+  // all: the static-assets layer redirects /admin.html to /admin, so a
+  // segment by that name would answer this router's refusal where the
+  // admin page belongs - the defect /charts had in #365, measured again
+  // at 0.9-M3-S8 (#414).
+  if (method === "GET" && path === "/admin-departed") {
+    if (!admin) return unauthorized(allowed);
+    return handleReadDeparted(env, allowed);
+  }
+  const departed = /^\/admin-departed\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && departed) {
+    if (!admin) return unauthorized(allowed);
+    return handleEraseDeparted(env, allowed, departed[1], caller);
+  }
+
   /*
    * The form, as the admins have built it (0.9-M3-S11, #419).
    *
@@ -4740,9 +5628,18 @@ async function route(request, env, url, allowed, admitted) {
  * for everywhere else in this repository, applied here for the first
  * time because this is the first piece of server/worker.js's own logic
  * simple enough to have one.
+ *
+ * eraseAccount IS IRREVERSIBLE and is exported anyway (0.9-M3-S15,
+ * #420), so the reason it is safe is written here rather than assumed:
+ * the runtime reaches this module only through the default export's
+ * fetch(), which never calls a named export, and nothing else in the
+ * deployed Worker imports this file at all. What the export buys is a
+ * proof that could not otherwise be real - the two-member byte-identity
+ * arm aims at the transaction itself, because a route-level proof can
+ * always be hollowed out by a refusal that fires before the erase.
  */
 export { isApiPath, API_SEGMENTS, rowIdentity, syncDirectoryEntry,
-         DIRECTORY_SLOT };
+         DIRECTORY_SLOT, eraseAccount };
 
 export default {
   /*
