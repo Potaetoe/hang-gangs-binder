@@ -68,6 +68,17 @@ import claim_vs_diff
 import prime_lock
 import session_open
 
+# Encoding-safe stdout/stderr (0.9-M3-S29 fix wave, #449 F2): this
+# suite's own fixtures write invalid-UTF-8 bytes on purpose, and its
+# checks print the results - the same exposure ship_check.py's main()
+# guards against. This file runs at import time (no __main__ guard, by
+# this fleet's own convention - see the sibling suites' module
+# docstrings), and nothing imports it, so reconfiguring here is always
+# the real run.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 failures = 0

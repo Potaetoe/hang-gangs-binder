@@ -989,14 +989,29 @@ def _has_browser_evidence(text):
 # against 0.9-M3-S20's real server/schema.sql, whose comment block grew
 # 15 -> 17 lines and wrongly printed `differs` before this fix.
 #
-# MARKDOWN AND DOCS ARE PROSE BY NATURE
+# MARKDOWN AND DOCS ARE PROSE BY NATURE - AND THE WAIVER IS BY FAMILY,
+# NOT BY CONTENT (0.9-M3-S29 fix wave, #449 F3, correcting this
+# comment's own former claim)
 #
-# A `.md` file carries no executable code to protect - mutation
-# batteries and browser passes exist to guard CODE changes, not prose
-# changes. Its "stripped" content is therefore always empty on both
-# sides of the comparison, which is a real equality (not a special-
-# cased skip) computed by the exact same "compare the stripped text"
-# rule every other family uses.
+# A `.md`/`.markdown` file carries no executable code to protect -
+# mutation batteries and browser passes exist to guard CODE changes,
+# not prose changes. Unlike every other family above, the `doc` branch
+# of `_prose_file_eligible()` does NOT read the file's content at
+# base or head at all: it sets `identical = True` on the extension
+# alone. That is a deliberate, undocumented-until-now exception to this
+# stage's own "byte-faithful" claim (0.9-M3-S29's own scope item 3,
+# which is about every OTHER family's comparison) - a whole markdown
+# file is prose by definition, so there is nothing left for a stripper
+# to strip and nothing a byte-level guard would be protecting. The
+# trade-off this buys: two `.md` files that differ ONLY in which
+# invalid UTF-8 byte they carry (the exact byte-faithful scenario this
+# ticket's guard exists to catch for `.js`/`.css`/`.sql`/`.toml`) still
+# read as IDENTICAL here, because the doc family is waived without ever
+# comparing their bytes. Accepted rather than closed: a markdown file
+# holding an invalid byte is not a case this repository's own gate
+# needs to catch by family design, and comparing raw bytes here would
+# cost a real read of every declared doc file for no code this stage
+# protects.
 #
 # THE DIST/ HALF, FOR A DECLARED PAGE FILE
 #
@@ -1289,6 +1304,11 @@ def _prose_file_eligible(repo, base, path, node):
                        "not eligible." % path]
 
     if family == "doc":
+        # Waived by FAMILY, not by content (#449 F3, see this section's
+        # own module comment "MARKDOWN AND DOCS ARE PROSE BY NATURE"
+        # above) - base_text/head_text are never read for a doc-family
+        # path, so this is the one family the byte-faithful guard below
+        # never reaches.
         lines = ["  prose  %s  markdown/docs - prose by nature, no "
                  "stripping needed." % path]
         identical = True
