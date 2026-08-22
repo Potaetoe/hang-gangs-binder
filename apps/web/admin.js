@@ -1908,7 +1908,7 @@
 
       dangerousAction(block, trigger, eraseDepartedSentence(label),
         function () {
-          eraseDeparted(entry && entry.accountId, label);
+          eraseDeparted(entry && entry.accountId);
         });
       return block;
     }
@@ -1970,7 +1970,7 @@
     // The result is a toast either way (#454 item 8), never the inline
     // status line - refusalBody's own null-on-unparseable fallback is
     // reused here exactly as it is for every other card's refusal read.
-    async function eraseDeparted(accountId, name) {
+    async function eraseDeparted(accountId) {
       let response;
       try {
         response = await fetch(

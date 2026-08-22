@@ -1718,7 +1718,7 @@
 
       dangerousAction(block, trigger, eraseDepartedSentence(label),
         function () {
-          eraseDeparted(entry && entry.accountId, label);
+          eraseDeparted(entry && entry.accountId);
         });
       return block;
     }
@@ -1780,7 +1780,7 @@
      
      
      
-    async function eraseDeparted(accountId, name) {
+    async function eraseDeparted(accountId) {
       let response;
       try {
         response = await fetch(

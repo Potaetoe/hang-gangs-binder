@@ -566,13 +566,19 @@ await check("every endpoint call in apps/web is spelled the way the reader reads
  * answers for the admin API is out of scope for a page-only slice; the
  * honest stub answer for all of it stays the same 404 an unknown path
  * gets. Everything else apps/web calls must still resolve.
+ *
+ * 0.9-M3-S34 (#458) adds two more, the same idiom: GET /admin-departed
+ * (static) and DELETE /admin-departed/<id> (dynamic id, so the literal
+ * path this reader extracts is the prefix "/admin-departed/", matching
+ * the two /admin-fields/ entries above).
  */
 const DEMO_STUB_GAPS = Object.freeze(["/admin-log", "/admin-fields",
-  "/admin-fields/"]);
+  "/admin-fields/", "/admin-departed", "/admin-departed/"]);
 await check("the stub answers every call apps/web makes, by verb and " +
   "path - except the admin API's standing gap (GET /admin-log, GET " +
-  "/admin-fields, PUT/DELETE /admin-fields/<id> - the demo has not " +
-  "grown with 0.9-M3's admin surface)", () =>
+  "/admin-fields, PUT/DELETE /admin-fields/<id>, GET /admin-departed, " +
+  "DELETE /admin-departed/<id> - the demo has not grown with 0.9-M3's " +
+  "admin surface)", () =>
   calls.every((one) => DEMO_STUB_GAPS.indexOf(one.path) !== -1 ||
     Demo.routeFor(one.path, one.method) !== null));
 
