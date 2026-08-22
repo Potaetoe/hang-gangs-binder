@@ -2194,6 +2194,27 @@ def build_parser():
 
 
 def main(argv=None):
+    # Encoding-safe stdout/stderr (0.9-M3-S29, #449, the other side of
+    # this same ticket's fix): every stage's captured text now comes
+    # through claim_vs_diff.git()'s real UTF-8 decode, so a stage that
+    # captured a genuine non-ASCII character (the old gate's own
+    # checkmark, U+2714, prints one on every passing stage) can now hold
+    # it for real - and this console's own default codepage on Windows
+    # (cp1252) cannot RE-encode that character on the way back out,
+    # which crashed render()'s own print(line) with UnicodeEncodeError
+    # the moment the read-side fix stopped mojibake-ing it into
+    # something cp1252 could round-trip by accident. reconfigure()
+    # (Python 3.7+) swaps the stream's encoding in place; errors=
+    # "replace" so an exotic character degrades on screen rather than
+    # crashing the run - the same trade-off this ticket's read-side fix
+    # already made. Guarded by hasattr(), and done only here, never at
+    # import time: tools/ship_check_suite.py imports this module and
+    # captures with `contextlib.redirect_stdout(io.StringIO())`, which
+    # is not a real stream and carries no reconfigure() to call.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     args = build_parser().parse_args(argv)
     repo = os.path.abspath(args.repo or REPO)
 
