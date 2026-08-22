@@ -1,6 +1,7 @@
 /*
  * The admin page. Settings, Roles, Fields and the Change log - nothing
- * else.
+ * else, one tab per area (#385 item (b), #454 item 20, owner ruling
+ * 2026-08-22).
  *
  * 0.9-M3-S10 (#416) rebuilds this page for the keyless world: the
  * keyfile-decrypt tool, the entry exports (CSV/xlsx/JSON) and the
@@ -12,17 +13,19 @@
  * record (#385 §4) rules that no admin surface exposes a current
  * member's data, and a page handing an admin every member's entries is
  * exactly that. Nothing here fetches or renders a submission - Fields
- * (0.9-M3-S13, #433) is no exception: it draws the SPEC (GET /spec),
- * never a count of who picked what.
+ * (0.9-M3-S13, #433; the bring-back rebuild is 0.9-M3-S30, #452) is no
+ * exception: it draws the SPEC, never a count of who picked what.
  *
- * What is left is four cards, each reading and writing through the
- * admin session alone: Settings (GET/POST /content), Roles (GET/POST/
- * DELETE /membership, plus /me's adminVia), Fields (GET /spec, PUT/
- * DELETE /admin-fields/<id> - the categorical form builder, #433
- * against 0.9-M3-S11's landed contract on #419), and the Change log
- * (GET /admin-log). Split like every other page here - the pure half
- * is exported as BinderAdmin and tested in tests/admin-page.test.mjs;
- * the wiring below returns early when there is no document.
+ * What is left is four cards, one per tab, each reading and writing
+ * through the admin session alone: Settings (GET/POST /content), Roles
+ * (GET/POST/DELETE /membership, plus /me's adminVia), Fields (GET
+ * /admin-fields, PUT/DELETE /admin-fields/<id> - the categorical form
+ * builder, #433 against 0.9-M3-S11's landed contract on #419, reading
+ * the admin-only overlay 0.9-M3-S25 added on #440 so a retired field or
+ * value can be brought back from any session), and the Change log (GET
+ * /admin-log). Split like every other page here - the pure half is
+ * exported as BinderAdmin and tested in tests/admin-page.test.mjs; the
+ * wiring below returns early when there is no document.
  *
  * THE CONTRACT SOURCE, superseding the ticket's own §5 in three places
  * (S8's completion on #414, comment 5370945709, read before this build
@@ -453,94 +456,78 @@
   const VALUES_OUTSIDE_REASON = "This field's choices live outside " +
     "the form spec, so they are not edited here.";
 
-  /* A rename's two plain-words choices and the one-sentence
-   * consequence of each (#385 §8) - the words THIS CARD shows before
-   * it sends, mirroring server/worker.js's own RENAME_NEEDS_MODE
-   * sentence rather than inventing a second account of the same rule. */
-  const RENAME_CHOICES = Object.freeze([
-    { mode: "relabel", label: "Same thing, new word",
-      consequence: "Entries already saved follow the new word " +
-        "instantly." },
-    { mode: "replace", label: "A different thing",
-      consequence: "The old value retires under the word it had; " +
-        "entries keep it until someone re-picks." },
-  ]);
+  /* ONE BUTTON, THE SMARTER DEFAULT (owner ruling, #385 item (b) and
+   * #454 item 20, carried onto this ticket's own scope on #452,
+   * comment "Scope grows by two owner UX rulings"): a rename always
+   * means "same thing, new word" - this card sends mode "relabel" and
+   * nothing else. Retiring a value under the word it had and adding a
+   * new one is its own action (the Retire button, never a second
+   * rename mode to choose between). RENAME_MODE names the one string
+   * every rename sends; RENAME_CONSEQUENCE is the one sentence this
+   * card shows before it sends, mirroring server/worker.js's own
+   * RENAME_NEEDS_MODE rather than inventing a second account of the
+   * same rule. */
+  const RENAME_MODE = "relabel";
+  const RENAME_CONSEQUENCE = "Entries already saved follow the new word " +
+    "instantly.";
 
-  /*
-   * WHY UN-RETIRE IS SESSION-SCOPED (the judgment call in the
-   * completion on #433). GET /spec answers the EFFECTIVE spec - what a
-   * member reads - and server/worker.js's own applyOverlay() splices a
-   * retired field out of it; offeredValues() filters a retired value
-   * out of `choices` the same way. #419's own completion proves an
-   * admin session reads the SAME bytes as a member - there is no
-   * admin view of the spec, only the one view. So no route ever hands
-   * this page a retired item's id once it has left that response: the
-   * Worker's own internal bookkeeping (server/worker.js's
-   * currentValues()) keeps it, but nothing serves it out.
-   *
-   * What follows is the most this card can honestly do about that: a
-   * roster of every choice field and value THIS PAGE has itself seen
-   * offered THIS SESSION, kept even after a later read stops offering
-   * it. mergeFieldsRoster ADDS and UPDATES; it never DROPS an id that
-   * disappears, because the disappearance is exactly the fact
-   * "retired, as far as this page knows" needs to survive. A field or
-   * value retired before this page was ever opened - by this admin
-   * last week, or by another admin just now in a different tab - never
-   * enters the roster and is not offered back; typing the same words
-   * again makes a NEW value under a NEW id (server/worker.js's mintId
-   * steps around every id a field has ever had, retired ones
-   * included), which is a real limit of the contract, not a bug here.
-   */
-  function mergeFieldsRoster(known, spec) {
-    const next = new Map(known);
-    for (const field of categoricalFields(spec).choice) {
-      const existing = next.get(field.name);
-      const values = new Map(existing ? existing.values : []);
-      for (const v of field.choices || []) {
-        if (v && typeof v.value === "string") values.set(v.value, v.label);
-      }
-      next.set(field.name, { label: field.label, values: values });
-    }
-    return next;
+  /* DANGEROUS ACTIONS CONFIRM IN PLACE (#454 item 9, applied here to
+   * retiring a field and retiring a value) - the button becomes a
+   * sentence naming the real consequence, with Yes and Cancel right
+   * there, never a same-button double-press that said nothing about
+   * what pressing it again would do. */
+  function retireValueSentence(label) {
+    return "Members stop being offered \"" + label + "\"; entries " +
+      "already saved keep it. Retire it?";
+  }
+
+  function retireFieldSentence(label) {
+    return "It leaves the form for members; entries already saved keep " +
+      "every value. Retire the \"" + label + "\" field?";
+  }
+
+  /* A short, honest date - the field row's own last write
+   * (server/worker.js's markRetired(), 0.9-M3-S25/#440: `retiredAt` is
+   * `site_content.updated_at`, never minted here), never stronger than
+   * that. This card's own words say last changed rather than retired
+   * on, per the reviewer's recommendation on #440 (F3): an admin who
+   * edits a retired field's values moves this same stamp, so it is an
+   * upper bound on the retirement, not the retirement itself. */
+  function shortDate(iso) {
+    const parsed = Date.parse(iso);
+    return Number.isFinite(parsed)
+      ? new Date(parsed).toISOString().slice(0, 10)
+      : "an unknown date";
   }
 
   /*
-   * The roster plus the live spec, turned into what the card draws:
-   * one entry per field this page has ever offered this session, each
-   * carrying every value it has ever offered - offered ones first, in
-   * the order the Worker sent them, retired-as-known ones after.
-   * Active fields render in the spec's own order; fields this session
-   * has retired (not present in `spec` any more, but still in `known`)
-   * render after them, in the order this roster first met them.
+   * BRING BACK, FROM ANY SESSION (0.9-M3-S30, #452, against 0.9-M3-S25's
+   * landed GET /admin-fields on #440). No client-side roster is kept:
+   * the admin read now carries a retired field marked `retired: true`
+   * with `retiredAt`, and a retired value marked `retired: true` inside
+   * its field's `choices` - from any session, not only one this page
+   * watched retire something in - so there is nothing left for a
+   * client-side memory to remember that the read does not already say.
+   * This is the one place a field from that read is reshaped for the
+   * card to draw; `retiredAt` reads FIELD-level only, because that is
+   * the only level the stored row has a stamp for - a value retired
+   * inside a field that is still active shares that field's row and
+   * carries no stamp of its own (server/worker.js's offeredValues()
+   * never puts one on a value), so a retired value alone shows with no
+   * date rather than one invented here.
    */
-  function fieldsRosterView(known, spec) {
-    const active = categoricalFields(spec).choice;
-    const activeIds = new Set(active.map((f) => f.name));
-    const out = [];
-
-    for (const field of active) {
-      const entry = known.get(field.name);
-      const knownValues = entry ? entry.values : new Map();
-      const offeredIds = new Set(
-        (field.choices || []).map((v) => v.value));
-      const values = (field.choices || []).map((v) =>
-        ({ id: v.value, label: v.label, retired: false }));
-      for (const [id, label] of knownValues) {
-        if (!offeredIds.has(id)) values.push({ id, label, retired: true });
-      }
-      out.push({ id: field.name, label: field.label, active: true,
-        outside: Boolean(field.choicesFrom), values: values });
-    }
-
-    for (const [id, entry] of known) {
-      if (activeIds.has(id)) continue;
-      const values = [...entry.values].map(([vid, label]) =>
-        ({ id: vid, label: label, retired: true }));
-      out.push({ id: id, label: entry.label, active: false,
-        outside: false, values: values });
-    }
-
-    return out;
+  function fieldView(field) {
+    const values = (field.choices || []).map((v) => ({
+      id: v.id, label: v.label, retired: v.retired === true }));
+    return {
+      id: field.name,
+      label: field.label,
+      active: field.retired !== true,
+      outside: Boolean(field.choicesFrom),
+      retiredAt: field.retired === true &&
+        typeof field.retiredAt === "string" ? field.retiredAt : null,
+      values: values,
+    };
   }
 
   /* ---------------------------------------------------------------- */
@@ -681,9 +668,12 @@
     categoricalFields: categoricalFields,
     FIELD_READ_ONLY_REASON: FIELD_READ_ONLY_REASON,
     VALUES_OUTSIDE_REASON: VALUES_OUTSIDE_REASON,
-    RENAME_CHOICES: RENAME_CHOICES,
-    mergeFieldsRoster: mergeFieldsRoster,
-    fieldsRosterView: fieldsRosterView,
+    RENAME_MODE: RENAME_MODE,
+    RENAME_CONSEQUENCE: RENAME_CONSEQUENCE,
+    retireValueSentence: retireValueSentence,
+    retireFieldSentence: retireFieldSentence,
+    shortDate: shortDate,
+    fieldView: fieldView,
     logLine: logLine,
     IDLE_WINDOW: IDLE_WINDOW,
     idleVerdict: idleVerdict,
@@ -1110,16 +1100,14 @@
     }
 
     /* ------------------------------------------------------------ */
-    /* Fields (#433).                                                */
+    /* Fields (#433; the bring-back rebuild is 0.9-M3-S30, #452).     */
 
-    // The live effective spec and this session's own roster of what it
-    // has ever offered - see the block comment above
-    // mergeFieldsRoster/fieldsRosterView in the pure half for why the
-    // roster exists at all. Both reset on idle sign-out
-    // (clearAdminData, below), the same as every other cache this page
-    // keeps.
+    // The live admin-fields read (GET /admin-fields, 0.9-M3-S25/#440) -
+    // what is retired is already IN it, marked, from any session, so
+    // there is no roster to keep beside it any more. Reset on idle
+    // sign-out (clearAdminData, below), the same as every other cache
+    // this page keeps.
     let currentSpec = null;
-    let fieldsKnown = new Map();
 
     function sayFields(message, tone) {
       UI.setStatus($("fields-status"), message, tone);
@@ -1135,17 +1123,30 @@
       return false;
     }
 
-    // The field's CURRENT offered list, read fresh from the live spec
-    // rather than from the roster - a write sends the whole desired
-    // state (server/worker.js's own mergeValues), so what a value edit
-    // builds on has to be what is actually stored now, never a memory
-    // that may have drifted.
-    function liveChoices(fieldId) {
+    // THE CONTAINER-KEY TRANSLATION THIS TICKET OWES (F7, 0.9-M3-S25's
+    // review on #440, comment 5377697322 - ruled into this ticket's
+    // scope by Prime's ruling comment 5378228358): GET /admin-fields
+    // names a field's list `choices`; PUT /admin-fields/<id> reads the
+    // same list under `values`, and the field's own id is the URL
+    // segment, never a body key. The VALUES THEMSELVES need no further
+    // rename any more - 0.9-M3-S25's fix wave already spells each one
+    // {id, label, retired}, the write's own shape - so renaming the
+    // CONTAINER is the whole of what is left, done at this ONE place:
+    // every write below reads a field's current values through here,
+    // never through `.choices` directly, so a write body built from the
+    // read's own field object (`{name, kind, label, choices, ...}`, the
+    // untranslated echo F7 found silently doing nothing) cannot happen
+    // by accident - tests/admin-page.test.mjs's "untranslated echo" arm
+    // drives the hazard this avoids, and the mutation battery arms this
+    // function's own use at every call site.
+    function fieldWriteValues(fieldId, includeRetired) {
       const fields = (currentSpec && currentSpec.fields) || [];
       const field = fields.filter((f) => f && f.name === fieldId)[0];
-      return field && Array.isArray(field.choices)
-        ? field.choices.map((v) => ({ id: v.value, label: v.label }))
-        : [];
+      const choices = field && Array.isArray(field.choices)
+        ? field.choices : [];
+      return choices
+        .filter((v) => includeRetired || v.retired !== true)
+        .map((v) => ({ id: v.id, label: v.label }));
     }
 
     function putField(id, body) {
@@ -1175,12 +1176,12 @@
     const STALE_AFTER_WRITE = "Saved, but the list could not be read " +
       "back afterward - what is shown below may be out of date.";
 
-    // Every field/value write on this card is: send, re-read /spec so
-    // what is shown is what is stored (ticket item 4), say what
-    // happened. One function so no call site invents its own order of
-    // those three steps. Returns whether the WRITE itself was accepted
-    // (true/false) - never the re-read's own outcome - so a caller
-    // like addValue's click handler (F2/F3, #433 fix wave) knows
+    // Every field/value write on this card is: send, re-read GET
+    // /admin-fields so what is shown is what is stored (ticket item 4),
+    // say what happened. One function so no call site invents its own
+    // order of those three steps. Returns whether the WRITE itself was
+    // accepted (true/false) - never the re-read's own outcome - so a
+    // caller like addValue's click handler (F2/F3, #433 fix wave) knows
     // whether to clear what the admin typed: only a write the Worker
     // actually accepted earns that, a refusal keeps it exactly as the
     // Roles card's own "Add" already does.
@@ -1201,7 +1202,12 @@
       }
       const reread = await loadFields();
       if (reread === "ok") {
-        sayFields(successMessage, null);
+        // Feedback after an action is a brief toast, not an inline
+        // status line (#454 item 8) - sayFields still carries the
+        // "Saving…" state above and a refusal below, since both of
+        // those need to stay put and readable rather than fade.
+        sayFields("", null);
+        showToast(successMessage);
         loadLog();
       } else if (reread === "failed") {
         sayFields(STALE_AFTER_WRITE, "bad");
@@ -1218,39 +1224,40 @@
     // Un-retiring a FIELD sends no `values` - handleWriteField then
     // keeps currentValues(shipped, held), which is exactly what the
     // field held at the moment it was retired (server/worker.js,
-    // handleRetireField). Reachable only for a field this roster still
-    // knows the id of.
+    // handleRetireField). Reachable for any field the admin read
+    // offers back marked retired, from any session (0.9-M3-S25, #440).
     function unretireField(id) {
       return sendFieldWrite(() => putField(id, { retired: false }),
         "Restored.");
     }
 
     function retireValue(fieldId, valueId) {
-      const remaining = liveChoices(fieldId)
+      const remaining = fieldWriteValues(fieldId, false)
         .filter((v) => v.id !== valueId);
       return sendFieldWrite(() => putField(fieldId, { values: remaining }),
         "Retired.");
     }
 
-    // The value's id and label come from THIS SESSION'S roster (the
-    // one place either survives once the Worker stops offering it) -
-    // never invented, never re-minted, so the entries members already
-    // saved under that id are the ones this brings back.
+    // The value's id and label come from the admin read itself (GET
+    // /admin-fields, 0.9-M3-S25/#440) - never invented, never
+    // re-minted, so the entries members already saved under that id
+    // are the ones this brings back, from any session that retired it.
     function unretireValue(fieldId, valueId, label) {
-      const values = liveChoices(fieldId)
+      const values = fieldWriteValues(fieldId, false)
         .concat([{ id: valueId, label: label, retired: false }]);
       return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Restored.");
     }
 
     function addValue(fieldId, label) {
-      const values = liveChoices(fieldId).concat([{ label: label }]);
+      const values = fieldWriteValues(fieldId, false)
+        .concat([{ label: label }]);
       return sendFieldWrite(() => putField(fieldId, { values: values }),
         "Added.");
     }
 
     function moveValue(fieldId, valueId, delta) {
-      const values = liveChoices(fieldId);
+      const values = fieldWriteValues(fieldId, false);
       const at = values.findIndex((v) => v.id === valueId);
       const to = at + delta;
       if (at === -1 || to < 0 || to >= values.length) return;
@@ -1261,11 +1268,11 @@
         "Reordered.");
     }
 
-    function renameValue(fieldId, valueId, newLabel, mode) {
-      const values = liveChoices(fieldId).map((v) =>
+    function renameValue(fieldId, valueId, newLabel) {
+      const values = fieldWriteValues(fieldId, false).map((v) =>
         v.id === valueId ? { id: v.id, label: newLabel } : v);
       return sendFieldWrite(
-        () => putField(fieldId, { values: values, mode: mode }),
+        () => putField(fieldId, { values: values, mode: RENAME_MODE }),
         "Renamed.");
     }
 
@@ -1278,6 +1285,44 @@
     }
 
     /* -- Drawing. -- */
+
+    // The in-place confirm every dangerous action on this card uses
+    // (#454 item 9): `trigger`'s click reveals a hidden sentence naming
+    // the real consequence, plus Yes and Cancel right there - Yes runs
+    // `onYes`, Cancel only hides the block again. One function so
+    // retire-a-field and retire-a-value share one shape rather than two
+    // near-identical ones.
+    function dangerousAction(container, trigger, sentence, onYes) {
+      const block = document.createElement("div");
+      block.className = "stack-tight";
+      block.hidden = true;
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = sentence;
+      block.appendChild(p);
+      const row = document.createElement("div");
+      row.className = "row";
+      const yes = document.createElement("button");
+      yes.type = "button";
+      yes.className = "primary";
+      yes.textContent = "Yes";
+      yes.addEventListener("click", onYes);
+      row.appendChild(yes);
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "secondary";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", function () {
+        show(block, false);
+      });
+      row.appendChild(cancel);
+      block.appendChild(row);
+      container.appendChild(block);
+      trigger.addEventListener("click", function () {
+        show(block, block.hidden);
+      });
+      return block;
+    }
 
     // F1 (#433 fix wave): `wrap-row-value` belongs on the id, not the
     // label. theme.css's own comment on ".row.wrap-row > .wrap-row-value"
@@ -1376,16 +1421,15 @@
       retire.type = "button";
       retire.className = "secondary";
       retire.textContent = "Retire";
-      retire.addEventListener("click", function () {
-        retireValue(view.id, value.id);
-      });
       buttons.appendChild(retire);
 
       block.appendChild(buttons);
 
-      // #385 §8: the rename form asks what the new word means BEFORE
-      // it sends anything - the two buttons below ARE the send, since
-      // picking a mode is picking an action, not a third step after it.
+      // ONE BUTTON, THE SMARTER DEFAULT (#385/#454 item 20): the form
+      // asks for the new word and sends - there is no mode to choose
+      // between any more, RENAME_MODE is always what this page sends.
+      // Retiring a value under the word it had is the Retire button
+      // above, its own action.
       const form = document.createElement("div");
       form.className = "stack-tight";
       form.hidden = true;
@@ -1395,26 +1439,24 @@
       input.value = value.label;
       form.appendChild(input);
 
-      for (const choice of RENAME_CHOICES) {
-        const consequence = document.createElement("p");
-        consequence.className = "hint";
-        consequence.textContent = choice.consequence;
-        form.appendChild(consequence);
+      const consequence = document.createElement("p");
+      consequence.className = "hint";
+      consequence.textContent = RENAME_CONSEQUENCE;
+      form.appendChild(consequence);
 
-        const modeButton = document.createElement("button");
-        modeButton.type = "button";
-        modeButton.className = "secondary";
-        modeButton.textContent = choice.label;
-        modeButton.addEventListener("click", function () {
-          const verdict = validateValueLabel(input.value);
-          if (!verdict.ok) {
-            sayFields(verdict.message, "bad");
-            return;
-          }
-          renameValue(view.id, value.id, verdict.value, choice.mode);
-        });
-        form.appendChild(modeButton);
-      }
+      const send = document.createElement("button");
+      send.type = "button";
+      send.className = "primary";
+      send.textContent = "Rename";
+      send.addEventListener("click", function () {
+        const verdict = validateValueLabel(input.value);
+        if (!verdict.ok) {
+          sayFields(verdict.message, "bad");
+          return;
+        }
+        renameValue(view.id, value.id, verdict.value);
+      });
+      form.appendChild(send);
 
       const cancel = document.createElement("button");
       cancel.type = "button";
@@ -1429,6 +1471,11 @@
       rename.addEventListener("click", function () {
         show(form, form.hidden);
       });
+
+      dangerousAction(block, retire, retireValueSentence(value.label),
+        function () {
+          retireValue(view.id, value.id);
+        });
 
       return block;
     }
@@ -1455,6 +1502,17 @@
       buttons.className = "row buttons";
 
       if (!view.active) {
+        // "Last changed", never "retired on" - the reviewer's own
+        // wording recommendation on #440 (F3): the stamp is the row's
+        // last write, an honest upper bound on the retirement rather
+        // than the retirement instant itself.
+        if (view.retiredAt) {
+          const when = document.createElement("p");
+          when.className = "hint";
+          when.textContent = "Last changed " + shortDate(view.retiredAt) +
+            ".";
+          block.appendChild(when);
+        }
         const restore = document.createElement("button");
         restore.type = "button";
         restore.className = "secondary";
@@ -1498,7 +1556,7 @@
             sayFields(verdict.message, "bad");
             return;
           }
-          if (liveChoices(view.id).length >= MAX_FIELD_VALUES) {
+          if (fieldWriteValues(view.id, true).length >= MAX_FIELD_VALUES) {
             sayFields("A field carries up to " + MAX_FIELD_VALUES +
               " values, retired ones counted.", "bad");
             return;
@@ -1512,21 +1570,16 @@
         block.appendChild(addRow);
       }
 
-      let armed = false;
       const retire = document.createElement("button");
       retire.type = "button";
       retire.className = "secondary";
       retire.textContent = "Retire field";
-      retire.addEventListener("click", function () {
-        if (!armed) {
-          armed = true;
-          retire.textContent = "Confirm retiring this field";
-          return;
-        }
-        retireField(view.id);
-      });
       buttons.appendChild(retire);
       block.appendChild(buttons);
+      dangerousAction(block, retire, retireFieldSentence(view.label),
+        function () {
+          retireField(view.id);
+        });
       return block;
     }
 
@@ -1562,8 +1615,8 @@
       for (const field of split.other) {
         list.appendChild(readOnlyFieldBlock(field));
       }
-      for (const view of fieldsRosterView(fieldsKnown, currentSpec)) {
-        list.appendChild(fieldBlock(view));
+      for (const field of split.choice) {
+        list.appendChild(fieldBlock(fieldView(field)));
       }
     }
 
@@ -1572,11 +1625,16 @@
     // write, and needs to tell a real refresh apart from a read that
     // failed, so it never prints the write's own success message over
     // a status line this function already set to something truer.
+    //
+    // GET /admin-fields, NOT /spec (0.9-M3-S30, #452, against 0.9-M3-S25
+    // on #440): the admin-only read that answers with what is retired
+    // still in it, marked - the whole reason this card no longer needs
+    // a session-scoped memory of anything a member-facing read hides.
     async function loadFields() {
       sayFields("Loading…", null);
       let payload;
       try {
-        const response = await fetch(config.endpoint + "/spec", {
+        const response = await fetch(config.endpoint + "/admin-fields", {
           headers: root.BinderSession.authorization(),
         });
         if (sessionRefused(response, sayFields)) return "signed-out";
@@ -1593,7 +1651,6 @@
       const spec = payload && payload.spec && typeof payload.spec === "object"
         ? payload.spec
         : { fields: [] };
-      fieldsKnown = mergeFieldsRoster(fieldsKnown, spec);
       currentSpec = spec;
       renderFields();
       sayFields("", null);
@@ -1710,7 +1767,6 @@
       show($("roles-other"), false);
       $("fields-list").textContent = "";
       currentSpec = null;
-      fieldsKnown = new Map();
     }
 
     function wireIdle() {
@@ -1760,6 +1816,80 @@
 
       ticker = root.setInterval(checkAttention, TICK_MS);
       $("idle-stay").addEventListener("click", markInteraction);
+    }
+
+    /* ------------------------------------------------------------ */
+    /* Tabs (#385 item (b) and #454 item 20): one area on screen at a   */
+    /* time. Click only, the same hand-wired shape apps/web/charts.js's */
+    /* own picture toggle already uses rather than a shared component - */
+    /* the [role="tab"]/[role="tablist"] family and the selected-mark   */
+    /* rule are theme.css's own, built for exactly this. The ~150ms     */
+    /* fade on the panel that appears is fadeIn(), below, using a       */
+    /* transition rather than a refused @keyframes (#273); it needs one */
+    /* forced reflow to fire on an element that just stopped being      */
+    /* `hidden`, and the site's blanket prefers-reduced-motion rule     */
+    /* already collapses it to nothing.                                 */
+
+    // Adds `.fade-in` (opacity: 0, theme.css), forces one reflow so the
+    // browser paints that value before the next line removes the class,
+    // then lets the element's own `transition: opacity 150ms` (theme.css,
+    // shared by every `[role="tabpanel"]` and `.toast`) carry it back to
+    // opaque. Skipped harmlessly where there is no layout engine to
+    // force (this suite's Node DOM stub) - void discards whatever
+    // `offsetHeight` reads there.
+    function fadeIn(el) {
+      if (!el) return;
+      el.className = (el.className ? el.className + " " : "") + "fade-in";
+      void el.offsetHeight;
+      el.className = el.className.replace(/\s*fade-in\b/, "");
+    }
+
+    const TABS = [
+      { tab: "tab-settings", panel: "settings-card" },
+      { tab: "tab-roles", panel: "roles-card" },
+      { tab: "tab-fields", panel: "fields-card" },
+      { tab: "tab-log", panel: "log-card" },
+    ];
+
+    function selectTab(panelId) {
+      for (const one of TABS) {
+        const active = one.panel === panelId;
+        $(one.tab).setAttribute("aria-selected", String(active));
+        show($(one.panel), active);
+        if (active) fadeIn($(one.panel));
+      }
+    }
+
+    for (const one of TABS) {
+      $(one.tab).addEventListener("click", function () {
+        selectTab(one.panel);
+      });
+    }
+    // Established here rather than trusted to the static markup alone,
+    // so the shipped page and this line agree by decision rather than
+    // by coincidence.
+    selectTab("settings-card");
+
+    /* ------------------------------------------------------------ */
+    /* The toast (#454 item 8) - the one element (#toast) and the one   */
+    /* function this page needs, so 0.9-M3-S33 can lift both site-wide  */
+    /* unchanged. Used for this card's own write confirmations          */
+    /* (Added./Retired./Restored./Renamed./Reordered.) - loading and    */
+    /* refusal stay on the inline status line beside the control, since */
+    /* those need to persist and stay readable rather than fade;        */
+    /* converting every card's feedback site-wide is S33's own scope    */
+    /* (Prime's map on #454), not this ticket's.                        */
+    let toastTimer = null;
+    function showToast(message) {
+      const toast = $("toast");
+      if (!toast) return;
+      root.clearTimeout(toastTimer);
+      toast.textContent = message;
+      show(toast, true);
+      fadeIn(toast);
+      toastTimer = root.setTimeout(function () {
+        show(toast, false);
+      }, 3000);
     }
 
     wireIdle();

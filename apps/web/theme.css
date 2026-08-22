@@ -1355,6 +1355,44 @@ button.primary:disabled {
   border-bottom-color: var(--color-accent);
 }
 
+/* A ~150ms fade for the panel a tab reveals and for the toast below
+   (0.9-M3-S30, #452; #454 item 4) - a TRANSITION, never a @keyframes:
+   #273 retired this stylesheet's entrance animation and the
+   live-verification ledger's reduced-motion row went with it, on the
+   grounds that no keyframe and no animated element was left for the
+   setting to reduce; tools/check_web.py now refuses a keyframe from
+   ever coming back for exactly that reason (its own comment on
+   KEYFRAMES says a transition is what it does NOT hold, since the
+   blanket prefers-reduced-motion rule below already covers one).
+   admin.js's fadeIn() adds and removes `.fade-in` around one forced
+   reflow, which is the coordination a transition (unlike a keyframe)
+   needs to fire on an element that just stopped being `hidden`. */
+[role="tabpanel"],
+.toast {
+  transition: opacity 150ms ease;
+}
+.fade-in { opacity: 0; }
+
+/* The toast (#454 item 8) - a brief, self-dismissing confirmation,
+   never an inline status line. Fixed near the bottom for one-hand reach
+   on a phone (#454 item 3), the same corner a primary action sits in;
+   the surface and border match `.card`'s own so it reads as this site's
+   chrome rather than a third component. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2 * var(--space-4));
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  z-index: 20;
+}
+
 /* ------------------------------------------------------------------ */
 /* The export table.                                                   */
 
