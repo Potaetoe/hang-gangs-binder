@@ -81,6 +81,17 @@
  * it was written for - above a floor of 0, a combination matching ONE
  * member and a combination matching nobody come back as the same
  * document, so the response cannot say which value made the view narrow.
+ *
+ * VALUE SETS (section 11, 0.9-M3-S31, #455) generalize that and add no
+ * mandate either. The owner's UX record (#454, items 16-18) rules the
+ * chips MULTI-SELECT, so a field carries a SET of values: the values of
+ * one field are ORed, the fields are ANDed, and a field nobody named
+ * matches everybody. Section 10's arms are the set of ONE and stand
+ * unchanged. What section 11 adds is the union half - the floor over a
+ * union rather than only over an intersection, the identity that makes
+ * "every chip lit" the same answer as no chip at all, and the presence
+ * list the page reads off the FLOORED group-makeup block, so a value
+ * too few members hold is not offered as a filter in the first place.
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -347,6 +358,33 @@ const atShippedFloor = (rows, query, spec) =>
   agg.aggregate(rows, ask(query, spec), spec);
 const atRaisedFloor = (rows, query, spec) =>
   agg.aggregate(rows, ask(query, spec), spec, raised);
+
+/*
+ * The same two, for a query that MIGHT be refused.
+ *
+ * ask() above throws on a refusal, which is right for an arm whose query
+ * is known good. Section 11 arms queries that were refusals until
+ * 0.9-M3-S31, so at its contract-first red every one of them throws -
+ * and a throw takes the whole run down and hides every arm after it
+ * (0.9-M3-S24's own review, #438 comment 5377047859, finding F5: a red
+ * that crashes is a red whose remaining arms nobody saw). These return
+ * a stand-in instead, so a red is a red. NOTHING_ASKED carries the
+ * not-enough shape so drawnOf(), groupBlock() and pointsOf() all read
+ * it without a special case, exactly as NOTHING_DRAWN does.
+ */
+const NOTHING_ASKED = Object.freeze({
+  ok: true, enough: false, filters: [], floor: null,
+  units: null, trend: null, distribution: null, groups: null,
+});
+const askOrNull = (query, spec) => {
+  const parsed = askFor(query, spec);
+  return parsed.ok ? parsed.ask : null;
+};
+const drawOrNothing = (rows, query, settings, spec) => {
+  const parsed = askFor(query, spec);
+  return parsed.ok ? agg.aggregate(rows, parsed.ask, spec, settings)
+    : NOTHING_ASKED;
+};
 
 /*
  * The spec's own grid for one unit system, computed here from the config
@@ -2131,6 +2169,12 @@ check("tombstones: the correction's own month is the one that draws",
 /* has to be computed inside the same intersection the floor is        */
 /* applied to.                                                         */
 /*                                                                     */
+/* THIS SECTION IS NOW THE SET OF ONE. 0.9-M3-S31 (#455) let a field   */
+/* carry SEVERAL values, ORed - section 11 arms that half. Every claim */
+/* below is still a claim about the shipped Worker, because one value  */
+/* per field is what a set of one asks, and keeping them here is what  */
+/* stops the generalization quietly costing the narrower guarantee.    */
+/*                                                                     */
 /* THE RULING THIS SECTION ARMS, in the owner's own words (#384 ruling  */
 /* 2): "the same rule - exact at floor 0". A combined view is not a    */
 /* second privacy regime, it is the same one over fewer people. So     */
@@ -2171,18 +2215,22 @@ check("combined: three fields ANDed",
     "&filter=country&value=US").filters.length === 3);
 
 /*
- * A FIELD STILL MAY NOT REPEAT, and the refusal keeps the sentence the
- * single-filter world used - now raised against the FIELD rather than
- * against the query parameter, because the parameter is allowed to
- * repeat and the dimension is not. #384 ruled one value per dimension,
- * so a second value for one field would be an OR inside an AND.
+ * A FIELD MAY REPEAT SINCE 0.9-M3-S31 (#455), AND THAT REPEAT IS THE
+ * SET. #384 ruled one value per dimension and the owner's later UX
+ * record (#454 item 16) ruled the chips multi-select, so two values for
+ * one field became an OR inside the AND rather than a refusal. It is
+ * armed as such in section 11; what is pinned here is that the change
+ * did not cost this section's own shape - the same query still resolves
+ * to one field, and the AND across fields below is untouched by it.
  */
 const dupeField = askFor("measure=weight&filter=gender&value=male" +
   "&filter=gender&value=female");
-check("combined: two values for ONE field are refused, in the words the " +
-  "single-filter world used, naming the field",
-  dupeField.ok === false &&
-  dupeField.error === '"gender" is given more than once.');
+check("combined: two values for ONE field are that field's set now " +
+  "(section 11) rather than the refusal this section shipped with, and " +
+  "they are still ONE dimension of the AND",
+  dupeField.ok === true &&
+  dupeField.ask.filters.length === 2 &&
+  dupeField.ask.filters.every((one) => one.field === "gender"));
 
 /* The other three parameters each decide one thing about the WHOLE
    answer, so a second copy is a caller contradicting themselves and
@@ -2270,21 +2318,21 @@ const capQuery = (n) => "measure=weight" + CAP_PAIRS.slice(0, n)
 
 check("combined: the cap is a shipped constant this arm reads rather " +
   "than a number copied into it",
-  typeof agg.MAX_FILTERS === "number" && Number.isInteger(agg.MAX_FILTERS) &&
-  agg.MAX_FILTERS > 0);
+  typeof agg.MAX_FILTER_PAIRS === "number" && Number.isInteger(agg.MAX_FILTER_PAIRS) &&
+  agg.MAX_FILTER_PAIRS > 0);
 check("combined: the cap covers every categorical field the shipped " +
   "form has, so nothing the shipped chips can build is out of reach",
-  agg.MAX_FILTERS >= SITE.fields
+  agg.MAX_FILTER_PAIRS >= SITE.fields
     .filter((one) => one.kind === "choice" && one.chart === true).length);
 check("combined: a request carrying exactly the cap's number of filters " +
   "is answered",
-  askFor(capQuery(agg.MAX_FILTERS), capFields).ok === true);
-const overCap = askFor(capQuery(agg.MAX_FILTERS + 1), capFields);
+  askFor(capQuery(agg.MAX_FILTER_PAIRS), capFields).ok === true);
+const overCap = askFor(capQuery(agg.MAX_FILTER_PAIRS + 1), capFields);
 check("combined: one filter past the cap is refused, with a reason that " +
   "names the number - the bound is on the request, so a form an admin " +
   "grows does not grow it",
   overCap.ok === false &&
-  overCap.error.indexOf(String(agg.MAX_FILTERS)) !== -1);
+  overCap.error.indexOf(String(agg.MAX_FILTER_PAIRS)) !== -1);
 /* The count is checked BEFORE any field name is resolved, so an
    over-cap request costs one comparison whatever it names - and a
    caller cannot use the ordering to learn which of their invented
@@ -2292,7 +2340,7 @@ check("combined: one filter past the cap is refused, with a reason that " +
 check("combined: past the cap is refused on the count alone, before any " +
   "field is looked up - the same refusal under the shipped spec, which " +
   "has three of those six fields and not the other three",
-  askFor(capQuery(agg.MAX_FILTERS + 1)).error === overCap.error);
+  askFor(capQuery(agg.MAX_FILTER_PAIRS + 1)).error === overCap.error);
 
 /* -------------------------------------------------------------- */
 /* 10b. The AND itself, and the echo.                              */
@@ -2551,10 +2599,14 @@ check("route: the makeup block that comes back with a filtered picture " +
 const routeDupe = await callOn(comboEnv, "GET",
   "/charts-data?measure=weight&filter=gender&value=male" +
   "&filter=gender&value=female", { token: COMBO_TOKENS[0] });
-check("route: two values for one field are a 400 at the door",
-  routeDupe.status === 400);
+check("route: two values for one field are that field's set at the door " +
+  "too - three of the five members are male or female... which is all " +
+  "of them, so the union draws the whole corpus",
+  routeDupe.status === 200 && routeDupe.body.enough === true &&
+  routeDupe.body.distribution.bins
+    .reduce((n, band) => n + band.count, 0) === CROWD.length);
 const routeCap = await callOn(comboEnv, "GET",
-  "/charts-data?" + capQuery(agg.MAX_FILTERS + 1),
+  "/charts-data?" + capQuery(agg.MAX_FILTER_PAIRS + 1),
   { token: COMBO_TOKENS[0] });
 check("route: one filter past the cap is a 400 at the door",
   routeCap.status === 400);
@@ -2626,8 +2678,559 @@ check("combined: the trend's population is the INTERSECTION, not the " +
   pointsOf(both)[0].people === drawnCount(both) &&
   pointsOf(both)[0].people === 2);
 
+/* -------------------------------------------------------------- */
+/* 11. VALUE SETS: several values per categorical field - OR       */
+/*     within a field, AND across fields (0.9-M3-S31, #455).       */
+/*                                                                 */
+/* The owner's UX record (#454, items 16-18) rules the chips       */
+/* MULTI-SELECT: every option starts lit, tapping one turns it off */
+/* and narrows, at least one stays lit, and there is no "All" chip */
+/* because everyone IS every option selected. So a field's chips   */
+/* are a SET of values rather than one value, and 0.9-M3-S24       */
+/* (section 10) refused a second value for a field outright.       */
+/*                                                                 */
+/* SECTION 10 IS UNCHANGED IN SUBSTANCE and that is deliberate: a  */
+/* set of ONE is the shape that shipped, so every claim it makes   */
+/* is still a claim about this Worker. What this section adds is   */
+/* what a set of SEVERAL does, and it re-arms the floor over       */
+/* unions rather than assuming section 10 covered them - an        */
+/* intersection and a union are different populations and the      */
+/* claim is that the floor cannot tell them apart.                 */
+/*                                                                 */
+/* THE RULE, whole: for each field the caller names, the member's  */
+/* own value must be IN that field's set; a field the caller does  */
+/* not name matches everybody; the named fields AND together.      */
+
+const SET_AT = "2026-08-01T00:00:00.000Z";
+
+/*
+ * Six members chosen so that a union, an intersection and a sum of
+ * separate answers are three different numbers - which is what makes
+ * the arms below positive proofs rather than shapes that would pass
+ * under either reading.
+ *
+ *   gender     male 2, female 2, nonbinary 1, other 1
+ *   roles      feeder 2, feedee 2, gainer 2, admirer 1 - and one member
+ *              holds TWO of them, so a union over roles counts fewer
+ *              people than the two cells sum to
+ *   country    US 3, JP 2, DE 1
+ *
+ * Every member states a gender, holds at least one role and states a
+ * country, which is what lets 11c arm the everyone identity as an
+ * identity rather than as an approximation.
+ */
+const SET_CROWD = [
+  row(acct(80), SET_AT, record(100, 170, "male", ["feeder"], "US")),
+  row(acct(81), SET_AT, record(102, 172, "male", ["feedee"], "JP")),
+  row(acct(82), SET_AT, record(104, 174, "female", ["feeder", "gainer"],
+    "US")),
+  row(acct(83), SET_AT, record(106, 176, "nonbinary", ["gainer"], "DE")),
+  row(acct(84), SET_AT, record(108, 178, "female", ["admirer"], "JP")),
+  row(acct(85), SET_AT, record(110, 180, "other", ["feedee"], "US")),
+];
+
+/* One field's chips, in the order the page would send them. */
+const chips = (field, values) =>
+  values.map((one) => "&filter=" + field + "&value=" + one).join("");
+
+/* -------------------------------------------------------------- */
+/* 11a. The ask: a repeated field is that field's SET.             */
+
+const TWO_COUNTRIES = "measure=weight" + chips("country", ["US", "JP"]);
+
+check("sets: a field named twice is that field's SET rather than the " +
+  "refusal 0.9-M3-S24 gave it, and the ask carries both pairs in the " +
+  "caller's own order",
+  askFor(TWO_COUNTRIES).ok === true &&
+  JSON.stringify(askOrNull(TWO_COUNTRIES).filters
+    .map((one) => [one.field, one.value])) ===
+    JSON.stringify([["country", "US"], ["country", "JP"]]));
+
+check("sets: a set of ONE is still the shape section 10 shipped - one " +
+  "pair, one predicate",
+  askOrNull("measure=weight" + chips("gender", ["male"])).filters
+    .length === 1);
+
+/* The pairs belonging to one field need not arrive together: the page
+   builds its query row by row, and a member who re-lights a chip after
+   setting another field's would otherwise be sending a different
+   question from the same screen. */
+const SPLIT_PAIRS = "measure=weight" + chips("country", ["US"]) +
+  chips("gender", ["male"]) + chips("country", ["JP"]);
+check("sets: a field's pairs need not be adjacent - the set is the " +
+  "field's, not the position's, and the echo keeps every pair in the " +
+  "caller's own order",
+  askOrNull(SPLIT_PAIRS) !== null &&
+  JSON.stringify(askOrNull(SPLIT_PAIRS).filters
+    .map((one) => one.field + "=" + one.value)) ===
+    JSON.stringify(["country=US", "gender=male", "country=JP"]));
+
+/*
+ * A DUPLICATE VALUE INSIDE ONE SET IS REFUSED rather than collapsed.
+ *
+ * A set is a set, so the two readings answer the same question - which
+ * is exactly why the choice is about what a caller learns rather than
+ * about the population. Refusing says the request was malformed;
+ * collapsing would silently answer a question the caller did not write,
+ * and this file's whole discipline is that askFor() refuses a query it
+ * does not understand rather than ignoring part of it. The page cannot
+ * produce one either: chips are a set on the screen too.
+ */
+const dupeValue = askFor("measure=weight" + chips("country", ["US", "US"]));
+check("sets: the SAME value twice in one field's set is refused, naming " +
+  "the field - a set is a set, and a malformed ask is refused rather " +
+  "than quietly collapsed",
+  dupeValue.ok === false &&
+  dupeValue.error === '"country" is given the same value more than once.');
+check("sets: and the duplicate is caught wherever the pairs sit, not " +
+  "only when they are adjacent",
+  askFor("measure=weight" + chips("country", ["US"]) +
+    chips("gender", ["male"]) + chips("country", ["US"])).error ===
+    dupeValue.error);
+check("sets: two DIFFERENT values for one field are accepted, so the " +
+  "refusal above is about the duplicate and not about the repeat",
+  askFor("measure=weight" + chips("country", ["US", "JP"])).ok === true);
+
+/* One bad member of a set refuses the whole ask, for the reason a bad
+   predicate always has: answering the good half would describe a
+   population the caller never named. */
+check("sets: one value outside the allowlist inside an otherwise good " +
+  "set refuses the whole ask",
+  askFor("measure=weight" + chips("country", ["US", "zz"])).error ===
+    "That is not a value of that filter.");
+check("sets: the unpaired-name refusals are untouched by sets - a " +
+  "filter with no value of its own is still that sentence",
+  askFor("measure=weight" + chips("country", ["US", "JP"]) +
+    "&filter=gender").error === "That filter needs a value.");
+
+/*
+ * THE CAP IS ON PAIRS NOW, AND THE RENAME IS THE POINT. The number a
+ * request is bounded by used to be a number of FIELDS, because a field
+ * could carry only one value; a field may now carry a set, so the two
+ * counts came apart and the constant was renamed with the meaning it
+ * actually has.
+ */
+const CODE = (n) => String.fromCharCode(65 + Math.floor(n / 26)) +
+  String.fromCharCode(65 + (n % 26));
+const codePairs = (n, field) => {
+  let query = "measure=weight";
+  for (let i = 0; i < n; i += 1) query += chips(field || "country", [CODE(i)]);
+  return query;
+};
+
+/* Every value the shipped form LISTS for a categorical field, summed -
+   the country list is not one of them, since its values live outside
+   the spec. A member may light every one of these at once, so the cap
+   has to be at least this. */
+const LISTED_VALUES = SITE.fields
+  .filter((one) => one.kind === "choice" && one.chart === true &&
+    Array.isArray(one.choices))
+  .reduce((total, one) => total + one.choices.length, 0);
+
+check("sets: the cap is a shipped constant this arm reads rather than a " +
+  "number copied into it",
+  typeof agg.MAX_FILTER_PAIRS === "number" &&
+  Number.isInteger(agg.MAX_FILTER_PAIRS) && agg.MAX_FILTER_PAIRS > 0);
+check("sets: the cap covers every value the shipped form lists across " +
+  "its categorical fields, so a member may light every chip of every " +
+  "field at once and still be answered (" + LISTED_VALUES + " values)",
+  LISTED_VALUES > 0 && agg.MAX_FILTER_PAIRS >= LISTED_VALUES);
+check("sets: and it leaves room past them for the countries a group " +
+  "really holds, which is the list that grows with the group rather " +
+  "than with the form",
+  agg.MAX_FILTER_PAIRS >= LISTED_VALUES * 4);
+check("sets: a request carrying exactly the cap's worth of pairs is " +
+  "answered",
+  askFor(codePairs(agg.MAX_FILTER_PAIRS)).ok === true);
+const overPairs = askFor(codePairs(agg.MAX_FILTER_PAIRS + 1));
+check("sets: one pair past the cap is refused, with a reason that names " +
+  "the number",
+  overPairs.ok === false &&
+  overPairs.error.indexOf(String(agg.MAX_FILTER_PAIRS)) !== -1);
+check("sets: the cap counts PAIRS and not fields - every pair above " +
+  "names the one field `country`, and one field past the cap is still " +
+  "refused",
+  askOrNull(codePairs(agg.MAX_FILTER_PAIRS)) !== null &&
+  askOrNull(codePairs(agg.MAX_FILTER_PAIRS)).filters
+    .every((one) => one.field === "country"));
+check("sets: past the cap is refused on the count alone, before any " +
+  "field is looked up - the same sentence for a field this form does " +
+  "not have",
+  askFor(codePairs(agg.MAX_FILTER_PAIRS + 1, "nope")).error ===
+    overPairs.error);
+
+/* -------------------------------------------------------------- */
+/* 11b. OR within a field, AND across fields.                      */
+
+const setsAtFloor0 = (query) => drawOrNothing(SET_CROWD, query);
+const US_ONLY = "measure=weight" + chips("country", ["US"]);
+const JP_ONLY = "measure=weight" + chips("country", ["JP"]);
+
+check("sets: the values of one field are ORed - three members are in " +
+  "the US and two are in JP, and asking for both draws five",
+  drawnCount(setsAtFloor0(US_ONLY)) === 3 &&
+  drawnCount(setsAtFloor0(JP_ONLY)) === 2 &&
+  drawnCount(setsAtFloor0(TWO_COUNTRIES)) === 5);
+check("sets: the two operators are told apart by the same two pairs - " +
+  "two values of ONE field draw five, and one value each of TWO fields " +
+  "draws one, so within a field is a union and across fields is an " +
+  "intersection",
+  drawnCount(setsAtFloor0(TWO_COUNTRIES)) === 5 &&
+  drawnCount(setsAtFloor0("measure=weight" + chips("country", ["JP"]) +
+    chips("gender", ["female"]))) === 1);
+check("sets: a value nobody holds adds nobody to a union rather than " +
+  "emptying it - the same answer, and no way to tell the two asks apart",
+  drawnCount(setsAtFloor0("measure=weight" + chips("country",
+    ["US", "ZZ"]))) === 3);
+
+/* On a MULTIPLE-choice field the union counts people, not holdings:
+   one member holds both feeder and gainer, so the two cells sum to
+   four while the union of them draws three. The person-rule the whole
+   file runs on is what makes that true, and it does not change because
+   there are more values in the predicate. */
+check("sets: a union over a multiple-choice field counts PEOPLE - two " +
+  "feeders and two gainers, one of whom is both, is three members and " +
+  "not four",
+  drawnCount(setsAtFloor0("measure=weight" + chips("roles",
+    ["feeder"]))) === 2 &&
+  drawnCount(setsAtFloor0("measure=weight" + chips("roles",
+    ["gainer"]))) === 2 &&
+  drawnCount(setsAtFloor0("measure=weight" + chips("roles",
+    ["feeder", "gainer"]))) === 3);
+
+check("sets: a set on one field ANDs with a set on another - four " +
+  "members are male or female, three are feeders or gainers, and the " +
+  "two who are both are what draws",
+  drawnCount(setsAtFloor0("measure=weight" +
+    chips("gender", ["male", "female"]) +
+    chips("roles", ["feeder", "gainer"]))) === 2);
+check("sets: a set ANDs with a single value the same way, since a " +
+  "single value is a set of one",
+  drawnCount(setsAtFloor0("measure=weight" +
+    chips("gender", ["male", "female"]) + chips("country", ["US"]))) === 2);
+check("sets: three fields of sets narrow again - male or other, in the " +
+  "US or DE, and a feedee is one member",
+  drawnCount(setsAtFloor0("measure=weight" +
+    chips("gender", ["male", "other"]) + chips("country", ["US", "DE"]) +
+    chips("roles", ["feedee"]))) === 1);
+
+/* The echo is the caller's own question handed back, so the ORDER is
+   theirs and the ANSWER must not depend on it - a set is unordered and
+   AND is commutative, so a member who lit their chips in a different
+   order must not be shown a different chart. */
+const unionEcho = setsAtFloor0(TWO_COUNTRIES);
+const unionFlipped = setsAtFloor0("measure=weight" +
+  chips("country", ["JP", "US"]));
+check("sets: the order the values arrive in changes the echo and " +
+  "nothing else",
+  withoutEcho(unionEcho) === withoutEcho(unionFlipped) &&
+  JSON.stringify(unionFlipped.filters) === JSON.stringify([
+    { field: "country", value: "JP" },
+    { field: "country", value: "US" }]));
+check("sets: the echo lists EVERY pair the caller sent, ungrouped and " +
+  "undeduplicated - their question, not this file's reading of it " +
+  "(mandate 5)",
+  JSON.stringify(unionEcho.filters) === JSON.stringify([
+    { field: "country", value: "US" },
+    { field: "country", value: "JP" }]));
+check("sets: and it still enumerates nothing - a union names only the " +
+  "values the caller sent, never the rest of the field",
+  everyString(unionEcho.filters).indexOf("DE") === -1);
+
+/* -------------------------------------------------------------- */
+/* 11c. The EVERYONE identity (#454 item 16, #455 scope 1).         */
+/*                                                                 */
+/* "There is no All chip - everyone is every option selected." So a */
+/* set naming every value of a field has to draw what no set at all */
+/* draws, or the page's own resting state would be a filter.        */
+
+const everyone = setsAtFloor0("measure=weight");
+const GENDERS = ["male", "female", "nonbinary", "other"];
+const ROLES = ["feeder", "feedee", "gainer", "admirer"];
+
+check("sets: a set naming EVERY value of a field is the same answer as " +
+  "no set at all, apart from the caller's own echo - the identity the " +
+  "chips' resting state depends on",
+  withoutEcho(setsAtFloor0("measure=weight" + chips("gender", GENDERS))) ===
+    withoutEcho(everyone));
+check("sets: and that answer really is the whole corpus, so the arm " +
+  "above is an identity rather than two empty documents",
+  everyone.enough === true && drawnCount(everyone) === SET_CROWD.length);
+check("sets: the identity holds on a multiple-choice field too, where a " +
+  "member may hold several of the values at once",
+  withoutEcho(setsAtFloor0("measure=weight" + chips("roles", ROLES))) ===
+    withoutEcho(everyone));
+check("sets: a set naming every value but one is NOT everyone - the " +
+  "identity is a consequence of the union covering the field, not a " +
+  "short circuit whenever several values are named",
+  drawnCount(setsAtFloor0("measure=weight" +
+    chips("gender", GENDERS.slice(0, 3)))) === SET_CROWD.length - 1);
+
+/*
+ * THE BOUNDARY, ARMED AS A POSITIVE CLAIM BECAUSE 0.9-M3-S14 HAS TO
+ * SEND ITS QUERY AGAINST IT. A member who stated nothing for a field
+ * holds no value of it, so they are in Everyone and in NO set - a full
+ * set is the whole field's values, not the whole group. The page
+ * therefore sends NO pair for a field whose chips are all lit; sending
+ * the full set instead would silently drop every member who left that
+ * field blank.
+ */
+const SET_CROWD_BLANK = SET_CROWD.concat([
+  row(acct(86), SET_AT, record(112, 182, undefined, ["feeder"], "US")),
+]);
+check("sets: a member who stated nothing for a field is in Everyone and " +
+  "in no set of that field's values - so the page sends no pair at all " +
+  "when every chip is lit, rather than the full set",
+  drawnCount(drawOrNothing(SET_CROWD_BLANK, "measure=weight")) ===
+    SET_CROWD_BLANK.length &&
+  drawnCount(drawOrNothing(SET_CROWD_BLANK,
+    "measure=weight" + chips("gender", GENDERS))) === SET_CROWD.length);
+
+/* -------------------------------------------------------------- */
+/* 11d. The floor over a UNION - the same rule, and the two-member  */
+/*      leak arm run across every pair of SETS rather than every    */
+/*      pair of values (#455 scope 2, the consult surface).         */
+
+check("sets: at the shipped floor of 0 a union draws its TRUE count - " +
+  "the same rule the whole population gets, exact",
+  unionEcho.floor === SHIPPED_FLOOR && drawnCount(unionEcho) === 5);
+
+const smallUnion = "measure=weight" + chips("gender", ["nonbinary", "other"]);
+check("sets: at a raised floor a union too small for it gets the honest " +
+  "empty document - never a smaller number, never a different rule",
+  drawnCount(setsAtFloor0(smallUnion)) === 2 &&
+  drawOrNothing(SET_CROWD, smallUnion, raised).enough === false &&
+  drawOrNothing(SET_CROWD, smallUnion, raised).distribution === null &&
+  drawOrNothing(SET_CROWD, smallUnion, raised).groups === null &&
+  drawOrNothing(SET_CROWD, smallUnion, raised).trend === null &&
+  drawOrNothing(SET_CROWD, smallUnion, raised).units === null);
+check("sets: and the WHOLE population of six draws at that same floor - " +
+  "what was suppressed is the union's SIZE and not the act of setting " +
+  "several chips",
+  drawOrNothing(SET_CROWD, "measure=weight", raised).enough === true);
+
+const unionTwoDeep = drawOrNothing(SET_CROWD, TWO_COUNTRIES, twoDeep);
+check("sets: a union that CLEARS a raised floor still names no " +
+  "per-value count below it, in any block",
+  unionTwoDeep.enough === true && unionTwoDeep.floor === 2 &&
+  unionTwoDeep.groups.length > 0 &&
+  unionTwoDeep.groups.every((block) => block.values.every((cell) =>
+    cell.count === 0 || cell.count >= 2)));
+check("sets: and the values that DO clear it are named at their true " +
+  "count, so the arm above is suppression rather than an empty answer",
+  countIn(groupBlock(unionTwoDeep, "country"), "US") === 3 &&
+  countIn(groupBlock(unionTwoDeep, "country"), "JP") === 2);
+
+/*
+ * EVERY PAIR OF SETS on the two members of section 10d, who differ on
+ * every categorical field. Each field contributes three sets - one
+ * member's value, the other's, and both - so a pair of fields gives
+ * nine set-pairs and the three pairs of fields give twenty-seven. Six
+ * of every nine isolate exactly one member, two match nobody and one
+ * matches both, which is the premise forced below before anything is
+ * asserted about suppressing it.
+ */
+const SET_CHOICES = (field) => [
+  [LONE_A[field]], [LONE_B[field]], [LONE_A[field], LONE_B[field]]];
+const setPair = (a, b, first, second) =>
+  "measure=weight" + chips(a, first) + chips(b, second);
+/* Counted from the fixture's own plain values rather than through
+   heldValues(), which is the point: this must not share the code it is
+   checking. */
+const holds = (member, field, values) =>
+  values.indexOf(member[field]) !== -1;
+
+const setQueries = [];
+for (let i = 0; i < CATEGORIES.length; i += 1) {
+  for (let j = i + 1; j < CATEGORIES.length; j += 1) {
+    const a = CATEGORIES[i];
+    const b = CATEGORIES[j];
+    for (const first of SET_CHOICES(a)) {
+      for (const second of SET_CHOICES(b)) {
+        setQueries.push({
+          query: setPair(a, b, first, second),
+          count: [LONE_A, LONE_B].filter((member) =>
+            holds(member, a, first) && holds(member, b, second)).length,
+        });
+      }
+    }
+  }
+}
+const tally = (n) => setQueries.filter((one) => one.count === n).length;
+
+check("sets: every pair of SETS across two fields draws exactly the " +
+  "members the fixture says it should at the shipped floor of 0 - " +
+  "eighteen isolate one member, six match nobody, three match both (" +
+  setQueries.length + " set-pairs)",
+  setQueries.length === 27 && tally(1) === 18 && tally(0) === 6 &&
+  tally(2) === 3 &&
+  setQueries.every((one) =>
+    drawnCount(drawOrNothing(TWO_MEMBERS, one.query)) === one.count));
+
+const setShapes = new Set(setQueries.map((one) =>
+  withoutEcho(drawOrNothing(TWO_MEMBERS, one.query, raised))));
+check("sets: at a raised floor all twenty-seven come back as the SAME " +
+  "document apart from the caller's own echo - a union cannot be " +
+  "differenced against a value inside one response, and nothing says " +
+  "which set made the view narrow (#455 scope 2)",
+  setShapes.size === 1);
+check("sets: and that document is the one the WHOLE two-person group " +
+  "gets at the same floor - the intersection, the union and the group " +
+  "itself are one answer",
+  setShapes.has(withoutEcho(atRaisedFloor(TWO_MEMBERS, "measure=weight"))));
+check("sets: each of those documents carries no number but the floor - " +
+  "no count, no residue of the set's size",
+  setQueries.every((one) => {
+    const numbers = everyNumber(
+      drawOrNothing(TWO_MEMBERS, one.query, raised));
+    return numbers.length === 1 && numbers[0] === RAISED;
+  }));
+
+/* -------------------------------------------------------------- */
+/* 11e. The makeup block, and the PRESENT VALUES the page derives  */
+/*      from it (#454 item 18, #455 scope 4).                      */
+/*                                                                 */
+/* The page's big lists offer only values somebody has entered,    */
+/* and the only place it can read that from is the group-makeup    */
+/* block, which is already floored. So presence obeys the floor    */
+/* for free - and the rule the page follows is exactly this: a     */
+/* value has a line with a count above zero, and the null-valued   */
+/* lines (the blank and the Other bucket) are not values.          */
+
+const presentValues = (answer, field) => groupBlock(answer, field)
+  .filter((cell) => cell.value !== null && cell.count > 0)
+  .map((cell) => cell.value).sort();
+
+check("sets: the makeup block that comes back with a union describes " +
+  "the UNION - the five members drawn are the three in the US and the " +
+  "two in JP, and nobody in DE is counted",
+  countIn(groupBlock(unionEcho, "country"), "US") === 3 &&
+  countIn(groupBlock(unionEcho, "country"), "JP") === 2 &&
+  countIn(groupBlock(unionEcho, "country"), "DE") === null);
+
+/*
+ * A group holding one rare country beside two common ones, so that
+ * "present" and "held" are different lists the moment a floor is set.
+ */
+const PRESENCE_COUNTRIES = ["US", "US", "US", "US", "GB", "GB", "GB", "DE"];
+const PRESENCE = [];
+for (let i = 0; i < PRESENCE_COUNTRIES.length; i += 1) {
+  PRESENCE.push(row(acct(90 + i), SET_AT,
+    record(100 + i, 170 + i, i % 2 ? "female" : "male", ["feeder"],
+      PRESENCE_COUNTRIES[i])));
+}
+const presentAt0 = presentValues(drawOrNothing(PRESENCE, "measure=weight"),
+  "country");
+const flooredBlock = drawOrNothing(PRESENCE, "measure=weight", twoDeep);
+const presentAt2 = presentValues(flooredBlock, "country");
+
+check("sets: at the shipped floor of 0 the present values are exactly " +
+  "the values the group holds - four in the US, three in GB, one in DE",
+  JSON.stringify(presentAt0) === JSON.stringify(["DE", "GB", "US"]));
+check("sets: at a raised floor the value only one member holds has NO " +
+  "line at all, so it is absent from the list the page offers - the " +
+  "floor rule holds for presence too (#455 scope 4)",
+  flooredBlock.enough === true && presentAt2.indexOf("DE") === -1);
+check("sets: and the block is not simply empty - it still names a " +
+  "value, so the arm above is the floor removing one rather than the " +
+  "whole answer disappearing",
+  presentAt2.length > 0 && presentAt2.length < presentAt0.length);
+check("sets: the lines the page must NOT read as values are the " +
+  "null-valued ones - the blank and the pooled bucket - and a floored " +
+  "block really does carry one",
+  groupBlock(flooredBlock, "country")
+    .some((cell) => cell.value === null && cell.count > 0));
+
+/* -------------------------------------------------------------- */
+/* 11f. The route, end to end - the multi-select chips reach the   */
+/*      aggregation.                                               */
+
+const setDb = makeDb();
+const setEnv = Object.assign({}, env, { DB: setDb });
+const SET_TOKENS = [];
+for (let i = 0; i < SET_CROWD.length; i += 1) {
+  const token = "charts-arm-sets-" + i;
+  SET_TOKENS.push(token);
+  setDb._sessions.push({
+    token_hash: sha256hex(token), account_id: acct(80 + i),
+    is_admin: 0, is_dev: 0,
+    created_at: new Date().toISOString(), expires_at: future,
+  });
+  await callOn(setEnv, "POST", "/submit", {
+    token: token,
+    body: { record: JSON.stringify(SET_CROWD[i].record) },
+  });
+}
+
+const routeUnion = await callOn(setEnv, "GET",
+  "/charts-data?" + TWO_COUNTRIES, { token: SET_TOKENS[0] });
+check("route: two values for ONE field are the union at the door now, " +
+  "not the 400 the single-value world gave - five of six members are " +
+  "in the US or JP",
+  routeUnion.status === 200 && routeUnion.body.enough === true &&
+  routeUnion.body.distribution.bins
+    .reduce((n, band) => n + band.count, 0) === 5);
+check("route: and the echo hands back both pairs in the caller's own " +
+  "order",
+  JSON.stringify(routeUnion.body.filters) === JSON.stringify([
+    { field: "country", value: "US" },
+    { field: "country", value: "JP" }]));
+check("route: the makeup block that comes back with a union describes " +
+  "the UNION, which is where the page reads its present values",
+  countIn(bodyBlock(routeUnion.body, "country"), "US") === 3 &&
+  countIn(bodyBlock(routeUnion.body, "country"), "JP") === 2);
+
+const routeDupeValue = await callOn(setEnv, "GET",
+  "/charts-data?measure=weight" + chips("country", ["US", "US"]),
+  { token: SET_TOKENS[0] });
+check("route: the same value twice in one set is a 400 at the door",
+  routeDupeValue.status === 400);
+const routePairs = await callOn(setEnv, "GET",
+  "/charts-data?" + codePairs(agg.MAX_FILTER_PAIRS + 1),
+  { token: SET_TOKENS[0] });
+check("route: one pair past the cap is a 400 at the door, even though " +
+  "every pair names one field",
+  routePairs.status === 400);
+
+const setFlooredDb = makeDb([{ name: "chart.floor", value: String(RAISED) }]);
+const setFlooredEnv = Object.assign({}, env, { DB: setFlooredDb });
+const SET_FLOOR_TOKENS = [];
+for (let i = 0; i < SET_CROWD.length; i += 1) {
+  const token = "charts-arm-set-floored-" + i;
+  SET_FLOOR_TOKENS.push(token);
+  setFlooredDb._sessions.push({
+    token_hash: sha256hex(token), account_id: acct(80 + i),
+    is_admin: 0, is_dev: 0,
+    created_at: new Date().toISOString(), expires_at: future,
+  });
+  await callOn(setFlooredEnv, "POST", "/submit", {
+    token: token,
+    body: { record: JSON.stringify(SET_CROWD[i].record) },
+  });
+}
+const routeWhole = await callOn(setFlooredEnv, "GET",
+  "/charts-data?measure=weight", { token: SET_FLOOR_TOKENS[0] });
+const routeSmallUnion = await callOn(setFlooredEnv, "GET",
+  "/charts-data?" + smallUnion, { token: SET_FLOOR_TOKENS[0] });
+check("route: the admin's floor really is the one applied to a union - " +
+  "six members clear a floor of " + RAISED + " set in site_content and " +
+  "a union of two does not",
+  routeWhole.status === 200 && routeWhole.body.floor === RAISED &&
+  routeWhole.body.enough === true &&
+  routeSmallUnion.status === 200 &&
+  routeSmallUnion.body.enough === false &&
+  routeSmallUnion.body.distribution === null &&
+  routeSmallUnion.body.groups === null);
+check("route: and that suppressed answer still echoes the caller's own " +
+  "two chips and carries no number but the floor",
+  JSON.stringify(routeSmallUnion.body.filters) === JSON.stringify([
+    { field: "gender", value: "nonbinary" },
+    { field: "gender", value: "other" }]) &&
+  everyNumber(Object.assign({}, routeSmallUnion.body, { filters: [] }))
+    .join(",") === String(RAISED));
+
 /* ------------------------------------------------------------------ */
-const EXPECTED = 238;
+const EXPECTED = 289;
 console.log(failures
   ? `\ncharts-aggregate FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED
