@@ -2882,6 +2882,9 @@ LABELS = {
     # since another page carries it independently and this slice never
     # touches that page.
     "Change log": "runner",
+    # 0.9-M3-S34 (#458): the Departed card, the page half of 0.9-M3-S15's
+    # Worker (#420) - a runner like every other tab on this page.
+    "Departed": "runner",
     "Development session": "caution",
     # 0.9-M3-S13 (#433): the Fields card, the categorical form builder's
     # page half - a runner like every other card on this page, naming
