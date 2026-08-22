@@ -79,6 +79,11 @@ const adminHtml = await read("../apps/web/admin.html");
 const adminJs = await read("../apps/web/admin.js");
 const distHtml = await read("../dist/admin.html");
 const distJs = await read("../dist/admin.js");
+// Fix wave 1 (#458 review, F4/F5 in the review's own numbering): the
+// tablist overflow fix lives in theme.css, not admin.js - read both
+// copies here so the parsed-CSS arm below has something to parse.
+const themeCss = await read("../apps/web/theme.css");
+const distThemeCss = await read("../dist/theme.css");
 
 const DEAD_IDS = ["keyfile", "keyfile-picker", "run", "clear",
   "published-state", "unpublish", "unpublish-status", "membership-card",
@@ -423,6 +428,76 @@ check("fieldView marks a choicesFrom field's values as living outside " +
     return view.outside === true && view.values.length === 0;
   })());
 
+/* -- Departed (0.9-M3-S34, #458 - the page half of S15's Worker, #420;  */
+/* #385 rule 4, #454 items 8-10/13/20). -- */
+
+check("departedName reads the membership label where GET /admin-departed " +
+  "sent one (item 13)",
+  Admin.departedName({ accountId: "a".repeat(64), label: "Prime" }) ===
+  "Prime");
+check("departedName falls back to the short id when there is no label - " +
+  "never a handle, never a numeric id (#385 rule 1): the Worker never " +
+  "sends either, and this function reads only accountId and label",
+  Admin.departedName({ accountId: "a".repeat(64), label: null }) ===
+  "a".repeat(12) + "…" &&
+  Admin.departedName({ accountId: "a".repeat(64), label: "   " }) ===
+  "a".repeat(12) + "…");
+
+check("eraseDepartedSentence names the real label and ends in a question " +
+  "(#454 item 9), and - since the landed Worker offers no dry-run count " +
+  "for this route - names the four row classes the erase actually " +
+  "deletes instead of inventing a number",
+  Admin.eraseDepartedSentence("Prime").includes("Prime") &&
+  Admin.eraseDepartedSentence("Prime").trim().endsWith("?") &&
+  /submissions/.test(Admin.eraseDepartedSentence("Prime")) &&
+  /directory/.test(Admin.eraseDepartedSentence("Prime")) &&
+  /membership/.test(Admin.eraseDepartedSentence("Prime")) &&
+  /sessions/.test(Admin.eraseDepartedSentence("Prime")));
+
+check("DEPARTED_PAGE_SIZE is 20, the ticket's own number (item 13)",
+  Admin.DEPARTED_PAGE_SIZE === 20);
+
+const DEPARTED_FIXTURE = {
+  departed: [{ accountId: "a1", label: "One" }, { accountId: "a2" }],
+  unknown: [{ accountId: "u1", reason: "unknown until next sign-in" }],
+  allowed: [{ accountId: "l1", reason: "allowed by the operator's list" }],
+};
+check("departedSections keeps the ticket's own order - departed, then " +
+  "unknown, then allowed - reordering nothing the Worker sent",
+  Admin.departedSections(DEPARTED_FIXTURE, 20).sections
+    .map((s) => s.key).join(",") === "departed,unknown,allowed");
+// Fix wave 1 on #458 (review F7 in the review's own numbering): the
+// check above proves the three SECTIONS stay in order; this proves
+// each section's own ROWS stay in the order the Worker sent them too
+// - "as sent", never resorted. The Worker's own sort direction (F1)
+// is a separate, still-open question Prime is ruling; this arm would
+// hold either way, because it only cares that the page does not touch
+// an order the Worker already chose.
+check("departedSections renders each section's own rows in the order " +
+  "the Worker sent them, unreordered",
+  Admin.departedSections({
+    departed: [{ accountId: "a" }, { accountId: "b" }, { accountId: "c" }],
+    unknown: [], allowed: [] }, 20).sections[0].rows
+    .map((row) => row.accountId).join(",") === "a,b,c");
+check("departedSections windows to ONE list of `revealed` rows total, " +
+  "not per section (item 13 describes one list, not three)",
+  (() => {
+    const view = Admin.departedSections(DEPARTED_FIXTURE, 3);
+    return view.shown === 3 && view.total === 4 && view.hasMore === true &&
+      view.sections[0].rows.length === 2 &&
+      view.sections[1].rows.length === 1 &&
+      view.sections[2].rows.length === 0;
+  })());
+check("departedSections reports no more once every row is shown",
+  Admin.departedSections(DEPARTED_FIXTURE, 20).hasMore === false);
+check("departedSections copes with a malformed answer - a missing list " +
+  "reads as empty rather than throwing",
+  (() => {
+    const view = Admin.departedSections({}, 20);
+    return view.total === 0 && view.hasMore === false &&
+      view.sections.every((s) => s.rows.length === 0);
+  })());
+
 /* -- The idle timer, unchanged in shape from every other signed-in page -- */
 
 check("idleVerdict is active well before the warning window",
@@ -504,12 +579,59 @@ function buttonByText(el, text) {
   return findAll(el, (n) => n.tag === "button" && n.textContent === text)[0];
 }
 
+// A whole-subtree serializer, not textContent - fix wave 1 on #458
+// (review comment 5380371688, F4 in the review's own numbering): the
+// #385-rule-1 arm used to read textContent alone, so a needle written
+// into title, aria-label, a data-* attribute, or anywhere else in the
+// markup would pass it silently. This walks every node under the
+// root and writes its tag, id, class, every attrs entry and every
+// leaf's own text into one string - the same thing a "view source"
+// on the real page would show - so a needle hiding in an attribute is
+// caught exactly like one hiding in visible text.
+function serializeSubtree(el) {
+  const attrPairs = [];
+  if (el.id) attrPairs.push('id="' + el.id + '"');
+  if (el.className) attrPairs.push('class="' + el.className + '"');
+  for (const key of Object.keys(el.attrs || {})) {
+    attrPairs.push(key + '="' + el.attrs[key] + '"');
+  }
+  const open = "<" + el.tag +
+    (attrPairs.length ? " " + attrPairs.join(" ") : "") + ">";
+  const inner = el.children.length
+    ? el.children.map(serializeSubtree).join("")
+    : (el._text || "");
+  return open + inner + "</" + el.tag + ">";
+}
+
+// Strips /* ... */ comments first, then returns the declaration block
+// of the first `selector { ... }` rule - not a whole-file string
+// match, which the eight-line comment sitting INSIDE this exact rule
+// (apps/web/theme.css, the [role="tablist"] block) would let a naive
+// regex keep matching even after the declaration it explains was
+// deleted. Fix wave 1 on #458 (review F5 in the review's own
+// numbering) asked for a parsed-CSS arm, not a comment string match.
+function cssRuleBody(css, selector) {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const at = stripped.indexOf(selector);
+  if (at === -1) return null;
+  const open = stripped.indexOf("{", at);
+  if (open === -1) return null;
+  let depth = 1, i = open + 1;
+  while (i < stripped.length && depth > 0) {
+    if (stripped[i] === "{") depth += 1;
+    else if (stripped[i] === "}") depth -= 1;
+    i += 1;
+  }
+  return stripped.slice(open + 1, i - 1);
+}
+
 const PAGE_HTML = adminHtml;
 const IDS = [...PAGE_HTML.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]);
 const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "idle-warning", "idle-countdown", "idle-stay",
-  "tab-settings", "tab-roles", "tab-fields", "tab-log",
+  "tab-settings", "tab-roles", "tab-fields", "tab-log", "tab-departed",
   "settings-card", "roles-card", "fields-card", "log-card",
+  "departed-card",
   "settings-floor", "settings-floor-notice", "settings-floor-save",
   "settings-locked-unit", "settings-locked-unit-save",
   "settings-group-name", "settings-group-name-save",
@@ -522,7 +644,7 @@ const NEEDED = ["tool", "closed", "surface-mark", "admin-intro",
   "roles-other-body",
   "fields-status", "fields-new-id", "fields-new-label", "fields-new-values",
   "fields-new-add", "fields-list",
-  "log-status", "log-list", "toast"];
+  "log-status", "log-list", "departed-status", "departed-list", "toast"];
 check("every element this suite drives is really in apps/web/admin.html",
   NEEDED.every((id) => IDS.includes(id)));
 check("dist/admin.html carries the same ids - the mirror is not stale",
@@ -537,7 +659,7 @@ check("dist/admin.html carries the same ids - the mirror is not stale",
 const STATIC_HIDDEN = ["idle-warning", "closed", "tool", "settings-status",
   "roles-status", "roles-secret-only-ids", "roles-malformed", "roles-other",
   "fields-status", "log-status", "roles-card", "fields-card", "log-card",
-  "toast"];
+  "departed-status", "departed-card", "toast"];
 // settings-card is deliberately NOT here - it is the default tab, the
 // one panel of the four that ships visible (#385 item (b), #454 item
 // 20).
@@ -584,7 +706,7 @@ function buildDom() {
   for (const id of ["settings-floor-save", "settings-locked-unit-save",
     "settings-group-name-save", "settings-welcome-text-save",
     "settings-default-theme-save", "idle-stay", "fields-new-add",
-    "tab-settings", "tab-roles", "tab-fields", "tab-log"]) {
+    "tab-settings", "tab-roles", "tab-fields", "tab-log", "tab-departed"]) {
     byId.get(id).tag = "button";
   }
   const reason = node("p");
@@ -752,12 +874,20 @@ const SPEC_FIXTURE = {
   ],
 };
 
+// GET /admin-departed's real envelope (S15's completion on #420):
+// {ok, departed: [{accountId, label, lastSeenAt, status}], unknown:
+// [{...reason}], allowed: [{...reason}]} - empty by default so every
+// existing test above keeps its own unrelated assertions unaffected by
+// this ticket's own route.
+const DEPARTED_EMPTY = { ok: true, departed: [], unknown: [], allowed: [] };
+
 const BASE_ROUTES = {
   "GET /content": () => ok({ ok: true, content: CONTENT }),
   "GET /membership": () => ok(MEMBERSHIP),
   "GET /me": () => ok({ ok: true, adminVia: "flag" }),
   "GET /admin-log": () => ok(LOG),
   "GET /admin-fields": () => ok({ ok: true, spec: SPEC_FIXTURE }),
+  "GET /admin-departed": () => ok(DEPARTED_EMPTY),
 };
 
 {
@@ -774,10 +904,11 @@ const BASE_ROUTES = {
   check("Settings is the tab that ships selected and visible",
     byId.get("tab-settings").getAttribute("aria-selected") === "true" &&
     byId.get("settings-card").hidden === false);
-  check("the other three panels ship hidden",
+  check("the other four panels ship hidden",
     byId.get("roles-card").hidden === true &&
     byId.get("fields-card").hidden === true &&
-    byId.get("log-card").hidden === true);
+    byId.get("log-card").hidden === true &&
+    byId.get("departed-card").hidden === true);
 
   byId.get("tab-fields").dispatch("click");
   check("clicking a tab shows its own panel and hides every other one, " +
@@ -786,6 +917,7 @@ const BASE_ROUTES = {
     byId.get("settings-card").hidden === true &&
     byId.get("roles-card").hidden === true &&
     byId.get("log-card").hidden === true &&
+    byId.get("departed-card").hidden === true &&
     byId.get("tab-fields").getAttribute("aria-selected") === "true" &&
     byId.get("tab-settings").getAttribute("aria-selected") === "false");
 
@@ -795,6 +927,35 @@ const BASE_ROUTES = {
     byId.get("fields-card").hidden === true &&
     byId.get("tab-log").getAttribute("aria-selected") === "true" &&
     byId.get("tab-fields").getAttribute("aria-selected") === "false");
+
+  byId.get("tab-departed").dispatch("click");
+  check("the fifth tab, Departed, shows its own panel and hides the rest " +
+    "(#385 item (b), #454 item 20 - a fifth tab, not a stacked card)",
+    byId.get("departed-card").hidden === false &&
+    byId.get("log-card").hidden === true &&
+    byId.get("settings-card").hidden === true &&
+    byId.get("roles-card").hidden === true &&
+    byId.get("fields-card").hidden === true &&
+    byId.get("tab-departed").getAttribute("aria-selected") === "true" &&
+    byId.get("tab-log").getAttribute("aria-selected") === "false");
+}
+
+/* -- The tab bar's own overflow fix (fix wave 1, #458): a parsed-CSS   */
+/* arm, since the DOM stub above never lays anything out in pixels -    */
+/* geometry proof for this fix is the browser pass, this only proves    */
+/* the rule that pass measured is still in the shipped stylesheet. -- */
+
+{
+  const tablistRule = cssRuleBody(themeCss, '[role="tablist"]');
+  check("apps/web/theme.css's own [role=\"tablist\"] rule sets " +
+    "flex-wrap: wrap (fix wave 1, #458) - parsed from the rule's own " +
+    "declaration block, not matched against the comment sitting " +
+    "inside it",
+    tablistRule !== null && /flex-wrap\s*:\s*wrap\s*;/.test(tablistRule));
+  const distTablistRule = cssRuleBody(distThemeCss, '[role="tablist"]');
+  check("the dist/theme.css mirror carries the same rule",
+    distTablistRule !== null &&
+    /flex-wrap\s*:\s*wrap\s*;/.test(distTablistRule));
 }
 
 /* -- Settings: load, per-field validation, per-field save -- */
@@ -1856,6 +2017,506 @@ check("Fields never fetches per-member counts - no /charts-data call " +
     /No changes yet/.test(byId.get("log-list").textContent));
 }
 
+/* -- Departed: three sections in order, the empty state, confirm IN     */
+/* PLACE, refusals rendered as the Worker states them, the re-read after */
+/* a result, 20-then-more, and no handle/no numeric id anywhere (#420;   */
+/* #385 rule 4; #454 items 8-10/13/20). -- */
+
+// Finds the row-block whose display name matches - not a fixed child
+// index, the same reason the Fields card's own confirm tests already
+// use buttonByText/findAll: dangerousAction() nests a second
+// "stack-tight" (the hidden confirm) inside the row's own "stack-tight",
+// and a bare index would be brittle and hard to read either way. The
+// predicate on `children[0].children[0]` is what tells the two apart -
+// the confirm block's own first child is a <p>, with no children of its
+// own under this stub, so it never matches.
+function departedRowByLabel(list, label) {
+  return findAll(list, (n) => n.className === "stack-tight" &&
+    n.children[0] && n.children[0].children &&
+    n.children[0].children[0] &&
+    n.children[0].children[0].textContent === label)[0];
+}
+
+{
+  const DEPARTED_LIST = { ok: true,
+    departed: [{ accountId: "d1", label: "Departed One",
+      lastSeenAt: "2026-07-01T00:00:00.000Z", status: "left" }],
+    unknown: [{ accountId: "u1", label: null,
+      lastSeenAt: "2026-07-02T00:00:00.000Z",
+      reason: "unknown until next sign-in" }],
+    allowed: [{ accountId: "l1", label: "Allowed One",
+      lastSeenAt: "2026-07-03T00:00:00.000Z",
+      reason: "allowed by the operator's list - remove it there first" }] };
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok(DEPARTED_LIST),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("departed-list");
+  check("the three sections render in the ticket's own order - departed, " +
+    "then unknown, then allowed - as headings this card writes itself",
+    list.children[0].tag === "h2" && list.children[0].textContent ===
+      "Departed" &&
+    list.children[2].tag === "h2" && list.children[2].textContent ===
+      "Unknown" &&
+    list.children[4].tag === "h2" && list.children[4].textContent ===
+      "Allowed");
+  check("a departed row shows the membership label and last seen (item " +
+    "13)",
+    list.children[1].children[0].children[0].textContent ===
+      "Departed One" &&
+    /last seen 2026-07-01/.test(
+      list.children[1].children[0].children[1].textContent));
+  check("an unknown row with no label falls back to the short id, and " +
+    "states its own reason in the Worker's own words",
+    list.children[3].children[0].children[0].textContent === "u1…" &&
+    /unknown until next sign-in/.test(
+      list.children[3].children[0].children[1].textContent));
+  check("an allowed row states the operator's-list sentence exactly as " +
+    "the Worker sent it",
+    list.children[5].children[0].children[0].textContent ===
+      "Allowed One" &&
+    /allowed by the operator's list - remove it there first/.test(
+      list.children[5].children[0].children[1].textContent));
+  check("every row carries wrap-row/wrap-row-value (#433 F1's " +
+    "convention, named in this ticket's own scope) - the display name " +
+    "is the unbounded run",
+    list.children[1].children[0].className === "row wrap-row" &&
+    list.children[1].children[0].children[0].className ===
+      "wrap-row-value");
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok(DEPARTED_EMPTY),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("the empty state says so in the ticket's own words (item 10), " +
+    "nothing else drawn",
+    byId.get("departed-list").textContent ===
+      "Nobody has left - nothing to clean up.");
+}
+
+{
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "d1", label: null,
+        lastSeenAt: "2026-07-01T00:00:00.000Z",
+        // A stub carrying both a handle and a numeric id - #385 rule 1
+        // says the page must render neither, so this proves it from the
+        // answer side rather than only from the Worker's own contract.
+        handle: "@realname", telegramId: "123456789" }],
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("a stub carrying a handle and a numeric id renders neither " +
+    "(#385 rule 1) - departedName/departedRow read only accountId, " +
+    "label, lastSeenAt and reason",
+    !/@realname/.test(byId.get("departed-list").textContent) &&
+    !/123456789/.test(byId.get("departed-list").textContent));
+}
+
+{
+  // Fix wave 1 on #458 (review comment 5380371688, F4 in the review's
+  // own numbering): the check above reads textContent alone, so a
+  // needle written into an attribute - title, aria-label, a data-*
+  // attribute, or any other field name - would pass it silently. This
+  // arms the WHOLE rendered subtree against a hostile stub carrying a
+  // handle, a numeric Telegram id, a username and an email, checked
+  // against every text node, every attribute value and the serialized
+  // markup together, not only the text a person reads.
+  const NEEDLES = ["@leakhandle", "918273645", "leakusername",
+    "leak@example.com"];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "d1", label: null,
+        lastSeenAt: "2026-07-01T00:00:00.000Z",
+        handle: NEEDLES[0], telegramId: NEEDLES[1],
+        username: NEEDLES[2], email: NEEDLES[3] }],
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const markup = serializeSubtree(byId.get("departed-list"));
+  check("no needle from a hostile stub (handle, numeric Telegram id, " +
+    "username, email) appears in any text node, any attribute value, " +
+    "or the serialized markup of the Departed list (#385 rule 1, the " +
+    "whole rendered subtree - not textContent alone)",
+    NEEDLES.every((needle) => !markup.includes(needle)));
+}
+
+{
+  // 20-then-more (item 13) over ONE list - 25 departed rows, no
+  // unknown/allowed, so this is the plainest arm of the pagination.
+  const many = Array.from({ length: 25 }, (_unused, i) => ({
+    accountId: "d" + i, label: "Member " + i,
+    lastSeenAt: "2026-07-01T00:00:00.000Z" }));
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true, departed: many,
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const list = byId.get("departed-list");
+  check("the newest 20 render with a More button when there are more " +
+    "(item 13) - one heading, 20 rows, one More button",
+    list.children.length === 22 &&
+    list.children[0].tag === "h2" &&
+    buttonByText(list, "More") !== undefined);
+  buttonByText(list, "More").dispatch("click");
+  check("More reveals every remaining row, and the button is gone once " +
+    "everything shows",
+    list.children.length === 26 && buttonByText(list, "More") === undefined);
+}
+
+{
+  // Confirm IN PLACE (item 9): Remove reveals the sentence, Cancel sends
+  // nothing, and a DELETE goes out only after Yes - never before it.
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "d1", label: "Rejoined",
+        lastSeenAt: "2026-07-01T00:00:00.000Z" }],
+      unknown: [], allowed: [] }),
+    "DELETE /admin-departed/d1": () => ok({ ok: true,
+      removed: { submissions: 1, directory: 1, membership: 0,
+        sessions: 1 } }),
+  });
+  const { byId, calls } = await driven(routes, { isAdmin: true });
+  const row = departedRowByLabel(byId.get("departed-list"), "Rejoined");
+  const remove = buttonByText(row, "Remove");
+  check("the confirm sentence is hidden until Remove is pressed",
+    row.children[2].hidden === true);
+  remove.dispatch("click");
+  check("pressing Remove reveals the real sentence - naming the four row " +
+    "classes, since the landed Worker route offers no dry-run count " +
+    "(item 9's own fallback)",
+    row.children[2].hidden === false &&
+    row.children[2].textContent.includes(
+      Admin.eraseDepartedSentence("Rejoined")));
+  check("no DELETE is sent before Yes is pressed",
+    calls.filter((c) => c.method === "DELETE").length === 0);
+  buttonByText(row.children[2], "Cancel").dispatch("click");
+  check("Cancel hides the confirm and sends nothing",
+    row.children[2].hidden === true &&
+    calls.filter((c) => c.method === "DELETE").length === 0);
+
+  remove.dispatch("click");
+  buttonByText(row.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("Yes, and only Yes, sends the DELETE - exactly once, for the " +
+    "right account",
+    calls.filter((c) => c.method === "DELETE" &&
+      c.path === "/admin-departed/d1").length === 1);
+  check("a genuine erase toasts Removed.",
+    byId.get("toast").textContent === "Removed.");
+}
+
+{
+  // Each refusal rendered exactly as the Worker states it - current
+  // member (its own re-check at erase time, never this stale list),
+  // unknown, and allowed - the three DELETE refusal shapes S15's own
+  // completion on #420 documents.
+  const CURRENT_MEMBER_MSG = "Telegram says that account is still in the " +
+    "group (“left”), so nothing was erased.";
+  const UNKNOWN_MSG = "That member's departure could not be confirmed - " +
+    "unknown until next sign-in. Nothing was erased.";
+  const ALLOWED_MSG = "That account is allowed by the operator's list - " +
+    "remove it there first. Telegram was never asked about it, so " +
+    "nothing was erased.";
+  let getCalls = 0;
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => {
+      getCalls += 1;
+      return ok({ ok: true,
+        departed: [{ accountId: "d1", label: "Rejoined",
+          lastSeenAt: "2026-07-01T00:00:00.000Z" }],
+        unknown: [{ accountId: "u1", label: "Quiet",
+          lastSeenAt: "2026-07-02T00:00:00.000Z",
+          reason: "unknown until next sign-in" }],
+        allowed: [{ accountId: "l1", label: "Kept",
+          lastSeenAt: "2026-07-03T00:00:00.000Z",
+          reason: "allowed by the operator's list - remove it there " +
+            "first" }] });
+    },
+    "DELETE /admin-departed/d1": () =>
+      refused(409, { error: CURRENT_MEMBER_MSG }),
+    "DELETE /admin-departed/u1": () => refused(409, { error: UNKNOWN_MSG }),
+    "DELETE /admin-departed/l1": () => refused(409, { error: ALLOWED_MSG }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+
+  const d1 = departedRowByLabel(byId.get("departed-list"), "Rejoined");
+  buttonByText(d1, "Remove").dispatch("click");
+  buttonByText(d1.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("a current-member refusal shows the Worker's exact words, " +
+    "verbatim - never rewrapped with the other cards' own \"Nothing " +
+    "changed\" tail",
+    byId.get("toast").textContent === CURRENT_MEMBER_MSG);
+  check("the list re-reads after a refusal too, not only after success",
+    getCalls === 2);
+
+  const u1 = departedRowByLabel(byId.get("departed-list"), "Quiet");
+  buttonByText(u1, "Remove").dispatch("click");
+  buttonByText(u1.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("an unknown-reason refusal shows the Worker's own reason",
+    byId.get("toast").textContent === UNKNOWN_MSG);
+
+  const l1 = departedRowByLabel(byId.get("departed-list"), "Kept");
+  buttonByText(l1, "Remove").dispatch("click");
+  buttonByText(l1.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("an allowed-by-the-operator's-list refusal shows the Worker's " +
+    "own sentence, exactly",
+    byId.get("toast").textContent === ALLOWED_MSG);
+  check("three refusals, three re-reads",
+    getCalls === 4);
+}
+
+{
+  // A mutating stub (the same shape this file's own Fields section uses
+  // for "the read is real, not remembered") - proves the re-read is a
+  // REAL read reflecting the erase, not a call count alone.
+  let remaining = [{ accountId: "gone", label: "Gone Soon",
+    lastSeenAt: "2026-07-01T00:00:00.000Z" }];
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true, departed: remaining,
+      unknown: [], allowed: [] }),
+    "DELETE /admin-departed/gone": () => {
+      remaining = [];
+      return ok({ ok: true, removed: { submissions: 1, directory: 1,
+        membership: 0, sessions: 1 } });
+    },
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  check("before erasing: the row is there",
+    /Gone Soon/.test(byId.get("departed-list").textContent));
+  const row = departedRowByLabel(byId.get("departed-list"), "Gone Soon");
+  buttonByText(row, "Remove").dispatch("click");
+  buttonByText(row.children[2], "Yes").dispatch("click");
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  check("the re-read reflects the erase - the row is gone and the empty " +
+    "state shows",
+    byId.get("departed-list").textContent ===
+      "Nobody has left - nothing to clean up.");
+}
+
+{
+  const HOSTILE = "<img src=x onerror=alert(1)>";
+  const routes = Object.assign({}, BASE_ROUTES, {
+    "GET /admin-departed": () => ok({ ok: true,
+      departed: [{ accountId: "h1", label: HOSTILE,
+        lastSeenAt: "2026-07-01T00:00:00.000Z" }],
+      unknown: [], allowed: [] }),
+  });
+  const { byId } = await driven(routes, { isAdmin: true });
+  const nameSpan = byId.get("departed-list").children[1].children[0]
+    .children[0];
+  check("a hostile membership label renders as literal text on the " +
+    "Departed card too - textContent, never innerHTML",
+    nameSpan.textContent === HOSTILE && nameSpan._text.includes("<img"));
+}
+
+/* -- Wiring for #463: the wrap-row squeeze - a long, unbroken run in   */
+/* one `.row.wrap-row` child could crowd a shorter sibling down to 0px, */
+/* at ANY width, because `.wrap-row-value`'s `flex: 1` (basis 0%) gave  */
+/* it zero weight in the shrink math a deficit row runs (fix wave 1,    */
+/* #463, F1 - the review's own 1280px Roles-row fixture, CONFIRMED).    */
+/* This suite has no layout engine (the Node DOM stub cannot compute a  */
+/* rendered width), so it proves the three things it CAN: theme.css     */
+/* carries the phone-width stacking rule (`flex-direction: column` AND  */
+/* `align-items: stretch`, both read from the SAME parsed rule body -   */
+/* fix wave 1, F2 - dropping either one alone must fail this check,     */
+/* never just the first) inside the site's phone breakpoint; it carries */
+/* the desktop-width fix (`.wrap-row-value { flex: 1 1 auto; }`,        */
+/* OUTSIDE any breakpoint - basis `auto` rather than `0%`, so a width    */
+/* deficit shrinks every child by its own size instead of routing all   */
+/* of it away from this one); and that a wrap-row site this suite had   */
+/* not yet covered (the numeric-field read-only row) still emits the    */
+/* classes both rules key on. Every check below is a PARSED rule, never */
+/* a string match on a comment - the same discipline tools/check_web.py's */
+/* own media_block_bodies()/rule_bodies() hold reviewing CSS to,        */
+/* reimplemented here in JS since this apparatus is Node, not Python.   */
+/* The real geometry proof - the squeezed cell legible at 375/360/1280, */
+/* and short-content desktop rects staying byte-for-byte the same       */
+/* before and after fix wave 1 - is a real-browser measurement, printed */
+/* in the completion, exactly as #433 F1's own pixel claim was (a Node  */
+/* stub proves wiring, never pixels). -- */
+
+// Comments only - a rule inside a comment ("/* .row.wrap-row { ... */")
+// must not satisfy either check below, so both strip them first.
+function stripCssComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+// The body of every @media block, brace-matched exactly the way
+// tools/check_web.py's media_block_bodies() is - counted rather than
+// stopped at the first "}", because a media block is a block OF
+// blocks. Each entry also carries the block's own header text, so a
+// caller can pick the block by the width it names rather than by
+// position.
+function mediaBlocks(css) {
+  const blocks = [];
+  const opener = /@media[^{]*\{/g;
+  let match;
+  while ((match = opener.exec(css))) {
+    let depth = 1;
+    let index = opener.lastIndex;
+    while (index < css.length && depth) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") depth -= 1;
+      index += 1;
+    }
+    blocks.push({ header: match[0], body: css.slice(opener.lastIndex,
+      index - 1) });
+    opener.lastIndex = index;
+  }
+  return blocks;
+}
+
+// Every rule body in `block` whose selector list names `selector`
+// exactly - a compared, split list rather than a substring search, so
+// ".row.wrap-row" is never mistaken for ".row" or ".row.buttons".
+function ruleBodies(block, selector) {
+  const bodies = [];
+  const rule = /([^{}]+)\{([^{}]*)\}/gs;
+  let match;
+  while ((match = rule.exec(block))) {
+    const parts = match[1].split(",").map((one) => one.trim());
+    if (parts.includes(selector)) bodies.push(match[2]);
+  }
+  return bodies;
+}
+
+// Every rule outside any @media block - the same slice-and-replace
+// shape mediaBlocks() already walks, minus what it found, so a
+// selector this check reads here is one theme.css applies at EVERY
+// width, phone included.
+function outsideMediaBlocks(css) {
+  let out = "";
+  let last = 0;
+  const opener = /@media[^{]*\{/g;
+  let match;
+  while ((match = opener.exec(css))) {
+    out += css.slice(last, match.index);
+    let depth = 1;
+    let index = opener.lastIndex;
+    while (index < css.length && depth) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") depth -= 1;
+      index += 1;
+    }
+    last = index;
+    opener.lastIndex = index;
+  }
+  out += css.slice(last);
+  return out;
+}
+
+// The site's own phone breakpoint (52rem), named where it is defined
+// rather than guessed at every call site below: the comment directly
+// above that block in theme.css calls it "the whole of the small-
+// screen [layout]" and states its own reason ("whether two fields fit
+// side by side"), and .pair (a label/control pair, the same side-by-
+// side-to-stacked shape wrap-row needs) already switches to
+// flex-direction: column there - not the 64rem block, which only
+// turns the rail into a strip and is about the two-column threshold,
+// and not the 22rem block, which is a stats-grid-only exception the
+// site's own comment says is deliberately narrower than "phone-sized".
+function phoneBreakpointBody(css) {
+  const block = mediaBlocks(css).find(
+    (candidate) => /max-width:\s*52rem/.test(candidate.header));
+  return block ? block.body : null;
+}
+
+function wrapRowStacksUnderPhoneBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const phone = phoneBreakpointBody(css);
+  if (phone === null) return false;
+  const stacked = ruleBodies(phone, ".row.wrap-row");
+  return stacked.some((body) => /flex-direction\s*:\s*column/.test(body));
+}
+
+// F2 (#463 fix wave 1, CONFIRMED): the stacking rule alone does not
+// give each stacked child the row's full width - `.row`'s own
+// `align-items: center` (unscoped, above) keeps a child at its own
+// content width unless the cross axis says otherwise, and
+// `align-items: stretch` is what says otherwise. Read from the SAME
+// rule body the flex-direction check above reads (both conditions on
+// one `.some()` pass), not a second rule found anywhere in the file,
+// so a stray `align-items: stretch` elsewhere cannot pass this by
+// coincidence. Deleting just this declaration left the suite at
+// 148/148 green before this check existed - the id cell rendered
+// 13px wide, centred, instead of the row's full width.
+function wrapRowStretchesUnderPhoneBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const phone = phoneBreakpointBody(css);
+  if (phone === null) return false;
+  const stacked = ruleBodies(phone, ".row.wrap-row");
+  return stacked.some((body) => /flex-direction\s*:\s*column/.test(body) &&
+    /align-items\s*:\s*stretch/.test(body));
+}
+
+// F1 (#463 fix wave 1, CONFIRMED): `.wrap-row-value` needs a real,
+// content-sized flex-basis (`auto`), not `0%` (what plain `flex: 1`
+// means) - a 0% basis gives this cell zero weight in the shrink math
+// a flex row runs once its children's combined width exceeds the
+// row's own, so 100% of any squeeze routed onto whichever sibling was
+// not this one, and this one could render 0px wide holding nothing
+// longer than a two-character id. That happened at 1280 with a
+// 62-character unbroken Roles label (the review's own fixture) -
+// nothing here was ever scoped to a width, so the desktop rule needed
+// the same fix as the phone one. Read outside every @media block: the
+// phone breakpoint below switches the whole row to a column, where
+// this same declaration still applies but does nothing observable
+// (fix wave 1, F3 - measured, not assumed).
+function wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(rawCss) {
+  const css = stripCssComments(rawCss);
+  const top = outsideMediaBlocks(css);
+  const rows = ruleBodies(top, ".row.wrap-row > .wrap-row-value");
+  return rows.some((body) => /flex\s*:\s*1\s+1\s+auto\s*;/.test(body));
+}
+
+check("apps/web/theme.css: .row.wrap-row stacks (flex-direction: " +
+  "column) inside the site's own phone breakpoint (max-width: 52rem, " +
+  "the same one .pair already stacks under) - a parsed rule, not a " +
+  "string match on a comment",
+  wrapRowStacksUnderPhoneBreakpoint(themeCss));
+check("dist/theme.css carries the same stacking rule - the build is " +
+  "apps/web with the comments removed, never a second source",
+  wrapRowStacksUnderPhoneBreakpoint(distThemeCss));
+check("apps/web/theme.css: the same stacking rule also carries " +
+  "align-items: stretch - without it a stacked child keeps its own " +
+  "content width, centred, instead of the row's full width (#463 fix " +
+  "wave 1, F2)",
+  wrapRowStretchesUnderPhoneBreakpoint(themeCss));
+check("dist/theme.css: same stretch declaration, same rule body, " +
+  "survives the build",
+  wrapRowStretchesUnderPhoneBreakpoint(distThemeCss));
+check("apps/web/theme.css: .row.wrap-row > .wrap-row-value gets " +
+  "flex: 1 1 auto OUTSIDE any breakpoint - basis auto rather than 0%, " +
+  "so a desktop width deficit shrinks this cell by its own size " +
+  "instead of routing the whole squeeze onto a sibling (#463 fix " +
+  "wave 1, F1)",
+  wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(themeCss));
+check("dist/theme.css: same desktop flex-basis fix survives the build",
+  wrapRowValueFlexBasisAutoOutsideAnyBreakpoint(distThemeCss));
+
+{
+  // The numeric-field read-only row (readOnlyFieldBlock, e.g. "Weight")
+  // was never checked for the wrap-row/wrap-row-value classes the
+  // stacking rule above keys on - every other wrap-row site in this
+  // file already was (the Fields header/value rows above, Roles below,
+  // the Change log above). Closing that gap here rather than leaving
+  // it implied by the others.
+  const { byId } = await driven(BASE_ROUTES, { isAdmin: true });
+  const weightRow = byId.get("fields-list").children[1].children[0];
+  check("the numeric Fields row (readOnlyFieldBlock) carries row " +
+    "wrap-row, the same overflow protection every other row on this " +
+    "page uses",
+    weightRow.className === "row wrap-row");
+  check("its label span carries wrap-row-value",
+    weightRow.children[0].className === "wrap-row-value");
+}
+
 /* -- Render-only: a hostile string lands as inert text everywhere this  */
 /* page draws server-authored content. -- */
 
@@ -1919,7 +2580,16 @@ check("no download/export id survives in the real shipped markup - the " +
 // tests/charts-page.test.mjs and dev/xlsx.test.mjs both hold to: the
 // checks that ran are the whole claim this file makes, and a reader
 // loop that silently ran fewer of them would still print "OK".
-const EXPECTED = 171;
+// merge-forward over origin/accounts (0.9-M3-S34, #458): this branch's
+// own merge-base with origin/accounts is f123e44a1, which had 171. This
+// branch's own head (513553e) added 36 more on top of that base (the
+// Departed tab, item by item) to reach 207. origin/accounts' own tip
+// added a different 8 on top of the SAME base (0.9-M3-S37's wrap-row
+// wiring, #463 fix wave 1) to reach 179. Both additions are disjoint
+// (Departed-tab arms vs. wrap-row-wiring arms) and both are kept in
+// full, so the union is the base plus both sides' own additions:
+// 171 + 36 + 8 = 215.
+const EXPECTED = 215;
 console.log(failures
   ? `\nadmin-page FAILED ${failures} of ${performed} check(s)`
   : performed !== EXPECTED

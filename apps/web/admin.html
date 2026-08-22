@@ -138,6 +138,8 @@
         aria-controls="fields-card" aria-selected="false">Fields</button>
       <button type="button" role="tab" id="tab-log"
         aria-controls="log-card" aria-selected="false">Change log</button>
+      <button type="button" role="tab" id="tab-departed"
+        aria-controls="departed-card" aria-selected="false">Departed</button>
     </div>
 
     <!--
@@ -403,6 +405,19 @@
       <p class="status" id="log-status" role="status" aria-live="polite"
          hidden></p>
       <div id="log-list"></div>
+    </div>
+
+    <!-- Departed (0.9-M3-S34, #458 - the page half of S15's Worker,
+      #420; #385 rule 4, #454 items 8-10/13/20). Renders what the Worker
+      states and decides nothing itself: three sections in its order,
+      never a handle or a numeric id. -->
+    <div class="tool" id="departed-card" role="tabpanel"
+      aria-labelledby="tab-departed" hidden>
+      <p class="runner"><span>Departed</span></p>
+      <p class="muted">Checked against Telegram before anything is removed.</p>
+      <p class="status" id="departed-status" role="status" aria-live="polite"
+         hidden></p>
+      <div id="departed-list"></div>
     </div>
   </div>
 

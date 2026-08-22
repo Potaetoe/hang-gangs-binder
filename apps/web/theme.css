@@ -1101,7 +1101,28 @@ input[aria-invalid="true"] { border-color: var(--color-warn-text); }
   overflow-wrap: anywhere;
 }
 
-.row.wrap-row > .wrap-row-value { flex: 1; }
+/* F1 (#463 fix wave 1): `flex: 1` is shorthand for `flex-basis: 0%`,
+   which gave `.wrap-row-value` a ZERO weight in the shrink math a flex
+   row runs when its children's own widths do not fit - the item with
+   basis 0% absorbs none of a width deficit (its scaled shrink factor,
+   basis times shrink, is 0), so every pixel of the deficit landed on
+   whichever sibling had a real (auto) basis, and `.wrap-row-value`
+   stayed pinned at 0 regardless of how short its own text was. That
+   is what let a Roles row with a 62-character unbroken label render
+   0px wide at 1280 - not a phone-only defect, since nothing scoped
+   the squeeze to a width. `flex-basis: auto` gives `.wrap-row-value`
+   the same real, content-sized basis every other child here already
+   has, so a width deficit now shrinks every child in proportion to
+   its OWN size: a short id stays close to its own text's width, and
+   whichever sibling is long absorbs most of the deficit and wraps
+   (`min-width: 0` and `overflow-wrap: anywhere` above already make
+   that wrap possible - this is the change that lets the flex sizing
+   actually use it, instead of handing 100% of a squeeze to whichever
+   sibling is not this one). `flex-grow: 1` is unchanged, so a row
+   with room to spare still gives this cell the slack, exactly as
+   before: measured byte-for-byte identical at 1280 for every existing
+   short-content row (completion on #463, fix wave 1). */
+.row.wrap-row > .wrap-row-value { flex: 1 1 auto; }
 
 .suffix {
   font-size: var(--text-sm);
@@ -1336,6 +1357,14 @@ button.primary:disabled {
  */
 [role="tablist"] {
   display: flex;
+  /* 0.9-M3-S34 (#458): a fifth tab (Departed) is the one that first
+     outgrows 375px - four fit without wrapping, five do not, and a
+     `nowrap` flex row pushes the whole page into sideways scroll rather
+     than the tab bar alone. Wrapping is free on desktop, where five
+     tabs still fit one line, and costs nothing this ticket's admin-
+     surface-at-desktop-plus-one-phone-check rule (item 22) does not
+     already ask this page to hold to. */
+  flex-wrap: wrap;
   gap: var(--space-1);
   border-bottom: 1px solid var(--color-border);
 }
@@ -1778,6 +1807,65 @@ circle.series-5, text.series-5 { fill: var(--color-series-5); }
   color: var(--color-text-muted);
 }
 
+/*
+ * The FILTER chips (0.9-M3-S14, #454 items 16-18) - a fourth family
+ * beside the ACTION/CHIP/TAB three the control-row comment above names,
+ * because this is the one place on the page a control both PICKS a
+ * setting (like the palette swatches) and MULTI-selects (unlike them).
+ * Real <button>s with their own aria-pressed, not a re-skinned .chip
+ * span - the read-only group-makeup chips above never receive a click.
+ *
+ * 44px min tap target and 16px text (owner ruling, #454 item 3) - the
+ * one control on this page that needed a rule stated for it rather
+ * than inherited from .primary/.secondary, since a pill this small
+ * would otherwise size to its own text.
+ */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background: var(--color-field);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  /* The blanket prefers-reduced-motion rule further down this file
+     already zeroes this duration for a member who asked for it - see
+     that rule's own comment on why it stays a blanket `*` selector. */
+  transition: background-color 150ms ease, color 150ms ease,
+              border-color 150ms ease;
+}
+
+.filter-chip:hover:not(:disabled) { border-color: var(--color-accent); }
+
+.filter-chip[aria-pressed="true"] {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.filter-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.filter-row select {
+  min-height: 2.75rem;
+  font-size: var(--text-base);
+}
+
+/* The gate's own plain-words refusal ("Combining filters is being
+   reviewed.", "Choosing several at once is being reviewed.") - .hint's
+   existing muted, small-text treatment, not an error color: nothing
+   here failed, a review is in progress (Prime's ruling on #455,
+   comment 5378956164; this file's own header). */
+.filter-notice { margin: 0; }
+
 .secondary-link {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
@@ -2102,6 +2190,40 @@ body.instrument main.stack { gap: var(--space-8); }
   /* Two across rather than one, so the summary is not a long list of
      single numbers. */
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* The squeeze (#463, owner ruling #454 item 21): `.row.wrap-row`
+     stayed a flex row at every width, and one child (whichever one
+     carries the long, unbroken run - a label, a member name, a
+     64-hex id, a pasted URL) could crowd a shorter sibling down to
+     0px, wrapping it letter by letter. Stacked here, every child
+     takes the full row width in its own turn instead of splitting
+     one - `align-items: stretch` is what makes that automatic (a flex
+     column's cross axis is inline here, and stretch is what fills
+     it; `.row`'s own `align-items: center` above would otherwise keep
+     each child at its own content width - measured: dropping
+     `align-items: stretch` alone, with `flex-direction: column` still
+     in place, renders a short id cell centred at 13px wide instead of
+     the row's full width, #463 fix wave 1 F2). `min-width: 0` and
+     `overflow-wrap: anywhere` on `.row.wrap-row > *` above stay
+     unscoped by width on purpose: that is the #416 spill guard (a
+     64-hex id, a pasted URL cannot widen the page), and stacking
+     removes the SQUEEZE, not the wrap protection - both are still
+     needed once each child is its own full-width line. Above this
+     breakpoint `.row.wrap-row` keeps its own fix for the same squeeze
+     (`.row.wrap-row > .wrap-row-value`, above, outside any
+     breakpoint) rather than switching to a column - #463 fix wave 1
+     F1, side by side stays on desktop (owner ruling #454 item 21).
+     NO `.wrap-row-value` override lives in this block, because
+     resetting its flex to `none` here has no measured effect (#463
+     fix wave 1 F3): `.row.wrap-row` is auto-height in this column
+     layout, so there is no free space on the column's main axis for
+     any flex-grow value to claim - with or without a `flex: none`
+     override, the two states render pixel-identical. A rule with no
+     measured effect does not get to stay on a story. */
+  .row.wrap-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 /* Very narrow: one stat per row, since two no longer fit their labels.
