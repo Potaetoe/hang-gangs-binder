@@ -215,6 +215,12 @@ A directory record written before that ruling carries no id, and its
 member's status reads **unknown until their next sign-in** — never
 guessed in either direction.
 
+An account held open by an operator's always-allow list is a **third
+answer and not a quiet "still a member"**: the bot is never asked about
+it, so the cleanup surface reports the list — and says which entry to
+remove — rather than putting words in Telegram's mouth. Never attribute
+to the bot what the bot did not say.
+
 A row has two identities and they are not equally good: the id is set
 server-side from a verified sign-in and cannot be forged by the page;
 anything the client typed is a claim. Treat the id as identity.
