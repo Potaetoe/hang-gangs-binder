@@ -132,7 +132,7 @@ def exit_codes(outcomes):
 # nothing compares against still prints a confident pass when a check
 # stops running, which is the armed-looking-but-not failure this
 # repository holds to be worse than no check at all.
-EXPECTED = 114
+EXPECTED = 116
 
 
 def check(label, condition):
@@ -889,6 +889,12 @@ with tempfile.TemporaryDirectory(prefix="prime-lock-suite-") as root:
         finally:
             os.link = real_link
         rival_code, rival_said = rival.get("out", (None, ""))
+        # Without this the whole arm passes vacuously if the publish ever
+        # stops going through os.link: the rival would simply never be
+        # driven in, and one uncontended winner looks exactly like one
+        # contended winner.
+        check("a rival arriving %s the publish: the rival was actually "
+              "driven in at that instant" % when, fired["n"] == 1)
         check("a rival arriving %s the publish: exactly one of the two "
               "wins" % when,
               [code, rival_code].count(0) == 1)
