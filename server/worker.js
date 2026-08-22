@@ -2601,22 +2601,26 @@ async function handleExport(request, env, origin, caller) {
     return json({ error: "Not authorized." }, 401, origin);
   }
 
-  // account_id travels with the row. Nothing on this side groups these
-  // rows and no page fetches them: /export is the admin-only route an
-  // operator reads by hand, break-glass EXPORT_TOKEN included. So the
+  // account_id travels with the row. This route does not group these
+  // rows and no page fetches it: /export is the admin-only route an
+  // operator reads by hand, break-glass EXPORT_TOKEN included, and it
+  // answers with the rows sealed exactly as they are stored. So the
   // column has to be in the response for "one per person" to be a fact
   // instead of a guess about two rows spelling a name the same way -
   // whoever reads it groups on the id, never on a handle they would have
   // to open the ciphertext to see.
   //
   // `supersedes` travels for the same reason and is resolved in the same
-  // place. This side knows which row a correction replaces and cannot
-  // know what either of them says, so dropping tombstones from a series
-  // is work for whatever opens the ciphertext after this response - not
-  // this Worker, which never decrypts, and not a page, because none
-  // fetches this route. Without the column in this response that
-  // resolution is not possible at all, and a correction reads as a
-  // repeat measurement.
+  // place. The column is clear, so this route can say which row a
+  // correction replaces without opening either one - and since it opens
+  // nothing, dropping tombstones from a series is work for whatever
+  // reads this export and opens the ciphertext. Not that the Worker
+  // cannot open one: it opens rows through store-crypto.js's openRow to
+  // serve GET /my-entries and GET /charts-data to signed-in members,
+  // which is the trade DESIGN.md rules under "Trust model: the Worker
+  // reads". It never opens one for /export. Without the column in this
+  // response that resolution is not possible at all, and a correction
+  // reads as a repeat measurement.
   const rows = await env.DB.prepare(
     "SELECT id, account_id, ciphertext, received_at, supersedes " +
     "FROM submissions ORDER BY id"
