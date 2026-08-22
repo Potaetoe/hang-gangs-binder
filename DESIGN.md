@@ -461,13 +461,15 @@ Worker half of the owner's multi-select chip ruling, #454 items 16-18).
 The floor is applied to the answer, per response, exactly as it is to
 an unfiltered group. **The answer echoes the caller's own filter
 pairs back, in the order asked, and never enumerates what the group
-holds** — a list of which values exist would itself be a membership
-oracle reachable in one request (`server/charts-agg.js`'s response
-contract, mandate 5). **The measures derive from the form's field
-spec** — every numeric field charts, weight and height and computed
-BMI today — so a fork that edits its fields gets matching charts with
-no chart code to write. The spec carries kind, unit and range metadata,
-which is what lets conversion, computed fields and the band edges
+holds** — the floored group-makeup block (below) is the one place a
+page learns which values have entries, and it withholds any value
+whose count sits under the floor, so presence obeys the floor exactly
+like every other number (0.9-M3-S31, #455). **The measures derive from
+the form's field spec** — every numeric field charts, weight and
+height and computed BMI today — so a fork that edits its fields gets
+matching charts with no chart code to write. The spec carries kind,
+unit and range metadata, which is what lets conversion, computed
+fields and the band edges
 derive too; it is `apps/web/site.config.js` and this page is one of the
 two things it exists for.
 
@@ -698,10 +700,11 @@ the chips, the theme picker, the charts. Every tap target is at least
 44 px, body text at least 16 px, and the primary action sits within
 one-hand reach, near the bottom on a phone. Transitions are gentle —
 roughly 150 ms fades and slides, charts settling into place — and
-honor the phone's reduce-motion setting. Icons carry text on desktop;
-alone, with a label under them, only where space is tight, which is the
-phone's bottom bar: 3-4 items — your page, charts, sign out, the admin
-page for admins only — the same items in a top rail on desktop.
+honor the phone's reduce-motion setting. The phone's bottom bar carries
+3-4 items as icons with labels under them — your page, charts, sign
+out, the admin page for admins only — the same items in a top rail on
+desktop. Icons stand alone, without their label, only where space is
+genuinely tight.
 
 **Words and feedback.** The voice is plain and warm — "Saved." or
 "That didn't work - the Worker is down, try again in a minute." — never
