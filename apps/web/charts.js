@@ -77,12 +77,44 @@
  * silently does nothing - and it reads the flag, never a floor, because
  * this file has no opinion about suppression at all.
  *
- * THE FILTER AND MEASURE VALUE LISTS COME FROM apps/site.config.js,
- * never from a response (security mandate 2; design mandate 2). GET
- * /charts-data deliberately never enumerates which values a group holds -
- * DESIGN.md, "The identifier is the whole problem" - so rebuilding
- * that list from anything the server said would open the membership
- * oracle the route's own shape refuses.
+ * THE MEASURE LIST COMES FROM THE EFFECTIVE SPEC (GET /spec, 0.9-M3-S11,
+ * #419), FETCHED ONCE AT SETUP - closing the gap DESIGN.md's "Where
+ * configuration lives" named ("Charts... do not yet"). An admin-added
+ * measure or filter field appears with no code change; the static
+ * apps/web/site.config.js is read only as fields.js's own fallback
+ * inside a fetch failure's error text, never as a second source of
+ * truth once the fetch succeeds.
+ *
+ * FILTER CHIPS COME FROM THE SPEC'S CATEGORICAL FIELDS, MULTI-SELECT,
+ * DERIVED - NEVER FROM A HARD-CODED LIST (0.9-M3, #384 ruling 3; #454
+ * items 16-18). A field renders as chips only if its candidate values
+ * fit two rows, measured on the device; otherwise it falls to a native
+ * drop list. Both forms offer ONLY the values a first, unfiltered GET
+ * /charts-data's own group-makeup block reports present (count > 0,
+ * not the blank/pooled bucket) - never a value list built from the
+ * spec alone, because the makeup block is where the floor already
+ * applies to PRESENCE (server/charts-agg.js's makeupOf(), "IT IS ALSO
+ * WHERE THE PAGE READS WHICH VALUES EXIST"). Resting state: every chip
+ * lit, meaning Everyone - no pair sent for that field at all, the
+ * identity 0.9-M3-S31 (#455) built the Worker side to hold.
+ *
+ * COMBINED_FILTERS_ENABLED (below) IS THE ONE GATE, NAMED ONCE (Prime's
+ * ruling on #455, comment 5378956164). Until the batch security consult
+ * rules a mitigation for the differencing channel S31's review measured
+ * (0.9-M3-S36, #462), this page sends at most one value for at most one
+ * field at a time - both true multi-select within a field and combining
+ * across fields are disabled at the constant, not removed from the
+ * code: flipping it to true is the whole of turning them back on. Every
+ * decision the gate makes is a pure function of that one boolean
+ * (nextFieldSelection() below), so both states are armed by calling it
+ * directly rather than by mutating a frozen constant.
+ *
+ * THE FILTER AND MEASURE VALUE LISTS NEVER COME FROM ANYTHING ELSE
+ * (security mandate 2; design mandate 2). GET /charts-data deliberately
+ * never enumerates which values a group holds on the FILTERED ask -
+ * DESIGN.md, "The identifier is the whole problem" - so the one place
+ * this page ever learns what exists is the unfiltered makeup block
+ * above, read once, not rebuilt from a per-keystroke guess.
  *
  * The pure half below is scale and label math with no document in it,
  * which is what tests/charts-page.test.mjs exercises under Node; the
@@ -193,15 +225,19 @@
   /*
    * The status line's whole sentence: "Showing Weight (lb)." - and
    * "Showing BMI." for a measure with no unit, since there is nothing
-   * to put in the parentheses.
+   * to put in the parentheses. With an active filter, "Showing male -
+   * Weight (lb)." - `filterWords` is activeFilterWords()'s own output,
+   * already the right case for a sentence, so this just places it.
    *
    * This is the ONE place on the page a unit is written (owner ruling
    * 2, #396), which is why it is a function rather than a string built
    * at the call site: one definition, and a test can ask it what the
    * page will say.
    */
-  function showingLine(measureLabel, unit) {
-    return "Showing " + measureLabel + (unit ? " (" + unit + ")" : "") + ".";
+  function showingLine(measureLabel, unit, filterWords) {
+    const lead = filterWords ? filterWords + " - " : "";
+    return "Showing " + lead + measureLabel + (unit ? " (" + unit + ")" : "") +
+      ".";
   }
 
   /*
@@ -599,14 +635,23 @@
      this page is charts.html, the assets layer redirects /charts.html
      to /charts, and a route sitting there answers in the page's place -
      which is what made this page unreachable until 0.9-M2-S8 (#365).
-     server/worker.js's API_SEGMENTS comment carries the whole rule. */
+     server/worker.js's API_SEGMENTS comment carries the whole rule.
+
+     `ask.filters`, A LIST OF {field, value} PAIRS, REPLACES THE OLD
+     SINGLE filter/value PAIR (0.9-M3-S14, against 0.9-M3-S31's landed
+     Worker contract, #455). The wire shape is unchanged from single-
+     filter days: `filter=`/`value=` still repeat and pair by POSITION
+     (server/charts-agg.js's askFor()), so several pairs naming one
+     field are that field's set - this function just emits every pair
+     the caller built, in order, rather than at most one. An empty list
+     sends neither parameter at all, which is Everyone. */
   function chartsURL(endpoint, ask) {
     const url = new URL(endpoint + "/charts-data");
     url.searchParams.set("measure", ask.measure);
-    if (ask.filter) {
-      url.searchParams.set("filter", ask.filter);
-      url.searchParams.set("value", ask.value);
-    }
+    (ask.filters || []).forEach(function (pair) {
+      url.searchParams.append("filter", pair.field);
+      url.searchParams.append("value", pair.value);
+    });
     /* The unit system the member is looking at (owner ruling 4, #396).
        The Worker bins on that unit's own grid, so this is a question
        rather than a preference - and it is always sent, because an
@@ -615,6 +660,252 @@
     url.searchParams.set("units", ask.units);
     url.searchParams.set("self", "1");
     return url.toString();
+  }
+
+  /*
+   * THE ONE GATE (Prime's ruling on #455, comment 5378956164, this
+   * file's own header carries the reasoning). Read ONLY by the one DOM
+   * call site that decides what a tap does (setUp() -> renderFilterRows()
+   * -> nextFieldSelection()) - every function below that the gate
+   * shapes takes its own `combinedEnabled` argument rather than reading
+   * this constant itself, so a test arms BOTH states by calling the
+   * pure function twice, never by mutating a frozen module constant.
+   */
+  const COMBINED_FILTERS_ENABLED = false;
+
+  /*
+   * One field's candidate values, from a first, UNFILTERED answer's own
+   * group-makeup block - never from the spec's full choice list (this
+   * file's header; #454 item 18; server/charts-agg.js's makeupOf(),
+   * "IT IS ALSO WHERE THE PAGE READS WHICH VALUES EXIST"). A cell counts
+   * as present when it cleared the floor (`count > 0`) and is a real
+   * value (`value !== null` excludes the blank and pooled-other
+   * buckets, both keyed by null) - so a value nobody has entered, or one
+   * a raised floor pooled away, simply is not offered as a filter,
+   * exactly the way the response already keeps it off the makeup block
+   * itself. `measure`/`countries` are groupCellLabel()'s own arguments
+   * (above) - this reuses that lookup rather than a second one, so a
+   * country code resolves through the same table the read-only makeup
+   * chips already use.
+   */
+  function presentValuesOf(groupEntry, measure, countries) {
+    return (groupEntry && groupEntry.values ? groupEntry.values : [])
+      .filter(function (cell) { return cell.count > 0 && cell.value !== null; })
+      .map(function (cell) {
+        return { value: cell.value, label: groupCellLabel(measure, cell, countries) };
+      });
+  }
+
+  /*
+   * `list`'s own entries, with every value in `pinned` moved to the
+   * FRONT, in `pinned`'s own order - WITHOUT duplication (#454 item 18:
+   * "pinned US/GB/CA order kept"). apps/web/fields.js's own
+   * orderedChoices() duplicates a pinned entry (kept at the front AND
+   * in its alphabetical place, a free scanning aid in a <select> where
+   * only one line shows) - carried into a chip row that became TWO
+   * buttons for one value, both lit on a single selection (the
+   * superseded build's own review, #434 comment 5378073973, finding
+   * F5). This is deliberately a second, non-duplicating algorithm
+   * rather than a reuse of that one.
+   */
+  function pinFirst(list, pinnedCodes) {
+    const present = {};
+    list.forEach(function (c) { present[c.value] = c; });
+    const pinnedSeen = {};
+    const front = (pinnedCodes || [])
+      .filter(function (code) {
+        return Object.prototype.hasOwnProperty.call(present, code) &&
+          !pinnedSeen[code];
+      })
+      .map(function (code) { pinnedSeen[code] = true; return present[code]; });
+    const rest = list.filter(function (c) {
+      return !Object.prototype.hasOwnProperty.call(pinnedSeen, c.value);
+    });
+    return front.concat(rest);
+  }
+
+  /* Every visual row a flex-wrap chip row actually used, read from each
+     chip's own measured top offset (#454 item 17: "measured on the
+     device... not a count"). Rounded to the nearest pixel before
+     counting distinct values - two chips in the SAME row can differ by
+     a sub-pixel fraction depending on how the browser rounds their
+     individual widths, and that must never read as two rows. */
+  function rowsUsed(tops) {
+    if (!tops || !tops.length) return 0;
+    const rounded = tops.map(function (t) { return Math.round(t); });
+    return new Set(rounded).size;
+  }
+
+  function fitsTwoRows(tops) {
+    return rowsUsed(tops) <= 2;
+  }
+
+  /*
+   * Chips or a drop list - the whole of the DOM layer's decision, moved
+   * here so it is testable without a document at all. `tops` is one
+   * measured top offset per chip, or null for any whose geometry is
+   * unavailable (the Node DOM stub, driving measuredTops() below -
+   * AGENTS.md: "the Node DOM stub proves wiring, never pixels"). With
+   * no real geometry to measure, this defaults to chips - the resting
+   * shape every fixture in this file's own suite expects - and the
+   * actual switch to a drop list is proven in a real browser at builder
+   * time (this file's own positionTooltip() skips the same measurement
+   * gap for the same documented reason).
+   */
+  function decideMode(tops) {
+    if (tops.some(function (t) { return typeof t !== "number"; })) return "chips";
+    return fitsTwoRows(tops) ? "chips" : "list";
+  }
+
+  const WITHIN_FIELD_GATE_NOTICE = "Choosing several at once is being " +
+    "reviewed.";
+  const CROSS_FIELD_GATE_NOTICE = "Combining filters is being reviewed.";
+
+  /* Whether a field currently holds a real narrowing - some but not all
+     of its own candidate values selected. Everyone (all selected) and
+     the impossible empty selection both read false; the gate never
+     lets the second one happen (see nextFieldSelection() below). */
+  function fieldIsRestricted(fieldState) {
+    return fieldState.selected.length > 0 &&
+      fieldState.selected.length < fieldState.candidateValues.length;
+  }
+
+  /*
+   * The gate's whole decision, pure - the ONLY place COMBINED_FILTERS_
+   * ENABLED's effect is decided, and it is decided by the CALLER passing
+   * `combinedEnabled` rather than by this function reading the module
+   * constant, which is what lets a test arm both states directly.
+   *
+   * `fieldState` is one field's own {candidateValues, selected} (see
+   * buildFieldStates() below); `tappedValue` is the one value a click or
+   * a change event named; `anyOtherFieldRestricted` is whether some
+   * OTHER field already holds a narrowing. Returns the field's own next
+   * `selected` list, plus a `notice` string when the gate refused the
+   * tap outright (nothing chosen, nothing to send).
+   *
+   * FULL MULTI-SELECT (combinedEnabled === true, #454 item 16): tapping
+   * toggles the one value, and "at least one chip stays lit" is the only
+   * rule - the last remaining selected value cannot be tapped off.
+   *
+   * GATED (combinedEnabled === false, Prime's ruling on #455): a field
+   * is either everyone (every candidate selected) or exactly one value
+   * selected, never in between - so from everyone, a tap narrows STRAIGHT
+   * to that one value rather than merely turning the tapped one off
+   * (turning one off from four would leave three selected, which is
+   * still a set, the very thing the gate exists to withhold). Tapping
+   * the field's own already-active value clears it back to everyone -
+   * every other candidate relights, which is a real toggle of that
+   * value and not a special "reset" action, and it is what re-enables
+   * every other field's own row (renderFilterRows() reads
+   * fieldIsRestricted() fresh on every render, so nothing here has to
+   * announce the re-enable itself). Tapping a DIFFERENT value while this
+   * field already holds one, or tapping anything at all while ANOTHER
+   * field holds one, refuses with the field's own notice and changes
+   * nothing - "sends nothing new" is a property of the caller never
+   * building a request from a selection that did not change.
+   */
+  function nextFieldSelection(fieldState, tappedValue, anyOtherFieldRestricted,
+      combinedEnabled) {
+    const wasSelected = fieldState.selected.indexOf(tappedValue) !== -1;
+    const allValues = fieldState.candidateValues.map(function (c) {
+      return c.value;
+    });
+
+    if (combinedEnabled) {
+      if (wasSelected) {
+        if (fieldState.selected.length === 1) {
+          return { selected: fieldState.selected, notice: null };
+        }
+        return { selected: fieldState.selected.filter(function (v) {
+          return v !== tappedValue;
+        }), notice: null };
+      }
+      return { selected: fieldState.selected.concat([tappedValue]),
+        notice: null };
+    }
+
+    if (fieldIsRestricted(fieldState)) {
+      if (wasSelected) return { selected: allValues, notice: null };
+      return { selected: fieldState.selected, notice: WITHIN_FIELD_GATE_NOTICE };
+    }
+    if (anyOtherFieldRestricted) {
+      return { selected: fieldState.selected, notice: CROSS_FIELD_GATE_NOTICE };
+    }
+    return { selected: [tappedValue], notice: null };
+  }
+
+  /* The whole ask's filter pairs, in field order and each field's own
+     candidate order (never click order, which a re-render would lose
+     anyway) - a field at Everyone (every candidate selected) sends no
+     pair at all, the identity 0.9-M3-S31 built the Worker side to
+     hold and this page must respect from its side (#455: "a member who
+     stated nothing for a field... is in Everyone and in no set - the
+     page therefore sends no pair at all when every chip is lit"). */
+  function activeFilterPairs(fieldStates) {
+    const pairs = [];
+    (fieldStates || []).forEach(function (state) {
+      if (state.selected.length === state.candidateValues.length) return;
+      state.candidateValues.forEach(function (c) {
+        if (state.selected.indexOf(c.value) !== -1) {
+          pairs.push({ field: state.field, value: c.value });
+        }
+      });
+    });
+    return pairs;
+  }
+
+  /*
+   * One filter pair's own display word, resolved the same two ways
+   * groupCellLabel() above resolves a response CELL - through the
+   * measure's own `choices` or through the countries table for a
+   * `choicesFrom` field - except this is keyed by a raw VALUE rather
+   * than a response cell, because the status line and the workbook
+   * describe the ASK, not an answer's makeup block.
+   *
+   * A PLAIN CHOICE'S LABEL READS LOWERCASE IN THIS SENTENCE ONLY
+   * ("male", "feeder" - the owner's own #454 item 19 example); A
+   * COUNTRY NAME NEVER DOES. The superseded build force-lowercased
+   * every label alike, which read as "united states of america" (its
+   * own review, #434 comment 5378073973, finding F3, "wrong for a
+   * proper noun"). `choicesFrom` is exactly the flag that already tells
+   * a plain word from a proper noun everywhere else in this file, so it
+   * is what this reuses rather than inventing a second test.
+   */
+  function filterValueLabel(pair, measureFor, countries) {
+    const measure = measureFor(pair.field);
+    if (measure && measure.choicesFrom === "countries") {
+      const table = countries || {};
+      return table[pair.value] || pair.value;
+    }
+    const choices = (measure && measure.choices) || [];
+    const found = choices.filter(function (c) { return c.value === pair.value; })[0];
+    const label = found ? found.label : pair.value;
+    return label.toLowerCase();
+  }
+
+  /*
+   * The status line's and the workbook's own filter phrase, from the
+   * ANSWER'S OWN ECHO (`answer.filters`) rather than from whatever the
+   * controls currently show - the same reason workbookRows() below
+   * already reads the answer instead of the radios: the sentence must
+   * describe what was actually drawn, not a selection that may have
+   * changed underneath it while a request was in flight. Several values
+   * of one field join with "/" (a field's own OR); several fields join
+   * with a space (AND across fields) - empty for Everyone.
+   */
+  function activeFilterWords(filters, measureFor, countries) {
+    if (!filters || !filters.length) return "";
+    const order = [];
+    const byField = {};
+    filters.forEach(function (pair) {
+      if (!Object.prototype.hasOwnProperty.call(byField, pair.field)) {
+        byField[pair.field] = [];
+        order.push(pair.field);
+      }
+      byField[pair.field].push(filterValueLabel(pair, measureFor, countries));
+    });
+    return order.map(function (field) { return byField[field].join("/"); })
+      .join(" ");
   }
 
   /*
@@ -688,14 +979,27 @@
     return ["Section", "Label", "Count", "Average" + suffix, "You" + suffix];
   }
 
+  /*
+   * THE WORKBOOK LEADS WITH A FILTERS ROW, THE SAME WORDS THE STATUS
+   * LINE PRINTS, AHEAD OF EVERY OTHER SECTION - a download must carry
+   * what it is a download OF, and "Everyone" is as much an answer to
+   * that as "male" is (0.9-M3-S14; the superseded build's own review,
+   * #434 comment 5378073973, confirmed this exact arm as one of the
+   * three F3 broke). Built from `answer.filters` - the echo, same as
+   * the status line - never from live control state, for the reason
+   * given on activeFilterWords() above.
+   */
   function workbookRows(answer, countries, measureFor) {
+    const words = activeFilterWords(answer.filters, measureFor, countries);
+    const filterRow = ["Filters", words || "Everyone", "", "", ""];
+
     if (!answer.enough) {
-      return [["Status", answer.note + " " + BROADER_FILTER_HINT,
+      return [filterRow, ["Status", answer.note + " " + BROADER_FILTER_HINT,
         "", "", ""]];
     }
 
     const unit = unitFor(answer);
-    const rows = [];
+    const rows = [filterRow];
 
     trimTrailingEmptyBins(
       answer.distribution ? answer.distribution.bins : []).forEach(
@@ -755,6 +1059,19 @@
     workbookColumns: workbookColumns,
     workbookRows: workbookRows,
     BROADER_FILTER_HINT: BROADER_FILTER_HINT,
+    COMBINED_FILTERS_ENABLED: COMBINED_FILTERS_ENABLED,
+    presentValuesOf: presentValuesOf,
+    pinFirst: pinFirst,
+    rowsUsed: rowsUsed,
+    fitsTwoRows: fitsTwoRows,
+    decideMode: decideMode,
+    fieldIsRestricted: fieldIsRestricted,
+    nextFieldSelection: nextFieldSelection,
+    activeFilterPairs: activeFilterPairs,
+    filterValueLabel: filterValueLabel,
+    activeFilterWords: activeFilterWords,
+    WITHIN_FIELD_GATE_NOTICE: WITHIN_FIELD_GATE_NOTICE,
+    CROSS_FIELD_GATE_NOTICE: CROSS_FIELD_GATE_NOTICE,
   };
 
   root.BinderCharts = Object.freeze(Pure);
@@ -927,16 +1244,6 @@
   /* ------------------------------------------------------------------ */
   /* Building the controls from the spec.                                */
 
-  function populateFilterField(site) {
-    const select = $("filter-field");
-    categoricalMeasures(Fields, site).forEach(function (measure) {
-      const option = document.createElement("option");
-      option.value = measure.name;
-      option.textContent = capitalize(measure.term);
-      select.appendChild(option);
-    });
-  }
-
   function populateMeasure(site) {
     const select = $("measure");
     drawableMeasures(Fields, site).forEach(function (measure) {
@@ -947,32 +1254,241 @@
     });
   }
 
-  function populateFilterValue(site) {
-    const fieldName = $("filter-field").value;
-    const wrap = $("filter-value-field");
-    const select = $("filter-value");
-    select.textContent = "";
+  /* ------------------------------------------------------------------ */
+  /* The filter chips: one row per categorical field in the effective    */
+  /* spec, multi-select, gated by COMBINED_FILTERS_ENABLED above (this   */
+  /* file's header; #454 items 16-18).                                   */
 
-    if (!fieldName) {
-      show(wrap, false);
-      return;
+  /* One entry per categorical field with something to filter by - a
+     field the baseline answer's own makeup block sent no present value
+     for (nobody has entered it, or a raised floor pooled every cell
+     away) offers no row at all, since there is nothing honest to
+     narrow by. `groups` is the baseline (unfiltered) answer's own
+     makeup block, or null when even that ask was not enough. */
+  function buildFieldStates(site, groups) {
+    return categoricalMeasures(Fields, site).map(function (measure) {
+      const entry = (groups || []).filter(function (g) {
+        return g.field === measure.name;
+      })[0];
+      let candidates = entry
+        ? presentValuesOf(entry, measure, root.BINDER_COUNTRIES) : [];
+      if (measure.choicesFrom === "countries") {
+        candidates = pinFirst(candidates, Fields.pinnedCountries(site));
+      }
+      return {
+        field: measure.name,
+        label: measure.label,
+        candidateValues: candidates,
+        // Resting state: every candidate selected, which
+        // activeFilterPairs() reads as Everyone - no pair sent
+        // (#455's identity, this file's header).
+        selected: candidates.map(function (c) { return c.value; }),
+      };
+    }).filter(function (state) { return state.candidateValues.length > 0; });
+  }
+
+  function fieldState(fieldName) {
+    return fieldStates.filter(function (s) { return s.field === fieldName; })[0]
+      || null;
+  }
+
+  /* Whether some field OTHER than `exceptField` already holds a real
+     narrowing - the cross-field half of the gate (nextFieldSelection()
+     above decides what a tap does with this). */
+  function anyOtherFieldRestricted(exceptField) {
+    return fieldStates.some(function (s) {
+      return s.field !== exceptField && fieldIsRestricted(s);
+    });
+  }
+
+  function buildChipButtons(state) {
+    return state.candidateValues.map(function (choice) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "filter-chip";
+      button.setAttribute("data-value", choice.value);
+      button.textContent = choice.label;
+      button.setAttribute("aria-pressed",
+        String(state.selected.indexOf(choice.value) !== -1));
+      return button;
+    });
+  }
+
+  /* Every chip's own measured top offset, or null for one whose
+     geometry is unavailable (the Node DOM stub - AGENTS.md: "the Node
+     DOM stub proves wiring, never pixels"). A real browser gives every
+     chip a real getBoundingClientRect(). */
+  function measuredTops(elements) {
+    return elements.map(function (el) {
+      return typeof el.getBoundingClientRect === "function"
+        ? el.getBoundingClientRect().top : null;
+    });
+  }
+
+  function wireChipRow(state, chips, notice) {
+    const crossRestricted = anyOtherFieldRestricted(state.field);
+    const thisRestricted = fieldIsRestricted(state);
+    chips.forEach(function (chip) {
+      const value = chip.getAttribute("data-value");
+      const selected = state.selected.indexOf(value) !== -1;
+      let disabled = false;
+      if (!COMBINED_FILTERS_ENABLED) {
+        if (crossRestricted && !thisRestricted) disabled = true;
+        else if (thisRestricted && !selected) disabled = true;
+      }
+      chip.disabled = disabled;
+      chip.addEventListener("click", function () {
+        const field = fieldState(state.field);
+        if (!field) return;
+        const result = nextFieldSelection(field, value,
+          anyOtherFieldRestricted(field.field), COMBINED_FILTERS_ENABLED);
+        field.selected = result.selected;
+        if (result.notice) {
+          notice.textContent = result.notice;
+          notice.hidden = false;
+          return;
+        }
+        renderFilterRows();
+      });
+    });
+    if (!COMBINED_FILTERS_ENABLED) {
+      if (crossRestricted && !thisRestricted) {
+        notice.textContent = CROSS_FIELD_GATE_NOTICE;
+        notice.hidden = false;
+      } else if (thisRestricted) {
+        notice.textContent = WITHIN_FIELD_GATE_NOTICE;
+        notice.hidden = false;
+      }
     }
-    const measure = Fields.measure(fieldName, site);
-    let choices = valueChoices(measure, root.BINDER_COUNTRIES);
-    // Pinned codes first, in site.config.js's own order (owner ruling,
-    // 0.9-M2-S14, #380 ruling 4) - a client-side reorder of the same
-    // value list valueChoices() already built from the spec, never a
-    // second source for what the filter offers.
-    if (measure.choicesFrom === "countries") {
-      choices = Fields.orderedChoices(choices, Fields.pinnedCountries(site));
+  }
+
+  /* The drop-list fallback - a native <select> (owner ruling, #454 item
+     2: "native first"). ONE value under the gate (a plain <select> with
+     its own "Everyone" option, which a browser already refuses to hold
+     two of at once - there is no within-field notice to wire here,
+     because the control cannot produce the shape that notice is about).
+     Every candidate under the full ruling instead (<select multiple>,
+     every option pre-selected at rest - #454 items 16-17). */
+  function buildFilterSelect(state) {
+    const select = document.createElement("select");
+    select.id = "filter-select-" + state.field;
+    if (COMBINED_FILTERS_ENABLED) {
+      select.multiple = true;
+    } else {
+      const everyone = document.createElement("option");
+      everyone.value = "";
+      everyone.textContent = "Everyone";
+      select.appendChild(everyone);
     }
-    choices.forEach(function (choice) {
+    state.candidateValues.forEach(function (choice) {
       const option = document.createElement("option");
       option.value = choice.value;
       option.textContent = choice.label;
+      if (COMBINED_FILTERS_ENABLED) {
+        option.selected = state.selected.indexOf(choice.value) !== -1;
+      } else if (state.selected.length === 1 &&
+          state.selected[0] === choice.value) {
+        option.selected = true;
+      }
       select.appendChild(option);
     });
-    show(wrap, true);
+    return select;
+  }
+
+  function wireFilterSelect(state, select, notice) {
+    if (COMBINED_FILTERS_ENABLED) {
+      select.addEventListener("change", function () {
+        const field = fieldState(state.field);
+        if (!field) return;
+        // `select.children`, not `.options` - both name the same
+        // <option> elements in a real browser, and only the first is an
+        // array this suite's DOM stub can filter directly (0.9-M3-S14).
+        const chosen = Array.prototype.filter.call(select.children,
+          function (o) { return o.selected; })
+          .map(function (o) { return o.value; });
+        // "At least one stays lit" (#454 item 16): an empty pick keeps
+        // whatever was selected before rather than falling back to
+        // Everyone, the same no-op the last chip's own toggle-off gets.
+        field.selected = chosen.length ? chosen : field.selected;
+        renderFilterRows();
+      });
+      return;
+    }
+    const crossRestricted = anyOtherFieldRestricted(state.field);
+    select.disabled = crossRestricted;
+    if (crossRestricted) {
+      notice.textContent = CROSS_FIELD_GATE_NOTICE;
+      notice.hidden = false;
+    }
+    select.addEventListener("change", function () {
+      const field = fieldState(state.field);
+      if (!field) return;
+      const value = select.value;
+      if (value === "") {
+        field.selected = field.candidateValues.map(function (c) {
+          return c.value;
+        });
+        renderFilterRows();
+        return;
+      }
+      if (anyOtherFieldRestricted(field.field)) {
+        // Refuse the browser's own selection change in place - the
+        // control never ends up showing a value the page did not
+        // accept.
+        select.value = field.selected.length === 1 ? field.selected[0] : "";
+        notice.textContent = CROSS_FIELD_GATE_NOTICE;
+        notice.hidden = false;
+        return;
+      }
+      field.selected = [value];
+      renderFilterRows();
+    });
+  }
+
+  function buildFilterRow(state) {
+    const row = document.createElement("div");
+    row.className = "field filter-row";
+    row.setAttribute("data-field", state.field);
+
+    const label = document.createElement("label");
+    label.id = "filter-label-" + state.field;
+    label.textContent = state.label;
+    row.appendChild(label);
+
+    const chips = buildChipButtons(state);
+    const chipRow = document.createElement("div");
+    chipRow.className = "chip-row filter-chip-row";
+    chipRow.setAttribute("role", "group");
+    chipRow.setAttribute("aria-labelledby", label.id);
+    chips.forEach(function (chip) { chipRow.appendChild(chip); });
+    row.appendChild(chipRow);
+
+    const notice = document.createElement("p");
+    notice.className = "hint filter-notice";
+    notice.hidden = true;
+
+    const mode = decideMode(measuredTops(chips));
+    if (mode === "chips") {
+      row.appendChild(notice);
+      wireChipRow(state, chips, notice);
+    } else {
+      row.removeChild(chipRow);
+      const select = buildFilterSelect(state);
+      label.setAttribute("for", select.id);
+      row.appendChild(select);
+      row.appendChild(notice);
+      wireFilterSelect(state, select, notice);
+    }
+
+    return row;
+  }
+
+  function renderFilterRows() {
+    const container = $("filter-rows");
+    container.textContent = "";
+    fieldStates.forEach(function (state) {
+      container.appendChild(buildFilterRow(state));
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -1297,7 +1813,7 @@
       show(card, false);
       return;
     }
-    const site = root.BINDER_SITE;
+    const site = effectiveSite;
     groups.forEach(function (group) {
       const heading = document.createElement("h3");
       heading.textContent = group.label;
@@ -1592,7 +2108,10 @@
      */
     status.className = "status";
     const unit = unitFor(answer);
-    status.textContent = showingLine(answer.measure.label, unit) +
+    const filterWords = activeFilterWords(answer.filters,
+      function (fieldName) { return Fields.measure(fieldName, effectiveSite); },
+      root.BINDER_COUNTRIES);
+    status.textContent = showingLine(answer.measure.label, unit, filterWords) +
       (unitLocked(answer) && unit ? " " + unitLockNote(unit) : "");
 
     drawTrend(answer);
@@ -1661,10 +2180,9 @@
   function wireDownload() {
     $("download").addEventListener("click", function () {
       if (!lastAnswer) return;
-      const site = root.BINDER_SITE;
       const columns = workbookColumns(unitFor(lastAnswer));
       const rows = workbookRows(lastAnswer, root.BINDER_COUNTRIES,
-        function (fieldName) { return Fields.measure(fieldName, site); });
+        function (fieldName) { return Fields.measure(fieldName, effectiveSite); });
       const bytes = root.BinderXlsx.build(columns, rows, "Charts",
         Date.now());
       const url = URL.createObjectURL(new Blob([bytes], { type:
@@ -1680,9 +2198,95 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Fetching. One request per Show-me press; nothing else on this page  */
-  /* ever calls fetch (design mandate 2: "controls inert until pressed,  */
-  /* no per-keystroke fetch").                                           */
+  /* Fetching. GET /spec once at setup (this file's header), one         */
+  /* unfiltered GET /charts-data at setup to learn what the filter       */
+  /* controls may offer (#454 item 18), then one request per Show-me     */
+  /* press - nothing here fetches on a keystroke (design mandate 2).     */
+
+  /* The effective spec (GET /spec, 0.9-M3-S11, #419) - fetched once,
+     held for the page's life, and read everywhere this file used to
+     read root.BINDER_SITE. Null until setUp()'s own fetch resolves. */
+  let effectiveSite = null;
+  let fieldStates = [];
+
+  /*
+   * One GET, parsed and error-handled once - showMe() and setUp()'s own
+   * baseline ask both go through this rather than each carrying the
+   * same 401/network/parse branches (the superseded build's own review,
+   * #434 comment 5378073973, noted the duplication this closes).
+   */
+  async function fetchAnswer(config, ask) {
+    let response;
+    try {
+      response = await fetch(chartsURL(config.endpoint, ask),
+        { headers: Session.authorization() });
+    } catch (error) {
+      detail(error && error.message ? error.message : "the charts route " +
+        "could not be fetched");
+      return { ok: false, message: "The figures could not be fetched — " +
+        "try again shortly." };
+    }
+    if (response.status === 401) {
+      Session.clear();
+      return { ok: false, message: "Your sign-in is no longer valid. " +
+        "Sign in again to see these charts." };
+    }
+    if (!response.ok) {
+      detail("the charts route answered " + response.status);
+      return { ok: false, message: "The service could not answer just now." };
+    }
+    const text = await response.text();
+    let answer;
+    try {
+      answer = JSON.parse(text);
+    } catch (error) {
+      return { ok: false, message: "These figures are not in a shape " +
+        "this page can draw. They may have been published by a newer " +
+        "version of the site — tell an admin." };
+    }
+    return { ok: true, answer: answer };
+  }
+
+  /* GET /spec, parsed the same way apps/web/admin.js's own loadFields()
+     reads it - `payload.spec` - since this is the same route answering
+     the same shape to any signed-in session (server/worker.js's
+     handleReadSpec()). */
+  async function fetchSpec(config) {
+    let response;
+    try {
+      response = await fetch(config.endpoint + "/spec",
+        { headers: Session.authorization() });
+    } catch (error) {
+      detail(error && error.message ? error.message : "the spec route " +
+        "could not be fetched");
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    if (response.status === 401) {
+      Session.clear();
+      return { ok: false, message: "Your sign-in is no longer valid. " +
+        "Sign in again to see these charts." };
+    }
+    if (!response.ok) {
+      detail("the spec route answered " + response.status);
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    let payload;
+    try {
+      payload = JSON.parse(await response.text());
+    } catch (error) {
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    const spec = payload && payload.spec && typeof payload.spec === "object"
+      ? payload.spec : null;
+    if (!spec) {
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    return { ok: true, spec: spec };
+  }
 
   async function showMe() {
     const config = root.BINDER_CONFIG || {};
@@ -1697,61 +2301,22 @@
       return;
     }
 
-    const measureName = $("measure").value;
-    const filterField = $("filter-field").value;
-    // The unit system is part of the QUESTION now (owner ruling 4,
-    // #396) - the Worker bins on that unit's own grid, and this page
-    // has no way to reach the other one.
-    const ask = { measure: measureName, units: currentSystem() };
-    if (filterField) {
-      ask.filter = filterField;
-      ask.value = $("filter-value").value;
-    }
-
-    let response;
-    try {
-      response = await fetch(chartsURL(config.endpoint, ask),
-        { headers: Session.authorization() });
-    } catch (error) {
-      detail(error && error.message ? error.message : "the charts route " +
-        "could not be fetched");
-      status.textContent = "The figures could not be fetched — try again " +
-        "shortly.";
+    const ask = { measure: $("measure").value, units: currentSystem(),
+      filters: activeFilterPairs(fieldStates) };
+    const result = await fetchAnswer(config, ask);
+    if (!result.ok) {
+      status.textContent = result.message;
       return;
     }
 
-    if (response.status === 401) {
-      Session.clear();
-      status.textContent = "Your sign-in is no longer valid. Sign in " +
-        "again to see these charts.";
-      return;
-    }
-    if (!response.ok) {
-      detail("the charts route answered " + response.status);
-      status.textContent = "The service could not answer just now.";
-      return;
-    }
-
-    const text = await response.text();
-
-    let answer;
-    try {
-      answer = JSON.parse(text);
-    } catch (error) {
-      status.textContent = "These figures are not in a shape this page " +
-        "can draw. They may have been published by a newer version of " +
-        "the site — tell an admin.";
-      return;
-    }
-
-    renderAnswer(answer);
+    renderAnswer(result.answer);
     // After render, not before: the workbook is built from the PARSED
-    // answer now (0.9-M2-S14, #380 ruling 3). A parse failure above
+    // answer now (0.9-M2-S14, #380 ruling 3). A refused fetch above
     // returns before this line runs, so the download is simply not
     // refreshed on that press - whatever workbook a PRIOR successful
     // press offered stays offered, matching the prior picture that is
     // also still on screen (the early return above leaves both alone).
-    offerDownload(answer);
+    offerDownload(result.answer);
     /* The units toggle's own wiring lives in applyUnitLock(), which
        renderAnswer() already called: whether the radios re-ask, and
        whether they are live at all, is decided by the answer rather
@@ -1761,20 +2326,52 @@
   async function setUp() {
     if (!Session.require()) return;
 
-    const site = root.BINDER_SITE;
-    if (!site || !Fields) {
+    const config = root.BINDER_CONFIG || {};
+    if (!config.endpoint) {
+      $("status").textContent = "This site is not set up to reach the " +
+        "service these figures come from.";
+      show($("status"), true);
+      return;
+    }
+
+    const specResult = await fetchSpec(config);
+    if (!specResult.ok) {
+      $("status").textContent = specResult.message;
+      show($("status"), true);
+      return;
+    }
+    effectiveSite = specResult.spec;
+    if (!Fields) {
       $("status").textContent = "This page could not load its own " +
         "field spec, so there is nothing it can chart.";
       show($("status"), true);
       return;
     }
 
-    populateFilterField(site);
-    populateMeasure(site);
+    populateMeasure(effectiveSite);
 
-    $("filter-field").addEventListener("change", function () {
-      populateFilterValue(site);
-    });
+    /*
+     * The baseline read: one unfiltered ask, purely to learn which
+     * values the filter controls may offer (#454 item 18; this file's
+     * header) - the group-makeup block a drawn answer carries describes
+     * every categorical field regardless of which measure was asked
+     * for, so any drawable measure serves. A baseline that is itself
+     * not enough leaves every field with nothing present to filter by,
+     * which buildFieldStates() reads honestly as no rows at all rather
+     * than guessing at a value list from the spec.
+     */
+    const drawable = drawableMeasures(Fields, effectiveSite);
+    let baselineGroups = null;
+    if (drawable.length) {
+      const baseline = await fetchAnswer(config,
+        { measure: drawable[0].name, units: currentSystem(), filters: [] });
+      if (baseline.ok && baseline.answer.enough) {
+        baselineGroups = baseline.answer.groups;
+      }
+    }
+    fieldStates = buildFieldStates(effectiveSite, baselineGroups);
+    renderFilterRows();
+
     $("picture-tab-trend").addEventListener("click", function () {
       selectPicture("trend");
     });
@@ -1790,5 +2387,14 @@
     // per draw: it outlives every redraw and every wireTooltip() click
     // above already stops its own click from reaching here.
     document.addEventListener("click", dismissTooltipElsewhere);
+
+    // Re-measure on resize (#454 item 17: "measured on the device at
+    // load and on resize"), debounced - a drag-resize fires many times
+    // a second and every intermediate width is not worth a rebuild.
+    let resizeTimer = null;
+    root.addEventListener("resize", function () {
+      if (resizeTimer !== null) root.clearTimeout(resizeTimer);
+      resizeTimer = root.setTimeout(renderFilterRows, 150);
+    });
   }
 })(globalThis);

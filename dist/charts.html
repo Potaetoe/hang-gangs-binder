@@ -95,26 +95,23 @@
     comment, below.
   -->
   <div class="card">
+
+    <!-- Filter: one row per categorical field in the EFFECTIVE spec
+         (GET /spec, 0.9-M3-S11, #419) - apps/web/charts.js's own
+         renderFilterRows() is the only thing that ever fills this, and
+         it fills it entirely: no row here is written by hand, because
+         an admin-added categorical field must appear with zero edits
+         to this file (0.9-M3 design record #384, ruling 3). Chips or a
+         native drop list per field, decided by measured geometry (#454
+         item 17), offering only the values a first, unfiltered GET
+         /charts-data's own group-makeup block reports present (#454
+         item 18) - never a value list rebuilt from the spec alone,
+         which is the membership-oracle rule DESIGN.md's "The
+         identifier is the whole problem" names. Resting state: every
+         chip lit, meaning Everyone. -->
+    <div id="filter-rows" class="stack-tight"></div>
+
     <div class="control-row">
-
-      <!-- Filter: a two-step select. The field list and every value
-           list come from apps/site.config.js (through fields.js) -
-           never from a response. GET /charts-data deliberately never
-           enumerates which values a group holds (the membership-oracle
-           rule DESIGN.md's "The identifier is the whole problem" names),
-           so this page must not try to rebuild that list from anything
-           the server says. -->
-      <div class="field">
-        <label for="filter-field">Filter</label>
-        <select id="filter-field">
-          <option value="">Everyone</option>
-        </select>
-      </div>
-
-      <div class="field" id="filter-value-field" hidden>
-        <label for="filter-value">Value</label>
-        <select id="filter-value"></select>
-      </div>
 
       <!-- Measure: the chartable-measure list. There is no statistic
            picker any more - the trend line is always the mean and its

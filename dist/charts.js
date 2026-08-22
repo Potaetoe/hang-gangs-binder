@@ -37,8 +37,10 @@
 
   
 
-  function showingLine(measureLabel, unit) {
-    return "Showing " + measureLabel + (unit ? " (" + unit + ")" : "") + ".";
+  function showingLine(measureLabel, unit, filterWords) {
+    const lead = filterWords ? filterWords + " - " : "";
+    return "Showing " + lead + measureLabel + (unit ? " (" + unit + ")" : "") +
+      ".";
   }
 
   
@@ -249,15 +251,155 @@
   function chartsURL(endpoint, ask) {
     const url = new URL(endpoint + "/charts-data");
     url.searchParams.set("measure", ask.measure);
-    if (ask.filter) {
-      url.searchParams.set("filter", ask.filter);
-      url.searchParams.set("value", ask.value);
-    }
+    (ask.filters || []).forEach(function (pair) {
+      url.searchParams.append("filter", pair.field);
+      url.searchParams.append("value", pair.value);
+    });
     
 
     url.searchParams.set("units", ask.units);
     url.searchParams.set("self", "1");
     return url.toString();
+  }
+
+  
+
+  const COMBINED_FILTERS_ENABLED = false;
+
+  
+
+  function presentValuesOf(groupEntry, measure, countries) {
+    return (groupEntry && groupEntry.values ? groupEntry.values : [])
+      .filter(function (cell) { return cell.count > 0 && cell.value !== null; })
+      .map(function (cell) {
+        return { value: cell.value, label: groupCellLabel(measure, cell, countries) };
+      });
+  }
+
+  
+
+  function pinFirst(list, pinnedCodes) {
+    const present = {};
+    list.forEach(function (c) { present[c.value] = c; });
+    const pinnedSeen = {};
+    const front = (pinnedCodes || [])
+      .filter(function (code) {
+        return Object.prototype.hasOwnProperty.call(present, code) &&
+          !pinnedSeen[code];
+      })
+      .map(function (code) { pinnedSeen[code] = true; return present[code]; });
+    const rest = list.filter(function (c) {
+      return !Object.prototype.hasOwnProperty.call(pinnedSeen, c.value);
+    });
+    return front.concat(rest);
+  }
+
+  
+
+  function rowsUsed(tops) {
+    if (!tops || !tops.length) return 0;
+    const rounded = tops.map(function (t) { return Math.round(t); });
+    return new Set(rounded).size;
+  }
+
+  function fitsTwoRows(tops) {
+    return rowsUsed(tops) <= 2;
+  }
+
+  
+
+  function decideMode(tops) {
+    if (tops.some(function (t) { return typeof t !== "number"; })) return "chips";
+    return fitsTwoRows(tops) ? "chips" : "list";
+  }
+
+  const WITHIN_FIELD_GATE_NOTICE = "Choosing several at once is being " +
+    "reviewed.";
+  const CROSS_FIELD_GATE_NOTICE = "Combining filters is being reviewed.";
+
+  
+
+  function fieldIsRestricted(fieldState) {
+    return fieldState.selected.length > 0 &&
+      fieldState.selected.length < fieldState.candidateValues.length;
+  }
+
+  
+
+  function nextFieldSelection(fieldState, tappedValue, anyOtherFieldRestricted,
+      combinedEnabled) {
+    const wasSelected = fieldState.selected.indexOf(tappedValue) !== -1;
+    const allValues = fieldState.candidateValues.map(function (c) {
+      return c.value;
+    });
+
+    if (combinedEnabled) {
+      if (wasSelected) {
+        if (fieldState.selected.length === 1) {
+          return { selected: fieldState.selected, notice: null };
+        }
+        return { selected: fieldState.selected.filter(function (v) {
+          return v !== tappedValue;
+        }), notice: null };
+      }
+      return { selected: fieldState.selected.concat([tappedValue]),
+        notice: null };
+    }
+
+    if (fieldIsRestricted(fieldState)) {
+      if (wasSelected) return { selected: allValues, notice: null };
+      return { selected: fieldState.selected, notice: WITHIN_FIELD_GATE_NOTICE };
+    }
+    if (anyOtherFieldRestricted) {
+      return { selected: fieldState.selected, notice: CROSS_FIELD_GATE_NOTICE };
+    }
+    return { selected: [tappedValue], notice: null };
+  }
+
+  
+
+  function activeFilterPairs(fieldStates) {
+    const pairs = [];
+    (fieldStates || []).forEach(function (state) {
+      if (state.selected.length === state.candidateValues.length) return;
+      state.candidateValues.forEach(function (c) {
+        if (state.selected.indexOf(c.value) !== -1) {
+          pairs.push({ field: state.field, value: c.value });
+        }
+      });
+    });
+    return pairs;
+  }
+
+  
+
+  function filterValueLabel(pair, measureFor, countries) {
+    const measure = measureFor(pair.field);
+    if (measure && measure.choicesFrom === "countries") {
+      const table = countries || {};
+      return table[pair.value] || pair.value;
+    }
+    const choices = (measure && measure.choices) || [];
+    const found = choices.filter(function (c) { return c.value === pair.value; })[0];
+    const label = found ? found.label : pair.value;
+    return label.toLowerCase();
+  }
+
+  
+
+  function activeFilterWords(filters, measureFor, countries) {
+    if (!filters || !filters.length) return "";
+    const order = [];
+    const byField = {};
+    filters.forEach(function (pair) {
+      if (!Object.prototype.hasOwnProperty.call(byField, pair.field)) {
+        byField[pair.field] = [];
+        order.push(pair.field);
+      }
+      byField[pair.field].push(filterValueLabel(pair, measureFor, countries));
+    });
+    return order.map(function (field) { return byField[field].join("/"); })
+      .join(" ");
   }
 
   
@@ -283,14 +425,19 @@
     return ["Section", "Label", "Count", "Average" + suffix, "You" + suffix];
   }
 
+  
+
   function workbookRows(answer, countries, measureFor) {
+    const words = activeFilterWords(answer.filters, measureFor, countries);
+    const filterRow = ["Filters", words || "Everyone", "", "", ""];
+
     if (!answer.enough) {
-      return [["Status", answer.note + " " + BROADER_FILTER_HINT,
+      return [filterRow, ["Status", answer.note + " " + BROADER_FILTER_HINT,
         "", "", ""]];
     }
 
     const unit = unitFor(answer);
-    const rows = [];
+    const rows = [filterRow];
 
     trimTrailingEmptyBins(
       answer.distribution ? answer.distribution.bins : []).forEach(
@@ -350,6 +497,19 @@
     workbookColumns: workbookColumns,
     workbookRows: workbookRows,
     BROADER_FILTER_HINT: BROADER_FILTER_HINT,
+    COMBINED_FILTERS_ENABLED: COMBINED_FILTERS_ENABLED,
+    presentValuesOf: presentValuesOf,
+    pinFirst: pinFirst,
+    rowsUsed: rowsUsed,
+    fitsTwoRows: fitsTwoRows,
+    decideMode: decideMode,
+    fieldIsRestricted: fieldIsRestricted,
+    nextFieldSelection: nextFieldSelection,
+    activeFilterPairs: activeFilterPairs,
+    filterValueLabel: filterValueLabel,
+    activeFilterWords: activeFilterWords,
+    WITHIN_FIELD_GATE_NOTICE: WITHIN_FIELD_GATE_NOTICE,
+    CROSS_FIELD_GATE_NOTICE: CROSS_FIELD_GATE_NOTICE,
   };
 
   root.BinderCharts = Object.freeze(Pure);
@@ -494,16 +654,6 @@
    
    
 
-  function populateFilterField(site) {
-    const select = $("filter-field");
-    categoricalMeasures(Fields, site).forEach(function (measure) {
-      const option = document.createElement("option");
-      option.value = measure.name;
-      option.textContent = capitalize(measure.term);
-      select.appendChild(option);
-    });
-  }
-
   function populateMeasure(site) {
     const select = $("measure");
     drawableMeasures(Fields, site).forEach(function (measure) {
@@ -514,32 +664,229 @@
     });
   }
 
-  function populateFilterValue(site) {
-    const fieldName = $("filter-field").value;
-    const wrap = $("filter-value-field");
-    const select = $("filter-value");
-    select.textContent = "";
+   
+   
+   
+   
 
-    if (!fieldName) {
-      show(wrap, false);
-      return;
+  
+
+  function buildFieldStates(site, groups) {
+    return categoricalMeasures(Fields, site).map(function (measure) {
+      const entry = (groups || []).filter(function (g) {
+        return g.field === measure.name;
+      })[0];
+      let candidates = entry
+        ? presentValuesOf(entry, measure, root.BINDER_COUNTRIES) : [];
+      if (measure.choicesFrom === "countries") {
+        candidates = pinFirst(candidates, Fields.pinnedCountries(site));
+      }
+      return {
+        field: measure.name,
+        label: measure.label,
+        candidateValues: candidates,
+         
+         
+         
+        selected: candidates.map(function (c) { return c.value; }),
+      };
+    }).filter(function (state) { return state.candidateValues.length > 0; });
+  }
+
+  function fieldState(fieldName) {
+    return fieldStates.filter(function (s) { return s.field === fieldName; })[0]
+      || null;
+  }
+
+  
+
+  function anyOtherFieldRestricted(exceptField) {
+    return fieldStates.some(function (s) {
+      return s.field !== exceptField && fieldIsRestricted(s);
+    });
+  }
+
+  function buildChipButtons(state) {
+    return state.candidateValues.map(function (choice) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "filter-chip";
+      button.setAttribute("data-value", choice.value);
+      button.textContent = choice.label;
+      button.setAttribute("aria-pressed",
+        String(state.selected.indexOf(choice.value) !== -1));
+      return button;
+    });
+  }
+
+  
+
+  function measuredTops(elements) {
+    return elements.map(function (el) {
+      return typeof el.getBoundingClientRect === "function"
+        ? el.getBoundingClientRect().top : null;
+    });
+  }
+
+  function wireChipRow(state, chips, notice) {
+    const crossRestricted = anyOtherFieldRestricted(state.field);
+    const thisRestricted = fieldIsRestricted(state);
+    chips.forEach(function (chip) {
+      const value = chip.getAttribute("data-value");
+      const selected = state.selected.indexOf(value) !== -1;
+      let disabled = false;
+      if (!COMBINED_FILTERS_ENABLED) {
+        if (crossRestricted && !thisRestricted) disabled = true;
+        else if (thisRestricted && !selected) disabled = true;
+      }
+      chip.disabled = disabled;
+      chip.addEventListener("click", function () {
+        const field = fieldState(state.field);
+        if (!field) return;
+        const result = nextFieldSelection(field, value,
+          anyOtherFieldRestricted(field.field), COMBINED_FILTERS_ENABLED);
+        field.selected = result.selected;
+        if (result.notice) {
+          notice.textContent = result.notice;
+          notice.hidden = false;
+          return;
+        }
+        renderFilterRows();
+      });
+    });
+    if (!COMBINED_FILTERS_ENABLED) {
+      if (crossRestricted && !thisRestricted) {
+        notice.textContent = CROSS_FIELD_GATE_NOTICE;
+        notice.hidden = false;
+      } else if (thisRestricted) {
+        notice.textContent = WITHIN_FIELD_GATE_NOTICE;
+        notice.hidden = false;
+      }
     }
-    const measure = Fields.measure(fieldName, site);
-    let choices = valueChoices(measure, root.BINDER_COUNTRIES);
-     
-     
-     
-     
-    if (measure.choicesFrom === "countries") {
-      choices = Fields.orderedChoices(choices, Fields.pinnedCountries(site));
+  }
+
+  
+
+  function buildFilterSelect(state) {
+    const select = document.createElement("select");
+    select.id = "filter-select-" + state.field;
+    if (COMBINED_FILTERS_ENABLED) {
+      select.multiple = true;
+    } else {
+      const everyone = document.createElement("option");
+      everyone.value = "";
+      everyone.textContent = "Everyone";
+      select.appendChild(everyone);
     }
-    choices.forEach(function (choice) {
+    state.candidateValues.forEach(function (choice) {
       const option = document.createElement("option");
       option.value = choice.value;
       option.textContent = choice.label;
+      if (COMBINED_FILTERS_ENABLED) {
+        option.selected = state.selected.indexOf(choice.value) !== -1;
+      } else if (state.selected.length === 1 &&
+          state.selected[0] === choice.value) {
+        option.selected = true;
+      }
       select.appendChild(option);
     });
-    show(wrap, true);
+    return select;
+  }
+
+  function wireFilterSelect(state, select, notice) {
+    if (COMBINED_FILTERS_ENABLED) {
+      select.addEventListener("change", function () {
+        const field = fieldState(state.field);
+        if (!field) return;
+         
+         
+         
+        const chosen = Array.prototype.filter.call(select.children,
+          function (o) { return o.selected; })
+          .map(function (o) { return o.value; });
+         
+         
+         
+        field.selected = chosen.length ? chosen : field.selected;
+        renderFilterRows();
+      });
+      return;
+    }
+    const crossRestricted = anyOtherFieldRestricted(state.field);
+    select.disabled = crossRestricted;
+    if (crossRestricted) {
+      notice.textContent = CROSS_FIELD_GATE_NOTICE;
+      notice.hidden = false;
+    }
+    select.addEventListener("change", function () {
+      const field = fieldState(state.field);
+      if (!field) return;
+      const value = select.value;
+      if (value === "") {
+        field.selected = field.candidateValues.map(function (c) {
+          return c.value;
+        });
+        renderFilterRows();
+        return;
+      }
+      if (anyOtherFieldRestricted(field.field)) {
+         
+         
+         
+        select.value = field.selected.length === 1 ? field.selected[0] : "";
+        notice.textContent = CROSS_FIELD_GATE_NOTICE;
+        notice.hidden = false;
+        return;
+      }
+      field.selected = [value];
+      renderFilterRows();
+    });
+  }
+
+  function buildFilterRow(state) {
+    const row = document.createElement("div");
+    row.className = "field filter-row";
+    row.setAttribute("data-field", state.field);
+
+    const label = document.createElement("label");
+    label.id = "filter-label-" + state.field;
+    label.textContent = state.label;
+    row.appendChild(label);
+
+    const chips = buildChipButtons(state);
+    const chipRow = document.createElement("div");
+    chipRow.className = "chip-row filter-chip-row";
+    chipRow.setAttribute("role", "group");
+    chipRow.setAttribute("aria-labelledby", label.id);
+    chips.forEach(function (chip) { chipRow.appendChild(chip); });
+    row.appendChild(chipRow);
+
+    const notice = document.createElement("p");
+    notice.className = "hint filter-notice";
+    notice.hidden = true;
+
+    const mode = decideMode(measuredTops(chips));
+    if (mode === "chips") {
+      row.appendChild(notice);
+      wireChipRow(state, chips, notice);
+    } else {
+      row.removeChild(chipRow);
+      const select = buildFilterSelect(state);
+      label.setAttribute("for", select.id);
+      row.appendChild(select);
+      row.appendChild(notice);
+      wireFilterSelect(state, select, notice);
+    }
+
+    return row;
+  }
+
+  function renderFilterRows() {
+    const container = $("filter-rows");
+    container.textContent = "";
+    fieldStates.forEach(function (state) {
+      container.appendChild(buildFilterRow(state));
+    });
   }
 
    
@@ -753,7 +1100,7 @@
       show(card, false);
       return;
     }
-    const site = root.BINDER_SITE;
+    const site = effectiveSite;
     groups.forEach(function (group) {
       const heading = document.createElement("h3");
       heading.textContent = group.label;
@@ -952,7 +1299,10 @@
 
     status.className = "status";
     const unit = unitFor(answer);
-    status.textContent = showingLine(answer.measure.label, unit) +
+    const filterWords = activeFilterWords(answer.filters,
+      function (fieldName) { return Fields.measure(fieldName, effectiveSite); },
+      root.BINDER_COUNTRIES);
+    status.textContent = showingLine(answer.measure.label, unit, filterWords) +
       (unitLocked(answer) && unit ? " " + unitLockNote(unit) : "");
 
     drawTrend(answer);
@@ -984,10 +1334,9 @@
   function wireDownload() {
     $("download").addEventListener("click", function () {
       if (!lastAnswer) return;
-      const site = root.BINDER_SITE;
       const columns = workbookColumns(unitFor(lastAnswer));
       const rows = workbookRows(lastAnswer, root.BINDER_COUNTRIES,
-        function (fieldName) { return Fields.measure(fieldName, site); });
+        function (fieldName) { return Fields.measure(fieldName, effectiveSite); });
       const bytes = root.BinderXlsx.build(columns, rows, "Charts",
         Date.now());
       const url = URL.createObjectURL(new Blob([bytes], { type:
@@ -1006,6 +1355,85 @@
    
    
    
+   
+
+  
+
+  let effectiveSite = null;
+  let fieldStates = [];
+
+  
+
+  async function fetchAnswer(config, ask) {
+    let response;
+    try {
+      response = await fetch(chartsURL(config.endpoint, ask),
+        { headers: Session.authorization() });
+    } catch (error) {
+      detail(error && error.message ? error.message : "the charts route " +
+        "could not be fetched");
+      return { ok: false, message: "The figures could not be fetched — " +
+        "try again shortly." };
+    }
+    if (response.status === 401) {
+      Session.clear();
+      return { ok: false, message: "Your sign-in is no longer valid. " +
+        "Sign in again to see these charts." };
+    }
+    if (!response.ok) {
+      detail("the charts route answered " + response.status);
+      return { ok: false, message: "The service could not answer just now." };
+    }
+    const text = await response.text();
+    let answer;
+    try {
+      answer = JSON.parse(text);
+    } catch (error) {
+      return { ok: false, message: "These figures are not in a shape " +
+        "this page can draw. They may have been published by a newer " +
+        "version of the site — tell an admin." };
+    }
+    return { ok: true, answer: answer };
+  }
+
+  
+
+  async function fetchSpec(config) {
+    let response;
+    try {
+      response = await fetch(config.endpoint + "/spec",
+        { headers: Session.authorization() });
+    } catch (error) {
+      detail(error && error.message ? error.message : "the spec route " +
+        "could not be fetched");
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    if (response.status === 401) {
+      Session.clear();
+      return { ok: false, message: "Your sign-in is no longer valid. " +
+        "Sign in again to see these charts." };
+    }
+    if (!response.ok) {
+      detail("the spec route answered " + response.status);
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    let payload;
+    try {
+      payload = JSON.parse(await response.text());
+    } catch (error) {
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    const spec = payload && payload.spec && typeof payload.spec === "object"
+      ? payload.spec : null;
+    if (!spec) {
+      return { ok: false, message: "This page could not load its own " +
+        "field spec, so there is nothing it can chart." };
+    }
+    return { ok: true, spec: spec };
+  }
 
   async function showMe() {
     const config = root.BINDER_CONFIG || {};
@@ -1020,61 +1448,22 @@
       return;
     }
 
-    const measureName = $("measure").value;
-    const filterField = $("filter-field").value;
-     
-     
-     
-    const ask = { measure: measureName, units: currentSystem() };
-    if (filterField) {
-      ask.filter = filterField;
-      ask.value = $("filter-value").value;
-    }
-
-    let response;
-    try {
-      response = await fetch(chartsURL(config.endpoint, ask),
-        { headers: Session.authorization() });
-    } catch (error) {
-      detail(error && error.message ? error.message : "the charts route " +
-        "could not be fetched");
-      status.textContent = "The figures could not be fetched — try again " +
-        "shortly.";
+    const ask = { measure: $("measure").value, units: currentSystem(),
+      filters: activeFilterPairs(fieldStates) };
+    const result = await fetchAnswer(config, ask);
+    if (!result.ok) {
+      status.textContent = result.message;
       return;
     }
 
-    if (response.status === 401) {
-      Session.clear();
-      status.textContent = "Your sign-in is no longer valid. Sign in " +
-        "again to see these charts.";
-      return;
-    }
-    if (!response.ok) {
-      detail("the charts route answered " + response.status);
-      status.textContent = "The service could not answer just now.";
-      return;
-    }
-
-    const text = await response.text();
-
-    let answer;
-    try {
-      answer = JSON.parse(text);
-    } catch (error) {
-      status.textContent = "These figures are not in a shape this page " +
-        "can draw. They may have been published by a newer version of " +
-        "the site — tell an admin.";
-      return;
-    }
-
-    renderAnswer(answer);
+    renderAnswer(result.answer);
      
      
      
      
      
      
-    offerDownload(answer);
+    offerDownload(result.answer);
     
 
   }
@@ -1082,20 +1471,44 @@
   async function setUp() {
     if (!Session.require()) return;
 
-    const site = root.BINDER_SITE;
-    if (!site || !Fields) {
+    const config = root.BINDER_CONFIG || {};
+    if (!config.endpoint) {
+      $("status").textContent = "This site is not set up to reach the " +
+        "service these figures come from.";
+      show($("status"), true);
+      return;
+    }
+
+    const specResult = await fetchSpec(config);
+    if (!specResult.ok) {
+      $("status").textContent = specResult.message;
+      show($("status"), true);
+      return;
+    }
+    effectiveSite = specResult.spec;
+    if (!Fields) {
       $("status").textContent = "This page could not load its own " +
         "field spec, so there is nothing it can chart.";
       show($("status"), true);
       return;
     }
 
-    populateFilterField(site);
-    populateMeasure(site);
+    populateMeasure(effectiveSite);
 
-    $("filter-field").addEventListener("change", function () {
-      populateFilterValue(site);
-    });
+    
+
+    const drawable = drawableMeasures(Fields, effectiveSite);
+    let baselineGroups = null;
+    if (drawable.length) {
+      const baseline = await fetchAnswer(config,
+        { measure: drawable[0].name, units: currentSystem(), filters: [] });
+      if (baseline.ok && baseline.answer.enough) {
+        baselineGroups = baseline.answer.groups;
+      }
+    }
+    fieldStates = buildFieldStates(effectiveSite, baselineGroups);
+    renderFilterRows();
+
     $("picture-tab-trend").addEventListener("click", function () {
       selectPicture("trend");
     });
@@ -1111,5 +1524,14 @@
      
      
     document.addEventListener("click", dismissTooltipElsewhere);
+
+     
+     
+     
+    let resizeTimer = null;
+    root.addEventListener("resize", function () {
+      if (resizeTimer !== null) root.clearTimeout(resizeTimer);
+      resizeTimer = root.setTimeout(renderFilterRows, 150);
+    });
   }
 })(globalThis);
